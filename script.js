@@ -1,35 +1,59 @@
 function parseXML() {
-  const fileInput = document.getElementById("xmlFile");
+  const xmlInput = document.getElementById("xmlFile");
+  const jsonInput = document.getElementById("jsonFile");
   const resultsDiv = document.getElementById("results");
 
-  if (!fileInput || !resultsDiv) {
+  if (!xmlInput || !jsonInput || !resultsDiv) {
     console.error("Missing required DOM elements.");
     return;
   }
 
-  if (!fileInput.files.length) {
-    resultsDiv.innerHTML = "<p>Please upload an XML file.</p>";
+  if (!xmlInput.files.length || !jsonInput.files.length) {
+    resultsDiv.innerHTML = "<p>Please upload both XML and JSON files.</p>";
     return;
   }
 
-  // Valid tooth code groups
-  const anteriorTeeth = new Set(['6','7','8','9','10','11','22','23','24','25','26','27']);
-  const premolarTeeth = new Set(['4','5','12','13','20','21','28','29']);
-  const posteriorTeeth = new Set(['1','2','3','14','15','16','17','18','19','30','31','32']);
+  const xmlReader = new FileReader();
+  const jsonReader = new FileReader();
 
-  // Activity code -> allowed region
-  const codeRegionMap = {
-    anterior: new Set(['23111','23112','23113','23114','23115','23101','23102','23103','23104','23105']),
-    premolar: new Set(['23311','23312','23313','23314','23315','23211','23212','23213','23214','23215']),
-    posterior: new Set(['23321','23322','23323','23324','23325','23221','23222','23223','23224','23225']),
-  };
+  let xmlData = null;
+  let jsonData = null;
 
-  const reader = new FileReader();
-  reader.onload = function () {
+  // When both files are loaded, process them
+  function tryProcess() {
+    if (!xmlData || !jsonData) return;
+
+    let codeToTeethMap = {};
+
+    try {
+      const parsedJSON = JSON.parse(jsonData);
+      for (const entry of parsedJSON) {
+        const teethSet = new Set();
+        const category = entry.affiliated_teeth.toLowerCase();
+
+        if (category === "all") {
+          for (let i = 1; i <= 32; i++) teethSet.add(String(i));
+        } else if (category === "anteriors") {
+          ["6","7","8","9","10","11","22","23","24","25","26","27"].forEach(t => teethSet.add(t));
+        } else if (category === "posteriors") {
+          ["1","2","3","14","15","16","17","18","19","30","31","32"].forEach(t => teethSet.add(t));
+        } else if (category === "anteriors/bicuspid") {
+          ["4","5","6","7","8","9","10","11","12","13","20","21","22","23","24","25","26","27","28","29"].forEach(t => teethSet.add(t));
+        }
+
+        for (const code of entry.codes) {
+          codeToTeethMap[code] = teethSet;
+        }
+      }
+    } catch (err) {
+      console.error("Error parsing JSON:", err);
+      resultsDiv.innerHTML = "<p>Invalid JSON file.</p>";
+      return;
+    }
+
     const parser = new DOMParser();
-    const xml = parser.parseFromString(reader.result, "text/xml");
+    const xml = parser.parseFromString(xmlData, "text/xml");
     const claims = xml.getElementsByTagName("Claim");
-
     let rows = [];
 
     for (let claim of claims) {
@@ -46,31 +70,16 @@ function parseXML() {
           let isValid = true;
           let remarks = [];
 
+          const allowedTeeth = codeToTeethMap[code] || null;
+
           const observationDetails = Array.from(observations).map(obs => {
             const type = obs.getElementsByTagName("Type")[0]?.textContent || "";
             const obsCode = obs.getElementsByTagName("Code")[0]?.textContent?.trim() || "";
 
-            let reason = "";
-
-            // Only check if it's a digit (assume permanent dentition for these cases)
-            if (/^\d+$/.test(obsCode)) {
-              const region = codeRegionMap.anterior.has(code)
-                ? 'anterior'
-                : codeRegionMap.premolar.has(code)
-                ? 'premolar'
-                : codeRegionMap.posterior.has(code)
-                ? 'posterior'
-                : null;
-
-              const inRegion =
-                region === 'anterior' && anteriorTeeth.has(obsCode) ||
-                region === 'premolar' && premolarTeeth.has(obsCode) ||
-                region === 'posterior' && posteriorTeeth.has(obsCode);
-
-              if (!inRegion && region !== null) {
+            if (/^\d+$/.test(obsCode) && allowedTeeth) {
+              if (!allowedTeeth.has(obsCode)) {
                 isValid = false;
-                reason = `Tooth ${obsCode} not valid for ${region} code ${code}`;
-                remarks.push(reason);
+                remarks.push(`Tooth ${obsCode} not valid for code ${code}`);
               }
             }
 
@@ -92,11 +101,10 @@ function parseXML() {
       }
     }
 
-    if (rows.length === 0) {
-      resultsDiv.innerHTML = "<p>No activities with observations found.</p>";
-    } else {
-      resultsDiv.innerHTML = `
-        <table>
+    resultsDiv.innerHTML = rows.length === 0
+      ? "<p>No activities with observations found.</p>"
+      : `
+        <table border="1">
           <thead>
             <tr>
               <th>Claim ID</th>
@@ -112,8 +120,20 @@ function parseXML() {
           </tbody>
         </table>
       `;
-    }
+  }
+
+  // Read XML
+  xmlReader.onload = () => {
+    xmlData = xmlReader.result;
+    tryProcess();
   };
 
-  reader.readAsText(fileInput.files[0]);
+  // Read JSON
+  jsonReader.onload = () => {
+    jsonData = jsonReader.result;
+    tryProcess();
+  };
+
+  xmlReader.readAsText(xmlInput.files[0]);
+  jsonReader.readAsText(jsonInput.files[0]);
 }
