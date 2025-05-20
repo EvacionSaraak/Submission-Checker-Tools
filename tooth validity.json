@@ -1,1008 +1,461 @@
-{
-  "21111": {
-    "permanent_teeth": [
-      1,
-      2,
-      3,
-      4,
-      5,
-      12,
-      13,
-      14,
-      15,
-      16,
-      17,
-      18,
-      19,
-      20,
-      21,
-      28,
-      29,
-      30,
-      31,
-      32
+[
+  {
+    "codes": [
+      "11101"
     ],
-    "primary_teeth": null
+    "description": "POLISHING One unit of time",
+    "dentition_type": "permanent",
+    "affiliated_teeth": "all"
   },
-  "21112": {
-    "permanent_teeth": [
-      1,
-      2,
-      3,
-      4,
-      5,
-      12,
-      13,
-      14,
-      15,
-      16,
-      17,
-      18,
-      19,
-      20,
-      21,
-      28,
-      29,
-      30,
-      31,
-      32
+  {
+    "codes": [
+      "11111"
     ],
-    "primary_teeth": null
+    "description": "SCALING One unit of time",
+    "dentition_type": "permanent",
+    "affiliated_teeth": "all"
   },
-  "21113": {
-    "permanent_teeth": [
-      1,
-      2,
-      3,
-      4,
-      5,
-      12,
-      13,
-      14,
-      15,
-      16,
-      17,
-      18,
-      19,
-      20,
-      21,
-      28,
-      29,
-      30,
-      31,
-      32
+  {
+    "codes": [
+      "12101"
     ],
-    "primary_teeth": null
+    "description": "Fluoritic Treatment, Topical Application",
+    "dentition_type": "permanent",
+    "affiliated_teeth": "all"
   },
-  "21114": {
-    "permanent_teeth": [
-      1,
-      2,
-      3,
-      4,
-      5,
-      12,
-      13,
-      14,
-      15,
-      16,
-      17,
-      18,
-      19,
-      20,
-      21,
-      28,
-      29,
-      30,
-      31,
-      32
+  {
+    "codes": [
+      "13404"
     ],
-    "primary_teeth": null
+    "description": "SEALANTS, PIT AND FISSURE (First tooth)",
+    "dentition_type": "permanent",
+    "affiliated_teeth": "posteriors"
   },
-  "21115": {
-    "permanent_teeth": [
-      1,
-      2,
-      3,
-      4,
-      5,
-      12,
-      13,
-      14,
-      15,
-      16,
-      17,
-      18,
-      19,
-      20,
-      21,
-      28,
-      29,
-      30,
-      31,
-      32
+  {
+    "codes": [
+      "13406"
     ],
-    "primary_teeth": null
+    "description": "Preventive Restorative Resin (First tooth)",
+    "dentition_type": "permanent",
+    "affiliated_teeth": "posteriors"
   },
-  "21211": {
-    "permanent_teeth": [
-      4,
-      5,
-      6,
-      7,
-      8,
-      9,
-      10,
-      11,
-      12,
-      13,
-      22,
-      23,
-      24,
-      25,
-      26,
-      27,
-      20,
-      21,
-      28,
-      29
+  {
+    "codes": [
+      "20111"
     ],
-    "primary_teeth": null
+    "description": "Caries/Trauma/Pain Control (First tooth)",
+    "dentition_type": "primary",
+    "affiliated_teeth": "all"
   },
-  "21212": {
-    "permanent_teeth": [
-      4,
-      5,
-      6,
-      7,
-      8,
-      9,
-      10,
-      11,
-      12,
-      13,
-      22,
-      23,
-      24,
-      25,
-      26,
-      27,
-      20,
-      21,
-      28,
-      29
+  {
+    "codes": [
+      "20121"
     ],
-    "primary_teeth": null
+    "description": "Caries/Trauma/Pain Control with band (First tooth)",
+    "dentition_type": "primary",
+    "affiliated_teeth": "all"
   },
-  "21213": {
-    "permanent_teeth": [
-      4,
-      5,
-      6,
-      7,
-      8,
-      9,
-      10,
-      11,
-      12,
-      13,
-      22,
-      23,
-      24,
-      25,
-      26,
-      27,
-      20,
-      21,
-      28,
-      29
+  {
+    "codes": [
+      "20131"
     ],
-    "primary_teeth": null
+    "description": "Trauma Control, Smoothing of Fractured Surfaces (First tooth)",
+    "dentition_type": "primary",
+    "affiliated_teeth": "anteriors"
   },
-  "21214": {
-    "permanent_teeth": [
-      4,
-      5,
-      6,
-      7,
-      8,
-      9,
-      10,
-      11,
-      12,
-      13,
-      22,
-      23,
-      24,
-      25,
-      26,
-      27,
-      20,
-      21,
-      28,
-      29
+  {
+    "codes": [
+      "20141"
     ],
-    "primary_teeth": null
+    "description": "Pulp Capping Direct (First tooth)",
+    "dentition_type": "primary",
+    "affiliated_teeth": "all"
   },
-  "21215": {
-    "permanent_teeth": [
-      4,
-      5,
-      6,
-      7,
-      8,
-      9,
-      10,
-      11,
-      12,
-      13,
-      22,
-      23,
-      24,
-      25,
-      26,
-      27,
-      20,
-      21,
-      28,
-      29
+  {
+    "codes": [
+      "21111",
+      "21112",
+      "21113",
+      "21114",
+      "21115"
     ],
-    "primary_teeth": null
+    "description": "Restorations, Amalgam, Non-Bonded, Primary Teeth (One to Five surfaces)",
+    "dentition_type": "primary",
+    "affiliated_teeth": "all"
   },
-  "21221": {
-    "permanent_teeth": [
-      1,
-      2,
-      3,
-      14,
-      15,
-      16,
-      17,
-      18,
-      19,
-      30,
-      31,
-      32
+  {
+    "codes": [
+      "21211",
+      "21212",
+      "21213",
+      "21214",
+      "21215"
     ],
-    "primary_teeth": null
+    "description": "Restorations, Amalgam, Non-Bonded, Permanent Bicuspids and Anteriors (One to Five surfaces)",
+    "dentition_type": "permanent",
+    "affiliated_teeth": "anteriors/bicuspid"
   },
-  "21222": {
-    "permanent_teeth": [
-      1,
-      2,
-      3,
-      14,
-      15,
-      16,
-      17,
-      18,
-      19,
-      30,
-      31,
-      32
+  {
+    "codes": [
+      "21221",
+      "21222",
+      "21223",
+      "21224",
+      "21225"
     ],
-    "primary_teeth": null
+    "description": "Restorations, Amalgam, Non-Bonded, Permanent Molars (One to Five surfaces)",
+    "dentition_type": "permanent",
+    "affiliated_teeth": "posteriors"
   },
-  "21223": {
-    "permanent_teeth": [
-      1,
-      2,
-      3,
-      14,
-      15,
-      16,
-      17,
-      18,
-      19,
-      30,
-      31,
-      32
+  {
+    "codes": [
+      "21401",
+      "21402",
+      "21403",
+      "21404",
+      "21405"
     ],
-    "primary_teeth": null
+    "description": "PINS, RETENTIVE (One to Five pins per restoration)",
+    "dentition_type": "permanent",
+    "affiliated_teeth": "all"
   },
-  "21224": {
-    "permanent_teeth": [
-      1,
-      2,
-      3,
-      14,
-      15,
-      16,
-      17,
-      18,
-      19,
-      30,
-      31,
-      32
+  {
+    "codes": [
+      "23101",
+      "23102",
+      "23103",
+      "23104",
+      "23105"
     ],
-    "primary_teeth": null
+    "description": "Restorations, Tooth Coloured, Permanent Anteriors Non-Bonded (One to Five surfaces)",
+    "dentition_type": "permanent",
+    "affiliated_teeth": "anteriors"
   },
-  "21225": {
-    "permanent_teeth": [
-      1,
-      2,
-      3,
-      14,
-      15,
-      16,
-      17,
-      18,
-      19,
-      30,
-      31,
-      32
+  {
+    "codes": [
+      "23111",
+      "23112",
+      "23113",
+      "23114",
+      "23115"
     ],
-    "primary_teeth": null
+    "description": "Restorations, Permanent Anteriors, Bonded Technique (One to Five surfaces)",
+    "dentition_type": "permanent",
+    "affiliated_teeth": "anteriors"
   },
-  "23101": {
-    "permanent_teeth": [
-      6,
-      7,
-      8,
-      9,
-      10,
-      11,
-      22,
-      23,
-      24,
-      25,
-      26,
-      27
+  {
+    "codes": [
+      "23121"
     ],
-    "primary_teeth": null
+    "description": "Tooth Coloured Veneer Application - Direct Chairside Prefabricated - Bonded",
+    "dentition_type": "permanent",
+    "affiliated_teeth": "anteriors"
   },
-  "23102": {
-    "permanent_teeth": [
-      6,
-      7,
-      8,
-      9,
-      10,
-      11,
-      22,
-      23,
-      24,
-      25,
-      26,
-      27
+  {
+    "codes": [
+      "23122"
     ],
-    "primary_teeth": null
+    "description": "Tooth Coloured Veneer Application - Non Prefabricated Direct Building - Bonded",
+    "dentition_type": "permanent",
+    "affiliated_teeth": "anteriors"
   },
-  "23103": {
-    "permanent_teeth": [
-      6,
-      7,
-      8,
-      9,
-      10,
-      11,
-      22,
-      23,
-      24,
-      25,
-      26,
-      27
+  {
+    "codes": [
+      "23123"
     ],
-    "primary_teeth": null
+    "description": "Tooth Coloured Veneer Application - Diastems Closures, Interproximal only, Bonded",
+    "dentition_type": "permanent",
+    "affiliated_teeth": "anteriors"
   },
-  "23104": {
-    "permanent_teeth": [
-      6,
-      7,
-      8,
-      9,
-      10,
-      11,
-      22,
-      23,
-      24,
-      25,
-      26,
-      27
+  {
+    "codes": [
+      "23211",
+      "23212",
+      "23213",
+      "23214",
+      "23215"
     ],
-    "primary_teeth": null
+    "description": "Restorations, Tooth Coloured, Permanent Posteriors Non-Bonded (One to Five surfaces)",
+    "dentition_type": "permanent",
+    "affiliated_teeth": "posteriors"
   },
-  "23105": {
-    "permanent_teeth": [
-      6,
-      7,
-      8,
-      9,
-      10,
-      11,
-      22,
-      23,
-      24,
-      25,
-      26,
-      27
+  {
+    "codes": [
+      "23311",
+      "23312",
+      "23313",
+      "23314",
+      "23315"
     ],
-    "primary_teeth": null
+    "description": "Restorations, Tooth Coloured, Permanent Posteriors Bonded (One to Five surfaces)",
+    "dentition_type": "permanent",
+    "affiliated_teeth": "posteriors"
   },
-  "23111": {
-    "permanent_teeth": [
-      6,
-      7,
-      8,
-      9,
-      10,
-      11,
-      22,
-      23,
-      24,
-      25,
-      26,
-      27
+  {
+    "codes": [
+      "23401",
+      "23402",
+      "23403",
+      "23404",
+      "23405"
     ],
-    "primary_teeth": null
+    "description": "Restorations, Tooth Coloured, Primary, Anterior (One to Five surfaces)",
+    "dentition_type": "primary",
+    "affiliated_teeth": "anteriors"
   },
-  "23112": {
-    "permanent_teeth": [
-      6,
-      7,
-      8,
-      9,
-      10,
-      11,
-      22,
-      23,
-      24,
-      25,
-      26,
-      27
+  {
+    "codes": [
+      "23501",
+      "23502",
+      "23503",
+      "23504",
+      "23505"
     ],
-    "primary_teeth": null
+    "description": "Restorations, Tooth Coloured, Primary, Posterior (One to Five surfaces)",
+    "dentition_type": "primary",
+    "affiliated_teeth": "posteriors"
   },
-  "23113": {
-    "permanent_teeth": [
-      6,
-      7,
-      8,
-      9,
-      10,
-      11,
-      22,
-      23,
-      24,
-      25,
-      26,
-      27
+  {
+    "codes": [
+      "32221"
     ],
-    "primary_teeth": null
+    "description": "Pulpectomy, Permanent Teeth (Anterior and Bicuspid Teeth)",
+    "dentition_type": "permanent",
+    "affiliated_teeth": "anteriors/bicuspid"
   },
-  "23114": {
-    "permanent_teeth": [
-      6,
-      7,
-      8,
-      9,
-      10,
-      11,
-      22,
-      23,
-      24,
-      25,
-      26,
-      27
+  {
+    "codes": [
+      "32223"
     ],
-    "primary_teeth": null
+    "description": "Pulpectomy, Permanent Teeth (Molar Teeth)",
+    "dentition_type": "permanent",
+    "affiliated_teeth": "posteriors"
   },
-  "23115": {
-    "permanent_teeth": [
-      6,
-      7,
-      8,
-      9,
-      10,
-      11,
-      22,
-      23,
-      24,
-      25,
-      26,
-      27
+  {
+    "codes": [
+      "32225"
     ],
-    "primary_teeth": null
+    "description": "Pulpectomy Primary Tooth as a Separate Procedure",
+    "dentition_type": "primary",
+    "affiliated_teeth": "all"
   },
-  "23121": {
-    "permanent_teeth": [
-      6,
-      7,
-      8,
-      9,
-      10,
-      11,
-      22,
-      23,
-      24,
-      25,
-      26,
-      27
+  {
+    "codes": [
+      "33111",
+      "33112",
+      "33113",
+      "33114",
+      "33115"
     ],
-    "primary_teeth": null
+    "description": "Root Canals, Permanent Teeth/Retained Primary Teeth (One to Four or more canals)",
+    "dentition_type": "permanent",
+    "affiliated_teeth": "all"
   },
-  "23122": {
-    "permanent_teeth": [
-      6,
-      7,
-      8,
-      9,
-      10,
-      11,
-      22,
-      23,
-      24,
-      25,
-      26,
-      27
+  {
+    "codes": [
+      "33401",
+      "33402",
+      "33403"
     ],
-    "primary_teeth": null
+    "description": "ROOT CANALS, PRIMARY TEETH (One to Three canals or more)",
+    "dentition_type": "primary",
+    "affiliated_teeth": "all"
   },
-  "23123": {
-    "permanent_teeth": [
-      6,
-      7,
-      8,
-      9,
-      10,
-      11,
-      22,
-      23,
-      24,
-      25,
-      26,
-      27
+  {
+    "codes": [
+      "34111",
+      "34112",
+      "34113",
+      "34114"
     ],
-    "primary_teeth": null
+    "description": "APICOECTOMY/APICAL CURETTAGE (Various tooth types and roots)",
+    "dentition_type": "permanent",
+    "affiliated_teeth": "all"
   },
-  "23211": {
-    "permanent_teeth": [
-      4,
-      5,
-      12,
-      13,
-      20,
-      21,
-      28,
-      29
+  {
+    "codes": [
+      "34211",
+      "34212",
+      "34213",
+      "34214"
     ],
-    "primary_teeth": null
+    "description": "RETROFILLING (Various tooth types and canals)",
+    "dentition_type": "permanent",
+    "affiliated_teeth": "all"
   },
-  "23212": {
-    "permanent_teeth": [
-      4,
-      5,
-      12,
-      13,
-      20,
-      21,
-      28,
-      29
+  {
+    "codes": [
+      "71201"
     ],
-    "primary_teeth": null
+    "description": "Removals, Erupted Teeth, Uncomplicated (Single tooth)",
+    "dentition_type": "permanent",
+    "affiliated_teeth": "all"
   },
-  "23213": {
-    "permanent_teeth": [
-      4,
-      5,
-      12,
-      13,
-      20,
-      21,
-      28,
-      29
+  {
+    "codes": [
+      "71209"
     ],
-    "primary_teeth": null
+    "description": "Odontectomy, Erupted Tooth, Surgical Approach (Single tooth)",
+    "dentition_type": "permanent",
+    "affiliated_teeth": "all"
   },
-  "23214": {
-    "permanent_teeth": [
-      4,
-      5,
-      12,
-      13,
-      20,
-      21,
-      28,
-      29
+  {
+    "codes": [
+      "71211"
     ],
-    "primary_teeth": null
+    "description": "Requiring elevation of a Flap, Removal of Bone and/or Sectioning of Tooth (Single tooth)",
+    "dentition_type": "permanent",
+    "affiliated_teeth": "all"
   },
-  "23215": {
-    "permanent_teeth": [
-      4,
-      5,
-      12,
-      13,
-      20,
-      21,
-      28,
-      29
+  {
+    "codes": [
+      "72111"
     ],
-    "primary_teeth": null
+    "description": "Removals, Impactions, Requiring Incision of Overlying Soft Tissue (Single tooth)",
+    "dentition_type": "permanent",
+    "affiliated_teeth": "all"
   },
-  "23311": {
-    "permanent_teeth": [
-      4,
-      5,
-      12,
-      13,
-      20,
-      21,
-      28,
-      29
+  {
+    "codes": [
+      "72211"
     ],
-    "primary_teeth": null
+    "description": "Removals, Impaction, Requiring Surgical Flap and/or Sectioning (Single tooth)",
+    "dentition_type": "permanent",
+    "affiliated_teeth": "all"
   },
-  "23312": {
-    "permanent_teeth": [
-      4,
-      5,
-      12,
-      13,
-      20,
-      21,
-      28,
-      29
+  {
+    "codes": [
+      "72311",
+      "72312",
+      "72313",
+      "72314",
+      "72315",
+      "72316",
+      "72317",
+      "72318",
+      "72319"
     ],
-    "primary_teeth": null
+    "description": "Removals, Residual Roots (First tooth)",
+    "dentition_type": "permanent",
+    "affiliated_teeth": "posteriors"
   },
-  "23313": {
-    "permanent_teeth": [
-      4,
-      5,
-      12,
-      13,
-      20,
-      21,
-      28,
-      29
+  {
+    "codes": [
+      "72511"
     ],
-    "primary_teeth": null
+    "description": "Surgical Exposures, Unerupted Tooth (Single tooth)",
+    "dentition_type": "permanent",
+    "affiliated_teeth": "all"
   },
-  "23314": {
-    "permanent_teeth": [
-      4,
-      5,
-      12,
-      13,
-      20,
-      21,
-      28,
-      29
+  {
+    "codes": [
+      "72711"
     ],
-    "primary_teeth": null
+    "description": "Unerupted Tooth and Follicle (First tooth)",
+    "dentition_type": "permanent",
+    "affiliated_teeth": "all"
   },
-  "23315": {
-    "permanent_teeth": [
-      4,
-      5,
-      12,
-      13,
-      20,
-      21,
-      28,
-      29
+  {
+    "codes": [
+      "25111",
+      "25112",
+      "25113",
+      "25114"
     ],
-    "primary_teeth": null
+    "description": "RESTORATIONS, INLAYS (Various materials and surfaces)",
+    "dentition_type": "permanent",
+    "affiliated_teeth": "all"
   },
-  "23321": {
-    "permanent_teeth": [
-      1,
-      2,
-      3,
-      14,
-      15,
-      16,
-      17,
-      18,
-      19,
-      30,
-      31,
-      32
+  {
+    "codes": [
+      "25511"
     ],
-    "primary_teeth": null
+    "description": "Onlays (Various materials)",
+    "dentition_type": "permanent",
+    "affiliated_teeth": "all"
   },
-  "23322": {
-    "permanent_teeth": [
-      1,
-      2,
-      3,
-      14,
-      15,
-      16,
-      17,
-      18,
-      19,
-      30,
-      31,
-      32
+  {
+    "codes": [
+      "25711",
+      "25712",
+      "25713",
+      "25714",
+      "25715",
+      "25716"
     ],
-    "primary_teeth": null
+    "description": "Posts (Various types and cores)",
+    "dentition_type": "permanent",
+    "affiliated_teeth": "all"
   },
-  "23323": {
-    "permanent_teeth": [
-      1,
-      2,
-      3,
-      14,
-      15,
-      16,
-      17,
-      18,
-      19,
-      30,
-      31,
-      32
+  {
+    "codes": [
+      "27111",
+      "27112",
+      "27113",
+      "27114",
+      "27115",
+      "27116",
+      "27117",
+      "27118"
     ],
-    "primary_teeth": null
+    "description": "Crowns (Various materials and types)",
+    "dentition_type": "permanent",
+    "affiliated_teeth": "all"
   },
-  "23324": {
-    "permanent_teeth": [
-      1,
-      2,
-      3,
-      14,
-      15,
-      16,
-      17,
-      18,
-      19,
-      30,
-      31,
-      32
+  {
+    "codes": [
+      "27601",
+      "27602"
     ],
-    "primary_teeth": null
+    "description": "Veneers (Bonded)",
+    "dentition_type": "permanent",
+    "affiliated_teeth": "anteriors"
   },
-  "23325": {
-    "permanent_teeth": [
-      1,
-      2,
-      3,
-      14,
-      15,
-      16,
-      17,
-      18,
-      19,
-      30,
-      31,
-      32
+  {
+    "codes": [
+      "28101",
+      "28102",
+      "28103",
+      "28104",
+      "28105"
     ],
-    "primary_teeth": null
+    "description": "RESTORATIVE PROCEDURES, OVERDENTURES (Single tooth)",
+    "dentition_type": "permanent",
+    "affiliated_teeth": "all"
   },
-  "23401": {
-    "permanent_teeth": null,
-    "primary_teeth": [
-      6,
-      7,
-      8,
-      9,
-      10,
-      11,
-      22,
-      23,
-      24,
-      25,
-      26,
-      27
-    ]
+  {
+    "codes": [
+      "34411",
+      "34412",
+      "34413"
+    ],
+    "description": "Amputations, Root / Hemisection (Single tooth)",
+    "dentition_type": "permanent",
+    "affiliated_teeth": "posteriors"
   },
-  "23402": {
-    "permanent_teeth": null,
-    "primary_teeth": [
-      6,
-      7,
-      8,
-      9,
-      10,
-      11,
-      22,
-      23,
-      24,
-      25,
-      26,
-      27
-    ]
+  {
+    "codes": [
+      "34511",
+      "34512",
+      "34513"
+    ],
+    "description": "Perforations/Resorptive Defects Repair (Single tooth)",
+    "dentition_type": "permanent",
+    "affiliated_teeth": "all"
   },
-  "23403": {
-    "permanent_teeth": null,
-    "primary_teeth": [
-      6,
-      7,
-      8,
-      9,
-      10,
-      11,
-      22,
-      23,
-      24,
-      25,
-      26,
-      27
-    ]
-  },
-  "23404": {
-    "permanent_teeth": null,
-    "primary_teeth": [
-      6,
-      7,
-      8,
-      9,
-      10,
-      11,
-      22,
-      23,
-      24,
-      25,
-      26,
-      27
-    ]
-  },
-  "23405": {
-    "permanent_teeth": null,
-    "primary_teeth": [
-      6,
-      7,
-      8,
-      9,
-      10,
-      11,
-      22,
-      23,
-      24,
-      25,
-      26,
-      27
-    ]
-  },
-  "23406": {
-    "permanent_teeth": null,
-    "primary_teeth": [
-      4,
-      5,
-      12,
-      13,
-      20,
-      21,
-      28,
-      29
-    ]
-  },
-  "23407": {
-    "permanent_teeth": null,
-    "primary_teeth": [
-      4,
-      5,
-      12,
-      13,
-      20,
-      21,
-      28,
-      29
-    ]
-  },
-  "23408": {
-    "permanent_teeth": null,
-    "primary_teeth": [
-      4,
-      5,
-      12,
-      13,
-      20,
-      21,
-      28,
-      29
-    ]
-  },
-  "23409": {
-    "permanent_teeth": null,
-    "primary_teeth": [
-      4,
-      5,
-      12,
-      13,
-      20,
-      21,
-      28,
-      29
-    ]
-  },
-  "23410": {
-    "permanent_teeth": null,
-    "primary_teeth": [
-      4,
-      5,
-      12,
-      13,
-      20,
-      21,
-      28,
-      29
-    ]
-  },
-  "23411": {
-    "permanent_teeth": null,
-    "primary_teeth": [
-      1,
-      2,
-      3,
-      14,
-      15,
-      16,
-      17,
-      18,
-      19,
-      30,
-      31,
-      32
-    ]
-  },
-  "23412": {
-    "permanent_teeth": null,
-    "primary_teeth": [
-      1,
-      2,
-      3,
-      14,
-      15,
-      16,
-      17,
-      18,
-      19,
-      30,
-      31,
-      32
-    ]
-  },
-  "23413": {
-    "permanent_teeth": null,
-    "primary_teeth": [
-      1,
-      2,
-      3,
-      14,
-      15,
-      16,
-      17,
-      18,
-      19,
-      30,
-      31,
-      32
-    ]
-  },
-  "23414": {
-    "permanent_teeth": null,
-    "primary_teeth": [
-      1,
-      2,
-      3,
-      14,
-      15,
-      16,
-      17,
-      18,
-      19,
-      30,
-      31,
-      32
-    ]
-  },
-  "23415": {
-    "permanent_teeth": null,
-    "primary_teeth": [
-      1,
-      2,
-      3,
-      14,
-      15,
-      16,
-      17,
-      18,
-      19,
-      30,
-      31,
-      32
-    ]
+  {
+    "codes": [
+      "74611",
+      "74612",
+      "74613",
+      "74614",
+      "74615",
+      "74616",
+      "74617",
+      "74618"
+    ],
+    "description": "Enucleation of Cyst/Granuloma (Single tooth)",
+    "dentition_type": "permanent",
+    "affiliated_teeth": "all"
   }
-}
+]
