@@ -1,12 +1,15 @@
+// script.js
+// -----------------------
+
 function parseXML() {
   const xmlInput = document.getElementById("xmlFile");
   const jsonInput = document.getElementById("jsonFile");
   const resultsDiv = document.getElementById("results");
 
+  // region definitions
   const ANTERIOR_TEETH = new Set(['6','7','8','9','10','11','22','23','24','25','26','27']);
   const BICUSPID_TEETH = new Set(['4','5','12','13','20','21','28','29']);
   const POSTERIOR_TEETH = new Set(['1','2','3','14','15','16','17','18','19','30','31','32']);
-
 
   if (!xmlInput || !jsonInput || !resultsDiv) {
     console.error("Missing required DOM elements.");
@@ -18,25 +21,41 @@ function parseXML() {
     return;
   }
 
-  const xmlReader = new FileReader();
-  const jsonReader = new FileReader();
-
   let xmlData = null;
   let jsonData = null;
 
-  // When both files are loaded, process them
+  const xmlReader = new FileReader();
+  const jsonReader = new FileReader();
+
+  xmlReader.onload = () => {
+    xmlData = xmlReader.result;
+    tryProcess();
+  };
+  xmlReader.onerror = () => {
+    console.error("Error reading XML file");
+  };
+
+  jsonReader.onload = () => {
+    jsonData = jsonReader.result;
+    tryProcess();
+  };
+  jsonReader.onerror = () => {
+    console.error("Error reading JSON file");
+  };
+
+  xmlReader.readAsText(xmlInput.files[0]);
+  jsonReader.readAsText(jsonInput.files[0]);
+
   function tryProcess() {
     if (!xmlData || !jsonData) return;
 
+    // build code→teeth map
     let codeToTeethMap = {};
-
     try {
       const parsedJSON = JSON.parse(jsonData);
-    
       for (const entry of parsedJSON) {
         let teethSet;
-    
-        switch (entry.affiliated_teeth.toLowerCase()) {
+        switch ((entry.affiliated_teeth || "").toLowerCase()) {
           case "all":
             teethSet = new Set([...ANTERIOR_TEETH, ...BICUSPID_TEETH, ...POSTERIOR_TEETH]);
             break;
@@ -53,10 +72,11 @@ function parseXML() {
             teethSet = new Set([...ANTERIOR_TEETH, ...BICUSPID_TEETH]);
             break;
           default:
-            teethSet = new Set(); // fallback if unknown label
+            teethSet = new Set();
         }
-        for (const code of entry.codes) {
-          codeToTeethMap[code.trim()] = teethSet;
+        for (const rawCode of entry.codes || []) {
+          const trimmed = rawCode.toString().trim();
+          codeToTeethMap[trimmed] = teethSet;
         }
       }
     } catch (err) {
@@ -65,89 +85,71 @@ function parseXML() {
       return;
     }
 
+    // parse XML & validate
     const parser = new DOMParser();
-    const xml = parser.parseFromString(xmlData, "text/xml");
-    const claims = xml.getElementsByTagName("Claim");
+    const xmlDoc = parser.parseFromString(xmlData, "text/xml");
+    const claims = xmlDoc.getElementsByTagName("Claim");
     let rows = [];
 
     for (let claim of claims) {
-      const claimId = claim.getElementsByTagName("ID")[0]?.textContent || "(no claim ID)";
-      const activities = claim.getElementsByTagName("Activity");
+      const claimId = claim.querySelector("ID")?.textContent || "(no claim ID)";
+      for (let activity of claim.getElementsByTagName("Activity")) {
+        const obsList = activity.getElementsByTagName("Observation");
+        if (obsList.length === 0) continue;
 
-      for (let activity of activities) {
-        const observations = activity.getElementsByTagName("Observation");
-        if (observations.length > 0) {
-          const activityId = activity.getElementsByTagName("ID")[0]?.textContent || "";
-          const code = activity.getElementsByTagName("Code")[0]?.textContent.trim() || "";
-          const net = activity.getElementsByTagName("Net")[0]?.textContent || "";
+        const activityId = activity.querySelector("ID")?.textContent || "";
+        const code = activity.querySelector("Code")?.textContent.trim() || "";
+        const net = activity.querySelector("Net")?.textContent || "";
 
-          let isValid = true;
-          let remarks = [];
+        let isValid = true;
+        let remarks = [];
 
-          const allowedTeeth = codeToTeethMap[code] || null;
+        const allowedTeeth = codeToTeethMap[code] || new Set();
 
-          const observationDetails = Array.from(observations).map(obs => {
-            const type = obs.getElementsByTagName("Type")[0]?.textContent || "";
-            const obsCode = obs.getElementsByTagName("Code")[0]?.textContent?.trim() || "";
-
-            if (/^\d+$/.test(obsCode) && allowedTeeth) {
-              if (!allowedTeeth.has(obsCode)) {
-                isValid = false;
-                remarks.push(`Tooth ${obsCode} not valid for code ${code}`);
-              }
+        const observationDetails = Array.from(obsList).map(obs => {
+          const type = obs.querySelector("Type")?.textContent || "";
+          const obsCode = obs.querySelector("Code")?.textContent.trim() || "";
+          if (/^\d+$/.test(obsCode)) {
+            if (!allowedTeeth.has(obsCode)) {
+              isValid = false;
+              remarks.push(`Tooth ${obsCode} not valid for code ${code}`);
             }
+          }
+          return `${type}: ${obsCode}`;
+        }).join("<br>");
 
-            return `${type}: ${obsCode}`;
-          }).join("<br>");
+        const rowClass = isValid ? "valid" : "invalid";
+        const remarkText = remarks.length ? remarks.join("<br>") : "All valid";
 
-          const rowClass = isValid ? "valid" : "invalid";
-          const remarkText = remarks.length > 0 ? remarks.join("<br>") : "All valid";
-          
-          rows.push(`<tr class="${rowClass}">
+        rows.push(`
+          <tr class="${rowClass}">
             <td>${claimId}</td>
             <td>${activityId}</td>
             <td>${code}</td>
             <td>${net}</td>
             <td>${observationDetails}</td>
             <td>${remarkText}</td>
-          </tr>`);
-        }
+          </tr>
+        `);
       }
     }
 
-    resultsDiv.innerHTML = rows.length === 0
-      ? "<p>No activities with observations found.</p>"
-      : `
-        <table border="1">
-          <thead>
-            <tr>
-              <th>Claim ID</th>
-              <th>Activity ID</th>
-              <th>Code</th>
-              <th>Net Amount</th>
-              <th>Observations</th>
-              <th>Remarks</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rows.join("\n")}
-          </tbody>
-        </table>
-      `;
+    resultsDiv.innerHTML = rows.length
+      ? `<table border="1">
+           <thead>
+             <tr>
+               <th>Claim ID</th>
+               <th>Activity ID</th>
+               <th>Code</th>
+               <th>Net Amount</th>
+               <th>Observations</th>
+               <th>Remarks</th>
+             </tr>
+           </thead>
+           <tbody>
+             ${rows.join("")}
+           </tbody>
+         </table>`
+      : "<p>No activities with observations found.</p>";
   }
-
-  // Read XML
-  xmlReader.onload = () => {
-    xmlData = xmlReader.result;
-    tryProcess();
-  };
-
-  // Read JSON
-  jsonReader.onload = () => {
-    jsonData = jsonReader.result;
-    tryProcess();
-  };
-
-  xmlReader.readAsText(xmlInput.files[0]);
-  jsonReader.readAsText(jsonInput.files[0]);
 }
