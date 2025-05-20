@@ -30,8 +30,6 @@ function parseXML() {
 
     let codeToTeethMap = {};
 
-    const codeToTeethMap = {};
-
     try {
       const parsedJSON = JSON.parse(jsonData);
     
