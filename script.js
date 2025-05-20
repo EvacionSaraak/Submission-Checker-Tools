@@ -1,3 +1,4 @@
+//Fixed
 function parseXML() {
   const fileInput = document.getElementById("xmlFile");
   const resultsDiv = document.getElementById("results");
