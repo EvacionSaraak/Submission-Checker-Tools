@@ -174,7 +174,7 @@
     ],
     "description": "RESTORATIONS, TOOTH COLOURED/PLASTIC WITH/WITHOUT SILVER FILINGS, PERMANENT POSTERIORS NON BONDED Permanent Bicuspids (One to Five surfaces)",
     "dentition_type": "permanent",
-    "affiliated_teeth": "bicuspids"
+    "affiliated_teeth": "bicuspid"
   },
   {
     "codes": [
@@ -186,7 +186,7 @@
     ],
     "description": "Restorations, Tooth Coloured, Permanent Bicuspids, Bonded Technique (One to Five surfaces)",
     "dentition_type": "permanent",
-    "affiliated_teeth": "bicuspids"
+    "affiliated_teeth": "bicuspid"
   },
   {
     "codes": [
@@ -199,6 +199,18 @@
     "description": "RESTORATIONS, TOOTH COLOURED, PRIMARY, ANTERIOR, NON BONDED (One to Five surfaces)",
     "dentition_type": "primary",
     "affiliated_teeth": "anteriors"
+  },
+  {
+    "codes": [
+      "23321",
+      "23322",
+      "23323",
+      "23324",
+      "23325"
+    ],
+    "description": "Restorations, Tooth Coloured, Permanent Posteriors - Bonded (One to Five surfaces)",
+    "dentition_type": "permanent",
+    "affiliated_teeth": "posteriors"
   },
   {
     "codes": [
@@ -251,7 +263,7 @@
   {
     "codes": [
       "34111",
-      "34112",
+      "34112"
     ],
     "description": "APICOECTOMY/APICAL CURETTAGE Maxillary Anterior",
     "dentition_type": "permanent",
@@ -262,7 +274,7 @@
     "codes": [
       "34121",
       "34122",
-      "34123",
+      "34123"
     ],
     "description": "APICOECTOMY/APICAL CURETTAGE Maxillary Bicuspid",
     "dentition_type": "permanent",
@@ -274,7 +286,7 @@
       "34131",
       "34132",
       "34133",
-      "34134",
+      "34134"
     ],
     "description": "APICOECTOMY/APICAL CURETTAGE Maxillary Molar",
     "dentition_type": "permanent",
@@ -284,7 +296,7 @@
   {
     "codes": [
       "34141",
-      "34142",
+      "34142"
     ],
     "description": "APICOECTOMY/APICAL CURETTAGE Mandibular Anterior",
     "dentition_type": "permanent",
@@ -295,7 +307,7 @@
     "codes": [
       "34151",
       "34152",
-      "34153",
+      "34153"
     ],
     "description": "APICOECTOMY/APICAL CURETTAGE Mandibular Bicuspid",
     "dentition_type": "permanent",
@@ -307,7 +319,7 @@
       "34161",
       "34162",
       "34163",
-      "34164",
+      "34164"
     ],
     "description": "APICOECTOMY/APICAL CURETTAGE Mandibular Molar",
     "dentition_type": "permanent",
@@ -416,7 +428,7 @@
   {
     "codes": [
       "27111",
-      "27113",
+      "27113"
     ],
     "description": "Crowns (Various materials and types)",
     "dentition_type": "permanent",
@@ -435,7 +447,7 @@
     "codes": [
       "28101",
       "28102",
-      "28103",
+      "28103"
     ],
     "description": "RESTORATIVE PROCEDURES, OVERDENTURES (Single tooth)",
     "dentition_type": "permanent",
@@ -473,6 +485,46 @@
       "74618"
     ],
     "description": "Enucleation of Cyst/Granuloma (Single tooth)",
+    "dentition_type": "permanent",
+    "affiliated_teeth": "all"
+  },
+  {
+    "codes": [
+      "42621"
+    ],
+    "description": "PERIODONTAL SURGERY, FLAPS, GRAFTS, OSSEOUS TISSUE Grafts, Osseous, Allograft (Including Flap Entry and Closure) Per site + E",
+    "dentition_type": "permanent",
+    "affiliated_teeth": "all"
+  },
+  {
+    "codes": [
+      "42702"
+    ],
+    "description": "Guided Tissue Regeneration – Resorbable Membrane - per site + E",
+    "dentition_type": "permanent",
+    "affiliated_teeth": "all"
+  },
+  {
+    "codes": [
+      "79933"
+    ],
+    "description": "Surgical Re-Entry + Healing Cap + Abutement.",
+    "dentition_type": "permanent",
+    "affiliated_teeth": "all"
+  },
+  {
+    "codes": [
+      "02111"
+    ],
+    "description": "IOPA",
+    "dentition_type": "permanent",
+    "affiliated_teeth": "all"
+  },
+  {
+    "codes": [
+      "02111"
+    ],
+    "description": "IOPA (Radiograph)",
     "dentition_type": "permanent",
     "affiliated_teeth": "all"
   }
