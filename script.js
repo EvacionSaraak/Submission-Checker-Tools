@@ -3,6 +3,11 @@ function parseXML() {
   const jsonInput = document.getElementById("jsonFile");
   const resultsDiv = document.getElementById("results");
 
+  const ANTERIOR_TEETH = new Set(['6','7','8','9','10','11','22','23','24','25','26','27']);
+  const BICUSPID_TEETH = new Set(['4','5','12','13','20','21','28','29']);
+  const POSTERIOR_TEETH = new Set(['1','2','3','14','15','16','17','18','19','30','31','32']);
+
+
   if (!xmlInput || !jsonInput || !resultsDiv) {
     console.error("Missing required DOM elements.");
     return;
@@ -25,26 +30,35 @@ function parseXML() {
 
     let codeToTeethMap = {};
 
+    const codeToTeethMap = {};
+
     try {
       const parsedJSON = JSON.parse(jsonData);
+    
       for (const entry of parsedJSON) {
-        const teethSet = new Set();
-        const category = entry.affiliated_teeth.toLowerCase();
-
-        if (category === "all") {
-          for (let i = 1; i <= 32; i++) teethSet.add(String(i));
-        } else if (category === "anteriors") {
-          ["6","7","8","9","10","11","22","23","24","25","26","27"].forEach(t => teethSet.add(t));
-        } else if (category === "posteriors") {
-          ["1","2","3","14","15","16","17","18","19","30","31","32"].forEach(t => teethSet.add(t));
-        } else if (category === "bicuspid") {
-          ["4","5","12","13","20","21","28","29"].forEach(t => teethSet.add(t));
-        } else if (category === "anteriors/bicuspid") {
-          ["4","5","6","7","8","9","10","11","12","13","20","21","22","23","24","25","26","27","28","29"].forEach(t => teethSet.add(t));
+        let teethSet;
+    
+        switch (entry.affiliated_teeth.toLowerCase()) {
+          case "all":
+            teethSet = new Set([...ANTERIOR_TEETH, ...BICUSPID_TEETH, ...POSTERIOR_TEETH]);
+            break;
+          case "anteriors":
+            teethSet = ANTERIOR_TEETH;
+            break;
+          case "posteriors":
+            teethSet = POSTERIOR_TEETH;
+            break;
+          case "bicuspid":
+            teethSet = BICUSPID_TEETH;
+            break;
+          case "anteriors/bicuspid":
+            teethSet = new Set([...ANTERIOR_TEETH, ...BICUSPID_TEETH]);
+            break;
+          default:
+            teethSet = new Set(); // fallback if unknown label
         }
-
         for (const code of entry.codes) {
-          codeToTeethMap[code] = teethSet;
+          codeToTeethMap[code.trim()] = teethSet;
         }
       }
     } catch (err) {
@@ -89,8 +103,8 @@ function parseXML() {
           }).join("<br>");
 
           const rowClass = isValid ? "valid" : "invalid";
-          const remarkText = remarks.length > 0 ? remarks.join("; ") : "All valid";
-
+          const remarkText = remarks.length > 0 ? remarks.join("<br>") : "All valid";
+          
           rows.push(`<tr class="${rowClass}">
             <td>${claimId}</td>
             <td>${activityId}</td>
