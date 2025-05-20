@@ -2,15 +2,14 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Claim Activity Parser</title>
+  <title>Claim Activity Observation Checker</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <h1>Claim Activity Observation Checker</h1>
+  <h1>Activities with Observations</h1>
   <input type="file" id="xmlFile" accept=".xml">
-  <input type="text" id="codeFilter" placeholder="Enter code to check (e.g., D0120)">
-  <button onclick="parseXML()">Parse</button>
-  <pre id="output"></pre>
+  <button onclick="parseXML()">Parse XML</button>
+  <div id="results"></div>
   <script src="script.js"></script>
 </body>
 </html>
