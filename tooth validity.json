@@ -121,15 +121,12 @@
   },
   {
     "codes": [
-      "23101",
-      "23102",
-      "23103",
-      "23104",
-      "23105"
+      "22211",
+      "22212"
     ],
-    "description": "Restorations, Tooth Coloured, Permanent Anteriors Non-Bonded (One to Five surfaces)",
-    "dentition_type": "permanent",
-    "affiliated_teeth": "anteriors"
+    "description": "RESTORATIONS, PREFABRICATED, METAL, PRIMARY TEETH Primary Posterior",
+    "dentition_type": "primary",
+    "affiliated_teeth": "posterior"
   },
   {
     "codes": [
@@ -175,9 +172,9 @@
       "23214",
       "23215"
     ],
-    "description": "Restorations, Tooth Coloured, Permanent Posteriors Non-Bonded (One to Five surfaces)",
+    "description": "RESTORATIONS, TOOTH COLOURED/PLASTIC WITH/WITHOUT SILVER FILINGS, PERMANENT POSTERIORS NON BONDED Permanent Bicuspids (One to Five surfaces)",
     "dentition_type": "permanent",
-    "affiliated_teeth": "posteriors"
+    "affiliated_teeth": "bicuspids"
   },
   {
     "codes": [
@@ -187,9 +184,9 @@
       "23314",
       "23315"
     ],
-    "description": "Restorations, Tooth Coloured, Permanent Posteriors Bonded (One to Five surfaces)",
+    "description": "Restorations, Tooth Coloured, Permanent Bicuspids, Bonded Technique (One to Five surfaces)",
     "dentition_type": "permanent",
-    "affiliated_teeth": "posteriors"
+    "affiliated_teeth": "bicuspids"
   },
   {
     "codes": [
@@ -199,7 +196,7 @@
       "23404",
       "23405"
     ],
-    "description": "Restorations, Tooth Coloured, Primary, Anterior (One to Five surfaces)",
+    "description": "RESTORATIONS, TOOTH COLOURED, PRIMARY, ANTERIOR, NON BONDED (One to Five surfaces)",
     "dentition_type": "primary",
     "affiliated_teeth": "anteriors"
   },
@@ -211,7 +208,7 @@
       "23504",
       "23505"
     ],
-    "description": "Restorations, Tooth Coloured, Primary, Posterior (One to Five surfaces)",
+    "description": "RESTORATIONS, TOOTH COLOURED/PLASTIC WITH/WITHOUT SILVER FILINGS, PRIMARY, POSTERIOR, NON BONDED (One to Five surfaces)",
     "dentition_type": "primary",
     "affiliated_teeth": "posteriors"
   },
@@ -225,7 +222,7 @@
   },
   {
     "codes": [
-      "32223"
+      "32222"
     ],
     "description": "Pulpectomy, Permanent Teeth (Molar Teeth)",
     "dentition_type": "permanent",
@@ -233,19 +230,9 @@
   },
   {
     "codes": [
-      "32225"
-    ],
-    "description": "Pulpectomy Primary Tooth as a Separate Procedure",
-    "dentition_type": "primary",
-    "affiliated_teeth": "all"
-  },
-  {
-    "codes": [
       "33111",
-      "33112",
-      "33113",
-      "33114",
-      "33115"
+      "33115",
+      "33116"
     ],
     "description": "Root Canals, Permanent Teeth/Retained Primary Teeth (One to Four or more canals)",
     "dentition_type": "permanent",
@@ -265,23 +252,67 @@
     "codes": [
       "34111",
       "34112",
-      "34113",
-      "34114"
     ],
-    "description": "APICOECTOMY/APICAL CURETTAGE (Various tooth types and roots)",
+    "description": "APICOECTOMY/APICAL CURETTAGE Maxillary Anterior",
     "dentition_type": "permanent",
-    "affiliated_teeth": "all"
+    "affiliated_teeth": "anterior",
+    "arch": "maxillary"
   },
   {
     "codes": [
-      "34211",
-      "34212",
-      "34213",
-      "34214"
+      "34121",
+      "34122",
+      "34123",
     ],
-    "description": "RETROFILLING (Various tooth types and canals)",
+    "description": "APICOECTOMY/APICAL CURETTAGE Maxillary Bicuspid",
     "dentition_type": "permanent",
-    "affiliated_teeth": "all"
+    "affiliated_teeth": "bicuspid",
+    "arch": "maxillary"
+  },
+  {
+    "codes": [
+      "34131",
+      "34132",
+      "34133",
+      "34134",
+    ],
+    "description": "APICOECTOMY/APICAL CURETTAGE Maxillary Molar",
+    "dentition_type": "permanent",
+    "affiliated_teeth": "posterior",
+    "arch": "maxillary"
+  },
+  {
+    "codes": [
+      "34141",
+      "34142",
+    ],
+    "description": "APICOECTOMY/APICAL CURETTAGE Mandibular Anterior",
+    "dentition_type": "permanent",
+    "affiliated_teeth": "anterior",
+    "arch": "mandibular"
+  },
+  {
+    "codes": [
+      "34151",
+      "34152",
+      "34153",
+    ],
+    "description": "APICOECTOMY/APICAL CURETTAGE Mandibular Bicuspid",
+    "dentition_type": "permanent",
+    "affiliated_teeth": "bicuspid",
+    "arch": "mandibular"
+  },
+  {
+    "codes": [
+      "34161",
+      "34162",
+      "34163",
+      "34164",
+    ],
+    "description": "APICOECTOMY/APICAL CURETTAGE Mandibular Molar",
+    "dentition_type": "permanent",
+    "affiliated_teeth": "posterior",
+    "arch": "mandibular"
   },
   {
     "codes": [
@@ -326,13 +357,6 @@
   {
     "codes": [
       "72311",
-      "72312",
-      "72313",
-      "72314",
-      "72315",
-      "72316",
-      "72317",
-      "72318",
       "72319"
     ],
     "description": "Removals, Residual Roots (First tooth)",
@@ -341,7 +365,8 @@
   },
   {
     "codes": [
-      "72511"
+      "72511",
+      "72519"
     ],
     "description": "Surgical Exposures, Unerupted Tooth (Single tooth)",
     "dentition_type": "permanent",
@@ -349,7 +374,8 @@
   },
   {
     "codes": [
-      "72711"
+      "72711",
+      "72719"
     ],
     "description": "Unerupted Tooth and Follicle (First tooth)",
     "dentition_type": "permanent",
@@ -390,13 +416,7 @@
   {
     "codes": [
       "27111",
-      "27112",
       "27113",
-      "27114",
-      "27115",
-      "27116",
-      "27117",
-      "27118"
     ],
     "description": "Crowns (Various materials and types)",
     "dentition_type": "permanent",
@@ -416,8 +436,6 @@
       "28101",
       "28102",
       "28103",
-      "28104",
-      "28105"
     ],
     "description": "RESTORATIVE PROCEDURES, OVERDENTURES (Single tooth)",
     "dentition_type": "permanent",
