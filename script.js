@@ -153,21 +153,19 @@ function validateActivities(xmlDoc, codeToMeta) {
       // Build observation details and remarks for invalid teeth
       const details = Array.from(obsList).map(obs => {
         const type = obs.querySelector('Type')?.textContent || '';
-        const obsCode = obs.querySelector('Code')?.textContent.trim() || '';
-
-        if (/^[A-T0-9]+$/.test(obsCode)) {
-          if (!meta.teethSet.has(obsCode)) {
-            isValid = false;
-            remarks.push(`Invalid - ${obsCode}`);
-          } else {
-            remarks.push(`Valid - ${obsCode}`);
-          }
+        const obsCodeRaw = obs.querySelector('Code')?.textContent.trim() || '';
+        const obsCode = obsCodeRaw.toUpperCase();  // Normalize for matching
+      
+        if (!meta.teethSet.has(obsCode)) {
+          isValid = false;
+          remarks.push(`Invalid - ${obsCode}`);
         } else {
-          remarks.push(`Unknown - ${obsCode}`);
+          remarks.push(`Valid - ${obsCode}`);
         }
-
-      return `${obsCode} - ${getRegionName(obsCode)}`;
+      
+        return `${obsCode} - ${getRegionName(obsCode)}`;
       }).join('<br>');
+
 
       rows.push({
         claimId,
