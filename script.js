@@ -226,9 +226,15 @@ function setupFileNameDisplay(inputId, displayId) {
   });
 }
 
-// Initialize display handlers
-setupFileNameDisplay('xmlFile', 'xmlFileName');
-setupFileNameDisplay('jsonFile', 'jsonFileName');
+function showMessage(container, message) {
+  container.innerHTML = `<p>${message}</p>`;
+}
+
+// Wait for DOM to be ready before initializing
+document.addEventListener('DOMContentLoaded', () => {
+  setupFileNameDisplay('xmlFile', 'xmlFileName');
+  setupFileNameDisplay('jsonFile', 'jsonFileName');
+});
 
 function showMessage(container, message) {
   container.innerHTML = `<p>${message}</p>`;
