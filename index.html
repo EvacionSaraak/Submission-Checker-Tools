@@ -2,14 +2,25 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Claim Activity Observation Checker</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <h1>Activities with Observations</h1>
-  <input type="file" id="xmlFile" accept=".xml">
-  <input type="file" id="jsonFile" accept=".json">
-  <button onclick="parseXML()">Parse XML</button>
+  <form id="fileInputs" style="margin-bottom: 1em;">
+    <div>
+      <label for="xmlFile">Upload XML File:</label><br>
+      <input type="file" id="xmlFile" accept=".xml">
+    </div>
+    <div style="margin-top: 0.5em;">
+      <label for="jsonFile">Upload JSON File (optional):</label><br>
+      <input type="file" id="jsonFile" accept=".json">
+    </div>
+    <div style="margin-top: 1em;">
+      <button type="button" onclick="parseXML()">Parse XML</button>
+    </div>
+  </form>
   <div id="results"></div>
   <script src="script.js"></script>
 </body>
