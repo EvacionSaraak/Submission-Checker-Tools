@@ -267,7 +267,15 @@ function showMessage(container, message) {
 }
 
 //DEV MODE DETECTION
-const params = new URLSearchParams(window.location.search);
-if (params.get('dev') === 'true') {
-  document.getElementById('devMode').style.display = 'block';
-}
+document.addEventListener('DOMContentLoaded', () => {
+  setupFileNameDisplay('xmlFile', 'xmlFileName');
+  setupFileNameDisplay('jsonFile', 'jsonFileName');
+
+  // Show developer mode if ?dev=true in the URL
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('dev') === 'true') {
+    const devSection = document.getElementById('devMode');
+    if (devSection) devSection.style.display = 'flex';
+  }
+});
+
