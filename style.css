@@ -17,6 +17,11 @@ body {
   margin: auto;
 }
 
+h1 {
+  text-align: center;
+  margin: 0 auto;
+}
+
 /* Layout for file inputs and button */
 #fileInputs {
   display: flex;
