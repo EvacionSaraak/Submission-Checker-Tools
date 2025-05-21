@@ -265,3 +265,9 @@ document.addEventListener('DOMContentLoaded', () => {
 function showMessage(container, message) {
   container.innerHTML = `<p>${message}</p>`;
 }
+
+//DEV MODE DETECTION
+const params = new URLSearchParams(window.location.search);
+if (params.get('dev') === 'true') {
+  document.getElementById('devMode').style.display = 'block';
+}
