@@ -5,9 +5,19 @@
 const repoJsonUrl = 'tooth validity.json';
 
 // Predefined tooth sets by region
-const ANTERIOR_TEETH = new Set(['6','7','8','9','10','11','22','23','24','25','26','27']);
-const BICUSPID_TEETH = new Set(['4','5','12','13','20','21','28','29']);
-const POSTERIOR_TEETH = new Set(['1','2','3','14','15','16','17','18','19','30','31','32']);
+const ANTERIOR_TEETH = new Set([
+  '6','7','8','9','10','11','22','23','24','25','26','27',  // permanent anterior
+  'C','D','E','F','G','H','M','N','O','P'                   // primary anterior
+]);
+
+const BICUSPID_TEETH = new Set([
+  '4','5','12','13','20','21','28','29',  // permanent premolars (no primary equivalent)
+]);
+
+const POSTERIOR_TEETH = new Set([
+  '1','2','3','14','15','16','17','18','19','30','31','32',  // permanent molars
+  'A','B','I','J','K','L','Q','R','S','T'                    // primary molars
+]);
 
 /**
  * Reads user-selected XML and JSON (optional) / repo JSON,
