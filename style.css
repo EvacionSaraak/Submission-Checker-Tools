@@ -26,39 +26,32 @@ h1 {
 /* Horizontal layout for input row */
 #fileInputs {
   display: flex;
-  flex-direction: column;
-  gap: 1em;
-}
-
-.input-row {
-  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
   flex-wrap: wrap;
-  gap: 1.5em;
-  align-items: flex-end;
-  margin-bottom: 1em;
+  margin-bottom: 1rem;
 }
 
-.form-group {
+.input-group {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
+  flex: 1;
   min-width: 200px;
 }
 
 input[type="file"],
 button {
-  margin: 10px 0;
+  margin-top: 8px;
   padding: 8px;
-}
-
-button {
-  cursor: pointer;
 }
 
 .file-name {
   font-size: 0.9em;
   color: #555;
-  margin-top: 0.25em;
+  margin-top: 4px;
 }
+
 
 table {
   width: 100%;
