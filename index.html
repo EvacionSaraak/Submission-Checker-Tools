@@ -10,21 +10,23 @@
   <h1>Activities with Observations</h1>
   <hr>
   <form id="fileInputs">
-    <div>
+    <div class="input-group">
       <label for="xmlFile">Upload XML File:</label>
       <input type="file" id="xmlFile" accept=".xml">
       <span class="file-name" id="xmlFileName">No file chosen</span>
     </div>
-    <div>
+  
+    <div class="input-group">
       <button type="button" onclick="parseXML()">Parse XML</button>
     </div>
-    <div id="devMode">
+  
+    <div class="input-group" id="devMode">
       <label for="jsonFile">Upload JSON File (optional):</label>
       <input type="file" id="jsonFile" accept=".json">
       <span class="file-name" id="jsonFileName">No file chosen</span>
     </div>
-    <p>If you encounter any issues, please notify the <a href="https://github.com/EvacionSaraak/procedure-tooth-code-error-check" target="_blank">developer</a> with a bug report.</p>
   </form>
+  <p>If you encounter any issues, please notify the <a href="https://github.com/EvacionSaraak/procedure-tooth-code-error-check" target="_blank">developer</a> with a bug report.</p>
   <hr>
   <div id="results"></div>
   <script src="script.js"></script>
