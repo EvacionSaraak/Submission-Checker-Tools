@@ -145,10 +145,15 @@ function validateActivities(xmlDoc, codeToMeta) {
         const type = obs.querySelector('Type')?.textContent || '';
         const obsCode = obs.querySelector('Code')?.textContent.trim() || '';
 
-        if (/^\d+$/.test(obsCode) && !meta.teethSet.has(obsCode)) {
-          isValid = false;
-          // Add remark in 'tooth - region' format
-          remarks.push(`${obsCode} - ${getRegionName(obsCode)}`);
+        if (/^\d+$/.test(obsCode)) {
+          if (!meta.teethSet.has(obsCode)) {
+            isValid = false;
+            remarks.push(`Invalid - ${obsCode}`);
+          } else {
+            remarks.push(`Valid - ${obsCode}`);
+          }
+        } else {
+          remarks.push(`Unknown - ${obsCode}`);
         }
 
       return `${obsCode} - ${getRegionName(obsCode)}`;
