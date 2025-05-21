@@ -1,5 +1,15 @@
 /* style.css */
 
+/* Hide default “no file chosen” text in file inputs */
+input[type="file"] {
+  font-size: 0; /* hide the native filename text */
+}
+/* Restore the button’s label font size */
+input[type="file"]::-webkit-file-upload-button,
+input[type="file"]::file-selector-button {
+  font-size: initial;
+}
+
 body {
   font-family: Arial, sans-serif;
   padding: 20px;
@@ -26,13 +36,8 @@ body {
   flex: 0;
 }
 
-#fileInputs div {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-input[type="file"], button {
+input[type="file"],
+button {
   margin: 10px 0;
   padding: 8px;
 }
@@ -47,7 +52,8 @@ table {
   margin-top: 20px;
 }
 
-th, td {
+th,
+td {
   padding: 10px;
   border: 1px solid #ccc;
   text-align: left;
