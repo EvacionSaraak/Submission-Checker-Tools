@@ -146,10 +146,10 @@ function parseXML() {
             <td>${claimId}</td>
             <td>${activityId}</td>
             <td>${code}</td>
+            <td>${description}</td>
             <td>${net}</td>
             <td>${observationDetails}</td>
             <td>${remarkText}</td>
-            <td>${description}</td>
           </tr>
         `);
       }
@@ -162,10 +162,10 @@ function parseXML() {
                <th>Claim ID</th>
                <th>Activity ID</th>
                <th>Code</th>
+               <th>Description</th>
                <th>Net Amount</th>
                <th>Observations</th>
                <th>Remarks</th>
-               <th>Description</th>
              </tr>
            </thead>
            <tbody>
