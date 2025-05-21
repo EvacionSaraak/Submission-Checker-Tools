@@ -211,27 +211,3 @@ function renderResults(container, rows) {
 /**
  * Utility: displays a simple message in the results container.
  */// After parseXML setup…
-
-
-/**
- * AESTHETIC FORMATING SCRIPTS
- */
-
-
-// Display selected file name under each input
-function setupFileNameDisplay(inputId, displayId) {
-  const input = document.getElementById(inputId);
-  const display = document.getElementById(displayId);
-  input.addEventListener('change', () => {
-    const name = input.files.length ? input.files[0].name : 'No file chosen';
-    display.textContent = name;
-  });
-}
-
-// Initialize display handlers
-setupFileNameDisplay('xmlFile', 'xmlFileName');
-setupFileNameDisplay('jsonFile', 'jsonFileName');
-
-function showMessage(container, message) {
-  container.innerHTML = `<p>${message}</p>`;
-}
