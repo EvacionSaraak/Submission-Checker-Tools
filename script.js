@@ -267,15 +267,13 @@ function showMessage(container, message) {
 }
 
 //DEV MODE DETECTION
-document.addEventListener('DOMContentLoaded', () => {
-  setupFileNameDisplay('xmlFile', 'xmlFileName');
-  setupFileNameDisplay('jsonFile', 'jsonFileName');
+// Hide dev-only JSON upload by default unless ?dev=true is in URL
+window.addEventListener("DOMContentLoaded", () => {
+  const urlParams = new URLSearchParams(window.location.search);
+  const isDevMode = urlParams.get("dev") === "true";
+  const devElement = document.getElementById("devMode");
 
-  // Show developer mode if ?dev=true in the URL
-  const params = new URLSearchParams(window.location.search);
-  if (params.get('dev') === 'true') {
-    const devSection = document.getElementById('devMode');
-    if (devSection) devSection.style.display = 'flex';
+  if (!isDevMode && devElement) {
+    devElement.style.display = "none";
   }
 });
-
