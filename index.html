@@ -10,15 +10,17 @@
   <h1>Activities with Observations</h1>
   <hr>
   <form id="fileInputs">
-    <div>
+    <div class="form-group">
       <label for="xmlFile">Upload XML File:</label>
       <input type="file" id="xmlFile" accept=".xml">
       <span class="file-name" id="xmlFileName">No file chosen</span>
     </div>
-    <div>
+  
+    <div class="form-group">
       <button type="button" onclick="parseXML()">Parse XML</button>
     </div>
-    <div id="devMode" style="display: none;">
+  
+    <div class="form-group" id="devMode" style="display: none;">
       <label for="jsonFile">Upload JSON File (optional):</label>
       <input type="file" id="jsonFile" accept=".json">
       <span class="file-name" id="jsonFileName">No file chosen</span>
