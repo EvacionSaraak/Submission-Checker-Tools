@@ -77,6 +77,13 @@ function getTeethSet(region) {
   }
 }
 
+function getRegionName(tooth) {
+  if (ANTERIOR_TEETH.has(tooth)) return 'Anterior';
+  if (BICUSPID_TEETH.has(tooth)) return 'Bicuspid';
+  if (POSTERIOR_TEETH.has(tooth)) return 'Posterior';
+  return 'Unknown';
+}
+
 function validateActivities(xmlDoc, codeToMeta) {
   const rows = [];
   Array.from(xmlDoc.getElementsByTagName('Claim')).forEach(claim => {
@@ -97,7 +104,8 @@ function validateActivities(xmlDoc, codeToMeta) {
         const obsCode = obs.querySelector('Code')?.textContent.trim() || '';
         if (/^\d+$/.test(obsCode) && !meta.teethSet.has(obsCode)) {
           isValid = false;
-          remarks.push(`Tooth ${obsCode} not valid for code ${code}`);
+          // Use region format instead of generic message
+          remarks.push(`${obsCode} - ${getRegionName(obsCode)}`);
         }
         return `${type}: ${obsCode}`;
       }).join('<br>');
