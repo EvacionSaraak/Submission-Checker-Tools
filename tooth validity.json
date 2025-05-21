@@ -541,7 +541,7 @@
     "codes": [
       "02111"
     ],
-    "description": "Radiographs, Intraoral, Periapical-Single film (IOPA)",
+    "description": "IOPA (Radiograph)",
     "dentition_type": "permanent",
     "affiliated_teeth": "all"
   },
@@ -558,6 +558,38 @@
       "32232"
     ],
     "description": "Pulpotomy Primary Tooth, Concurrent with Restorations (but excluding final restoration)",
+    "dentition_type": "primary",
+    "affiliated_teeth": "all"
+  },
+  {
+    "codes": [
+      "49211"
+    ],
+    "description": "Periodontal Irrigation, Subgingival + E One unit of time +E",
+    "dentition_type": "primary",
+    "affiliated_teeth": "all"
+  },
+  {
+    "codes": [
+      "49219"
+    ],
+    "description": "Periodontal Irrigation, Subgingival + E Each additional unit of time +E",
+    "dentition_type": "primary",
+    "affiliated_teeth": "all"
+  },
+  {
+    "codes": [
+      "49221"
+    ],
+    "description": "Periodontal Irrigation about Implants, Subgingival + E One unit of time +E",
+    "dentition_type": "primary",
+    "affiliated_teeth": "all"
+  },
+  {
+    "codes": [
+      "49229"
+    ],
+    "description": "Periodontal Irrigation about Implants, Subgingival + E Each additional unit of time +E",
     "dentition_type": "primary",
     "affiliated_teeth": "all"
   }
