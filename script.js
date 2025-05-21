@@ -155,7 +155,7 @@ function validateActivities(xmlDoc, codeToMeta) {
         const type = obs.querySelector('Type')?.textContent || '';
         const obsCode = obs.querySelector('Code')?.textContent.trim() || '';
 
-        if (/^\d+$/.test(obsCode)) {
+        if (/^[A-T0-9]+$/.test(obsCode)) {
           if (!meta.teethSet.has(obsCode)) {
             isValid = false;
             remarks.push(`Invalid - ${obsCode}`);
