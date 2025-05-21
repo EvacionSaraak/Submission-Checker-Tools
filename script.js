@@ -151,7 +151,7 @@ function validateActivities(xmlDoc, codeToMeta) {
           remarks.push(`${obsCode} - ${getRegionName(obsCode)}`);
         }
 
-        return `${type}: ${obsCode}`;
+      return `${obsCode} - ${getRegionName(obsCode)}`;
       }).join('<br>');
 
       rows.push({
