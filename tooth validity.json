@@ -541,7 +541,7 @@
     "codes": [
       "02111"
     ],
-    "description": "IOPA (Radiograph)",
+    "description": "Radiographs, Intraoral, Periapical-Single film (IOPA)",
     "dentition_type": "permanent",
     "affiliated_teeth": "all"
   },
