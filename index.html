@@ -12,15 +12,13 @@
     <div>
       <label for="xmlFile">Upload XML File:</label><br>
       <input type="file" id="xmlFile" accept=".xml">
-      <span class="file-name" id="xmlFileName">No file chosen</span>
-    </div>
-    <div>
-      <button type="button" onclick="parseXML()">Parse XML</button>
     </div>
     <div>
       <label for="jsonFile">Upload JSON File (optional):</label><br>
       <input type="file" id="jsonFile" accept=".json">
-      <span class="file-name" id="jsonFileName">No file chosen</span>
+    </div>
+    <div>
+      <button type="button" onclick="parseXML()">Parse XML</button>
     </div>
   </form>
   <div id="results"></div>
