@@ -508,15 +508,16 @@
     "codes": [
       "79933"
     ],
-    "description": "Surgical Re-Entry + Healing Cap + Abutement.",
+    "description": "Surgical Re-Entry + Healing Cap + Abutement",
     "dentition_type": "permanent",
     "affiliated_teeth": "all"
   },
   {
     "codes": [
-      "02111"
+      "91111",
+      "91119"
     ],
-    "description": "IOPA",
+    "description": "Palliative (emergency) Treatment of Dental Pain, Minor procedure",
     "dentition_type": "permanent",
     "affiliated_teeth": "all"
   },
