@@ -52,6 +52,10 @@ table {
   margin-top: 10px;
 }
 
+table td:nth-child(7) {  /* 7th column is Remarks */
+    white-space: nowrap;
+  }
+
 th,
 td {
   padding: 5px;
