@@ -4,6 +4,7 @@
 input[type="file"] {
   font-size: 0; /* hide the native filename text */
 }
+
 /* Restore the button’s label font size */
 input[type="file"]::-webkit-file-upload-button,
 input[type="file"]::file-selector-button {
@@ -22,23 +23,25 @@ h1 {
   margin: 0 auto;
 }
 
-/* Layout for file inputs and button */
+/* Horizontal layout for input row */
 #fileInputs {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1.5rem;
+  flex-direction: column;
+  gap: 1em;
 }
 
-#fileInputs div {
+.input-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5em;
+  align-items: flex-end;
+  margin-bottom: 1em;
+}
+
+.form-group {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  flex: 1;
-}
-
-#fileInputs div:nth-child(2) {
-  flex: 0;
+  min-width: 200px;
 }
 
 input[type="file"],
@@ -51,6 +54,12 @@ button {
   cursor: pointer;
 }
 
+.file-name {
+  font-size: 0.9em;
+  color: #555;
+  margin-top: 0.25em;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -58,8 +67,8 @@ table {
 }
 
 table td:nth-child(7) {  /* 7th column is Remarks */
-    white-space: nowrap;
-  }
+  white-space: nowrap;
+}
 
 th,
 td {
@@ -76,26 +85,6 @@ th {
 .valid {
   background-color: #e0f7e9; /* light green */
 }
-
-
-form#fileInputs {
-  display: flex;
-  flex-direction: column;
-  gap: 1em;
-  max-width: 500px;
-}
-
-.form-group {
-  display: flex;
-  flex-direction: column;
-}
-
-.file-name {
-  font-size: 0.9em;
-  color: #555;
-  margin-top: 0.25em;
-}
-
 
 .invalid {
   background-color: #ffe4e1; /* light red */
