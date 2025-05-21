@@ -340,7 +340,7 @@
     ],
     "description": "Odontectomy, Erupted Tooth, Surgical Approach (Single tooth)",
     "dentition_type": "permanent",
-    "affiliated_teeth": "all"
+    "affiliated_teeth": "posterior"
   },
   {
     "codes": [
@@ -348,7 +348,7 @@
     ],
     "description": "Requiring elevation of a Flap, Removal of Bone and/or Sectioning of Tooth (Single tooth)",
     "dentition_type": "permanent",
-    "affiliated_teeth": "all"
+    "affiliated_teeth": "posterior"
   },
   {
     "codes": [
@@ -364,7 +364,7 @@
     ],
     "description": "Removals, Impaction, Requiring Surgical Flap and/or Sectioning (Single tooth)",
     "dentition_type": "permanent",
-    "affiliated_teeth": "all"
+    "affiliated_teeth": "posterior"
   },
   {
     "codes": [
@@ -527,6 +527,22 @@
     ],
     "description": "IOPA (Radiograph)",
     "dentition_type": "permanent",
+    "affiliated_teeth": "all"
+  },
+  {
+    "codes": [
+      "32231"
+    ],
+    "description": "Pulpotomy Primary Tooth as a Separate Procedure",
+    "dentition_type": "primary",
+    "affiliated_teeth": "all"
+  },
+  {
+    "codes": [
+      "32231"
+    ],
+    "description": "Pulpotomy Primary Tooth, Concurrent with Restorations (but excluding final restoration)",
+    "dentition_type": "primary",
     "affiliated_teeth": "all"
   }
 ]
