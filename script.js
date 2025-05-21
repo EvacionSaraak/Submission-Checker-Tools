@@ -6,18 +6,21 @@ function parseXML() {
   const jsonInput = document.getElementById("jsonFile");
   const resultsDiv = document.getElementById("results");
 
+  // path to your repository JSON (adjust if in a subfolder)
+  const repoJsonUrl = 'tooth validity.json';
+
   // region definitions
   const ANTERIOR_TEETH = new Set(['6','7','8','9','10','11','22','23','24','25','26','27']);
   const BICUSPID_TEETH = new Set(['4','5','12','13','20','21','28','29']);
   const POSTERIOR_TEETH = new Set(['1','2','3','14','15','16','17','18','19','30','31','32']);
 
-  if (!xmlInput || !jsonInput || !resultsDiv) {
+  if (!xmlInput || !resultsDiv) {
     console.error("Missing required DOM elements.");
     return;
   }
 
-  if (!xmlInput.files.length || !jsonInput.files.length) {
-    resultsDiv.innerHTML = "<p>Please upload both XML and JSON files.</p>";
+  if (!xmlInput.files.length) {
+    resultsDiv.innerHTML = "<p>Please upload an XML file.</p>";
     return;
   }
 
@@ -25,7 +28,6 @@ function parseXML() {
   let jsonData = null;
 
   const xmlReader = new FileReader();
-  const jsonReader = new FileReader();
 
   xmlReader.onload = () => {
     xmlData = xmlReader.result;
@@ -35,48 +37,66 @@ function parseXML() {
     console.error("Error reading XML file");
   };
 
-  jsonReader.onload = () => {
-    jsonData = jsonReader.result;
-    tryProcess();
-  };
-  jsonReader.onerror = () => {
-    console.error("Error reading JSON file");
-  };
-
   xmlReader.readAsText(xmlInput.files[0]);
-  jsonReader.readAsText(jsonInput.files[0]);
+
+  // if user uploaded JSON, read it; otherwise fetch from repo
+  if (jsonInput && jsonInput.files.length) {
+    const jsonReader = new FileReader();
+    jsonReader.onload = () => {
+      jsonData = jsonReader.result;
+      tryProcess();
+    };
+    jsonReader.onerror = () => {
+      console.error("Error reading uploaded JSON file");
+    };
+    jsonReader.readAsText(jsonInput.files[0]);
+  } else {
+    fetch(repoJsonUrl)
+      .then(response => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.text();
+      })
+      .then(text => {
+        jsonData = text;
+        tryProcess();
+      })
+      .catch(err => {
+        console.error("Error fetching repository JSON:", err);
+        resultsDiv.innerHTML = "<p>Could not load repository JSON.</p>";
+      });
+  }
 
   function tryProcess() {
     if (!xmlData || !jsonData) return;
 
-    // build code→teeth map
-    let codeToTeethMap = {};
+    // build code→metadata map
+    let codeToMeta = {};
     try {
       const parsedJSON = JSON.parse(jsonData);
       for (const entry of parsedJSON) {
-        let teethSet;
-        switch ((entry.affiliated_teeth || "").toLowerCase()) {
-          case "all":
-            teethSet = new Set([...ANTERIOR_TEETH, ...BICUSPID_TEETH, ...POSTERIOR_TEETH]);
-            break;
-          case "anteriors":
-            teethSet = ANTERIOR_TEETH;
-            break;
-          case "posteriors":
-            teethSet = POSTERIOR_TEETH;
-            break;
-          case "bicuspid":
-            teethSet = BICUSPID_TEETH;
-            break;
-          case "anteriors/bicuspid":
-            teethSet = new Set([...ANTERIOR_TEETH, ...BICUSPID_TEETH]);
-            break;
-          default:
-            teethSet = new Set();
-        }
+        const teethSet = (() => {
+          switch ((entry.affiliated_teeth || "").toLowerCase()) {
+            case "all":
+              return new Set([...ANTERIOR_TEETH, ...BICUSPID_TEETH, ...POSTERIOR_TEETH]);
+            case "anteriors":
+              return ANTERIOR_TEETH;
+            case "posteriors":
+              return POSTERIOR_TEETH;
+            case "bicuspid":
+              return BICUSPID_TEETH;
+            case "anteriors/bicuspid":
+              return new Set([...ANTERIOR_TEETH, ...BICUSPID_TEETH]);
+            default:
+              return new Set();
+          }
+        })();
+
         for (const rawCode of entry.codes || []) {
           const trimmed = rawCode.toString().trim();
-          codeToTeethMap[trimmed] = teethSet;
+          codeToMeta[trimmed] = {
+            teethSet,
+            description: entry.description || "(no description)"
+          };
         }
       }
     } catch (err) {
@@ -103,19 +123,17 @@ function parseXML() {
 
         let isValid = true;
         let remarks = [];
-        const codeMeta = codeToTeethMap[code];
-        const allowedTeeth = codeMeta?.teethSet || new Set();
-        const description = codeMeta?.description || "(no description)";
 
+        const meta = codeToMeta[code] || {};
+        const allowedTeeth = meta.teethSet || new Set();
+        const description = meta.description || "(no description)";
 
         const observationDetails = Array.from(obsList).map(obs => {
           const type = obs.querySelector("Type")?.textContent || "";
           const obsCode = obs.querySelector("Code")?.textContent.trim() || "";
-          if (/^\d+$/.test(obsCode)) {
-            if (!allowedTeeth.has(obsCode)) {
-              isValid = false;
-              remarks.push(`Tooth ${obsCode} not valid for code ${code}`);
-            }
+          if (/^\d+$/.test(obsCode) && !allowedTeeth.has(obsCode)) {
+            isValid = false;
+            remarks.push(`Tooth ${obsCode} not valid for code ${code}`);
           }
           return `${type}: ${obsCode}`;
         }).join("<br>");
@@ -128,10 +146,10 @@ function parseXML() {
             <td>${claimId}</td>
             <td>${activityId}</td>
             <td>${code}</td>
-            <td>${description}</td>
             <td>${net}</td>
             <td>${observationDetails}</td>
             <td>${remarkText}</td>
+            <td>${description}</td>
           </tr>
         `);
       }
@@ -144,10 +162,10 @@ function parseXML() {
                <th>Claim ID</th>
                <th>Activity ID</th>
                <th>Code</th>
-               <th>Description</th>
                <th>Net Amount</th>
                <th>Observations</th>
                <th>Remarks</th>
+               <th>Description</th>
              </tr>
            </thead>
            <tbody>
