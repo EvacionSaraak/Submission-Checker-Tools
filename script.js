@@ -103,8 +103,10 @@ function parseXML() {
 
         let isValid = true;
         let remarks = [];
+        const codeMeta = codeToTeethMap[code];
+        const allowedTeeth = codeMeta?.teethSet || new Set();
+        const description = codeMeta?.description || "(no description)";
 
-        const allowedTeeth = codeToTeethMap[code] || new Set();
 
         const observationDetails = Array.from(obsList).map(obs => {
           const type = obs.querySelector("Type")?.textContent || "";
@@ -126,6 +128,7 @@ function parseXML() {
             <td>${claimId}</td>
             <td>${activityId}</td>
             <td>${code}</td>
+            <td>${description}</td>
             <td>${net}</td>
             <td>${observationDetails}</td>
             <td>${remarkText}</td>
@@ -141,6 +144,7 @@ function parseXML() {
                <th>Claim ID</th>
                <th>Activity ID</th>
                <th>Code</th>
+               <th>Description</th>
                <th>Net Amount</th>
                <th>Observations</th>
                <th>Remarks</th>
