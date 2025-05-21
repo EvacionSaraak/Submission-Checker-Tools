@@ -77,6 +77,26 @@ th {
   background-color: #e0f7e9; /* light green */
 }
 
+
+form#fileInputs {
+  display: flex;
+  flex-direction: column;
+  gap: 1em;
+  max-width: 500px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.file-name {
+  font-size: 0.9em;
+  color: #555;
+  margin-top: 0.25em;
+}
+
+
 .invalid {
   background-color: #ffe4e1; /* light red */
 }
