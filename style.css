@@ -10,11 +10,20 @@ body {
 /* Layout for file inputs and button */
 #fileInputs {
   display: flex;
-  justify-content: space-evenly;
+  justify-content: space-between;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 1rem;
   margin-bottom: 1.5rem;
+}
+
+#fileInputs div {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+}
+
+#fileInputs div:nth-child(2) {
+  flex: 0;
 }
 
 #fileInputs div {
