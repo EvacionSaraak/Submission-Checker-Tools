@@ -147,25 +147,30 @@ function validateActivities(xmlDoc, codeToMeta) {
       const net = act.querySelector('Net')?.textContent || '';
 
       const meta = codeToMeta[code] || { teethSet: new Set(), description: '(no description)' };
+      console.log(`\nActivity: ${activityId}, Code: ${code}, Description: ${meta.description}`);
+      console.log(`Valid teeth for this code:`, [...meta.teethSet]);
+
       let isValid = true;
       const remarks = [];
 
-      // Build observation details and remarks for invalid teeth
       const details = Array.from(obsList).map(obs => {
         const type = obs.querySelector('Type')?.textContent || '';
         const obsCodeRaw = obs.querySelector('Code')?.textContent.trim() || '';
-        const obsCode = obsCodeRaw.toUpperCase();  // Normalize for matching
-      
+        const obsCode = obsCodeRaw.toUpperCase(); // Normalize to match tooth sets
+
+        console.log(`Checking tooth: ${obsCode}`);
+
         if (!meta.teethSet.has(obsCode)) {
           isValid = false;
           remarks.push(`Invalid - ${obsCode}`);
+          console.log(`--> INVALID: ${obsCode} not in meta.teethSet`);
         } else {
           remarks.push(`Valid - ${obsCode}`);
+          console.log(`--> VALID: ${obsCode} found in meta.teethSet`);
         }
-      
+
         return `${obsCode} - ${getRegionName(obsCode)}`;
       }).join('<br>');
-
 
       rows.push({
         claimId,
