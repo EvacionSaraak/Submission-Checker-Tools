@@ -514,6 +514,22 @@
   },
   {
     "codes": [
+      "71101"
+    ],
+    "description": "Removals, Erupted Teeth, Uncomplicated Single tooth, Uncomplicated",
+    "dentition_type": "permanent",
+    "affiliated_teeth": "all"
+  },
+  {
+    "codes": [
+      "71109"
+    ],
+    "description": "Removals, Erupted Teeth, Uncomplicated Each additional tooth, same quadrant, same appointment",
+    "dentition_type": "permanent",
+    "affiliated_teeth": "all"
+  },
+  {
+    "codes": [
       "91111",
       "91119"
     ],
@@ -539,7 +555,7 @@
   },
   {
     "codes": [
-      "32231"
+      "32232"
     ],
     "description": "Pulpotomy Primary Tooth, Concurrent with Restorations (but excluding final restoration)",
     "dentition_type": "primary",
