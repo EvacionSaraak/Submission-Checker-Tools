@@ -145,7 +145,6 @@ function validateActivities(xmlDoc, codeToMeta) {
 
       const activityId = act.querySelector('ID')?.textContent || '';
       const code = act.querySelector('Code')?.textContent.trim() || '';
-      const net = act.querySelector('Net')?.textContent || '';
 
       const meta = codeToMeta[code] || { teethSet: new Set(), description: '(no description)' };
       console.log(`\nActivity: ${activityId}, Code: ${code}, Description: ${meta.description}`);
@@ -178,7 +177,6 @@ function validateActivities(xmlDoc, codeToMeta) {
         activityId,
         code,
         description: meta.description,
-        net,
         details,
         remarks,
         isValid
@@ -204,7 +202,6 @@ function renderResults(container, rows) {
       <th>Activity ID</th>
       <th>Code</th>
       <th>Description</th>
-      <th>Net Amount</th>
       <th>Observations</th>
       <th>Remarks</th>
     </tr>`;
@@ -215,7 +212,6 @@ function renderResults(container, rows) {
       <td>${r.activityId}</td>
       <td>${r.code}</td>
       <td>${r.description}</td>
-      <td>${r.net}</td>
       <td>${r.details}</td>
       <td>${r.remarks.length ? r.remarks.join('<br>') : 'All valid'}</td>
     </tr>
