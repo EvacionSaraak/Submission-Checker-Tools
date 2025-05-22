@@ -97,7 +97,7 @@ function buildCodeMeta(jsonText) {
       const code = raw.toString().trim();
       map[code] = {
         teethSet,
-        description: entry.description || '(no description)'
+        description: entry.description || '[Code N/A within JSON Repository]'
       };
     });
   });
