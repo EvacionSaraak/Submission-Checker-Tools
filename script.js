@@ -109,22 +109,15 @@ function buildCodeMeta(jsonText) {
  */
 function getTeethSet(region) {
   const normalized = (region || '').toLowerCase().trim();
-
-  if (normalized === 'all') { return new Set([...ANTERIOR_TEETH, ...BICUSPID_TEETH, ...POSTERIOR_TEETH]); }
-  if ((normalized.includes('anterior') && normalized.includes('bicuspid')) && normalized.includes('posterior')) { 
-    return new Set([...ANTERIOR_TEETH, ...BICUSPID_TEETH, ...POSTERIOR_TEETH]); 
-  }
-  if (normalized.includes('anterior') && normalized.includes('bicuspid')) { return new Set([...ANTERIOR_TEETH, ...BICUSPID_TEETH]); }
-  if (normalized.includes('anterior') && normalized.includes('posterior')) { return new Set([...ANTERIOR_TEETH, ...POSTERIOR_TEETH]); }
-  if (normalized.includes('bicuspid') && normalized.includes('posterior')) { return new Set([...BICUSPID_TEETH, ...POSTERIOR_TEETH]); }
-  if (normalized.includes('posterior')) { return POSTERIOR_TEETH; }
-  if (normalized.includes('bicuspid')) { return BICUSPID_TEETH; }
-  if (normalized.includes('anterior')) { return ANTERIOR_TEETH; }
-
-  // Fallback for unknown or empty region
-  return new Set();
+  const result = new Set();
+  
+  // If region is 'all' or no specific regions matched, return everything
+  if (normalized === 'all' || result.size === 0) { return new Set([...ANTERIOR_TEETH, ...BICUSPID_TEETH, ...POSTERIOR_TEETH]); }
+  if (normalized.includes('anterior')) { ANTERIOR_TEETH.forEach(tooth => result.add(tooth)); }
+  if (normalized.includes('bicuspid')) { BICUSPID_TEETH.forEach(tooth => result.add(tooth)); }
+  if (normalized.includes('posterior')) { POSTERIOR_TEETH.forEach(tooth => result.add(tooth)); }
+  return result;
 }
-
 
 /**
  * Determines the human-readable region name for a given tooth number.
