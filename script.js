@@ -110,12 +110,22 @@ function buildCodeMeta(jsonText) {
 function getTeethSet(region) {
   const normalized = (region || '').toLowerCase().trim();
   const result = new Set();
-  
-  // If region is 'all' or no specific regions matched, return everything
-  if (normalized === 'all' || result.size === 0) { return new Set([...ANTERIOR_TEETH, ...BICUSPID_TEETH, ...POSTERIOR_TEETH]); }
-  if (normalized.includes('anterior')) { ANTERIOR_TEETH.forEach(tooth => result.add(tooth)); }
-  if (normalized.includes('bicuspid')) { BICUSPID_TEETH.forEach(tooth => result.add(tooth)); }
-  if (normalized.includes('posterior')) { POSTERIOR_TEETH.forEach(tooth => result.add(tooth)); }
+
+  if (normalized.includes('anterior')) {
+    ANTERIOR_TEETH.forEach(tooth => result.add(tooth));
+  }
+  if (normalized.includes('bicuspid')) {
+    BICUSPID_TEETH.forEach(tooth => result.add(tooth));
+  }
+  if (normalized.includes('posterior')) {
+    POSTERIOR_TEETH.forEach(tooth => result.add(tooth));
+  }
+
+  // Fallback: if no valid region keywords matched, return all teeth
+  if (normalized === 'all' || result.size === 0) {
+    return new Set([...ANTERIOR_TEETH, ...BICUSPID_TEETH, ...POSTERIOR_TEETH]);
+  }
+
   return result;
 }
 
