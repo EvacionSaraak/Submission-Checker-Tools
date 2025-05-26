@@ -1,104 +1,69 @@
-let xmlText = '';
+document.getElementById('fileInput').addEventListener('change', function(event) {
+  const file = event.target.files[0];
+  if (!file) return;
 
-document.getElementById('fileInput').addEventListener('change', (e) => {
-  const file = e.target.files[0];
-  if (!file) {
-    alert('No file selected');
-    return;
-  }
   const reader = new FileReader();
-  reader.onload = (event) => {
-    xmlText = event.target.result;
-    document.getElementById('checkBtn').disabled = false;
-    document.getElementById('results').textContent = 'File loaded. Ready to check.';
-  };
+  reader.onload = e => processXML(e.target.result);
   reader.readAsText(file);
 });
 
-document.getElementById('checkBtn').addEventListener('click', () => {
-  if (!xmlText) {
-    alert('Please upload an XML file first.');
-    return;
-  }
-
+function processXML(xmlString) {
   const parser = new DOMParser();
-  const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
+  const xmlDoc = parser.parseFromString(xmlString, "text/xml");
+  const claims = xmlDoc.getElementsByTagName('claim');
+  const tbody = document.querySelector('#resultsTable tbody');
+  tbody.innerHTML = ''; // Clear previous
 
-  const claims = xmlDoc.getElementsByTagName('Claim');
-  const results = [];
+  const fragment = document.createDocumentFragment();
 
-  function parseDateTime(dtStr) {
-    // dtStr format: dd/MM/yyyy HH:mm
-    // Convert to JS Date object (assume local timezone)
-    const [datePart, timePart] = dtStr.split(' ');
-    const [dd, mm, yyyy] = datePart.split('/');
-    const [HH, MM] = timePart.split(':');
-    return new Date(yyyy, mm - 1, dd, HH, MM);
+  for (let claim of claims) {
+    const claimID = claim.getAttribute('id') || '-';
+    const startStr = claim.getAttribute('start') || '';
+    const endStr = claim.getAttribute('end') || '';
+    const startType = claim.getAttribute('startType') || '';
+    const endType = claim.getAttribute('endType') || '';
+
+    const issues = [];
+    const startDateTime = new Date(startStr);
+    const endDateTime = new Date(endStr);
+
+    const [startDate, startTime] = splitDateTime(startStr);
+    const [endDate, endTime] = splitDateTime(endStr);
+
+    if (startDate !== endDate) issues.push('Start and end dates differ');
+
+    const diffMinutes = (endDateTime - startDateTime) / 60000;
+    if (diffMinutes < 10) issues.push('Less than 10 minutes difference');
+    if (startDateTime >= endDateTime) issues.push('Start time not earlier than end time');
+    if (diffMinutes > 240) issues.push('Duration longer than 4 hours');
+    if (startType !== '1') issues.push(`Start Type is not 1 (found ${startType})`);
+    if (endType !== '1') issues.push(`End Type is not 1 (found ${endType})`);
+
+    const status = issues.length === 0 ? 'Passed' : 'Failed';
+
+    const tr = document.createElement('tr');
+    tr.className = status.toLowerCase();
+
+    [claimID, startDate, startTime, endDate, endTime, status, issues.length ? issues.join('; ') : '-']
+      .forEach(text => {
+        const td = document.createElement('td');
+        td.textContent = text;
+        tr.appendChild(td);
+      });
+
+    fragment.appendChild(tr);
   }
 
-  for (let i = 0; i < claims.length; i++) {
-    const claim = claims[i];
-    const claimID = claim.getElementsByTagName('ID')[0]?.textContent || 'Unknown';
+  tbody.appendChild(fragment);
+  document.getElementById('resultsTable').style.display = 'table';
+}
 
-    const encounter = claim.getElementsByTagName('Encounter')[0];
-    if (!encounter) {
-      results.push(`Claim ${claimID}: No Encounter data found.`);
-      continue;
-    }
-
-    const startStr = encounter.getElementsByTagName('Start')[0]?.textContent;
-    const endStr = encounter.getElementsByTagName('End')[0]?.textContent;
-    const startType = encounter.getElementsByTagName('StartType')[0]?.textContent;
-    const endType = encounter.getElementsByTagName('EndType')[0]?.textContent;
-
-    if (!startStr || !endStr || !startType || !endType) {
-      results.push(`Claim ${claimID}: Missing encounter start/end datetime or types.`);
-      continue;
-    }
-
-    // Parse Date objects
-    const startDT = parseDateTime(startStr);
-    const endDT = parseDateTime(endStr);
-
-    // Extract dates only for date equality check
-    const startDateStr = startStr.split(' ')[0];
-    const endDateStr = endStr.split(' ')[0];
-
-    let issues = [];
-
-    // 1. Start and end dates must be same
-    if (startDateStr !== endDateStr) {
-      issues.push('Start and End dates differ');
-    }
-
-    // 2. Start time must be earlier than end time
-    if (startDT >= endDT) {
-      issues.push('Start time is not earlier than End time');
-    }
-
-    // 3. Difference must be at least 10 minutes
-    const diffMs = endDT - startDT;
-    const diffMins = diffMs / 60000;
-    if (diffMins < 10) {
-      issues.push('Duration less than 10 minutes');
-    }
-
-    // 4. Flag durations longer than 4 hours (240 mins)
-    if (diffMins > 240) {
-      issues.push('Duration longer than 4 hours');
-    }
-
-    // 5. StartType and EndType must be 1
-    if (startType !== '1' || endType !== '1') {
-      issues.push(`StartType or EndType not 1 (StartType=${startType}, EndType=${endType})`);
-    }
-
-    if (issues.length === 0) {
-      results.push(`Claim ${claimID}: All timing checks passed.`);
-    } else {
-      results.push(`Claim ${claimID}: Issues found:\n - ${issues.join('\n - ')}`);
-    }
+function splitDateTime(dateTimeStr) {
+  if (!dateTimeStr) return ['-', '-'];
+  if (dateTimeStr.includes('T')) {
+    const [date, time] = dateTimeStr.split('T');
+    return [date, time.split('.')[0]];
   }
-
-  document.getElementById('results').textContent = results.join('\n\n');
-});
+  const parts = dateTimeStr.split(' ');
+  return parts.length === 2 ? parts : [dateTimeStr, '-'];
+}
