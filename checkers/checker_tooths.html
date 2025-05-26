@@ -10,25 +10,20 @@
 <body>
   <h1>Tooth Validity Checker</h1>
   <hr>
-  <form id="fileInputs">
-    <div class="input-group">
-      <label for="xmlFile">Upload XML File:</label>
-      <input type="file" id="xmlFile" accept=".xml" />
-      <span class="file-name" id="xmlFileName">No file chosen</span>
-    </div>
 
-    <div class="input-group">
-      <button type="button" onclick="parseXML()">Parse XML</button>
-    </div>
+  <label for="xmlFile">Upload XML File:</label>
+  <input type="file" id="xmlFile" accept=".xml" />
+  <span class="file-name" id="xmlFileName">No file chosen</span>
 
-    <div class="input-group" id="devMode">
-      <label for="jsonFile">Upload JSON File (optional):</label>
-      <input type="file" id="jsonFile" accept=".json" />
-      <span class="file-name" id="jsonFileName">No file chosen</span>
-    </div>
-  </form>
+  <button type="button" onclick="parseXML()">Parse XML</button>
+
   <hr>
-  <div id="results"></div>
+
+  <div id="results">
+    <table id="outputTable" style="display:none;">
+      <!-- Output rows go here -->
+    </table>
+  </div>
 
   <script src="checker_tooths.js"></script>
 </body>
