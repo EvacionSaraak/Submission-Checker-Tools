@@ -14,10 +14,8 @@ function parseXMLAndRenderTable(xmlString) {
   const parser = new DOMParser();
   const xmlDoc = parser.parseFromString(xmlString, 'application/xml');
 
-  // The root element is Claim.Submission (note: tag name is case sensitive)
-  const claimElements = xmlDoc.getElementsByTagName('Claim');
-
-  if (!claimElements.length) {
+  const claims = xmlDoc.getElementsByTagName('Claim');
+  if (!claims.length) {
     document.getElementById('tableContainer').innerHTML = "<p>No <code>&lt;Claim&gt;</code> elements found.</p>";
     return;
   }
@@ -27,30 +25,58 @@ function parseXMLAndRenderTable(xmlString) {
       <thead>
         <tr>
           <th>Claim ID</th>
+          <th>Start Date & Time</th>
+          <th>End Date & Time</th>
           <th>Patient ID</th>
           <th>Doctor</th>
           <th>Total Amount</th>
-          <th>Encounter Validity</th>
+          <th>Validity</th>
         </tr>
       </thead>
       <tbody>
   `;
 
-  for (let claim of claimElements) {
+  for (let claim of claims) {
     const claimID = getTagValue(claim, 'ID');
-    const patientID = getTagValue(claim, 'MemberID');
-    const doctor = getTagValue(claim, 'ProviderID');
-    const amount = getTagValue(claim, 'Net');
 
+    // Encounter node (first one)
     const encounter = claim.getElementsByTagName('Encounter')[0];
-    const validity = encounter ? validateEncounterData(encounter) : 'No Encounter';
+    let startDateTime = 'N/A';
+    let endDateTime = 'N/A';
+    let startType = null;
+    let endType = null;
+
+    if (encounter) {
+      startDateTime = getTagValue(encounter, 'Start');
+      endDateTime = getTagValue(encounter, 'End');
+      startType = getTagValue(encounter, 'StartType');
+      endType = getTagValue(encounter, 'EndType');
+    }
+
+    // PatientID
+    const patientID = encounter ? getTagValue(encounter, 'PatientID') : 'N/A';
+
+    // Doctor (from Activity/Clinician, fallback to 'N/A' if multiple activities, take first)
+    const activity = claim.getElementsByTagName('Activity')[0];
+    let doctor = 'N/A';
+    if (activity) {
+      doctor = getTagValue(activity, 'Clinician');
+    }
+
+    // Total amount (Net)
+    const totalAmount = getTagValue(claim, 'Net');
+
+    // Validate encounter
+    const validity = validateEncounterData(startDateTime, endDateTime, startType, endType);
 
     tableHTML += `
       <tr>
         <td>${claimID}</td>
+        <td>${startDateTime}</td>
+        <td>${endDateTime}</td>
         <td>${patientID}</td>
         <td>${doctor}</td>
-        <td>${amount}</td>
+        <td>${totalAmount}</td>
         <td>${validity}</td>
       </tr>
     `;
