@@ -66,8 +66,8 @@ function parseXMLAndRenderTable(xmlString) {
     // Total amount (Net)
     const totalAmount = getTagValue(claim, 'Net');
 
-    // Validate encounter
-    const validity = validateEncounterData(startDateTime, endDateTime, startType, endType);
+    // Validate encounter, only if encounter is present
+    const validity = encounter ? validateEncounterData(encounter) : "Invalid (missing encounter)";
 
     tableHTML += `
       <tr>
@@ -87,6 +87,7 @@ function parseXMLAndRenderTable(xmlString) {
 }
 
 function getTagValue(parent, tagName) {
+  if (!parent || typeof parent.getElementsByTagName !== 'function') return 'N/A';
   const el = parent.getElementsByTagName(tagName)[0];
   return el ? el.textContent.trim() : 'N/A';
 }
@@ -140,7 +141,6 @@ function validateMaxDuration(startDateTime, endDateTime, maxMinutes) {
 
 function parseDateTime(dateTimeStr) {
   // Example format: "22/10/2023 15:55"
-  // We parse manually because Date.parse might not handle dd/mm/yyyy well
   const [datePart, timePart] = dateTimeStr.split(' ');
   if (!datePart || !timePart) return null;
 
