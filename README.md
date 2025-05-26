@@ -1,4 +1,11 @@
-# Checker for Tooth Validity on Procedures
-A tool that aims to accept an upload of a specialized XML file, read it, then output potential errors for when invalid teeth are assigned to a code or if there are no teeth assigned to a code at all.
+# Submission Tools
+A tool that aims to accept specialized XML files and check for errors with a variety of tools. Originally for tooth procedures, but the scope has since been widened.
+Tools planned for this project:
+- Tooth Validity Checker
+- Procedure Approval Checker
+- Start End Time Checker
+- Approval Checker
+- Eligibility Checker
+- Ordering Physician Checker
 
-Site: https://evacionsaraak.github.io/procedure-tooth-code-error-check/
+Site: [NO LINK AVAILABLE YET]
