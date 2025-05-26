@@ -1,6 +1,6 @@
 // script.js
 // -----------------------
-// Main entry point: reads XML and JSON (or repo) then processes data
+// Main entry point: reads XML and repo JSON then processes data
 
 const repoJsonUrl = 'checker_tooths.json';
 
@@ -20,12 +20,11 @@ const POSTERIOR_TEETH = new Set([
 ]);
 
 /**
- * Reads user-selected XML and JSON (optional) / repo JSON,
+ * Reads user-selected XML and repo JSON,
  * then initiates validation and rendering.
  */
 function parseXML() {
   const xmlInput = document.getElementById('xmlFile');
-  const jsonInput = document.getElementById('jsonFile');
   const resultsDiv = document.getElementById('results');
 
   // Ensure XML file is provided
@@ -36,13 +35,15 @@ function parseXML() {
   const xmlFile = xmlInput.files[0];
   console.log(`XML file selected: ${xmlFile.name}`);
 
-  // Read both XML and JSON (uploaded or repo) in parallel
   Promise.all([
-    readXMLFile(xmlInput.files[0]),
-    readJSONOrRepo(jsonInput)
+    readXMLFile(xmlFile),
+    fetch(repoJsonUrl).then(resp => {
+      if (!resp.ok) throw new Error(`Could not load repository JSON (HTTP ${resp.status})`);
+      return resp.text();
+    })
   ])
-    .then(([xmlData, jsonData]) => tryProcess(xmlData, jsonData, resultsDiv))
-    .catch(err => showMessage(resultsDiv, err.message));
+  .then(([xmlData, jsonData]) => tryProcess(xmlData, jsonData, resultsDiv))
+  .catch(err => showMessage(resultsDiv, err.message));
 }
 
 /**
@@ -55,27 +56,6 @@ function readXMLFile(file) {
     reader.onerror = () => reject(new Error('Error reading XML file'));
     reader.readAsText(file);
   });
-}
-
-/**
- * Returns a Promise resolving to JSON text: prefers uploaded file, falls back to repo fetch.
- */
-function readJSONOrRepo(jsonInput) {
-  if (jsonInput?.files.length) {
-    // Uploaded JSON for debugging
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = () => reject(new Error('Error reading uploaded JSON file'));
-      reader.readAsText(jsonInput.files[0]);
-    });
-  }
-  // Fetch repository JSON
-  return fetch(repoJsonUrl)
-    .then(resp => {
-      if (!resp.ok) throw new Error(`Could not load repository JSON (HTTP ${resp.status})`);
-      return resp.text();
-    });
 }
 
 /**
@@ -167,7 +147,6 @@ function validateActivities(xmlDoc, codeToMeta) {
       const remarks = [];
 
       const details = Array.from(obsList).map(obs => {
-        const type = obs.querySelector('Type')?.textContent || '';
         const obsCodeRaw = obs.querySelector('Code')?.textContent.trim() || '';
         const obsCode = obsCodeRaw.toUpperCase(); // Normalize to match tooth sets
 
@@ -201,11 +180,14 @@ function validateActivities(xmlDoc, codeToMeta) {
 }
 
 /**
- * Renders the results table or a no-data message.
+ * Renders the results table or a no-data message inside #results,
+ * updating the hidden #outputTable element.
  */
 function renderResults(container, rows) {
+  const table = document.getElementById('outputTable');
   if (!rows.length) {
     container.innerHTML = '<p>No activities with observations found.</p>';
+    if(table) table.style.display = 'none';
     return;
   }
 
@@ -230,21 +212,24 @@ function renderResults(container, rows) {
     </tr>
   `).join('');
 
-  container.innerHTML = `<table border="1">
-    <thead>${header}</thead>
-    <tbody>${body}</tbody>
-  </table>`;
+  if (table) {
+    table.innerHTML = `<thead>${header}</thead><tbody>${body}</tbody>`;
+    table.style.display = 'table';
+    container.innerHTML = ''; // Clear any previous messages
+  } else {
+    // fallback: render as normal inside container
+    container.innerHTML = `<table border="1"><thead>${header}</thead><tbody>${body}</tbody></table>`;
+  }
 }
 
 /**
  * Utility: displays a simple message in the results container.
- */// After parseXML setup…
-/**
- * AESTHETIC FORMATING SCRIPTS
  */
+function showMessage(container, message) {
+  container.innerHTML = `<p>${message}</p>`;
+}
 
-
-// Display selected file name under each input
+// Display selected file name under xml input
 function setupFileNameDisplay(inputId, displayId) {
   const input = document.getElementById(inputId);
   const display = document.getElementById(displayId);
@@ -254,28 +239,7 @@ function setupFileNameDisplay(inputId, displayId) {
   });
 }
 
-function showMessage(container, message) {
-  container.innerHTML = `<p>${message}</p>`;
-}
-
-// Wait for DOM to be ready before initializing
+// Initialize on DOM ready
 document.addEventListener('DOMContentLoaded', () => {
   setupFileNameDisplay('xmlFile', 'xmlFileName');
-  setupFileNameDisplay('jsonFile', 'jsonFileName');
-});
-
-function showMessage(container, message) {
-  container.innerHTML = `<p>${message}</p>`;
-}
-
-//DEV MODE DETECTION
-// Hide dev-only JSON upload by default unless ?dev=true is in URL
-window.addEventListener("DOMContentLoaded", () => {
-  const urlParams = new URLSearchParams(window.location.search);
-  const isDevMode = urlParams.get("dev") === "true";
-  const devElement = document.getElementById("devMode");
-
-  if (!isDevMode && devElement) {
-    devElement.style.display = "none";
-  }
 });
