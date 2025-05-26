@@ -1,7 +1,7 @@
 const pages = [
   { label: "Clinician", file: "checkers/checker_clinician.html" },
   { label: "Approvals", file: "checkers/checker_procedure_approval.html" },
-  { label: "Timings", file: "checkers/checker_start_end_timing.html" },
+  { label: "Timings", file: "checkers/checker_timings.html" },
   { label: "Tooths", file: "checkers/checker_tooths.html" }
 ];
 
