@@ -24,6 +24,13 @@ nav button.active {
   font-weight: bold;
 }
 
+
 #mainContent {
-  padding: 20px;
+  padding: 0;
+}
+#mainIframe {
+  width: 100%;
+  height: 80vh;
+  border: none;
+  display: block;
 }
