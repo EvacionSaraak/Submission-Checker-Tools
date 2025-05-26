@@ -33,6 +33,9 @@ function parseXML() {
     return showMessage(resultsDiv, 'Please upload an XML file.');
   }
 
+  const xmlFile = xmlInput.files[0];
+  console.log(`XML file selected: ${xmlFile.name}`);
+
   // Read both XML and JSON (uploaded or repo) in parallel
   Promise.all([
     readXMLFile(xmlInput.files[0]),
