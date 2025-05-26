@@ -1,4 +1,3 @@
-// List of pages to load from checkers/ folder (relative paths)
 const pages = [
   { label: "Clinician", file: "checkers/checker_clinician.html" },
   { label: "Approvals", file: "checkers/checker_procedure_approval.html" },
@@ -7,7 +6,7 @@ const pages = [
 ];
 
 const navbar = document.getElementById("navbar");
-const mainContent = document.getElementById("mainContent");
+const iframe = document.getElementById("mainIframe");
 
 function setActiveButton(activeIndex) {
   Array.from(navbar.children).forEach((btn, i) => {
@@ -15,17 +14,9 @@ function setActiveButton(activeIndex) {
   });
 }
 
-async function loadPage(file, index) {
-  try {
-    const response = await fetch(file);
-    if (!response.ok) throw new Error(`HTTP error ${response.status}`);
-    const html = await response.text();
-    mainContent.innerHTML = html;
-    setActiveButton(index);
-  } catch (error) {
-    mainContent.innerHTML = `<h2>Error loading page: ${error.message}</h2>`;
-    console.error(error);
-  }
+function loadPage(file, index) {
+  iframe.src = file;
+  setActiveButton(index);
 }
 
 function buildNavbar() {
@@ -36,9 +27,7 @@ function buildNavbar() {
     btn.onclick = () => loadPage(page.file, i);
     navbar.appendChild(btn);
   });
-  // Load the first page by default
   loadPage(pages[0].file, 0);
 }
 
-// Build nav and load first page on startup
 buildNavbar();
