@@ -221,7 +221,7 @@
         ],
         "description": "Restorations, Tooth Coloured, Permanent Bicuspids, Bonded Technique, Two surfaces\n(continuous)",
         "dentition_type": "permanent",
-        "affiliated_teeth": "Bicuspids"
+        "affiliated_teeth": "bicuspids"
     },
     {
         "code": [
@@ -229,7 +229,7 @@
         ],
         "description": "RESTORATIONS, TOOTH COLOURED/PLASTIC WITH/WITHOUT SILVER FILINGS, PERMANENT\nPOSTERIORS NON BONDED Permanent Bicuspids Three surfaces",
         "dentition_type": "permanent",
-        "affiliated_teeth": "Bicuspids"
+        "affiliated_teeth": "bicuspids"
     },
     {
         "code": [
@@ -237,7 +237,7 @@
         ],
         "description": "Restorations, Tooth Coloured, Permanent Bicuspids, Bonded Technique, Four surfaces\n(continuous)",
         "dentition_type": "permanent",
-        "affiliated_teeth": "Bicuspids"
+        "affiliated_teeth": "bicuspids"
     },
     {
         "code": [
@@ -245,7 +245,7 @@
         ],
         "description": "Restorations, Tooth Coloured, Permanent Bicuspids, Bonded Technique, Five surfaces\n(continuous, maximum surfaces per tooth)",
         "dentition_type": "permanent",
-        "affiliated_teeth": "Bicuspids"
+        "affiliated_teeth": "bicuspids"
     },
     {
         "code": [
@@ -253,7 +253,7 @@
         ],
         "description": "Restorations, Tooth Coloured, Permanent Posteriors - Bonded One surface",
         "dentition_type": "permanent",
-        "affiliated_teeth": "Posteriors"
+        "affiliated_teeth": "posteriors"
     },
     {
         "code": [
@@ -261,7 +261,7 @@
         ],
         "description": "Restorations, Tooth Coloured, Permanent Posteriors - Bonded Two surfaces",
         "dentition_type": "permanent",
-        "affiliated_teeth": "Posteriors"
+        "affiliated_teeth": "posteriors"
     },
     {
         "code": [
@@ -269,7 +269,7 @@
         ],
         "description": "Restorations, Tooth Coloured, Permanent Posteriors - Bonded Three surfaces",
         "dentition_type": "permanent",
-        "affiliated_teeth": "Posteriors"
+        "affiliated_teeth": "posteriors"
     },
     {
         "code": [
@@ -277,7 +277,7 @@
         ],
         "description": "Restorations, Tooth Coloured, Permanent Posteriors - Bonded Four surfaces",
         "dentition_type": "permanent",
-        "affiliated_teeth": "Posteriors"
+        "affiliated_teeth": "posteriors"
     },
     {
         "code": [
@@ -285,7 +285,7 @@
         ],
         "description": "Restorations, Tooth Coloured, Permanent Posteriors - Bonded Five surfaces or maximum\nsurfaces per tooth",
         "dentition_type": "permanent",
-        "affiliated_teeth": "Posteriors"
+        "affiliated_teeth": "posteriors"
     },
     {
         "code": [
@@ -293,7 +293,7 @@
         ],
         "description": "RESTORATIONS, TOOTH COLOURED/PLASTIC WITH/WITHOUT SILVER FILINGS -\nRESTORATIONS, TOOTH COLOURED, PERMANENT ANTERIORS NON BONDED TECHNIQUE One\nsurface",
         "dentition_type": "permanent",
-        "affiliated_teeth": "Anteriors"
+        "affiliated_teeth": "anteriors"
     },
     {
         "code": [
@@ -301,7 +301,7 @@
         ],
         "description": "RESTORATIONS, TOOTH COLOURED/PLASTIC WITH/WITHOUT SILVER FILINGS -\nRESTORATIONS, TOOTH COLOURED, PERMANENT ANTERIORS NON BONDED TECHNIQUE Two\nsurfaces (continuous)",
         "dentition_type": "permanent",
-        "affiliated_teeth": "Anteriors"
+        "affiliated_teeth": "anteriors"
     },
     {
         "code": [
@@ -309,7 +309,7 @@
         ],
         "description": "RESTORATIONS, TOOTH COLOURED/PLASTIC WITH/WITHOUT SILVER FILINGS -\nRESTORATIONS, TOOTH COLOURED, PERMANENT ANTERIORS NON BONDED TECHNIQUE  Three\nsurfaces (continuous)",
         "dentition_type": "permanent",
-        "affiliated_teeth": "Anteriors"
+        "affiliated_teeth": "anteriors"
     },
     {
         "code": [
@@ -317,7 +317,7 @@
         ],
         "description": "RESTORATIONS, TOOTH COLOURED/PLASTIC WITH/WITHOUT SILVER FILINGS -\nRESTORATIONS, TOOTH COLOURED, PERMANENT ANTERIORS NON BONDED TECHNIQUE Four\nsurfaces (continuous)",
         "dentition_type": "permanent",
-        "affiliated_teeth": "Anteriors"
+        "affiliated_teeth": "anteriors"
     },
     {
         "code": [
@@ -325,7 +325,7 @@
         ],
         "description": "RESTORATIONS, TOOTH COLOURED/PLASTIC WITH/WITHOUT SILVER FILINGS -\nRESTORATIONS, TOOTH COLOURED, PERMANENT ANTERIORS NON BONDED TECHNIQUE Five\nsurfaces (continuous, maximum surfaces per tooth)",
         "dentition_type": "permanent",
-        "affiliated_teeth": "Anteriors"
+        "affiliated_teeth": "anteriors"
     },
     {
         "code": [
@@ -333,7 +333,7 @@
         ],
         "description": "RESTORATIONS, TOOTH COLOURED/PLASTIC WITH/WITHOUT SILVER FILINGS, PERMANENT\nPOSTERIORS NON BONDED Permanent Bicuspids One surface",
         "dentition_type": "permanent",
-        "affiliated_teeth": "Bicuspids"
+        "affiliated_teeth": "bicuspids"
     },
     {
         "code": [
@@ -389,7 +389,7 @@
         ],
         "description": "RESTORATIONS, TOOTH COLOURED/PLASTIC WITH/WITHOUT SILVER FILINGS, PERMANENT\nPOSTERIORS NON BONDED Permanent Molars Three surfaces",
         "dentition_type": "permanent",
-        "affiliated_teeth": "Posteriors"
+        "affiliated_teeth": "posteriors"
     },
     {
         "code": [
@@ -397,7 +397,7 @@
         ],
         "description": "RESTORATIONS, TOOTH COLOURED/PLASTIC WITH/WITHOUT SILVER FILINGS, PERMANENT\nPOSTERIORS NON BONDED Permanent Molars Four surfaces",
         "dentition_type": "permanent",
-        "affiliated_teeth": "Posteriors"
+        "affiliated_teeth": "posteriors"
     },
     {
         "code": [
@@ -405,7 +405,7 @@
         ],
         "description": "RESTORATIONS, TOOTH COLOURED/PLASTIC WITH/WITHOUT SILVER FILINGS, PERMANENT\nPOSTERIORS NON BONDED Permanent Molars Five surfaces or maximum surfaces per tooth",
         "dentition_type": "permanent",
-        "affiliated_teeth": "Posteriors"
+        "affiliated_teeth": "posteriors"
     },
     {
         "code": [
@@ -925,7 +925,7 @@
         ],
         "description": "RESTORATIONS, TOOTH COLOURED/PLASTIC WITH/WITHOUT SILVER FILINGS -\nRESTORATIONS, TOOTH COLOURED, PERMANENT ANTERIORS NON BONDED TECHNIQUE One\nsurface",
         "dentition_type": "permanent",
-        "affiliated_teeth": "Anteriors"
+        "affiliated_teeth": "anteriors"
     },
     {
         "code": [
@@ -933,7 +933,7 @@
         ],
         "description": "RESTORATIONS, TOOTH COLOURED/PLASTIC WITH/WITHOUT SILVER FILINGS -\nRESTORATIONS, TOOTH COLOURED, PERMANENT ANTERIORS NON BONDED TECHNIQUE Two\nsurfaces (continuous)",
         "dentition_type": "permanent",
-        "affiliated_teeth": "Anteriors"
+        "affiliated_teeth": "anteriors"
     },
     {
         "code": [
@@ -941,7 +941,7 @@
         ],
         "description": "RESTORATIONS, TOOTH COLOURED/PLASTIC WITH/WITHOUT SILVER FILINGS -\nRESTORATIONS, TOOTH COLOURED, PERMANENT ANTERIORS NON BONDED TECHNIQUE  Three\nsurfaces (continuous)",
         "dentition_type": "permanent",
-        "affiliated_teeth": "Anteriors"
+        "affiliated_teeth": "anteriors"
     },
     {
         "code": [
@@ -949,7 +949,7 @@
         ],
         "description": "RESTORATIONS, TOOTH COLOURED/PLASTIC WITH/WITHOUT SILVER FILINGS -\nRESTORATIONS, TOOTH COLOURED, PERMANENT ANTERIORS NON BONDED TECHNIQUE Four\nsurfaces (continuous)",
         "dentition_type": "permanent",
-        "affiliated_teeth": "Anteriors"
+        "affiliated_teeth": "anteriors"
     },
     {
         "code": [
@@ -957,7 +957,7 @@
         ],
         "description": "RESTORATIONS, TOOTH COLOURED/PLASTIC WITH/WITHOUT SILVER FILINGS -\nRESTORATIONS, TOOTH COLOURED, PERMANENT ANTERIORS NON BONDED TECHNIQUE Five\nsurfaces (continuous, maximum surfaces per tooth)",
         "dentition_type": "permanent",
-        "affiliated_teeth": "Anteriors"
+        "affiliated_teeth": "anteriors"
     },
     {
         "code": [
@@ -1029,7 +1029,7 @@
         ],
         "description": "RESTORATIONS, TOOTH COLOURED/PLASTIC WITH/WITHOUT SILVER FILINGS, PERMANENT\nPOSTERIORS NON BONDED Permanent Bicuspids One surface",
         "dentition_type": "permanent",
-        "affiliated_teeth": "Bicuspids"
+        "affiliated_teeth": "bicuspids"
     },
     {
         "code": [
@@ -1085,7 +1085,7 @@
         ],
         "description": "RESTORATIONS, TOOTH COLOURED/PLASTIC WITH/WITHOUT SILVER FILINGS, PERMANENT\nPOSTERIORS NON BONDED Permanent Molars Three surfaces",
         "dentition_type": "permanent",
-        "affiliated_teeth": "Posteriors"
+        "affiliated_teeth": "posteriors"
     },
     {
         "code": [
@@ -1093,7 +1093,7 @@
         ],
         "description": "RESTORATIONS, TOOTH COLOURED/PLASTIC WITH/WITHOUT SILVER FILINGS, PERMANENT\nPOSTERIORS NON BONDED Permanent Molars Four surfaces",
         "dentition_type": "permanent",
-        "affiliated_teeth": "Posteriors"
+        "affiliated_teeth": "posteriors"
     },
     {
         "code": [
@@ -1101,7 +1101,7 @@
         ],
         "description": "RESTORATIONS, TOOTH COLOURED/PLASTIC WITH/WITHOUT SILVER FILINGS, PERMANENT\nPOSTERIORS NON BONDED Permanent Molars Five surfaces or maximum surfaces per tooth",
         "dentition_type": "permanent",
-        "affiliated_teeth": "Posteriors"
+        "affiliated_teeth": "posteriors"
     },
     {
         "code": [
@@ -1117,7 +1117,7 @@
         ],
         "description": "Restorations, Tooth Coloured, Permanent Bicuspids, Bonded Technique, Two surfaces\n(continuous)",
         "dentition_type": "permanent",
-        "affiliated_teeth": "Bicuspids"
+        "affiliated_teeth": "bicuspids"
     },
     {
         "code": [
@@ -1125,7 +1125,7 @@
         ],
         "description": "RESTORATIONS, TOOTH COLOURED/PLASTIC WITH/WITHOUT SILVER FILINGS, PERMANENT\nPOSTERIORS NON BONDED Permanent Bicuspids Three surfaces",
         "dentition_type": "permanent",
-        "affiliated_teeth": "Bicuspids"
+        "affiliated_teeth": "bicuspids"
     },
     {
         "code": [
@@ -1133,7 +1133,7 @@
         ],
         "description": "Restorations, Tooth Coloured, Permanent Bicuspids, Bonded Technique, Four surfaces\n(continuous)",
         "dentition_type": "permanent",
-        "affiliated_teeth": "Bicuspids"
+        "affiliated_teeth": "bicuspids"
     },
     {
         "code": [
@@ -1141,7 +1141,7 @@
         ],
         "description": "Restorations, Tooth Coloured, Permanent Bicuspids, Bonded Technique, Five surfaces\n(continuous, maximum surfaces per tooth)",
         "dentition_type": "permanent",
-        "affiliated_teeth": "Bicuspids"
+        "affiliated_teeth": "bicuspids"
     },
     {
         "code": [
@@ -1149,7 +1149,7 @@
         ],
         "description": "Restorations, Tooth Coloured, Permanent Posteriors - Bonded One surface",
         "dentition_type": "permanent",
-        "affiliated_teeth": "Posteriors"
+        "affiliated_teeth": "posteriors"
     },
     {
         "code": [
@@ -1157,7 +1157,7 @@
         ],
         "description": "Restorations, Tooth Coloured, Permanent Posteriors - Bonded Two surfaces",
         "dentition_type": "permanent",
-        "affiliated_teeth": "Posteriors"
+        "affiliated_teeth": "posteriors"
     },
     {
         "code": [
@@ -1165,7 +1165,7 @@
         ],
         "description": "Restorations, Tooth Coloured, Permanent Posteriors - Bonded Three surfaces",
         "dentition_type": "permanent",
-        "affiliated_teeth": "Posteriors"
+        "affiliated_teeth": "posteriors"
     },
     {
         "code": [
@@ -1173,7 +1173,7 @@
         ],
         "description": "Restorations, Tooth Coloured, Permanent Posteriors - Bonded Four surfaces",
         "dentition_type": "permanent",
-        "affiliated_teeth": "Posteriors"
+        "affiliated_teeth": "posteriors"
     },
     {
         "code": [
@@ -1181,7 +1181,7 @@
         ],
         "description": "Restorations, Tooth Coloured, Permanent Posteriors - Bonded Five surfaces or maximum\nsurfaces per tooth",
         "dentition_type": "permanent",
-        "affiliated_teeth": "Posteriors"
+        "affiliated_teeth": "posteriors"
     },
     {
         "code": [
