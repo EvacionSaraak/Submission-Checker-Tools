@@ -14,47 +14,36 @@ function parseXMLAndRenderTable(xmlString) {
   const parser = new DOMParser();
   const xmlDoc = parser.parseFromString(xmlString, 'application/xml');
 
-  // Your root is Claim.Submission (case-sensitive)
-  const claimSubmission = xmlDoc.getElementsByTagName('Claim.Submission')[0];
-  if (!claimSubmission) {
-    document.getElementById('tableContainer').innerHTML = "<p>No <code>&lt;Claim.Submission&gt;</code> element found.</p>";
-    return;
-  }
+  // The root element is Claim.Submission (note: tag name is case sensitive)
+  const claimElements = xmlDoc.getElementsByTagName('Claim');
 
-  // Get all Claim nodes under Claim.Submission
-  const claims = claimSubmission.getElementsByTagName('Claim');
-  if (!claims.length) {
+  if (!claimElements.length) {
     document.getElementById('tableContainer').innerHTML = "<p>No <code>&lt;Claim&gt;</code> elements found.</p>";
     return;
   }
 
   let tableHTML = `
-    <table border="1" cellpadding="5" cellspacing="0">
+    <table border="1" cellpadding="5">
       <thead>
         <tr>
           <th>Claim ID</th>
           <th>Patient ID</th>
           <th>Doctor</th>
-          <th>Total Amount (Gross)</th>
+          <th>Total Amount</th>
+          <th>Encounter Validity</th>
         </tr>
       </thead>
       <tbody>
   `;
 
-  for (let claim of claims) {
-    // Claim ID
+  for (let claim of claimElements) {
     const claimID = getTagValue(claim, 'ID');
+    const patientID = getTagValue(claim, 'MemberID');
+    const doctor = getTagValue(claim, 'ProviderID');
+    const amount = getTagValue(claim, 'Net');
 
-    // PatientID is inside Encounter node
     const encounter = claim.getElementsByTagName('Encounter')[0];
-    const patientID = encounter ? getTagValue(encounter, 'PatientID') : 'N/A';
-
-    // Doctor is inside Activity -> Clinician
-    const activity = claim.getElementsByTagName('Activity')[0];
-    const doctor = activity ? getTagValue(activity, 'Clinician') : 'N/A';
-
-    // Total Amount = Gross
-    const amount = getTagValue(claim, 'Gross');
+    const validity = encounter ? validateEncounterData(encounter) : 'No Encounter';
 
     tableHTML += `
       <tr>
@@ -62,6 +51,7 @@ function parseXMLAndRenderTable(xmlString) {
         <td>${patientID}</td>
         <td>${doctor}</td>
         <td>${amount}</td>
+        <td>${validity}</td>
       </tr>
     `;
   }
@@ -73,4 +63,68 @@ function parseXMLAndRenderTable(xmlString) {
 function getTagValue(parent, tagName) {
   const el = parent.getElementsByTagName(tagName)[0];
   return el ? el.textContent.trim() : 'N/A';
+}
+
+function validateEncounterData(encounter) {
+  const startStr = getTagValue(encounter, 'Start');
+  const endStr = getTagValue(encounter, 'End');
+  const startType = getTagValue(encounter, 'StartType');
+  const endType = getTagValue(encounter, 'EndType');
+
+  if (!startStr || !endStr) return "Invalid (missing start/end)";
+  if (!validateStartEndType(startType, endType)) return "Invalid (start/end type not 1)";
+
+  const startDateTime = parseDateTime(startStr);
+  const endDateTime = parseDateTime(endStr);
+  if (!startDateTime || !endDateTime) return "Invalid (unparsable dates)";
+
+  if (!validateSameDate(startDateTime, endDateTime)) return "Invalid (different start/end dates)";
+  if (!validateStartBeforeEnd(startDateTime, endDateTime)) return "Invalid (start not before end)";
+  if (!validateMinDuration(startDateTime, endDateTime, 10)) return "Invalid (less than 10 mins difference)";
+  if (!validateMaxDuration(startDateTime, endDateTime, 240)) return "Invalid (duration > 4 hours)";
+
+  return "Valid";
+}
+
+function validateStartEndType(startType, endType) {
+  return startType === '1' && endType === '1';
+}
+
+function validateSameDate(startDateTime, endDateTime) {
+  return (
+    startDateTime.getFullYear() === endDateTime.getFullYear() &&
+    startDateTime.getMonth() === endDateTime.getMonth() &&
+    startDateTime.getDate() === endDateTime.getDate()
+  );
+}
+
+function validateStartBeforeEnd(startDateTime, endDateTime) {
+  return startDateTime < endDateTime;
+}
+
+function validateMinDuration(startDateTime, endDateTime, minMinutes) {
+  const diffMins = (endDateTime - startDateTime) / 1000 / 60;
+  return diffMins >= minMinutes;
+}
+
+function validateMaxDuration(startDateTime, endDateTime, maxMinutes) {
+  const diffMins = (endDateTime - startDateTime) / 1000 / 60;
+  return diffMins <= maxMinutes;
+}
+
+function parseDateTime(dateTimeStr) {
+  // Example format: "22/10/2023 15:55"
+  // We parse manually because Date.parse might not handle dd/mm/yyyy well
+  const [datePart, timePart] = dateTimeStr.split(' ');
+  if (!datePart || !timePart) return null;
+
+  const [day, month, year] = datePart.split('/').map(Number);
+  const [hours, minutes] = timePart.split(':').map(Number);
+
+  if (
+    !day || !month || !year ||
+    hours === undefined || minutes === undefined
+  ) return null;
+
+  return new Date(year, month - 1, day, hours, minutes);
 }
