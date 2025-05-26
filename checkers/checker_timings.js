@@ -1,7 +1,23 @@
+let xmlText = '';
+
+document.getElementById('fileInput').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) {
+    alert('No file selected');
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = (event) => {
+    xmlText = event.target.result;
+    document.getElementById('checkBtn').disabled = false;
+    document.getElementById('results').textContent = 'File loaded. Ready to check.';
+  };
+  reader.readAsText(file);
+});
+
 document.getElementById('checkBtn').addEventListener('click', () => {
-  const xmlText = document.getElementById('xmlInput').value.trim();
   if (!xmlText) {
-    alert('Please paste the XML data first.');
+    alert('Please upload an XML file first.');
     return;
   }
 
