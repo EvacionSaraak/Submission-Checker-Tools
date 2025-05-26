@@ -1,53 +1,14 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<title>Checker Timings</title>
-<style>
-  table {
-    border-collapse: collapse;
-    width: 100%;
-    max-width: 900px;
-  }
-  th, td {
-    border: 1px solid #888;
-    padding: 8px;
-    text-align: left;
-  }
-  th {
-    background-color: #eee;
-  }
-  .passed {
-    background-color: #c8e6c9;
-  }
-  .failed {
-    background-color: #ffcdd2;
-  }
-</style>
+  <meta charset="UTF-8">
+  <title>Claim Submission Checker</title>
 </head>
 <body>
-<h1>Claim Encounter Timing Checker</h1>
+  <h2>Upload Claim Submission XML</h2>
+  <input type="file" id="xmlFileInput" accept=".xml" />
+  <div id="tableContainer"></div>
 
-<input type="file" id="fileInput" accept=".xml" />
-<button id="checkBtn" disabled>Check Timings</button>
-
-<h2>Results:</h2>
-<table id="resultsTable" style="display:none;">
-  <thead>
-    <tr>
-      <th>Claim ID</th>
-      <th>Start Date</th>
-      <th>Start Time</th>
-      <th>End Date</th>
-      <th>End Time</th>
-      <th>Status</th>
-      <th>Issues</th>
-    </tr>
-  </thead>
-  <tbody></tbody>
-</table>
-
-
-<script src="checker_timings.js"></script>
+  <script src="checker_timings.js"></script>
 </body>
 </html>
