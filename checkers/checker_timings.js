@@ -14,37 +14,51 @@ function parseXMLAndRenderTable(xmlString) {
   const parser = new DOMParser();
   const xmlDoc = parser.parseFromString(xmlString, 'application/xml');
 
-  const claimSubmissions = xmlDoc.getElementsByTagName('claimSubmission');
-  if (!claimSubmissions.length) {
-    document.getElementById('tableContainer').innerHTML = "<p>No <code>&lt;claimSubmission&gt;</code> elements found.</p>";
+  // Your root is Claim.Submission (case-sensitive)
+  const claimSubmission = xmlDoc.getElementsByTagName('Claim.Submission')[0];
+  if (!claimSubmission) {
+    document.getElementById('tableContainer').innerHTML = "<p>No <code>&lt;Claim.Submission&gt;</code> element found.</p>";
+    return;
+  }
+
+  // Get all Claim nodes under Claim.Submission
+  const claims = claimSubmission.getElementsByTagName('Claim');
+  if (!claims.length) {
+    document.getElementById('tableContainer').innerHTML = "<p>No <code>&lt;Claim&gt;</code> elements found.</p>";
     return;
   }
 
   let tableHTML = `
-    <table border="1" cellpadding="5">
+    <table border="1" cellpadding="5" cellspacing="0">
       <thead>
         <tr>
           <th>Claim ID</th>
-          <th>Submission Time</th>
           <th>Patient ID</th>
           <th>Doctor</th>
-          <th>Total Amount</th>
+          <th>Total Amount (Gross)</th>
         </tr>
       </thead>
       <tbody>
   `;
 
-  for (let submission of claimSubmissions) {
-    const claimID = getTagValue(submission, 'claimID');
-    const submissionTime = getTagValue(submission, 'submissionTime');
-    const patientID = getTagValue(submission, 'patientID');
-    const doctor = getTagValue(submission, 'doctorName');
-    const amount = getTagValue(submission, 'totalAmount');
+  for (let claim of claims) {
+    // Claim ID
+    const claimID = getTagValue(claim, 'ID');
+
+    // PatientID is inside Encounter node
+    const encounter = claim.getElementsByTagName('Encounter')[0];
+    const patientID = encounter ? getTagValue(encounter, 'PatientID') : 'N/A';
+
+    // Doctor is inside Activity -> Clinician
+    const activity = claim.getElementsByTagName('Activity')[0];
+    const doctor = activity ? getTagValue(activity, 'Clinician') : 'N/A';
+
+    // Total Amount = Gross
+    const amount = getTagValue(claim, 'Gross');
 
     tableHTML += `
       <tr>
         <td>${claimID}</td>
-        <td>${submissionTime}</td>
         <td>${patientID}</td>
         <td>${doctor}</td>
         <td>${amount}</td>
