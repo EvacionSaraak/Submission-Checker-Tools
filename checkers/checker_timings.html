@@ -3,6 +3,27 @@
 <head>
 <meta charset="UTF-8" />
 <title>Checker Timings</title>
+<style>
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    max-width: 900px;
+  }
+  th, td {
+    border: 1px solid #888;
+    padding: 8px;
+    text-align: left;
+  }
+  th {
+    background-color: #eee;
+  }
+  .passed {
+    background-color: #c8e6c9;
+  }
+  .failed {
+    background-color: #ffcdd2;
+  }
+</style>
 </head>
 <body>
 <h1>Claim Encounter Timing Checker</h1>
@@ -11,7 +32,21 @@
 <button id="checkBtn" disabled>Check Timings</button>
 
 <h2>Results:</h2>
-<pre id="results"></pre>
+<table id="resultsTable" style="display:none;">
+  <thead>
+    <tr>
+      <th>Claim ID</th>
+      <th>Start Date</th>
+      <th>Start Time</th>
+      <th>End Date</th>
+      <th>End Time</th>
+      <th>Status</th>
+      <th>Issues</th>
+    </tr>
+  </thead>
+  <tbody></tbody>
+</table>
+
 
 <script src="checker_timings.js"></script>
 </body>
