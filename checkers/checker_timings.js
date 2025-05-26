@@ -1,27 +1,27 @@
+// 1. Listen for file selection and kick off parsing
 document.getElementById('xmlFileInput').addEventListener('change', function (event) {
   const file = event.target.files[0];
   if (!file) return;
 
   const reader = new FileReader();
   reader.onload = function (e) {
-    const xmlString = e.target.result;
-    parseXMLAndRenderTable(xmlString);
+    parseXMLAndRenderTable(e.target.result);
   };
   reader.readAsText(file);
 });
 
+// 2. Main: parse XML, build table, inject into DOM
 function parseXMLAndRenderTable(xmlString) {
-  const parser = new DOMParser();
-  const xmlDoc = parser.parseFromString(xmlString, 'application/xml');
+  const xmlDoc = new DOMParser()
+    .parseFromString(xmlString, 'application/xml');
 
-  const claims = xmlDoc.getElementsByTagName('Claim');
-  if (!claims.length) {
-    document.getElementById('tableContainer').innerHTML = "<p>No <code>&lt;Claim&gt;</code> elements found.</p>";
-    return;
+  const claims = Array.from(xmlDoc.getElementsByTagName('Claim'));
+  if (claims.length === 0) {
+    return renderMessage("No <code>&lt;Claim&gt;</code> elements found.");
   }
 
-  let tableHTML = `
-    <table border="1" cellpadding="5">
+  let html = `
+    <table border="1" cellpadding="5" cellspacing="0">
       <thead>
         <tr>
           <th>Claim ID</th>
@@ -37,43 +37,23 @@ function parseXMLAndRenderTable(xmlString) {
   `;
 
   for (let claim of claims) {
-    const claimID = getTagValue(claim, 'ID');
-
-    // Encounter node (first one)
-    const encounter = claim.getElementsByTagName('Encounter')[0];
-    let startDateTime = 'N/A';
-    let endDateTime = 'N/A';
-    let startType = null;
-    let endType = null;
-
-    if (encounter) {
-      startDateTime = getTagValue(encounter, 'Start');
-      endDateTime = getTagValue(encounter, 'End');
-      startType = getTagValue(encounter, 'StartType');
-      endType = getTagValue(encounter, 'EndType');
-    }
-
-    // PatientID
-    const patientID = encounter ? getTagValue(encounter, 'PatientID') : 'N/A';
-
-    // Doctor (from Activity/Clinician, fallback to 'N/A' if multiple activities, take first)
-    const activity = claim.getElementsByTagName('Activity')[0];
-    let doctor = 'N/A';
-    if (activity) {
-      doctor = getTagValue(activity, 'Clinician');
-    }
-
-    // Total amount (Net)
+    const claimID     = getTagValue(claim, 'ID');
+    const encounter   = claim.querySelector('Encounter');
+    const startDT     = encounter ? getTagValue(encounter, 'Start')     : 'N/A';
+    const endDT       = encounter ? getTagValue(encounter, 'End')       : 'N/A';
+    const patientID   = encounter ? getTagValue(encounter, 'PatientID') : 'N/A';
+    const activity    = claim.querySelector('Activity');
+    const doctor      = activity ? getTagValue(activity, 'Clinician')   : 'N/A';
     const totalAmount = getTagValue(claim, 'Net');
+    const validity    = encounter
+      ? validateEncounterData(encounter)
+      : 'Invalid (no encounter)';
 
-    // Validate encounter, only if encounter is present
-    const validity = encounter ? validateEncounterData(encounter) : "Invalid (missing encounter)";
-
-    tableHTML += `
+    html += `
       <tr>
         <td>${claimID}</td>
-        <td>${startDateTime}</td>
-        <td>${endDateTime}</td>
+        <td>${startDT}</td>
+        <td>${endDT}</td>
         <td>${patientID}</td>
         <td>${doctor}</td>
         <td>${totalAmount}</td>
@@ -82,75 +62,74 @@ function parseXMLAndRenderTable(xmlString) {
     `;
   }
 
-  tableHTML += `</tbody></table>`;
-  document.getElementById('tableContainer').innerHTML = tableHTML;
+  html += `</tbody></table>`;
+  document.getElementById('tableContainer').innerHTML = html;
 }
 
+// 3. Safely extract the first child element's textContent
 function getTagValue(parent, tagName) {
-  if (!parent || typeof parent.getElementsByTagName !== 'function') return 'N/A';
-  const el = parent.getElementsByTagName(tagName)[0];
+  // Only Elements and Documents can be queried
+  if (!(parent instanceof Element) && !(parent instanceof Document)) {
+    return 'N/A';
+  }
+  const el = parent.querySelector(tagName);
   return el ? el.textContent.trim() : 'N/A';
 }
 
+// 4. Validate all encounter rules at once
 function validateEncounterData(encounter) {
-  const startStr = getTagValue(encounter, 'Start');
-  const endStr = getTagValue(encounter, 'End');
-  const startType = getTagValue(encounter, 'StartType');
-  const endType = getTagValue(encounter, 'EndType');
+  const s = getTagValue(encounter, 'Start');
+  const e = getTagValue(encounter, 'End');
+  const st = getTagValue(encounter, 'StartType');
+  const et = getTagValue(encounter, 'EndType');
 
-  if (!startStr || !endStr) return "Invalid (missing start/end)";
-  if (!validateStartEndType(startType, endType)) return "Invalid (start/end type not 1)";
+  if (!s || !e)           return 'Invalid (missing start/end)';
+  if (!validateStartEndType(st, et))    return 'Invalid (start/end type ≠ 1)';
 
-  const startDateTime = parseDateTime(startStr);
-  const endDateTime = parseDateTime(endStr);
-  if (!startDateTime || !endDateTime) return "Invalid (unparsable dates)";
+  const sd = parseDateTime(s);
+  const ed = parseDateTime(e);
+  if (!sd || !ed)         return 'Invalid (bad date format)';
 
-  if (!validateSameDate(startDateTime, endDateTime)) return "Invalid (different start/end dates)";
-  if (!validateStartBeforeEnd(startDateTime, endDateTime)) return "Invalid (start not before end)";
-  if (!validateMinDuration(startDateTime, endDateTime, 10)) return "Invalid (less than 10 mins difference)";
-  if (!validateMaxDuration(startDateTime, endDateTime, 240)) return "Invalid (duration > 4 hours)";
+  if (!validateSameDate(sd, ed))        return 'Invalid (different dates)';
+  if (!validateStartBeforeEnd(sd, ed))  return 'Invalid (start ≥ end)';
+  if (!validateMinDuration(sd, ed, 10)) return 'Invalid (< 10 min)';
+  if (!validateMaxDuration(sd, ed, 240))return 'Invalid (> 4 h)';
 
-  return "Valid";
+  return 'Valid';
 }
 
-function validateStartEndType(startType, endType) {
-  return startType === '1' && endType === '1';
+// 5. Individual rule checks
+function validateStartEndType(st, et) {
+  return st === '1' && et === '1';
+}
+function validateSameDate(a, b) {
+  return a.getFullYear() === b.getFullYear()
+      && a.getMonth()    === b.getMonth()
+      && a.getDate()     === b.getDate();
+}
+function validateStartBeforeEnd(a, b) {
+  return a < b;
+}
+function validateMinDuration(a, b, mins) {
+  return (b - a) / 1000 / 60 >= mins;
+}
+function validateMaxDuration(a, b, mins) {
+  return (b - a) / 1000 / 60 <= mins;
 }
 
-function validateSameDate(startDateTime, endDateTime) {
-  return (
-    startDateTime.getFullYear() === endDateTime.getFullYear() &&
-    startDateTime.getMonth() === endDateTime.getMonth() &&
-    startDateTime.getDate() === endDateTime.getDate()
-  );
-}
-
-function validateStartBeforeEnd(startDateTime, endDateTime) {
-  return startDateTime < endDateTime;
-}
-
-function validateMinDuration(startDateTime, endDateTime, minMinutes) {
-  const diffMins = (endDateTime - startDateTime) / 1000 / 60;
-  return diffMins >= minMinutes;
-}
-
-function validateMaxDuration(startDateTime, endDateTime, maxMinutes) {
-  const diffMins = (endDateTime - startDateTime) / 1000 / 60;
-  return diffMins <= maxMinutes;
-}
-
-function parseDateTime(dateTimeStr) {
-  // Example format: "22/10/2023 15:55"
-  const [datePart, timePart] = dateTimeStr.split(' ');
+// 6. Parse "DD/MM/YYYY HH:mm" into a JS Date
+function parseDateTime(str) {
+  const [datePart, timePart] = str.split(' ');
   if (!datePart || !timePart) return null;
 
-  const [day, month, year] = datePart.split('/').map(Number);
-  const [hours, minutes] = timePart.split(':').map(Number);
+  const [d,m,y] = datePart.split('/').map(Number);
+  const [h,mm]  = timePart.split(':').map(Number);
+  if ([d,m,y,h,mm].some(isNaN)) return null;
 
-  if (
-    !day || !month || !year ||
-    hours === undefined || minutes === undefined
-  ) return null;
+  return new Date(y, m - 1, d, h, mm);
+}
 
-  return new Date(year, month - 1, day, hours, minutes);
+// 7. Helper to render a message
+function renderMessage(html) {
+  document.getElementById('tableContainer').innerHTML = `<p>${html}</p>`;
 }
