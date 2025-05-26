@@ -2,7 +2,7 @@
 // -----------------------
 // Main entry point: reads XML and JSON (or repo) then processes data
 
-const repoJsonUrl = 'tooth validity.json';
+const repoJsonUrl = 'checker_tooths.json';
 
 // Predefined tooth sets by region
 const ANTERIOR_TEETH = new Set([
