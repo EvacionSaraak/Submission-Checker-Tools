@@ -1,6 +1,4 @@
 // checker_tooths.js
-// -----------------------
-// Main entry point: reads XML and repo JSON then processes data
 
 const repoJsonUrl = 'checker_tooths.json';
 
@@ -20,6 +18,15 @@ const POSTERIOR_TEETH = new Set([
 ]);
 
 /**
+ * Normalize codes to strings with leading zeros preserved.
+ * Optionally pad to 5 chars if needed (adjust pad length if your codes differ).
+ */
+function normalizeCode(code) {
+  if (!code) return '';
+  return code.toString().trim().padStart(5, '0');
+}
+
+/**
  * Reads user-selected XML and repo JSON,
  * then initiates validation and rendering.
  */
@@ -27,9 +34,8 @@ function parseXML() {
   const xmlInput = document.getElementById('xmlFile');
   const resultsDiv = document.getElementById('results');
 
-  // Ensure XML file is provided
   if (!xmlInput?.files.length) {
-    return showMessage(resultsDiv, '[E100] Please upload an XML file.');
+    return showMessage(resultsDiv, 'Please upload an XML file.');
   }
 
   const xmlFile = xmlInput.files[0];
@@ -38,72 +44,47 @@ function parseXML() {
   Promise.all([
     readXMLFile(xmlFile),
     fetch(repoJsonUrl).then(resp => {
-      if (!resp.ok) throw new Error(`[E101] Could not load repository JSON (HTTP ${resp.status})`);
+      if (!resp.ok) throw new Error(`Could not load repository JSON (HTTP ${resp.status})`);
       return resp.text();
     })
   ])
   .then(([xmlData, jsonData]) => tryProcess(xmlData, jsonData, resultsDiv))
-  .catch(err => showMessage(resultsDiv, `[E102] ${err.message}`));
+  .catch(err => showMessage(resultsDiv, err.message));
 }
 
-/**
- * Returns a Promise resolving to the text of the provided XML file.
- */
 function readXMLFile(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result);
-    reader.onerror = () => reject(new Error('[E103] Error reading XML file'));
+    reader.onerror = () => reject(new Error('Error reading XML file'));
     reader.readAsText(file);
   });
 }
 
-/**
- * Parses XML + JSON data, validates activities, and renders output.
- */
 function tryProcess(xmlData, jsonData, resultsDiv) {
-  let codeToMeta;
-  try {
-    codeToMeta = buildCodeMeta(jsonData);
-  } catch (e) {
-    console.error('[E000] Failed to parse JSON:', e);
-    return showMessage(resultsDiv, '[E000] Failed to parse repository JSON.');
-  }
-
-  console.log(`[INFO] Loaded ${Object.keys(codeToMeta).length} codes from JSON.`);
-
+  const codeToMeta = buildCodeMeta(jsonData);
   const xmlDoc = new DOMParser().parseFromString(xmlData, 'text/xml');
   const rows = validateActivities(xmlDoc, codeToMeta);
   renderResults(resultsDiv, rows);
 }
 
-/**
- * Builds a map: procedure code -> { teethSet, description }
- */
 function buildCodeMeta(jsonText) {
   let map = {};
   const data = JSON.parse(jsonText);
-
   data.forEach(entry => {
     const teethSet = getTeethSet(entry.affiliated_teeth);
     (entry.codes || []).forEach(raw => {
-      const code = raw.toString().trim();
-      if (map[code]) {
-        console.warn(`[W001] Duplicate code detected in JSON repository: ${code}`);
-      }
+      const code = normalizeCode(raw);
       map[code] = {
         teethSet,
         description: entry.description || '[Code N/A within JSON Repository]'
       };
+      console.log(`Mapping code "${code}" to description "${map[code].description}"`);
     });
   });
-
   return map;
 }
 
-/**
- * Returns the Set of valid teeth given an affiliated_teeth region string.
- */
 function getTeethSet(region) {
   const normalized = (region || '').toLowerCase().trim();
   const result = new Set();
@@ -118,7 +99,6 @@ function getTeethSet(region) {
     POSTERIOR_TEETH.forEach(tooth => result.add(tooth));
   }
 
-  // Fallback: if no valid region keywords matched, return all teeth
   if (normalized === 'all' || result.size === 0) {
     return new Set([...ANTERIOR_TEETH, ...BICUSPID_TEETH, ...POSTERIOR_TEETH]);
   }
@@ -126,9 +106,6 @@ function getTeethSet(region) {
   return result;
 }
 
-/**
- * Determines the human-readable region name for a given tooth number.
- */
 function getRegionName(tooth) {
   if (ANTERIOR_TEETH.has(tooth)) return 'Anterior';
   if (BICUSPID_TEETH.has(tooth)) return 'Bicuspid';
@@ -136,10 +113,6 @@ function getRegionName(tooth) {
   return 'Unknown';
 }
 
-/**
- * Iterates claims/activities, validates each observation,
- * and collects row data for rendering.
- */
 function validateActivities(xmlDoc, codeToMeta) {
   const rows = [];
 
@@ -148,47 +121,35 @@ function validateActivities(xmlDoc, codeToMeta) {
 
     Array.from(claim.getElementsByTagName('Activity')).forEach(act => {
       const obsList = act.getElementsByTagName('Observation');
-      if (!obsList.length) return; // Skip if no observations
+      if (!obsList.length) return;
 
       const activityId = act.querySelector('ID')?.textContent || '';
-      const codeRaw = act.querySelector('Code')?.textContent || '';
-      const code = codeRaw.trim();
+      // Normalize code with leading zeros
+      const rawCode = act.querySelector('Code')?.textContent || '';
+      const code = normalizeCode(rawCode);
 
-      if (!code) {
-        console.warn(`[E200] Missing code in activity ID: ${activityId}`);
-      }
-
-      const meta = codeToMeta[code];
-
-      if (!meta) {
-        console.error(`[E001] Code not found in JSON: "${code}" (Activity ID: ${activityId})`);
-      } else {
-        console.log(`[INFO] Activity ID: ${activityId}, Code: "${code}", Description: ${meta.description}`);
-        console.log(`[INFO] Valid teeth for code:`, [...meta.teethSet]);
-      }
+      const meta = codeToMeta[code] || { teethSet: new Set(), description: '(no description)' };
+      console.log(`\nActivity ID: ${activityId}`);
+      console.log(`Raw code from XML: "${rawCode}" -> normalized: "${code}"`);
+      console.log(`Description: ${meta.description}`);
+      console.log(`Valid teeth for this code:`, [...meta.teethSet]);
 
       let isValid = true;
       const remarks = [];
 
       const details = Array.from(obsList).map(obs => {
-        const obsCodeRaw = obs.querySelector('Code')?.textContent || '';
-        const obsCode = obsCodeRaw.trim().toUpperCase(); // normalize
+        const obsCodeRaw = obs.querySelector('Code')?.textContent.trim() || '';
+        const obsCode = obsCodeRaw.toUpperCase(); // Teeth codes are uppercase
 
-        console.log(`[CHECK] Observation tooth code: "${obsCode}"`);
-
-        if (!meta) {
-          isValid = false;
-          remarks.push(`[E001] Code "${code}" missing in JSON`);
-          return `${obsCode} - Unknown`;
-        }
+        console.log(`Checking tooth code in observation: "${obsCode}"`);
 
         if (!meta.teethSet.has(obsCode)) {
           isValid = false;
-          remarks.push(`[E002] Invalid tooth for code: ${obsCode}`);
-          console.warn(`[E002] Tooth "${obsCode}" not valid for code "${code}"`);
+          remarks.push(`Invalid - ${obsCode}`);
+          console.log(`--> INVALID: ${obsCode} not in valid teeth set`);
         } else {
           remarks.push(`Valid - ${obsCode}`);
-          console.log(`[VALID] Tooth "${obsCode}" is valid for code "${code}"`);
+          console.log(`--> VALID: ${obsCode} found in valid teeth set`);
         }
 
         return `${obsCode} - ${getRegionName(obsCode)}`;
@@ -198,7 +159,7 @@ function validateActivities(xmlDoc, codeToMeta) {
         claimId,
         activityId,
         code,
-        description: meta ? meta.description : '[Code missing in JSON]',
+        description: meta.description,
         details,
         remarks,
         isValid
@@ -209,15 +170,11 @@ function validateActivities(xmlDoc, codeToMeta) {
   return rows;
 }
 
-/**
- * Renders the results table or a no-data message inside #results,
- * updating the hidden #outputTable element.
- */
 function renderResults(container, rows) {
   const table = document.getElementById('outputTable');
   if (!rows.length) {
     container.innerHTML = '<p>No activities with observations found.</p>';
-    if (table) table.style.display = 'none';
+    if(table) table.style.display = 'none';
     return;
   }
 
@@ -245,20 +202,16 @@ function renderResults(container, rows) {
   if (table) {
     table.innerHTML = `<thead>${header}</thead><tbody>${body}</tbody>`;
     table.style.display = 'table';
-    container.innerHTML = ''; // Clear any previous messages
+    container.innerHTML = '';
   } else {
     container.innerHTML = `<table border="1"><thead>${header}</thead><tbody>${body}</tbody></table>`;
   }
 }
 
-/**
- * Utility: displays a simple message in the results container.
- */
 function showMessage(container, message) {
   container.innerHTML = `<p>${message}</p>`;
 }
 
-// Display selected file name under xml input
 function setupFileNameDisplay(inputId, displayId) {
   const input = document.getElementById(inputId);
   const display = document.getElementById(displayId);
@@ -268,7 +221,6 @@ function setupFileNameDisplay(inputId, displayId) {
   });
 }
 
-// Initialize on DOM ready
 document.addEventListener('DOMContentLoaded', () => {
   setupFileNameDisplay('xmlFile', 'xmlFileName');
 });
