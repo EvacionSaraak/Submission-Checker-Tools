@@ -168,63 +168,74 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Render results table
   function renderResults(results) {
+    const resultsDiv = document.getElementById('results');
     if (!results.length) {
-      resultsDiv.innerHTML = '<p>No claim activities found.</p>';
+      resultsDiv.innerHTML = '<p>No clinician activity found in the XML.</p>';
       return;
     }
-
-    const tableHeaders = `
-      <tr>
-        <th>Claim ID</th>
-        <th>Activity ID</th>
-        <th>Ordering Clinician ID</th>
-        <th>Ordering Clinician Name</th>
-        <th>Ordering Privileges</th>
-        <th>Performing Clinician ID</th>
-        <th>Performing Clinician Name</th>
-        <th>Performing Privileges</th>
-        <th>Validity</th>
-        <th>Remarks</th>
-      </tr>
+  
+    // Build table header
+    let html = `
+      <table>
+        <thead>
+          <tr>
+            <th>Claim ID</th>
+            <th>Activity ID</th>
+            <th>Ordering Clinician ID</th>
+            <th>Ordering Clinician Name</th>
+            <th>Ordering Privileges</th>
+            <th>Ordering Category</th>
+            <th>Performing Clinician ID</th>
+            <th>Performing Clinician Name</th>
+            <th>Performing Privileges</th>
+            <th>Performing Category</th>
+            <th>Validation Status</th>
+            <th>Remarks</th>
+          </tr>
+        </thead>
+        <tbody>
     `;
-
-    const rowsHtml = results.map(r => `
-      <tr>
-        <td>${escapeHtml(r.claimId)}</td>
-        <td>${escapeHtml(r.activityId)}</td>
-        <td>${escapeHtml(r.orderingId)}</td>
-        <td>${escapeHtml(r.orderingName)}</td>
-        <td>${escapeHtml(r.orderingPrivileges)}</td>
-        <td>${escapeHtml(r.performingId)}</td>
-        <td>${escapeHtml(r.performingName)}</td>
-        <td>${escapeHtml(r.performingPrivileges)}</td>
-        <td style="color:${r.valid ? 'green' : 'red'};">${r.valid ? 'Valid' : 'Invalid'}</td>
-        <td>${escapeHtml(r.remarks)}</td>
-      </tr>
-    `).join('');
-
-    resultsDiv.innerHTML = `
-      <table border="1" cellpadding="5" cellspacing="0">
-        <thead>${tableHeaders}</thead>
-        <tbody>${rowsHtml}</tbody>
+  
+    // Populate rows using classes from tables.css
+    results.forEach(item => {
+      const rowClass = item.isValid ? 'valid' : 'invalid';
+      html += `
+        <tr class="${rowClass}">
+          <td>${escapeHtml(item.claimId)}</td>
+          <td>${escapeHtml(item.activityId)}</td>
+          <td>${escapeHtml(item.orderingClinicianId)}</td>
+          <td>${escapeHtml(item.orderingClinicianName)}</td>
+          <td>${escapeHtml(item.orderingPrivileges)}</td>
+          <td>${escapeHtml(item.orderingCategory)}</td>
+          <td>${escapeHtml(item.performingClinicianId)}</td>
+          <td>${escapeHtml(item.performingClinicianName)}</td>
+          <td>${escapeHtml(item.performingPrivileges)}</td>
+          <td>${escapeHtml(item.performingCategory)}</td>
+          <td>${escapeHtml(item.isValid ? 'Valid' : 'Invalid')}</td>
+          <td>${escapeHtml(item.remarks)}</td>
+        </tr>
+      `;
+    });
+  
+    html += `
+        </tbody>
       </table>
     `;
+  
+    resultsDiv.innerHTML = html;
   }
-
-  // Simple HTML escape for safety
+  
+  // Helper function to escape HTML entities to avoid XSS or rendering issues
   function escapeHtml(text) {
-    return text.replace(/[&<>"']/g, (m) => {
-      switch (m) {
-        case '&': return '&amp;';
-        case '<': return '&lt;';
-        case '>': return '&gt;';
-        case '"': return '&quot;';
-        case "'": return '&#39;';
-        default: return m;
-      }
-    });
+    if (!text) return '';
+    return text
+      .toString()
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
   }
-
   // Log summary counts
   function logSummary(results) {
     const total = results.length;
