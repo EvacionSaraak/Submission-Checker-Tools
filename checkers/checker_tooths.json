@@ -3910,5 +3910,37 @@
         "description": "Implants, Removal of Implant Per implant, Complicated",
         "dentition_type": "all",
         "affiliated_teeth": "all"
+    },
+    {
+        "code": [
+            "02111"
+        ],
+        "description": "Radiographs, Intraoral, Periapical-Single film",
+        "dentition_type": "all",
+        "affiliated_teeth": "all"
+    },
+    {
+        "code": [
+            "49211"
+        ],
+        "description": "Periodontal Irrigation, Subgingival + E One unit of time +E",
+        "dentition_type": "all",
+        "affiliated_teeth": "all"
+    },
+    {
+        "code": [
+            "42111"
+        ],
+        "description": "Surgical Curettage, to Include Definitive Root Planing Per sextant",
+        "dentition_type": "all",
+        "affiliated_teeth": "all"
+    },
+    {
+        "code": [
+            "42121"
+        ],
+        "description": "Surgical Curettage, to Include Definitive Debridement About an Implant - Affected by Peri-implant Inflammation or Infection Per Site",
+        "dentition_type": "all",
+        "affiliated_teeth": "all"
     }
 ]
