@@ -1,29 +1,93 @@
 // checker_tooths.js
+// -----------------------
+// Main entry point: reads XML and repo JSON then processes data
 
 const repoJsonUrl = 'checker_tooths.json';
 
-// Predefined tooth sets by region
+// Define all tooth sets (uppercase strings for letters)
 const ANTERIOR_TEETH = new Set([
   '6','7','8','9','10','11','22','23','24','25','26','27',  // permanent anterior
-  'C','D','E','F','G','H','M','N','O','P'                   // primary anterior
+  'C','D','E','F','G','H','M','N','O','P'                  // primary anterior
 ]);
 
 const BICUSPID_TEETH = new Set([
-  '4','5','12','13','20','21','28','29',  // permanent premolars (no primary equivalent)
+  '4','5','12','13','20','21','28','29',  // permanent premolars
 ]);
 
 const POSTERIOR_TEETH = new Set([
   '1','2','3','14','15','16','17','18','19','30','31','32',  // permanent molars
-  'A','B','I','J','K','L','Q','R','S','T'                    // primary molars
+  'A','B','I','J','K','L','Q','R','S','T'                  // primary molars
 ]);
 
+// Combine all known teeth into one set (to validate unknown teeth)
+const ALL_TEETH = new Set([...ANTERIOR_TEETH, ...BICUSPID_TEETH, ...POSTERIOR_TEETH]);
+
 /**
- * Normalize codes to strings with leading zeros preserved.
- * Optionally pad to 5 chars if needed (adjust pad length if your codes differ).
+ * Normalize tooth code from XML (trim + uppercase)
+ * @param {string} code 
+ * @returns {string}
  */
-function normalizeCode(code) {
-  if (!code) return '';
-  return code.toString().trim().padStart(5, '0');
+function normalizeToothCode(code) {
+  return code?.toString().trim().toUpperCase() || '';
+}
+
+/**
+ * Map affiliated_teeth string to corresponding tooth sets
+ * @param {string} region 
+ * @returns {Set<string>}
+ */
+function getTeethSet(region) {
+  if (!region) return ALL_TEETH; // default all if missing
+
+  const regionLC = region.toLowerCase().trim();
+
+  if (regionLC === 'all') {
+    console.log(`Teeth region "${region}" mapped to ALL_TEETH`);
+    return ALL_TEETH;
+  }
+
+  let teethSet = new Set();
+
+  if (regionLC.includes('anterior')) {
+    ANTERIOR_TEETH.forEach(t => teethSet.add(t));
+  }
+  if (regionLC.includes('bicuspid')) {
+    BICUSPID_TEETH.forEach(t => teethSet.add(t));
+  }
+  if (regionLC.includes('posterior')) {
+    POSTERIOR_TEETH.forEach(t => teethSet.add(t));
+  }
+
+  // If nothing matched, default to ALL_TEETH (fail safe)
+  if (teethSet.size === 0) {
+    console.warn(`Teeth region "${region}" did not match any known set. Using ALL_TEETH as fallback.`);
+    return ALL_TEETH;
+  }
+
+  console.log(`Teeth region "${region}" mapped to set: [${[...teethSet].join(', ')}]`);
+  return teethSet;
+}
+
+/**
+ * Check if tooth code is valid for a given teeth set
+ * @param {string} toothCode 
+ * @param {Set<string>} allowedSet 
+ * @returns {boolean}
+ */
+function isToothValid(toothCode, allowedSet) {
+  // Normalize the tooth code
+  const tCode = normalizeToothCode(toothCode);
+
+  // If tooth code is unknown (not in ALL_TEETH), consider invalid
+  if (!ALL_TEETH.has(tCode)) {
+    console.warn(`Unknown tooth code encountered: "${tCode}"`);
+    return false;
+  }
+
+  // Check if tooth code is allowed for this code's affiliated teeth
+  const valid = allowedSet.has(tCode);
+  console.log(`Tooth "${tCode}" validation against allowed set: ${valid ? 'VALID' : 'INVALID'}`);
+  return valid;
 }
 
 /**
@@ -34,6 +98,7 @@ function parseXML() {
   const xmlInput = document.getElementById('xmlFile');
   const resultsDiv = document.getElementById('results');
 
+  // Ensure XML file is provided
   if (!xmlInput?.files.length) {
     return showMessage(resultsDiv, 'Please upload an XML file.');
   }
@@ -52,6 +117,11 @@ function parseXML() {
   .catch(err => showMessage(resultsDiv, err.message));
 }
 
+/**
+ * Returns a Promise resolving to the text of the provided XML file.
+ * @param {File} file 
+ * @returns {Promise<string>}
+ */
 function readXMLFile(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -61,6 +131,12 @@ function readXMLFile(file) {
   });
 }
 
+/**
+ * Parses XML + JSON data, validates activities, and renders output.
+ * @param {string} xmlData 
+ * @param {string} jsonData 
+ * @param {HTMLElement} resultsDiv 
+ */
 function tryProcess(xmlData, jsonData, resultsDiv) {
   const codeToMeta = buildCodeMeta(jsonData);
   const xmlDoc = new DOMParser().parseFromString(xmlData, 'text/xml');
@@ -68,51 +144,48 @@ function tryProcess(xmlData, jsonData, resultsDiv) {
   renderResults(resultsDiv, rows);
 }
 
+/**
+ * Builds a map: procedure code -> { teethSet, description }
+ * @param {string} jsonText 
+ * @returns {Object<string, {teethSet: Set<string>, description: string}>}
+ */
 function buildCodeMeta(jsonText) {
   let map = {};
   const data = JSON.parse(jsonText);
   data.forEach(entry => {
     const teethSet = getTeethSet(entry.affiliated_teeth);
     (entry.codes || []).forEach(raw => {
-      const code = normalizeCode(raw);
+      const code = raw.toString().trim();
       map[code] = {
         teethSet,
         description: entry.description || '[Code N/A within JSON Repository]'
       };
-      console.log(`Mapping code "${code}" to description "${map[code].description}"`);
+      console.log(`Mapping code "${code}" to description "${map[code].description}" with teeth: [${[...teethSet].join(', ')}]`);
     });
   });
   return map;
 }
 
-function getTeethSet(region) {
-  const normalized = (region || '').toLowerCase().trim();
-  const result = new Set();
-
-  if (normalized.includes('anterior')) {
-    ANTERIOR_TEETH.forEach(tooth => result.add(tooth));
-  }
-  if (normalized.includes('bicuspid')) {
-    BICUSPID_TEETH.forEach(tooth => result.add(tooth));
-  }
-  if (normalized.includes('posterior')) {
-    POSTERIOR_TEETH.forEach(tooth => result.add(tooth));
-  }
-
-  if (normalized === 'all' || result.size === 0) {
-    return new Set([...ANTERIOR_TEETH, ...BICUSPID_TEETH, ...POSTERIOR_TEETH]);
-  }
-
-  return result;
-}
-
+/**
+ * Determines the human-readable region name for a given tooth number.
+ * @param {string} tooth 
+ * @returns {string}
+ */
 function getRegionName(tooth) {
-  if (ANTERIOR_TEETH.has(tooth)) return 'Anterior';
-  if (BICUSPID_TEETH.has(tooth)) return 'Bicuspid';
-  if (POSTERIOR_TEETH.has(tooth)) return 'Posterior';
+  const t = normalizeToothCode(tooth);
+  if (ANTERIOR_TEETH.has(t)) return 'Anterior';
+  if (BICUSPID_TEETH.has(t)) return 'Bicuspid';
+  if (POSTERIOR_TEETH.has(t)) return 'Posterior';
   return 'Unknown';
 }
 
+/**
+ * Iterates claims/activities, validates each observation,
+ * and collects row data for rendering.
+ * @param {Document} xmlDoc 
+ * @param {Object<string, {teethSet: Set<string>, description: string}>} codeToMeta 
+ * @returns {Array}
+ */
 function validateActivities(xmlDoc, codeToMeta) {
   const rows = [];
 
@@ -121,35 +194,31 @@ function validateActivities(xmlDoc, codeToMeta) {
 
     Array.from(claim.getElementsByTagName('Activity')).forEach(act => {
       const obsList = act.getElementsByTagName('Observation');
-      if (!obsList.length) return;
+      if (!obsList.length) return; // Skip if no observations
 
       const activityId = act.querySelector('ID')?.textContent || '';
-      // Normalize code with leading zeros
-      const rawCode = act.querySelector('Code')?.textContent || '';
-      const code = normalizeCode(rawCode);
+      const code = act.querySelector('Code')?.textContent.trim() || '';
 
-      const meta = codeToMeta[code] || { teethSet: new Set(), description: '(no description)' };
-      console.log(`\nActivity ID: ${activityId}`);
-      console.log(`Raw code from XML: "${rawCode}" -> normalized: "${code}"`);
-      console.log(`Description: ${meta.description}`);
-      console.log(`Valid teeth for this code:`, [...meta.teethSet]);
+      const meta = codeToMeta[code] || { teethSet: ALL_TEETH, description: '(no description)' };
+      console.log(`\nActivity: ${activityId}, Code: ${code}, Description: ${meta.description}`);
+      console.log(`Valid teeth for this code: [${[...meta.teethSet].join(', ')}]`);
 
       let isValid = true;
       const remarks = [];
 
       const details = Array.from(obsList).map(obs => {
-        const obsCodeRaw = obs.querySelector('Code')?.textContent.trim() || '';
-        const obsCode = obsCodeRaw.toUpperCase(); // Teeth codes are uppercase
+        const obsCodeRaw = obs.querySelector('Code')?.textContent || '';
+        const obsCode = normalizeToothCode(obsCodeRaw);
 
-        console.log(`Checking tooth code in observation: "${obsCode}"`);
+        console.log(`Checking tooth: "${obsCode}"`);
 
-        if (!meta.teethSet.has(obsCode)) {
+        if (!isToothValid(obsCode, meta.teethSet)) {
           isValid = false;
           remarks.push(`Invalid - ${obsCode}`);
-          console.log(`--> INVALID: ${obsCode} not in valid teeth set`);
+          console.log(`--> INVALID: ${obsCode} not allowed for this code.`);
         } else {
           remarks.push(`Valid - ${obsCode}`);
-          console.log(`--> VALID: ${obsCode} found in valid teeth set`);
+          console.log(`--> VALID: ${obsCode} allowed for this code.`);
         }
 
         return `${obsCode} - ${getRegionName(obsCode)}`;
@@ -170,6 +239,12 @@ function validateActivities(xmlDoc, codeToMeta) {
   return rows;
 }
 
+/**
+ * Renders the results table or a no-data message inside #results,
+ * updating the hidden #outputTable element.
+ * @param {HTMLElement} container 
+ * @param {Array} rows 
+ */
 function renderResults(container, rows) {
   const table = document.getElementById('outputTable');
   if (!rows.length) {
@@ -178,49 +253,50 @@ function renderResults(container, rows) {
     return;
   }
 
-  const header = `
-    <tr>
-      <th>Claim ID</th>
-      <th>Activity ID</th>
-      <th>Code</th>
-      <th>Description</th>
-      <th>Observations</th>
-      <th>Remarks</th>
-    </tr>`;
-
-  const body = rows.map(r => `
-    <tr class="${r.isValid ? 'valid' : 'invalid'}">
-      <td>${r.claimId}</td>
-      <td>${r.activityId}</td>
-      <td>${r.code}</td>
-      <td>${r.description}</td>
-      <td>${r.details}</td>
-      <td>${r.remarks.length ? r.remarks.join('<br>') : 'All valid'}</td>
+  const rowsHtml = rows.map(row => `
+    <tr style="background-color:${row.isValid ? 'transparent' : '#fcc'};">
+      <td>${row.claimId}</td>
+      <td>${row.activityId}</td>
+      <td>${row.code}</td>
+      <td>${row.description}</td>
+      <td>${row.details}</td>
+      <td>${row.remarks.join('<br>')}</td>
     </tr>
-  `).join('');
+  `).join('\n');
 
-  if (table) {
-    table.innerHTML = `<thead>${header}</thead><tbody>${body}</tbody>`;
-    table.style.display = 'table';
-    container.innerHTML = '';
-  } else {
-    container.innerHTML = `<table border="1"><thead>${header}</thead><tbody>${body}</tbody></table>`;
-  }
+  const html = `
+    <table border="1" style="border-collapse:collapse; width: 100%;">
+      <thead>
+        <tr>
+          <th>Claim ID</th>
+          <th>Activity ID</th>
+          <th>Code</th>
+          <th>Description</th>
+          <th>Tooth Details</th>
+          <th>Validation Remarks</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rowsHtml}
+      </tbody>
+    </table>
+  `;
+
+  container.innerHTML = html;
+  if(table) table.style.display = 'table';
 }
 
-function showMessage(container, message) {
-  container.innerHTML = `<p>${message}</p>`;
+/**
+ * Utility to show messages
+ * @param {HTMLElement} container 
+ * @param {string} msg 
+ */
+function showMessage(container, msg) {
+  container.innerHTML = `<p style="color:red;">${msg}</p>`;
 }
 
-function setupFileNameDisplay(inputId, displayId) {
-  const input = document.getElementById(inputId);
-  const display = document.getElementById(displayId);
-  input.addEventListener('change', () => {
-    const name = input.files.length ? input.files[0].name : 'No file chosen';
-    display.textContent = name;
-  });
-}
+// Hook the file input and button on the page (example HTML assumed)
+// <input type="file" id="xmlFile" accept=".xml">
+// <button onclick="parseXML()">Validate XML</button>
+// <div id="results"></div>
 
-document.addEventListener('DOMContentLoaded', () => {
-  setupFileNameDisplay('xmlFile', 'xmlFileName');
-});
