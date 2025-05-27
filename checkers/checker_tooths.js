@@ -1,25 +1,16 @@
 const repoJsonUrl = 'checker_tooths.json';
 
-// Predefined tooth sets by region
-const ANTERIOR_TEETH = new Set([
-  '6','7','8','9','10','11','22','23','24','25','26','27',
-  'C','D','E','F','G','H','M','N','O','P'
-]);
-
-const BICUSPID_TEETH = new Set([
-  '4','5','12','13','20','21','28','29',
-]);
-
-const POSTERIOR_TEETH = new Set([
-  '1','2','3','14','15','16','17','18','19','30','31','32',
-  'A','B','I','J','K','L','Q','R','S','T'
-]);
+const ANTERIOR_TEETH = new Set(['6','7','8','9','10','11','22','23','24','25','26','27','C','D','E','F','G','H','M','N','O','P']);
+const BICUSPID_TEETH = new Set(['4','5','12','13','20','21','28','29']);
+const POSTERIOR_TEETH = new Set(['1','2','3','14','15','16','17','18','19','30','31','32','A','B','I','J','K','L','Q','R','S','T']);
 
 function parseXML() {
   const xmlInput = document.getElementById('xmlFile');
   const resultsDiv = document.getElementById('results');
 
-  if (!xmlInput?.files.length) { return showMessage(resultsDiv, 'Please upload an XML file.'); }
+  if (!xmlInput?.files.length) {
+    return showMessage(resultsDiv, 'Please upload an XML file.');
+  }
 
   const xmlFile = xmlInput.files[0];
   console.log(`XML file selected: ${xmlFile.name}`);
@@ -27,68 +18,44 @@ function parseXML() {
   Promise.all([
     readXMLFile(xmlFile),
     fetch(repoJsonUrl).then(resp => {
-      console.log(`Fetching JSON from: ${repoJsonUrl}`);
-      console.log(`Fetch status: ${resp.status}`);
       if (!resp.ok) throw new Error(`Could not load repository JSON (HTTP ${resp.status})`);
       return resp.text();
     })
   ])
   .then(([xmlData, jsonData]) => tryProcess(xmlData, jsonData, resultsDiv))
-  .catch(err => showMessage(resultsDiv, `Error: ${err.message}`));
+  .catch(err => showMessage(resultsDiv, '[E000] ' + err.message));
 }
 
 function readXMLFile(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => {
-      console.log("XML file successfully read.");
-      resolve(reader.result);
-    };
-    reader.onerror = () => {
-      console.error("Error reading XML file.");
-      reject(new Error('Error reading XML file'));
-    };
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error('Error reading XML file'));
     reader.readAsText(file);
   });
 }
 
 function tryProcess(xmlData, jsonData, resultsDiv) {
-  console.log("Raw JSON loaded:", jsonData.slice(0, 100), "...");
-
   const codeToMeta = buildCodeMeta(jsonData);
-  console.log("Final codeToMeta map:", codeToMeta);
-
   const xmlDoc = new DOMParser().parseFromString(xmlData, 'text/xml');
   const rows = validateActivities(xmlDoc, codeToMeta);
   renderResults(resultsDiv, rows);
 }
 
 function buildCodeMeta(jsonText) {
-  let map = {};
-  let data;
-
-  try {
-    data = JSON.parse(jsonText);
-    console.log(`Parsed JSON with ${data.length} entries.`);
-  } catch (e) {
-    console.error("JSON parsing failed:", e.message);
-    return map;
-  }
-
-  data.forEach((entry, idx) => {
-    console.log(`Processing JSON entry ${idx + 1}:`, entry);
+  const map = {};
+  const data = JSON.parse(jsonText);
+  data.forEach(entry => {
     const teethSet = getTeethSet(entry.affiliated_teeth);
     (entry.codes || []).forEach(raw => {
       const code = raw.toString().trim();
-      if (!code) {
-        console.warn(`Empty code found in entry index ${idx}`);
-        return;
-      }
-      map[code] = { teethSet, description: entry.description || '[No Description]' };
-      console.log(`Mapped code ${code} → Region: ${entry.affiliated_teeth}`);
+      map[code] = {
+        teethSet,
+        description: entry.description || '[Code N/A within JSON Repository]'
+      };
     });
   });
-
+  console.log(`Loaded ${Object.keys(map).length} codes from JSON.`);
   return map;
 }
 
@@ -96,11 +63,11 @@ function getTeethSet(region) {
   const normalized = (region || '').toLowerCase().trim();
   const result = new Set();
 
-  if (normalized.includes('anterior')) { ANTERIOR_TEETH.forEach(tooth => result.add(tooth)); }
-  if (normalized.includes('bicuspid')) { BICUSPID_TEETH.forEach(tooth => result.add(tooth)); }
-  if (normalized.includes('posterior')) { POSTERIOR_TEETH.forEach(tooth => result.add(tooth)); }
+  if (normalized.includes('anterior')) ANTERIOR_TEETH.forEach(t => result.add(t));
+  if (normalized.includes('bicuspid')) BICUSPID_TEETH.forEach(t => result.add(t));
+  if (normalized.includes('posterior')) POSTERIOR_TEETH.forEach(t => result.add(t));
+
   if (normalized === 'all' || result.size === 0) {
-    console.log(`Using full set for region "${region}"`);
     return new Set([...ANTERIOR_TEETH, ...BICUSPID_TEETH, ...POSTERIOR_TEETH]);
   }
 
@@ -122,43 +89,51 @@ function validateActivities(xmlDoc, codeToMeta) {
 
     Array.from(claim.getElementsByTagName('Activity')).forEach(act => {
       const obsList = act.getElementsByTagName('Observation');
-      if (!obsList.length) return; // Skip if no observations
+      if (!obsList.length) return;
 
       const activityId = act.querySelector('ID')?.textContent || '';
       const code = act.querySelector('Code')?.textContent.trim() || '';
 
       const meta = codeToMeta[code];
-
       if (!meta) {
-        console.warn(`[E001] Code not found in JSON repo: ${code}`);
+        console.warn(`[E001] Code not in JSON: ${code}`);
         rows.push({
           claimId,
           activityId,
           code,
           description: 'UNKNOWN CODE',
           details: '',
-          remarks: [`[E001] Code not found in JSON repo`],
+          remarks: ['[E001] Code not found in JSON'],
           isValid: false
         });
         return;
       }
 
-      console.log(`Activity ID: ${activityId}, Code: ${code}, Description: ${meta.description}`);
-      console.log(`→ Valid Teeth Set:`, [...meta.teethSet]);
+      console.log(`\nActivity ID: ${activityId}, Code: ${code}`);
+      console.log(`→ Description: ${meta.description}`);
+      console.log(`→ Valid teeth for this code:`, [...meta.teethSet]);
 
       let isValid = true;
       const remarks = [];
 
       const details = Array.from(obsList).map(obs => {
-        let obsCodeRaw = obs.querySelector('Code')?.textContent || '';
+        const codeElem = obs.querySelector('Code');
+        if (!codeElem) {
+          remarks.push('[E002] Observation missing <Code> element');
+          isValid = false;
+          console.warn(`[E002] Observation missing <Code>`);
+          return 'Invalid Observation (no <Code>)';
+        }
+
+        const obsCodeRaw = codeElem.textContent || '';
         const obsCode = obsCodeRaw.trim().toUpperCase().replace(/^0+/, '');
 
         console.log(`→ Checking Tooth: [${obsCodeRaw}] → Normalized: [${obsCode}]`);
 
         if (!obsCode) {
-          remarks.push('[E002] Empty or missing observation code');
+          remarks.push('[E002] Empty code value in <Code>');
           isValid = false;
-          return 'Invalid Observation';
+          return 'Invalid Observation (empty code)';
         }
 
         if (!meta.teethSet.has(obsCode)) {
@@ -226,7 +201,6 @@ function renderResults(container, rows) {
 }
 
 function showMessage(container, message) {
-  console.warn("Displaying message to user:", message);
   container.innerHTML = `<p>${message}</p>`;
 }
 
@@ -240,6 +214,5 @@ function setupFileNameDisplay(inputId, displayId) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  console.log("Document ready — setting up file input display.");
   setupFileNameDisplay('xmlFile', 'xmlFileName');
 });
