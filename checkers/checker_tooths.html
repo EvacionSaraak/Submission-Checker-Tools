@@ -2,17 +2,23 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Tooth Checker</title>
+  <title>Tooth Validity Checker</title>
   <link rel="stylesheet" href="checker_tooths.css" />
 </head>
 <body>
   <h1>Tooth Validity Checker</h1>
+
   <label>Upload XML:
     <input type="file" id="xmlFile" accept=".xml" />
+    <span id="xmlFileName" style="margin-left: 10px; font-weight: bold;"></span>
   </label>
   <button onclick="parseXML()">Parse XML</button>
+
   <div id="messageBox" style="color: red; font-weight: bold;"></div>
-  <table id="outputTable" style="display:none;"></table>
+
+  <!-- Results will be inserted here -->
+  <div id="results" style="margin-top: 20px;"></div>
+
   <script src="checker_tooths.js"></script>
 </body>
 </html>
