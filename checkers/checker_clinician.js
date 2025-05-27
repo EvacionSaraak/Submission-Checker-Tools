@@ -17,13 +17,15 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       xmlDoc = await readAndParseXML(xmlInput.files[0]);
       console.log('XML loaded');
+      resultsDiv.textContent = 'XML loaded successfully.';
     } catch (e) {
       xmlDoc = null;
       resultsDiv.textContent = `Error loading XML: ${e.message}`;
       console.error(e);
+    } finally {
+      filesLoading.xml = false;
+      toggleProcessButton();
     }
-    filesLoading.xml = false;
-    toggleProcessButton();
   });
 
   excelInput.addEventListener('change', async () => {
