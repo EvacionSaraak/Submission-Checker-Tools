@@ -9,11 +9,8 @@ const navbar = document.getElementById("navbar");
 const iframe = document.getElementById("mainIframe");
 
 function setActiveButton(activeIndex) {
-  Array.from(navbar.children).forEach((btn, i) => {
-    // Only toggle active class for buttons, not the report link div
-    if (btn.tagName === 'BUTTON') {
-      btn.classList.toggle("active", i === activeIndex);
-    }
+  Array.from(navbar.querySelector(".nav-left").children).forEach((btn, i) => {
+    btn.classList.toggle("active", i === activeIndex);
   });
 }
 
@@ -25,24 +22,28 @@ function loadPage(file, index) {
 function buildNavbar() {
   navbar.innerHTML = "";
 
-  // Create buttons for each page
+  // Left container for nav buttons
+  const leftContainer = document.createElement("div");
+  leftContainer.className = "nav-left";
+
   pages.forEach((page, i) => {
     const btn = document.createElement("button");
     btn.textContent = page.label;
     btn.onclick = () => loadPage(page.file, i);
-    navbar.appendChild(btn);
+    leftContainer.appendChild(btn);
   });
 
-  // Add the report issue link below buttons
-  const reportDiv = document.createElement("div");
-  reportDiv.className = "form-link";
-  reportDiv.innerHTML = `
+  navbar.appendChild(leftContainer);
+
+  // Right container for report issue link
+  const rightContainer = document.createElement("div");
+  rightContainer.className = "nav-right";
+  rightContainer.innerHTML = `
     Found an issue? Please report it to the
     <a href="https://github.com/EvacionSaraak/Submission-Checker-Tools" target="_blank" rel="noopener">developer</a>.
   `;
-  navbar.appendChild(reportDiv);
+  navbar.appendChild(rightContainer);
 
-  // Load first page by default
   loadPage(pages[0].file, 0);
 }
 
