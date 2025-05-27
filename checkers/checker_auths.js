@@ -65,11 +65,26 @@ function validateClaim(claim, header, xlsxMap) {
   const diagnoses = claim.getElementsByTagName("Diagnosis");
   const remarks = [];
 
+  // Member & Patient Data Checks
+  if (/\s/.test(memberID)) remarks.push("Member ID contains whitespace");
+  const validPackages = ["Thiqa 1", "Thiqa 2", "Daman", "NextCare", "NAS", "Mednet"];
+  if (!validPackages.includes(packageName)) remarks.push(`Invalid Package Name: ${packageName}`);
+  if (!validateEmiratesID(emiratesID)) remarks.push("Invalid Emirates ID format");
+
+  const vat = parseFloat(getTextContent(claim, "VAT") || "0");
+  const vatPerc = parseFloat(getTextContent(claim, "VATPercentage") || "0");
+  const patientShare = parseFloat(getTextContent(claim, "PatientShare") || "0");
+  if (packageName.includes("Thiqa")) {
+    if (vat !== 0 || vatPerc !== 0) remarks.push("Thiqa claims must have 0 VAT and VAT Percentage");
+    if (patientShare !== 0) remarks.push("Thiqa claims must have 0 Patient Share");
+  } else {
+    if (vat !== 0 || vatPerc !== 0) remarks.push("VAT and VAT Percentage must be 0");
+  }
+
   const license = insuranceLicenses.licenses.find(
     (l) => l.PayerID === payerID && l.ReceiverID === receiverID && packageName.includes(l.Plan)
   );
   if (!license) remarks.push("Invalid payer/receiver/package match");
-  if (!validateEmiratesID(emiratesID)) remarks.push("Invalid Emirates ID format");
 
   // Check for duplicate ICD codes
   const icdCodes = new Set();
