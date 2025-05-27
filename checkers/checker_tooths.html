@@ -2,29 +2,20 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <base href="/checkers/">
-  <title>Tooth Validity Checker</title>
+  <title>Tooth Checker</title>
   <link rel="stylesheet" href="checker_tooths.css" />
 </head>
 <body>
   <h1>Tooth Validity Checker</h1>
+  <label>Upload XML:
+    <input type="file" id="xmlFile" accept=".xml" />
+  </label>
+  <span id="xmlFileName">No file chosen</span>
+  <button onclick="parseXML()">Parse XML</button>
   <hr>
+  <table id="outputTable" style="display:none;"></table>
 
-  <label for="xmlFile">Upload XML File:</label>
-  <input type="file" id="xmlFile" accept=".xml" />
-  <span class="file-name" id="xmlFileName">No file chosen</span>
-
-  <button type="button" onclick="parseXML()">Parse XML</button>
-
-  <hr>
-
-  <div id="results">
-    <table id="outputTable" style="display:none;">
-      <!-- Output rows go here -->
-    </table>
-  </div>
-
-  <script src="checker_tooths.js"></script>
+  <script src="checker_tooths.js" defer></script>
 </body>
 </html>
