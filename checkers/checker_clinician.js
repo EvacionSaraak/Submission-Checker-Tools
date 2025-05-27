@@ -1,139 +1,120 @@
-document.addEventListener('DOMContentLoaded', () => {
-  setupEventListeners();
-});
+// checker_clinician.js
 
-// Shared state
-const state = {
-  xmlDoc: null,
-  clinicianData: null
-};
+document.addEventListener('DOMContentLoaded', init);
 
-function setupEventListeners() {
-  document.getElementById('xmlFileInput')
-    .addEventListener('change', handleXmlUpload);
-
-  document.getElementById('excelFileInput')
-    .addEventListener('change', handleExcelUpload);
+function init() {
+  document.getElementById('xmlFileInput').addEventListener('change', handleFiles);
+  document.getElementById('excelFileInput').addEventListener('change', handleFiles);
 }
 
-// ===== File Handlers =====
+let xmlDoc = null;
+let excelData = null;
 
-async function handleXmlUpload(event) {
-  const file = event.target.files?.[0];
-  if (!file) return renderMessage('Please upload a valid XML file.');
+function handleFiles() {
+  const xmlFile = document.getElementById('xmlFileInput').files[0];
+  const excelFile = document.getElementById('excelFileInput').files[0];
 
-  try {
-    const xmlText = await file.text();
-    state.xmlDoc = parseXml(xmlText);
-    tryRenderResults();
-  } catch (err) {
-    state.xmlDoc = null;
-    renderMessage(`Error parsing XML: ${err.message}`);
+  if (xmlFile && excelFile) {
+    Promise.all([xmlFile.text(), readExcel(excelFile)])
+      .then(([xmlText, excelJson]) => {
+        xmlDoc = parseXML(xmlText);
+        excelData = excelJson;
+        const claims = extractClaims(xmlDoc);
+        renderResults(claims);
+      })
+      .catch(err => renderMessage(`Error: ${err.message}`));
   }
 }
 
-async function handleExcelUpload(event) {
-  const file = event.target.files?.[0];
-  if (!file) return renderMessage('Please upload a valid Excel file.');
-
-  try {
-    state.clinicianData = await parseExcel(file);
-    tryRenderResults();
-  } catch (err) {
-    state.clinicianData = null;
-    renderMessage(`Error parsing Excel: ${err.message}`);
-  }
-}
-
-// ===== Parsing =====
-
-function parseXml(xmlString) {
+function parseXML(xmlString) {
   const doc = new DOMParser().parseFromString(xmlString, 'application/xml');
-  if (doc.querySelector('parsererror')) {
-    throw new Error('Invalid XML format.');
-  }
+  if (doc.querySelector('parsererror')) throw new Error('Invalid XML');
   return doc;
 }
 
-async function parseExcel(file) {
-  const data = await file.arrayBuffer();
-  const workbook = XLSX.read(data);
-  const sheet = workbook.Sheets[workbook.SheetNames[0]];
-  return XLSX.utils.sheet_to_json(sheet, { defval: '' });
+function readExcel(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const workbook = XLSX.read(e.target.result, { type: 'binary' });
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+      const json = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+      resolve(json);
+    };
+    reader.onerror = reject;
+    reader.readAsBinaryString(file);
+  });
 }
 
-// ===== Processing =====
-
-function tryRenderResults() {
-  if (!state.xmlDoc || !state.clinicianData) {
-    renderMessage('Waiting for both XML and Excel files...');
-    return;
-  }
-
-  const claims = extractClaimsFromXml(state.xmlDoc);
-  const enrichedClaims = enrichClaimsWithClinicians(claims, state.clinicianData);
-  renderResults(enrichedClaims);
-}
-
-function extractClaimsFromXml(xmlDoc) {
+function extractClaims(xmlDoc) {
   return Array.from(xmlDoc.getElementsByTagName('Claim')).map(el => {
-    const get = sel => el.querySelector(sel)?.textContent.trim() ?? 'N/A';
+    const activity = el.querySelector('Activity');
+    const orderingId = activity?.querySelector('OrderingClinician')?.textContent.trim() ?? 'N/A';
+    const performingId = activity?.querySelector('Clinician')?.textContent.trim() ?? 'N/A';
+
+    const orderingInfo = findClinician(orderingId);
+    const performingInfo = findClinician(performingId);
+
+    const isSameId = orderingId === performingId;
+    const isSameCategory = orderingInfo?.Category === performingInfo?.Category;
+
+    let valid = 'Valid';
+    let remarks = '';
+
+    if (!isSameId && !isSameCategory) {
+      valid = 'Invalid';
+      remarks = `Mismatch: ${orderingInfo?.Category ?? 'N/A'} vs ${performingInfo?.Category ?? 'N/A'}`;
+    }
+
     return {
-      id: get('ID'),
-      patient: get('PatientID'),
-      clinician: el.querySelector('Activity')?.querySelector('Clinician')?.textContent.trim() ?? 'N/A',
-      amount: get('Net')
+      id: el.querySelector('ID')?.textContent.trim() ?? 'N/A',
+      orderingId,
+      orderingName: orderingInfo?.Name ?? 'N/A',
+      orderingPriv: orderingInfo?.Privileges ?? 'N/A',
+      performingId,
+      performingName: performingInfo?.Name ?? 'N/A',
+      performingPriv: performingInfo?.Privileges ?? 'N/A',
+      valid,
+      remarks
     };
   });
 }
 
-function enrichClaimsWithClinicians(claims, clinicians) {
-  const map = {};
-  clinicians.forEach(c => {
-    const key = (c.ClinicianName || '').toLowerCase();
-    if (key) map[key] = c;
-  });
-
-  return claims.map(claim => {
-    const key = claim.clinician.toLowerCase();
-    const clinicianInfo = map[key] || null;
-    return {
-      ...claim,
-      clinicianInfo,
-      clinicianValid: clinicianInfo ? 'Valid' : 'Not found in Excel'
-    };
-  });
+function findClinician(id) {
+  return excelData.find(row => row['License Number']?.toString().trim() === id);
 }
 
-// ===== UI Rendering =====
+function renderResults(claims) {
+  if (!claims.length) return renderMessage('No <code>&lt;Claim&gt;</code> found.');
 
-function renderResults(data) {
-  if (!data.length) {
-    renderMessage('No <Claim> entries found.');
-    return;
-  }
-
-  const rows = data.map(d => `
-    <tr>
-      <td>${d.id}</td>
-      <td>${d.patient}</td>
-      <td>${d.clinician}</td>
-      <td>${d.clinicianInfo?.Department || 'N/A'}</td>
-      <td>${d.amount}</td>
-      <td>${d.clinicianValid}</td>
+  const rows = claims.map(c => `
+    <tr class="${c.valid === 'Valid' ? 'valid' : 'invalid'}">
+      <td>${c.id}</td>
+      <td>${c.orderingId}</td>
+      <td>${c.orderingName}</td>
+      <td>${c.orderingPriv}</td>
+      <td>${c.performingId}</td>
+      <td>${c.performingName}</td>
+      <td>${c.performingPriv}</td>
+      <td>${c.valid}</td>
+      <td>${c.remarks}</td>
     </tr>
   `).join('');
 
-  document.getElementById('resultsContainer').innerHTML = `
-    <table class="shared-table">
+  document.getElementById('results').innerHTML = `
+    <table>
       <thead>
         <tr>
           <th>Claim ID</th>
-          <th>Patient ID</th>
-          <th>Clinician</th>
-          <th>Department</th>
-          <th>Amount</th>
+          <th>Ordering Clinician ID</th>
+          <th>Ordering Name</th>
+          <th>Ordering Privileges</th>
+          <th>Performing Clinician ID</th>
+          <th>Performing Name</th>
+          <th>Performing Privileges</th>
           <th>Status</th>
+          <th>Remarks</th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
@@ -142,5 +123,5 @@ function renderResults(data) {
 }
 
 function renderMessage(msg) {
-  document.getElementById('resultsContainer').innerHTML = `<p style="color:red">${msg}</p>`;
+  document.getElementById('results').innerHTML = `<p>${msg}</p>`;
 }
