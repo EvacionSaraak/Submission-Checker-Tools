@@ -2,20 +2,24 @@ body {
   font-family: Arial, sans-serif;
   margin: 0;
   padding: 0;
-
-  /* Use flexbox only for the main content container, NOT body */
-  /* So leave body as normal block for nav */
 }
 
-/* Navigation bar styling */
+/* Full width navbar background */
 nav {
-  display: flex;
-  justify-content: space-between; /* Left buttons on left, report link on right */
-  align-items: center;            /* Vertically center content */
   background-color: #333;
-  padding: 10px 20px;             /* padding left and right */
-  max-width: 900px;               /* match your page max-width for centering */
-  margin: 0 auto;                 /* center nav horizontally */
+  width: 100%;      /* fill viewport width */
+  padding: 10px 0;  /* vertical padding only */
+  box-sizing: border-box;
+}
+
+/* Inner container inside nav to constrain content width & center */
+nav .nav-container {
+  max-width: 900px;  /* your desired max width */
+  margin: 0 auto;    /* center horizontally */
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 20px;   /* horizontal padding inside container */
 }
 
 /* Left side nav buttons */
@@ -35,7 +39,7 @@ nav .nav-left button:hover,
 nav .nav-left button.active {
   text-decoration: underline;
   font-weight: bold;
-  color: #0af; /* Optional: highlight color on hover and active */
+  color: #0af;
 }
 
 /* Right side report link */
@@ -45,7 +49,7 @@ nav .nav-right {
 }
 
 nav .nav-right a {
-  color: #0af; /* bright link color */
+  color: #0af;
   text-decoration: underline;
 }
 
@@ -55,15 +59,15 @@ nav .nav-right a:hover {
 
 /* Wrap main content in a container */
 #mainContent {
-  max-width: 1200px; /* set max width */
-  margin: 0 auto;    /* center horizontally */
+  max-width: 1200px;
+  margin: 0 auto;
   padding: 0 10px;
 }
 
 /* Iframe fills the main content width */
 #mainIframe {
-  width: 100%;      /* full width of container */
-  height: 93vh;     /* nearly full viewport height */
+  width: 100%;
+  height: 93vh;
   border: none;
   display: block;
   max-width: 100%;
