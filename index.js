@@ -10,7 +10,10 @@ const iframe = document.getElementById("mainIframe");
 
 function setActiveButton(activeIndex) {
   Array.from(navbar.children).forEach((btn, i) => {
-    btn.classList.toggle("active", i === activeIndex);
+    // Only toggle active class for buttons, not the report link div
+    if (btn.tagName === 'BUTTON') {
+      btn.classList.toggle("active", i === activeIndex);
+    }
   });
 }
 
@@ -21,12 +24,25 @@ function loadPage(file, index) {
 
 function buildNavbar() {
   navbar.innerHTML = "";
+
+  // Create buttons for each page
   pages.forEach((page, i) => {
     const btn = document.createElement("button");
     btn.textContent = page.label;
     btn.onclick = () => loadPage(page.file, i);
     navbar.appendChild(btn);
   });
+
+  // Add the report issue link below buttons
+  const reportDiv = document.createElement("div");
+  reportDiv.className = "form-link";
+  reportDiv.innerHTML = `
+    Found an issue? Please report it to the
+    <a href="https://github.com/EvacionSaraak/Submission-Checker-Tools" target="_blank" rel="noopener">developer</a>.
+  `;
+  navbar.appendChild(reportDiv);
+
+  // Load first page by default
   loadPage(pages[0].file, 0);
 }
 
