@@ -74,17 +74,22 @@ function isSameDay(a, b) {
 
 function renderResults(claims) {
   if (!claims.length) return renderMessage('No <code>&lt;Claim&gt;</code> found.');
-  const rows = claims.map(c => `
-    <tr>
-      <td>${c.id}</td>
-      <td>${c.start}</td>
-      <td>${c.end}</td>
-      <td>${c.patient}</td>
-      <td>${c.doctor}</td>
-      <td>${c.amount}</td>
-      <td>${c.valid}</td>
-    </tr>
-  `).join('');
+
+  const rows = claims.map(c => {
+    const isValid = c.valid === 'Valid';
+    return `
+      <tr class="${isValid ? 'valid' : 'invalid'}">
+        <td>${c.id}</td>
+        <td>${c.start}</td>
+        <td>${c.end}</td>
+        <td>${c.patient}</td>
+        <td>${c.doctor}</td>
+        <td>${c.amount}</td>
+        <td>${c.valid}</td>
+      </tr>
+    `;
+  }).join('');
+
   document.getElementById('tableContainer').innerHTML = `
     <table border="1" cellpadding="5" cellspacing="0">
       <thead><tr>
@@ -95,6 +100,7 @@ function renderResults(claims) {
     </table>
   `;
 }
+
 
 function renderMessage(msg) {
   document.getElementById('tableContainer').innerHTML = `<p>${msg}</p>`;
