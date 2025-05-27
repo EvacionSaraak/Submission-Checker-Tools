@@ -127,23 +127,44 @@ function extractAllClaims(xmlDoc) {
 }
 
 // Map clinicians from Excel workbook:
-// Assuming clinician data is in first sheet with columns:
-// ID (clinician id), ClinicianName, Category, Privileges
 function mapClinicians(workbook) {
   const sheetName = workbook.SheetNames[0];
   const sheet = workbook.Sheets[sheetName];
-  const data = XLSX.utils.sheet_to_json(sheet);
+  let data = XLSX.utils.sheet_to_json(sheet, { defval: '' });
 
-  // Map: clinician ID => {name, category, privileges}
+  console.log('Excel rows parsed:', data.length);
+  console.log('First row data sample:', data[0]);
+
+  function findKey(row, possibles) {
+    for (const k of Object.keys(row)) {
+      const norm = k.trim().toLowerCase();
+      if (possibles.includes(norm)) return k;
+    }
+    return null;
+  }
+
+  // We want to find the "Clinician License" column to map keys by license ID
+  const licenseKey = findKey(data[0], ['clinician license', 'license', 'license id', 'clinicianlicense']);
+  const nameKey = findKey(data[0], ['clinicianname', 'clinician name', 'name']);
+  const categoryKey = findKey(data[0], ['category']);
+  const privilegesKey = findKey(data[0], ['privileges']);
+
+  if (!licenseKey || !nameKey || !categoryKey || !privilegesKey) {
+    console.warn('Could not find all expected columns in Excel. Found keys:', Object.keys(data[0]));
+  }
+
   const map = new Map();
   data.forEach(row => {
-    if (!row.ID) return;
-    map.set(String(row.ID).trim(), {
-      name: row.ClinicianName || 'N/A',
-      category: row.Category || 'N/A',
-      privileges: row.Privileges || 'N/A'
+    const licenseVal = row[licenseKey]?.toString().trim();
+    if (!licenseVal) return; // skip rows without license
+    map.set(licenseVal, {
+      name: row[nameKey]?.toString().trim() || 'N/A',
+      category: row[categoryKey]?.toString().trim() || 'N/A',
+      privileges: row[privilegesKey]?.toString().trim() || 'N/A',
     });
   });
+
+  console.log('Clinicians mapped by License:', map.size);
   return map;
 }
 
