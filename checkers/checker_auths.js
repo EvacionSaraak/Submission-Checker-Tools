@@ -18,8 +18,8 @@ document.getElementById("processBtn").addEventListener("click", async () => {
 
   // Load JSON files
   [licensesJson, authsJson] = await Promise.all([
-    fetch("../data/insurance_licenses.json").then(res => res.json()),
-    fetch("../data/checker_auths.json").then(res => res.json())
+    fetch('insurance_licenses.json'),
+    fetch('checker_auths.json')
   ]);
 
   // Parse XML and XLSX
