@@ -102,7 +102,7 @@ function parseClinicianExcel(workbook) {
     const license = row['Clinician License']?.toString().trim();
     if (license) {
       map[license] = {
-        name: row['Name'] || 'Unknown',
+        name: row['Clinician Name'] || 'Unknown',
         privileges: row['Privileges'] || 'Unknown',
         category: row['Category'] || 'Unknown'
       };
