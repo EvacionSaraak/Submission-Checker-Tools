@@ -1,0 +1,52 @@
+/* shared_tables.css */
+
+/* General body and font styles (optional, can be overridden by page-specific CSS) */
+body {
+  font-family: Arial, sans-serif;
+  padding: 20px;
+  max-width: 900px;
+  margin: auto;
+}
+
+/* Table styling */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 10px;
+  font-size: 14px;
+}
+
+th, td {
+  padding: 8px 10px;
+  border: 1px solid #ccc;
+  text-align: left;
+  vertical-align: top;
+}
+
+th {
+  background-color: #f4f4f4;
+  font-weight: bold;
+}
+
+/* Remarks column no-wrap if needed */
+table td:nth-child(7), /* For checker_timings validity column */
+table td:nth-child(6)  /* For checker_tooths remarks column (adjust if different) */
+{
+  white-space: nowrap;
+}
+
+/* Valid / Invalid row background colors */
+.valid {
+  background-color: #e0f7e9; /* light green */
+}
+
+.invalid {
+  background-color: #ffe4e1; /* light red */
+}
+
+/* Message styling */
+#messageBox {
+  color: red;
+  font-weight: bold;
+  margin-top: 10px;
+}
