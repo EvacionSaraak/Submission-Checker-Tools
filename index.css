@@ -59,16 +59,18 @@ nav .nav-right a:hover {
 
 /* Wrap main content in a container */
 #mainContent {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 0 10px;
+  position: relative;
+  width: 100%;
+  height: 100vh; /* or desired height */
+  overflow: hidden; /* prevent container scroll */
 }
 
-/* Iframe fills the main content width */
 #mainIframe {
   width: 100%;
-  height: 93vh;
+  height: 100%;
   border: none;
   display: block;
-  max-width: 100%;
+  overflow-y: auto; /* ensure vertical scrollbar appears on iframe content */
+  /* no padding or margin */
 }
+
