@@ -1,8 +1,6 @@
-// checker_tooths.js
-
 const repoJsonUrl = 'checker_tooths.json';
 
-// Tooth sets
+// Tooth sets (unchanged)
 const ANTERIOR_TEETH = new Set(['6','7','8','9','10','11','22','23','24','25','26','27','C','D','E','F','G','H','M','N','O','P']);
 const BICUSPID_TEETH  = new Set(['4','5','12','13','20','21','28','29']);
 const POSTERIOR_TEETH = new Set(['1','2','3','14','15','16','17','18','19','30','31','32','A','B','I','J','K','L','Q','R','S','T']);
@@ -30,15 +28,27 @@ function getRegionName(tooth) {
   return 'Unknown';
 }
 
+document.addEventListener('DOMContentLoaded', () => {
+  const xmlInput = document.getElementById('xmlFile');
+  xmlInput.addEventListener('change', () => {
+    if (!xmlInput.files.length) return;
+    parseXML();
+  });
+});
+
 function parseXML() {
   const xmlInput = document.getElementById('xmlFile');
   const resultsDiv = document.getElementById('results');
+  const messageBox = document.getElementById('messageBox');
+  messageBox.textContent = '';
+  resultsDiv.innerHTML = '';
+
   if (!xmlInput.files.length) {
-    return showMessage(resultsDiv, 'Please upload an XML file.');
+    messageBox.textContent = 'Please upload an XML file.';
+    return;
   }
   const file = xmlInput.files[0];
 
-  // 1) Read XML, 2) Fetch+parse JSON, then process both
   Promise.all([
     new Promise((res, rej) => {
       const rdr = new FileReader();
@@ -47,24 +57,18 @@ function parseXML() {
       rdr.readAsText(file);
     }),
     fetch(repoJsonUrl)
-      .then(r => {
-        console.log(`JSON fetch status: ${r.status}`);
-        return r.ok 
-          ? r.json() 
-          : Promise.reject(`Failed to load JSON (HTTP ${r.status})`);
-      })
-      .then(json => {
-        console.log('JSON payload sample:', JSON.stringify(json.slice(0,3), null,2));
-        return json;
-      })
+      .then(r => r.ok ? r.json() : Promise.reject(`Failed to load JSON (HTTP ${r.status})`))
   ])
   .then(([xmlText, jsonData]) => {
     const codeToMeta = buildCodeMeta(jsonData);
     const xmlDoc = new DOMParser().parseFromString(xmlText, 'application/xml');
+    if (xmlDoc.querySelector('parsererror')) throw new Error('Invalid XML file');
     const rows = validateActivities(xmlDoc, codeToMeta);
     renderResults(resultsDiv, rows);
   })
-  .catch(err => showMessage(resultsDiv, err.toString()));
+  .catch(err => {
+    messageBox.textContent = err.toString();
+  });
 }
 
 function buildCodeMeta(data) {
@@ -73,17 +77,15 @@ function buildCodeMeta(data) {
     const codesArray = entry.codes || entry.code || [];
     const teethSet = getTeethSet(entry.affiliated_teeth);
     codesArray.forEach(rawCode => {
-      const code = rawCode.toString().trim();  // Force string type
+      const code = rawCode.toString().trim();
       map[code] = {
         teethSet,
         description: entry.description || '(no description)'
       };
     });
   });
-  console.log(`Mapped ${Object.keys(map).length} codes from JSON.`);
   return map;
 }
-
 
 function validateActivities(xmlDoc, codeToMeta) {
   const rows = [];
@@ -97,7 +99,7 @@ function validateActivities(xmlDoc, codeToMeta) {
 
       const activityId = act.querySelector('ID')?.textContent || '';
       const rawCode = act.querySelector('Code')?.textContent || '';
-      const code = rawCode.trim();  // Preserve leading zeros
+      const code = rawCode.trim();
 
       const meta = codeToMeta[code] || { teethSet: new Set(), description: '(no description)' };
 
@@ -133,7 +135,6 @@ function validateActivities(xmlDoc, codeToMeta) {
   return rows;
 }
 
-
 function renderResults(container, rows) {
   if (!rows.length) {
     container.innerHTML = '<p>No activities found.</p>';
@@ -149,7 +150,7 @@ function renderResults(container, rows) {
       </thead>
       <tbody>
         ${rows.map(r=>`
-          <tr style="background:${r.isValid?'#e8ffe8':'#ffe8e8'}">
+          <tr class="${r.isValid ? 'valid' : 'invalid'}">
             <td>${r.claimId}</td><td>${r.activityId}</td><td>${r.code}</td>
             <td>${r.description}</td><td>${r.details}</td><td>${r.remarks.join('<br>')}</td>
           </tr>`).join('')}
@@ -157,17 +158,3 @@ function renderResults(container, rows) {
     </table>`;
   container.innerHTML = html;
 }
-
-console.log("02111" in codeToMeta);      // should be true if that's in your JSON
-console.log("2111" in codeToMeta);       // should be false (unless duplicate added)
-
-
-function showMessage(container, msg) {
-  container.innerHTML = `<p style="color:red">${msg}</p>`;
-}
-
-document.addEventListener('DOMContentLoaded', () => {
-  document.getElementById('xmlFile').addEventListener('change', e=>{
-    document.getElementById('xmlFileName').textContent = e.target.files[0]?.name||'No file chosen';
-  });
-});
