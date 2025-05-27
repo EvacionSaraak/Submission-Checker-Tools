@@ -2,7 +2,7 @@ const pages = [
   { label: "Clinician (WIP)", file: "checkers/checker_clinician.html" },
   { label: "Approvals (WIP)", file: "checkers/checker_procedure_approval.html" },
   { label: "Timings", file: "checkers/checker_timings.html" },
-  { label: "Tooths (WIP)", file: "checkers/checker_tooths.html" }
+  { label: "Tooths", file: "checkers/checker_tooths.html" }
 ];
 
 const navbar = document.getElementById("navbar");
