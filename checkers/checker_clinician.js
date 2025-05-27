@@ -167,7 +167,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Render results table
-  function renderResults(results) {
+ function renderResults(results) {
     const resultsDiv = document.getElementById('results');
     if (!results.length) {
       resultsDiv.innerHTML = '<p>No clinician activity found in the XML.</p>';
@@ -196,22 +196,21 @@ document.addEventListener('DOMContentLoaded', () => {
         <tbody>
     `;
   
-    // Populate rows using classes from tables.css
     results.forEach(item => {
-      const rowClass = item.isValid ? 'valid' : 'invalid';
+      const rowClass = item.valid ? 'valid' : 'invalid';
       html += `
         <tr class="${rowClass}">
           <td>${escapeHtml(item.claimId)}</td>
           <td>${escapeHtml(item.activityId)}</td>
-          <td>${escapeHtml(item.orderingClinicianId)}</td>
-          <td>${escapeHtml(item.orderingClinicianName)}</td>
+          <td>${escapeHtml(item.orderingId)}</td>
+          <td>${escapeHtml(item.orderingName)}</td>
           <td>${escapeHtml(item.orderingPrivileges)}</td>
           <td>${escapeHtml(item.orderingCategory)}</td>
-          <td>${escapeHtml(item.performingClinicianId)}</td>
-          <td>${escapeHtml(item.performingClinicianName)}</td>
+          <td>${escapeHtml(item.performingId)}</td>
+          <td>${escapeHtml(item.performingName)}</td>
           <td>${escapeHtml(item.performingPrivileges)}</td>
           <td>${escapeHtml(item.performingCategory)}</td>
-          <td>${escapeHtml(item.isValid ? 'Valid' : 'Invalid')}</td>
+          <td>${escapeHtml(item.valid ? 'Valid' : 'Invalid')}</td>
           <td>${escapeHtml(item.remarks)}</td>
         </tr>
       `;
@@ -224,6 +223,7 @@ document.addEventListener('DOMContentLoaded', () => {
   
     resultsDiv.innerHTML = html;
   }
+
   
   // Helper function to escape HTML entities to avoid XSS or rendering issues
   function escapeHtml(text) {
