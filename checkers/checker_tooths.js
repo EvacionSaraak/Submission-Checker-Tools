@@ -122,26 +122,49 @@ function validateActivities(xmlDoc, codeToMeta) {
 
     Array.from(claim.getElementsByTagName('Activity')).forEach(act => {
       const obsList = act.getElementsByTagName('Observation');
-      if (!obsList.length) return;
+      if (!obsList.length) return; // Skip if no observations
 
       const activityId = act.querySelector('ID')?.textContent || '';
       const code = act.querySelector('Code')?.textContent.trim() || '';
 
-      const meta = codeToMeta[code] || { teethSet: new Set(), description: '(code not found)' };
+      const meta = codeToMeta[code];
+
+      if (!meta) {
+        console.warn(`[E001] Code not found in JSON repo: ${code}`);
+        rows.push({
+          claimId,
+          activityId,
+          code,
+          description: 'UNKNOWN CODE',
+          details: '',
+          remarks: [`[E001] Code not found in JSON repo`],
+          isValid: false
+        });
+        return;
+      }
+
       console.log(`Activity ID: ${activityId}, Code: ${code}, Description: ${meta.description}`);
-      console.log(`→ Valid teeth: ${[...meta.teethSet].join(', ')}`);
+      console.log(`→ Valid Teeth Set:`, [...meta.teethSet]);
 
       let isValid = true;
       const remarks = [];
 
       const details = Array.from(obsList).map(obs => {
-        const obsCode = obs.querySelector('Code')?.textContent.trim().toUpperCase() || '';
-        console.log(`Checking observation code: ${obsCode}`);
+        let obsCodeRaw = obs.querySelector('Code')?.textContent || '';
+        const obsCode = obsCodeRaw.trim().toUpperCase().replace(/^0+/, '');
+
+        console.log(`→ Checking Tooth: [${obsCodeRaw}] → Normalized: [${obsCode}]`);
+
+        if (!obsCode) {
+          remarks.push('[E002] Empty or missing observation code');
+          isValid = false;
+          return 'Invalid Observation';
+        }
 
         if (!meta.teethSet.has(obsCode)) {
+          remarks.push(`[E003] Invalid Tooth - ${obsCode}`);
           isValid = false;
-          remarks.push(`Invalid - ${obsCode}`);
-          console.warn(`INVALID tooth ${obsCode} for code ${code}`);
+          console.warn(`[E003] ${obsCode} not in allowed teeth set`);
         } else {
           remarks.push(`Valid - ${obsCode}`);
         }
