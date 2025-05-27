@@ -70,10 +70,10 @@ function parseXML() {
 function buildCodeMeta(data) {
   const map = {};
   data.forEach(entry => {
-    const arr = entry.codes || entry.code || [];
+    const codesArray = entry.codes || entry.code || [];
     const teethSet = getTeethSet(entry.affiliated_teeth);
-    arr.forEach(raw => {
-      const code = raw.toString().trim();
+    codesArray.forEach(rawCode => {
+      const code = rawCode.toString().trim();  // Force string type
       map[code] = {
         teethSet,
         description: entry.description || '(no description)'
@@ -84,23 +84,38 @@ function buildCodeMeta(data) {
   return map;
 }
 
+
 function validateActivities(xmlDoc, codeToMeta) {
   const rows = [];
-  xmlDoc.querySelectorAll('Claim').forEach(claim => {
-    const claimId = claim.querySelector('ID')?.textContent || '(no claim ID)';
-    claim.querySelectorAll('Activity').forEach(act => {
-      const obs = act.querySelectorAll('Observation');
-      if (!obs.length) return;
-      const activityId = act.querySelector('ID')?.textContent || '';
-      const code = act.querySelector('Code')?.textContent.trim() || '';
-      const meta = codeToMeta[code] || { teethSet: ALL_TEETH, description: '(no description)' };
 
+  Array.from(xmlDoc.getElementsByTagName('Claim')).forEach(claim => {
+    const claimId = claim.querySelector('ID')?.textContent || '(no claim ID)';
+
+    Array.from(claim.getElementsByTagName('Activity')).forEach(act => {
+      const obsList = act.getElementsByTagName('Observation');
+      if (!obsList.length) return;
+
+      const activityId = act.querySelector('ID')?.textContent || '';
+      const rawCode = act.querySelector('Code')?.textContent || '';
+      const code = rawCode.trim();  // Preserve leading zeros
+
+      const meta = codeToMeta[code] || { teethSet: new Set(), description: '(no description)' };
+
+      let isValid = true;
       const remarks = [];
-      const details = Array.from(obs).map(o => {
-        const tc = normalizeToothCode(o.querySelector('Code')?.textContent);
-        const valid = meta.teethSet.has(tc);
-        remarks.push(valid ? `Valid - ${tc}` : `Invalid - ${tc}`);
-        return `${tc} - ${getRegionName(tc)}`;
+
+      const details = Array.from(obsList).map(obs => {
+        const obsCodeRaw = obs.querySelector('Code')?.textContent.trim() || '';
+        const obsCode = obsCodeRaw.toUpperCase();
+
+        if (!meta.teethSet.has(obsCode)) {
+          isValid = false;
+          remarks.push(`Invalid - ${obsCode}`);
+        } else {
+          remarks.push(`Valid - ${obsCode}`);
+        }
+
+        return `${obsCode} - ${getRegionName(obsCode)}`;
       }).join('<br>');
 
       rows.push({
@@ -110,12 +125,14 @@ function validateActivities(xmlDoc, codeToMeta) {
         description: meta.description,
         details,
         remarks,
-        isValid: !remarks.some(r => r.startsWith('Invalid'))
+        isValid
       });
     });
   });
+
   return rows;
 }
+
 
 function renderResults(container, rows) {
   if (!rows.length) {
@@ -140,6 +157,10 @@ function renderResults(container, rows) {
     </table>`;
   container.innerHTML = html;
 }
+
+console.log("02111" in codeToMeta);      // should be true if that's in your JSON
+console.log("2111" in codeToMeta);       // should be false (unless duplicate added)
+
 
 function showMessage(container, msg) {
   container.innerHTML = `<p style="color:red">${msg}</p>`;
