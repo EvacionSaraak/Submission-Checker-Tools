@@ -90,7 +90,7 @@ function renderResults(claims) {
     `;
   }).join('');
 
-  document.getElementById('tableContainer').innerHTML = `
+  document.getElementById('results').innerHTML = `
     <table border="1" cellpadding="5" cellspacing="0">
       <thead><tr>
         <th>Claim ID</th><th>Start Date & Time</th><th>End Date & Time</th>
@@ -103,5 +103,5 @@ function renderResults(claims) {
 
 
 function renderMessage(msg) {
-  document.getElementById('tableContainer').innerHTML = `<p>${msg}</p>`;
+  document.getElementById('results').innerHTML = `<p>${msg}</p>`;
 }
