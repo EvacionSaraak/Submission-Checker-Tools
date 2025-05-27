@@ -1,320 +1,285 @@
-// checker_clinician.js
+document.addEventListener('DOMContentLoaded', init);
 
-let xmlContent = null;
 let excelData = null;
-let xmlReady = false;
-let excelReady = false;
+let xmlDoc = null;
+let isExcelLoaded = false;
+let isXmlLoaded = false;
 
-document.addEventListener('DOMContentLoaded', () => {
+function init() {
   const xmlInput = document.getElementById('xmlFileInput');
   const excelInput = document.getElementById('excelFileInput');
-  const processBtn = document.getElementById('processButton');
-  const uploadStatus = document.getElementById('uploadStatus');
 
-  xmlInput.addEventListener('change', async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    uploadStatus.textContent = 'Uploading XML file...';
-    xmlReady = false;
-    processBtn.disabled = true;
-    try {
-      xmlContent = await readFileAsText(file);
-      // Validate XML parse
-      parseXML(xmlContent);
-      xmlReady = true;
-      uploadStatus.textContent = 'XML file ready.';
-      maybeEnableProcess();
-    } catch (err) {
-      uploadStatus.textContent = 'Error reading or parsing XML: ' + err.message;
-      console.error('XML file error:', err);
-    }
-  });
+  xmlInput.addEventListener('change', handleXmlFile);
+  excelInput.addEventListener('change', handleExcelFile);
 
-  excelInput.addEventListener('change', async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    uploadStatus.textContent = 'Uploading Excel file...';
-    excelReady = false;
-    processBtn.disabled = true;
-    try {
-      excelData = await readExcel(file);
-      excelReady = true;
-      uploadStatus.textContent = 'Excel file ready.';
-      maybeEnableProcess();
-    } catch (err) {
-      uploadStatus.textContent = 'Error reading Excel file: ' + err.message;
-      console.error('Excel file error:', err);
-    }
-  });
-
-  processBtn.addEventListener('click', () => {
-    uploadStatus.textContent = 'Processing files...';
-    console.log('Processing started...');
-    try {
-      const xmlDoc = parseXML(xmlContent);
-      const claims = extractAllClaims(xmlDoc);
-      const cliniciansMap = mapClinicians(excelData);
-      const validationResults = validateClaims(claims, cliniciansMap);
-      renderResults(validationResults);
-      printSummary(validationResults);
-      uploadStatus.textContent = 'Processing completed.';
-    } catch (err) {
-      uploadStatus.textContent = 'Error during processing: ' + err.message;
-      console.error('Processing error:', err);
-    }
-  });
-
-  function maybeEnableProcess() {
-    if (xmlReady && excelReady) {
-      processBtn.disabled = false;
-      uploadStatus.textContent = 'Files are ready. Click "Process Files" to continue.';
-    }
-  }
-});
-
-// Utility: Read file as text
-function readFileAsText(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = e => resolve(e.target.result);
-    reader.onerror = e => reject(e.target.error);
-    reader.readAsText(file);
-  });
+  // Create and insert progress bar container after Excel input
+  createExcelProgressBar(excelInput.parentNode);
 }
 
-// Utility: Read Excel using XLSX library
-function readExcel(file) {
+function createExcelProgressBar(container) {
+  const progressContainer = document.createElement('div');
+  progressContainer.id = 'excelProgressContainer';
+  progressContainer.style.cssText = `
+    width: 100%; 
+    background: #eee; 
+    height: 20px; 
+    margin-top: 5px; 
+    display: none; 
+    border-radius: 5px; 
+    overflow: hidden;
+  `;
+
+  const progressBar = document.createElement('div');
+  progressBar.id = 'excelProgressBar';
+  progressBar.style.cssText = `
+    height: 100%; 
+    width: 0%; 
+    background-color: #4caf50; 
+    transition: width 0.2s;
+  `;
+
+  progressContainer.appendChild(progressBar);
+  container.appendChild(progressContainer);
+}
+
+async function handleXmlFile(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  isXmlLoaded = false;
+  setStatusMessage('Loading XML file...');
+  try {
+    const text = await file.text();
+    xmlDoc = parseXML(text);
+    isXmlLoaded = true;
+    setStatusMessage('XML file loaded.');
+    tryProcess();
+  } catch (err) {
+    setStatusMessage(`Error parsing XML: ${err.message}`, true);
+    console.error('XML parse error:', err);
+  }
+}
+
+function parseXML(text) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(text, 'application/xml');
+  if (doc.querySelector('parsererror')) throw new Error('Invalid XML');
+  return doc;
+}
+
+function handleExcelFile(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  isExcelLoaded = false;
+  setStatusMessage('Reading Excel file...');
+  showProgressBar(true);
+  readExcelFileWithProgress(file)
+    .then(data => {
+      excelData = data;
+      isExcelLoaded = true;
+      setStatusMessage('Excel file loaded.');
+      showProgressBar(false);
+      tryProcess();
+    })
+    .catch(err => {
+      setStatusMessage(`Error reading Excel: ${err.message}`, true);
+      showProgressBar(false);
+      console.error('Excel read error:', err);
+    });
+}
+
+function showProgressBar(show) {
+  const container = document.getElementById('excelProgressContainer');
+  if (container) container.style.display = show ? 'block' : 'none';
+  if (!show) updateProgressBar(0);
+}
+
+function updateProgressBar(percentage) {
+  const bar = document.getElementById('excelProgressBar');
+  if (bar) bar.style.width = `${percentage}%`;
+}
+
+function readExcelFileWithProgress(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = e => {
-      try {
-        const data = new Uint8Array(e.target.result);
-        const workbook = XLSX.read(data, {type: 'array'});
-        resolve(workbook);
-      } catch (err) {
-        reject(err);
+
+    reader.onprogress = (evt) => {
+      if (evt.lengthComputable) {
+        const percentLoaded = Math.round((evt.loaded / evt.total) * 100);
+        updateProgressBar(percentLoaded);
+        console.log(`Excel read progress: ${percentLoaded}%`);
       }
     };
-    reader.onerror = e => reject(e.target.error);
+
+    reader.onerror = () => reject(new Error('Failed to read Excel file'));
+    reader.onabort = () => reject(new Error('Excel file read aborted'));
+
+    reader.onload = (evt) => {
+      try {
+        const data = evt.target.result;
+        const workbook = XLSX.read(data, { type: 'array' });
+        const firstSheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheetName];
+        const json = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+        // json is array of arrays, row 1 is header row
+        resolve(json);
+      } catch (e) {
+        reject(e);
+      }
+    };
+
     reader.readAsArrayBuffer(file);
   });
 }
 
-// Parse XML string to document, throw if invalid
-function parseXML(xmlString) {
-  const parser = new DOMParser();
-  const xmlDoc = parser.parseFromString(xmlString, 'application/xml');
-  if (xmlDoc.querySelector('parsererror')) {
-    throw new Error('Invalid XML format');
+function tryProcess() {
+  if (!isXmlLoaded || !isExcelLoaded) {
+    console.log('Waiting for both files to load...');
+    return;
   }
-  return xmlDoc;
+  console.log('Both files loaded. Starting validation...');
+  processClaims(xmlDoc, excelData);
 }
 
-// Recursively extract all <Claim> elements (depth-first)
-function extractAllClaims(xmlDoc) {
-  const claims = [];
-  function recurse(node) {
-    if (!node) return;
-    if (node.nodeName === 'Claim') {
-      claims.push(node);
+function processClaims(xml, excel) {
+  // Map Excel headers from first row
+  const headers = excel[0];
+  const dataRows = excel.slice(1);
+
+  // Find column indexes for needed fields
+  const colIndex = {};
+  ['Clinician License', 'Clinician Name', 'Privilages', 'Category'].forEach(key => {
+    const idx = headers.indexOf(key);
+    if (idx === -1) {
+      console.warn(`Warning: Column "${key}" not found in Excel`);
     }
-    for (const child of node.children) {
-      recurse(child);
-    }
-  }
-  recurse(xmlDoc.documentElement);
-  return claims;
-}
+    colIndex[key] = idx;
+  });
 
-// Map clinicians from Excel workbook:
-function mapClinicians(workbook) {
-  const sheetName = workbook.SheetNames[0];
-  const sheet = workbook.Sheets[sheetName];
-  let data = XLSX.utils.sheet_to_json(sheet, { defval: '' });
-
-  console.log('Excel rows parsed:', data.length);
-  console.log('First row data sample:', data[0]);
-
-  function findKey(row, possibles) {
-    for (const k of Object.keys(row)) {
-      const norm = k.trim().toLowerCase();
-      if (possibles.includes(norm)) return k;
-    }
-    return null;
-  }
-
-  // We want to find the "Clinician License" column to map keys by license ID
-  const licenseKey = findKey(data[0], ['clinician license', 'license', 'license id', 'clinicianlicense']);
-  const nameKey = findKey(data[0], ['clinicianname', 'clinician name', 'name']);
-  const categoryKey = findKey(data[0], ['category']);
-  const privilegesKey = findKey(data[0], ['privileges']);
-
-  if (!licenseKey || !nameKey || !categoryKey || !privilegesKey) {
-    console.warn('Could not find all expected columns in Excel. Found keys:', Object.keys(data[0]));
-  }
-
-  const map = new Map();
-  data.forEach(row => {
-    const licenseVal = row[licenseKey]?.toString().trim();
-    if (!licenseVal) return; // skip rows without license
-    map.set(licenseVal, {
-      name: row[nameKey]?.toString().trim() || 'N/A',
-      category: row[categoryKey]?.toString().trim() || 'N/A',
-      privileges: row[privilegesKey]?.toString().trim() || 'N/A',
+  // Build clinician lookup by License
+  const clinicianMap = new Map();
+  dataRows.forEach(row => {
+    const license = row[colIndex['Clinician License']];
+    if (!license) return;
+    clinicianMap.set(license.trim(), {
+      name: row[colIndex['Clinician Name']] ?? 'N/A',
+      privilages: row[colIndex['Privilages']] ?? 'N/A',
+      category: row[colIndex['Category']] ?? 'N/A'
     });
   });
 
-  console.log('Clinicians mapped by License:', map.size);
-  return map;
-}
+  // Extract claims and activities from XML (supports multiple <Claim>)
+  const claims = Array.from(xml.getElementsByTagName('Claim'));
 
-// Validate claims based on clinician IDs and excel data
-function validateClaims(claims, cliniciansMap) {
-  const results = [];
+  let results = [];
+  claims.forEach((claim, claimIndex) => {
+    const activities = Array.from(claim.getElementsByTagName('Activity'));
+    activities.forEach(activity => {
+      const orderingClinician = activity.querySelector('OrderingClinician')?.textContent.trim() ?? 'N/A';
+      const performingClinician = activity.querySelector('Clinician')?.textContent.trim() ?? 'N/A';
 
-  for (const claimEl of claims) {
-    // Extract Claim ID for reporting
-    const claimID = claimEl.querySelector('ID')?.textContent.trim() || 'N/A';
+      // Lookup clinicians in Excel
+      const orderingInfo = clinicianMap.get(orderingClinician);
+      const performingInfo = clinicianMap.get(performingClinician);
 
-    // Extract all activities in this claim
-    const activities = Array.from(claimEl.querySelectorAll('Activity'));
-
-    activities.forEach(activityEl => {
-      const activityID = activityEl.querySelector('ID')?.textContent.trim() || 'N/A';
-
-      const orderingClinID = activityEl.querySelector('OrderingClinician')?.textContent.trim() || 'N/A';
-      const performingClinID = activityEl.querySelector('Clinician')?.textContent.trim() || 'N/A';
-
-      // Get clinician details from map
-      const orderingClin = cliniciansMap.get(orderingClinID) || {name:'Unknown', category:'Unknown', privileges:'Unknown'};
-      const performingClin = cliniciansMap.get(performingClinID) || {name:'Unknown', category:'Unknown', privileges:'Unknown'};
-
-      let validity = '';
+      let validity = 'Valid';
       let remarks = '';
 
-      if (orderingClinID === performingClinID) {
-        validity = 'Valid';
-        remarks = 'Ordering and performing clinicians are identical.';
-      } else {
-        // Different clinicians, check category
-        if (orderingClin.category === performingClin.category) {
-          validity = 'Valid';
-          remarks = `Different clinicians but same category (${orderingClin.category}).`;
-        } else {
+      if (orderingClinician === performingClinician) {
+        // Same clinician, automatically valid
+        if (!orderingInfo) {
           validity = 'Invalid';
-          remarks = `Category mismatch: Ordering=${orderingClin.category}, Performing=${performingClin.category}`;
+          remarks = 'Ordering clinician not found in Excel';
+        }
+      } else {
+        // Different clinicians - check categories
+        if (!orderingInfo || !performingInfo) {
+          validity = 'Invalid';
+          remarks = 'Clinician(s) not found in Excel';
+        } else if (orderingInfo.category !== performingInfo.category) {
+          validity = 'Invalid';
+          remarks = `Category mismatch: Ordering(${orderingInfo.category}) / Performing(${performingInfo.category})`;
         }
       }
 
       results.push({
-        claimID,
-        activityID,
-        orderingClinID,
-        orderingClinName: orderingClin.name,
-        orderingClinCategory: orderingClin.category,
-        orderingClinPrivileges: orderingClin.privileges,
-        performingClinID,
-        performingClinName: performingClin.name,
-        performingClinCategory: performingClin.category,
-        performingClinPrivileges: performingClin.privileges,
+        activityId: activity.querySelector('ID')?.textContent.trim() ?? 'N/A',
+        orderingClinician,
+        orderingName: orderingInfo?.name ?? 'N/A',
+        orderingPrivilages: orderingInfo?.privilages ?? 'N/A',
+        performingClinician,
+        performingName: performingInfo?.name ?? 'N/A',
+        performingPrivilages: performingInfo?.privilages ?? 'N/A',
         validity,
-        remarks,
+        remarks
       });
     });
-  }
+  });
 
-  return results;
+  renderResults(results);
+  logSummary(results);
 }
 
-// Render results table in #results
 function renderResults(results) {
-  if (!results.length) {
-    document.getElementById('results').innerHTML = '<p>No activities found in claims.</p>';
+  if (results.length === 0) {
+    setStatusMessage('No activities found in XML.');
     return;
   }
 
-  const rows = results.map(r => `
-    <tr>
-      <td>${escapeHTML(r.claimID)}</td>
-      <td>${escapeHTML(r.activityID)}</td>
-      <td>${escapeHTML(r.orderingClinID)}</td>
-      <td>${escapeHTML(r.orderingClinName)}</td>
-      <td>${escapeHTML(r.orderingClinCategory)}</td>
-      <td>${escapeHTML(r.orderingClinPrivileges)}</td>
-      <td>${escapeHTML(r.performingClinID)}</td>
-      <td>${escapeHTML(r.performingClinName)}</td>
-      <td>${escapeHTML(r.performingClinCategory)}</td>
-      <td>${escapeHTML(r.performingClinPrivileges)}</td>
-      <td>${escapeHTML(r.validity)}</td>
-      <td>${escapeHTML(r.remarks)}</td>
+  const rowsHtml = results.map(r => `
+    <tr class="${r.validity === 'Valid' ? 'valid' : 'invalid'}">
+      <td>${r.activityId}</td>
+      <td>${r.orderingClinician}</td>
+      <td>${r.orderingName}</td>
+      <td>${r.orderingPrivilages}</td>
+      <td>${r.performingClinician}</td>
+      <td>${r.performingName}</td>
+      <td>${r.performingPrivilages}</td>
+      <td>${r.validity}</td>
+      <td>${r.remarks}</td>
     </tr>
   `).join('');
 
-  document.getElementById('results').innerHTML = `
-    <table border="1" cellpadding="5" cellspacing="0" class="shared-table">
+  const tableHtml = `
+    <table>
       <thead>
         <tr>
-          <th>Claim ID</th>
           <th>Activity ID</th>
           <th>Ordering Clinician ID</th>
           <th>Ordering Clinician Name</th>
-          <th>Ordering Clinician Category</th>
-          <th>Ordering Clinician Privileges</th>
+          <th>Ordering Privilages</th>
           <th>Performing Clinician ID</th>
           <th>Performing Clinician Name</th>
-          <th>Performing Clinician Category</th>
-          <th>Performing Clinician Privileges</th>
+          <th>Performing Privilages</th>
           <th>Validity</th>
           <th>Remarks</th>
         </tr>
       </thead>
-      <tbody>${rows}</tbody>
+      <tbody>${rowsHtml}</tbody>
     </table>
   `;
+
+  document.getElementById('results').innerHTML = tableHtml;
 }
 
-// Escape HTML special characters to avoid injection
-function escapeHTML(text) {
-  if (typeof text !== 'string') return text;
-  return text.replace(/[&<>"']/g, (m) => {
-    switch (m) {
-      case '&': return '&amp;';
-      case '<': return '&lt;';
-      case '>': return '&gt;';
-      case '"': return '&quot;';
-      case '\'': return '&#39;';
-      default: return m;
-    }
-  });
+function setStatusMessage(msg, isError = false) {
+  const results = document.getElementById('results');
+  results.innerHTML = `<p style="color:${isError ? 'red' : 'black'};">${msg}</p>`;
 }
 
-// Print summary of validation to console
-function printSummary(results) {
-  let validCount = 0;
-  let invalidCount = 0;
-  const invalidDetails = [];
+function logSummary(results) {
+  const total = results.length;
+  const validCount = results.filter(r => r.validity === 'Valid').length;
+  const invalidCount = total - validCount;
 
-  for (const r of results) {
-    if (r.validity === 'Valid') validCount++;
-    else {
-      invalidCount++;
-      invalidDetails.push({
-        claimID: r.claimID,
-        activityID: r.activityID,
-        remarks: r.remarks
-      });
-    }
-  }
+  console.log(`Validation Summary:`);
+  console.log(`Total activities checked: ${total}`);
+  console.log(`Valid activities: ${validCount}`);
+  console.log(`Invalid activities: ${invalidCount}`);
 
-  console.log(`Clinician License Validation Summary:`);
-  console.log(`Total Activities Processed: ${results.length}`);
-  console.log(`Valid: ${validCount}`);
-  console.log(`Invalid: ${invalidCount}`);
-
-  if (invalidCount) {
-    console.log(`Invalid entries details:`);
-    invalidDetails.forEach(d => {
-      console.log(`- Claim ID: ${d.claimID}, Activity ID: ${d.activityID}, Reason: ${d.remarks}`);
+  if (invalidCount > 0) {
+    console.log('Invalid activity details:');
+    results.filter(r => r.validity === 'Invalid').forEach(r => {
+      console.log(`Activity ID ${r.activityId}: ${r.remarks}`);
     });
   }
 }
