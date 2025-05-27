@@ -3942,5 +3942,101 @@
         "description": "Surgical Curettage, to Include Definitive Debridement About an Implant - Affected by Peri-implant Inflammation or Infection Per Site",
         "dentition_type": "all",
         "affiliated_teeth": "all"
+    },
+    {
+        "code": [
+            "91111"
+        ],
+        "description": "Palliative (emergency) Treatment of Dental Pain, Minor Procedure One unit of time",
+        "dentition_type": "all",
+        "affiliated_teeth": "all"
+    },
+    {
+        "code": [
+            "91119"
+        ],
+        "description": "Palliative (emergency) Treatment of Dental Pain, Minor Procedure Each additional unit over three",
+        "dentition_type": "all",
+        "affiliated_teeth": "all"
+    },
+    {
+        "code": [
+            "76631"
+        ],
+        "description": "Excision of Cyst 1 cm and under",
+        "dentition_type": "all",
+        "affiliated_teeth": "all"
+    },
+    {
+        "code": [
+            "76632"
+        ],
+        "description": "Excision of Cyst 1-2 cm",
+        "dentition_type": "all",
+        "affiliated_teeth": "all"
+    },
+    {
+        "code": [
+            "76633"
+        ],
+        "description": "Excision of Cyst 2-3 cm",
+        "dentition_type": "all",
+        "affiliated_teeth": "all"
+    },
+    {
+        "code": [
+            "76634"
+        ],
+        "description": "Excision of Cyst 3-4 cm",
+        "dentition_type": "all",
+        "affiliated_teeth": "all"
+    },
+    {
+        "code": [
+            "76635"
+        ],
+        "description": "Excision of Cyst 4-6 cm",
+        "dentition_type": "all",
+        "affiliated_teeth": "all"
+    },
+    {
+        "code": [
+            "76636"
+        ],
+        "description": "Excision of Cyst 6-9 cm",
+        "dentition_type": "all",
+        "affiliated_teeth": "all"
+    },
+    {
+        "code": [
+            "76637"
+        ],
+        "description": "Excision of Cyst 9-15 cm",
+        "dentition_type": "all",
+        "affiliated_teeth": "all"
+    },
+    {
+        "code": [
+            "76638"
+        ],
+        "description": "Excision of Cyst 15 cm and over",
+        "dentition_type": "all",
+        "affiliated_teeth": "all"
+    },
+    {
+        "code": [
+            "42621"
+        ],
+        "description": "PERIODONTAL SURGERY, FLAPS, GRAFTS, OSSEOUS TISSUE Grafts, Osseous, Allograft (Including Flap Entry and Closure) Per site + E",
+        "dentition_type": "all",
+        "affiliated_teeth": "all"
+    },
+    {
+        "code": [
+            "42702"
+        ],
+        "description": "Guided Tissue Regeneration – Resorbable Membrane - per site +E.",
+        "dentition_type": "all",
+        "affiliated_teeth": "all"
     }
 ]
