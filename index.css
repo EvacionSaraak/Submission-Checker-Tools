@@ -9,26 +9,33 @@ body {
 
 /* Keep nav styles unchanged */
 nav {
-  background-color: #333;
-  height: 7vh; /* full viewport height */
-  padding: 10px;
   display: flex;
+  justify-content: space-between; /* Left buttons on left, report link on right */
+  align-items: center;            /* Vertically center content */
+  background-color: #333;
+  padding: 10px 20px;             /* padding left and right */
+  max-width: 900px;               /* match your page max-width for centering */
+  margin: 0 auto;                 /* center nav horizontally */
 }
 
-nav button {
-  background: none;
+nav .nav-left button {
+  margin-right: 10px;
+}
+
+nav .nav-right {
   color: white;
-  border: none;
-  cursor: pointer;
-  font-size: 1em;
-  padding: 5px 10px;
+  font-size: 0.9em;
 }
 
-nav button:hover,
-nav button.active {
+nav .nav-right a {
+  color: #0af; /* bright link color */
   text-decoration: underline;
-  font-weight: bold;
 }
+
+nav .nav-right a:hover {
+  color: #08c;
+}
+
 
 /* Wrap main content in a container */
 #mainContent {
