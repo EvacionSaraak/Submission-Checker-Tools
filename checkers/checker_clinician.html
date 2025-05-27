@@ -1,1 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Clinician Data Checker</title>
+  <link rel="stylesheet" href="shared_tables.css" />
+</head>
+<body>
+  <h2>Upload Claim XML and Clinician Excel</h2>
 
+  <label>
+    Upload Claim Submission XML:
+    <input type="file" id="xmlFileInput" accept=".xml" />
+  </label>
+
+  <label>
+    Upload Clinician Excel File:
+    <input type="file" id="excelFileInput" accept=".xls,.xlsx" />
+  </label>
+
+  <div id="results"></div>
+  <div id="messageBox" style="color:red; font-weight:bold;"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="checker_clinician.js"></script>
+</body>
+</html>
