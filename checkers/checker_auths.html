@@ -2,38 +2,39 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Authorization Checker</title>
+  <title>Authorization Validity Checker</title>
   <link rel="stylesheet" href="tables.css" />
 </head>
 <body>
-  <h2>Authorization Checker</h2>
-  <div class="explanation-box">
-    This tool validates claim submissions against the provided authorization export and insurer rules. It checks:
+  <h2>Authorization Validity Checker</h2>
+
+  <div style="border: 1px solid #ccc; padding: 10px; background-color: #f9f9f9; margin-bottom: 20px;">
+    <p>This tool verifies claim authorization data from a submitted XML file against an insurer's exported authorization list (Excel Sheet 2).</p>
     <ul>
-      <li>Authorization ID formats per payer</li>
-      <li>Matching authorization records</li>
-      <li>Correct clinician pairing and ordered date</li>
-      <li>Duplicate ICD codes</li>
-      <li>Thiqa/Daman-specific financial validations</li>
+      <li>Checks for valid Emirates ID format and member info.</li>
+      <li>Ensures Package Name matches insurer records.</li>
+      <li>Validates prior authorization codes against known formats.</li>
+      <li>Cross-checks activity codes and clinicians with the XLSX file.</li>
+      <li>Flags missing or mismatched information, VAT inconsistencies, and duplicate ICD codes.</li>
     </ul>
+    <p><strong>Upload the XML and the Excel file, then click "Run Checker" to begin.</strong></p>
   </div>
 
-  <div class="input-group">
-    <label for="xmlInput">Upload Claim Submission XML:</label>
+  <label>
+    Upload XML:
     <input type="file" id="xmlInput" accept=".xml" />
-  </div>
-  <div class="input-group">
-    <label for="xlsxInput">Upload Authorization Export (XLSX, Sheet 2):</label>
+  </label>
+  <br><br>
+  <label>
+    Upload Excel (Sheet 2 - Authorization Export):
     <input type="file" id="xlsxInput" accept=".xlsx" />
-  </div>
-  <div class="input-group">
-    <button id="runButton">Run Checker</button>
-  </div>
+  </label>
+  <br><br>
+  <button id="runButton">Run Checker</button>
 
-  <!-- Placeholder for dynamically generated results table -->
-  <div id="resultsContainer"></div>
-  
-  <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/xlsx.full.min.js"></script>
+  <div id="messageBox" style="color: red; font-weight: bold;"></div>
+  <div id="results"></div>
+
   <script type="module" src="checker_auths.js"></script>
 </body>
 </html>
