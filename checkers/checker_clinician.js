@@ -214,58 +214,64 @@
     function renderResults(results) {
         resultsDiv.innerHTML = '';
         validationDiv.innerHTML = '';
-
+    
         if (!results.length) {
             resultsDiv.textContent = 'No results found';
             return;
         }
-
-        var validCount = results.filter(r => r.valid).length;
-        var total = results.length;
-        var pct = Math.round((validCount / total) * 100);
-
+    
+        const validCount = results.filter(r => r.valid).length;
+        const total = results.length;
+        const pct = Math.round((validCount / total) * 100);
+    
         validationDiv.textContent = `Validation completed: ${validCount}/${total} valid (${pct}%)`;
         validationDiv.className = pct > 90 ? 'valid-message' : pct > 70 ? 'warning-message' : 'error-message';
-
-        var table = document.createElement('table');
-        var thead = document.createElement('thead');
-        var headerRow = document.createElement('tr');
+    
+        const table = document.createElement('table');
+        const thead = document.createElement('thead');
+        const headerRow = document.createElement('tr');
         ['Claim ID', 'Act ID', 'Clinicians', 'Privileges', 'Categories', 'Valid', 'Remarks'].forEach(function (t) {
-            var th = document.createElement('th');
+            const th = document.createElement('th');
+            th.scope = 'col';
             th.textContent = t;
             headerRow.appendChild(th);
         });
         thead.appendChild(headerRow);
         table.appendChild(thead);
-
-        var tbody = document.createElement('tbody');
+    
+        const tbody = document.createElement('tbody');
+        let prevClaimId = null;
+    
         results.forEach(function (r) {
-            if (r.rowSpan === 0) return;
-
-            var tr = document.createElement('tr');
+            const tr = document.createElement('tr');
             tr.className = r.valid ? 'valid' : 'invalid';
-
-            var td0 = document.createElement('td');
-            td0.textContent = r.claimId;
-            if (r.rowSpan > 1) {
-                td0.rowSpan = r.rowSpan;
-                td0.style.verticalAlign = 'top';
+    
+            // Only show Claim ID if it's different from the previous one
+            const td0 = document.createElement('td');
+            if (r.claimId !== prevClaimId) {
+                td0.textContent = r.claimId;
+                prevClaimId = r.claimId;
+            } else {
+                td0.textContent = '';
             }
+            td0.style.verticalAlign = 'top';
             tr.appendChild(td0);
-
+    
+            // Add other columns
             [r.activityId, r.clinicianInfo, r.privilegesInfo, r.categoryInfo, r.valid ? '✔️' : '❌', r.remarks].forEach(function (txt) {
-                var td = document.createElement('td');
+                const td = document.createElement('td');
                 td.style.whiteSpace = txt.includes('\n') ? 'pre-line' : 'nowrap';
                 td.textContent = txt;
                 tr.appendChild(td);
             });
-
+    
             tbody.appendChild(tr);
         });
-
+    
         table.appendChild(tbody);
         resultsDiv.appendChild(table);
     }
+
 
     function setupExportHandler(results) {
         exportCsvBtn.disabled = false;
