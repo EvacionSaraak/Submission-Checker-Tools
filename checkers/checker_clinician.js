@@ -8,37 +8,38 @@
     var clinicianMap = null;
     var xmlInput, excelInput, openJetInput, resultsDiv, validationDiv, processBtn, exportCsvBtn;
 
-    function sheetToJsonWithHeader(file, sheetIndex = 0, headerRow = 1, offsetHeaders = false) {
+    function sheetToJsonWithHeader(file, sheetIndex = 0, headerRow = 1, skipRowAboveHeader = false) {
         return file.arrayBuffer().then(function (buffer) {
-            var data = new Uint8Array(buffer);
-            var wb = XLSX.read(data, { type: 'array' });
-            var name = wb.SheetNames[sheetIndex];
+            const data = new Uint8Array(buffer);
+            const wb = XLSX.read(data, { type: 'array' });
+            const name = wb.SheetNames[sheetIndex];
             if (!name) throw new Error('Sheet index ' + sheetIndex + ' not found');
     
-            var sheet = wb.Sheets[name];
-            var rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
-            if (!rows || rows.length < headerRow + (offsetHeaders ? 1 : 0)) {
-                throw new Error('Header row ' + headerRow + ' out of range');
+            const sheet = wb.Sheets[name];
+            const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+    
+            // Adjust for one extra row if needed (e.g. "Policy1" above real headers)
+            const headerRowIndex = (headerRow - 1) + (skipRowAboveHeader ? 1 : 0);
+    
+            if (!rows || rows.length <= headerRowIndex) {
+                throw new Error(`Header row ${headerRowIndex + 1} out of range`);
             }
     
-            var headerRowIndex = headerRow - 1 + (offsetHeaders ? 1 : 0);
-            var rawHeaders = rows[headerRowIndex];
-            var headers = rawHeaders.map(h => (h || '').toString().trim());
+            const rawHeaders = rows[headerRowIndex];
+            const headers = rawHeaders.map(h => (h || '').toString().trim());
     
-            // Optional: log headers
-            console.log('Normalized headers:', headers);
+            // Slice data starting after the header
+            const dataRows = rows.slice(headerRowIndex + 1);
     
-            var dataRows = rows.slice(headerRowIndex + 1);
-            return dataRows.map(function (row) {
-                var obj = {};
-                headers.forEach(function (h, i) {
+            return dataRows.map(row => {
+                const obj = {};
+                headers.forEach((h, i) => {
                     obj[h] = row[i] || '';
                 });
                 return obj;
             });
         });
     }
-
 
     function initEventListeners() {
         xmlInput = document.getElementById('xmlFileInput');
@@ -70,7 +71,7 @@
 
         if (excelInput.files[0]) {
             promises.push(
-                sheetToJsonWithHeader(excelInput.files[0], 0, 1).then(function (data) {
+                sheetToJsonWithHeader(excelInput.files[0], 0, 1, false).then(function (data) {
                     clinicianMap = {};
                     data.forEach(function (row) {
                         var id = (row['Clinician License'] || '').toString().trim();
@@ -88,7 +89,7 @@
 
         if (openJetInput.files[0]) {
             promises.push(
-                sheetToJsonWithHeader(openJetInput.files[0], 0, 1).then(function (data) {
+                sheetToJsonWithHeader(openJetInput.files[0], 0, 1, true).then(function (data) {
                     openJetClinicianList = [];
                     data.forEach(function (row) {
                         var lic = (row['Clinician'] || '').toString().trim();
