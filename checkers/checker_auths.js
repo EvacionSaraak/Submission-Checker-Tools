@@ -1,20 +1,44 @@
-// checker_auths.js
+// checker_auths.js OH MAI GAHD
 
 import * as XLSX from "https://cdn.sheetjs.com/xlsx-0.20.0/package/xlsx.mjs";
 
 const xmlInput = document.getElementById("xmlInput");
 const xlsxInput = document.getElementById("xlsxInput");
-const resultsTable = document.getElementById("resultsBody");
+const resultsContainer = document.getElementById("resultsContainer");
+
 let insuranceLicenses = {};
 let approvalCodes = {};
+let licensesLoaded = false;
+let codesLoaded = false;
+
+// Display error message utility
+function showError(message) {
+  resultsContainer.innerHTML = `<div class="error-box">${message}</div>`;
+}
 
 fetch("insurance_licenses.json")
   .then((res) => res.json())
-  .then((data) => (insuranceLicenses = data));
+  .then((data) => {
+    if (!data || !data.licenses || data.licenses.length === 0) {
+      showError("Error: insurance_licenses.json is empty or invalid.");
+    } else {
+      insuranceLicenses = data;
+      licensesLoaded = true;
+    }
+  })
+  .catch(() => showError("Error: Failed to load insurance_licenses.json."));
 
 fetch("checker_auths.json")
   .then((res) => res.json())
-  .then((data) => (approvalCodes = data));
+  .then((data) => {
+    if (!data || Object.keys(data).length === 0) {
+      showError("Error: checker_auths.json is empty or invalid.");
+    } else {
+      approvalCodes = data;
+      codesLoaded = true;
+    }
+  })
+  .catch(() => showError("Error: Failed to load checker_auths.json."));
 
 function parseXML(xmlText) {
   const parser = new DOMParser();
@@ -40,7 +64,7 @@ function validateEmiratesID(id) {
 function validateAuthCode(code, payer) {
   if (payer === "E001") return code.length === 20;
   if (payer === "A001") return /^\d{9}$/.test(code);
-  return false; // manual review
+  return false;
 }
 
 function parseXLSX(sheet) {
@@ -65,7 +89,6 @@ function validateClaim(claim, header, xlsxMap) {
   const diagnoses = claim.getElementsByTagName("Diagnosis");
   const remarks = [];
 
-  // Member & Patient Data Checks
   if (/\s/.test(memberID)) remarks.push("Member ID contains whitespace");
   const validPackages = ["Thiqa 1", "Thiqa 2", "Daman", "NextCare", "NAS", "Mednet"];
   if (!validPackages.includes(packageName)) remarks.push(`Invalid Package Name: ${packageName}`);
@@ -86,7 +109,6 @@ function validateClaim(claim, header, xlsxMap) {
   );
   if (!license) remarks.push("Invalid payer/receiver/package match");
 
-  // Check for duplicate ICD codes
   const icdCodes = new Set();
   const duplicates = new Set();
   for (const diag of diagnoses) {
@@ -135,7 +157,27 @@ function validateClaim(claim, header, xlsxMap) {
 }
 
 function renderResults(results) {
-  resultsTable.innerHTML = "";
+  if (results.length === 0) {
+    resultsContainer.innerHTML = `<div class="error-box">No claims found in the XML file.</div>`;
+    return;
+  }
+
+  const table = document.createElement("table");
+  table.classList.add("styled-table");
+
+  const thead = document.createElement("thead");
+  thead.innerHTML = `
+    <tr>
+      <th>Claim ID</th>
+      <th>Member ID</th>
+      <th>Payer ID</th>
+      <th>Activities</th>
+      <th>Remarks</th>
+    </tr>`;
+  table.appendChild(thead);
+
+  const tbody = document.createElement("tbody");
+
   results.forEach((entry) => {
     const row = document.createElement("tr");
     const activityDetails = entry.Activity.map(
@@ -150,14 +192,26 @@ function renderResults(results) {
       <td>${activityDetails}</td>
       <td>${entry.Remarks.join("<br>")}</td>
     `;
-    resultsTable.appendChild(row);
+    tbody.appendChild(row);
   });
+
+  table.appendChild(tbody);
+  resultsContainer.innerHTML = "";
+  resultsContainer.appendChild(table);
 }
 
 function handleFiles() {
+  if (!licensesLoaded || !codesLoaded) {
+    showError("JSON data not fully loaded. Please wait and try again.");
+    return;
+  }
+
   const xmlFile = xmlInput.files[0];
   const xlsxFile = xlsxInput.files[0];
-  if (!xmlFile || !xlsxFile) return;
+  if (!xmlFile || !xlsxFile) {
+    showError("Please upload both XML and XLSX files.");
+    return;
+  }
 
   const reader = new FileReader();
   reader.onload = (e) => {
@@ -170,7 +224,6 @@ function handleFiles() {
       const workbook = XLSX.read(e2.target.result, { type: "binary" });
       const sheet2 = workbook.Sheets[workbook.SheetNames[1]];
       const xlsxMap = parseXLSX(sheet2);
-
       const results = claims.map((c) => validateClaim(c, header, xlsxMap));
       renderResults(results);
     };
