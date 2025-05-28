@@ -178,10 +178,14 @@ function renderResults(results) {
 
   results.forEach((entry) => {
     const row = document.createElement("tr");
-    const activityDetails = entry.Activity.map(
-      (a) =>
-        `ID: ${a.ID}<br>Start: ${a.Start}<br>Type: ${a.Type}<br>Code: ${a.Code}<br>Auth ID: ${a.PriorAuthorizationID}`
-    ).join("<hr>");
+
+    const activityDetails = entry.Activity.map((a) => `
+      ID: ${a.ID}<br>
+      Code: ${a.Code}<br>
+      Start: ${a.Start}<br>
+      Type: ${a.Type}<br>
+      Auth ID: ${a.PriorAuthorizationID}
+    `).join("<hr>");
 
     row.innerHTML = `
       <td>${entry.ClaimID}</td>
@@ -197,6 +201,7 @@ function renderResults(results) {
   resultsContainer.innerHTML = "";
   resultsContainer.appendChild(table);
 }
+
 
 function handleFiles() {
   if (!licensesLoaded || !codesLoaded) {
