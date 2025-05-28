@@ -65,10 +65,18 @@
         });
     }
 
+    function updateResultsDiv() {
+        let messages = [];
+        if (clinicianCount > 0) messages.push(`${clinicianCount} clinicians loaded`);
+        if (openJetCount > 0) messages.push(`${openJetCount} Open Jet IDs loaded`);
+        if (claimCount > 0) messages.push(`${claimCount} claims loaded`);
+        resultsDiv.textContent = messages.join(', ');
+        toggleProcessButton();
+    }
+    
     function handleUnifiedExcelInput() {
-        resultsDiv.textContent = 'Loading Excel files...';
         var promises = [];
-
+    
         if (excelInput.files[0]) {
             promises.push(
                 sheetToJsonWithHeader(excelInput.files[0], 0, 1, false).then(function (data) {
@@ -83,10 +91,12 @@
                             };
                         }
                     });
+                    clinicianCount = Object.keys(clinicianMap).length;
+                    updateResultsDiv();
                 })
             );
         }
-
+    
         if (openJetInput.files[0]) {
             promises.push(
                 sheetToJsonWithHeader(openJetInput.files[0], 0, 1, true).then(function (data) {
@@ -95,46 +105,49 @@
                         var lic = (row['Clinician'] || '').toString().trim();
                         if (lic) openJetClinicianList.push(lic);
                     });
+                    openJetCount = openJetClinicianList.length;
+                    updateResultsDiv();
                 })
             );
         }
-
-        Promise.all(promises).then(function () {
-            var cCount = Object.keys(clinicianMap).length;
-            var oCount = openJetClinicianList.length;
-            resultsDiv.textContent = `Excel loaded: ${cCount} clinicians, ${oCount} Open Jet IDs.`;
-            toggleProcessButton();
-        }).catch(function (e) {
+    
+        Promise.all(promises).catch(function (e) {
             resultsDiv.textContent = 'Error loading Excel files: ' + e.message;
             toggleProcessButton();
         });
     }
+
+
 
     function handleXmlInput() {
         resultsDiv.textContent = 'Loading XML...';
         var file = xmlInput.files[0];
         if (!file) {
             xmlDoc = null;
-            resultsDiv.textContent = 'Error loading XML: No XML selected';
+            claimCount = 0;
+            updateResultsDiv();
             toggleProcessButton();
             return;
         }
-
+    
         file.text().then(function (text) {
             if (!text.trim()) throw new Error('Empty XML');
-
+    
             var doc = new DOMParser().parseFromString(text, 'application/xml');
             if (doc.querySelector('parsererror')) throw new Error('Invalid XML');
-
+    
             xmlDoc = doc;
-            resultsDiv.textContent = `XML loaded (${xmlDoc.getElementsByTagName('Claim').length} claims).`;
+            claimCount = xmlDoc.getElementsByTagName('Claim').length;
+            updateResultsDiv();
             toggleProcessButton();
         }).catch(function (e) {
             xmlDoc = null;
+            claimCount = 0;
             resultsDiv.textContent = 'Error loading XML: ' + e.message;
             toggleProcessButton();
         });
     }
+
 
     function getText(p, tag) {
         var el = p.getElementsByTagName(tag)[0];
@@ -211,6 +224,13 @@
         setupExportHandler(res);
     }
 
+    function formatClinicianInfo(text) {
+        if (!text) return '';
+        text = text.replace(/\b(Ordering|Performing):/g, '<b>$1:</b>');
+        text = text.replace(/\bDr\b\s/g, '<i>Dr</i> ');
+        return text;
+    }
+
     function renderResults(results) {
         resultsDiv.innerHTML = '';
         validationDiv.innerHTML = '';
@@ -257,11 +277,26 @@
             td0.style.verticalAlign = 'top';
             tr.appendChild(td0);
     
-            // Add other columns
-            [r.activityId, r.clinicianInfo, r.privilegesInfo, r.categoryInfo, r.valid ? '✔️' : '❌', r.remarks].forEach(function (txt) {
+            // Columns besides Claim ID
+            const cols = [
+                r.activityId,
+                formatClinicianInfo(r.clinicianInfo),
+                r.privilegesInfo,
+                r.categoryInfo,
+                r.valid ? '✔️' : '❌',
+                r.remarks
+            ];
+    
+            cols.forEach(function (txt, idx) {
                 const td = document.createElement('td');
-                td.style.whiteSpace = txt.includes('\n') ? 'pre-line' : 'nowrap';
-                td.textContent = txt;
+                // For the clinicianInfo column, use innerHTML to support formatting
+                if (idx === 1) {
+                    td.style.whiteSpace = 'pre-line';
+                    td.innerHTML = txt;
+                } else {
+                    td.style.whiteSpace = txt.includes('\n') ? 'pre-line' : 'nowrap';
+                    td.textContent = txt;
+                }
                 tr.appendChild(td);
             });
     
@@ -271,7 +306,6 @@
         table.appendChild(tbody);
         resultsDiv.appendChild(table);
     }
-
 
     function setupExportHandler(results) {
         exportCsvBtn.disabled = false;
