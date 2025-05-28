@@ -20,6 +20,7 @@ let clinicianMap = null;
 if (xmlInput) {
   xmlInput.addEventListener('change', async () => {
     resultsDiv.textContent = 'Loading XML...';
+    filesLoading.xml = true;
     try {
       const file = xmlInput.files[0];
       const text = await file.text();
@@ -35,10 +36,12 @@ if (xmlInput) {
   });
 }
 
+
 // Event listener: Excel file (clinician privileges)
 if (excelInput) {
   excelInput.addEventListener('change', async () => {
     resultsDiv.textContent = 'Loading Excel...';
+    filesLoading.excel = true;
     try {
       const file = excelInput.files[0];
       const data = new Uint8Array(await file.arrayBuffer());
@@ -69,6 +72,7 @@ if (excelInput) {
   });
 }
 
+
 // Event listener: Open Jet file
 if (openJetInput) {
   openJetInput.addEventListener('change', async () => {
@@ -89,6 +93,7 @@ if (openJetInput) {
 // Enable process button when all inputs are loaded
 function toggleProcessButton() {
   const ready = !filesLoading.xml && !filesLoading.excel && xmlDoc && clinicianMap && openJetClinicianList.length > 0;
+
   console.log('Button toggle check:', {
     xmlLoading: filesLoading.xml,
     excelLoading: filesLoading.excel,
@@ -101,6 +106,7 @@ function toggleProcessButton() {
   exportCsvBtn.disabled = !ready;
   if (ready) resultsDiv.textContent = 'Ready to process. Click "Process Files".';
 }
+
 
 // Read Open Jet XLSX
 async function readOpenJetExcel(file) {
