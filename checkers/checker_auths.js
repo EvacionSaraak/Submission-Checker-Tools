@@ -1,7 +1,5 @@
 // checker_auths.js OH MAI GAHD
 
-import * as XLSX from "https://cdn.sheetjs.com/xlsx-0.20.0/package/xlsx.mjs";
-
 const xmlInput = document.getElementById("xmlInput");
 const xlsxInput = document.getElementById("xlsxInput");
 const resultsContainer = document.getElementById("resultsContainer");
