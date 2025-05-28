@@ -14,14 +14,17 @@
             var wb = XLSX.read(data, { type: 'array' });
             var name = wb.SheetNames[sheetIndex];
             if (!name) throw new Error('Sheet index ' + sheetIndex + ' not found');
-
+    
             var sheet = wb.Sheets[name];
             var rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
             if (!rows || rows.length < headerRow) throw new Error('Header row ' + headerRow + ' out of range');
-
-            var headers = rows[headerRow - 1];
-            if (!headers || headers.length === 0) throw new Error('No header found at row ' + headerRow);
-
+    
+            var rawHeaders = rows[headerRow - 1];
+            var headers = rawHeaders.map(h => (h || '').toString().trim()); // ✅ normalize headers
+    
+            // Optional: Debug header names
+            console.log('Normalized headers:', headers);
+    
             var dataRows = rows.slice(headerRow);
             return dataRows.map(function (row) {
                 var obj = {};
