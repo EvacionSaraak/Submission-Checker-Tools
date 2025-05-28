@@ -17,6 +17,7 @@
       <li>Thiqa/Daman-specific financial validations</li>
     </ul>
   </div>
+
   <div class="input-group">
     <label for="xmlInput">Upload Claim Submission XML:</label>
     <input type="file" id="xmlInput" accept=".xml" />
@@ -28,18 +29,10 @@
   <div class="input-group">
     <button id="runButton">Run Checker</button>
   </div>
-  <table class="results-table">
-    <thead>
-      <tr>
-        <th>Claim ID</th>
-        <th>Member ID</th>
-        <th>Payer ID</th>
-        <th>Activity Details</th>
-        <th>Remarks</th>
-      </tr>
-    </thead>
-    <tbody id="resultsBody"></tbody>
-  </table>
+
+  <!-- Placeholder for dynamically generated results table -->
+  <div id="resultsContainer"></div>
+
   <script type="module" src="checker_auths.js"></script>
 </body>
 </html>
