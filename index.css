@@ -23,7 +23,8 @@ nav {
 
 /* Inner container inside nav to constrain content width & center */
 nav .nav-container {
-  max-width: 900px;  /* your desired max width */
+  max-width: --webkit-fill-available;  /* your desired max width */
+  height: 3vh;
   margin: 0 auto;    /* center horizontally */
   display: flex;
   justify-content: space-between;
@@ -69,10 +70,10 @@ nav .nav-right a:hover {
 /* Wrap main content in a container */
 #mainContent {
   position: relative;
-  max-width: 900px;  /* same as nav .nav-container */
+  max-width: 100%;  /* same as nav .nav-container */
   margin: 0 auto;    /* center horizontally */
-  height: 100vh;
-  overflow-y: auto;  /* allow vertical scroll if needed */
+  height: calc(100vh - 5vh);
+  overflow-y: hidden;  /* allow vertical scroll if needed */
   width: 100%;       /* take full width up to max-width */
 }
 
