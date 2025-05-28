@@ -6,7 +6,17 @@
   <link rel="stylesheet" href="tables.css" />
 </head>
 <body>
-  <h2>Timing Validatity Checker</h2>
+  <h2>Timing Validity Checker</h2>
+
+  <div id="explanationBox">
+    <strong>What this script does:</strong>
+    <p>
+      This tool validates the timing-related elements within a Claim Submission XML file.
+      It checks that service dates, encounter times, and other time-sensitive values follow the required logic and order.
+      Upload a Claim Submission XML to begin the verification process.
+    </p>
+  </div>
+
   <label>Upload XML: <input type="file" id="xmlFileInput" accept=".xml" /></label>
   <div id="results"></div>
 
