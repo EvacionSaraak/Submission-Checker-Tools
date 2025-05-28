@@ -1,4 +1,4 @@
-// VERKA 4 - Clinician Validation Tool
+// VERKA 3 - Clinician Validation Tool
 
 // Global variables
 let openJetClinicianList = [];
@@ -88,11 +88,16 @@ async function handleExcelInput() {
     const data = new Uint8Array(await file.arrayBuffer());
     const workbook = XLSX.read(data, { type: 'array' });
 
-    if (workbook.SheetNames.length < 2) {
-      throw new Error('Excel file must contain at least 2 sheets');
+    // Find the "Clinicians" sheet by name
+    const clinicianSheetName = workbook.SheetNames.find(name => 
+      name.toLowerCase().includes('clinician')
+    );
+
+    if (!clinicianSheetName) {
+      throw new Error('No sheet named "Clinicians" found');
     }
 
-    const sheet = workbook.Sheets[workbook.SheetNames[1]];
+    const sheet = workbook.Sheets[clinicianSheetName];
     const json = XLSX.utils.sheet_to_json(sheet, { defval: '' });
 
     clinicianMap = new Map();
@@ -108,7 +113,7 @@ async function handleExcelInput() {
     });
 
     console.log('Excel loaded:', clinicianMap.size, 'entries');
-    resultsDiv.textContent = 'Excel loaded.';
+    resultsDiv.textContent = `Excel loaded (${clinicianMap.size} clinicians).`;
   } catch (e) {
     clinicianMap = null;
     resultsDiv.textContent = `Error loading Excel: ${e.message}`;
@@ -130,7 +135,7 @@ async function handleOpenJetInput() {
 
     openJetClinicianList = await readOpenJetExcel(file);
     console.log('Open Jet XLSX loaded:', openJetClinicianList.length, 'records');
-    resultsDiv.textContent = 'Open Jet file loaded.';
+    resultsDiv.textContent = `Open Jet file loaded (${openJetClinicianList.length} clinicians).`;
   } catch (e) {
     openJetClinicianList = [];
     resultsDiv.textContent = `Error loading Open Jet XLSX: ${e.message}`;
@@ -262,7 +267,7 @@ function generateRemarks(orderingId, performingId, orderingData, performingData)
   return `Category mismatch: Ordering (${orderingData.category}) vs Performing (${performingData.category})`;
 }
 
-// Results rendering
+// Results rendering with CSS styling
 function renderResults(results) {
   // Clear previous results
   resultsDiv.innerHTML = '';
@@ -272,6 +277,19 @@ function renderResults(results) {
     return;
   }
 
+  // Create summary message
+  const validCount = results.filter(r => r.valid).length;
+  const total = results.length;
+  const messageDiv = document.createElement('div');
+  messageDiv.className = 'validation-summary';
+  messageDiv.textContent = `Validation completed: ${validCount}/${total} valid (${Math.round((validCount/total)*100)}%)`;
+  resultsDiv.appendChild(messageDiv);
+
+  // Create table container
+  const tableContainer = document.createElement('div');
+  tableContainer.className = 'table-container';
+  
+  // Create table
   const table = document.createElement('table');
   const thead = document.createElement('thead');
   const tbody = document.createElement('tbody');
@@ -289,6 +307,7 @@ function renderResults(results) {
   // Create data rows
   results.forEach(r => {
     const tr = document.createElement('tr');
+    tr.className = r.valid ? 'valid' : 'invalid';
     
     // Claim ID
     const claimTd = document.createElement('td');
@@ -323,8 +342,9 @@ function renderResults(results) {
     validTd.textContent = r.valid ? '✔️' : '❌';
     tr.appendChild(validTd);
     
-    // Remarks
+    // Remarks (no-wrap)
     const remarksTd = document.createElement('td');
+    remarksTd.style.whiteSpace = 'nowrap';
     remarksTd.textContent = r.remarks;
     tr.appendChild(remarksTd);
     
@@ -332,7 +352,8 @@ function renderResults(results) {
   });
 
   table.appendChild(tbody);
-  resultsDiv.appendChild(table);
+  tableContainer.appendChild(table);
+  resultsDiv.appendChild(tableContainer);
 }
 
 // Export to CSV
@@ -372,9 +393,7 @@ function setupExportHandler(results) {
 function logSummary(results) {
   const validCount = results.filter(r => r.valid).length;
   const total = results.length;
-  const message = `Validation completed: ${validCount}/${total} valid (${Math.round((validCount/total)*100)}%)`;
-  console.log(message);
-  resultsDiv.insertAdjacentHTML('beforeend', `<p>${message}</p>`);
+  console.log(`Validation completed: ${validCount}/${total} valid (${Math.round((validCount/total)*100)}%)`);
 }
 
 // Initialize the application
