@@ -319,26 +319,99 @@
     function setupExportHandler(results) {
         exportCsvBtn.disabled = false;
         exportCsvBtn.onclick = function () {
-            var headers = ['Claim ID', 'Act ID', 'Clinicians', 'Privileges', 'Categories', 'Valid', 'Remarks'];
-            var rows = results.map(r => [
-                r.claimId,
-                r.activityId,
-                r.clinicianInfo,
-                r.privilegesInfo,
-                r.categoryInfo,
-                r.valid ? 'Yes' : 'No',
-                r.remarks
-            ]);
-
-            var csv = [headers].concat(rows).map(r =>
-                r.map(v => `"${v.replace(/"/g, '""')}"`).join(',')
-            ).join('\n');
-
-            var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-            var a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = 'validation_results.csv';
-            a.click();
+            if (!xmlDoc) {
+                alert('No XML document loaded for export.');
+                return;
+            }
+    
+            // Extract SenderID
+            const senderID = (xmlDoc.querySelector('Header > SenderID')?.textContent || 'UnknownSender').trim();
+    
+            // Extract and parse TransactionDate (format: dd/MM/yyyy HH:mm)
+            const transactionDateRaw = (xmlDoc.querySelector('Header > TransactionDate')?.textContent || '').trim();
+            let transactionDateFormatted = 'UnknownDate';
+    
+            if (transactionDateRaw) {
+                // Convert from dd/MM/yyyy to yyyy-MM-dd
+                const dateParts = transactionDateRaw.split(' ')[0].split('/');
+                if (dateParts.length === 3) {
+                    // Format YYYY-MM-DD
+                    transactionDateFormatted = `${dateParts[2]}-${dateParts[1].padStart(2,'0')}-${dateParts[0].padStart(2,'0')}`;
+                }
+            }
+    
+            // Prepare data rows for XLSX
+            const headers = [
+                'Claim ID',
+                'Activity ID',
+                'Valid/Invalid',
+                'Remarks',
+                'Ordering Clinician ID',
+                'Ordering Privilege',
+                'Ordering Category',
+                'Performing Clinician ID',
+                'Performing Privilege',
+                'Performing Category'
+            ];
+    
+            const rows = results.map(r => {
+                // Split clinicianInfo like "Ordering: oid - name\nPerforming: pid - name"
+                // We want just the IDs (oid and pid)
+                let orderingID = '', performingID = '';
+                if (r.clinicianInfo) {
+                    const lines = r.clinicianInfo.split('\n');
+                    const orderingLine = lines.find(l => l.startsWith('Ordering:')) || '';
+                    const performingLine = lines.find(l => l.startsWith('Performing:')) || '';
+    
+                    // Ordering: oid - name
+                    const orderMatch = orderingLine.match(/^Ordering:\s*(\S+)\s*-/);
+                    orderingID = orderMatch ? orderMatch[1] : '';
+    
+                    // Performing: pid - name
+                    const performMatch = performingLine.match(/^Performing:\s*(\S+)\s*-/);
+                    performingID = performMatch ? performMatch[1] : '';
+                }
+    
+                return [
+                    r.claimId,
+                    r.activityId,
+                    r.valid ? 'Valid' : 'Invalid',
+                    r.remarks,
+                    orderingID,
+                    r.privilegesInfo.split('\n')[0].replace(/^Ordering:\s*/, '') || '',
+                    r.categoryInfo.split('\n')[0].replace(/^Ordering:\s*/, '') || '',
+                    performingID,
+                    r.privilegesInfo.split('\n')[1]?.replace(/^Performing:\s*/, '') || '',
+                    r.categoryInfo.split('\n')[1]?.replace(/^Performing:\s*/, '') || ''
+                ];
+            });
+    
+            // Create workbook and worksheet
+            const wb = XLSX.utils.book_new();
+            const wsData = [headers, ...rows];
+            const ws = XLSX.utils.aoa_to_sheet(wsData);
+    
+            // Freeze first row (headers)
+            ws['!freeze'] = { xSplit: 0, ySplit: 1 };
+    
+            // Auto-width columns based on max length in each column
+            const colWidths = headers.map((h, i) => {
+                let maxLen = h.length;
+                rows.forEach(r => {
+                    const v = r[i];
+                    if (v) maxLen = Math.max(maxLen, v.toString().length);
+                });
+                return { wch: Math.min(maxLen + 5, 50) }; // cap max width to 50 chars
+            });
+            ws['!cols'] = colWidths;
+    
+            XLSX.utils.book_append_sheet(wb, ws, 'Validation Results');
+    
+            // Generate filename
+            const filename = `ClaimsValidation__${senderID}__${transactionDateFormatted}.xlsx`;
+    
+            // Export file
+            XLSX.writeFile(wb, filename);
         };
     }
 
