@@ -2,75 +2,44 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Authorization Checker</title>
   <link rel="stylesheet" href="tables.css" />
-<!--   <style>
-    body {
-      font-family: Arial, sans-serif;
-      margin: 20px;
-    }
-
-    h1 {
-      text-align: center;
-    }
-
-    .upload-section {
-      margin: 20px 0;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-    }
-
-    .upload-section input {
-      margin: 5px 0;
-    }
-
-    #resultsTable {
-      margin-top: 20px;
-      width: 100%;
-      overflow-x: auto;
-    }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-    }
-
-    th, td {
-      border: 1px solid #ccc;
-      padding: 8px;
-      text-align: left;
-    }
-
-    th {
-      background-color: #f4f4f4;
-    }
-
-    pre {
-      white-space: pre-wrap;
-    }
-  </style> -->
 </head>
 <body>
-  <h1>Authorization Checker</h1>
-
-  <div class="upload-section">
-    <label>Upload XML file:</label>
-    <input type="file" id="xmlFile" accept=".xml" />
-    
-    <label>Upload XLSX file:</label>
-    <input type="file" id="xlsxFile" accept=".xlsx" />
-    
-    <button id="processBtn">Process Files</button>
+  <h2>Authorization Checker</h2>
+  <div class="explanation-box">
+    This tool validates claim submissions against the provided authorization export and insurer rules. It checks:
+    <ul>
+      <li>Authorization ID formats per payer</li>
+      <li>Matching authorization records</li>
+      <li>Correct clinician pairing and ordered date</li>
+      <li>Duplicate ICD codes</li>
+      <li>Thiqa/Daman-specific financial validations</li>
+    </ul>
   </div>
-
-  <div id="resultsTable">
-    <!-- The results table will be injected here by JS -->
+  <div class="input-group">
+    <label for="xmlInput">Upload Claim Submission XML:</label>
+    <input type="file" id="xmlInput" accept=".xml" />
   </div>
-
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.7.1/jszip.min.js"></script>
-  <script src="checker_auths.js"></script>
+  <div class="input-group">
+    <label for="xlsxInput">Upload Authorization Export (XLSX, Sheet 2):</label>
+    <input type="file" id="xlsxInput" accept=".xlsx" />
+  </div>
+  <div class="input-group">
+    <button id="runButton">Run Checker</button>
+  </div>
+  <table class="results-table">
+    <thead>
+      <tr>
+        <th>Claim ID</th>
+        <th>Member ID</th>
+        <th>Payer ID</th>
+        <th>Activity Details</th>
+        <th>Remarks</th>
+      </tr>
+    </thead>
+    <tbody id="resultsBody"></tbody>
+  </table>
+  <script type="module" src="checker_auths.js"></script>
 </body>
 </html>
