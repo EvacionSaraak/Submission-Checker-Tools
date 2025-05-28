@@ -4025,9 +4025,25 @@
     },
     {
         "code": [
+            "42611"
+        ],
+        "description": "PERIODONTAL SURGERY, FLAPS, GRAFTS, OSSEOUS TISSUE Grafts, Osseous, Autograft (Including Flap Entry, Closure and Donor Site Per site)",
+        "dentition_type": "all",
+        "affiliated_teeth": "all"
+    },
+    {
+        "code": [
             "42621"
         ],
         "description": "PERIODONTAL SURGERY, FLAPS, GRAFTS, OSSEOUS TISSUE Grafts, Osseous, Allograft (Including Flap Entry and Closure) Per site + E",
+        "dentition_type": "all",
+        "affiliated_teeth": "all"
+    },
+    {
+        "code": [
+            "42631"
+        ],
+        "description": "PERIODONTAL SURGERY, FLAPS, GRAFTS, OSSEOUS TISSUE Grafts, Osseous, Xenograft (Including Flap Entry and Closure) Per site + E",
         "dentition_type": "all",
         "affiliated_teeth": "all"
     },
