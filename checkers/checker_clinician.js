@@ -17,23 +17,37 @@ let xmlDoc = null;
 let clinicianMap = null;
 
 // Event listener: XML file
-if (xmlInput) {
-  xmlInput.addEventListener('change', async () => {
-    resultsDiv.textContent = 'Loading XML...';
-    filesLoading.xml = true;
-    try {
-      const file = xmlInput.files[0];
-      const text = await file.text();
-      window.xmlDoc = new DOMParser().parseFromString(text, 'text/xml');
-      filesLoading.xml = false;
-      resultsDiv.textContent = 'XML loaded.';
-      console.log('XML loaded:', xmlDoc.getElementsByTagName('Claim').length, 'claims');
-    } catch (e) {
-      resultsDiv.textContent = `Error loading XML: ${e.message}`;
-      console.error(e);
+xmlInput.addEventListener('change', async () => {
+  resultsDiv.textContent = 'Loading XML...';
+  filesLoading.xml = true;
+
+  try {
+    const file = xmlInput.files[0];
+    const text = await file.text();
+    xmlDoc = new DOMParser().parseFromString(text, 'application/xml');
+
+    const errorNode = xmlDoc.querySelector('parsererror');
+    if (errorNode) {
+      throw new Error('Invalid XML format');
     }
-    toggleProcessButton();
-  });
+
+    const claimCount = xmlDoc.getElementsByTagName('Claim').length;
+    console.log('XML loaded:', claimCount, 'claims');
+    resultsDiv.textContent = `XML loaded (${claimCount} claims).`;
+
+  } catch (e) {
+    xmlDoc = null;
+    resultsDiv.textContent = `Error loading XML: ${e.message}`;
+    console.error(e);
+  }
+
+  filesLoading.xml = false;
+  toggleProcessButton();
+});
+
+if (!xmlDoc || xmlDoc.querySelector('parsererror')) {
+  console.error("XML is invalid or wasn't parsed properly.");
+  return;
 }
 
 
