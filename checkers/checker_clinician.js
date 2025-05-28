@@ -1,4 +1,4 @@
-// VERKA 3 - Clinician Validation Tool
+// VERKA 3 - Clinician Validation Tool (Final Version)
 
 // Global variables
 let openJetClinicianList = [];
@@ -11,59 +11,36 @@ const xmlInput = document.getElementById('xmlFileInput');
 const excelInput = document.getElementById('excelFileInput');
 const openJetInput = document.getElementById('openJetFileInput');
 const resultsDiv = document.getElementById('results');
+const validationDiv = document.createElement('div'); // New div for validation message
+validationDiv.id = 'validation-message';
+resultsDiv.parentNode.insertBefore(validationDiv, resultsDiv);
 const processBtn = document.getElementById('processBtn');
 const exportCsvBtn = document.getElementById('exportCsvBtn');
 
 // Initialize event listeners
 function initEventListeners() {
-  // XML file input
   xmlInput.addEventListener('change', handleXmlInput);
-
-  // Excel file input
-  if (excelInput) {
-    excelInput.addEventListener('change', handleExcelInput);
-  }
-
-  // Open Jet file input
-  if (openJetInput) {
-    openJetInput.addEventListener('change', handleOpenJetInput);
-  }
-
-  // Process button
-  processBtn.addEventListener('click', () => {
-    if (xmlDoc && clinicianMap) {
-      processClaims(xmlDoc, clinicianMap);
-    }
-  });
+  if (excelInput) excelInput.addEventListener('change', handleExcelInput);
+  if (openJetInput) openJetInput.addEventListener('change', handleOpenJetInput);
+  processBtn.addEventListener('click', () => xmlDoc && clinicianMap && processClaims(xmlDoc, clinicianMap));
 }
 
 // XML file handler
 async function handleXmlInput() {
   resultsDiv.textContent = 'Loading XML...';
   filesLoading.xml = true;
-
   try {
     const file = xmlInput.files[0];
-    if (!file) {
-      throw new Error('No file selected');
-    }
-
+    if (!file) throw new Error('No file selected');
+    
     const text = await file.text();
-    if (!text.trim()) {
-      throw new Error('Empty XML file');
-    }
-
+    if (!text.trim()) throw new Error('Empty XML file');
+    
     xmlDoc = new DOMParser().parseFromString(text, 'application/xml');
-
-    const errorNode = xmlDoc.querySelector('parsererror');
-    if (errorNode) {
-      throw new Error('Invalid XML format');
-    }
-
+    if (xmlDoc.querySelector('parsererror')) throw new Error('Invalid XML format');
+    
     const claimCount = xmlDoc.getElementsByTagName('Claim').length;
-    console.log('XML loaded:', claimCount, 'claims');
     resultsDiv.textContent = `XML loaded (${claimCount} claims).`;
-
   } catch (e) {
     xmlDoc = null;
     resultsDiv.textContent = `Error loading XML: ${e.message}`;
@@ -74,45 +51,42 @@ async function handleXmlInput() {
   }
 }
 
-// Excel file handler
+// Excel file handler - Modified to properly find clinician data
 async function handleExcelInput() {
   resultsDiv.textContent = 'Loading Excel...';
   filesLoading.excel = true;
-
   try {
     const file = excelInput.files[0];
-    if (!file) {
-      throw new Error('No file selected');
-    }
-
+    if (!file) throw new Error('No file selected');
+    
     const data = new Uint8Array(await file.arrayBuffer());
     const workbook = XLSX.read(data, { type: 'array' });
-
-    // Find the "Clinicians" sheet by name
+    
+    // First try to find exact "Clinicians" sheet, then fallback to partial match
     const clinicianSheetName = workbook.SheetNames.find(name => 
+      name.trim().toLowerCase() === 'clinicians'
+    ) || workbook.SheetNames.find(name => 
       name.toLowerCase().includes('clinician')
     );
-
-    if (!clinicianSheetName) {
-      throw new Error('No sheet named "Clinicians" found');
-    }
-
+    
+    if (!clinicianSheetName) throw new Error('No Clinicians sheet found');
+    
     const sheet = workbook.Sheets[clinicianSheetName];
     const json = XLSX.utils.sheet_to_json(sheet, { defval: '' });
-
+    
     clinicianMap = new Map();
     json.forEach(row => {
-      const id = row['Clinician ID']?.toString().trim();
+      // Try different possible column names for clinician ID
+      const id = (row['Clinician ID'] || row['ID'] || row['Clinician'] || '').toString().trim();
       if (id) {
         clinicianMap.set(id, {
-          name: row['Clinician Name'] || 'N/A',
-          category: row['Clinician Category'] || 'N/A',
-          privileges: row['Activity Group'] || 'N/A'
+          name: row['Clinician Name'] || row['Name'] || 'N/A',
+          category: row['Clinician Category'] || row['Category'] || 'N/A',
+          privileges: row['Activity Group'] || row['Privileges'] || 'N/A'
         });
       }
     });
-
-    console.log('Excel loaded:', clinicianMap.size, 'entries');
+    
     resultsDiv.textContent = `Excel loaded (${clinicianMap.size} clinicians).`;
   } catch (e) {
     clinicianMap = null;
@@ -124,113 +98,54 @@ async function handleExcelInput() {
   }
 }
 
-// Open Jet file handler
+// Open Jet file handler - Updated message
 async function handleOpenJetInput() {
   resultsDiv.textContent = 'Loading Open Jet XLSX...';
   try {
     const file = openJetInput.files[0];
-    if (!file) {
-      throw new Error('No file selected');
-    }
-
+    if (!file) throw new Error('No file selected');
+    
     openJetClinicianList = await readOpenJetExcel(file);
-    console.log('Open Jet XLSX loaded:', openJetClinicianList.length, 'records');
-    resultsDiv.textContent = `Open Jet file loaded (${openJetClinicianList.length} clinicians).`;
+    resultsDiv.textContent = `Open Jet loaded (${openJetClinicianList.length} eligibilities).`;
   } catch (e) {
     openJetClinicianList = [];
-    resultsDiv.textContent = `Error loading Open Jet XLSX: ${e.message}`;
+    resultsDiv.textContent = `Error loading Open Jet: ${e.message}`;
     console.error('Open Jet Error:', e);
   } finally {
     toggleProcessButton();
   }
 }
 
-// Read Open Jet Excel file
-async function readOpenJetExcel(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error('Failed to read file'));
-    reader.onload = e => {
-      try {
-        const data = new Uint8Array(e.target.result);
-        const workbook = XLSX.read(data, { type: 'array' });
-
-        if (workbook.SheetNames.length === 0) {
-          throw new Error('No sheets found in Excel file');
-        }
-
-        const sheet = workbook.Sheets[workbook.SheetNames[0]];
-        const json = XLSX.utils.sheet_to_json(sheet, { defval: '', range: 1 });
-        
-        const cleaned = json.map(row => {
-          const clinician = row['Clinician'];
-          return clinician !== undefined ? clinician.toString().trim() : '';
-        }).filter(Boolean);
-
-        resolve(cleaned);
-      } catch (err) {
-        reject(err);
-      }
-    };
-    reader.readAsArrayBuffer(file);
-  });
-}
-
-// Enable/disable process button based on file readiness
-function toggleProcessButton() {
-  const ready = !filesLoading.xml && 
-                !filesLoading.excel && 
-                xmlDoc && 
-                clinicianMap && 
-                openJetClinicianList.length > 0;
-
-  processBtn.disabled = !ready;
-  exportCsvBtn.disabled = !ready;
-
-  if (ready) {
-    resultsDiv.textContent = 'Ready to process. Click "Process Files".';
-  }
-}
-
-// Process claims data
+// Process claims with merged Claim ID cells
 function processClaims(xmlDoc, clinicianMap) {
-  if (!xmlDoc || !clinicianMap) {
-    resultsDiv.textContent = 'Error: Required files not loaded';
-    return;
-  }
-
   resultsDiv.textContent = 'Processing...';
   const claims = Array.from(xmlDoc.getElementsByTagName('Claim'));
   const results = [];
-
+  
+  // First pass - collect all data
   claims.forEach(claim => {
     const claimId = getText(claim, 'ID') || 'N/A';
     const activities = Array.from(claim.getElementsByTagName('Activity'));
-
+    
     activities.forEach(activity => {
       const activityId = getText(activity, 'ID') || 'N/A';
       const orderingId = getText(activity, 'OrderingClinician') || '';
       const performingId = getText(activity, 'Clinician') || '';
-
+      
       const orderingData = clinicianMap.get(orderingId) || defaultClinicianData();
       const performingData = clinicianMap.get(performingId) || defaultClinicianData();
-
+      
       const remarksList = [];
-
-      // Check Open Jet list
       if (performingId && !openJetClinicianList.includes(performingId)) {
-        remarksList.push(`Performing Clinician (${performingId}) not in Open Jet list`);
+        remarksList.push(`Performing Clinician (${performingId}) not in Open Jet`);
       }
       if (orderingId && !openJetClinicianList.includes(orderingId)) {
-        remarksList.push(`Ordering Clinician (${orderingId}) not in Open Jet list`);
+        remarksList.push(`Ordering Clinician (${orderingId}) not in Open Jet`);
       }
-
-      // Validate clinician relationships
+      
       const valid = validateClinicians(orderingId, performingId, orderingData, performingData);
-      if (!valid) {
-        remarksList.push(generateRemarks(orderingId, performingId, orderingData, performingData));
-      }
-
+      if (!valid) remarksList.push(generateRemarks(orderingData, performingData));
+      
       results.push({
         claimId,
         activityId,
@@ -238,63 +153,47 @@ function processClaims(xmlDoc, clinicianMap) {
         privilegesInfo: `Ordering: ${orderingData.privileges}\nPerforming: ${performingData.privileges}`,
         categoryInfo: `Ordering: ${orderingData.category}\nPerforming: ${performingData.category}`,
         valid,
-        remarks: remarksList.join('; ')
+        remarks: remarksList.join('; '),
+        rowSpan: 1 // Initialize rowspan counter
       });
     });
   });
-
+  
+  // Second pass - calculate rowspans for merged Claim IDs
+  for (let i = 0; i < results.length; i++) {
+    if (i > 0 && results[i].claimId === results[i-1].claimId) {
+      results[i].rowSpan = 0; // Mark for merging
+      results[i-1].rowSpan++; // Increment previous row's span
+    }
+  }
+  
   renderResults(results);
-  logSummary(results);
-  exportCsvBtn.disabled = false;
   setupExportHandler(results);
 }
 
-// Helper functions
-function getText(parent, tag) {
-  const el = parent.getElementsByTagName(tag)[0];
-  return el ? el.textContent.trim() : '';
-}
-
-function defaultClinicianData() {
-  return { name: 'N/A', category: 'N/A', privileges: 'N/A' };
-}
-
-function validateClinicians(orderingId, performingId, orderingData, performingData) {
-  return orderingId === performingId || orderingData.category === performingData.category;
-}
-
-function generateRemarks(orderingId, performingId, orderingData, performingData) {
-  return `Category mismatch: Ordering (${orderingData.category}) vs Performing (${performingData.category})`;
-}
-
-// Results rendering with CSS styling
+// Render results with merged cells and proper validation message
 function renderResults(results) {
-  // Clear previous results
   resultsDiv.innerHTML = '';
+  validationDiv.innerHTML = '';
   
   if (results.length === 0) {
     resultsDiv.textContent = 'No results found';
     return;
   }
-
-  // Create summary message
+  
+  // Calculate and display validation summary
   const validCount = results.filter(r => r.valid).length;
   const total = results.length;
-  const messageDiv = document.createElement('div');
-  messageDiv.className = 'validation-summary';
-  messageDiv.textContent = `Validation completed: ${validCount}/${total} valid (${Math.round((validCount/total)*100)}%)`;
-  resultsDiv.appendChild(messageDiv);
-
-  // Create table container
-  const tableContainer = document.createElement('div');
-  tableContainer.className = 'table-container';
+  const percentage = Math.round((validCount/total)*100);
+  validationDiv.textContent = `Validation completed: ${validCount}/${total} valid (${percentage}%)`;
+  validationDiv.className = percentage > 90 ? 'valid-message' : percentage > 70 ? 'warning-message' : 'error-message';
   
-  // Create table
+  // Create table with merged cells
   const table = document.createElement('table');
   const thead = document.createElement('thead');
   const tbody = document.createElement('tbody');
-
-  // Create header row
+  
+  // Header row
   const headerRow = document.createElement('tr');
   ['Claim ID', 'Activity ID', 'Clinicians', 'Privileges', 'Categories', 'Valid', 'Remarks'].forEach(text => {
     const th = document.createElement('th');
@@ -303,14 +202,20 @@ function renderResults(results) {
   });
   thead.appendChild(headerRow);
   table.appendChild(thead);
-
-  // Create data rows
-  results.forEach(r => {
+  
+  // Data rows with merged cells
+  results.forEach((r, index) => {
+    if (r.rowSpan === 0) return; // Skip merged rows
+    
     const tr = document.createElement('tr');
     tr.className = r.valid ? 'valid' : 'invalid';
     
-    // Claim ID
+    // Claim ID with rowspan if needed
     const claimTd = document.createElement('td');
+    if (r.rowSpan > 1) {
+      claimTd.rowSpan = r.rowSpan;
+      claimTd.style.verticalAlign = 'top';
+    }
     claimTd.textContent = r.claimId;
     tr.appendChild(claimTd);
     
@@ -350,50 +255,9 @@ function renderResults(results) {
     
     tbody.appendChild(tr);
   });
-
+  
   table.appendChild(tbody);
-  tableContainer.appendChild(table);
-  resultsDiv.appendChild(tableContainer);
-}
-
-// Export to CSV
-function setupExportHandler(results) {
-  exportCsvBtn.onclick = () => {
-    const rows = [['Claim ID', 'Activity ID', 'Clinicians', 'Privileges', 'Categories', 'Valid', 'Remarks']];
-    
-    results.forEach(r => {
-      rows.push([
-        r.claimId,
-        r.activityId,
-        r.clinicianInfo.replace(/\n/g, ' | '),
-        r.privilegesInfo.replace(/\n/g, ' | '),
-        r.categoryInfo.replace(/\n/g, ' | '),
-        r.valid ? 'Yes' : 'No',
-        r.remarks
-      ]);
-    });
-
-    const csvContent = rows.map(r => 
-      r.map(field => `"${field.toString().replace(/"/g, '""')}"`).join(',')
-    ).join('\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'clinician_validation_results.csv';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  };
-}
-
-// Log summary to console
-function logSummary(results) {
-  const validCount = results.filter(r => r.valid).length;
-  const total = results.length;
-  console.log(`Validation completed: ${validCount}/${total} valid (${Math.round((validCount/total)*100)}%)`);
+  resultsDiv.appendChild(table);
 }
 
 // Initialize the application
