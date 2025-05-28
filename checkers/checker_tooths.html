@@ -7,10 +7,21 @@
 </head>
 <body>
   <h2>Tooth Validity Checker</h2>
+
+  <div id="explanationBox">
+    <strong>What this script does:</strong>
+    <p>
+      This tool validates that the dental procedure codes in a Claim Submission XML file are correctly matched to the associated tooth numbers.
+      It ensures the procedures are assigned only to appropriate tooth regions (anterior, premolar, molar).
+      Upload your XML to begin validation.
+    </p>
+  </div>
+
   <label>
     Upload XML:
     <input type="file" id="xmlFile" accept=".xml" />
   </label>
+
   <div id="messageBox" style="color: red; font-weight: bold;"></div>
   <div id="results"></div>
 
