@@ -8,7 +8,7 @@
     var clinicianMap = null;
     var xmlInput, excelInput, openJetInput, resultsDiv, validationDiv, processBtn, exportCsvBtn;
 
-    function sheetToJsonWithHeader(file, sheetIndex = 0, headerRow = 1) {
+    function sheetToJsonWithHeader(file, sheetIndex = 0, headerRow = 1, offsetHeaders = false) {
         return file.arrayBuffer().then(function (buffer) {
             var data = new Uint8Array(buffer);
             var wb = XLSX.read(data, { type: 'array' });
@@ -17,15 +17,18 @@
     
             var sheet = wb.Sheets[name];
             var rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
-            if (!rows || rows.length < headerRow) throw new Error('Header row ' + headerRow + ' out of range');
+            if (!rows || rows.length < headerRow + (offsetHeaders ? 1 : 0)) {
+                throw new Error('Header row ' + headerRow + ' out of range');
+            }
     
-            var rawHeaders = rows[headerRow - 1];
-            var headers = rawHeaders.map(h => (h || '').toString().trim()); // ✅ normalize headers
+            var headerRowIndex = headerRow - 1 + (offsetHeaders ? 1 : 0);
+            var rawHeaders = rows[headerRowIndex];
+            var headers = rawHeaders.map(h => (h || '').toString().trim());
     
-            // Optional: Debug header names
+            // Optional: log headers
             console.log('Normalized headers:', headers);
     
-            var dataRows = rows.slice(headerRow);
+            var dataRows = rows.slice(headerRowIndex + 1);
             return dataRows.map(function (row) {
                 var obj = {};
                 headers.forEach(function (h, i) {
@@ -35,6 +38,7 @@
             });
         });
     }
+
 
     function initEventListeners() {
         xmlInput = document.getElementById('xmlFileInput');
