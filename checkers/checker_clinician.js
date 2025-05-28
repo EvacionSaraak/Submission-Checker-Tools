@@ -1,4 +1,4 @@
-// VERKA 3 - Clinician Validation Tool (Final Version)
+// VERKA 43 - Clinician Validation Tool (Final Version)
 
 // Global variables
 let openJetClinicianList = [];
