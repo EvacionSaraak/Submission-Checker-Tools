@@ -77,6 +77,11 @@
     }
     
     function handleUnifiedExcelInput() {
+        // Clear results and disable process button immediately
+        resultsDiv.innerHTML = '';
+        validationDiv.innerHTML = '';
+        processBtn.disabled = true;
+    
         var promises = [];
     
         if (excelInput.files[0]) {
@@ -119,10 +124,13 @@
         });
     }
 
-
-
     function handleXmlInput() {
+        // Clear results and disable process button immediately
+        resultsDiv.innerHTML = '';
+        validationDiv.innerHTML = '';
+        processBtn.disabled = true;
         resultsDiv.textContent = 'Loading XML...';
+    
         var file = xmlInput.files[0];
         if (!file) {
             xmlDoc = null;
@@ -149,7 +157,6 @@
             toggleProcessButton();
         });
     }
-
 
     function getText(p, tag) {
         var el = p.getElementsByTagName(tag)[0];
