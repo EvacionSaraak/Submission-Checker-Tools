@@ -38,17 +38,19 @@ async function handleUnifiedExcelInput() {
   resultsDiv.textContent = 'Loading Excel files...';
   try {
     if (excelInput.files[0]) {
-      console.log('Loading clinician Excel');
+      console.log('Attempting to load Clinician Excel:', excelInput.files[0].name);
       clinicianMap = await loadClinicianExcel(excelInput.files[0]);
+      console.log('Clinician Excel loaded successfully');
     }
     if (openJetInput.files[0]) {
-      console.log('Loading Open Jet Excel');
+      console.log('Attempting to load Open Jet Excel:', openJetInput.files[0].name);
       openJetClinicianList = await loadOpenJetExcel(openJetInput.files[0]);
+      console.log('Open Jet Excel loaded successfully');
     }
     resultsDiv.textContent = `Excel loaded: ${clinicianMap.size} clinicians, ${openJetClinicianList.length} Open Jet IDs.`;
   } catch (e) {
+    console.error('Unified Excel loading error:', e);
     resultsDiv.textContent = `Error loading Excel files: ${e.message}`;
-    console.error('Excel Error:', e);
   } finally {
     toggleProcessButton();
   }
@@ -56,37 +58,57 @@ async function handleUnifiedExcelInput() {
 
 // Load clinician Excel: expects sheet named 'Clinicians'
 async function loadClinicianExcel(file) {
-  console.log('Parsing clinician Excel file');
+  console.log('Parsing Clinicians Excel file');
   const data = new Uint8Array(await file.arrayBuffer());
   const workbook = XLSX.read(data, { type: 'array' });
+  console.log('Workbook sheets for clinicians:', workbook.SheetNames);
   const sheetName = 'Clinicians';
-  if (!workbook.SheetNames.includes(sheetName)) throw new Error("Clinician sheet 'Clinicians' not found");
+  if (!workbook.SheetNames.includes(sheetName)) {
+    console.error(`Sheet '${sheetName}' not found in clinician workbook`);
+    throw new Error("Clinician sheet 'Clinicians' not found");
+  }
   const sheet = workbook.Sheets[sheetName];
+  // Log first few rows to debug header offset
+  const preview = XLSX.utils.sheet_to_json(sheet, { header: 1, range: 0, defval: '' }).slice(0, 3);
+  console.log('Clinician sheet preview rows:', preview);
   const json = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+  console.log('Clinician JSON keys sample:', json.length ? Object.keys(json[0]) : 'No data');
   const map = new Map();
-  json.forEach(row => {
+  json.forEach((row, index) => {
     const id = (row['Clinician ID'] || row['ID'] || row['Clinician'] || '').toString().trim();
-    if (id) map.set(id, {
-      name: row['Clinician Name'] || row['Name'] || 'N/A',
-      category: row['Clinician Category'] || row['Category'] || 'N/A',
-      privileges: row['Activity Group'] || row['Privileges'] || 'N/A'
-    });
+    if (!id) console.warn(`Row ${index + 2}: missing Clinician ID`);
+    if (id) {
+      map.set(id, {
+        name: row['Clinician Name'] || row['Name'] || 'N/A',
+        category: row['Clinician Category'] || row['Category'] || 'N/A',
+        privileges: row['Activity Group'] || row['Privileges'] || 'N/A'
+      });
+    }
   });
   console.log(`Loaded ${map.size} clinicians from sheet '${sheetName}'`);
   return map;
 }
 
-// Load OpenJet Excel: expects single sheet at index 0
+// Load OpenJet Excel: expects single sheet at index 0, header starts on row 2
 async function loadOpenJetExcel(file) {
   console.log('Parsing Open Jet Excel file');
   const data = new Uint8Array(await file.arrayBuffer());
   const workbook = XLSX.read(data, { type: 'array' });
-  if (workbook.SheetNames.length < 1) throw new Error('Open Jet file has no sheets');
+  console.log('Workbook sheets for Open Jet:', workbook.SheetNames);
+  if (workbook.SheetNames.length < 1) {
+    console.error('No sheets found in Open Jet workbook');
+    throw new Error('Open Jet file has no sheets');
+  }
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  // Preview rows to check header offset
+  const preview = XLSX.utils.sheet_to_json(sheet, { header: 1, range: 0, defval: '' }).slice(0, 4);
+  console.log('Open Jet sheet preview (first 4 rows):', preview);
   const json = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+  console.log('Open Jet JSON keys sample:', json.length ? Object.keys(json[0]) : 'No data');
   const licenses = new Set();
-  json.forEach(row => {
+  json.forEach((row, index) => {
     const lic = row['Clinician License'] || row['License'] || '';
+    if (!lic) console.warn(`Row ${index + 2}: missing Clinician License`);
     if (lic) licenses.add(lic.toString().trim());
   });
   console.log(`Loaded ${licenses.size} clinician licenses from Open Jet`);
@@ -116,7 +138,7 @@ async function handleXmlInput() {
   }
 }
 
-// Core processing and rendering logic
+// Core processing and rendering logic (unchanged)...
 function getText(parent, tag) {
   const el = parent.getElementsByTagName(tag)[0];
   return el ? el.textContent.trim() : '';
@@ -160,10 +182,7 @@ function processClaims(xmlDoc, clinicianMap) {
     });
   });
   for (let i = 1; i < results.length; i++) {
-    if (results[i].claimId === results[i-1].claimId) {
-      results[i].rowSpan = 0;
-      results[i-1].rowSpan++;
-    }
+    if (results[i].claimId === results[i-1].claimId) { results[i].rowSpan = 0; results[i-1].rowSpan++; }
   }
   console.log(`Processed ${results.length} activities`);
   renderResults(results);
@@ -180,22 +199,7 @@ function renderResults(results) {
   console.log(`Validation summary: ${validCount}/${total} valid (${percentage}%)`);
   validationDiv.textContent = `Validation completed: ${validCount}/${total} valid (${percentage}%)`;
   validationDiv.className = percentage>90 ? 'valid-message' : percentage>70 ? 'warning-message' : 'error-message';
-  const table = document.createElement('table');
-  const thead = document.createElement('thead');
-  const headerRow = document.createElement('tr');
-  ['Claim ID','Activity ID','Clinicians','Privileges','Categories','Valid','Remarks'].forEach(text => { const th = document.createElement('th'); th.textContent = text; headerRow.appendChild(th); });
-  thead.appendChild(headerRow);
-  table.appendChild(thead);
-  const tbody = document.createElement('tbody');
-  results.forEach(r => {
-    if (r.rowSpan===0) return;
-    const tr = document.createElement('tr'); tr.className = r.valid ? 'valid':'invalid';
-    const claimTd = document.createElement('td'); claimTd.textContent = r.claimId; if(r.rowSpan>1){claimTd.rowSpan=r.rowSpan;claimTd.style.verticalAlign='top';} tr.appendChild(claimTd);
-    [r.activityId, r.clinicianInfo, r.privilegesInfo, r.categoryInfo, r.valid? '✔️':'❌', r.remarks].forEach(text=>{const td=document.createElement('td'); td.style.whiteSpace = text.includes('\n')?'pre-line':'nowrap'; td.textContent=text; tr.appendChild(td);});
-    tbody.appendChild(tr);
-  });
-  table.appendChild(tbody);
-  resultsDiv.appendChild(table);
+  const table = document.createElement('table'); const thead = document.createElement('thead'); const headerRow = document.createElement('tr'); ['Claim ID','Activity ID','Clinicians','Privileges','Categories','Valid','Remarks'].forEach(text => { const th = document.createElement('th'); th.textContent = text; headerRow.appendChild(th); }); thead.appendChild(headerRow); table.appendChild(thead); const tbody = document.createElement('tbody'); results.forEach(r => { if (r.rowSpan===0) return; const tr = document.createElement('tr'); tr.className = r.valid ? 'valid':'invalid'; const claimTd = document.createElement('td'); claimTd.textContent = r.claimId; if(r.rowSpan>1){claimTd.rowSpan=r.rowSpan;claimTd.style.verticalAlign='top';} tr.appendChild(claimTd); [r.activityId, r.clinicianInfo, r.privilegesInfo, r.categoryInfo, r.valid? '✔️':'❌', r.remarks].forEach(text=>{ const td=document.createElement('td'); td.style.whiteSpace = text.includes('\n')?'pre-line':'nowrap'; td.textContent=text; tr.appendChild(td); }); tbody.appendChild(tr); }); table.appendChild(tbody); resultsDiv.appendChild(table);
 }
 
 function setupExportHandler(results) {
@@ -206,7 +210,7 @@ function setupExportHandler(results) {
     const rows = results.map(r=>[r.claimId,r.activityId,r.clinicianInfo,r.privilegesInfo,r.categoryInfo,r.valid?'Yes':'No',r.remarks]);
     const csv = [headers,...rows].map(row=>row.map(v=>`"${v.replace(/"/g,'""')}"`).join(',')).join('\n');
     const blob = new Blob([csv],{type:'text/csv;charset=utf-8;'});
-    const link = document.createElement('a');link.href=URL.createObjectURL(blob);link.setAttribute('download','validation_results.csv');link.click();
+    const link = document.createElement('a'); link.href=URL.createObjectURL(blob); link.setAttribute('download','validation_results.csv'); link.click();
   };
 }
 
