@@ -8,16 +8,11 @@
 <body>
   <h2>Authorization Validity Checker</h2>
 
-  <div style="border: 1px solid #ccc; padding: 10px; background-color: #f9f9f9; margin-bottom: 20px;">
-    <p>This tool verifies claim authorization data from a submitted XML file against an insurer's exported authorization list (Excel Sheet 2).</p>
-    <ul>
-      <li>Checks for valid Emirates ID format and member info.</li>
-      <li>Ensures Package Name matches insurer records.</li>
-      <li>Validates prior authorization codes against known formats.</li>
-      <li>Cross-checks activity codes and clinicians with the XLSX file.</li>
-      <li>Flags missing or mismatched information, VAT inconsistencies, and duplicate ICD codes.</li>
-    </ul>
-    <p><strong>Upload the XML and the Excel file, then click "Run Checker" to begin.</strong></p>
+  <div id="explanationBox">
+    <strong>What this script does:</strong>
+    <p>
+      This tool allows you to upload a Claim Submission XML file along with an Excel export (Sheet 2) containing authorization records. It validates Emirates ID format, verifies the correctness of authorization codes, ensures clinician and activity details match the export, and checks for duplicate diagnoses, invalid packages, VAT inconsistencies, and other discrepancies. After processing, the tool will show any remarks that need attention.
+    </p>
   </div>
 
   <label>
