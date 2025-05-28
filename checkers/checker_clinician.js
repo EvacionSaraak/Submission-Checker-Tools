@@ -9,12 +9,12 @@ const excelInput = document.getElementById('excelFileInput');
 const openJetInput = document.getElementById('openJetFileInput');
 const resultsDiv = document.getElementById('results');
 const processBtn = document.getElementById('processBtn');
+const exportCsvBtn = document.getElementById('exportCsvBtn');
 
 // File loading flags
-const filesLoading = {
-  xml: true,
-  excel: true,
-};
+const filesLoading = { xml: false, excel: false };
+let xmlDoc = null;
+let clinicianMap = null;
 
 // Event listener: XML file
 if (xmlInput) {
@@ -26,6 +26,7 @@ if (xmlInput) {
       window.xmlDoc = new DOMParser().parseFromString(text, 'text/xml');
       filesLoading.xml = false;
       resultsDiv.textContent = 'XML loaded.';
+      console.log('XML loaded:', xmlDoc.getElementsByTagName('Claim').length, 'claims');
     } catch (e) {
       resultsDiv.textContent = `Error loading XML: ${e.message}`;
       console.error(e);
@@ -59,6 +60,7 @@ if (excelInput) {
 
       filesLoading.excel = false;
       resultsDiv.textContent = 'Excel loaded.';
+      console.log('Excel loaded:', clinicianMap.size, 'entries');
     } catch (e) {
       resultsDiv.textContent = `Error loading Excel: ${e.message}`;
       console.error(e);
@@ -86,8 +88,18 @@ if (openJetInput) {
 
 // Enable process button when all inputs are loaded
 function toggleProcessButton() {
-  processBtn.disabled = filesLoading.xml || filesLoading.excel || !xmlDoc || !clinicianMap || openJetClinicianList.length === 0;
-  if (!processBtn.disabled) resultsDiv.textContent = 'Ready to process. Click "Process Files".';
+  const ready = !filesLoading.xml && !filesLoading.excel && xmlDoc && clinicianMap && openJetClinicianList.length > 0;
+  console.log('Button toggle check:', {
+    xmlLoading: filesLoading.xml,
+    excelLoading: filesLoading.excel,
+    hasXmlDoc: !!xmlDoc,
+    hasClinicianMap: !!clinicianMap,
+    openJetEntries: openJetClinicianList.length
+  });
+
+  processBtn.disabled = !ready;
+  exportCsvBtn.disabled = !ready;
+  if (ready) resultsDiv.textContent = 'Ready to process. Click "Process Files".';
 }
 
 // Read Open Jet XLSX
@@ -100,8 +112,10 @@ async function readOpenJetExcel(file) {
         const data = new Uint8Array(e.target.result);
         const workbook = XLSX.read(data, { type: 'array' });
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
-        const json = XLSX.utils.sheet_to_json(sheet, { defval: '' });
-        resolve(json.map(row => row['Clinician']?.toString().trim()).filter(Boolean));
+
+        const json = XLSX.utils.sheet_to_json(sheet, { defval: '', range: 1 });
+        const cleaned = json.map(row => row['Clinician']?.toString().trim()).filter(Boolean);
+        resolve(cleaned);
       } catch (err) {
         reject(err);
       }
@@ -110,12 +124,10 @@ async function readOpenJetExcel(file) {
   });
 }
 
-// Create default clinician data
 function defaultClinicianData() {
   return { name: 'N/A', category: 'N/A', privileges: 'N/A' };
 }
 
-// Main validation logic
 function processClaims(xmlDoc, clinicianMap) {
   const claims = Array.from(xmlDoc.getElementsByTagName('Claim'));
   const results = [];
@@ -135,10 +147,10 @@ function processClaims(xmlDoc, clinicianMap) {
       const remarksList = [];
 
       if (!openJetClinicianList.includes(performingId)) {
-        remarksList.push('Performing Clinician mismatch with XLSX');
+        remarksList.push(`Performing Clinician (${performingId}) not in Open Jet list`);
       }
       if (!openJetClinicianList.includes(orderingId)) {
-        remarksList.push('Ordering Clinician mismatch with XLSX');
+        remarksList.push(`Ordering Clinician (${orderingId}) not in Open Jet list`);
       }
 
       const valid = validateClinicians(orderingId, performingId, orderingData, performingData);
@@ -160,25 +172,38 @@ function processClaims(xmlDoc, clinicianMap) {
 
   renderResults(results);
   logSummary(results);
+  exportCsvBtn.disabled = false;
+
+  exportCsvBtn.onclick = () => {
+    const rows = [['Claim ID', 'Activity ID', 'Clinicians', 'Privileges', 'Categories', 'Valid', 'Remarks']];
+    results.forEach(r => {
+      rows.push([
+        r.claimId, r.activityId, r.clinicianInfo, r.privilegesInfo, r.categoryInfo, r.valid ? 'Yes' : 'No', r.remarks
+      ]);
+    });
+
+    const csvContent = rows.map(r => r.map(field => `"${field.replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = 'clinician_validation_results.csv';
+    link.click();
+  };
 }
 
-// Helper to extract text content from tag
 function getText(parent, tag) {
   const el = parent.getElementsByTagName(tag)[0];
   return el ? el.textContent.trim() : '';
 }
 
-// Validate clinician compatibility
 function validateClinicians(orderingId, performingId, orderingData, performingData) {
   return orderingId === performingId || orderingData.category === performingData.category;
 }
 
-// Generate remarks
 function generateRemarks(orderingId, performingId, orderingData, performingData, valid) {
   return `Category mismatch: Ordering (${orderingData.category}) vs Performing (${performingData.category})`;
 }
 
-// Render results in a table
 function renderResults(results) {
   const table = document.createElement('table');
   table.innerHTML = `
@@ -211,7 +236,6 @@ function renderResults(results) {
   resultsDiv.appendChild(table);
 }
 
-// Log summary (optional)
 function logSummary(results) {
   const validCount = results.filter(r => r.valid).length;
   const total = results.length;
