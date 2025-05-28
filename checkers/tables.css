@@ -65,6 +65,15 @@ table td:nth-child(6)  /* For checker_tooths remarks column (adjust if different
   background-color: #ffe4e1; /* light red */
 }
 
+.error-box {
+  background-color: #ffdddd;
+  border: 1px solid #ff5c5c;
+  padding: 12px;
+  margin-top: 12px;
+  color: #a30000;
+  border-radius: 4px;
+}
+
 /* Message styling */
 #messageBox {
   color: red;
