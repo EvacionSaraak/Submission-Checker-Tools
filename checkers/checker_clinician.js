@@ -51,7 +51,7 @@ async function handleXmlInput() {
   }
 }
 
-// Excel file handler - Modified to properly find clinician data
+// Excel file handler
 async function handleExcelInput() {
   resultsDiv.textContent = 'Loading Excel...';
   filesLoading.excel = true;
@@ -62,7 +62,6 @@ async function handleExcelInput() {
     const data = new Uint8Array(await file.arrayBuffer());
     const workbook = XLSX.read(data, { type: 'array' });
     
-    // First try to find exact "Clinicians" sheet, then fallback to partial match
     const clinicianSheetName = workbook.SheetNames.find(name => 
       name.trim().toLowerCase() === 'clinicians'
     ) || workbook.SheetNames.find(name => 
@@ -76,7 +75,6 @@ async function handleExcelInput() {
     
     clinicianMap = new Map();
     json.forEach(row => {
-      // Try different possible column names for clinician ID
       const id = (row['Clinician ID'] || row['ID'] || row['Clinician'] || '').toString().trim();
       if (id) {
         clinicianMap.set(id, {
@@ -98,7 +96,7 @@ async function handleExcelInput() {
   }
 }
 
-// Open Jet file handler - Updated message
+// Open Jet file handler
 async function handleOpenJetInput() {
   resultsDiv.textContent = 'Loading Open Jet XLSX...';
   try {
@@ -116,13 +114,39 @@ async function handleOpenJetInput() {
   }
 }
 
+// Helper: get text content of a tag
+function getText(parent, tag) {
+  const el = parent.getElementsByTagName(tag)[0];
+  return el ? el.textContent.trim() : '';
+}
+
+// Helper: default clinician data
+function defaultClinicianData() {
+  return { name: 'Unknown', category: 'Unknown', privileges: 'Unknown' };
+}
+
+// NEW: Validate clinicians
+function validateClinicians(orderingId, performingId, orderingData, performingData) {
+  if (!orderingId || !performingId) return false;
+  if (orderingId === performingId) return true;
+  return orderingData.category === performingData.category;
+}
+
+// NEW: Generate remarks on mismatch
+function generateRemarks(orderingData, performingData) {
+  const remarks = [];
+  if (orderingData.category !== performingData.category) {
+    remarks.push(`Category mismatch (${orderingData.category} vs ${performingData.category})`);
+  }
+  return remarks.join('; ');
+}
+
 // Process claims with merged Claim ID cells
 function processClaims(xmlDoc, clinicianMap) {
   resultsDiv.textContent = 'Processing...';
   const claims = Array.from(xmlDoc.getElementsByTagName('Claim'));
   const results = [];
   
-  // First pass - collect all data
   claims.forEach(claim => {
     const claimId = getText(claim, 'ID') || 'N/A';
     const activities = Array.from(claim.getElementsByTagName('Activity'));
@@ -154,24 +178,23 @@ function processClaims(xmlDoc, clinicianMap) {
         categoryInfo: `Ordering: ${orderingData.category}\nPerforming: ${performingData.category}`,
         valid,
         remarks: remarksList.join('; '),
-        rowSpan: 1 // Initialize rowspan counter
+        rowSpan: 1
       });
     });
   });
-  
-  // Second pass - calculate rowspans for merged Claim IDs
+
   for (let i = 0; i < results.length; i++) {
-    if (i > 0 && results[i].claimId === results[i-1].claimId) {
-      results[i].rowSpan = 0; // Mark for merging
-      results[i-1].rowSpan++; // Increment previous row's span
+    if (i > 0 && results[i].claimId === results[i - 1].claimId) {
+      results[i].rowSpan = 0;
+      results[i - 1].rowSpan++;
     }
   }
-  
+
   renderResults(results);
   setupExportHandler(results);
 }
 
-// Render results with merged cells and proper validation message
+// Render results table
 function renderResults(results) {
   resultsDiv.innerHTML = '';
   validationDiv.innerHTML = '';
@@ -181,19 +204,16 @@ function renderResults(results) {
     return;
   }
   
-  // Calculate and display validation summary
   const validCount = results.filter(r => r.valid).length;
   const total = results.length;
-  const percentage = Math.round((validCount/total)*100);
+  const percentage = Math.round((validCount / total) * 100);
   validationDiv.textContent = `Validation completed: ${validCount}/${total} valid (${percentage}%)`;
   validationDiv.className = percentage > 90 ? 'valid-message' : percentage > 70 ? 'warning-message' : 'error-message';
   
-  // Create table with merged cells
   const table = document.createElement('table');
   const thead = document.createElement('thead');
   const tbody = document.createElement('tbody');
   
-  // Header row
   const headerRow = document.createElement('tr');
   ['Claim ID', 'Activity ID', 'Clinicians', 'Privileges', 'Categories', 'Valid', 'Remarks'].forEach(text => {
     const th = document.createElement('th');
@@ -203,14 +223,11 @@ function renderResults(results) {
   thead.appendChild(headerRow);
   table.appendChild(thead);
   
-  // Data rows with merged cells
   results.forEach((r, index) => {
-    if (r.rowSpan === 0) return; // Skip merged rows
-    
+    if (r.rowSpan === 0) return;
     const tr = document.createElement('tr');
     tr.className = r.valid ? 'valid' : 'invalid';
     
-    // Claim ID with rowspan if needed
     const claimTd = document.createElement('td');
     if (r.rowSpan > 1) {
       claimTd.rowSpan = r.rowSpan;
@@ -219,35 +236,29 @@ function renderResults(results) {
     claimTd.textContent = r.claimId;
     tr.appendChild(claimTd);
     
-    // Activity ID
     const activityTd = document.createElement('td');
     activityTd.textContent = r.activityId;
     tr.appendChild(activityTd);
     
-    // Clinicians (with pre-line formatting)
     const clinicianTd = document.createElement('td');
     clinicianTd.style.whiteSpace = 'pre-line';
     clinicianTd.textContent = r.clinicianInfo;
     tr.appendChild(clinicianTd);
     
-    // Privileges (with pre-line formatting)
     const privTd = document.createElement('td');
     privTd.style.whiteSpace = 'pre-line';
     privTd.textContent = r.privilegesInfo;
     tr.appendChild(privTd);
     
-    // Categories (with pre-line formatting)
     const catTd = document.createElement('td');
     catTd.style.whiteSpace = 'pre-line';
     catTd.textContent = r.categoryInfo;
     tr.appendChild(catTd);
     
-    // Validation status
     const validTd = document.createElement('td');
     validTd.textContent = r.valid ? '✔️' : '❌';
     tr.appendChild(validTd);
     
-    // Remarks (no-wrap)
     const remarksTd = document.createElement('td');
     remarksTd.style.whiteSpace = 'nowrap';
     remarksTd.textContent = r.remarks;
@@ -260,5 +271,16 @@ function renderResults(results) {
   resultsDiv.appendChild(table);
 }
 
-// Initialize the application
+// Enable or disable Process button
+function toggleProcessButton() {
+  const ready = xmlDoc && clinicianMap && openJetClinicianList.length > 0;
+  processBtn.disabled = !ready;
+}
+
+// Placeholder: Export logic if needed
+function setupExportHandler(results) {
+  // You can implement CSV export logic here if needed
+}
+
+// Initialize app
 document.addEventListener('DOMContentLoaded', initEventListeners);
