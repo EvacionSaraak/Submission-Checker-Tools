@@ -18,10 +18,13 @@
       <input type="file" id="excelFileInput" accept=".xlsx" />
     </div>
     <div class="input-group">
-      <label for="excelFileInput">Open Jet Eligibility Export File (.xlsx):</label>
-      <input type="file" id="openJetFileInput" />
+      <label for="openJetFileInput">Open Jet Eligibility Export File (.xlsx):</label>
+      <input type="file" id="openJetFileInput" accept=".xlsx" />
     </div>
-    <div class="input-group"><button id="processBtn" disabled>Process Files</button></div>
+    <div class="input-group">
+      <button id="processBtn" disabled>Process Files</button>
+      <button id="exportCsvBtn" disabled>Export CSV</button>
+    </div>
   </div>
 
   <div id="uploadStatus"></div>
