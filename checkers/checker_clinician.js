@@ -7,6 +7,8 @@
     var xmlDoc = null;
     var clinicianMap = null;
     var xmlInput, excelInput, openJetInput, resultsDiv, validationDiv, processBtn, exportCsvBtn;
+    var clinicianCount = 0, openJetCount = 0, claimCount = 0;
+
 
     function sheetToJsonWithHeader(file, sheetIndex = 0, headerRow = 1, skipRowAboveHeader = false) {
         return file.arrayBuffer().then(function (buffer) {
