@@ -14,22 +14,6 @@ let parsedXlsxData = null;
 
 // === UTILITIES ===
 
-function showFileStatus(message, type = 'info') {
-  const statusElement = document.getElementById('file-status');
-  if (!statusElement) return;
-
-  statusElement.textContent = message;
-  statusElement.className = '';
-  statusElement.classList.add(type);
-
-  if (type !== 'error') {
-    setTimeout(() => {
-      statusElement.textContent = '';
-      statusElement.className = '';
-    }, 5000);
-  }
-}
-
 function getText(parent, tag) {
   const el = parent.querySelector(tag);
   return el && el.textContent ? el.textContent.trim() : "";
@@ -171,8 +155,10 @@ function validateXLSXMatch(row, { memberId, code, /* , */ netTotal, ordering, au
   const remarks = [];
   if ((row["Card Number / DHA Member ID"] || "").trim() !== memberId.trim()) remarks.push(`MemberID mismatch: XLSX=${row["Card Number / DHA Member ID"] || ""}`);
   if ((row["Item Code"] || "").trim() !== code.trim()) remarks.push(`Item Code mismatch: XLSX=${row["Item Code"] || ""}`);
-  //  check removed
-  if (String(row["Payer Share"] || "").trim() !== netTotal.trim()) remarks.push(`Payer Share mismatch: XLSX=${row["Payer Share"] || ""}`);
+  
+  const xlsxPayerShare = parseFloat(row["Payer Share"] || "0");
+  const xmlNetTotal = parseFloat(netTotal || "0");
+  if (xlsxPayerShare !== xmlNetTotal) remarks.push(`Payer Share mismatch: XLSX=${row["Payer Share"] || ""}`);
 
   const xlsxOrdering = (row["Ordering Clinician"] || "").trim().toUpperCase();
   const xmlOrdering = (ordering || "").trim().toUpperCase();
@@ -405,18 +391,11 @@ function renderResults(results) {
 // === MAIN PROCESSING ===
 
 async function handleRun() {
-  if (!parsedXmlDoc || !parsedXlsxData) {
-    showFileStatus('Please upload both XML and XLSX files.', 'error');
-    return;
-  }
   try {
-    showFileStatus('Processing files...', 'info');
     await loadAuthRules();
     const results = validateClaims(parsedXmlDoc, parsedXlsxData, authRules);
     renderResults(results);
-    showFileStatus('Processing complete!', 'success');
   } catch (err) {
-    showFileStatus(`Error: ${err.message || err}`, 'error');
     console.error("Processing error:", err);
   }
 }
@@ -441,7 +420,6 @@ document.addEventListener('DOMContentLoaded', function() {
         if (id === "xmlInput") {
           currentXmlFile = file;
           xmlClaimCount = -1;
-          showFileStatus(`XML file selected: ${file.name}`, 'info');
           // Parse just for claim count
           try {
             parsedXmlDoc = await parseXMLFile(currentXmlFile);
@@ -449,7 +427,6 @@ document.addEventListener('DOMContentLoaded', function() {
         } else if (id === "xlsxInput") {
           currentXlsxFile = file;
           xlsxAuthCount = -1;
-          showFileStatus(`XLSX file selected: ${file.name}`, 'info');
           // Parse just for auth count
           try {
             parsedXlsxData = await parseXLSXFile(currentXlsxFile);
