@@ -226,54 +226,73 @@ function logInvalidRow(xlsRow, context, remarks) {
  * @param {Object} authRules - Authorization rules
  * @returns {Object} Validation result with remarks
  */
-function validateActivity(activity, xlsxMap, memberId, authRules) {
-  const id = getText(activity, "ID");
-  const code = getText(activity, "Code");
-  const rule = authRules[code];
-  const description = rule?.description || "";
-  const start = getText(activity, "Start");
-  // const  = getText(activity, "Quantity"); //REMOVED
-  const netTotal = getText(activity, "Net"); // Use "Net" from XML (not NetTotal, corrected)
-  const ordering = getText(activity, "OrderingClinician");
-  const authID = getText(activity, "PriorAuthorizationID") || getText(activity, "PriorAuthorization");
+function validateActivities(xmlActivities, xlsxDataMap) {
+  const results = [];
 
-  let remarks = [];
+  for (const act of xmlActivities) {
+    const { authID, memberId, code, netTotal, ordering } = act;
+    const xlsxRows = xlsxDataMap[authID] || [];
+    let matchedRow = null;
 
-  // Check if authorization is required for this code
-  const authRequired = !!(rule && rule.authRequired);
+    for (const row of xlsxRows) {
+      const rowCode = String(row["Item Code"] || "");
+      const rowMember = String(row["Card Number / DHA Member ID"] || "");
 
-  if (!authID) {
-    if (authRequired) {
-      remarks.push("Missing AuthorizationID for code requiring auth");
-    }
-  } else {
-    const rows = xlsxMap[authID] || [];
-    if (!rows.length) {
-      remarks.push(`AuthID ${authID} not in XLSX data`);
-    } else {
-      // Find matching XLSX row by AuthorizationID and Item Code
-      const xlsRow = rows.find(r => (r.AuthorizationID || "") === authID && (r["Item Code"] || "") === code);
-      if (!xlsRow) {
-        remarks.push("No matching XLSX row for code/AuthID");
-      } else {
-        const context = { memberId, code, /*qty,*/ netTotal, ordering, authID };
-        
-        // Validate XLSX row against XML context
-        const remarksFromMatch = validateXLSXMatch(xlsRow, context);
-        // Log all invalid rows with full data if any mismatch
-        logInvalidRow(xlsRow, context, remarksFromMatch);
-        remarks = remarks.concat(remarksFromMatch);
-
-        // Also validate date and status
-        const remarksFromDate = validateDateAndStatus(xlsRow, start);
-        remarks = remarks.concat(remarksFromDate);
-
-        return { id, code, description, start, netTotal, ordering, authID, payerShare: xlsRow ? xlsRow["Payer Share"] : "", remarks };
+      if (rowCode.trim() === code && rowMember.trim() === memberId) {
+        matchedRow = row;
+        break;
       }
     }
+
+    const remarks = [];
+
+    if (!matchedRow) {
+      remarks.push("No matching authorization row found in XLSX.");
+    } else {
+      // --- Whitespace Checks ---
+      const whitespaceFields = [
+        "Item Code",
+        "Card Number / DHA Member ID",
+        "Ordering Clinician",
+        "Payer Share"
+      ];
+      whitespaceFields.forEach(field => {
+        const value = String(matchedRow[field] || "");
+        if (value !== value.trim()) {
+          remarks.push(`Extra whitespace in field: "${field}"`);
+        }
+      });
+
+      // --- Payer Share vs Net Total ---
+      const xPayerShare = String(matchedRow["Payer Share"] || "").trim();
+      const xNet = parseFloat(netTotal).toFixed(2);
+      if (parseFloat(xPayerShare).toFixed(2) !== xNet) {
+        remarks.push(`Payer Share mismatch: XLSX=${xPayerShare}`);
+      }
+
+      // --- Ordering Clinician match ---
+      const xOrdering = String(matchedRow["Ordering Clinician"] || "").trim();
+      if (xOrdering && xOrdering !== ordering) {
+        remarks.push(`Ordering clinician mismatch: XLSX=${xOrdering}`);
+      }
+
+      // --- Debug Logging ---
+      if (remarks.length) {
+        console.warn("Validation errors for AuthorizationID:", authID, "Item Code:", code);
+        console.log("XLSX Row Data:", matchedRow);
+        console.log("XML Context Data:", act);
+        console.log("Remarks:", remarks.join("; "));
+      }
+    }
+
+    results.push({
+      ...act,
+      xlsRow: matchedRow || {},
+      remarks
+    });
   }
 
-  return { id, code, description, start, netTotal, ordering, authID, payerShare: xlsRow ? xlsRow["Payer Share"] : "", remarks };
+  return results;
 }
 
 /**
