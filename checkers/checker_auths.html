@@ -4,6 +4,8 @@
   <meta charset="UTF-8" />
   <title>Authorization Validity Checker</title>
   <link rel="stylesheet" href="tables.css" />
+  <!-- [ADDED] Load SheetJS library before checker_auths.js -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 <body>
   <h2>Authorization Validity Checker</h2>
@@ -27,9 +29,10 @@
   <br><br>
   <button id="runButton">Run Checker</button>
 
-  <div id="messageBox" style="color: red; font-weight: bold;"></div>
+  <!-- [REMOVED] messageBox: All messages/errors go to 'results' now -->
   <div id="results"></div>
 
+  <!-- [IMPORTANT] checker_auths.js depends on SheetJS being loaded above -->
   <script type="module" src="checker_auths.js"></script>
 </body>
 </html>
