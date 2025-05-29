@@ -489,20 +489,39 @@ async function handleRun() {
 
 // === EVENT LISTENERS ===
 
-// Set up file input change handlers
-document.getElementById('file-input').addEventListener('change', (event) => {
-  handleFileInputChange(event, processAuthsFileContent);
-});
+// Initialize when DOM is loaded
+document.addEventListener('DOMContentLoaded', function() {
+  // Main processing button
+  const processBtn = document.getElementById('processBtn');
+  if (processBtn) {
+    processBtn.addEventListener('click', handleRun);
+  } else {
+    console.error('Process button not found');
+  }
 
-// Set up main run button handler
-document.getElementById("runButton").addEventListener("click", handleRun);
+  // File input change handlers
+  const xmlInput = document.getElementById('xmlInput');
+  const xlsxInput = document.getElementById('xlsxInput');
 
-// Set up file input change handlers for XML/XLSX
-["xmlInput", "xlsxInput"].forEach(id => {
-  const el = document.getElementById(id);
-  if (el) el.addEventListener("change", () => {
-    if (id === "xmlInput") xmlClaimCount = -1;
-    if (id === "xlsxInput") xlsxAuthCount = -1;
-    updateStatus();
-  });
+  if (xmlInput) {
+    xmlInput.addEventListener('change', function() {
+      xmlClaimCount = -1;
+      updateStatus();
+    });
+  }
+
+  if (xlsxInput) {
+    xlsxInput.addEventListener('change', function() {
+      xlsxAuthCount = -1;
+      updateStatus();
+    });
+  }
+
+  // Simple file input handler (if needed)
+  const fileInput = document.getElementById('file-input');
+  if (fileInput) {
+    fileInput.addEventListener('change', function(event) {
+      handleFileInputChange(event, processAuthsFileContent);
+    });
+  }
 });
