@@ -169,7 +169,7 @@ function validateDateAndStatus(row, start) {
   if (isNaN(xlsDate))      remarks.push("Invalid XLSX Ordered On date/time");
   if (isNaN(xmlDate))      remarks.push("Invalid XML Start date/time");
   if (!isNaN(xlsDate) && !isNaN(xmlDate) && xlsDate >= xmlDate)
-    remarks.push("Ordered On must be before Activity Start");
+    remarks.push("Procedure was done before Approval Ordering date. Please check Effective Date on OpenJet.");
 
   const status = (row.status || row.Status || "").toLowerCase();
   if (!status.includes("approved")) {
