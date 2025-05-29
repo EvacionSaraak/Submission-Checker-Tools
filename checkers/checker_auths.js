@@ -167,17 +167,22 @@ function validateApprovalRequirement(code, authID) {
  * @param {Object} context - Activity context
  * @returns {Array<string>} remarks
  */
-function validateXLSXMatch(row, { memberId, code, qty, netTotal, ordering, clinician, authID }) {
+function validateXLSXMatch(row, { memberId, code, /* qty, */ netTotal, ordering, authID }) {
   const remarks = [];
-  if ((row["Card Number / DHA Member ID"] || "") !== memberId) remarks.push(`MemberID mismatch: XLSX=${row["Card Number / DHA Member ID"] || ""}`);
-  if ((row["Item Code"] || "") !== code) remarks.push(`Item Code mismatch: XLSX=${row["Item Code"] || ""}`);
-  if (String(row["Item Amount"] || "") !== qty) remarks.push(`Qty mismatch: XLSX=${row["Item Amount"] || ""}`);
-  if (String(row["Payer Share"] || "") !== netTotal) remarks.push(`Payer Share mismatch: XLSX=${row["Payer Share"] || ""}`);
-  if ((row["Ordering Clinician"] || "") !== ordering) remarks.push(`Ordering Clinician mismatch: XLSX=${row["Ordering Clinician"] || ""}`);
-  if ((row["Performing Clinician"] || "") !== clinician) remarks.push(`Clinician mismatch: XLSX=${row["Performing Clinician"] || ""}`);
-  if ((row.AuthorizationID || "") !== authID) remarks.push(`AuthorizationID mismatch: XLSX=${row.AuthorizationID || ""}`);
+  if ((row["Card Number / DHA Member ID"] || "").trim() !== memberId.trim()) remarks.push(`MemberID mismatch: XLSX=${row["Card Number / DHA Member ID"] || ""}`);
+  if ((row["Item Code"] || "").trim() !== code.trim()) remarks.push(`Item Code mismatch: XLSX=${row["Item Code"] || ""}`);
+  // Qty check removed
+  if (String(row["Payer Share"] || "").trim() !== netTotal.trim()) remarks.push(`Payer Share mismatch: XLSX=${row["Payer Share"] || ""}`);
+
+  const xlsxOrdering = (row["Ordering Clinician"] || "").trim().toUpperCase();
+  const xmlOrdering = (ordering || "").trim().toUpperCase();
+  if (xlsxOrdering !== xmlOrdering) remarks.push(`Ordering Clinician mismatch: XLSX=${row["Ordering Clinician"] || ""}`);
+
+  if ((row.AuthorizationID || "").trim() !== authID.trim()) remarks.push(`AuthorizationID mismatch: XLSX=${row.AuthorizationID || ""}`);
+
   return remarks;
 }
+
 
 
 /**
@@ -241,7 +246,7 @@ function validateActivity(activity, xlsxMap, memberId, authRules) {
   const rule = authRules[code];
   const description = rule?.description || "";
   const start = getText(activity, "Start");
-  const qty = getText(activity, "Quantity");
+  // const qty = getText(activity, "Quantity"); //REMOVED
   const netTotal = getText(activity, "Net"); // Use "Net" from XML (not NetTotal, corrected)
   const ordering = getText(activity, "OrderingClinician");
   const authID = getText(activity, "PriorAuthorizationID") || getText(activity, "PriorAuthorization");
