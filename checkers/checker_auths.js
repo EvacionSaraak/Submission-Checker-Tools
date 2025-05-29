@@ -190,18 +190,12 @@ function validateApprovalRequirement(code, authID) {
  */
 function validateXLSXMatch(row, { memberId, code, qty, netTotal, ordering, authID }) {
   const remarks = [];
-  if ((row["Card Number / DHA Member ID"] || "") !== memberId)
-    remarks.push(`MemberID mismatch: XLSX=${row["Card Number / DHA Member ID"] || ""}`);
-  if ((row["Item Code"] || "") !== code)
-    remarks.push(`Item Code mismatch: XLSX=${row["Item Code"] || ""}`);
-  if (String(row["Item Amount"] || "") !== qty)
-    remarks.push(`Qty mismatch: XLSX=${row["Item Amount"] || ""}`);
-  if (String(row["Payer Share"] || "") !== netTotal)
-    remarks.push(`Payer Share mismatch: XLSX=${row["Payer Share"] || ""}`);
-  if ((row["Ordering Clinician"] || "") !== ordering)
-    remarks.push(`Ordering Clinician mismatch: XLSX=${row["Ordering Clinician"] || ""}`);
-  if ((row.AuthorizationID || "") !== authID)
-    remarks.push(`AuthorizationID mismatch: XLSX=${row.AuthorizationID || ""}`);
+  if ((row["Card Number / DHA Member ID"] || "") !== memberId) remarks.push(`MemberID mismatch: XLSX=${row["Card Number / DHA Member ID"] || ""}`);
+  if ((row["Item Code"] || "") !== code) remarks.push(`Item Code mismatch: XLSX=${row["Item Code"] || ""}`);
+  if (String(row["Item Amount"] || "") !== qty) remarks.push(`Qty mismatch: XLSX=${row["Item Amount"] || ""}`);
+  if (String(row["Payer Share"] || "") !== netTotal) remarks.push(`Payer Share mismatch: XLSX=${row["Payer Share"] || ""}`);
+  if ((row["Ordering Clinician"] || "") !== ordering) remarks.push(`Ordering Clinician mismatch: XLSX=${row["Ordering Clinician"] || ""}`);
+  if ((row.AuthorizationID || "") !== authID) remarks.push(`AuthorizationID mismatch: XLSX=${row.AuthorizationID || ""}`);
   console.log("[validateXLSXMatch] context:", context, "remarks:", remarks);
   return remarks;
 }
