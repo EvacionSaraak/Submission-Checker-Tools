@@ -212,12 +212,28 @@ function validateDateAndStatus(row, start) {
 }
 
 /**
- * Validates an individual Activity element
+ * Logs invalid XLSX rows with all comparison data to console for debugging
+ * @param {Object} xlsRow - The XLSX data row object
+ * @param {Object} context - The XML context data used for comparison
+ * @param {Array<string>} remarks - The mismatch remarks from validation
+ */
+function logInvalidRow(xlsRow, context, remarks) {
+  if (remarks.length > 0) {
+    console.group(`Validation errors for AuthorizationID: ${context.authID}, Item Code: ${context.code}`);
+    console.log("XLSX Row Data:", xlsRow);
+    console.log("XML Context Data:", context);
+    console.log("Remarks:", remarks);
+    console.groupEnd();
+  }
+}
+
+/**
+ * Validates an individual Activity element against XLSX data and rules
  * @param {Element} activity - XML Activity element
  * @param {Object} xlsxMap - XLSX data mapped by AuthorizationID
- * @param {string} memberId - Member ID
+ * @param {string} memberId - Member ID from XML claim
  * @param {Object} authRules - Authorization rules
- * @returns {Object} Validation result
+ * @returns {Object} Validation result with remarks
  */
 function validateActivity(activity, xlsxMap, memberId, authRules) {
   const id = getText(activity, "ID");
@@ -226,17 +242,15 @@ function validateActivity(activity, xlsxMap, memberId, authRules) {
   const description = rule?.description || "";
   const start = getText(activity, "Start");
   const qty = getText(activity, "Quantity");
-  const netTotal = getText(activity, "NetTotal");
+  const netTotal = getText(activity, "Net"); // Use "Net" from XML (not NetTotal, corrected)
   const ordering = getText(activity, "OrderingClinician");
-  const clinician = getText(activity, "Clinician"); // Performing Clinician
   const authID = getText(activity, "PriorAuthorizationID") || getText(activity, "PriorAuthorization");
 
   let remarks = [];
 
-  // Determine if auth is required for this code
+  // Check if authorization is required for this code
   const authRequired = !!(rule && rule.authRequired);
 
-  // Main validation logic for auth
   if (!authID) {
     if (authRequired) {
       remarks.push("Missing AuthorizationID for code requiring auth");
@@ -244,23 +258,32 @@ function validateActivity(activity, xlsxMap, memberId, authRules) {
   } else {
     const rows = xlsxMap[authID] || [];
     if (!rows.length) {
-      remarks.push(`AuthID ${authID} not in HCPRequests sheet`);
+      remarks.push(`AuthID ${authID} not in XLSX data`);
     } else {
+      // Find matching XLSX row by AuthorizationID and Item Code
       const xlsRow = rows.find(r => (r.AuthorizationID || "") === authID && (r["Item Code"] || "") === code);
       if (!xlsRow) {
-        remarks.push("No matching row for code/AuthID in XLSX");
+        remarks.push("No matching XLSX row for code/AuthID");
       } else {
-        const context = { memberId, code, qty, netTotal, ordering, clinician, authID };
-        remarks = remarks.concat(validateXLSXMatch(xlsRow, context));
-        remarks = remarks.concat(validateDateAndStatus(xlsRow, start));
-        return { id, code, description, start, qty, netTotal, ordering, clinician, authID, xlsRow, remarks };
+        const context = { memberId, code, qty, netTotal, ordering, authID };
+        
+        // Validate XLSX row against XML context
+        const remarksFromMatch = validateXLSXMatch(xlsRow, context);
+        // Log all invalid rows with full data if any mismatch
+        logInvalidRow(xlsRow, context, remarksFromMatch);
+        remarks = remarks.concat(remarksFromMatch);
+
+        // Also validate date and status
+        const remarksFromDate = validateDateAndStatus(xlsRow, start);
+        remarks = remarks.concat(remarksFromDate);
+
+        return { id, code, description, start, qty, netTotal, ordering, authID, xlsRow, remarks };
       }
     }
   }
 
-  return { id, code, description, start, qty, netTotal, ordering, clinician, authID, xlsRow: null, remarks };
+  return { id, code, description, start, qty, netTotal, ordering, authID, xlsRow: null, remarks };
 }
-
 
 /**
  * Validates all claims and activities
@@ -393,6 +416,7 @@ async function handleRun() {
     console.error("Processing error:", err);
   }
 }
+
 
 // === EVENT LISTENERS ===
 
