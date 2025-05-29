@@ -30,6 +30,7 @@ function updateStatus() {
   let messages = [];
   if (xmlClaimCount > 0) messages.push(`${xmlClaimCount} Claims Loaded`);
   if (xlsxAuthCount > 0) messages.push(`${xlsxAuthCount} Auths Loaded`);
+  if (messages.length === 0) messages.push('Please upload and process files.');
   if (resultsDiv) {
     resultsDiv.textContent = messages.join(", ");
     console.log("[updateStatus] Updated resultsDiv:", resultsDiv.textContent);
@@ -446,8 +447,14 @@ document.getElementById("runButton").addEventListener("click", handleRun);
 ["xmlInput", "xlsxInput"].forEach(id => {
   const el = document.getElementById(id);
   if (el) el.addEventListener("change", () => {
-    if (id === "xmlInput") xmlClaimCount = 0;
-    if (id === "xlsxInput") xlsxAuthCount = 0;
+    if (id === "xmlInput") {
+      xmlClaimCount = 0;
+      document.getElementById("results").textContent = "XML file selected, awaiting processing...";
+    }
+    if (id === "xlsxInput") {
+      xlsxAuthCount = 0;
+      document.getElementById("results").textContent = "XLSX file selected, awaiting processing...";
+    }
     updateStatus();
     console.log("[input change] File input changed:", id);
   });
