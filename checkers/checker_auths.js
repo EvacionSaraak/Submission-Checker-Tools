@@ -79,6 +79,8 @@ function parseXMLFile(file) {
       const err = doc.querySelector("parsererror");
       if (err) {
         console.error("[parseXMLFile] Invalid XML file");
+        xmlClaimCount = 0;
+        updateStatus();
         return reject("Invalid XML file");
       }
       const claims = doc.querySelectorAll("Claim");
@@ -89,6 +91,8 @@ function parseXMLFile(file) {
     };
     reader.onerror = () => {
       console.error("[parseXMLFile] Failed to read XML file");
+      xmlClaimCount = 0;
+      updateStatus();
       reject("Failed to read XML file");
     };
     reader.readAsText(file);
@@ -119,11 +123,15 @@ function parseXLSXFile(file) {
         resolve(rows);
       } catch (err) {
         console.error("[parseXLSXFile] Invalid XLSX file:", err);
+        xlsxAuthCount = 0;
+        updateStatus();
         reject("Invalid XLSX file");
       }
     };
     reader.onerror = () => {
       console.error("[parseXLSXFile] Failed to read XLSX file");
+      xlsxAuthCount = 0;
+      updateStatus();
       reject("Failed to read XLSX file");
     };
     reader.readAsArrayBuffer(file);
@@ -236,28 +244,38 @@ function validateDateAndStatus(row, start) {
  * @param {Element} activity - XML Activity DOM element
  * @param {Object} xlsxMap - Map of XLSX rows by AuthorizationID
  * @param {string} memberId - Current claim's member ID
+ * @param {Object} authRules - Map of rules by code (pass in global authRules)
  * @returns {Object}
  */
-function validateActivity(activity, xlsxMap, memberId) {
+function validateActivity(activity, xlsxMap, memberId, authRules) {
   const id = getText(activity, "ID");
   const code = getText(activity, "Code");
-  const description = authRules[code]?.description || "";
+  const rule = authRules[code];
+  const description = rule?.description || "";
   const start = getText(activity, "Start");
   const qty = getText(activity, "Quantity");
   const netTotal = getText(activity, "NetTotal");
   const ordering = getText(activity, "OrderingClinician");
   const authID = getText(activity, "PriorAuthorizationID") || getText(activity, "PriorAuthorization");
 
-  let remarks = validateApprovalRequirement(code, authID);
-  let xlsRow = null;
+  let remarks = [];
 
-  if (authID) {
+  // Determine if auth is required for this code
+  const authRequired = !!(rule && rule.authRequired);
+
+  // Main validation logic for auth
+  if (!authID) {
+    if (authRequired) {
+      remarks.push("Missing AuthorizationID for code requiring auth");
+    }
+    // else: valid, do not add remarks
+  } else {
     const rows = xlsxMap[authID] || [];
     if (!rows.length) {
       remarks.push(`AuthID ${authID} not in HCPRequests sheet`);
       console.warn("[validateActivity] No rows in XLSX for authID:", authID);
     } else {
-      xlsRow = rows.find(r => (r.AuthorizationID || "") === authID && (r["Item Code"] || "") === code);
+      const xlsRow = rows.find(r => (r.AuthorizationID || "") === authID && (r["Item Code"] || "") === code);
       if (!xlsRow) {
         remarks.push("No matching row for code/AuthID in XLSX");
         console.warn("[validateActivity] No matching XLSX row for authID/code:", authID, code);
@@ -265,21 +283,22 @@ function validateActivity(activity, xlsxMap, memberId) {
         const context = { memberId, code, qty, netTotal, ordering, authID };
         remarks = remarks.concat(validateXLSXMatch(xlsRow, context));
         remarks = remarks.concat(validateDateAndStatus(xlsRow, start));
+        return { id, code, description, start, qty, netTotal, ordering, authID, xlsRow, remarks };
       }
     }
   }
 
-  console.log("[validateActivity] Activity ID:", id, "remarks:", remarks);
-  return { id, code, description, start, qty, netTotal, ordering, authID, xlsRow, remarks };
+  // Always return, even if no authID or xlsRow
+  return { id, code, description, start, qty, netTotal, ordering, authID, xlsRow: null, remarks };
 }
-
 /**
  * Iterates through all claims and activities, running validation and collecting results.
  * @param {Document} xmlDoc - Parsed XML DOM
  * @param {Array} xlsxData - XLSX data rows
+ * @param {Object} authRules - Map of rules by code
  * @returns {Array<Object>}
  */
-function validateClaims(xmlDoc, xlsxData) {
+function validateClaims(xmlDoc, xlsxData, authRules) {
   console.log("[validateClaims] Starting validation...");
   const results = [];
   const xlsxMap = mapXLSXData(xlsxData);
@@ -291,7 +310,7 @@ function validateClaims(xmlDoc, xlsxData) {
     const activities = Array.from(claim.getElementsByTagName("Activity"));
 
     activities.forEach(activity => {
-      const rec = validateActivity(activity, xlsxMap, memberId);
+      const rec = validateActivity(activity, xlsxMap, memberId, authRules);
       results.push({ claimId, memberId, ...rec });
     });
   });
