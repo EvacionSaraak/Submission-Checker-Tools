@@ -226,14 +226,6 @@ function logInvalidRow(xlsRow, context, remarks) {
  * @param {Object} authRules - Authorization rules
  * @returns {Object} Validation result with remarks
  */
-/**
- * Validates a single XML <Activity> node against the mapped XLSX data.
- * @param {Element} activityEl  — the XML <Activity> element
- * @param {Object} xlsxMap      — map of AuthorizationID → [rows]
- * @param {string} claimId      — parent Claim’s ID
- * @param {string} memberId     — parent Claim’s MemberID
- * @returns {Object}            — { claimId, memberId, id, code, description, netTotal, ordering, authID, start, xlsRow, remarks }
- */
 function validateActivity(activityEl, xlsxMap, claimId, memberId) {
   // 1) Extract from XML
   const id       = getText(activityEl, "ID");
@@ -260,6 +252,18 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId) {
     };
   }
 
+  // 1b) SHORT-CIRCUIT: if auth not required, skip all validation
+  const needsAuth  = !/NOT\s+REQUIRED/i.test(rule.approval_details || "");
+  if (!needsAuth && !authID) {
+    return {
+      claimId, memberId, id: getText(activityEl,"ID"), code,
+      description: rule.description || "",
+      netTotal: getText(activityEl,"Net")||getText(activityEl,"NetTotal"),
+      ordering: getText(activityEl,"OrderingClinician"),
+      authID, start: getText(activityEl,"Start"),
+      xlsRow: {}, remarks: []
+    };
+  }
   // 2) Find matching XLSX row(s)
   const rows = xlsxMap[authID] || [];
   const matchedRow = rows.find(r =>
