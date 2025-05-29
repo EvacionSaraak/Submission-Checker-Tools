@@ -27,12 +27,12 @@
     <input type="file" id="xlsxInput" accept=".xlsx" />
   </label>
   <br><br>
-  <button id="runButton">Run Checker</button>
+  <button id="processBtn">Run Checker</button> <!-- Changed id from runButton to processBtn -->
 
-  <div id="uploadStatus"></div>
+  <div id="file-status"></div> <!-- Added for status messages -->
   <div id="results"></div>
 
   <!-- [IMPORTANT] checker_auths.js depends on SheetJS being loaded above -->
-  <script type="module" src="checker_auths.js"></script>
+  <script src="checker_auths.js"></script> <!-- Removed type="module" -->
 </body>
 </html>
