@@ -197,12 +197,15 @@
   /**
    * Formats clinician info for display (bold, italics).
    */
-  function formatClinicianInfo(text) {
-    if (!text) return '';
-    text = text.replace(/\b(Ordering|Performing):/g, '<b>$1:</b>');
-    text = text.replace(/\bDr\b\s/g, '<i>Dr</i> ');
-    return text;
-  }
+function formatClinicianInfo(text) {
+  if (!text) return '';
+  // Bold all 'Ordering' and 'Performing' words anywhere
+  text = text.replace(/\b(Ordering|Performing)\b/g, '<b>$1</b>');
+  // Keep italicizing Dr
+  text = text.replace(/\bDr\b\s/g, '<i>Dr</i> ');
+  return text;
+}
+
 
   // === DATA PROCESSING ===
 
