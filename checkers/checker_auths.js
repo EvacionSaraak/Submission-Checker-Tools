@@ -209,6 +209,7 @@ function validateClaims(xmlDoc, xlsxData) {
 // === RENDERER ===
 /**
  * Render results table in #results (blanks repeated Claim IDs)
+ * Applies classes from tables.css for valid/invalid rows
  */
 function renderResults(results) {
   const container = document.getElementById("results");
@@ -249,18 +250,24 @@ function renderResults(results) {
 
   results.forEach(r => {
     const tr = document.createElement("tr");
+    // apply valid/invalid class
+    tr.className = r.remarks.length ? 'invalid' : 'valid';
+
     // Claim cell
     const claimCell = document.createElement("td");
     claimCell.textContent = r.claimId === lastClaim ? "" : r.claimId;
     lastClaim = r.claimId;
     tr.appendChild(claimCell);
+
     // Member, Activity, Code, Description
     [r.memberId, r.id, r.code, r.description]
       .forEach(val => { const td = document.createElement("td"); td.textContent = val || ""; tr.appendChild(td); });
+
     // Qty, Net Total, Ordering, Auth, Start
     [r.qty, r.netTotal, r.ordering, r.authID, r.start]
       .forEach(val => { const td = document.createElement("td"); td.textContent = val || ""; tr.appendChild(td); });
-    // XLSX fields
+
+    // XLSX fields or placeholders
     if (r.xlsRow) {
       [r.xlsRow["Ordered On"], r.xlsRow.status,
        r.xlsRow["Denial Code (if any)"], r.xlsRow["Denial Reason (if any)"]]
@@ -268,6 +275,7 @@ function renderResults(results) {
     } else {
       for (let i = 0; i < 4; i++) tr.appendChild(document.createElement("td"));
     }
+
     // Remarks
     const remTd = document.createElement("td");
     remTd.innerHTML = r.remarks.map(m => `<div>${m}</div>`).join("");
