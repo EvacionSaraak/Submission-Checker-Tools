@@ -4,7 +4,6 @@
   <meta charset="UTF-8" />
   <title>Authorization Validity Checker</title>
   <link rel="stylesheet" href="tables.css" />
-  <!-- [ADDED] Load SheetJS library before checker_auths.js -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 <body>
@@ -13,26 +12,30 @@
   <div id="explanationBox">
     <strong>What this script does:</strong>
     <p>
-      This tool allows you to upload a Claim Submission XML file along with an Excel export (Sheet 2) containing authorization records. It validates Emirates ID format, verifies the correctness of authorization codes, ensures clinician and activity details match the export, and checks for duplicate diagnoses, invalid packages, VAT inconsistencies, and other discrepancies. After processing, the tool will show any remarks that need attention.
+      This tool validates authorization records by comparing XML claims data with Excel authorization exports.
     </p>
   </div>
 
+  <!-- Main file inputs -->
   <label>
     Upload XML:
     <input type="file" id="xmlInput" accept=".xml" />
   </label>
   <br><br>
   <label>
-    Upload Excel (Sheet 2 - Authorization Export):
+    Upload Excel (Authorization Export):
     <input type="file" id="xlsxInput" accept=".xlsx" />
   </label>
   <br><br>
-  <button id="processBtn">Run Checker</button> <!-- Changed id from runButton to processBtn -->
-
-  <div id="file-status"></div> <!-- Added for status messages -->
+  
+  <!-- Processing button -->
+  <button id="processBtn">Run Checker</button>
+  
+  <!-- Status and results containers -->
+  <div id="file-status"></div>
+  <div id="results-container"></div>
   <div id="results"></div>
 
-  <!-- [IMPORTANT] checker_auths.js depends on SheetJS being loaded above -->
-  <script src="checker_auths.js"></script> <!-- Removed type="module" -->
+  <script src="checker_auths.js"></script>
 </body>
 </html>
