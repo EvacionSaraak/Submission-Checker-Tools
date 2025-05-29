@@ -99,10 +99,16 @@ function validateApprovalRequirement(code, authID) {
     return remarks;
   }
   const needsAuth = !/NOT\s+REQUIRED/i.test(rule.approval_details || "");
-  if (needsAuth && !authID) remarks.push("Missing required AuthorizationID");
-  if (!needsAuth && authID) remarks.push("AuthorizationID provided but not required");
+  if (needsAuth) {
+    if (!authID) remarks.push("Missing required AuthorizationID");
+  } else {
+    // Code does not require authorization
+    remarks.push("No authorization required for this code");
+    if (authID) remarks.push("AuthorizationID provided but not required");
+  }
   return remarks;
 }
+
 
 /**
  * Exact field matching against XLSX row
@@ -149,7 +155,7 @@ function validateActivity(activity, xlsxMap, memberId) {
   const quantity = getText(activity, "Quantity");
   const netTotal = getText(activity, "NetTotal");
   const ordering = getText(activity, "OrderingClinician");
-  const authID = getText(activity, "PriorAuthorizationID");
+  const authID = getText(activity, "PriorAuthorizationID") || getText(activity, "PriorAuthorization");
 
   let remarks = validateApprovalRequirement(code, authID);
   let xlsRow = null;
