@@ -102,25 +102,29 @@ function validateApprovalRequirement(code, authID) {
   if (needsAuth) {
     if (!authID) remarks.push("Missing required AuthorizationID");
   } else {
-    // Code does not require authorization
     remarks.push("No authorization required for this code");
     if (authID) remarks.push("AuthorizationID provided but not required");
   }
   return remarks;
 }
 
-
 /**
  * Exact field matching against XLSX row
  */
-function validateXLSXMatch(row, { memberId, code, quantity, netTotal, ordering, authID }) {
+function validateXLSXMatch(row, { memberId, code, qty, netTotal, ordering, authID }) {
   const remarks = [];
-  if ((row["Card Number / DHA Member ID"] || "") !== memberId) remarks.push(`MemberID mismatch: XLSX=${row["Card Number / DHA Member ID"] || ""}`);
-  if ((row["Item Code"] || "") !== code) remarks.push(`Item Code mismatch: XLSX=${row["Item Code"] || ""}`);
-  if (String(row["Item Amount"] || "") !== quantity) remarks.push(`Quantity mismatch: XLSX=${row["Item Amount"] || ""}`);
-  if (String(row["Payer Share"] || "") !== netTotal) remarks.push(`Payer Share mismatch: XLSX=${row["Payer Share"] || ""}`);
-  if ((row["Ordering Clinician"] || "") !== ordering) remarks.push(`Ordering Clinician mismatch: XLSX=${row["Ordering Clinician"] || ""}`);
-  if ((row.AuthorizationID || "") !== authID) remarks.push(`AuthorizationID mismatch: XLSX=${row.AuthorizationID || ""}`);
+  if ((row["Card Number / DHA Member ID"] || "") !== memberId)
+    remarks.push(`MemberID mismatch: XLSX=${row["Card Number / DHA Member ID"] || ""}`);
+  if ((row["Item Code"] || "") !== code)
+    remarks.push(`Item Code mismatch: XLSX=${row["Item Code"] || ""}`);
+  if (String(row["Item Amount"] || "") !== qty)
+    remarks.push(`Qty mismatch: XLSX=${row["Item Amount"] || ""}`);
+  if (String(row["Payer Share"] || "") !== netTotal)
+    remarks.push(`Payer Share mismatch: XLSX=${row["Payer Share"] || ""}`);
+  if ((row["Ordering Clinician"] || "") !== ordering)
+    remarks.push(`Ordering Clinician mismatch: XLSX=${row["Ordering Clinician"] || ""}`);
+  if ((row.AuthorizationID || "") !== authID)
+    remarks.push(`AuthorizationID mismatch: XLSX=${row.AuthorizationID || ""}`);
   return remarks;
 }
 
@@ -146,13 +150,14 @@ function validateDateAndStatus(row, start) {
 }
 
 /**
- * Validate a single <Activity>
+ * Validate a single <Activity> element
  */
 function validateActivity(activity, xlsxMap, memberId) {
   const id = getText(activity, "ID");
   const code = getText(activity, "Code");
+  const description = authRules[code]?.description || "";
   const start = getText(activity, "Start");
-  const quantity = getText(activity, "Quantity");
+  const qty = getText(activity, "Quantity");
   const netTotal = getText(activity, "NetTotal");
   const ordering = getText(activity, "OrderingClinician");
   const authID = getText(activity, "PriorAuthorizationID") || getText(activity, "PriorAuthorization");
@@ -169,14 +174,14 @@ function validateActivity(activity, xlsxMap, memberId) {
       if (!xlsRow) {
         remarks.push("No matching row for code/AuthID in XLSX");
       } else {
-        const context = { memberId, code, quantity, netTotal, ordering, authID };
+        const context = { memberId, code, qty, netTotal, ordering, authID };
         remarks = remarks.concat(validateXLSXMatch(xlsRow, context));
         remarks = remarks.concat(validateDateAndStatus(xlsRow, start));
       }
     }
   }
 
-  return { id, code, start, quantity, netTotal, ordering, authID, xlsRow, remarks };
+  return { id, code, description, start, qty, netTotal, ordering, authID, xlsRow, remarks };
 }
 
 /**
@@ -193,8 +198,8 @@ function validateClaims(xmlDoc, xlsxData) {
     const activities = Array.from(claim.getElementsByTagName("Activity"));
 
     activities.forEach(activity => {
-      const record = validateActivity(activity, xlsxMap, memberId);
-      results.push({ claimId, memberId, ...record });
+      const rec = validateActivity(activity, xlsxMap, memberId);
+      results.push({ claimId, memberId, ...rec });
     });
   });
 
@@ -225,7 +230,8 @@ function renderResults(results) {
       <th>Member ID</th>
       <th>Activity ID</th>
       <th>Code</th>
-      <th>Quantity</th>
+      <th>Description</th>
+      <th>Qty</th>
       <th>Net Total</th>
       <th>Ordering Clinician</th>
       <th>Auth ID</th>
@@ -243,40 +249,29 @@ function renderResults(results) {
 
   results.forEach(r => {
     const tr = document.createElement("tr");
-
-    // Claim column, blank if same as previous
+    // Claim cell
     const claimCell = document.createElement("td");
     claimCell.textContent = r.claimId === lastClaim ? "" : r.claimId;
     lastClaim = r.claimId;
     tr.appendChild(claimCell);
-
-    // Static XML fields
-    [r.memberId, r.id, r.code, r.quantity, r.netTotal, r.ordering, r.authID, r.start]
-      .forEach(val => {
-        const td = document.createElement("td");
-        td.textContent = val || "";
-        tr.appendChild(td);
-      });
-
-    // XLSX fields or placeholders
+    // Member, Activity, Code, Description
+    [r.memberId, r.id, r.code, r.description]
+      .forEach(val => { const td = document.createElement("td"); td.textContent = val || ""; tr.appendChild(td); });
+    // Qty, Net Total, Ordering, Auth, Start
+    [r.qty, r.netTotal, r.ordering, r.authID, r.start]
+      .forEach(val => { const td = document.createElement("td"); td.textContent = val || ""; tr.appendChild(td); });
+    // XLSX fields
     if (r.xlsRow) {
-      [r.xlsRow["Ordered On"], r.xlsRow.status, r.xlsRow["Denial Code (if any)"], r.xlsRow["Denial Reason (if any)"]]
-        .forEach(val => {
-          const td = document.createElement("td");
-          td.textContent = val || "";
-          tr.appendChild(td);
-        });
+      [r.xlsRow["Ordered On"], r.xlsRow.status,
+       r.xlsRow["Denial Code (if any)"], r.xlsRow["Denial Reason (if any)"]]
+        .forEach(val => { const td = document.createElement("td"); td.textContent = val || ""; tr.appendChild(td); });
     } else {
-      for (let i = 0; i < 4; i++) {
-        tr.appendChild(document.createElement("td"));
-      }
+      for (let i = 0; i < 4; i++) tr.appendChild(document.createElement("td"));
     }
-
-    // Remarks column
-    const remarksTd = document.createElement("td");
-    remarksTd.innerHTML = r.remarks.map(m => `<div>${m}</div>`).join("");
-    tr.appendChild(remarksTd);
-
+    // Remarks
+    const remTd = document.createElement("td");
+    remTd.innerHTML = r.remarks.map(m => `<div>${m}</div>`).join("");
+    tr.appendChild(remTd);
     tbody.appendChild(tr);
   });
 
