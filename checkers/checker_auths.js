@@ -390,17 +390,79 @@ function renderRow(r, lastClaimId) {
 
 
 // === MAIN PROCESSING ===
+// After renderResults, add this helper to wire up export and summary:
+function postProcessResults(results) {
+  const container = document.getElementById("results-container");
+  container.innerHTML = "";
 
+  const total = results.length;
+  const invalidEntries = results.filter(r => r.remarks.length > 0);
+  const invalidCount = invalidEntries.length;
+  const validCount   = total - invalidCount;
+  const pctValid     = total ? ((validCount / total) * 100).toFixed(1) : "0.0";
+
+  // 1) Show summary
+  const summary = document.createElement("div");
+  summary.textContent = `Valid: ${validCount} / ${total} (${pctValid}% valid)`;
+  container.appendChild(summary);
+
+  // 2) If any invalid, show export button
+  if (invalidCount > 0) {
+    const btn = document.createElement("button");
+    btn.textContent = `Export ${invalidCount} Invalid Entries`;
+    btn.id = "exportInvalidBtn";
+    btn.className = "btn btn-sm btn-outline-danger mt-2";
+    container.appendChild(btn);
+
+    btn.addEventListener("click", () => {
+      // Build array of objects matching your table headers
+      const headers = [
+        "Claim ID","Member ID","Activity ID","Code","Description","Net Total",
+        "Payer Share","Ordering Clinician","Auth ID","Start Date",
+        "Ordered On","Status","Denial Code","Denial Reason","Remarks"
+      ];
+
+      const data = invalidEntries.map(r => {
+        const x = r.xlsRow || {};
+        return {
+          "Claim ID": r.claimId,
+          "Member ID": r.memberId,
+          "Activity ID": r.id,
+          "Code": r.code,
+          "Description": r.description,
+          "Net Total": r.netTotal,
+          "Payer Share": x["Payer Share"] || "",
+          "Ordering Clinician": r.ordering,
+          "Auth ID": r.authID,
+          "Start Date": r.start,
+          "Ordered On": x["Ordered On"] || "",
+          "Status": x["Status"] || x.status || "",
+          "Denial Code": x["Denial Code (if any)"] || "",
+          "Denial Reason": x["Denial Reason (if any)"] || "",
+          "Remarks": r.remarks.join("; ")
+        };
+      });
+
+      // Use SheetJS to export
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(data, { header: headers });
+      XLSX.utils.book_append_sheet(wb, ws, "InvalidEntries");
+      XLSX.writeFile(wb, `invalid_entries_${Date.now()}.xlsx`);
+    });
+  }
+}
+
+// Finally, modify your handleRun() to call postProcessResults after renderResults:
 async function handleRun() {
   try {
     await loadAuthRules();
     const results = validateClaims(parsedXmlDoc, parsedXlsxData, authRules);
     renderResults(results);
+    postProcessResults(results);
   } catch (err) {
     console.error("Processing error:", err);
   }
 }
-
 
 // === EVENT LISTENERS ===
 
