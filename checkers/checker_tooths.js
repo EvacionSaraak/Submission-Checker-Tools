@@ -57,6 +57,27 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 
+document.getElementById('exportBtn').addEventListener('click', () => {
+  if (!window.invalidRows || !window.invalidRows.length) return;
+
+  const wb = XLSX.utils.book_new();
+  const wsData = [
+    ["Claim ID", "Activity ID", "Code", "Description", "Observations", "Remarks"],
+    ...window.invalidRows.map(r => [
+      r.claimId,
+      r.activityId,
+      r.code,
+      r.description,
+      r.details.replace(/<br>/g, '\n'),
+      r.remarks.join('\n')
+    ])
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(wsData);
+  XLSX.utils.book_append_sheet(wb, ws, "Invalid Activities");
+  XLSX.writeFile(wb, "invalid_tooths.xlsx");
+});
+
+
 function parseXML() {
   const xmlInput = document.getElementById('xmlFile');
   const resultsDiv = document.getElementById('results');
@@ -159,8 +180,14 @@ function validateActivities(xmlDoc, codeToMeta) {
 function renderResults(container, rows) {
   if (!rows.length) {
     container.innerHTML = '<p>No activities found.</p>';
+    document.getElementById('exportBtn').style.display = 'none';
     return;
   }
+
+  let lastClaimId = null;
+  window.invalidRows = rows.filter(r => !r.isValid); // Save for export
+  document.getElementById('exportBtn').style.display = window.invalidRows.length ? 'inline-block' : 'none';
+
   const html = `
     <table border="1" style="width:100%;border-collapse:collapse">
       <thead>
@@ -170,12 +197,19 @@ function renderResults(container, rows) {
         </tr>
       </thead>
       <tbody>
-        ${rows.map(r=>`
-          <tr class="${r.isValid ? 'valid' : 'invalid'}">
-            <td>${r.claimId}</td><td>${r.activityId}</td><td>${r.code}</td>
-            <td>${r.description}</td><td>${r.details}</td><td>${r.remarks.join('<br>')}</td>
-          </tr>`).join('')}
+        ${rows.map(r => {
+          const showClaimId = r.claimId !== lastClaimId;
+          lastClaimId = r.claimId;
+          return `
+            <tr class="${r.isValid ? 'valid' : 'invalid'}">
+              <td>${showClaimId ? r.claimId : ''}</td>
+              <td>${r.activityId}</td><td>${r.code}</td>
+              <td>${r.description}</td><td>${r.details}</td>
+              <td>${r.remarks.join('<br>')}</td>
+            </tr>`;
+        }).join('')}
       </tbody>
     </table>`;
+    
   container.innerHTML = html;
 }
