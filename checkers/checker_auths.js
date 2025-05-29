@@ -375,19 +375,14 @@ function renderResults(results) {
 // === MAIN PROCESSING ===
 
 async function handleRun() {
-  if (!currentXmlFile || !currentXlsxFile) {
+  if (!parsedXmlDoc || !parsedXlsxData) {
     showFileStatus('Please upload both XML and XLSX files.', 'error');
     return;
   }
-
   try {
     showFileStatus('Processing files...', 'info');
     await loadAuthRules();
-    const [xmlDoc, xlsxData] = await Promise.all([
-      parseXMLFile(currentXmlFile),
-      parseXLSXFile(currentXlsxFile)
-    ]);
-    const results = validateClaims(xmlDoc, xlsxData, authRules);
+    const results = validateClaims(parsedXmlDoc, parsedXlsxData, authRules);
     renderResults(results);
     showFileStatus('Processing complete!', 'success');
   } catch (err) {
@@ -406,29 +401,34 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   // Enhanced file input change handlers for auto-run
+  let parsedXmlDoc = null;
+  let parsedXlsxData = null;
+
   ["xmlInput", "xlsxInput"].forEach(id => {
     const el = document.getElementById(id);
     if (el) {
       el.addEventListener("change", async (event) => {
         const file = event.target.files[0];
         if (!file) return;
-
+  
         if (id === "xmlInput") {
           currentXmlFile = file;
           xmlClaimCount = -1;
           showFileStatus(`XML file selected: ${file.name}`, 'info');
+          // Parse just for claim count
+          try {
+            parsedXmlDoc = await parseXMLFile(currentXmlFile);
+          } catch (e) { parsedXmlDoc = null; }
         } else if (id === "xlsxInput") {
           currentXlsxFile = file;
           xlsxAuthCount = -1;
           showFileStatus(`XLSX file selected: ${file.name}`, 'info');
+          // Parse just for auth count
+          try {
+            parsedXlsxData = await parseXLSXFile(currentXlsxFile);
+          } catch (e) { parsedXlsxData = null; }
         }
-
         updateStatus();
-
-        // Auto-process if both files are selected
-        if (currentXmlFile && currentXlsxFile) {
-          await handleRun();
-        }
       });
     }
   });
