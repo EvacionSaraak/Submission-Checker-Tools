@@ -1,5 +1,3 @@
-// checker_auths.js
-
 let authRules = {};
 let authRulesPromise = null;
 
@@ -353,6 +351,72 @@ function setLoading(isLoading) {
 }
 
 /**
+ * Show file summary counts in results div [ADDED]
+ */
+function showFileSummary(xmlClaimsCount, xlsxAuthCount) { // [ADDED]
+  const resultsDiv = document.getElementById("results");
+  if (!resultsDiv) return;
+  resultsDiv.innerHTML = `
+    <div>
+      <strong>Claims loaded from XML:</strong> ${xmlClaimsCount}<br>
+      <strong>Authorizations loaded from XLSX:</strong> ${xlsxAuthCount}
+    </div>
+  `;
+}
+
+// --- Attach file input listeners to show file summary counts [ADDED] ---
+(function attachInputListeners() {
+  const xmlInput = document.getElementById("xmlInput");
+  const xlsxInput = document.getElementById("xlsxInput");
+  if (!xmlInput || !xlsxInput) return;
+
+  let xmlClaimsCount = 0, xlsxAuthCount = 0, xmlLoaded = false, xlsxLoaded = false, xmlDoc = null, xlsxData = null;
+
+  async function updateSummary() {
+    // Only show counts when both are loaded and valid
+    if (xmlLoaded && xlsxLoaded && xmlClaimsCount !== null && xlsxAuthCount !== null) {
+      showFileSummary(xmlClaimsCount, xlsxAuthCount);
+    }
+  }
+
+  xmlInput.addEventListener("change", async e => {
+    xmlLoaded = false;
+    xmlClaimsCount = null;
+    const file = xmlInput.files[0];
+    if (file) {
+      try {
+        xmlDoc = await parseXMLFile(file);
+        xmlClaimsCount = xmlDoc.getElementsByTagName("Claim").length;
+        xmlLoaded = true;
+      } catch {
+        xmlLoaded = false;
+        xmlClaimsCount = null;
+      }
+    }
+    updateSummary();
+  });
+
+  xlsxInput.addEventListener("change", async e => {
+    xlsxLoaded = false;
+    xlsxAuthCount = null;
+    const file = xlsxInput.files[0];
+    if (file) {
+      try {
+        xlsxData = await parseXLSXFile(file);
+        // Count unique AuthorizationID values
+        const authSet = new Set(xlsxData.map(row => row.AuthorizationID).filter(Boolean));
+        xlsxAuthCount = authSet.size;
+        xlsxLoaded = true;
+      } catch {
+        xlsxLoaded = false;
+        xlsxAuthCount = null;
+      }
+    }
+    updateSummary();
+  });
+})();
+
+/**
  * Main entry: handle Run button click
  */
 async function handleRun() {
@@ -370,7 +434,7 @@ async function handleRun() {
   const xlsxFile = xlsxInput.files[0];
 
   if (!xmlFile || !xlsxFile) {
-    resultsDiv.textContent = "Please upload both XML and XLSX files.";
+    resultsDiv.innerHTML = "Please upload both XML and XLSX files."; // [MODIFIED]
     console.warn("[Init] Missing one or both files."); // [LOG ADDED]
     return;
   }
@@ -388,7 +452,7 @@ async function handleRun() {
     // [LOG ADDED] Output the results array before rendering
     console.log("[Main] Final results before render:", results);
 
-    renderResults(results);
+    renderResults(results); // this will replace the summary with the table
   } catch (err) {
     resultsDiv.textContent = `Error: ${err}`;
     console.error("[Main] Exception caught:", err); // [LOG ADDED]
