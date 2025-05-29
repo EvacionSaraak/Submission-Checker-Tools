@@ -238,25 +238,49 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId) {
   // 1) Extract from XML
   const id       = getText(activityEl, "ID");
   const code     = getText(activityEl, "Code");
-  const description = "";   // fill if you have a rule lookup
   const start    = getText(activityEl, "Start");
   const netTotal = getText(activityEl, "Net") || getText(activityEl, "NetTotal");
   const ordering = getText(activityEl, "OrderingClinician");
   const authID   = getText(activityEl, "PriorAuthorizationID") || getText(activityEl, "PriorAuthorization");
 
+  // 1a) SHORT-CIRCUIT: if netTotal is zero, skip all validation
+  if (parseFloat(netTotal || "0") === 0) {
+    return {
+      claimId,
+      memberId,
+      id,
+      code,
+      description: "",  // or pull from authRules if needed
+      netTotal,
+      ordering,
+      authID,
+      start,
+      xlsRow: {},       // no lookup needed
+      remarks: []       // considered valid
+    };
+  }
+
   // 2) Find matching XLSX row(s)
   const rows = xlsxMap[authID] || [];
-  let matchedRow = rows.find(r =>
+  const matchedRow = rows.find(r =>
     String(r["Item Code"] || "").trim() === code &&
     String(r["Card Number / DHA Member ID"] || "").trim() === memberId
   ) || null;
 
   const remarks = [];
 
+  // 3) FIRST CHECK: Rejected status with auth present
+  if (matchedRow && authID) {
+    const status = String(matchedRow["Status"] || matchedRow.status || "").toLowerCase();
+    if (status.includes("rejected")) {
+      remarks.push(`Activity has AuthorizationID but status is rejected`);
+    }
+  }
+
   if (!matchedRow) {
     remarks.push("No matching authorization row found in XLSX.");
   } else {
-    // 3) Whitespace checks
+    // 4) Whitespace Checks
     ["Item Code", "Card Number / DHA Member ID", "Ordering Clinician", "Payer Share"].forEach(field => {
       const val = String(matchedRow[field] || "");
       if (val !== val.trim()) {
@@ -264,23 +288,21 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId) {
       }
     });
 
-    // 4) Payer Share vs. Net Total (numeric)
+    // 5) Payer Share vs. Net Total
     const xPayerShare = parseFloat(matchedRow["Payer Share"] || "0").toFixed(2);
     const xNet        = parseFloat(netTotal || "0").toFixed(2);
     if (xPayerShare !== xNet) {
       remarks.push(`Payer Share mismatch: XLSX=${matchedRow["Payer Share"]}`);
     }
 
-    // 5) Ordering Clinician (case‐insensitive trim)
+    // 6) Ordering Clinician
     const xOrdering = String(matchedRow["Ordering Clinician"] || "").trim().toUpperCase();
     if (xOrdering && xOrdering !== ordering.trim().toUpperCase()) {
       remarks.push(`Ordering clinician mismatch: XLSX=${matchedRow["Ordering Clinician"]}`);
     }
-
-    // (You can add more checks here: status, denial codes, etc.)
   }
 
-  // 6) Debug log if anything failed
+  // 7) Debug log if anything failed
   if (remarks.length) {
     console.group(`Validation errors for AuthID=${authID}, Code=${code}`);
     console.log("XML Activity:", { claimId, memberId, id, code, netTotal, ordering, authID, start });
@@ -289,13 +311,13 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId) {
     console.groupEnd();
   }
 
-  // 7) Return a flat result object, ready for renderResults()
+  // 8) Return the result object
   return {
     claimId,
     memberId,
     id,
     code,
-    description,
+    description: "",
     netTotal,
     ordering,
     authID,
@@ -304,6 +326,7 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId) {
     remarks
   };
 }
+
 
 /**
  * Walk every <Claim> in the XML doc, extract its activities, and call validateActivity().
