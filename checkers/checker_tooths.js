@@ -1,9 +1,30 @@
 const repoJsonUrl = 'checker_tooths.json';
 
 // Tooth sets (unchanged)
-const ANTERIOR_TEETH = new Set(['6','7','8','9','10','11','22','23','24','25','26','27','C','D','E','F','G','H','M','N','O','P']);
-const BICUSPID_TEETH  = new Set(['4','5','12','13','20','21','28','29']);
-const POSTERIOR_TEETH = new Set(['1','2','3','14','15','16','17','18','19','30','31','32','A','B','I','J','K','L','Q','R','S','T']);
+const ANTERIOR_TEETH = new Set([
+  // Permanent Anterior
+  '6','7','8','9','10','11',
+  '22','23','24','25','26','27',
+  // Primary Anterior
+  'C','D','E','F','G','H',
+  'M','N','O','P','Q','R'
+]);
+
+const BICUSPID_TEETH = new Set([
+  // Permanent Bicuspid (no baby premolars)
+  '4','5','12','13',
+  '20','21','28','29'
+]);
+
+const POSTERIOR_TEETH = new Set([
+  // Permanent Molars
+  '1','2','3','14','15','16',
+  '17','18','19','30','31','32',
+  // Primary Molars
+  'A','B','I','J',
+  'K','L','S','T'
+]);
+
 const ALL_TEETH = new Set([...ANTERIOR_TEETH, ...BICUSPID_TEETH, ...POSTERIOR_TEETH]);
 
 function normalizeToothCode(code) {
