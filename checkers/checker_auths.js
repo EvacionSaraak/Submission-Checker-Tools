@@ -29,12 +29,12 @@ function updateStatus() {
   const resultsDiv = document.getElementById("results");
   let messages = [];
 
-  // XML
+  // XML status
   if (xmlClaimCount === -1) messages.push("XML file selected, awaiting processing...");
   else if (xmlClaimCount > 0) messages.push(`${xmlClaimCount} Claims Loaded`);
   else if (xmlClaimCount === 0) messages.push("No claims loaded");
 
-  // XLSX
+  // XLSX status
   if (xlsxAuthCount === -1) messages.push("XLSX file selected, awaiting processing...");
   else if (xlsxAuthCount > 0) messages.push(`${xlsxAuthCount} Auths Loaded`);
   else if (xlsxAuthCount === 0) messages.push("No auths loaded");
@@ -45,6 +45,7 @@ function updateStatus() {
   } else {
     console.warn("[updateStatus] resultsDiv not found");
   }
+
   const processBtn = document.getElementById("processBtn");
   if (processBtn) processBtn.disabled = !(xmlClaimCount > 0 && xlsxAuthCount > 0);
 }
@@ -439,6 +440,8 @@ async function handleRun() {
       parseXMLFile(xmlFile),
       parseXLSXFile(xlsxFile)
     ]);
+    console.log("xmlClaimCount after parsing:", xmlClaimCount);
+    console.log("xlsxAuthCount after parsing:", xlsxAuthCount);
     const results = validateClaims(xmlDoc, xlsxData, authRules);
     renderResults(results);
     console.log("[handleRun] Process complete.");
