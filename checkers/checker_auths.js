@@ -226,95 +226,107 @@ function logInvalidRow(xlsRow, context, remarks) {
  * @param {Object} authRules - Authorization rules
  * @returns {Object} Validation result with remarks
  */
-function validateActivity(act, xlsxDataMap) {
-  const { authID, memberId, code, netTotal, ordering } = act;
-  const xlsxRows = xlsxDataMap[authID] || [];
-  let matchedRow = null;
+/**
+ * Validates a single XML <Activity> node against the mapped XLSX data.
+ * @param {Element} activityEl  — the XML <Activity> element
+ * @param {Object} xlsxMap      — map of AuthorizationID → [rows]
+ * @param {string} claimId      — parent Claim’s ID
+ * @param {string} memberId     — parent Claim’s MemberID
+ * @returns {Object}            — { claimId, memberId, id, code, description, netTotal, ordering, authID, start, xlsRow, remarks }
+ */
+function validateActivity(activityEl, xlsxMap, claimId, memberId) {
+  // 1) Extract from XML
+  const id       = getText(activityEl, "ID");
+  const code     = getText(activityEl, "Code");
+  const description = "";   // fill if you have a rule lookup
+  const start    = getText(activityEl, "Start");
+  const netTotal = getText(activityEl, "Net") || getText(activityEl, "NetTotal");
+  const ordering = getText(activityEl, "OrderingClinician");
+  const authID   = getText(activityEl, "PriorAuthorizationID") || getText(activityEl, "PriorAuthorization");
 
-  for (const row of xlsxRows) {
-    const rowCode = String(row["Item Code"] || "");
-    const rowMember = String(row["Card Number / DHA Member ID"] || "");
-
-    if (rowCode.trim() === code && rowMember.trim() === memberId) {
-      matchedRow = row;
-      break;
-    }
-  }
+  // 2) Find matching XLSX row(s)
+  const rows = xlsxMap[authID] || [];
+  let matchedRow = rows.find(r =>
+    String(r["Item Code"] || "").trim() === code &&
+    String(r["Card Number / DHA Member ID"] || "").trim() === memberId
+  ) || null;
 
   const remarks = [];
 
   if (!matchedRow) {
     remarks.push("No matching authorization row found in XLSX.");
   } else {
-    // --- Whitespace Checks ---
-    const whitespaceFields = [
-      "Item Code",
-      "Card Number / DHA Member ID",
-      "Ordering Clinician",
-      "Payer Share"
-    ];
-    whitespaceFields.forEach(field => {
-      const value = String(matchedRow[field] || "");
-      if (value !== value.trim()) {
+    // 3) Whitespace checks
+    ["Item Code", "Card Number / DHA Member ID", "Ordering Clinician", "Payer Share"].forEach(field => {
+      const val = String(matchedRow[field] || "");
+      if (val !== val.trim()) {
         remarks.push(`Extra whitespace in field: "${field}"`);
       }
     });
 
-    // --- Payer Share vs Net Total ---
-    const xPayerShare = String(matchedRow["Payer Share"] || "").trim();
-    const xNet = parseFloat(netTotal).toFixed(2);
-    if (parseFloat(xPayerShare).toFixed(2) !== xNet) {
-      remarks.push(`Payer Share mismatch: XLSX=${xPayerShare}`);
+    // 4) Payer Share vs. Net Total (numeric)
+    const xPayerShare = parseFloat(matchedRow["Payer Share"] || "0").toFixed(2);
+    const xNet        = parseFloat(netTotal || "0").toFixed(2);
+    if (xPayerShare !== xNet) {
+      remarks.push(`Payer Share mismatch: XLSX=${matchedRow["Payer Share"]}`);
     }
 
-    // --- Ordering Clinician Match ---
-    const xOrdering = String(matchedRow["Ordering Clinician"] || "").trim();
-    if (xOrdering && xOrdering !== ordering) {
-      remarks.push(`Ordering clinician mismatch: XLSX=${xOrdering}`);
+    // 5) Ordering Clinician (case‐insensitive trim)
+    const xOrdering = String(matchedRow["Ordering Clinician"] || "").trim().toUpperCase();
+    if (xOrdering && xOrdering !== ordering.trim().toUpperCase()) {
+      remarks.push(`Ordering clinician mismatch: XLSX=${matchedRow["Ordering Clinician"]}`);
     }
 
-    // --- Debug Logging ---
-    if (remarks.length) {
-      console.warn(`Validation errors for AuthorizationID: ${authID}, Item Code: ${code}`);
-      console.log("XLSX Row Data:", matchedRow);
-      console.log("XML Context Data:", act);
-      console.log("Remarks:", remarks);
-    }
+    // (You can add more checks here: status, denial codes, etc.)
   }
 
+  // 6) Debug log if anything failed
+  if (remarks.length) {
+    console.group(`Validation errors for AuthID=${authID}, Code=${code}`);
+    console.log("XML Activity:", { claimId, memberId, id, code, netTotal, ordering, authID, start });
+    console.log("Matched XLSX Row:", matchedRow);
+    console.log("Remarks:", remarks);
+    console.groupEnd();
+  }
+
+  // 7) Return a flat result object, ready for renderResults()
   return {
-    ...act,
+    claimId,
+    memberId,
+    id,
+    code,
+    description,
+    netTotal,
+    ordering,
+    authID,
+    start,
     xlsRow: matchedRow || {},
     remarks
   };
 }
 
-
 /**
- * Validates all claims and activities
- * @param {Document} xmlDoc - Parsed XML document
- * @param {Array} xlsxData - XLSX data rows
- * @param {Object} authRules - Authorization rules
- * @returns {Array<Object>} Validation results
+ * Walk every <Claim> in the XML doc, extract its activities, and call validateActivity().
  */
-function validateClaims(xmlDoc, xlsxData, authRules) {
-  const results = [];
+function validateClaims(xmlDoc, xlsxData) {
   const xlsxMap = mapXLSXData(xlsxData);
+  const results = [];
   const claims = Array.from(xmlDoc.getElementsByTagName("Claim"));
 
-  claims.forEach(claim => {
-    const claimId = getText(claim, "ID");
-    const memberId = getText(claim, "MemberID");
-    const activities = Array.from(claim.getElementsByTagName("Activity"));
+  claims.forEach(claimEl => {
+    const claimId  = getText(claimEl, "ID");
+    const memberId = getText(claimEl, "MemberID");
+    const activities = Array.from(claimEl.getElementsByTagName("Activity"));
 
-    activities.forEach(activity => {
-      const rec = validateActivity(activity, xlsxMap, memberId, authRules);
-      results.push({ claimId, memberId, ...rec });
+    activities.forEach(activityEl => {
+      const rec = validateActivity(activityEl, xlsxMap, claimId, memberId);
+      results.push(rec);
     });
   });
 
   return results;
 }
+
 
 // === RENDERERS ===
 
