@@ -153,42 +153,72 @@ function isSameDay(a, b) {
 /**
  * Renders the claims in a table, or a message if none found.
  */
-function renderResults(claims) {
-  if (!claims.length) {
-    renderMessage('No <code>&lt;Claim&gt;</code> found.');
+function renderResults(container, rows) {
+  const summaryBox = document.getElementById('resultsSummary');
+  const exportBtn = document.getElementById('exportBtn');
+
+  if (!rows.length) {
+    container.innerHTML = '<p>No entries found.</p>';
+    summaryBox.textContent = '';
+    exportBtn.style.display = 'none';
     return;
   }
-  // Build table rows
-  const rows = claims.map(c => `
-    <tr class="${c.validity === 'Valid' ? 'valid' : 'invalid'}">
-      <td>${sanitize(c.id)}</td>
-      <td>${sanitize(c.start)}</td>
-      <td>${sanitize(c.end)}</td>
-      <td>${sanitize(c.patient)}</td>
-      <td>${sanitize(c.doctor)}</td>
-      <td>${sanitize(c.amount)}</td>
-      <td>${sanitize(c.validity)}</td>
-    </tr>
-  `).join('');
-  // Build table
-  const table = `
-    <table border="1" cellpadding="5" cellspacing="0">
+
+  const invalidRows = rows.filter(r => !r.isValid);
+  window.invalidRows = invalidRows; // for export access
+  exportBtn.style.display = invalidRows.length ? 'inline-block' : 'none';
+
+  const validCount = rows.length - invalidRows.length;
+  const totalCount = rows.length;
+  const percentage = ((validCount / totalCount) * 100).toFixed(1);
+  summaryBox.textContent = `Valid: ${validCount} / ${totalCount} (${percentage}%)`;
+
+  const html = `
+    <table border="1" style="width:100%;border-collapse:collapse">
       <thead>
         <tr>
-          <th>Claim ID</th>
-          <th>Start Date & Time</th>
-          <th>End Date & Time</th>
-          <th>Patient ID</th>
-          <th>Doctor</th>
-          <th>Total Amount</th>
-          <th>Validity</th>
+          <th>Claim ID</th><th>Activity ID</th><th>Start</th>
+          <th>End</th><th>Duration</th><th>Remarks</th>
         </tr>
       </thead>
-      <tbody>${rows}</tbody>
-    </table>
-  `;
-  document.getElementById('results').innerHTML = table;
+      <tbody>
+        ${rows.map(r => `
+          <tr class="${r.isValid ? 'valid' : 'invalid'}">
+            <td>${r.claimId}</td>
+            <td>${r.activityId}</td>
+            <td>${r.start}</td>
+            <td>${r.end}</td>
+            <td>${r.duration}</td>
+            <td>${r.remarks.join('<br>')}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`;
+
+  container.innerHTML = html;
 }
+
+// XLSX export support
+document.getElementById('exportBtn').addEventListener('click', () => {
+  if (!window.invalidRows?.length) return;
+
+  const wb = XLSX.utils.book_new();
+  const wsData = [
+    ['Claim ID', 'Activity ID', 'Start', 'End', 'Duration', 'Remarks'],
+    ...window.invalidRows.map(r => [
+      r.claimId,
+      r.activityId,
+      r.start,
+      r.end,
+      r.duration,
+      r.remarks.join('; ')
+    ])
+  ];
+
+  const ws = XLSX.utils.aoa_to_sheet(wsData);
+  XLSX.utils.book_append_sheet(wb, ws, 'Invalid Timings');
+  XLSX.writeFile(wb, 'invalid_timings.xlsx');
+});
+
 
 /**
  * Renders a message in the results area.
