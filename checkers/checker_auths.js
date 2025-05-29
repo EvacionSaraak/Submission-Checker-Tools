@@ -375,49 +375,50 @@ function renderRow(r, lastClaimId) {
 
   const xls = r.xlsRow || {};
 
-  // Claim ID (hide if same as previous)
+  // Claim ID
   const claimCell = document.createElement("td");
-  claimCell.textContent = (r.claimId === lastClaimId) ? "" : r.claimId;
+  claimCell.textContent = (r.claimId === lastClaimId) ? "" : (r.claimId || "");
   tr.appendChild(claimCell);
 
-  // Static fields
+  // Static XML fields with fallback
   [r.memberId, r.id, r.code, r.description].forEach(val => {
     const td = document.createElement("td");
-    td.textContent = val;
+    td.textContent = val ?? "";  // fallback to empty string
     tr.appendChild(td);
   });
 
   // Net Total
   const netTotalTd = document.createElement("td");
-  netTotalTd.textContent = r.netTotal;
+  netTotalTd.textContent = r.netTotal ?? "";
   tr.appendChild(netTotalTd);
 
   // Payer Share
   const payerShareTd = document.createElement("td");
-  payerShareTd.textContent = xls["Payer Share"] || "";
+  payerShareTd.textContent = xls["Payer Share"] ?? "";
   tr.appendChild(payerShareTd);
 
   // Ordering Clinician, Auth ID, Start Date
   [r.ordering, r.authID, r.start].forEach(val => {
     const td = document.createElement("td");
-    td.textContent = val;
+    td.textContent = val ?? "";
     tr.appendChild(td);
   });
 
-  // Ordered On, Status, Denial Code, Denial Reason
+  // XLSX fields (ordered on, status, denial code, denial reason)
   ["Ordered On", "Status", "Denial Code (if any)", "Denial Reason (if any)"].forEach(field => {
     const td = document.createElement("td");
-    td.textContent = xls[field] || "";
+    td.textContent = xls[field] ?? "";
     tr.appendChild(td);
   });
 
   // Remarks
   const remarksTd = document.createElement("td");
-  remarksTd.innerHTML = r.remarks.map(msg => `<div>${msg}</div>`).join("");
+  remarksTd.innerHTML = (r.remarks || []).map(msg => `<div>${msg}</div>`).join("");
   tr.appendChild(remarksTd);
 
   return tr;
 }
+
 
 // === MAIN PROCESSING ===
 
