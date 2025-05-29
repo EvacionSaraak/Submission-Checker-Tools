@@ -132,22 +132,26 @@ function validateApprovalRequirement(code, authID) {
   return remarks;
 }
 
-function validateXLSXMatch(row, { memberId, code, netTotal, ordering, authID }) {
+function validateXLSXMatch(row, { memberId, code, qty, netTotal, ordering, authID }) {
   const remarks = [];
-  if ((row["Card Number / DHA Member ID"] || "").trim() !== memberId.trim())
-    remarks.push(`MemberID mismatch: XLSX=${row["Card Number / DHA Member ID"]}`);
-  if ((row["Item Code"] || "").trim() !== code.trim())
-    remarks.push(`Item Code mismatch: XLSX=${row["Item Code"]}`);
-  const xlsxPayerShare = parseFloat(row["Payer Share"] || "0");
-  const xmlNetTotal = parseFloat(netTotal || "0");
-  if (xlsxPayerShare !== xmlNetTotal)
-    remarks.push(`Payer Share mismatch: XLSX=${row["Payer Share"]}`);
+  if ((row["Card Number / DHA Member ID"] || "").trim() !== memberId.trim()) remarks.push(`MemberID mismatch: XLSX=${row["Card Number / DHA Member ID"]}`);
+  if ((row["Item Code"] || "").trim() !== code.trim()) remarks.push(`Item Code mismatch: XLSX=${row["Item Code"]}`);
+
+  // Compute expected total = xml netTotal * qty
+  const unitNet = parseFloat(netTotal || "0");
+  const quantity = parseFloat(qty || "0");
+  const expectedTotal = (unitNet * quantity).toFixed(2);
+  const xlsxPayerShare = parseFloat(row["Payer Share"] || "0").toFixed(2);
+  if (expectedTotal !== xlsxPayerShare)
+    remarks.push(
+      `Total mismatch: expected ${expectedTotal} ` +
+      `(net ${unitNet} × qty ${quantity}), ` +
+      `XLSX Payer Share=${row["Payer Share"]}`
+    );
+  
   const xOrdering = (row["Ordering Clinician"] || "").trim().toUpperCase();
-  const xmlOrdering = (ordering || "").trim().toUpperCase();
-  if (xOrdering !== xmlOrdering)
-    remarks.push(`Ordering Clinician mismatch: XLSX=${row["Ordering Clinician"]}`);
-  if ((row.AuthorizationID || "").trim() !== authID.trim())
-    remarks.push(`AuthorizationID mismatch: XLSX=${row.AuthorizationID}`);
+  if (xOrdering !== (ordering || "").trim().toUpperCase()) remarks.push(`Ordering Clinician mismatch: XLSX=${row["Ordering Clinician"]}`);
+  if ((row.AuthorizationID || "").trim() !== authID.trim()) remarks.push(`AuthorizationID mismatch: XLSX=${row.AuthorizationID}`);
   return remarks;
 }
 
@@ -202,27 +206,24 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId) {
   const code     = getText(activityEl, "Code");
   const start    = getText(activityEl, "Start");
   const netTotal = getText(activityEl, "Net") || getText(activityEl, "NetTotal");
+  const qty      = getText(activityEl, "Quantity") || "1";
   const ordering = getText(activityEl, "OrderingClinician");
   const authID   = getText(activityEl, "PriorAuthorizationID") || getText(activityEl, "PriorAuthorization");
   const rule     = authRules[code] || {};
   const needsAuth = !/NOT\s+REQUIRED/i.test(rule.approval_details || "");
 
   if (!needsAuth && !authID) {
-    return {
-      claimId, memberId, id, code,
-      description: rule.description || "",
-      netTotal, ordering, authID, start,
-      xlsRow: {}, remarks: []
-    };
+    return { claimId, memberId, id, code,
+      description: rule.description||"",
+      netTotal, qty, ordering, authID, start,
+      xlsRow:{}, remarks:[] };
   }
 
   if (parseFloat(netTotal || "0") === 0) {
-    return {
-      claimId, memberId, id, code,
-      description: rule.description || "",
-      netTotal, ordering, authID, start,
-      xlsRow: {}, remarks: []
-    };
+    return { claimId, memberId, id, code,
+      description: rule.description||"",
+      netTotal, qty, ordering, authID, start,
+      xlsRow:{}, remarks:[] };
   }
 
   const rows = xlsxMap[authID] || [];
@@ -230,11 +231,13 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId) {
     String(r["Item Code"]||"").trim() === code &&
     String(r["Card Number / DHA Member ID"]||"").trim() === memberId
   ) || null;
+
   const remarks = [];
 
   if (matchedRow && authID) {
     const status = (matchedRow["Status"]||matchedRow.status||"").toLowerCase();
-    if (status.includes("rejected")) remarks.push("Activity has AuthorizationID but status is rejected");
+    if (status.includes("rejected"))
+      remarks.push("Activity has AuthorizationID but status is rejected");
   }
 
   if (!matchedRow) {
@@ -242,16 +245,29 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId) {
   } else {
     ["Item Code","Card Number / DHA Member ID","Ordering Clinician","Payer Share"].forEach(f => {
       const v = String(matchedRow[f]||"");
-      if (v !== v.trim()) remarks.push(`Extra whitespace in field: "${f}"`);
+      if (v !== v.trim())
+        remarks.push(`Extra whitespace in field: "${f}"`);
     });
-    remarks.push(...validateXLSXMatch(matchedRow, { memberId, code, netTotal, ordering, authID }));
+
+    const context = { memberId, code, qty, netTotal, ordering, authID };
+    remarks.push(...validateXLSXMatch(matchedRow, context));
     remarks.push(...validateDateAndStatus(matchedRow, start));
   }
 
-  const context = { claimId, memberId, id, code, netTotal, ordering, authID, start };
-  logInvalidRow(matchedRow, context, remarks);
+  if (remarks.length) {
+    console.group(`Errors for AuthID=${authID}, Code=${code}`);
+    console.log("Activity:", { claimId, memberId, id, code, netTotal, qty, ordering, authID, start });
+    console.log("XLSX row:", matchedRow);
+    console.log("Remarks:", remarks);
+    console.groupEnd();
+  }
 
-  return { claimId, memberId, id, code, description: rule.description||"", netTotal, ordering, authID, start, xlsRow: matchedRow||{}, remarks };
+  return {
+    claimId, memberId, id, code,
+    description: rule.description||"",
+    netTotal, qty, ordering, authID, start,
+    xlsRow: matchedRow||{}, remarks
+  };
 }
 
 function validateClaims(xmlDoc, xlsxData) {
