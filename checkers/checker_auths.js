@@ -28,17 +28,25 @@ function getText(parent, tag) {
 function updateStatus() {
   const resultsDiv = document.getElementById("results");
   let messages = [];
-  if (xmlClaimCount > 0) messages.push(`${xmlClaimCount} Claims Loaded`);
-  if (xlsxAuthCount > 0) messages.push(`${xlsxAuthCount} Auths Loaded`);
-  if (messages.length === 0) messages.push('Please upload and process files.');
+
+  // XML
+  if (xmlClaimCount === -1) messages.push("XML file selected, awaiting processing...");
+  else if (xmlClaimCount > 0) messages.push(`${xmlClaimCount} Claims Loaded`);
+  else if (xmlClaimCount === 0) messages.push("No claims loaded");
+
+  // XLSX
+  if (xlsxAuthCount === -1) messages.push("XLSX file selected, awaiting processing...");
+  else if (xlsxAuthCount > 0) messages.push(`${xlsxAuthCount} Auths Loaded`);
+  else if (xlsxAuthCount === 0) messages.push("No auths loaded");
+
   if (resultsDiv) {
-    resultsDiv.textContent = messages.join(", ");
+    resultsDiv.textContent = messages.join(" | ");
     console.log("[updateStatus] Updated resultsDiv:", resultsDiv.textContent);
   } else {
     console.warn("[updateStatus] resultsDiv not found");
   }
   const processBtn = document.getElementById("processBtn");
-  if (processBtn) processBtn.disabled = !(xmlClaimCount && xlsxAuthCount);
+  if (processBtn) processBtn.disabled = !(xmlClaimCount > 0 && xlsxAuthCount > 0);
 }
 
 // === LOADERS ===
@@ -447,14 +455,8 @@ document.getElementById("runButton").addEventListener("click", handleRun);
 ["xmlInput", "xlsxInput"].forEach(id => {
   const el = document.getElementById(id);
   if (el) el.addEventListener("change", () => {
-    if (id === "xmlInput") {
-      xmlClaimCount = 0;
-      document.getElementById("results").textContent = "XML file selected, awaiting processing...";
-    }
-    if (id === "xlsxInput") {
-      xlsxAuthCount = 0;
-      document.getElementById("results").textContent = "XLSX file selected, awaiting processing...";
-    }
+    if (id === "xmlInput") xmlClaimCount = -1;
+    if (id === "xlsxInput") xlsxAuthCount = -1;
     updateStatus();
     console.log("[input change] File input changed:", id);
   });
