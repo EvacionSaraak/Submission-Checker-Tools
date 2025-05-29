@@ -120,81 +120,53 @@ function mapXLSXData(rows) {
   }, {});
 }
 
-// === VALIDATORS ===
-
-/**
- * Checks if a code requires approval
- * @param {string} code - Activity code
- * @param {string} authID - Authorization ID
- * @returns {Array<string>} remarks
- */
 function validateApprovalRequirement(code, authID) {
   const remarks = [];
-  const rule = authRules[code];
-  if (!rule) {
-    remarks.push("Code not found in checker_auths.json");
-    return remarks;
-  }
+  const rule = authRules[code] || {};
   const needsAuth = !/NOT\s+REQUIRED/i.test(rule.approval_details || "");
   if (needsAuth) {
     if (!authID) remarks.push("Missing required AuthorizationID");
   } else {
-    remarks.push("No authorization required for this code");
     if (authID) remarks.push("AuthorizationID provided but not required");
   }
   return remarks;
 }
 
-/**
- * Validates field matches between XLSX and XML data
- * @param {Object} row - XLSX data row
- * @param {Object} context - Activity context
- * @returns {Array<string>} remarks
- */
-function validateXLSXMatch(row, { memberId, code, /* , */ netTotal, ordering, authID }) {
+function validateXLSXMatch(row, { memberId, code, netTotal, ordering, authID }) {
   const remarks = [];
-  if ((row["Card Number / DHA Member ID"] || "").trim() !== memberId.trim()) remarks.push(`MemberID mismatch: XLSX=${row["Card Number / DHA Member ID"] || ""}`);
-  if ((row["Item Code"] || "").trim() !== code.trim()) remarks.push(`Item Code mismatch: XLSX=${row["Item Code"] || ""}`);
-  
+  if ((row["Card Number / DHA Member ID"] || "").trim() !== memberId.trim())
+    remarks.push(`MemberID mismatch: XLSX=${row["Card Number / DHA Member ID"]}`);
+  if ((row["Item Code"] || "").trim() !== code.trim())
+    remarks.push(`Item Code mismatch: XLSX=${row["Item Code"]}`);
   const xlsxPayerShare = parseFloat(row["Payer Share"] || "0");
   const xmlNetTotal = parseFloat(netTotal || "0");
-  if (xlsxPayerShare !== xmlNetTotal) remarks.push(`Payer Share mismatch: XLSX=${row["Payer Share"] || ""}`);
-
-  const xlsxOrdering = (row["Ordering Clinician"] || "").trim().toUpperCase();
+  if (xlsxPayerShare !== xmlNetTotal)
+    remarks.push(`Payer Share mismatch: XLSX=${row["Payer Share"]}`);
+  const xOrdering = (row["Ordering Clinician"] || "").trim().toUpperCase();
   const xmlOrdering = (ordering || "").trim().toUpperCase();
-  if (xlsxOrdering !== xmlOrdering) remarks.push(`Ordering Clinician mismatch: XLSX=${row["Ordering Clinician"] || ""}`);
-
-  if ((row.AuthorizationID || "").trim() !== authID.trim()) remarks.push(`AuthorizationID mismatch: XLSX=${row.AuthorizationID || ""}`);
-
+  if (xOrdering !== xmlOrdering)
+    remarks.push(`Ordering Clinician mismatch: XLSX=${row["Ordering Clinician"]}`);
+  if ((row.AuthorizationID || "").trim() !== authID.trim())
+    remarks.push(`AuthorizationID mismatch: XLSX=${row.AuthorizationID}`);
   return remarks;
 }
 
-
-
-/**
- * Validates date consistency and approval status
- * @param {Object} row - XLSX data row
- * @param {string} start - Activity start date
- * @returns {Array<string>} remarks
- */
 function validateDateAndStatus(row, start) {
   const remarks = [];
   const xlsDateStr = (row["Ordered On"] || "").split(' ')[0];
   const xmlDateStr = (start || "").split(' ')[0];
-  const xlsParts = xlsDateStr.split('/');
-  const xmlParts = xmlDateStr.split('/');
-  const xlsDate = new Date(`${xlsParts[2]}-${xlsParts[1].padStart(2,'0')}-${xlsParts[0].padStart(2,'0')}`);
-  const xmlDate = new Date(`${xmlParts[2]}-${xmlParts[1].padStart(2,'0')}-${xmlParts[0].padStart(2,'0')}`);
-
-  if (!(xlsDate instanceof Date) || isNaN(xlsDate)) remarks.push("Invalid XLSX Ordered On date");
-  if (!(xmlDate instanceof Date) || isNaN(xmlDate)) remarks.push("Invalid XML Start date");
+  const [dx, mx, yx] = xlsDateStr.split('/');
+  const [di, mi, yi] = xmlDateStr.split('/');
+  const xlsDate = new Date(`${yx}-${mx.padStart(2,'0')}-${dx.padStart(2,'0')}`);
+  const xmlDate = new Date(`${yi}-${mi.padStart(2,'0')}-${di.padStart(2,'0')}`);
+  if (isNaN(xlsDate)) remarks.push("Invalid XLSX Ordered On date");
+  if (isNaN(xmlDate)) remarks.push("Invalid XML Start date");
   if (!isNaN(xlsDate) && !isNaN(xmlDate) && xlsDate >= xmlDate)
     remarks.push("Ordered On date must be before Activity Start date");
-
   const status = (row.status || row.Status || "").toLowerCase();
   if (!status.includes("approved")) {
     if (status.includes("rejected")) {
-      remarks.push(`Rejected: Code=${row["Denial Code (if any)"] || 'N/A'} Reason=${row["Denial Reason (if any)"] || 'N/A'}`);
+      remarks.push(`Rejected: Code=${row["Denial Code (if any)"]||'N/A'} Reason=${row["Denial Reason (if any)"]||'N/A'}`);
     } else {
       remarks.push("Status not approved");
     }
@@ -202,15 +174,9 @@ function validateDateAndStatus(row, start) {
   return remarks;
 }
 
-/**
- * Logs invalid XLSX rows with all comparison data to console for debugging
- * @param {Object} xlsRow - The XLSX data row object
- * @param {Object} context - The XML context data used for comparison
- * @param {Array<string>} remarks - The mismatch remarks from validation
- */
 function logInvalidRow(xlsRow, context, remarks) {
-  if (remarks.length > 0) {
-    console.group(`Validation errors for AuthorizationID: ${context.authID}, Item Code: ${context.code}`);
+  if (remarks.length) {
+    console.group(`Validation errors for AuthorizationID: ${context.authID}, Code: ${context.code}`);
     console.log("XLSX Row Data:", xlsRow);
     console.log("XML Context Data:", context);
     console.log("Remarks:", remarks);
@@ -218,142 +184,77 @@ function logInvalidRow(xlsRow, context, remarks) {
   }
 }
 
-/**
- * Validates an individual Activity element against XLSX data and rules
- * @param {Element} activity - XML Activity element
- * @param {Object} xlsxMap - XLSX data mapped by AuthorizationID
- * @param {string} memberId - Member ID from XML claim
- * @param {Object} authRules - Authorization rules
- * @returns {Object} Validation result with remarks
- */
 function validateActivity(activityEl, xlsxMap, claimId, memberId) {
-  // 1) Extract from XML
   const id       = getText(activityEl, "ID");
   const code     = getText(activityEl, "Code");
   const start    = getText(activityEl, "Start");
   const netTotal = getText(activityEl, "Net") || getText(activityEl, "NetTotal");
   const ordering = getText(activityEl, "OrderingClinician");
   const authID   = getText(activityEl, "PriorAuthorizationID") || getText(activityEl, "PriorAuthorization");
+  const rule     = authRules[code] || {};
+  const needsAuth = !/NOT\s+REQUIRED/i.test(rule.approval_details || "");
 
-  // 1a) SHORT-CIRCUIT: if netTotal is zero, skip all validation
-  if (parseFloat(netTotal || "0") === 0) {
-    return {
-      claimId,
-      memberId,
-      id,
-      code,
-      description: "",  // or pull from authRules if needed
-      netTotal,
-      ordering,
-      authID,
-      start,
-      xlsRow: {},       // no lookup needed
-      remarks: []       // considered valid
-    };
-  }
-
-  // 1b) SHORT-CIRCUIT: if auth not required, skip all validation
-  const needsAuth  = !/NOT\s+REQUIRED/i.test(rule.approval_details || "");
   if (!needsAuth && !authID) {
     return {
-      claimId, memberId, id: getText(activityEl,"ID"), code,
+      claimId, memberId, id, code,
       description: rule.description || "",
-      netTotal: getText(activityEl,"Net")||getText(activityEl,"NetTotal"),
-      ordering: getText(activityEl,"OrderingClinician"),
-      authID, start: getText(activityEl,"Start"),
+      netTotal, ordering, authID, start,
       xlsRow: {}, remarks: []
     };
   }
-  // 2) Find matching XLSX row(s)
+
+  if (parseFloat(netTotal || "0") === 0) {
+    return {
+      claimId, memberId, id, code,
+      description: rule.description || "",
+      netTotal, ordering, authID, start,
+      xlsRow: {}, remarks: []
+    };
+  }
+
   const rows = xlsxMap[authID] || [];
   const matchedRow = rows.find(r =>
-    String(r["Item Code"] || "").trim() === code &&
-    String(r["Card Number / DHA Member ID"] || "").trim() === memberId
+    String(r["Item Code"]||"").trim() === code &&
+    String(r["Card Number / DHA Member ID"]||"").trim() === memberId
   ) || null;
-
   const remarks = [];
 
-  // 3) FIRST CHECK: Rejected status with auth present
   if (matchedRow && authID) {
-    const status = String(matchedRow["Status"] || matchedRow.status || "").toLowerCase();
-    if (status.includes("rejected")) {
-      remarks.push(`Activity has AuthorizationID but status is rejected`);
-    }
+    const status = (matchedRow["Status"]||matchedRow.status||"").toLowerCase();
+    if (status.includes("rejected")) remarks.push("Activity has AuthorizationID but status is rejected");
   }
 
   if (!matchedRow) {
     remarks.push("No matching authorization row found in XLSX.");
   } else {
-    // 4) Whitespace Checks
-    ["Item Code", "Card Number / DHA Member ID", "Ordering Clinician", "Payer Share"].forEach(field => {
-      const val = String(matchedRow[field] || "");
-      if (val !== val.trim()) {
-        remarks.push(`Extra whitespace in field: "${field}"`);
-      }
+    ["Item Code","Card Number / DHA Member ID","Ordering Clinician","Payer Share"].forEach(f => {
+      const v = String(matchedRow[f]||"");
+      if (v !== v.trim()) remarks.push(`Extra whitespace in field: "${f}"`);
     });
-
-    // 5) Payer Share vs. Net Total
-    const xPayerShare = parseFloat(matchedRow["Payer Share"] || "0").toFixed(2);
-    const xNet        = parseFloat(netTotal || "0").toFixed(2);
-    if (xPayerShare !== xNet) {
-      remarks.push(`Payer Share mismatch: XLSX=${matchedRow["Payer Share"]}`);
-    }
-
-    // 6) Ordering Clinician
-    const xOrdering = String(matchedRow["Ordering Clinician"] || "").trim().toUpperCase();
-    if (xOrdering && xOrdering !== ordering.trim().toUpperCase()) {
-      remarks.push(`Ordering clinician mismatch: XLSX=${matchedRow["Ordering Clinician"]}`);
-    }
+    remarks.push(...validateXLSXMatch(matchedRow, { memberId, code, netTotal, ordering, authID }));
+    remarks.push(...validateDateAndStatus(matchedRow, start));
   }
 
-  // 7) Debug log if anything failed
-  if (remarks.length) {
-    console.group(`Validation errors for AuthID=${authID}, Code=${code}`);
-    console.log("XML Activity:", { claimId, memberId, id, code, netTotal, ordering, authID, start });
-    console.log("Matched XLSX Row:", matchedRow);
-    console.log("Remarks:", remarks);
-    console.groupEnd();
-  }
+  const context = { claimId, memberId, id, code, netTotal, ordering, authID, start };
+  logInvalidRow(matchedRow, context, remarks);
 
-  // 8) Return the result object
-  return {
-    claimId,
-    memberId,
-    id,
-    code,
-    description: "",
-    netTotal,
-    ordering,
-    authID,
-    start,
-    xlsRow: matchedRow || {},
-    remarks
-  };
+  return { claimId, memberId, id, code, description: rule.description||"", netTotal, ordering, authID, start, xlsRow: matchedRow||{}, remarks };
 }
 
-
-/**
- * Walk every <Claim> in the XML doc, extract its activities, and call validateActivity().
- */
 function validateClaims(xmlDoc, xlsxData) {
   const xlsxMap = mapXLSXData(xlsxData);
   const results = [];
   const claims = Array.from(xmlDoc.getElementsByTagName("Claim"));
 
   claims.forEach(claimEl => {
-    const claimId  = getText(claimEl, "ID");
-    const memberId = getText(claimEl, "MemberID");
-    const activities = Array.from(claimEl.getElementsByTagName("Activity"));
-
-    activities.forEach(activityEl => {
-      const rec = validateActivity(activityEl, xlsxMap, claimId, memberId);
-      results.push(rec);
-    });
+    const cid = getText(claimEl, "ID");
+    const mid = getText(claimEl, "MemberID");
+    const acts = Array.from(claimEl.getElementsByTagName("Activity"));
+    acts.forEach(a => results.push(validateActivity(a, xlsxMap, cid, mid)));
   });
 
   return results;
 }
-
 
 // === RENDERERS ===
 
