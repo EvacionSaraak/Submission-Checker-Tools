@@ -1,18 +1,15 @@
-// checker_auths.js
-
 // === GLOBAL STATE ===
 let authRules = {};
 let authRulesPromise = null;
 let xmlClaimCount = 0;
 let xlsxAuthCount = 0;
 
+// === FILE HANDLING STATE ===
+let currentXmlFile = null;
+let currentXlsxFile = null;
+
 // === UTILITIES ===
 
-/**
- * Shows file status messages with different types (info, success, error)
- * @param {string} message - Status message
- * @param {string} type - Message type ('info', 'success', 'error')
- */
 function showFileStatus(message, type = 'info') {
   const statusElement = document.getElementById('file-status');
   if (!statusElement) return;
@@ -21,7 +18,6 @@ function showFileStatus(message, type = 'info') {
   statusElement.className = '';
   statusElement.classList.add(type);
 
-  // Auto-clear non-error messages after 5 seconds
   if (type !== 'error') {
     setTimeout(() => {
       statusElement.textContent = '';
@@ -30,30 +26,19 @@ function showFileStatus(message, type = 'info') {
   }
 }
 
-/**
- * Safely retrieves trimmed text content from a named child element of an XML parent.
- * @param {Element} parent - XML parent element
- * @param {string} tag - Tag name to search for
- * @returns {string}
- */
 function getText(parent, tag) {
   const el = parent.querySelector(tag);
   return el && el.textContent ? el.textContent.trim() : "";
 }
 
-/**
- * Updates the status message and run button state based on loaded claim/auth counts
- */
 function updateStatus() {
   const resultsDiv = document.getElementById("results");
   let messages = [];
 
-  // XML status
   if (xmlClaimCount === -1) messages.push("XML file selected, awaiting processing...");
   else if (xmlClaimCount > 0) messages.push(`${xmlClaimCount} Claims Loaded`);
   else if (xmlClaimCount === 0) messages.push("No claims loaded");
 
-  // XLSX status
   if (xlsxAuthCount === -1) messages.push("XLSX file selected, awaiting processing...");
   else if (xlsxAuthCount > 0) messages.push(`${xlsxAuthCount} Auths Loaded`);
   else if (xlsxAuthCount === 0) messages.push("No auths loaded");
@@ -61,46 +46,12 @@ function updateStatus() {
   if (resultsDiv) {
     resultsDiv.textContent = messages.join(" | ");
   }
-
   const processBtn = document.getElementById("processBtn");
   if (processBtn) processBtn.disabled = !(xmlClaimCount > 0 && xlsxAuthCount > 0);
 }
 
 // === LOADERS ===
 
-/**
- * Handles file input change events and reads the file
- * @param {Event} event - File input change event
- * @param {function} callback - Callback with file content
- */
-function handleFileInputChange(event, callback) {
-  const file = event.target.files[0];
-  if (!file) {
-    showFileStatus('No file selected.', 'error');
-    return;
-  }
-
-  showFileStatus(`Loading file: ${file.name}`, 'info');
-
-  const reader = new FileReader();
-
-  reader.onload = (e) => {
-    showFileStatus(`File loaded: ${file.name}`, 'success');
-    callback(e.target.result);
-  };
-
-  reader.onerror = () => {
-    showFileStatus(`Error loading file: ${file.name}`, 'error');
-  };
-
-  reader.readAsText(file);
-}
-
-/**
- * Loads authorization rules from JSON file
- * @param {string} url - URL to JSON rules file
- * @returns {Promise<void>}
- */
 function loadAuthRules(url = "checker_auths.json") {
   if (!authRulesPromise) {
     authRulesPromise = fetch(url)
@@ -118,13 +69,6 @@ function loadAuthRules(url = "checker_auths.json") {
   return authRulesPromise;
 }
 
-// === PARSERS ===
-
-/**
- * Reads and parses an XML file
- * @param {File} file - XML file to parse
- * @returns {Promise<Document>}
- */
 function parseXMLFile(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -150,11 +94,6 @@ function parseXMLFile(file) {
   });
 }
 
-/**
- * Reads and parses an XLSX file
- * @param {File} file - XLSX file to parse
- * @returns {Promise<Array>}
- */
 function parseXLSXFile(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -184,13 +123,6 @@ function parseXLSXFile(file) {
   });
 }
 
-// === DATA TRANSFORM ===
-
-/**
- * Maps XLSX rows by AuthorizationID for fast lookup
- * @param {Array} rows - XLSX data rows
- * @returns {Object}
- */
 function mapXLSXData(rows) {
   return rows.reduce((map, row) => {
     const id = row.AuthorizationID || "";
@@ -442,86 +374,62 @@ function renderResults(results) {
 
 // === MAIN PROCESSING ===
 
-/**
- * Processes authorization file content
- * @param {string} fileContent - File content to process
- */
-function processAuthsFileContent(fileContent) {
-  try {
-    const authsData = JSON.parse(fileContent);
-    showFileStatus('Authorization data parsed successfully.', 'success');
-    const validationResults = validateAuthsData(authsData);
-    renderAuthsResults(validationResults);
-  } catch (error) {
-    showFileStatus('Failed to process authorization data: ' + error.message, 'error');
-  }
-}
-
-/**
- * Main runner function
- */
 async function handleRun() {
-  xmlClaimCount = 0;
-  xlsxAuthCount = 0;
-  updateStatus();
-
-  const xmlFile = document.getElementById("xmlInput").files[0];
-  const xlsxFile = document.getElementById("xlsxInput").files[0];
-  const resultsDiv = document.getElementById("results");
-
-  if (!xmlFile || !xlsxFile) {
-    resultsDiv.textContent = "Please upload both XML and XLSX files.";
+  if (!currentXmlFile || !currentXlsxFile) {
+    showFileStatus('Please upload both XML and XLSX files.', 'error');
     return;
   }
 
   try {
+    showFileStatus('Processing files...', 'info');
     await loadAuthRules();
     const [xmlDoc, xlsxData] = await Promise.all([
-      parseXMLFile(xmlFile),
-      parseXLSXFile(xlsxFile)
+      parseXMLFile(currentXmlFile),
+      parseXLSXFile(currentXlsxFile)
     ]);
     const results = validateClaims(xmlDoc, xlsxData, authRules);
     renderResults(results);
+    showFileStatus('Processing complete!', 'success');
   } catch (err) {
-    resultsDiv.textContent = `Error: ${err}`;
+    showFileStatus(`Error: ${err.message || err}`, 'error');
+    console.error("Processing error:", err);
   }
 }
 
 // === EVENT LISTENERS ===
 
-// Initialize when DOM is loaded
 document.addEventListener('DOMContentLoaded', function() {
-  // Main processing button
+  // Main processing button (optional, still supported)
   const processBtn = document.getElementById('processBtn');
   if (processBtn) {
     processBtn.addEventListener('click', handleRun);
-  } else {
-    console.error('Process button not found');
   }
 
-  // File input change handlers
-  const xmlInput = document.getElementById('xmlInput');
-  const xlsxInput = document.getElementById('xlsxInput');
+  // Enhanced file input change handlers for auto-run
+  ["xmlInput", "xlsxInput"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.addEventListener("change", async (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
 
-  if (xmlInput) {
-    xmlInput.addEventListener('change', function() {
-      xmlClaimCount = -1;
-      updateStatus();
-    });
-  }
+        if (id === "xmlInput") {
+          currentXmlFile = file;
+          xmlClaimCount = -1;
+          showFileStatus(`XML file selected: ${file.name}`, 'info');
+        } else if (id === "xlsxInput") {
+          currentXlsxFile = file;
+          xlsxAuthCount = -1;
+          showFileStatus(`XLSX file selected: ${file.name}`, 'info');
+        }
 
-  if (xlsxInput) {
-    xlsxInput.addEventListener('change', function() {
-      xlsxAuthCount = -1;
-      updateStatus();
-    });
-  }
+        updateStatus();
 
-  // Simple file input handler (if needed)
-  const fileInput = document.getElementById('file-input');
-  if (fileInput) {
-    fileInput.addEventListener('change', function(event) {
-      handleFileInputChange(event, processAuthsFileContent);
-    });
-  }
+        // Auto-process if both files are selected
+        if (currentXmlFile && currentXlsxFile) {
+          await handleRun();
+        }
+      });
+    }
+  });
 });
