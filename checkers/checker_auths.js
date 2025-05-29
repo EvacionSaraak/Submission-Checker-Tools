@@ -49,6 +49,11 @@ function parseXMLFile(file) {
  */
 function parseXLSXFile(file) {
   return new Promise((resolve, reject) => {
+    // [ADDED]: Check if XLSX library is loaded
+    if (typeof XLSX === "undefined") {
+      reject("XLSX library not loaded. Please include SheetJS (XLSX.js) in your HTML.");
+      return;
+    }
     const reader = new FileReader();
     reader.onload = e => {
       try {
@@ -101,13 +106,15 @@ function validateApprovalRequirement(code, authID) {
  */
 function validateXLSXMatch(row, fields) {
   const remarks = [];
+  // [MODIFIED]: Coerce both XLSX and XML values to trimmed strings for comparison
+  const safeStr = val => (val === undefined || val === null) ? "" : String(val).trim();
   const { memberId, code, quantity, netTotal, ordering, authID } = fields;
-  if ((row["Card Number / DHA Member ID"] || "") !== memberId) remarks.push(`MemberID mismatch: XLSX=${row["Card Number / DHA Member ID"] || ""}`);
-  if ((row["Item Code"] || "") !== code) remarks.push(`Item Code mismatch: XLSX=${row["Item Code"] || ""}`);
-  if (String(row["Item Amount"] || "") !== quantity) remarks.push(`Quantity mismatch: XLSX=${row["Item Amount"] || ""}`);
-  if (String(row["Payer Share"] || "") !== netTotal) remarks.push(`Payer Share mismatch: XLSX=${row["Payer Share"] || ""}`);
-  if ((row["Ordering Clinician"] || "") !== ordering) remarks.push(`Ordering Clinician mismatch: XLSX=${row["Ordering Clinician"] || ""}`);
-  if ((row.AuthorizationID || "") !== authID) remarks.push(`AuthorizationID mismatch: XLSX=${row.AuthorizationID || ""}`);
+  if (safeStr(row["Card Number / DHA Member ID"]) !== safeStr(memberId)) remarks.push(`MemberID mismatch: XLSX=${safeStr(row["Card Number / DHA Member ID"])}`);
+  if (safeStr(row["Item Code"]) !== safeStr(code)) remarks.push(`Item Code mismatch: XLSX=${safeStr(row["Item Code"])}`);
+  if (safeStr(row["Item Amount"]) !== safeStr(quantity)) remarks.push(`Quantity mismatch: XLSX=${safeStr(row["Item Amount"])}`);
+  if (safeStr(row["Payer Share"]) !== safeStr(netTotal)) remarks.push(`Payer Share mismatch: XLSX=${safeStr(row["Payer Share"])}`);
+  if (safeStr(row["Ordering Clinician"]) !== safeStr(ordering)) remarks.push(`Ordering Clinician mismatch: XLSX=${safeStr(row["Ordering Clinician"])}`);
+  if (safeStr(row.AuthorizationID) !== safeStr(authID)) remarks.push(`AuthorizationID mismatch: XLSX=${safeStr(row.AuthorizationID)}`);
   return remarks;
 }
 
@@ -116,11 +123,16 @@ function validateXLSXMatch(row, fields) {
  */
 function validateDateAndStatus(row, start) {
   const remarks = [];
-  const xlsDate = row["Ordered On"] instanceof Date ? row["Ordered On"] : new Date(row["Ordered On"]);
+  // [MODIFIED]: Robust date parsing and comparison
+  let xlsDate = row["Ordered On"];
+  if (!(xlsDate instanceof Date)) {
+    xlsDate = new Date(xlsDate);
+  }
   const xmlDate = new Date(start);
   if (!(xlsDate instanceof Date) || isNaN(xlsDate)) remarks.push("Invalid XLSX Ordered On date");
   if (!(xmlDate instanceof Date) || isNaN(xmlDate)) remarks.push("Invalid XML Start date");
-  if (xlsDate >= xmlDate) remarks.push("Ordered On date must be before Activity Start date");
+  // [MODIFIED]: Only flag if xlsDate is strictly after xmlDate
+  if (xlsDate > xmlDate) remarks.push("Ordered On date must be before or equal to Activity Start date");
   const status = (row.status || "").toLowerCase();
   if (!status.includes("approved")) {
     if (status.includes("rejected")) {
@@ -191,7 +203,9 @@ function validateClaims(xmlDoc, xlsxData) {
  * Render the results table with all fields for manual review
  */
 function renderResults(results) {
+  // [MODIFIED]: Ensure container exists
   const container = document.getElementById("results");
+  if (!container) return; // [ADDED]: Guard against missing element
   container.innerHTML = "";
   if (!results.length) {
     container.textContent = "✅ No activities to validate.";
@@ -254,17 +268,41 @@ function renderResults(results) {
 }
 
 /**
+ * Show a basic loading indicator
+ * [ADDED]: New function for user feedback during async processing
+ */
+function setLoading(isLoading) {
+  const resultsDiv = document.getElementById("results");
+  if (!resultsDiv) return;
+  if (isLoading) {
+    resultsDiv.innerHTML = '<span style="font-style:italic">Processing, please wait...</span>';
+  } else {
+    resultsDiv.innerHTML = '';
+  }
+}
+
+/**
  * Main entry: handle Run button click
  */
 async function handleRun() {
-  const xmlFile = document.getElementById("xmlInput").files[0];
-  const xlsxFile = document.getElementById("xlsxInput").files[0];
+  // [MODIFIED]: Check for required DOM elements
+  const xmlInput = document.getElementById("xmlInput");
+  const xlsxInput = document.getElementById("xlsxInput");
   const resultsDiv = document.getElementById("results");
+  if (!xmlInput || !xlsxInput || !resultsDiv) {
+    alert("Required input elements are missing in the HTML.");
+    return;
+  }
+
+  const xmlFile = xmlInput.files[0];
+  const xlsxFile = xlsxInput.files[0];
 
   if (!xmlFile || !xlsxFile) {
     resultsDiv.textContent = "Please upload both XML and XLSX files.";
     return;
   }
+
+  setLoading(true); // [ADDED]: Show loading indicator
 
   try {
     await loadAuthRules();
@@ -276,7 +314,16 @@ async function handleRun() {
     renderResults(results);
   } catch (err) {
     resultsDiv.textContent = `Error: ${err}`;
+  } finally {
+    setLoading(false); // [ADDED]: Hide loading indicator
   }
 }
 
-document.getElementById("runButton").addEventListener("click", handleRun);
+// [MODIFIED]: Prevent double event listener registration
+(function attachHandler() {
+  const runButton = document.getElementById("runButton");
+  if (runButton && !runButton._checkerAttached) {
+    runButton.addEventListener("click", handleRun);
+    runButton._checkerAttached = true; // [ADDED]: Custom property to flag listener
+  }
+})();
