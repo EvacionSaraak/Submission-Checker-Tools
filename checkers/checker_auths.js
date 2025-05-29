@@ -8,6 +8,10 @@ let xlsxAuthCount = 0;
 let currentXmlFile = null;
 let currentXlsxFile = null;
 
+// Enhanced file input change handlers for auto-run
+let parsedXmlDoc = null;
+let parsedXlsxData = null;
+
 // === UTILITIES ===
 
 function showFileStatus(message, type = 'info') {
@@ -399,10 +403,6 @@ document.addEventListener('DOMContentLoaded', function() {
   if (processBtn) {
     processBtn.addEventListener('click', handleRun);
   }
-
-  // Enhanced file input change handlers for auto-run
-  let parsedXmlDoc = null;
-  let parsedXlsxData = null;
 
   ["xmlInput", "xlsxInput"].forEach(id => {
     const el = document.getElementById(id);
