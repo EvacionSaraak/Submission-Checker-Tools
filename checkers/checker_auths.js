@@ -153,26 +153,39 @@ function validateXLSXMatch(row, { memberId, code, netTotal, ordering, authID }) 
 
 function validateDateAndStatus(row, start) {
   const remarks = [];
-  const xlsDateStr = (row["Ordered On"] || "").split(' ')[0];
-  const xmlDateStr = (start || "").split(' ')[0];
-  const [dx, mx, yx] = xlsDateStr.split('/');
-  const [di, mi, yi] = xmlDateStr.split('/');
-  const xlsDate = new Date(`${yx}-${mx.padStart(2,'0')}-${dx.padStart(2,'0')}`);
-  const xmlDate = new Date(`${yi}-${mi.padStart(2,'0')}-${di.padStart(2,'0')}`);
-  if (isNaN(xlsDate)) remarks.push("Invalid XLSX Ordered On date");
-  if (isNaN(xmlDate)) remarks.push("Invalid XML Start date");
+
+  // Parse XLSX Ordered On date and time (ignore seconds)
+  const [xlsDatePart, xlsTimePart = ""] = (row["Ordered On"] || "").split(' ');
+  const [dx, mx, yx] = xlsDatePart.split('/');
+  const [hx, minx] = xlsTimePart.split(':') || [];
+  const xlsDate = new Date(`${yx}-${mx.padStart(2,'0')}-${dx.padStart(2,'0')}T${(hx||"00").padStart(2,'0')}:${(minx||"00").padStart(2,'0')}`);
+
+  // Parse XML Start date and time (ignore seconds)
+  const [xmlDatePart, xmlTimePart = ""] = (start || "").split(' ');
+  const [di, mi, yi] = xmlDatePart.split('/');
+  const [hi, mini] = xmlTimePart.split(':') || [];
+  const xmlDate = new Date(`${yi}-${mi.padStart(2,'0')}-${di.padStart(2,'0')}T${(hi||"00").padStart(2,'0')}:${(mini||"00").padStart(2,'0')}`);
+
+  if (isNaN(xlsDate))      remarks.push("Invalid XLSX Ordered On date/time");
+  if (isNaN(xmlDate))      remarks.push("Invalid XML Start date/time");
   if (!isNaN(xlsDate) && !isNaN(xmlDate) && xlsDate >= xmlDate)
-    remarks.push("Ordered On date must be before Activity Start date");
+    remarks.push("Ordered On must be before Activity Start");
+
   const status = (row.status || row.Status || "").toLowerCase();
   if (!status.includes("approved")) {
     if (status.includes("rejected")) {
-      remarks.push(`Rejected: Code=${row["Denial Code (if any)"]||'N/A'} Reason=${row["Denial Reason (if any)"]||'N/A'}`);
+      remarks.push(
+        `Rejected: Code=${row["Denial Code (if any)"]||'N/A'} ` +
+        `Reason=${row["Denial Reason (if any)"]||'N/A'}`
+      );
     } else {
       remarks.push("Status not approved");
     }
   }
+
   return remarks;
 }
+
 
 function logInvalidRow(xlsRow, context, remarks) {
   if (remarks.length) {
