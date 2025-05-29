@@ -178,15 +178,24 @@ function validateActivities(xmlDoc, codeToMeta) {
 }
 
 function renderResults(container, rows) {
+  const summaryBox = document.getElementById('resultsSummary');
   if (!rows.length) {
     container.innerHTML = '<p>No activities found.</p>';
+    summaryBox.textContent = '';
     document.getElementById('exportBtn').style.display = 'none';
     return;
   }
 
   let lastClaimId = null;
-  window.invalidRows = rows.filter(r => !r.isValid); // Save for export
+  window.invalidRows = rows.filter(r => !r.isValid);
   document.getElementById('exportBtn').style.display = window.invalidRows.length ? 'inline-block' : 'none';
+
+  // Summary statistics
+  const validCount = rows.filter(r => r.isValid).length;
+  const totalCount = rows.length;
+  const percentage = ((validCount / totalCount) * 100).toFixed(1);
+
+  summaryBox.textContent = `Valid: ${validCount} / ${totalCount} (${percentage}%)`;
 
   const html = `
     <table border="1" style="width:100%;border-collapse:collapse">
@@ -210,6 +219,6 @@ function renderResults(container, rows) {
         }).join('')}
       </tbody>
     </table>`;
-    
+
   container.innerHTML = html;
 }
