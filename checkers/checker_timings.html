@@ -17,7 +17,9 @@
     </p>
   </div>
 
-  <label>Upload XML: <input type="file" id="xmlFileInput" accept=".xml" /></label>
+  <label>Upload XML: <input type="file" id="xmlFileInput" accept=".xml" /><button id="exportBtn" style="display:none;margin-top:10px">Export Invalid Entries</button></label>
+  
+  <div id="resultsSummary" style="margin:10px;font-weight:bold;"></div>
   <div id="results"></div>
 
   <script src="checker_timings.js"></script>
