@@ -268,12 +268,12 @@ function validateActivity(activity, xlsxMap, memberId, authRules) {
         const remarksFromDate = validateDateAndStatus(xlsRow, start);
         remarks = remarks.concat(remarksFromDate);
 
-        return { id, code, description, start, /*qty,*/netTotal, ordering, authID, xlsRow, remarks };
+        return { id, code, description, start, qty, netTotal, ordering, authID, xlsRow, payerShare: xlsRow ? xlsRow["Payer Share"] : "", remarks };
       }
     }
   }
 
-  return { id, code, description, start, /*qty,*/netTotal, ordering, authID, xlsRow: null, remarks };
+  return { id, code, description, start, qty, netTotal, ordering, authID, xlsRow, payerShare: xlsRow ? xlsRow["Payer Share"] : "", remarks };
 }
 
 /**
@@ -330,6 +330,7 @@ function renderResults(results) {
       <th>Code</th>
       <th>Description</th>
       <th>Net Total</th>
+      <th>Payer Share</th>
       <th>Ordering Clinician</th>
       <th>Auth ID</th>
       <th>Start Date</th>
@@ -344,48 +345,64 @@ function renderResults(results) {
   const tbody = document.createElement("tbody");
   let lastClaim = null;
 
-  results.forEach(r => {
-    const tr = document.createElement("tr");
-    tr.className = r.remarks.length ? 'invalid' : 'valid';
-
-    // Claim ID cell (only show if different from last)
-    const claimCell = document.createElement("td");
-    claimCell.textContent = (r.claimId === lastClaim) ? "" : r.claimId;
-    lastClaim = r.claimId;
-    tr.appendChild(claimCell);
-
-    // Member ID, Activity ID, Code, Description
-    [r.memberId, r.id, r.code, r.description].forEach(val => {
-      const td = document.createElement("td");
-      td.textContent = val;
-      tr.appendChild(td);
-    });
-
-    // Qty, Net Total, Ordering Clinician, Auth ID, Start Date
-    [/*r.qty,*/ r.netTotal, r.ordering, r.authID, r.start].forEach(val => {
-      const td = document.createElement("td");
-      td.textContent = val;
-      tr.appendChild(td);
-    });
-
-    // Ordered On, Status, Denial Code, Denial Reason
-    const xls = r.xlsRow || {};
-    ["Ordered On", "Status", "Denial Code (if any)", "Denial Reason (if any)"].forEach(field => {
-      const td = document.createElement("td");
-      td.textContent = xls[field] || "";
-      tr.appendChild(td);
-    });
-
-    // Remarks
-    const remarksTd = document.createElement("td");
-    remarksTd.innerHTML = r.remarks.map(msg => `<div>${msg}</div>`).join("");
-    tr.appendChild(remarksTd);
-
-    tbody.appendChild(tr);
+  results.forEach(result => {
+    const row = renderRow(result, lastClaim);
+    lastClaim = result.claimId;
+    tbody.appendChild(row);
   });
 
   table.appendChild(tbody);
   container.appendChild(table);
+}
+
+function renderRow(r, lastClaimId) {
+  const tr = document.createElement("tr");
+  tr.className = r.remarks.length ? 'invalid' : 'valid';
+
+  const xls = r.xlsRow || {};
+
+  // Claim ID (hide if same as previous)
+  const claimCell = document.createElement("td");
+  claimCell.textContent = (r.claimId === lastClaimId) ? "" : r.claimId;
+  tr.appendChild(claimCell);
+
+  // Static fields
+  [r.memberId, r.id, r.code, r.description].forEach(val => {
+    const td = document.createElement("td");
+    td.textContent = val;
+    tr.appendChild(td);
+  });
+
+  // Net Total
+  const netTotalTd = document.createElement("td");
+  netTotalTd.textContent = r.netTotal;
+  tr.appendChild(netTotalTd);
+
+  // Payer Share
+  const payerShareTd = document.createElement("td");
+  payerShareTd.textContent = xls["Payer Share"] || "";
+  tr.appendChild(payerShareTd);
+
+  // Ordering Clinician, Auth ID, Start Date
+  [r.ordering, r.authID, r.start].forEach(val => {
+    const td = document.createElement("td");
+    td.textContent = val;
+    tr.appendChild(td);
+  });
+
+  // Ordered On, Status, Denial Code, Denial Reason
+  ["Ordered On", "Status", "Denial Code (if any)", "Denial Reason (if any)"].forEach(field => {
+    const td = document.createElement("td");
+    td.textContent = xls[field] || "";
+    tr.appendChild(td);
+  });
+
+  // Remarks
+  const remarksTd = document.createElement("td");
+  remarksTd.innerHTML = r.remarks.map(msg => `<div>${msg}</div>`).join("");
+  tr.appendChild(remarksTd);
+
+  return tr;
 }
 
 // === MAIN PROCESSING ===
