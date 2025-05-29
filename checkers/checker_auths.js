@@ -268,12 +268,12 @@ function validateActivity(activity, xlsxMap, memberId, authRules) {
         const remarksFromDate = validateDateAndStatus(xlsRow, start);
         remarks = remarks.concat(remarksFromDate);
 
-        return { id, code, description, start, qty, netTotal, ordering, authID, xlsRow, payerShare: xlsRow ? xlsRow["Payer Share"] : "", remarks };
+        return { id, code, description, start, netTotal, ordering, authID, xlsRow, payerShare: xlsRow ? xlsRow["Payer Share"] : "", remarks };
       }
     }
   }
 
-  return { id, code, description, start, qty, netTotal, ordering, authID, xlsRow, payerShare: xlsRow ? xlsRow["Payer Share"] : "", remarks };
+  return { id, code, description, start, netTotal, ordering, authID, xlsRow, payerShare: xlsRow ? xlsRow["Payer Share"] : "", remarks };
 }
 
 /**
