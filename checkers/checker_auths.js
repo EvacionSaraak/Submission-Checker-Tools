@@ -133,11 +133,18 @@ function validateXLSXMatch(row, { memberId, code, qty, netTotal, ordering, authI
  */
 function validateDateAndStatus(row, start) {
   const remarks = [];
-  const xlsDate = row["Ordered On"] instanceof Date ? row["Ordered On"] : new Date(row["Ordered On"]);
-  const xmlDate = new Date(start);
+  // Extract date only (ignore time)
+  const xlsDateStr = (row["Ordered On"] || "").split(' ')[0];
+  const xmlDateStr = (start || "").split(' ')[0];
+  const xlsParts = xlsDateStr.split('/'); // dd/MM/yyyy
+  const xmlParts = xmlDateStr.split('/');
+  const xlsDate = new Date(`${xlsParts[2]}-${xlsParts[1].padStart(2,'0')}-${xlsParts[0].padStart(2,'0')}`);
+  const xmlDate = new Date(`${xmlParts[2]}-${xmlParts[1].padStart(2,'0')}-${xmlParts[0].padStart(2,'0')}`);
+
   if (!(xlsDate instanceof Date) || isNaN(xlsDate)) remarks.push("Invalid XLSX Ordered On date");
   if (!(xmlDate instanceof Date) || isNaN(xmlDate)) remarks.push("Invalid XML Start date");
   if (xlsDate >= xmlDate) remarks.push("Ordered On date must be before Activity Start date");
+
   const status = (row.status || "").toLowerCase();
   if (!status.includes("approved")) {
     if (status.includes("rejected")) {
@@ -147,6 +154,7 @@ function validateDateAndStatus(row, start) {
     }
   }
   return remarks;
+}
 }
 
 /**
