@@ -425,7 +425,7 @@ async function handleRun() {
       parseXMLFile(xmlFile),
       parseXLSXFile(xlsxFile)
     ]);
-    const results = validateClaims(xmlDoc, xlsxData);
+    const results = validateClaims(xmlDoc, xlsxData, authRules);
     renderResults(results);
     console.log("[handleRun] Process complete.");
   } catch (err) {
