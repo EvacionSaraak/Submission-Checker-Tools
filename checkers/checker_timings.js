@@ -25,7 +25,9 @@ async function onFileChange(event) {
     validateXMLString(xmlText);
     const xmlDoc = parseXML(xmlText);
     const claims = extractClaims(xmlDoc);
-    renderResults(claims);
+
+    const resultsContainer = document.getElementById('results');
+    renderResults(resultsContainer, claims);
   } catch (err) {
     renderMessage(`❌ Error: ${sanitize(String(err.message))}`);
   }
