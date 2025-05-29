@@ -167,16 +167,18 @@ function validateApprovalRequirement(code, authID) {
  * @param {Object} context - Activity context
  * @returns {Array<string>} remarks
  */
-function validateXLSXMatch(row, { memberId, code, qty, netTotal, ordering, authID }) {
+function validateXLSXMatch(row, { memberId, code, qty, netTotal, ordering, clinician, authID }) {
   const remarks = [];
   if ((row["Card Number / DHA Member ID"] || "") !== memberId) remarks.push(`MemberID mismatch: XLSX=${row["Card Number / DHA Member ID"] || ""}`);
   if ((row["Item Code"] || "") !== code) remarks.push(`Item Code mismatch: XLSX=${row["Item Code"] || ""}`);
   if (String(row["Item Amount"] || "") !== qty) remarks.push(`Qty mismatch: XLSX=${row["Item Amount"] || ""}`);
   if (String(row["Payer Share"] || "") !== netTotal) remarks.push(`Payer Share mismatch: XLSX=${row["Payer Share"] || ""}`);
   if ((row["Ordering Clinician"] || "") !== ordering) remarks.push(`Ordering Clinician mismatch: XLSX=${row["Ordering Clinician"] || ""}`);
+  if ((row["Performing Clinician"] || "") !== clinician) remarks.push(`Clinician mismatch: XLSX=${row["Performing Clinician"] || ""}`);
   if ((row.AuthorizationID || "") !== authID) remarks.push(`AuthorizationID mismatch: XLSX=${row.AuthorizationID || ""}`);
   return remarks;
 }
+
 
 /**
  * Validates date consistency and approval status
@@ -226,6 +228,7 @@ function validateActivity(activity, xlsxMap, memberId, authRules) {
   const qty = getText(activity, "Quantity");
   const netTotal = getText(activity, "NetTotal");
   const ordering = getText(activity, "OrderingClinician");
+  const clinician = getText(activity, "Clinician"); // Performing Clinician
   const authID = getText(activity, "PriorAuthorizationID") || getText(activity, "PriorAuthorization");
 
   let remarks = [];
@@ -247,16 +250,17 @@ function validateActivity(activity, xlsxMap, memberId, authRules) {
       if (!xlsRow) {
         remarks.push("No matching row for code/AuthID in XLSX");
       } else {
-        const context = { memberId, code, qty, netTotal, ordering, authID };
+        const context = { memberId, code, qty, netTotal, ordering, clinician, authID };
         remarks = remarks.concat(validateXLSXMatch(xlsRow, context));
         remarks = remarks.concat(validateDateAndStatus(xlsRow, start));
-        return { id, code, description, start, qty, netTotal, ordering, authID, xlsRow, remarks };
+        return { id, code, description, start, qty, netTotal, ordering, clinician, authID, xlsRow, remarks };
       }
     }
   }
 
-  return { id, code, description, start, qty, netTotal, ordering, authID, xlsRow: null, remarks };
+  return { id, code, description, start, qty, netTotal, ordering, clinician, authID, xlsRow: null, remarks };
 }
+
 
 /**
  * Validates all claims and activities
@@ -340,34 +344,29 @@ function renderResults(results) {
     // Member ID, Activity ID, Code, Description
     [r.memberId, r.id, r.code, r.description].forEach(val => {
       const td = document.createElement("td");
-      td.textContent = val || "";
+      td.textContent = val;
       tr.appendChild(td);
     });
 
     // Qty, Net Total, Ordering Clinician, Auth ID, Start Date
     [r.qty, r.netTotal, r.ordering, r.authID, r.start].forEach(val => {
       const td = document.createElement("td");
-      td.textContent = val || "";
+      td.textContent = val;
       tr.appendChild(td);
     });
 
-    // From XLSX row: Ordered On, Status, Denial Code, Denial Reason
-    const xlsRow = r.xlsRow || {};
-    const orderedOn = xlsRow["Ordered On"] || xlsRow["OrderedOn"] || "";
-    const status = xlsRow.status || xlsRow.Status || "";
-    const denialCode = xlsRow["Denial Code (if any)"] || "";
-    const denialReason = xlsRow["Denial Reason (if any)"] || "";
-
-    [orderedOn, status, denialCode, denialReason].forEach(val => {
+    // Ordered On, Status, Denial Code, Denial Reason
+    const xls = r.xlsRow || {};
+    ["Ordered On", "Status", "Denial Code (if any)", "Denial Reason (if any)"].forEach(field => {
       const td = document.createElement("td");
-      td.textContent = val || "";
+      td.textContent = xls[field] || "";
       tr.appendChild(td);
     });
 
-    // Remarks (join all remarks as a single string)
-    const remarksCell = document.createElement("td");
-    remarksCell.textContent = r.remarks.length ? r.remarks.join("; ") : "OK";
-    tr.appendChild(remarksCell);
+    // Remarks
+    const remarksTd = document.createElement("td");
+    remarksTd.innerHTML = r.remarks.map(msg => `<div>${msg}</div>`).join("");
+    tr.appendChild(remarksTd);
 
     tbody.appendChild(tr);
   });
