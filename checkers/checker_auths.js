@@ -1,20 +1,37 @@
 // checker_auths.js
 
 // === GLOBAL STATE ===
-// Stores the authorization rules loaded from checker_auths.json
 let authRules = {};
-// Promise to avoid fetching rules multiple times
 let authRulesPromise = null;
-// Counts for loaded claims and auths, used for status display and validation gating
 let xmlClaimCount = 0;
 let xlsxAuthCount = 0;
-
-console.log("[checker_auths.js] Script loaded and global state initialized");
 
 // === UTILITIES ===
 
 /**
- * Utility: Safely retrieves trimmed text content from a named child element of an XML parent.
+ * Shows file status messages with different types (info, success, error)
+ * @param {string} message - Status message
+ * @param {string} type - Message type ('info', 'success', 'error')
+ */
+function showFileStatus(message, type = 'info') {
+  const statusElement = document.getElementById('file-status');
+  if (!statusElement) return;
+
+  statusElement.textContent = message;
+  statusElement.className = '';
+  statusElement.classList.add(type);
+
+  // Auto-clear non-error messages after 5 seconds
+  if (type !== 'error') {
+    setTimeout(() => {
+      statusElement.textContent = '';
+      statusElement.className = '';
+    }, 5000);
+  }
+}
+
+/**
+ * Safely retrieves trimmed text content from a named child element of an XML parent.
  * @param {Element} parent - XML parent element
  * @param {string} tag - Tag name to search for
  * @returns {string}
@@ -24,7 +41,9 @@ function getText(parent, tag) {
   return el && el.textContent ? el.textContent.trim() : "";
 }
 
-// UI Utility: Updates the status message and run button state based on loaded claim/auth counts
+/**
+ * Updates the status message and run button state based on loaded claim/auth counts
+ */
 function updateStatus() {
   const resultsDiv = document.getElementById("results");
   let messages = [];
@@ -41,9 +60,6 @@ function updateStatus() {
 
   if (resultsDiv) {
     resultsDiv.textContent = messages.join(" | ");
-    console.log("[updateStatus] Updated resultsDiv:", resultsDiv.textContent);
-  } else {
-    console.warn("[updateStatus] resultsDiv not found");
   }
 
   const processBtn = document.getElementById("processBtn");
@@ -53,14 +69,40 @@ function updateStatus() {
 // === LOADERS ===
 
 /**
- * Loads checker_auths.json and builds a map of rules by code.
- * Caches the result to avoid duplicate fetches.
- * @param {string} url
+ * Handles file input change events and reads the file
+ * @param {Event} event - File input change event
+ * @param {function} callback - Callback with file content
+ */
+function handleFileInputChange(event, callback) {
+  const file = event.target.files[0];
+  if (!file) {
+    showFileStatus('No file selected.', 'error');
+    return;
+  }
+
+  showFileStatus(`Loading file: ${file.name}`, 'info');
+
+  const reader = new FileReader();
+
+  reader.onload = (e) => {
+    showFileStatus(`File loaded: ${file.name}`, 'success');
+    callback(e.target.result);
+  };
+
+  reader.onerror = () => {
+    showFileStatus(`Error loading file: ${file.name}`, 'error');
+  };
+
+  reader.readAsText(file);
+}
+
+/**
+ * Loads authorization rules from JSON file
+ * @param {string} url - URL to JSON rules file
  * @returns {Promise<void>}
  */
 function loadAuthRules(url = "checker_auths.json") {
   if (!authRulesPromise) {
-    console.log("[loadAuthRules] Fetching rules from:", url);
     authRulesPromise = fetch(url)
       .then(res => {
         if (!res.ok) throw new Error(`Failed to load ${url}`);
@@ -71,7 +113,6 @@ function loadAuthRules(url = "checker_auths.json") {
           map[entry.code] = entry;
           return map;
         }, {});
-        console.log("[loadAuthRules] Rules loaded:", Object.keys(authRules).length, "codes");
       });
   }
   return authRulesPromise;
@@ -80,32 +121,27 @@ function loadAuthRules(url = "checker_auths.json") {
 // === PARSERS ===
 
 /**
- * Reads an XML file and parses it to a DOM Document.
- * Also updates xmlClaimCount and status.
- * @param {File} file
+ * Reads and parses an XML file
+ * @param {File} file - XML file to parse
  * @returns {Promise<Document>}
  */
 function parseXMLFile(file) {
-  console.log("[parseXMLFile] Reading XML file:", file.name);
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = e => {
       const doc = new DOMParser().parseFromString(e.target.result, "application/xml");
       const err = doc.querySelector("parsererror");
       if (err) {
-        console.error("[parseXMLFile] Invalid XML file");
         xmlClaimCount = 0;
         updateStatus();
         return reject("Invalid XML file");
       }
       const claims = doc.querySelectorAll("Claim");
       xmlClaimCount = claims.length;
-      console.log("[parseXMLFile] Parsed XML, claim count:", xmlClaimCount);
       updateStatus();
       resolve(doc);
     };
     reader.onerror = () => {
-      console.error("[parseXMLFile] Failed to read XML file");
       xmlClaimCount = 0;
       updateStatus();
       reject("Failed to read XML file");
@@ -115,13 +151,11 @@ function parseXMLFile(file) {
 }
 
 /**
- * Reads an XLSX file and parses it into an array of JSON rows from the HCPRequests sheet.
- * Also updates xlsxAuthCount and status.
- * @param {File} file
+ * Reads and parses an XLSX file
+ * @param {File} file - XLSX file to parse
  * @returns {Promise<Array>}
  */
 function parseXLSXFile(file) {
-  console.log("[parseXLSXFile] Reading XLSX file:", file.name);
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = e => {
@@ -133,18 +167,15 @@ function parseXLSXFile(file) {
         const sheet = wb.Sheets[sheetName];
         const rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
         xlsxAuthCount = rows.length;
-        console.log("[parseXLSXFile] Parsed XLSX, auth count:", xlsxAuthCount, "sheet:", sheetName);
         updateStatus();
         resolve(rows);
       } catch (err) {
-        console.error("[parseXLSXFile] Invalid XLSX file:", err);
         xlsxAuthCount = 0;
         updateStatus();
         reject("Invalid XLSX file");
       }
     };
     reader.onerror = () => {
-      console.error("[parseXLSXFile] Failed to read XLSX file");
       xlsxAuthCount = 0;
       updateStatus();
       reject("Failed to read XLSX file");
@@ -156,12 +187,11 @@ function parseXLSXFile(file) {
 // === DATA TRANSFORM ===
 
 /**
- * Maps rows from XLSX by AuthorizationID for fast lookup.
- * @param {Array} rows
+ * Maps XLSX rows by AuthorizationID for fast lookup
+ * @param {Array} rows - XLSX data rows
  * @returns {Object}
  */
 function mapXLSXData(rows) {
-  console.log("[mapXLSXData] Mapping XLSX data by AuthorizationID");
   return rows.reduce((map, row) => {
     const id = row.AuthorizationID || "";
     map[id] = map[id] || [];
@@ -173,9 +203,9 @@ function mapXLSXData(rows) {
 // === VALIDATORS ===
 
 /**
- * Checks if a code requires approval and if so, whether an AuthorizationID is present.
- * @param {string} code
- * @param {string} authID
+ * Checks if a code requires approval
+ * @param {string} code - Activity code
+ * @param {string} authID - Authorization ID
  * @returns {Array<string>} remarks
  */
 function validateApprovalRequirement(code, authID) {
@@ -183,7 +213,6 @@ function validateApprovalRequirement(code, authID) {
   const rule = authRules[code];
   if (!rule) {
     remarks.push("Code not found in checker_auths.json");
-    console.warn("[validateApprovalRequirement] Code not found:", code);
     return remarks;
   }
   const needsAuth = !/NOT\s+REQUIRED/i.test(rule.approval_details || "");
@@ -193,12 +222,11 @@ function validateApprovalRequirement(code, authID) {
     remarks.push("No authorization required for this code");
     if (authID) remarks.push("AuthorizationID provided but not required");
   }
-  console.log("[validateApprovalRequirement] code:", code, "authID:", authID, "remarks:", remarks);
   return remarks;
 }
 
 /**
- * Checks that all fields in the activity context match the corresponding XLSX row fields.
+ * Validates field matches between XLSX and XML data
  * @param {Object} row - XLSX data row
  * @param {Object} context - Activity context
  * @returns {Array<string>} remarks
@@ -211,22 +239,20 @@ function validateXLSXMatch(row, { memberId, code, qty, netTotal, ordering, authI
   if (String(row["Payer Share"] || "") !== netTotal) remarks.push(`Payer Share mismatch: XLSX=${row["Payer Share"] || ""}`);
   if ((row["Ordering Clinician"] || "") !== ordering) remarks.push(`Ordering Clinician mismatch: XLSX=${row["Ordering Clinician"] || ""}`);
   if ((row.AuthorizationID || "") !== authID) remarks.push(`AuthorizationID mismatch: XLSX=${row.AuthorizationID || ""}`);
-  console.log("[validateXLSXMatch] context:", context, "remarks:", remarks);
   return remarks;
 }
 
 /**
- * Checks date consistency and approval status between XML and XLSX data.
+ * Validates date consistency and approval status
  * @param {Object} row - XLSX data row
- * @param {string} start - XML Activity Start date
+ * @param {string} start - Activity start date
  * @returns {Array<string>} remarks
  */
 function validateDateAndStatus(row, start) {
   const remarks = [];
-  // Extract date only (ignore time)
   const xlsDateStr = (row["Ordered On"] || "").split(' ')[0];
   const xmlDateStr = (start || "").split(' ')[0];
-  const xlsParts = xlsDateStr.split('/'); // dd/MM/yyyy
+  const xlsParts = xlsDateStr.split('/');
   const xmlParts = xmlDateStr.split('/');
   const xlsDate = new Date(`${xlsParts[2]}-${xlsParts[1].padStart(2,'0')}-${xlsParts[0].padStart(2,'0')}`);
   const xmlDate = new Date(`${xmlParts[2]}-${xmlParts[1].padStart(2,'0')}-${xmlParts[0].padStart(2,'0')}`);
@@ -244,17 +270,16 @@ function validateDateAndStatus(row, start) {
       remarks.push("Status not approved");
     }
   }
-  console.log("[validateDateAndStatus] Ordered On:", xlsDateStr, "Start:", xmlDateStr, "remarks:", remarks);
   return remarks;
 }
 
 /**
- * Validates an individual Activity element against rules and XLSX data.
- * @param {Element} activity - XML Activity DOM element
- * @param {Object} xlsxMap - Map of XLSX rows by AuthorizationID
- * @param {string} memberId - Current claim's member ID
- * @param {Object} authRules - Map of rules by code (pass in global authRules)
- * @returns {Object}
+ * Validates an individual Activity element
+ * @param {Element} activity - XML Activity element
+ * @param {Object} xlsxMap - XLSX data mapped by AuthorizationID
+ * @param {string} memberId - Member ID
+ * @param {Object} authRules - Authorization rules
+ * @returns {Object} Validation result
  */
 function validateActivity(activity, xlsxMap, memberId, authRules) {
   const id = getText(activity, "ID");
@@ -277,17 +302,14 @@ function validateActivity(activity, xlsxMap, memberId, authRules) {
     if (authRequired) {
       remarks.push("Missing AuthorizationID for code requiring auth");
     }
-    // else: valid, do not add remarks
   } else {
     const rows = xlsxMap[authID] || [];
     if (!rows.length) {
       remarks.push(`AuthID ${authID} not in HCPRequests sheet`);
-      console.warn("[validateActivity] No rows in XLSX for authID:", authID);
     } else {
       const xlsRow = rows.find(r => (r.AuthorizationID || "") === authID && (r["Item Code"] || "") === code);
       if (!xlsRow) {
         remarks.push("No matching row for code/AuthID in XLSX");
-        console.warn("[validateActivity] No matching XLSX row for authID/code:", authID, code);
       } else {
         const context = { memberId, code, qty, netTotal, ordering, authID };
         remarks = remarks.concat(validateXLSXMatch(xlsRow, context));
@@ -297,18 +319,17 @@ function validateActivity(activity, xlsxMap, memberId, authRules) {
     }
   }
 
-  // Always return, even if no authID or xlsRow
   return { id, code, description, start, qty, netTotal, ordering, authID, xlsRow: null, remarks };
 }
+
 /**
- * Iterates through all claims and activities, running validation and collecting results.
- * @param {Document} xmlDoc - Parsed XML DOM
+ * Validates all claims and activities
+ * @param {Document} xmlDoc - Parsed XML document
  * @param {Array} xlsxData - XLSX data rows
- * @param {Object} authRules - Map of rules by code
- * @returns {Array<Object>}
+ * @param {Object} authRules - Authorization rules
+ * @returns {Array<Object>} Validation results
  */
 function validateClaims(xmlDoc, xlsxData, authRules) {
-  console.log("[validateClaims] Starting validation...");
   const results = [];
   const xlsxMap = mapXLSXData(xlsxData);
   const claims = Array.from(xmlDoc.getElementsByTagName("Claim"));
@@ -324,16 +345,14 @@ function validateClaims(xmlDoc, xlsxData, authRules) {
     });
   });
 
-  console.log("[validateClaims] Validation complete. Total results:", results.length);
   return results;
 }
 
-// === RENDERER ===
+// === RENDERERS ===
 
 /**
- * Renders the validation results as a table in the page.
- * Applies CSS classes for valid/invalid rows.
- * @param {Array} results
+ * Renders validation results in a table
+ * @param {Array} results - Validation results
  */
 function renderResults(results) {
   const container = document.getElementById("results");
@@ -341,7 +360,6 @@ function renderResults(results) {
 
   if (!results.length) {
     container.textContent = "✅ No activities to validate.";
-    console.log("[renderResults] No validation results to render.");
     return;
   }
 
@@ -377,48 +395,72 @@ function renderResults(results) {
     const tr = document.createElement("tr");
     tr.className = r.remarks.length ? 'invalid' : 'valid';
 
-    // Claim cell (blank for repeated claimId)
+    // Claim ID cell (only show if different from last)
     const claimCell = document.createElement("td");
-    claimCell.textContent = r.claimId === lastClaim ? "" : r.claimId;
+    claimCell.textContent = (r.claimId === lastClaim) ? "" : r.claimId;
     lastClaim = r.claimId;
     tr.appendChild(claimCell);
 
-    // Member, Activity, Code, Description
-    [r.memberId, r.id, r.code, r.description]
-      .forEach(val => { const td = document.createElement("td"); td.textContent = val || ""; tr.appendChild(td); });
+    // Member ID, Activity ID, Code, Description
+    [r.memberId, r.id, r.code, r.description].forEach(val => {
+      const td = document.createElement("td");
+      td.textContent = val || "";
+      tr.appendChild(td);
+    });
 
-    // Qty, Net Total, Ordering, Auth, Start
-    [r.qty, r.netTotal, r.ordering, r.authID, r.start]
-      .forEach(val => { const td = document.createElement("td"); td.textContent = val || ""; tr.appendChild(td); });
+    // Qty, Net Total, Ordering Clinician, Auth ID, Start Date
+    [r.qty, r.netTotal, r.ordering, r.authID, r.start].forEach(val => {
+      const td = document.createElement("td");
+      td.textContent = val || "";
+      tr.appendChild(td);
+    });
 
-    // XLSX fields or placeholders
-    if (r.xlsRow) {
-      [r.xlsRow["Ordered On"], r.xlsRow.status,
-       r.xlsRow["Denial Code (if any)"], r.xlsRow["Denial Reason (if any)"]]
-        .forEach(val => { const td = document.createElement("td"); td.textContent = val || ""; tr.appendChild(td); });
-    } else {
-      for (let i = 0; i < 4; i++) tr.appendChild(document.createElement("td"));
-    }
+    // From XLSX row: Ordered On, Status, Denial Code, Denial Reason
+    const xlsRow = r.xlsRow || {};
+    const orderedOn = xlsRow["Ordered On"] || xlsRow["OrderedOn"] || "";
+    const status = xlsRow.status || xlsRow.Status || "";
+    const denialCode = xlsRow["Denial Code (if any)"] || "";
+    const denialReason = xlsRow["Denial Reason (if any)"] || "";
 
-    // Remarks
-    const remTd = document.createElement("td");
-    remTd.innerHTML = r.remarks.map(m => `<div>${m}</div>`).join("");
-    tr.appendChild(remTd);
+    [orderedOn, status, denialCode, denialReason].forEach(val => {
+      const td = document.createElement("td");
+      td.textContent = val || "";
+      tr.appendChild(td);
+    });
+
+    // Remarks (join all remarks as a single string)
+    const remarksCell = document.createElement("td");
+    remarksCell.textContent = r.remarks.length ? r.remarks.join("; ") : "OK";
+    tr.appendChild(remarksCell);
+
     tbody.appendChild(tr);
   });
 
   table.appendChild(tbody);
   container.appendChild(table);
-  console.log("[renderResults] Rendered results table with", results.length, "rows.");
 }
 
-// === MAIN ENTRY ===
+// === MAIN PROCESSING ===
 
 /**
- * Main runner: Loads files, triggers validation, renders results, and manages state.
+ * Processes authorization file content
+ * @param {string} fileContent - File content to process
+ */
+function processAuthsFileContent(fileContent) {
+  try {
+    const authsData = JSON.parse(fileContent);
+    showFileStatus('Authorization data parsed successfully.', 'success');
+    const validationResults = validateAuthsData(authsData);
+    renderAuthsResults(validationResults);
+  } catch (error) {
+    showFileStatus('Failed to process authorization data: ' + error.message, 'error');
+  }
+}
+
+/**
+ * Main runner function
  */
 async function handleRun() {
-  // Reset counts and status for a new run
   xmlClaimCount = 0;
   xlsxAuthCount = 0;
   updateStatus();
@@ -429,40 +471,38 @@ async function handleRun() {
 
   if (!xmlFile || !xlsxFile) {
     resultsDiv.textContent = "Please upload both XML and XLSX files.";
-    console.warn("[handleRun] Missing file(s)");
     return;
   }
 
   try {
-    console.log("[handleRun] Starting process...");
     await loadAuthRules();
     const [xmlDoc, xlsxData] = await Promise.all([
       parseXMLFile(xmlFile),
       parseXLSXFile(xlsxFile)
     ]);
-    console.log("xmlClaimCount after parsing:", xmlClaimCount);
-    console.log("xlsxAuthCount after parsing:", xlsxAuthCount);
     const results = validateClaims(xmlDoc, xlsxData, authRules);
     renderResults(results);
-    console.log("[handleRun] Process complete.");
   } catch (err) {
     resultsDiv.textContent = `Error: ${err}`;
-    console.error("[handleRun] Error during processing:", err);
   }
 }
 
-// Attach main run handler to button
+// === EVENT LISTENERS ===
+
+// Set up file input change handlers
+document.getElementById('file-input').addEventListener('change', (event) => {
+  handleFileInputChange(event, processAuthsFileContent);
+});
+
+// Set up main run button handler
 document.getElementById("runButton").addEventListener("click", handleRun);
 
-// Optional: Reset counts and status when file inputs change
+// Set up file input change handlers for XML/XLSX
 ["xmlInput", "xlsxInput"].forEach(id => {
   const el = document.getElementById(id);
   if (el) el.addEventListener("change", () => {
     if (id === "xmlInput") xmlClaimCount = -1;
     if (id === "xlsxInput") xlsxAuthCount = -1;
     updateStatus();
-    console.log("[input change] File input changed:", id);
   });
 });
-
-console.log("[checker_auths.js] All handlers attached.");
