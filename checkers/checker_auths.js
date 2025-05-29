@@ -30,7 +30,12 @@ function updateStatus() {
   let messages = [];
   if (xmlClaimCount > 0) messages.push(`${xmlClaimCount} Claims Loaded`);
   if (xlsxAuthCount > 0) messages.push(`${xlsxAuthCount} Auths Loaded`);
-  if (resultsDiv) resultsDiv.textContent = messages.join(" | ");
+  if (resultsDiv) {
+    resultsDiv.textContent = messages.join(", ");
+    console.log("[updateStatus] Updated resultsDiv:", resultsDiv.textContent);
+  } else {
+    console.warn("[updateStatus] resultsDiv not found");
+  }
   const processBtn = document.getElementById("processBtn");
   if (processBtn) processBtn.disabled = !(xmlClaimCount && xlsxAuthCount);
 }
