@@ -226,74 +226,69 @@ function logInvalidRow(xlsRow, context, remarks) {
  * @param {Object} authRules - Authorization rules
  * @returns {Object} Validation result with remarks
  */
-function validateActivity(xmlActivities, xlsxDataMap) {
-  const results = [];
+function validateActivity(act, xlsxDataMap) {
+  const { authID, memberId, code, netTotal, ordering } = act;
+  const xlsxRows = xlsxDataMap[authID] || [];
+  let matchedRow = null;
 
-  for (const act of xmlActivities) {
-    const { authID, memberId, code, netTotal, ordering } = act;
-    const xlsxRows = xlsxDataMap[authID] || [];
-    let matchedRow = null;
+  for (const row of xlsxRows) {
+    const rowCode = String(row["Item Code"] || "");
+    const rowMember = String(row["Card Number / DHA Member ID"] || "");
 
-    for (const row of xlsxRows) {
-      const rowCode = String(row["Item Code"] || "");
-      const rowMember = String(row["Card Number / DHA Member ID"] || "");
-
-      if (rowCode.trim() === code && rowMember.trim() === memberId) {
-        matchedRow = row;
-        break;
-      }
+    if (rowCode.trim() === code && rowMember.trim() === memberId) {
+      matchedRow = row;
+      break;
     }
-
-    const remarks = [];
-
-    if (!matchedRow) {
-      remarks.push("No matching authorization row found in XLSX.");
-    } else {
-      // --- Whitespace Checks ---
-      const whitespaceFields = [
-        "Item Code",
-        "Card Number / DHA Member ID",
-        "Ordering Clinician",
-        "Payer Share"
-      ];
-      whitespaceFields.forEach(field => {
-        const value = String(matchedRow[field] || "");
-        if (value !== value.trim()) {
-          remarks.push(`Extra whitespace in field: "${field}"`);
-        }
-      });
-
-      // --- Payer Share vs Net Total ---
-      const xPayerShare = String(matchedRow["Payer Share"] || "").trim();
-      const xNet = parseFloat(netTotal).toFixed(2);
-      if (parseFloat(xPayerShare).toFixed(2) !== xNet) {
-        remarks.push(`Payer Share mismatch: XLSX=${xPayerShare}`);
-      }
-
-      // --- Ordering Clinician match ---
-      const xOrdering = String(matchedRow["Ordering Clinician"] || "").trim();
-      if (xOrdering && xOrdering !== ordering) {
-        remarks.push(`Ordering clinician mismatch: XLSX=${xOrdering}`);
-      }
-
-      // --- Debug Logging ---
-      if (remarks.length) {
-        console.warn("Validation errors for AuthorizationID:", authID, "Item Code:", code);
-        console.log("XLSX Row Data:", matchedRow);
-        console.log("XML Context Data:", act);
-        console.log("Remarks:", remarks.join("; "));
-      }
-    }
-
-    results.push({
-      ...act,
-      xlsRow: matchedRow || {},
-      remarks
-    });
   }
 
-  return results;
+  const remarks = [];
+
+  if (!matchedRow) {
+    remarks.push("No matching authorization row found in XLSX.");
+  } else {
+    // --- Whitespace Checks ---
+    const whitespaceFields = [
+      "Item Code",
+      "Card Number / DHA Member ID",
+      "Ordering Clinician",
+      "Payer Share"
+    ];
+    whitespaceFields.forEach(field => {
+      const value = String(matchedRow[field] || "");
+      if (value !== value.trim()) {
+        remarks.push(`Extra whitespace in field: "${field}"`);
+      }
+    });
+
+    // --- Payer Share vs Net Total ---
+    const xPayerShare = String(matchedRow["Payer Share"] || "").trim();
+    const xNet = parseFloat(netTotal).toFixed(2);
+    if (parseFloat(xPayerShare).toFixed(2) !== xNet) {
+      remarks.push(`Payer Share mismatch: XLSX=${xPayerShare}`);
+    }
+
+    // --- Ordering Clinician Match ---
+    const xOrdering = String(matchedRow["Ordering Clinician"] || "").trim();
+    if (xOrdering && xOrdering !== ordering) {
+      remarks.push(`Ordering clinician mismatch: XLSX=${xOrdering}`);
+    }
+
+    // --- Debug Logging ---
+    if (remarks.length) {
+      console.warn(`Validation errors for AuthorizationID: ${authID}, Item Code: ${code}`);
+      console.log("XLSX Row Data:", matchedRow);
+      console.log("XML Context Data:", act);
+      console.log("Remarks:", remarks);
+    }
+  }
+
+  return {
+    ...act,
+    xlsRow: matchedRow || {},
+    remarks
+  };
 }
+
 
 /**
  * Validates all claims and activities
