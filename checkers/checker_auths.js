@@ -26,14 +26,13 @@ function getText(parent, tag) {
 
 // UI Utility: Updates the status message and run button state based on loaded claim/auth counts
 function updateStatus() {
-  const statusDiv = document.getElementById("status");
+  const resultsDiv = document.getElementById("results");
   let messages = [];
   if (xmlClaimCount > 0) messages.push(`${xmlClaimCount} Claims Loaded`);
   if (xlsxAuthCount > 0) messages.push(`${xlsxAuthCount} Auths Loaded`);
-  statusDiv.textContent = messages.join(" | ");
-  const runBtn = document.getElementById("runButton");
-  runBtn.disabled = !(xmlClaimCount && xlsxAuthCount);
-  console.log("[updateStatus] xmlClaimCount:", xmlClaimCount, "xlsxAuthCount:", xlsxAuthCount, "runButton.disabled:", runBtn.disabled);
+  if (resultsDiv) resultsDiv.textContent = messages.join(" | ");
+  const processBtn = document.getElementById("processBtn");
+  if (processBtn) processBtn.disabled = !(xmlClaimCount && xlsxAuthCount);
 }
 
 // === LOADERS ===
