@@ -167,11 +167,11 @@ function validateApprovalRequirement(code, authID) {
  * @param {Object} context - Activity context
  * @returns {Array<string>} remarks
  */
-function validateXLSXMatch(row, { memberId, code, /* qty, */ netTotal, ordering, authID }) {
+function validateXLSXMatch(row, { memberId, code, /* , */ netTotal, ordering, authID }) {
   const remarks = [];
   if ((row["Card Number / DHA Member ID"] || "").trim() !== memberId.trim()) remarks.push(`MemberID mismatch: XLSX=${row["Card Number / DHA Member ID"] || ""}`);
   if ((row["Item Code"] || "").trim() !== code.trim()) remarks.push(`Item Code mismatch: XLSX=${row["Item Code"] || ""}`);
-  // Qty check removed
+  //  check removed
   if (String(row["Payer Share"] || "").trim() !== netTotal.trim()) remarks.push(`Payer Share mismatch: XLSX=${row["Payer Share"] || ""}`);
 
   const xlsxOrdering = (row["Ordering Clinician"] || "").trim().toUpperCase();
@@ -246,7 +246,7 @@ function validateActivity(activity, xlsxMap, memberId, authRules) {
   const rule = authRules[code];
   const description = rule?.description || "";
   const start = getText(activity, "Start");
-  // const qty = getText(activity, "Quantity"); //REMOVED
+  // const  = getText(activity, "Quantity"); //REMOVED
   const netTotal = getText(activity, "Net"); // Use "Net" from XML (not NetTotal, corrected)
   const ordering = getText(activity, "OrderingClinician");
   const authID = getText(activity, "PriorAuthorizationID") || getText(activity, "PriorAuthorization");
@@ -270,7 +270,7 @@ function validateActivity(activity, xlsxMap, memberId, authRules) {
       if (!xlsRow) {
         remarks.push("No matching XLSX row for code/AuthID");
       } else {
-        const context = { memberId, code, qty, netTotal, ordering, authID };
+        const context = { memberId, code, /*qty,*/ netTotal, ordering, authID };
         
         // Validate XLSX row against XML context
         const remarksFromMatch = validateXLSXMatch(xlsRow, context);
@@ -282,12 +282,12 @@ function validateActivity(activity, xlsxMap, memberId, authRules) {
         const remarksFromDate = validateDateAndStatus(xlsRow, start);
         remarks = remarks.concat(remarksFromDate);
 
-        return { id, code, description, start, qty, netTotal, ordering, authID, xlsRow, remarks };
+        return { id, code, description, start, /*qty,*/netTotal, ordering, authID, xlsRow, remarks };
       }
     }
   }
 
-  return { id, code, description, start, qty, netTotal, ordering, authID, xlsRow: null, remarks };
+  return { id, code, description, start, /*qty,*/netTotal, ordering, authID, xlsRow: null, remarks };
 }
 
 /**
@@ -343,7 +343,6 @@ function renderResults(results) {
       <th>Activity ID</th>
       <th>Code</th>
       <th>Description</th>
-      <th>Qty</th>
       <th>Net Total</th>
       <th>Ordering Clinician</th>
       <th>Auth ID</th>
@@ -377,7 +376,7 @@ function renderResults(results) {
     });
 
     // Qty, Net Total, Ordering Clinician, Auth ID, Start Date
-    [r.qty, r.netTotal, r.ordering, r.authID, r.start].forEach(val => {
+    [/*r.qty,*/ r.netTotal, r.ordering, r.authID, r.start].forEach(val => {
       const td = document.createElement("td");
       td.textContent = val;
       tr.appendChild(td);
