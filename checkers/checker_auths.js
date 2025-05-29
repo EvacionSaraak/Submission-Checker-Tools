@@ -226,7 +226,7 @@ function logInvalidRow(xlsRow, context, remarks) {
  * @param {Object} authRules - Authorization rules
  * @returns {Object} Validation result with remarks
  */
-function validateActivities(xmlActivities, xlsxDataMap) {
+function validateActivity(xmlActivities, xlsxDataMap) {
   const results = [];
 
   for (const act of xmlActivities) {
