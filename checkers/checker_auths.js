@@ -1,238 +1,282 @@
-// checker_auths.js OH MAI GAHD
+// checker_auths.js
 
-const xmlInput = document.getElementById("xmlInput");
-const xlsxInput = document.getElementById("xlsxInput");
-const resultsContainer = document.getElementById("resultsContainer");
+let authRules = {};
+let authRulesPromise = null;
 
-let insuranceLicenses = {};
-let approvalCodes = {};
-let licensesLoaded = false;
-let codesLoaded = false;
-
-// Display error message utility
-function showError(message) {
-  resultsContainer.innerHTML = `<div class="error-box">${message}</div>`;
+/**
+ * Load and index checker_auths.json into authRules map (cached)
+ */
+function loadAuthRules(url = "checker_auths.json") {
+  if (!authRulesPromise) {
+    authRulesPromise = fetch(url)
+      .then(res => { if (!res.ok) throw new Error(`Failed to load ${url}`); return res.json(); })
+      .then(data => {
+        authRules = data.reduce((map, entry) => {
+          map[entry.code] = entry;
+          return map;
+        }, {});
+      });
+  }
+  return authRulesPromise;
 }
 
-fetch("insurance_licenses.json")
-  .then((res) => res.json())
-  .then((data) => {
-    if (!data || !data.licenses || data.licenses.length === 0) {
-      showError("Error: insurance_licenses.json is empty or invalid.");
-    } else {
-      insuranceLicenses = data;
-      licensesLoaded = true;
-    }
-  })
-  .catch(() => showError("Error: Failed to load insurance_licenses.json."));
-
-fetch("checker_auths.json")
-  .then((res) => res.json())
-  .then((data) => {
-    if (!data || Object.keys(data).length === 0) {
-      showError("Error: checker_auths.json is empty or invalid.");
-    } else {
-      approvalCodes = data;
-      codesLoaded = true;
-    }
-  })
-  .catch(() => showError("Error: Failed to load checker_auths.json."));
-
-function parseXML(xmlText) {
-  const parser = new DOMParser();
-  return parser.parseFromString(xmlText, "application/xml");
+/**
+ * Safe text getter for XML elements
+ */
+function getText(parent, tag) {
+  const el = parent.querySelector(tag);
+  return el && el.textContent ? el.textContent.trim() : "";
 }
 
-function getTextContent(el, tag) {
-  const found = el.getElementsByTagName(tag)[0];
-  return found ? found.textContent.trim() : "";
-}
-
-function validateEmiratesID(id) {
-  const parts = id.split("-");
-  return (
-    parts.length === 4 &&
-    parts[0].length === 3 &&
-    parts[1].length === 4 &&
-    parts[2].length === 7 &&
-    parts[3].length === 1
-  );
-}
-
-function validateAuthCode(code, payer) {
-  if (payer === "E001") return code.length === 20;
-  if (payer === "A001") return /^\d{9}$/.test(code);
-  return false;
-}
-
-function parseXLSX(sheet) {
-  const data = XLSX.utils.sheet_to_json(sheet, { defval: "" });
-  const map = {};
-  data.forEach((row) => {
-    const authId = row["AuthorizationID"];
-    if (!map[authId]) map[authId] = [];
-    map[authId].push(row);
+/**
+ * Parse XML file into XML Document
+ */
+function parseXMLFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const doc = new DOMParser().parseFromString(e.target.result, "application/xml");
+      const err = doc.querySelector("parsererror");
+      err ? reject("Invalid XML file") : resolve(doc);
+    };
+    reader.onerror = () => reject("Failed to read XML file");
+    reader.readAsText(file);
   });
-  return map;
 }
 
-function validateClaim(claim, header, xlsxMap) {
-  const claimID = getTextContent(claim, "ID");
-  const memberID = getTextContent(claim, "MemberID");
-  const payerID = getTextContent(claim, "PayerID");
-  const receiverID = getTextContent(header, "ReceiverID");
-  const emiratesID = getTextContent(claim, "EmiratesIDNumber");
-  const contract = claim.getElementsByTagName("Contract")[0];
-  const packageName = contract ? getTextContent(contract, "PackageName") : "";
-  const diagnoses = claim.getElementsByTagName("Diagnosis");
+/**
+ * Parse XLSX file and return JSON of HCPRequests sheet
+ */
+function parseXLSXFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      try {
+        const wb = XLSX.read(new Uint8Array(e.target.result), { type: "array" });
+        const sheetName = wb.SheetNames.includes("HCPRequests")
+          ? "HCPRequests"
+          : wb.SheetNames[1] || wb.SheetNames[0];
+        const sheet = wb.Sheets[sheetName];
+        const json = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+        resolve(json);
+      } catch {
+        reject("Invalid XLSX file");
+      }
+    };
+    reader.onerror = () => reject("Failed to read XLSX file");
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+/**
+ * Build map of XLSX data keyed by AuthorizationID
+ */
+function mapXLSXData(rows) {
+  return rows.reduce((map, row) => {
+    const id = row.AuthorizationID || "";
+    map[id] = map[id] || [];
+    map[id].push(row);
+    return map;
+  }, {});
+}
+
+/**
+ * Validation: approval requirement based on JSON policy
+ */
+function validateApprovalRequirement(code, authID) {
   const remarks = [];
-
-  if (/\s/.test(memberID)) remarks.push("Member ID contains whitespace");
-  const validPackages = ["Thiqa 1", "Thiqa 2", "Daman", "NextCare", "NAS", "Mednet"];
-  if (!validPackages.includes(packageName)) remarks.push(`Invalid Package Name: ${packageName}`);
-  if (!validateEmiratesID(emiratesID)) remarks.push("Invalid Emirates ID format");
-
-  const vat = parseFloat(getTextContent(claim, "VAT") || "0");
-  const vatPerc = parseFloat(getTextContent(claim, "VATPercentage") || "0");
-  const patientShare = parseFloat(getTextContent(claim, "PatientShare") || "0");
-  if (packageName.includes("Thiqa")) {
-    if (vat !== 0 || vatPerc !== 0) remarks.push("Thiqa claims must have 0 VAT and VAT Percentage");
-    if (patientShare !== 0) remarks.push("Thiqa claims must have 0 Patient Share");
-  } else {
-    if (vat !== 0 || vatPerc !== 0) remarks.push("VAT and VAT Percentage must be 0");
+  const rule = authRules[code];
+  if (!rule) {
+    remarks.push("Code not found in checker_auths.json");
+    return remarks;
   }
-
-  const license = insuranceLicenses.licenses.find(
-    (l) => l.PayerID === payerID && l.ReceiverID === receiverID && packageName.includes(l.Plan)
-  );
-  if (!license) remarks.push("Invalid payer/receiver/package match");
-
-  const icdCodes = new Set();
-  const duplicates = new Set();
-  for (const diag of diagnoses) {
-    const code = getTextContent(diag, "Code");
-    if (icdCodes.has(code)) duplicates.add(code);
-    icdCodes.add(code);
-  }
-  if (duplicates.size) remarks.push(`Duplicate ICD diagnosis code(s): ${[...duplicates].join(", ")}`);
-
-  const activities = claim.getElementsByTagName("Activity");
-  const activityData = [];
-
-  for (const act of activities) {
-    const id = getTextContent(act, "ID");
-    const start = getTextContent(act, "Start");
-    const type = getTextContent(act, "Type");
-    const code = getTextContent(act, "Code");
-    const authID = getTextContent(act, "PriorAuthorizationID");
-    const orderingClinician = getTextContent(act, "OrderingClinician");
-    const performingClinician = getTextContent(act, "Clinician");
-
-    if (type !== "6") remarks.push(`Activity ID ${id}: Invalid type, must be 6`);
-    if (approvalCodes[code] && !authID) remarks.push(`Activity ID ${id}: Missing prior authorization`);
-    if (authID && !validateAuthCode(authID, payerID)) remarks.push(`Activity ID ${id}: Invalid auth code format`);
-
-    const xlsxRows = xlsxMap[authID] || [];
-    if (xlsxRows.length === 0) {
-      remarks.push(`Activity ID ${id}: Authorization ID not found in XLSX`);
-    } else {
-      const codeMatch = xlsxRows.some((row) => row["Item Code"] === code);
-      const orderedOnValid = xlsxRows.some((row) => new Date(row["Ordered On"]) <= new Date(start));
-      const cliniciansMatch = xlsxRows.some(
-        (row) =>
-          row["Ordering Clinician"] === orderingClinician &&
-          row["Performing Clinician"] === performingClinician
-      );
-      if (!codeMatch) remarks.push(`Activity ID ${id}: Code not in XLSX Item Code`);
-      if (!orderedOnValid) remarks.push(`Activity ID ${id}: Ordered On date is after performing date`);
-      if (!cliniciansMatch) remarks.push(`Activity ID ${id}: Ordering or Performing Clinician mismatch`);
-    }
-
-    activityData.push({ ID: id, Start: start, Type: type, Code: code, PriorAuthorizationID: authID });
-  }
-
-  return { ClaimID: claimID, MemberID: memberID, PayerID: payerID, Activity: activityData, Remarks: remarks };
+  const needsAuth = !/NOT\s+REQUIRED/i.test(rule.approval_details || "");
+  if (needsAuth && !authID) remarks.push("Missing required AuthorizationID");
+  if (!needsAuth && authID) remarks.push("AuthorizationID provided but not required");
+  return remarks;
 }
 
+/**
+ * Validation: exact match of activity fields against XLSX data
+ */
+function validateXLSXMatch(row, fields) {
+  const remarks = [];
+  const { memberId, code, quantity, netTotal, ordering, authID } = fields;
+  if ((row["Card Number / DHA Member ID"] || "") !== memberId) remarks.push(`MemberID mismatch: XLSX=${row["Card Number / DHA Member ID"] || ""}`);
+  if ((row["Item Code"] || "") !== code) remarks.push(`Item Code mismatch: XLSX=${row["Item Code"] || ""}`);
+  if (String(row["Item Amount"] || "") !== quantity) remarks.push(`Quantity mismatch: XLSX=${row["Item Amount"] || ""}`);
+  if (String(row["Payer Share"] || "") !== netTotal) remarks.push(`Payer Share mismatch: XLSX=${row["Payer Share"] || ""}`);
+  if ((row["Ordering Clinician"] || "") !== ordering) remarks.push(`Ordering Clinician mismatch: XLSX=${row["Ordering Clinician"] || ""}`);
+  if ((row.AuthorizationID || "") !== authID) remarks.push(`AuthorizationID mismatch: XLSX=${row.AuthorizationID || ""}`);
+  return remarks;
+}
+
+/**
+ * Validation: date and status checks
+ */
+function validateDateAndStatus(row, start) {
+  const remarks = [];
+  const xlsDate = row["Ordered On"] instanceof Date ? row["Ordered On"] : new Date(row["Ordered On"]);
+  const xmlDate = new Date(start);
+  if (!(xlsDate instanceof Date) || isNaN(xlsDate)) remarks.push("Invalid XLSX Ordered On date");
+  if (!(xmlDate instanceof Date) || isNaN(xmlDate)) remarks.push("Invalid XML Start date");
+  if (xlsDate >= xmlDate) remarks.push("Ordered On date must be before Activity Start date");
+  const status = (row.status || "").toLowerCase();
+  if (!status.includes("approved")) {
+    if (status.includes("rejected")) {
+      remarks.push(`Rejected: Code=${row["Denial Code (if any)"] || 'N/A'} Reason=${row["Denial Reason (if any)"] || 'N/A'}`);
+    } else {
+      remarks.push("Status not approved");
+    }
+  }
+  return remarks;
+}
+
+/**
+ * Validate a single <Activity> element
+ */
+function validateActivity(activity, xlsxMap, memberId) {
+  const id = getText(activity, "ID");
+  const code = getText(activity, "Code");
+  const start = getText(activity, "Start");
+  const quantity = getText(activity, "Quantity");
+  const netTotal = getText(activity, "NetTotal");
+  const ordering = getText(activity, "OrderingClinician");
+  const authID = getText(activity, "PriorAuthorizationID");
+
+  let remarks = [];
+  remarks = remarks.concat(validateApprovalRequirement(code, authID));
+
+  let xlsRow = null;
+  if (authID) {
+    const rows = xlsxMap[authID] || [];
+    if (!rows.length) {
+      remarks.push(`AuthID ${authID} not in HCPRequests sheet`);
+    } else {
+      xlsRow = rows.find(r => (r.AuthorizationID || "") === authID && (r["Item Code"] || "") === code);
+      if (!xlsRow) {
+        remarks.push("No matching row for code/AuthID in XLSX");
+      } else {
+        const fields = { memberId, code, quantity, netTotal, ordering, authID };
+        remarks = remarks.concat(validateXLSXMatch(xlsRow, fields));
+        remarks = remarks.concat(validateDateAndStatus(xlsRow, start));
+      }
+    }
+  }
+
+  return { id, code, start, quantity, netTotal, ordering, authID, xlsRow, remarks };
+}
+
+/**
+ * Iterate through all Claims and Activities
+ */
+function validateClaims(xmlDoc, xlsxData) {
+  const results = [];
+  const xlsxMap = mapXLSXData(xlsxData);
+  const claims = Array.from(xmlDoc.getElementsByTagName("Claim"));
+
+  for (const claim of claims) {
+    const claimId = getText(claim, "ID");
+    const memberId = getText(claim, "MemberID");
+    const activities = Array.from(claim.getElementsByTagName("Activity"));
+    for (const act of activities) {
+      const res = validateActivity(act, xlsxMap, memberId);
+      results.push({ claimId, memberId, ...res });
+    }
+  }
+  return results;
+}
+
+/**
+ * Render the results table with all fields for manual review
+ */
 function renderResults(results) {
-  if (results.length === 0) {
-    resultsContainer.innerHTML = `<div class="error-box">No claims found in the XML file.</div>`;
+  const container = document.getElementById("results");
+  container.innerHTML = "";
+  if (!results.length) {
+    container.textContent = "✅ No activities to validate.";
     return;
   }
 
   const table = document.createElement("table");
-  table.classList.add("styled-table");
-
-  const thead = document.createElement("thead");
-  thead.innerHTML = `
-    <tr>
-      <th>Claim ID</th>
-      <th>Member ID</th>
-      <th>Payer ID</th>
-      <th>Activities</th>
-      <th>Remarks</th>
-    </tr>`;
-  table.appendChild(thead);
+  table.className = "styled-table";
+  // header
+  table.innerHTML = `
+    <thead>
+      <tr>
+        <th>Claim ID</th>
+        <th>Member ID</th>
+        <th>Activity ID</th>
+        <th>Code</th>
+        <th>Quantity</th>
+        <th>Net Total</th>
+        <th>Ordering Clinician</th>
+        <th>Auth ID</th>
+        <th>Start Date</th>
+        <th>Ordered On</th>
+        <th>Status</th>
+        <th>Denial Code</th>
+        <th>Denial Reason</th>
+        <th>Remarks</th>
+      </tr>
+    </thead>`;
 
   const tbody = document.createElement("tbody");
+  let lastClaim = null;
+  results.forEach(r => {
+    const tr = document.createElement("tr");
+    const claimCell = document.createElement("td");
+    claimCell.textContent = r.claimId === lastClaim ? "" : r.claimId;
+    lastClaim = r.claimId;
+    tr.appendChild(claimCell);
 
-  results.forEach((entry) => {
-    const row = document.createElement("tr");
+    [r.memberId, r.id, r.code, r.quantity, r.netTotal, r.ordering, r.authID, r.start].forEach(val => {
+      const td = document.createElement("td"); td.textContent = val || ""; tr.appendChild(td);
+    });
 
-    const activityDetails = entry.Activity.map((a) => `
-      ID: ${a.ID}<br>
-      Code: ${a.Code}<br>
-      Start: ${a.Start}<br>
-      Type: ${a.Type}<br>
-      Auth ID: ${a.PriorAuthorizationID}
-    `).join("<hr>");
+    if (r.xlsRow) {
+      [r.xlsRow["Ordered On"], r.xlsRow.status, r.xlsRow["Denial Code (if any)"], r.xlsRow["Denial Reason (if any)"]].forEach(val => {
+        const td = document.createElement("td"); td.textContent = val || ""; tr.appendChild(td);
+      });
+    } else {
+      ["", "", "", ""].forEach(() => { tr.appendChild(document.createElement("td")); });
+    }
 
-    row.innerHTML = `
-      <td>${entry.ClaimID}</td>
-      <td>${entry.MemberID}</td>
-      <td>${entry.PayerID}</td>
-      <td>${activityDetails}</td>
-      <td>${entry.Remarks.join("<br>")}</td>
-    `;
-    tbody.appendChild(row);
+    const remarksTd = document.createElement("td");
+    remarksTd.innerHTML = r.remarks.map(m => `<div>${m}</div>`).join("");
+    tr.appendChild(remarksTd);
+
+    tbody.appendChild(tr);
   });
 
   table.appendChild(tbody);
-  resultsContainer.innerHTML = "";
-  resultsContainer.appendChild(table);
+  container.appendChild(table);
 }
 
+/**
+ * Main entry: handle Run button click
+ */
+async function handleRun() {
+  const xmlFile = document.getElementById("xmlInput").files[0];
+  const xlsxFile = document.getElementById("xlsxInput").files[0];
+  const resultsDiv = document.getElementById("results");
 
-function handleFiles() {
-  if (!licensesLoaded || !codesLoaded) {
-    showError("JSON data not fully loaded. Please wait and try again.");
-    return;
-  }
-
-  const xmlFile = xmlInput.files[0];
-  const xlsxFile = xlsxInput.files[0];
   if (!xmlFile || !xlsxFile) {
-    showError("Please upload both XML and XLSX files.");
+    resultsDiv.textContent = "Please upload both XML and XLSX files.";
     return;
   }
 
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    const xmlDoc = parseXML(e.target.result);
-    const header = xmlDoc.getElementsByTagName("Header")[0];
-    const claims = Array.from(xmlDoc.getElementsByTagName("Claim"));
-
-    const xlsxReader = new FileReader();
-    xlsxReader.onload = (e2) => {
-      const workbook = XLSX.read(e2.target.result, { type: "binary" });
-      const sheet2 = workbook.Sheets[workbook.SheetNames[1]];
-      const xlsxMap = parseXLSX(sheet2);
-      const results = claims.map((c) => validateClaim(c, header, xlsxMap));
-      renderResults(results);
-    };
-    xlsxReader.readAsBinaryString(xlsxFile);
-  };
-  reader.readAsText(xmlFile);
+  try {
+    await loadAuthRules();
+    const [xmlDoc, xlsxData] = await Promise.all([
+      parseXMLFile(xmlFile),
+      parseXLSXFile(xlsxFile)
+    ]);
+    const results = validateClaims(xmlDoc, xlsxData);
+    renderResults(results);
+  } catch (err) {
+    resultsDiv.textContent = `Error: ${err}`;
+  }
 }
 
-document.getElementById("runButton").addEventListener("click", handleFiles);
+document.getElementById("runButton").addEventListener("click", handleRun);
