@@ -86,47 +86,73 @@ function parseXML(xmlString) {
  * Builds rows from XML Claims, now including encounterStart/end and activityStart,
  * and adds a remark if there's insufficient time between activityStart and encounter end.
  */
-function extractClaims(xmlDoc) {
-  const MIN_GAP_MINUTES = 15; // adjust buffer as needed
+function extractClaims(xmlData, encounterMap) {
+  const results = [];
 
-  return Array.from(xmlDoc.getElementsByTagName('Claim')).flatMap(claimEl => {
-    const claimId = getTextContent(claimEl, 'ID');
-    const { start: encounterStart, end: encounterEnd, validity } = extractEncounterDetails(claimEl);
+  xmlData.forEach(claim => {
+    const claimId = claim.claimId || '';
+    const activities = claim.activities || [];
 
-    const encStartDate = parseDateTime(encounterStart);
-    const encEndDate   = parseDateTime(encounterEnd);
-
-    return Array.from(claimEl.getElementsByTagName('Activity')).map(actEl => {
-      const { activityId, activityStart, doctor } = extractActivityDetails(claimEl);
-      const actStartDate = parseDateTime(activityStart);
-      const duration = computeDuration(encounterStart, encounterEnd);
+    activities.forEach(activity => {
+      const activityId = activity.activityId || '';
+      const startStr = activity.start || '';
+      const endStr = activity.end || '';
+      const encounter = encounterMap[claimId] || {};
+      const encounterStartStr = encounter.start || '';
+      const encounterEndStr = encounter.end || '';
 
       const remarks = [];
-      if (validity !== 'Valid') remarks.push(validity);
+      let isValid = true;
 
-      // New gap check
-      if (encEndDate && actStartDate) {
-        const gap = (encEndDate - actStartDate) / 60000;
-        if (gap < MIN_GAP_MINUTES) {
-          remarks.push('Not enough time between activity start and encounter end time (minimum 2 mins).');
+      const activityStart = new Date(startStr);
+      const activityEnd = new Date(endStr);
+      const encounterStart = new Date(encounterStartStr);
+      const encounterEnd = new Date(encounterEndStr);
+
+      // Duration
+      let duration = '';
+      if (!isNaN(activityStart) && !isNaN(activityEnd)) {
+        const diffMs = activityEnd - activityStart;
+        const mins = Math.floor(diffMs / 60000);
+        const secs = Math.floor((diffMs % 60000) / 1000);
+        duration = `${mins}m ${secs}s`;
+      }
+
+      // Encounter end vs Activity end
+      if (!isNaN(encounterEnd) && !isNaN(activityEnd)) {
+        const diffMs = encounterEnd - activityEnd;
+
+        if (diffMs < 0) {
+          const absMs = Math.abs(diffMs);
+          const mins = Math.floor(absMs / 60000);
+          const secs = Math.floor((absMs % 60000) / 1000);
+          remarks.push(`Activity ends after encounter ends (Time difference: -${mins}m ${secs}s)`);
+          isValid = false;
+        } else if (diffMs < 120000) { // Less than 2 minutes
+          const mins = Math.floor(diffMs / 60000);
+          const secs = Math.floor((diffMs % 60000) / 1000);
+          remarks.push(`Not enough time between activity end and encounter end (Time difference: ${mins}m ${secs}s)`);
+          isValid = false;
         }
       }
 
-      return {
+      results.push({
         claimId,
         activityId,
-        encounterStart,           // new column
-        encounterEnd,             // new column
-        start: activityStart,
-        end: encounterEnd,
+        encounterStart: encounterStartStr,
+        encounterEnd: encounterEndStr,
+        start: startStr,
+        end: endStr,
         duration,
-        doctor,
-        isValid: remarks.length === 0,
-        remarks
-      };
+        remarks,
+        isValid
+      });
     });
   });
+
+  return results;
 }
+
 
 /**
  * Extracts encounter details from a claim element.
