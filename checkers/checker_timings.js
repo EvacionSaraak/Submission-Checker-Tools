@@ -127,7 +127,7 @@ function extractClaims(xmlDoc) {
         encounterEnd,
         start: activityStartStr,
         end: encounterEnd,
-        duration: `${durationMin} min`,
+        duration: isNaN(durationMin) ? 'N/A' : `${durationMin} min`,
         isValid,
         remarks
       });
