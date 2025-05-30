@@ -191,7 +191,7 @@ function renderResults(container, rows) {
             <td>${r.start}</td>
             <td>${r.end}</td>
             <td>${r.duration}</td>
-            <td>${r.remarks.join('<br>')}</td>
+            <td>${(r.remarks || []).join('<br>')}</td>
           </tr>`).join('')}
       </tbody>
     </table>`;
