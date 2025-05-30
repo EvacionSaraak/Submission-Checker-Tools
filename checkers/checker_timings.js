@@ -416,17 +416,19 @@ function buildResultsTable(rows) {
   `;
 
   rows.forEach(r => {
-    const claimCell   = (r.claimId !== prevClaimId) ? r.claimId : '';
+    const claimCell   = (r.claimId !== prevClaimId) ? sanitize(r.claimId) : '';
     prevClaimId       = r.claimId;
-    const remarkLines = (r.remarks || []).map(line => `<div>${sanitize(line)}</div>`).join('');
+    const remarkLines = (r.remarks || [])
+      .map(line => `<div>${sanitize(line)}</div>`)
+      .join('');
 
     html += `
       <tr class="${r.isValid ? 'valid' : 'invalid'}">
-        <td>${sanitize(claimCell)}</td>
+        <td>${claimCell}</td>
         <td>${sanitize(r.activityId)}</td>
-        <td>${formatDateTimeCell(sanitize(r.encounterStart))}</td>
-        <td>${formatDateTimeCell(sanitize(r.encounterEnd))}</td>
-        <td>${formatDateTimeCell(sanitize(r.start))}</td>
+        <td>${formatDateTimeCell(r.encounterStart)}</td>
+        <td>${formatDateTimeCell(r.encounterEnd)}</td>
+        <td>${formatDateTimeCell(r.start)}</td>
         <td>${sanitize(r.duration)}</td>
         <td>${remarkLines}</td>
       </tr>
