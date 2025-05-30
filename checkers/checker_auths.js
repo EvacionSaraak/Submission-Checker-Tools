@@ -248,8 +248,8 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId) {
     String(r["Card Number / DHA Member ID"] || "").trim() === memberId
   ) || {};
 
-  const denialCode   = matchedRow["Denial Code (if any)"]   || "";
-  const denialReason = matchedRow["Denial Reason (if any)"] || "";
+  const denialCode   = matchedRow["Denial Code (If any)"]   || "";
+  const denialReason = matchedRow["Denial Reason (If any)"] || "";
 
   const remarks = [];
 
