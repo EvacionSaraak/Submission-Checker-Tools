@@ -91,33 +91,41 @@ function extractClaims(xmlDoc) {
   const results = [];
 
   claimElements.forEach(claim => {
-    const claimId        = claim.querySelector('ID')?.textContent || 'Unknown';
-    const encStartStr    = claim.querySelector('Encounter > Start')?.textContent;
-    const encEndStr      = claim.querySelector('Encounter > End')?.textContent;
-    const encStartDate   = parseDateTime(encStartStr);
-    const encEndDate     = parseDateTime(encEndStr);
+    const claimId      = claim.querySelector('ID')?.textContent || 'Unknown';
+    const encStartStr  = claim.querySelector('Encounter > Start')?.textContent;
+    const encEndStr    = claim.querySelector('Encounter > End')?.textContent;
+    const encStartDate = parseDateTime(encStartStr);
+    const encEndDate   = parseDateTime(encEndStr);
     if (!encStartDate || !encEndDate) return;
 
+    // Compute encounter duration and its remarks
+    const encDiffMs  = encEndDate - encStartDate;
+    const encMin     = Math.floor(encDiffMs / 60000);
+    const durationRemarks = [];
+    if (encMin < 10)       durationRemarks.push('Duration <10 min');
+    else if (encMin > 240) durationRemarks.push('Duration >4 h');
+
     claim.querySelectorAll('Activity').forEach(act => {
-      const activityId     = act.querySelector('ID')?.textContent || 'Unknown';
-      const actStartStr    = act.querySelector('Start')?.textContent;
-      const actStartDate   = parseDateTime(actStartStr);
+      const activityId    = act.querySelector('ID')?.textContent || 'Unknown';
+      const actStartStr   = act.querySelector('Start')?.textContent;
+      const actStartDate  = parseDateTime(actStartStr);
       if (!actStartDate) return;
 
-      // compute duration in minutes
-      const diffMs       = encEndDate - actStartDate;
-      const durationMin  = Math.floor(diffMs / 60000);
-
-      const remarks = [];
-      let isValid = true;
-
+      // Compute excess time and its remarks
+      const excessMs      = encEndDate - actStartDate;
+      const excessMin     = Math.floor(excessMs / 60000);
+      const excessRemarks = [];
       if (actStartDate > encEndDate) {
-        remarks.push('Activity start is after encounter end.');
-        isValid = false;
-      } else if (durationMin < 2) {
-        remarks.push(`Not enough time between activity and encounter end (${durationMin} min).`);
-        isValid = false;
+        excessRemarks.push('Activity starts after encounter end');
+      } else if (excessMin < 2) {
+        excessRemarks.push(`Excess <2 min (${excessMin} min)`);
       }
+
+      // Combine all remarks
+      const remarks = [
+        ...durationRemarks,
+        ...excessRemarks
+      ];
 
       results.push({
         claimId,
@@ -125,9 +133,9 @@ function extractClaims(xmlDoc) {
         encounterStart: encStartStr,
         encounterEnd:   encEndStr,
         start:          actStartStr,
-        // no more Activity End column
-        duration:       `${durationMin} min`,
-        isValid,
+        duration:       `${encMin} min`,
+        excess:         isNaN(excessMin) ? 'N/A' : `${excessMin} min`,
+        isValid:        remarks.length === 0,
         remarks
       });
     });
@@ -396,36 +404,41 @@ function buildResultsTable(rows) {
     <table border="1" style="width:100%;border-collapse:collapse">
       <thead>
         <tr>
-          <th>Claim ID</th><th>Activity ID</th>
-          <th>Encounter Start</th><th>Encounter End</th>
-          <th>Activity Start</th><th>Duration</th><th>Remarks</th>
+          <th>Claim ID</th>
+          <th>Activity ID</th>
+          <th>Encounter Start</th>
+          <th>Encounter End</th>
+          <th>Activity Start</th>
+          <th>Duration</th>
+          <th>Excess</th>
+          <th>Remarks</th>
         </tr>
       </thead>
       <tbody>
   `;
 
   rows.forEach(r => {
-    const claimCell = (r.claimId !== prevClaimId) ? sanitize(r.claimId) : '';
-    prevClaimId = r.claimId;
-    const remarkLines = (r.remarks || []).map(line => `<div>${sanitize(line)}</div>`).join('');
+    const claimCell   = (r.claimId !== prevClaimId) ? sanitize(r.claimId) : '';
+    prevClaimId       = r.claimId;
+    const remarkLines = (r.remarks || [])
+      .map(line => `<div>${sanitize(line)}</div>`)
+      .join('');
 
     html += `
       <tr class="${r.isValid ? 'valid' : 'invalid'}">
         <td>${claimCell}</td>
         <td>${sanitize(r.activityId)}</td>
-        <!-- date/time cells use innerHTML, no sanitize around the wrapping <div>s -->
         <td>${formatDateTimeCell(r.encounterStart)}</td>
         <td>${formatDateTimeCell(r.encounterEnd)}</td>
         <td>${formatDateTimeCell(r.start)}</td>
         <td>${sanitize(r.duration)}</td>
+        <td>${sanitize(r.excess)}</td>
         <td>${remarkLines}</td>
-      </tr>
-    `;
+      </tr>`;
   });
 
   html += `
       </tbody>
-    </table>
-  `;
+    </table>`;
   return html;
 }
