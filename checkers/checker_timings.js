@@ -410,7 +410,6 @@ function buildResultsTable(rows) {
         <td>${formatDateTimeCell(r.encounterStart)}</td>
         <td>${formatDateTimeCell(r.encounterEnd)}</td>
         <td>${formatDateTimeCell(r.start)}</td>
-        <td>${formatDateTimeCell(r.end)}</td>
         <td>${r.duration || ''}</td>
         <td>${remarkLines}</td>
       </tr>`;
@@ -421,7 +420,7 @@ function buildResultsTable(rows) {
       <thead>
         <tr>
           <th>Claim ID</th><th>Activity ID</th><th>Encounter Start</th>
-          <th>Encounter End</th><th>Activity Start</th><th>Activity End</th>
+          <th>Encounter End</th><th>Activity Start</th>
           <th>Duration</th><th>Remarks</th>
         </tr>
       </thead>
