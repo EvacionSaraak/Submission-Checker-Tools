@@ -157,12 +157,9 @@ function validateXLSXMatch(row, { memberId, code, qty, netTotal, ordering, authI
 
 function validateDateAndStatus(row, start) {
   const remarks = [];
-
-  // Extract just the date portions (DD/MM/YYYY)
   const xlsDateStr = (row["Ordered On"] || "").split(' ')[0];
   const xmlDateStr = (start || "").split(' ')[0];
 
-  // Parse as dates at midnight
   const [dx, mx, yx] = xlsDateStr.split('/').map(Number);
   const [di, mi, yi] = xmlDateStr.split('/').map(Number);
   const xlsDate = isNaN(dx) ? null : new Date(yx, mx - 1, dx);
@@ -170,13 +167,13 @@ function validateDateAndStatus(row, start) {
 
   if (!xlsDate) remarks.push("Invalid XLSX Ordered On date");
   if (!xmlDate) remarks.push("Invalid XML Start date");
-  if (xlsDate && xmlDate && xlsDate >= xmlDate) remarks.push("Procedure date must be after Approval date");
-
+  if (xlsDate && xmlDate && xlsDate > xmlDate) remarks.push("Approval must be on or before procedure date");
   const status = (row.Status || row.status || "").toLowerCase();
   
   if (!status.includes("approved") && !status.includes("rejected")) remarks.push("Status not approved");
   return remarks;
 }
+
 
 function logInvalidRow(xlsRow, context, remarks) {
   if (remarks.length) {
