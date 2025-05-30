@@ -1,5 +1,7 @@
 // checker_timings.js
 
+/*** --------------- DOM LOAD AND EVENT HANDLERS --------------- ***/
+
 // Wait for DOM to load before initializing
 document.addEventListener('DOMContentLoaded', () => {
   const fileInput = document.getElementById('xmlFileInput');
@@ -7,6 +9,30 @@ document.addEventListener('DOMContentLoaded', () => {
     fileInput.addEventListener('change', onFileChange);
   }
 });
+
+// XLSX export button handler
+document.getElementById('exportBtn').addEventListener('click', () => {
+  if (!window.invalidRows?.length) return;
+
+  const wb = XLSX.utils.book_new();
+  const wsData = [
+    ['Claim ID', 'Activity ID', 'Start', 'End', 'Duration', 'Remarks'],
+    ...window.invalidRows.map(r => [
+      r.claimId,
+      r.activityId,
+      r.start,
+      r.end,
+      r.duration,
+      r.remarks.join('; ')
+    ])
+  ];
+
+  const ws = XLSX.utils.aoa_to_sheet(wsData);
+  XLSX.utils.book_append_sheet(wb, ws, 'Invalid Timings');
+  XLSX.writeFile(wb, 'invalid_timings.xlsx');
+});
+
+/*** --------------- MAIN FILE HANDLER --------------- ***/
 
 /**
  * Handles file input change event
@@ -33,6 +59,17 @@ async function onFileChange(event) {
   }
 }
 
+/*** --------------- XML PARSING AND VALIDATION --------------- ***/
+
+/**
+ * Validates the raw XML string before parsing.
+ */
+function validateXMLString(str) {
+  if (typeof str !== 'string' || !str.trim().startsWith('<')) {
+    throw new Error('File does not appear to be valid XML.');
+  }
+}
+
 /**
  * Parses XML string into a document.
  * Throws if the XML is invalid.
@@ -43,14 +80,8 @@ function parseXML(xmlString) {
   return doc;
 }
 
-/**
- * Validates the raw XML string before parsing.
- */
-function validateXMLString(str) {
-  if (typeof str !== 'string' || !str.trim().startsWith('<')) {
-    throw new Error('File does not appear to be valid XML.');
-  }
-}
+/*** --------------- XML DATA EXTRACTION --------------- ***/
+
 /**
  * Builds rows from XML Claims, now including encounterStart/end and activityStart,
  * and adds a remark if there's insufficient time between activityStart and encounter end.
@@ -98,42 +129,6 @@ function extractClaims(xmlDoc) {
 }
 
 /**
- * Extracts activity/doctor details (including ID and Start) from a claim element.
- */
-function extractActivityDetails(claimEl) {
-  const act = claimEl.querySelector('Activity');
-  return {
-    doctor: act ? getTextContent(act, 'Clinician') : 'N/A',
-    activityId: act ? getTextContent(act, 'ID') : 'N/A',
-    activityStart: act ? getTextContent(act, 'Start') : 'N/A'
-  };
-}
-
-function formatDuration(minutes) {
-  const h = Math.floor(minutes / 60);
-  const m = Math.round(minutes % 60);
-  return `${h}h ${m}m`;
-}
-
-function computeDuration(start, end) {
-  const sd = parseDateTime(start);
-  const ed = parseDateTime(end);
-  if (!sd || !ed || !(sd < ed)) return 'N/A';
-
-  const diffMinutes = Math.round((ed - sd) / 60000);
-  const hours = Math.floor(diffMinutes / 60);
-  const minutes = diffMinutes % 60;
-  return `${hours}h ${minutes}m`;
-}
-
-/**
- * Gets text content of a selector inside an element.
- */
-function getTextContent(parent, selector) {
-  return parent.querySelector(selector)?.textContent.trim() ?? 'N/A';
-}
-
-/**
  * Extracts encounter details from a claim element.
  */
 function extractEncounterDetails(claimEl) {
@@ -159,16 +154,25 @@ function extractEncounterDetails(claimEl) {
   };
 }
 
-
 /**
- * Extracts activity/doctor details from a claim element.
+ * Extracts activity/doctor details (including ID and Start) from a claim element.
  */
 function extractActivityDetails(claimEl) {
   const act = claimEl.querySelector('Activity');
   return {
-    doctor: act ? getTextContent(act, 'Clinician') : 'N/A'
+    doctor: act ? getTextContent(act, 'Clinician') : 'N/A',
+    activityId: act ? getTextContent(act, 'ID') : 'N/A',
+    activityStart: act ? getTextContent(act, 'Start') : 'N/A'
   };
 }
+
+/*** --------------- VALIDATION HELPERS --------------- ***/
+
+// Valid types for encounter
+const VALID_TYPES = {
+  START: '1',
+  END: '1'
+};
 
 /**
  * Validates encounter timings and types.
@@ -187,19 +191,9 @@ function validateEncounter(start, end, startType, endType) {
   return 'Valid';
 }
 
-// Valid types for encounter
-const VALID_TYPES = {
-  START: '1',
-  END: '1'
-};
-
 /**
  * Validates the date order and status for a given XLSX row and XML start date.
  * Now safely coerces values to strings before calling .includes().
- *
- * @param {Object} row  – an XLSX row object
- * @param {string} start – XML activity Start date/time string
- * @returns {string[]} – array of remark messages
  */
 function validateDateAndStatus(row, start) {
   const remarks = [];
@@ -239,6 +233,15 @@ function validateDateAndStatus(row, start) {
   return remarks;
 }
 
+/*** --------------- GENERAL UTILITIES --------------- ***/
+
+/**
+ * Gets text content of a selector inside an element.
+ */
+function getTextContent(parent, selector) {
+  return parent.querySelector(selector)?.textContent.trim() ?? 'N/A';
+}
+
 /**
  * Parses a date/time string as DD/MM/YYYY HH:mm.
  */
@@ -262,12 +265,33 @@ function isSameDay(a, b) {
 }
 
 /**
+ * Computes duration string between two date/time strings.
+ */
+function computeDuration(start, end) {
+  const sd = parseDateTime(start);
+  const ed = parseDateTime(end);
+  if (!sd || !ed || !(sd < ed)) return 'N/A';
+
+  const diffMinutes = Math.round((ed - sd) / 60000);
+  const hours = Math.floor(diffMinutes / 60);
+  const minutes = diffMinutes % 60;
+  return `${hours}h ${minutes}m`;
+}
+
+/**
+ * Formats minutes as 'Xh Ym'.
+ */
+function formatDuration(minutes) {
+  const h = Math.floor(minutes / 60);
+  const m = Math.round(minutes % 60);
+  return `${h}h ${m}m`;
+}
+
+/*** --------------- RENDERING FUNCTIONS --------------- ***/
+
+/**
  * Renders the timing validation results table, including new Encounter Start/End columns.
  * Safely handles .includes() when checking for newline in remarks.
- *
- * @param {HTMLElement} container – element to render table into
- * @param {Array} rows – array of timing result objects:
- *   { claimId, activityId, encounterStart, encounterEnd, start, end, duration, remarks[], isValid }
  */
 function renderResults(container, rows) {
   const summaryBox = document.getElementById('resultsSummary');
@@ -320,29 +344,6 @@ function renderResults(container, rows) {
 
   container.innerHTML = html;
 }
-
-// XLSX export support
-document.getElementById('exportBtn').addEventListener('click', () => {
-  if (!window.invalidRows?.length) return;
-
-  const wb = XLSX.utils.book_new();
-  const wsData = [
-    ['Claim ID', 'Activity ID', 'Start', 'End', 'Duration', 'Remarks'],
-    ...window.invalidRows.map(r => [
-      r.claimId,
-      r.activityId,
-      r.start,
-      r.end,
-      r.duration,
-      r.remarks.join('; ')
-    ])
-  ];
-
-  const ws = XLSX.utils.aoa_to_sheet(wsData);
-  XLSX.utils.book_append_sheet(wb, ws, 'Invalid Timings');
-  XLSX.writeFile(wb, 'invalid_timings.xlsx');
-});
-
 
 /**
  * Renders a message in the results area.
