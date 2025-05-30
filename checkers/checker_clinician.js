@@ -214,7 +214,7 @@
       td.style.whiteSpace = txt.includes('\n') ? 'pre-line' : 'nowrap';
       td.textContent = txt;
     }
-    const prebold = rd.innerHTML
+    const prebold = td.innerHTML
         .replace(/Ordering:/g, '<strong>Ordering:</strong>')
         .replace(/Performing:/g, '<strong>Performing:</strong>');
     
