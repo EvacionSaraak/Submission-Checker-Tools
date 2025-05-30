@@ -89,7 +89,9 @@ function parseXML(xmlString) {
 function extractClaims(xmlData, encounterMap) {
   const results = [];
 
-  xmlData.forEach(claim => {
+  const claimsArray = Array.isArray(xmlData.claims) ? xmlData.claims : [];
+
+  claimsArray.forEach(claim => {
     const claimId = claim.claimId || '';
     const activities = claim.activities || [];
 
