@@ -125,74 +125,99 @@
   /**
    * Renders results in a table, applies accessibility and styling.
    */
-  function renderResults(results) {
-    resultsDiv.innerHTML = '';
-    validationDiv.innerHTML = '';
+function renderResults(results) {
+  clearOutput();
+  if (!results.length) {
+    showNoResults();
+    return;
+  }
+  renderSummary(results);
 
-    if (!results.length) {
-      resultsDiv.innerHTML = '<p>No results found.</p>';
-      return;
-    }
+  const table = document.createElement('table');
+  table.setAttribute('aria-label', 'Clinician validation results');
+  table.appendChild(renderTableHeader());
+  table.appendChild(renderTableBody(results));
 
-    const validCount = results.filter(r => r.valid).length;
-    const total = results.length;
-    const pct = Math.round((validCount / total) * 100);
+  resultsDiv.appendChild(table);
+}
 
-    validationDiv.textContent = `Validation completed: ${validCount}/${total} valid (${pct}%)`;
-    validationDiv.className = pct > 90 ? 'valid-message' : pct > 70 ? 'warning-message' : 'error-message';
+function clearOutput() {
+  resultsDiv.innerHTML = '';
+  validationDiv.innerHTML = '';
+}
 
-    const table = document.createElement('table');
-    table.setAttribute('aria-label', 'Clinician validation results');
-    const thead = document.createElement('thead');
-    const headerRow = document.createElement('tr');
-    ['Claim ID', 'Act ID', 'Clinicians', 'Privileges', 'Categories', 'Valid', 'Remarks'].forEach(t => {
+function showNoResults() {
+  resultsDiv.innerHTML = '<p>No results found.</p>';
+}
+
+function renderSummary(results) {
+  const validCount = results.filter(r => r.valid).length;
+  const total = results.length;
+  const pct = Math.round((validCount / total) * 100);
+
+  validationDiv.textContent = `Validation completed: ${validCount}/${total} valid (${pct}%)`;
+  validationDiv.className = pct > 90
+    ? 'valid-message'
+    : pct > 70
+      ? 'warning-message'
+      : 'error-message';
+}
+
+function renderTableHeader() {
+  const thead = document.createElement('thead');
+  const row = document.createElement('tr');
+  ['Claim ID', 'Act ID', 'Clinicians', 'Privileges', 'Categories', 'Valid', 'Remarks']
+    .forEach(text => {
       const th = document.createElement('th');
       th.scope = 'col';
-      th.textContent = t;
-      headerRow.appendChild(th);
+      th.textContent = text;
+      row.appendChild(th);
     });
-    thead.appendChild(headerRow);
-    table.appendChild(thead);
+  thead.appendChild(row);
+  return thead;
+}
 
-    const tbody = document.createElement('tbody');
-    let prevClaimId = null;
-    results.forEach(r => {
-      const tr = document.createElement('tr');
-      tr.className = r.valid ? 'valid' : 'invalid';
+function renderTableBody(results) {
+  const tbody = document.createElement('tbody');
+  let prevClaimId = null;
 
-      // Claim ID column
-      const td0 = document.createElement('td');
-      td0.textContent = (r.claimId !== prevClaimId) ? r.claimId : '';
-      td0.style.verticalAlign = 'top';
-      prevClaimId = r.claimId;
-      tr.appendChild(td0);
+  results.forEach(r => tbody.appendChild(renderRow(r, prevClaimId)));
+  return tbody;
+}
 
-      // Other columns
-      const cols = [
-        r.activityId,
-        formatClinicianInfo(r.clinicianInfo),
-        r.privilegesInfo,
-        r.categoryInfo,
-        r.valid ? '\u2714\ufe0f' : '\u274c',
-        r.remarks
-      ];
-      cols.forEach((txt, idx) => {
-        const td = document.createElement('td');
-        if (idx === 1) {
-          td.style.whiteSpace = 'pre-line';
-          td.innerHTML = txt;
-        } else {
-          td.style.whiteSpace = String(txt).includes('\n') ? 'pre-line' : 'nowrap';
-          td.textContent = txt;
-        }
-        tr.appendChild(td);
-      });
-      tbody.appendChild(tr);
-    });
+function renderRow(record, lastClaimId) {
+  const tr = document.createElement('tr');
+  tr.className = record.valid ? 'valid' : 'invalid';
 
-    table.appendChild(tbody);
-    resultsDiv.appendChild(table);
+  appendCell(tr, record.claimId === lastClaimId ? '' : record.claimId, { verticalAlign: 'top' });
+  appendCell(tr, record.activityId);
+  appendCell(tr, formatClinicianCell(record.clinicianInfo), { isHTML: true });
+  appendCell(tr, record.privilegesInfo);
+  appendCell(tr, record.categoryInfo);
+  appendCell(tr, record.valid ? '\u2714\ufe0f' : '\u274c');
+  appendCell(tr, record.remarks, { isArray: true });
+
+  return tr;
+}
+
+function appendCell(tr, content, { isHTML=false, isArray=false, verticalAlign='' } = {}) {
+  const td = document.createElement('td');
+  if (verticalAlign) td.style.verticalAlign = verticalAlign;
+  if (isArray) {
+    td.style.whiteSpace = 'pre-line';
+    td.innerHTML = (content || []).map(x => `<div>${x}</div>`).join('');
+  } else if (isHTML) {
+    td.style.whiteSpace = 'pre-line';
+    td.innerHTML = content
+      .replace(/Ordering:/g, '<strong>Ordering:</strong>')
+      .replace(/Performing:/g, '<strong>Performing:</strong>');
+  } else {
+    const txt = String(content || '');
+    td.style.whiteSpace = txt.includes('\n') ? 'pre-line' : 'nowrap';
+    td.textContent = txt;
   }
+  tr.appendChild(td);
+}
 
   /**
    * Formats clinician info for display (bold, italics).
