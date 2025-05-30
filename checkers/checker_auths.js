@@ -176,20 +176,12 @@ function validateDateAndStatus(row, start) {
     remarks.push("Procedure was done before Approval Ordering date. Please check Effective Date on OpenJet.");
 
   const status = (row.status || row.Status || "").toLowerCase();
-  if (!status.includes("approved")) {
-    if (status.includes("rejected")) {
-      remarks.push(
-        `Rejected: Code=${row["Denial Code (if any)"]||'N/A'} ` +
-        `Reason=${row["Denial Reason (if any)"]||'N/A'}`
-      );
-    } else {
-      remarks.push("Status not approved");
-    }
+  if (!status.includes("approved") && !status.includes("rejected")) {
+    remarks.push("Status not approved");
   }
 
   return remarks;
 }
-
 
 function logInvalidRow(xlsRow, context, remarks) {
   if (remarks.length) {
@@ -210,43 +202,70 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId) {
   const ordering = getText(activityEl, "OrderingClinician");
   const authID   = getText(activityEl, "PriorAuthorizationID") || getText(activityEl, "PriorAuthorization");
   const rule     = authRules[code] || {};
-  const needsAuth = !/NOT\s+REQUIRED/i.test(rule.approval_details || "");
+  const needsAuth= !/NOT\s+REQUIRED/i.test(rule.approval_details || "");
 
   if (!needsAuth && !authID) {
-    return { claimId, memberId, id, code,
-      description: rule.description||"",
-      netTotal, qty, ordering, authID, start,
-      xlsRow:{}, remarks:[] };
+    return {
+      claimId,
+      memberId,
+      id,
+      code,
+      description: rule.description || "",
+      netTotal,
+      qty,
+      ordering,
+      authID,
+      start,
+      xlsRow: {},
+      denialCode: "",
+      denialReason: "",
+      remarks: []
+    };
   }
 
   if (parseFloat(netTotal || "0") === 0) {
-    return { claimId, memberId, id, code,
-      description: rule.description||"",
-      netTotal, qty, ordering, authID, start,
-      xlsRow:{}, remarks:[] };
+    return {
+      claimId,
+      memberId,
+      id,
+      code,
+      description: rule.description || "",
+      netTotal,
+      qty,
+      ordering,
+      authID,
+      start,
+      xlsRow: {},
+      denialCode: "",
+      denialReason: "",
+      remarks: []
+    };
   }
 
   const rows = xlsxMap[authID] || [];
   const matchedRow = rows.find(r =>
-    String(r["Item Code"]||"").trim() === code &&
-    String(r["Card Number / DHA Member ID"]||"").trim() === memberId
-  ) || null;
+    String(r["Item Code"] || "").trim() === code &&
+    String(r["Card Number / DHA Member ID"] || "").trim() === memberId
+  ) || {};
+
+  const denialCode   = matchedRow["Denial Code (if any)"]   || "";
+  const denialReason = matchedRow["Denial Reason (if any)"] || "";
 
   const remarks = [];
 
-  if (matchedRow && authID) {
-    const status = (matchedRow["Status"]||matchedRow.status||"").toLowerCase();
-    if (status.includes("rejected"))
-      remarks.push("Activity has AuthorizationID but status is rejected");
+  if (matchedRow.AuthorizationID && (matchedRow.Status || matchedRow.status || "").toLowerCase().includes("rejected")) {
+    // we have denialCode/denialReason columns for details
+    remarks.push("Has authID but status is rejected");
   }
 
-  if (!matchedRow) {
+  if (!matchedRow.AuthorizationID) {
     remarks.push("No matching authorization row found in XLSX.");
   } else {
-    ["Item Code","Card Number / DHA Member ID","Ordering Clinician","Payer Share"].forEach(f => {
-      const v = String(matchedRow[f]||"");
-      if (v !== v.trim())
-        remarks.push(`Extra whitespace in field: "${f}"`);
+    ["Item Code", "Card Number / DHA Member ID", "Ordering Clinician", "Payer Share"].forEach(field => {
+      const v = String(matchedRow[field] || "");
+      if (v !== v.trim()) {
+        remarks.push(`Extra whitespace in field: "${field}"`);
+      }
     });
 
     const context = { memberId, code, qty, netTotal, ordering, authID };
@@ -263,10 +282,20 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId) {
   }
 
   return {
-    claimId, memberId, id, code,
-    description: rule.description||"",
-    netTotal, qty, ordering, authID, start,
-    xlsRow: matchedRow||{}, remarks
+    claimId,
+    memberId,
+    id,
+    code,
+    description: rule.description || "",
+    netTotal,
+    qty,
+    ordering,
+    authID,
+    start,
+    xlsRow: matchedRow,
+    denialCode,
+    denialReason,
+    remarks
   };
 }
 
@@ -344,50 +373,50 @@ function renderRow(r, lastClaimId) {
 
   const xls = r.xlsRow || {};
 
-  // Claim ID
   const claimCell = document.createElement("td");
-  claimCell.textContent = (r.claimId === lastClaimId) ? "" : (r.claimId || "");
+  claimCell.textContent = (r.claimId === lastClaimId) ? "" : r.claimId;
   tr.appendChild(claimCell);
 
-  // Static XML fields with fallback
   [r.memberId, r.id, r.code, r.description].forEach(val => {
     const td = document.createElement("td");
-    td.textContent = val ?? "";  // fallback to empty string
+    td.textContent = val || "";
     tr.appendChild(td);
   });
 
-  // Net Total
-  const netTotalTd = document.createElement("td");
-  netTotalTd.textContent = r.netTotal ?? "";
-  tr.appendChild(netTotalTd);
+  const netTd = document.createElement("td");
+  netTd.textContent = r.netTotal || "";
+  tr.appendChild(netTd);
 
-  // Payer Share
-  const payerShareTd = document.createElement("td");
-  payerShareTd.textContent = xls["Payer Share"] ?? "";
-  tr.appendChild(payerShareTd);
+  const payerTd = document.createElement("td");
+  payerTd.textContent = xls["Payer Share"] || "";
+  tr.appendChild(payerTd);
 
-  // Ordering Clinician, Auth ID, Start Date
   [r.ordering, r.authID, r.start].forEach(val => {
     const td = document.createElement("td");
-    td.textContent = val ?? "";
+    td.textContent = val || "";
     tr.appendChild(td);
   });
 
-  // XLSX fields (ordered on, status, denial code, denial reason)
-  ["Ordered On", "Status", "Denial Code (if any)", "Denial Reason (if any)"].forEach(field => {
+  ["Ordered On", "Status"].forEach(field => {
     const td = document.createElement("td");
-    td.textContent = xls[field] ?? "";
+    td.textContent = xls[field] || "";
     tr.appendChild(td);
   });
 
-  // Remarks
+  const dc = document.createElement("td");
+  dc.textContent = r.denialCode;
+  tr.appendChild(dc);
+
+  const dr = document.createElement("td");
+  dr.textContent = r.denialReason;
+  tr.appendChild(dr);
+
   const remarksTd = document.createElement("td");
-  remarksTd.innerHTML = (r.remarks || []).map(msg => `<div>${msg}</div>`).join("");
+  remarksTd.innerHTML = (r.remarks || []).map(m => `<div>${m}</div>`).join("");
   tr.appendChild(remarksTd);
 
   return tr;
 }
-
 
 // === MAIN PROCESSING ===
 // After renderResults, add this helper to wire up export and summary:
