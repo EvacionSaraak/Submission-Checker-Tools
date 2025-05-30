@@ -205,7 +205,9 @@
     if (verticalAlign) td.style.verticalAlign = verticalAlign;
     if (isArray) {
       td.style.whiteSpace = 'pre-line';
-      td.innerHTML = (content || []).map(x => `<div>${x}</div>`).join('');
+      td.innerHTML = (content || []).map(x => `<div>${x}</div>`).join('')
+        .replace(/Ordering:/g, '<strong>Ordering:</strong>')
+        .replace(/Performing:/g, '<strong>Performing:</strong>');
     } else if (isHTML) {
       td.style.whiteSpace = 'pre-line';
       td.innerHTML = content
@@ -216,6 +218,11 @@
       td.style.whiteSpace = txt.includes('\n') ? 'pre-line' : 'nowrap';
       td.textContent = txt;
     }
+    const prebold = rd.innerHTML
+        .replace(/Ordering:/g, '<strong>Ordering:</strong>')
+        .replace(/Performing:/g, '<strong>Performing:</strong>');
+    
+    td.innerHTML = prebold;
     tr.appendChild(td);
   }
 
