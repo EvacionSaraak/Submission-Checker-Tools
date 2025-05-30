@@ -58,26 +58,29 @@ function validateXMLString(str) {
 function extractClaims(xmlDoc) {
   return Array.from(xmlDoc.getElementsByTagName('Claim')).flatMap(claimEl => {
     const claimId = getTextContent(claimEl, 'ID');
-    const { start, end, patient, validity } = extractEncounterDetails(claimEl);
+    const encounter = extractEncounterDetails(claimEl);
 
-    const sd = parseDateTime(start);
-    const ed = parseDateTime(end);
-    const duration = (sd && ed) ? formatDuration((ed - sd) / 1000 / 60) : 'N/A';
+    return Array.from(claimEl.getElementsByTagName('Activity')).map(activityEl => {
+      const activityId = getTextContent(activityEl, 'ID');
+      const doctor = getTextContent(activityEl, 'Clinician');
+      const start = encounter.start;
+      const end = encounter.end;
+      const duration = computeDuration(start, end);
+      const validity = encounter.validity;
 
-    const activities = Array.from(claimEl.getElementsByTagName('Activity'));
-    return activities.map(act => ({
-      claimId,
-      activityId: getTextContent(act, 'ID'),
-      doctor: getTextContent(act, 'Clinician'),
-      start,
-      end,
-      duration,
-      remarks: [validity],
-      isValid: validity === 'Valid'
-    }));
+      return {
+        claimId,
+        activityId,
+        start,
+        end,
+        duration,
+        doctor,
+        isValid: validity === 'Valid',
+        remarks: validity === 'Valid' ? [] : [validity]
+      };
+    });
   });
 }
-
 
 function extractActivityDetails(claimEl) {
   const act = claimEl.querySelector('Activity');
@@ -91,6 +94,17 @@ function formatDuration(minutes) {
   const h = Math.floor(minutes / 60);
   const m = Math.round(minutes % 60);
   return `${h}h ${m}m`;
+}
+
+function computeDuration(start, end) {
+  const sd = parseDateTime(start);
+  const ed = parseDateTime(end);
+  if (!sd || !ed || !(sd < ed)) return 'N/A';
+
+  const diffMinutes = Math.round((ed - sd) / 60000);
+  const hours = Math.floor(diffMinutes / 60);
+  const minutes = diffMinutes % 60;
+  return `${hours}h ${minutes}m`;
 }
 
 /**
@@ -125,6 +139,7 @@ function extractEncounterDetails(claimEl) {
     validity: validateEncounter(start, end, startType, endType)
   };
 }
+
 
 /**
  * Extracts activity/doctor details from a claim element.
@@ -196,13 +211,27 @@ function renderResults(container, rows) {
   }
 
   const invalidRows = rows.filter(r => !r.isValid);
-  window.invalidRows = invalidRows; // for export access
+  window.invalidRows = invalidRows; // for export
   exportBtn.style.display = invalidRows.length ? 'inline-block' : 'none';
 
   const validCount = rows.length - invalidRows.length;
-  const totalCount = rows.length;
-  const percentage = ((validCount / totalCount) * 100).toFixed(1);
-  summaryBox.textContent = `Valid: ${validCount} / ${totalCount} (${percentage}%)`;
+  const percentage = ((validCount / rows.length) * 100).toFixed(1);
+  summaryBox.textContent = `Valid: ${validCount} / ${rows.length} (${percentage}%)`;
+
+  let prevClaimId = null;
+  const tableRows = rows.map(r => {
+    const claimIdCell = r.claimId === prevClaimId ? '' : r.claimId;
+    prevClaimId = r.claimId;
+    return `
+      <tr class="${r.isValid ? 'valid' : 'invalid'}">
+        <td>${claimIdCell}</td>
+        <td>${r.activityId}</td>
+        <td>${r.start}</td>
+        <td>${r.end}</td>
+        <td>${r.duration}</td>
+        <td>${r.remarks.join('<br>')}</td>
+      </tr>`;
+  }).join('');
 
   const html = `
     <table border="1" style="width:100%;border-collapse:collapse">
@@ -212,17 +241,7 @@ function renderResults(container, rows) {
           <th>End</th><th>Duration</th><th>Remarks</th>
         </tr>
       </thead>
-      <tbody>
-        ${rows.map(r => `
-          <tr class="${r.isValid ? 'valid' : 'invalid'}">
-            <td>${r.claimId}</td>
-            <td>${r.activityId}</td>
-            <td>${r.start}</td>
-            <td>${r.end}</td>
-            <td>${r.duration}</td>
-            <td>${(r.remarks || []).join('<br>')}</td>
-          </tr>`).join('')}
-      </tbody>
+      <tbody>${tableRows}</tbody>
     </table>`;
 
   container.innerHTML = html;
