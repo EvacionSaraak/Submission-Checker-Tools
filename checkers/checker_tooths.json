@@ -4054,5 +4054,13 @@
         "description": "Guided Tissue Regeneration – Resorbable Membrane - per site +E.",
         "dentition_type": "all",
         "affiliated_teeth": "all"
+    },
+    {
+        "code": [
+            "74631"
+        ],
+        "description": "Excision of Cyst 1 cm and under.",
+        "dentition_type": "all",
+        "affiliated_teeth": "all"
     }
 ]
