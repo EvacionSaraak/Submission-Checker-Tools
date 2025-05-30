@@ -205,14 +205,10 @@
     if (verticalAlign) td.style.verticalAlign = verticalAlign;
     if (isArray) {
       td.style.whiteSpace = 'pre-line';
-      td.innerHTML = (content || []).map(x => `<div>${x}</div>`).join('')
-        .replace(/Ordering:/g, '<strong>Ordering:</strong>')
-        .replace(/Performing:/g, '<strong>Performing:</strong>');
+      td.innerHTML = (content || []).map(x => `<div>${x}</div>`).join('');
     } else if (isHTML) {
       td.style.whiteSpace = 'pre-line';
-      td.innerHTML = content
-        .replace(/Ordering:/g, '<strong>Ordering:</strong>')
-        .replace(/Performing:/g, '<strong>Performing:</strong>');
+      td.innerHTML = content;
     } else {
       const txt = String(content || '');
       td.style.whiteSpace = txt.includes('\n') ? 'pre-line' : 'nowrap';
