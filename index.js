@@ -1,7 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
   const pages = [
-    { label: "Clinician", file: "checkers/checker_clinician.html" },
-    { label: "Authorizations (WIP)", file: "checkers/checker_auths.html" },
+    { label: "Clinician and Eligibility", file: "checkers/checker_clinician.html" },
+    { label: "Authorizations", file: "checkers/checker_auths.html" },
     { label: "Timings", file: "checkers/checker_timings.html" },
     { label: "Tooths", file: "checkers/checker_tooths.html" }
   ];
