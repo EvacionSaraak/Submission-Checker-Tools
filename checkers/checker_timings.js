@@ -194,6 +194,52 @@ const VALID_TYPES = {
 };
 
 /**
+ * Validates the date order and status for a given XLSX row and XML start date.
+ * Now safely coerces values to strings before calling .includes().
+ *
+ * @param {Object} row  – an XLSX row object
+ * @param {string} start – XML activity Start date/time string
+ * @returns {string[]} – array of remark messages
+ */
+function validateDateAndStatus(row, start) {
+  const remarks = [];
+
+  // Extract just the date portions (DD/MM/YYYY)
+  const xlsDateStr = String(row["Ordered On"] || "").split(' ')[0];
+  const xmlDateStr = String(start || "").split(' ')[0];
+
+  // Parse as dates at midnight (ignore time)
+  const [dx, mx, yx] = xlsDateStr.split('/').map(Number);
+  const [di, mi, yi] = xmlDateStr.split('/').map(Number);
+  const xlsDate = (!isNaN(dx) && !isNaN(mx) && !isNaN(yx))
+    ? new Date(yx, mx - 1, dx)
+    : null;
+  const xmlDate = (!isNaN(di) && !isNaN(mi) && !isNaN(yi))
+    ? new Date(yi, mi - 1, di)
+    : null;
+
+  if (!xlsDate) {
+    remarks.push("Invalid XLSX Ordered On date");
+  }
+  if (!xmlDate) {
+    remarks.push("Invalid XML Start date");
+  }
+  // Only error if approval date is after procedure date (same day is allowed)
+  if (xlsDate && xmlDate && xlsDate > xmlDate) {
+    remarks.push("Approval must be on or before procedure date");
+  }
+
+  // Safely coerce status to string before .includes()
+  const rawStatus = row["Status"] ?? row.status;
+  const status = String(rawStatus || "").toLowerCase();
+  if (!status.includes("approved") && !status.includes("rejected")) {
+    remarks.push("Status not approved");
+  }
+
+  return remarks;
+}
+
+/**
  * Parses a date/time string as DD/MM/YYYY HH:mm.
  */
 function parseDateTime(dt) {
@@ -216,89 +262,62 @@ function isSameDay(a, b) {
 }
 
 /**
- * Renders the claims in a table, or a message if none found.
- */
-/**
- * Renders the timing validation results table, including two new columns:
- * - Encounter Start
- * - Encounter End
- * Also handles the summary, export button visibility, and hides repeated Claim IDs.
+ * Renders the timing validation results table, including new Encounter Start/End columns.
+ * Safely handles .includes() when checking for newline in remarks.
  *
- * @param {HTMLElement} container – the DOM element to render into
- * @param {Array} rows – array of result objects with fields:
- *   claimId, activityId, encounterStart, encounterEnd, start, end, duration, remarks, isValid
+ * @param {HTMLElement} container – element to render table into
+ * @param {Array} rows – array of timing result objects:
+ *   { claimId, activityId, encounterStart, encounterEnd, start, end, duration, remarks[], isValid }
  */
 function renderResults(container, rows) {
-  // Summary and export button elements
   const summaryBox = document.getElementById('resultsSummary');
   const exportBtn  = document.getElementById('exportBtn');
 
-  // No rows case
   if (!rows.length) {
-    container.innerHTML    = '<p>No entries found.</p>';
+    container.innerHTML = '<p>No entries found.</p>';
     summaryBox.textContent = '';
     exportBtn.style.display = 'none';
     return;
   }
 
-  // Determine invalid rows and toggle export button
   const invalidRows = rows.filter(r => !r.isValid);
-  window.invalidRows  = invalidRows; // global for export handler
+  window.invalidRows = invalidRows;
   exportBtn.style.display = invalidRows.length ? 'inline-block' : 'none';
 
-  // Render summary: valid count, total, percentage
   const validCount = rows.length - invalidRows.length;
   const percentage = ((validCount / rows.length) * 100).toFixed(1);
   summaryBox.textContent = `Valid: ${validCount} / ${rows.length} (${percentage}%)`;
 
-  // Build table rows, hiding repeated Claim IDs
   let prevClaimId = null;
   const tableRows = rows.map(r => {
-    // Only show Claim ID when it changes
-    const claimIdCell = (r.claimId !== prevClaimId) ? r.claimId : '';
+    const claimCell = (r.claimId !== prevClaimId) ? r.claimId : '';
     prevClaimId = r.claimId;
 
-    // Generate <tr> with new Encounter Start/End columns
     return `
       <tr class="${r.isValid ? 'valid' : 'invalid'}">
-        <td>${claimIdCell}</td>
+        <td>${claimCell}</td>
         <td>${r.activityId}</td>
-
-        <!-- New columns for Encounter Start and Encounter End -->
         <td>${r.encounterStart}</td>
         <td>${r.encounterEnd}</td>
-
-        <!-- Existing columns: Activity Start, Activity End, Duration -->
         <td>${r.start}</td>
         <td>${r.end}</td>
         <td>${r.duration}</td>
-
-        <!-- Remarks column (multi-line) -->
-        <td>${r.remarks.join('<br>')}</td>
+        <td>${r.remarks.map(line => `<div>${line}</div>`).join('')}</td>
       </tr>`;
   }).join('');
 
-  // Full table HTML with headers
   const html = `
     <table border="1" style="width:100%;border-collapse:collapse">
       <thead>
         <tr>
-          <th>Claim ID</th>
-          <th>Activity ID</th>
-          <th>Encounter Start</th>
-          <th>Encounter End</th>
-          <th>Activity Start</th>
-          <th>Activity End</th>
-          <th>Duration</th>
-          <th>Remarks</th>
+          <th>Claim ID</th><th>Activity ID</th><th>Encounter Start</th>
+          <th>Encounter End</th><th>Activity Start</th><th>Activity End</th>
+          <th>Duration</th><th>Remarks</th>
         </tr>
       </thead>
-      <tbody>
-        ${tableRows}
-      </tbody>
+      <tbody>${tableRows}</tbody>
     </table>`;
 
-  // Render into container
   container.innerHTML = html;
 }
 
