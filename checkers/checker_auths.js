@@ -158,28 +158,23 @@ function validateXLSXMatch(row, { memberId, code, qty, netTotal, ordering, authI
 function validateDateAndStatus(row, start) {
   const remarks = [];
 
-  // Parse XLSX Ordered On date and time (ignore seconds)
-  const [xlsDatePart, xlsTimePart = ""] = (row["Ordered On"] || "").split(' ');
-  const [dx, mx, yx] = xlsDatePart.split('/');
-  const [hx, minx] = xlsTimePart.split(':') || [];
-  const xlsDate = new Date(`${yx}-${mx.padStart(2,'0')}-${dx.padStart(2,'0')}T${(hx||"00").padStart(2,'0')}:${(minx||"00").padStart(2,'0')}`);
+  // Extract just the date portions (DD/MM/YYYY)
+  const xlsDateStr = (row["Ordered On"] || "").split(' ')[0];
+  const xmlDateStr = (start || "").split(' ')[0];
 
-  // Parse XML Start date and time (ignore seconds)
-  const [xmlDatePart, xmlTimePart = ""] = (start || "").split(' ');
-  const [di, mi, yi] = xmlDatePart.split('/');
-  const [hi, mini] = xmlTimePart.split(':') || [];
-  const xmlDate = new Date(`${yi}-${mi.padStart(2,'0')}-${di.padStart(2,'0')}T${(hi||"00").padStart(2,'0')}:${(mini||"00").padStart(2,'0')}`);
+  // Parse as dates at midnight
+  const [dx, mx, yx] = xlsDateStr.split('/').map(Number);
+  const [di, mi, yi] = xmlDateStr.split('/').map(Number);
+  const xlsDate = isNaN(dx) ? null : new Date(yx, mx - 1, dx);
+  const xmlDate = isNaN(di) ? null : new Date(yi, mi - 1, di);
 
-  if (isNaN(xlsDate))      remarks.push("Invalid XLSX Ordered On date/time");
-  if (isNaN(xmlDate))      remarks.push("Invalid XML Start date/time");
-  if (!isNaN(xlsDate) && !isNaN(xmlDate) && xlsDate >= xmlDate)
-    remarks.push("Procedure was done before Approval Ordering date. Please check Effective Date on OpenJet.");
+  if (!xlsDate) remarks.push("Invalid XLSX Ordered On date");
+  if (!xmlDate) remarks.push("Invalid XML Start date");
+  if (xlsDate && xmlDate && xlsDate >= xmlDate) remarks.push("Procedure date must be after Approval date");
 
-  const status = (row.status || row.Status || "").toLowerCase();
-  if (!status.includes("approved") && !status.includes("rejected")) {
-    remarks.push("Status not approved");
-  }
-
+  const status = (row.Status || row.status || "").toLowerCase();
+  
+  if (!status.includes("approved") && !status.includes("rejected")) remarks.push("Status not approved");
   return remarks;
 }
 
@@ -373,44 +368,59 @@ function renderRow(r, lastClaimId) {
 
   const xls = r.xlsRow || {};
 
-  const claimCell = document.createElement("td");
-  claimCell.textContent = (r.claimId === lastClaimId) ? "" : r.claimId;
-  tr.appendChild(claimCell);
+  // Claim ID (hide repeats)
+  const cid = document.createElement("td");
+  cid.textContent = (r.claimId === lastClaimId) ? "" : r.claimId;
+  tr.appendChild(cid);
 
+  // XML fields
   [r.memberId, r.id, r.code, r.description].forEach(val => {
     const td = document.createElement("td");
     td.textContent = val || "";
     tr.appendChild(td);
   });
 
+  // Net Total
   const netTd = document.createElement("td");
   netTd.textContent = r.netTotal || "";
   tr.appendChild(netTd);
 
+  // Payer Share
   const payerTd = document.createElement("td");
   payerTd.textContent = xls["Payer Share"] || "";
   tr.appendChild(payerTd);
 
-  [r.ordering, r.authID, r.start].forEach(val => {
+  // Ordering Clinician, Auth ID
+  [r.ordering, r.authID].forEach(val => {
     const td = document.createElement("td");
     td.textContent = val || "";
     tr.appendChild(td);
   });
 
-  ["Ordered On", "Status"].forEach(field => {
-    const td = document.createElement("td");
-    td.textContent = xls[field] || "";
-    tr.appendChild(td);
-  });
+  // Start Date (discard time)
+  const startDateTd = document.createElement("td");
+  startDateTd.textContent = r.start.split(' ')[0] || "";
+  tr.appendChild(startDateTd);
 
+  // Ordered On date (discard time)
+  const orderedOnTd = document.createElement("td");
+  orderedOnTd.textContent = (xls["Ordered On"] || "").split(' ')[0];
+  tr.appendChild(orderedOnTd);
+
+  // Status
+  const statusTd = document.createElement("td");
+  statusTd.textContent = xls["Status"] || xls.status || "";
+  tr.appendChild(statusTd);
+
+  // Denial Code / Reason
   const dc = document.createElement("td");
   dc.textContent = r.denialCode;
   tr.appendChild(dc);
-
   const dr = document.createElement("td");
   dr.textContent = r.denialReason;
   tr.appendChild(dr);
 
+  // Remarks
   const remarksTd = document.createElement("td");
   remarksTd.innerHTML = (r.remarks || []).map(m => `<div>${m}</div>`).join("");
   tr.appendChild(remarksTd);
