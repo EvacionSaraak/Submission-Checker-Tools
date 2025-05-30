@@ -323,7 +323,7 @@ function formatDateTimeCell(datetimeStr) {
 
 /*** --------------- RENDERING FUNCTIONS --------------- ***/
 /**
- * Renders results
+ * Renders the timing validation results table, summary, and export button.
  */
 function renderResults(container, rows) {
   const summaryBox = document.getElementById('resultsSummary');
@@ -341,9 +341,10 @@ function renderResults(container, rows) {
   const summaryText = generateSummaryText(rows.length, invalidRows.length);
   summaryBox.textContent = summaryText;
 
-  const htmlTable = buildResultsTable(rows);
-  container.innerHTML = htmlTable;
+  // Build and inject table HTML (now without Activity End)
+  container.innerHTML = buildResultsTable(rows);
 }
+
 
 /**
  * Renders no result
@@ -392,38 +393,50 @@ function sanitize(str) {
 /**
  * Builds a Table
  */
+/**
+ * Returns an HTML table string for the given rows,
+ * omitting the Activity End column since it duplicates Encounter End.
+ */
 function buildResultsTable(rows) {
   let prevClaimId = null;
-
-  const tableRows = rows.map(r => {
-    const claimCell = (r.claimId !== prevClaimId) ? r.claimId : '';
-    prevClaimId = r.claimId;
-
-    const remarkLines = Array.isArray(r.remarks)
-      ? r.remarks.map(line => `<div>${line}</div>`).join('')
-      : '';
-
-    return `
-      <tr class="${r.isValid ? 'valid' : 'invalid'}">
-        <td>${claimCell}</td>
-        <td>${r.activityId || ''}</td>
-        <td>${formatDateTimeCell(r.encounterStart)}</td>
-        <td>${formatDateTimeCell(r.encounterEnd)}</td>
-        <td>${formatDateTimeCell(r.start)}</td>
-        <td>${r.duration || ''}</td>
-        <td>${remarkLines}</td>
-      </tr>`;
-  }).join('');
-
-  return `
+  let html = `
     <table border="1" style="width:100%;border-collapse:collapse">
       <thead>
         <tr>
-          <th>Claim ID</th><th>Activity ID</th><th>Encounter Start</th>
-          <th>Encounter End</th><th>Activity Start</th>
-          <th>Duration</th><th>Remarks</th>
+          <th>Claim ID</th>
+          <th>Activity ID</th>
+          <th>Encounter Start</th>
+          <th>Encounter End</th>
+          <th>Activity Start</th>
+          <th>Duration</th>
+          <th>Remarks</th>
         </tr>
       </thead>
-      <tbody>${tableRows}</tbody>
-    </table>`;
+      <tbody>
+  `;
+
+  rows.forEach(r => {
+    const claimCell   = (r.claimId !== prevClaimId) ? r.claimId : '';
+    prevClaimId       = r.claimId;
+    const remarkLines = (r.remarks || []).map(line => `<div>${sanitize(line)}</div>`).join('');
+
+    html += `
+      <tr class="${r.isValid ? 'valid' : 'invalid'}">
+        <td>${sanitize(claimCell)}</td>
+        <td>${sanitize(r.activityId)}</td>
+        <td>${formatDateTimeCell(sanitize(r.encounterStart))}</td>
+        <td>${formatDateTimeCell(sanitize(r.encounterEnd))}</td>
+        <td>${formatDateTimeCell(sanitize(r.start))}</td>
+        <td>${sanitize(r.duration)}</td>
+        <td>${remarkLines}</td>
+      </tr>
+    `;
+  });
+
+  html += `
+      </tbody>
+    </table>
+  `;
+
+  return html;
 }
