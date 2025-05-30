@@ -108,7 +108,7 @@ function extractClaims(xmlDoc) {
       if (encEndDate && actStartDate) {
         const gap = (encEndDate - actStartDate) / 60000;
         if (gap < MIN_GAP_MINUTES) {
-          remarks.push('Not enough time between activity start and encounter end time (minimum 2 mins.');
+          remarks.push('Not enough time between activity start and encounter end time (minimum 2 mins).');
         }
       }
 
