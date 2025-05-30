@@ -305,19 +305,17 @@ function formatDuration(minutes) {
 }
 
 /**
- * Formats Date/Time for Table Output.
+ * Formats a "DD/MM/YYYY HH:mm" string into two lines: date above, time below.
+ * Uses the raw string parts (avoids ISO conversion) and sanitizes each.
  */
 function formatDateTimeCell(datetimeStr) {
   if (!datetimeStr) return '';
-  const dt = new Date(datetimeStr);
-  if (isNaN(dt)) return datetimeStr; // Fallback for invalid date
-
-  const datePart = dt.toISOString().split('T')[0]; // YYYY-MM-DD
-  const timePart = dt.toTimeString().split(' ')[0]; // HH:MM:SS
-
-  return `<div style="white-space:nowrap">${datePart}<br><small>${timePart}</small></div>`;
+  const [datePart, timePart] = String(datetimeStr).split(' ');
+  return `
+    <div>${sanitize(datePart)}</div>
+    <div>${sanitize(timePart || '')}</div>
+  `;
 }
-
 
 /*** --------------- RENDERING FUNCTIONS --------------- ***/
 /**
@@ -389,11 +387,8 @@ function sanitize(str) {
 }
 
 /**
- * Builds a Table
- */
-/**
- * Returns an HTML table string for the given rows,
- * omitting the Activity End column since it duplicates Encounter End.
+ * Builds an HTML table, injecting date/time cells via innerHTML
+ * so that the <div> wrappers from formatDateTimeCell take effect.
  */
 function buildResultsTable(rows) {
   let prevClaimId = null;
@@ -401,29 +396,24 @@ function buildResultsTable(rows) {
     <table border="1" style="width:100%;border-collapse:collapse">
       <thead>
         <tr>
-          <th>Claim ID</th>
-          <th>Activity ID</th>
-          <th>Encounter Start</th>
-          <th>Encounter End</th>
-          <th>Activity Start</th>
-          <th>Duration</th>
-          <th>Remarks</th>
+          <th>Claim ID</th><th>Activity ID</th>
+          <th>Encounter Start</th><th>Encounter End</th>
+          <th>Activity Start</th><th>Duration</th><th>Remarks</th>
         </tr>
       </thead>
       <tbody>
   `;
 
   rows.forEach(r => {
-    const claimCell   = (r.claimId !== prevClaimId) ? sanitize(r.claimId) : '';
-    prevClaimId       = r.claimId;
-    const remarkLines = (r.remarks || [])
-      .map(line => `<div>${sanitize(line)}</div>`)
-      .join('');
+    const claimCell = (r.claimId !== prevClaimId) ? sanitize(r.claimId) : '';
+    prevClaimId = r.claimId;
+    const remarkLines = (r.remarks || []).map(line => `<div>${sanitize(line)}</div>`).join('');
 
     html += `
       <tr class="${r.isValid ? 'valid' : 'invalid'}">
         <td>${claimCell}</td>
         <td>${sanitize(r.activityId)}</td>
+        <!-- date/time cells use innerHTML, no sanitize around the wrapping <div>s -->
         <td>${formatDateTimeCell(r.encounterStart)}</td>
         <td>${formatDateTimeCell(r.encounterEnd)}</td>
         <td>${formatDateTimeCell(r.start)}</td>
@@ -437,6 +427,5 @@ function buildResultsTable(rows) {
       </tbody>
     </table>
   `;
-
   return html;
 }
