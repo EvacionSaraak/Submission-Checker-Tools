@@ -125,112 +125,99 @@
   /**
    * Renders results in a table, applies accessibility and styling.
    */
-function renderResults(results) {
-  clearOutput();
-  if (!results.length) {
-    showNoResults();
-    return;
+  function renderResults(results) {
+    clearOutput();
+    if (!results.length) {
+      showNoResults();
+      return;
+    }
+    renderSummary(results);
+  
+    const table = document.createElement('table');
+    table.setAttribute('aria-label', 'Clinician validation results');
+    table.appendChild(renderTableHeader());
+    table.appendChild(renderTableBody(results));
+  
+    resultsDiv.appendChild(table);
   }
-  renderSummary(results);
-
-  const table = document.createElement('table');
-  table.setAttribute('aria-label', 'Clinician validation results');
-  table.appendChild(renderTableHeader());
-  table.appendChild(renderTableBody(results));
-
-  resultsDiv.appendChild(table);
-}
-
-function clearOutput() {
-  resultsDiv.innerHTML = '';
-  validationDiv.innerHTML = '';
-}
-
-function showNoResults() {
-  resultsDiv.innerHTML = '<p>No results found.</p>';
-}
-
-function renderSummary(results) {
-  const validCount = results.filter(r => r.valid).length;
-  const total = results.length;
-  const pct = Math.round((validCount / total) * 100);
-
-  validationDiv.textContent = `Validation completed: ${validCount}/${total} valid (${pct}%)`;
-  validationDiv.className = pct > 90
-    ? 'valid-message'
-    : pct > 70
-      ? 'warning-message'
-      : 'error-message';
-}
-
-function renderTableHeader() {
-  const thead = document.createElement('thead');
-  const row = document.createElement('tr');
-  ['Claim ID', 'Act ID', 'Clinicians', 'Privileges', 'Categories', 'Valid', 'Remarks']
-    .forEach(text => {
-      const th = document.createElement('th');
-      th.scope = 'col';
-      th.textContent = text;
-      row.appendChild(th);
-    });
-  thead.appendChild(row);
-  return thead;
-}
-
-function renderTableBody(results) {
-  const tbody = document.createElement('tbody');
-  let prevClaimId = null;
-
-  results.forEach(r => tbody.appendChild(renderRow(r, prevClaimId)));
-  return tbody;
-}
-
-function renderRow(record, lastClaimId) {
-  const tr = document.createElement('tr');
-  tr.className = record.valid ? 'valid' : 'invalid';
-
-  appendCell(tr, record.claimId === lastClaimId ? '' : record.claimId, { verticalAlign: 'top' });
-  appendCell(tr, record.activityId);
-  appendCell(tr, formatClinicianCell(record.clinicianInfo), { isHTML: true });
-  appendCell(tr, record.privilegesInfo);
-  appendCell(tr, record.categoryInfo);
-  appendCell(tr, record.valid ? '\u2714\ufe0f' : '\u274c');
-  appendCell(tr, record.remarks, { isArray: true });
-
-  return tr;
-}
-
-function appendCell(tr, content, { isHTML=false, isArray=false, verticalAlign='' } = {}) {
-  const td = document.createElement('td');
-  if (verticalAlign) td.style.verticalAlign = verticalAlign;
-  if (isArray) {
-    td.style.whiteSpace = 'pre-line';
-    td.innerHTML = (content || []).map(x => `<div>${x}</div>`).join('');
-  } else if (isHTML) {
-    td.style.whiteSpace = 'pre-line';
-    td.innerHTML = content
-      .replace(/Ordering:/g, '<strong>Ordering:</strong>')
-      .replace(/Performing:/g, '<strong>Performing:</strong>');
-  } else {
-    const txt = String(content || '');
-    td.style.whiteSpace = txt.includes('\n') ? 'pre-line' : 'nowrap';
-    td.textContent = txt;
+  
+  function clearOutput() {
+    resultsDiv.innerHTML = '';
+    validationDiv.innerHTML = '';
   }
-  tr.appendChild(td);
-}
-
-  /**
-   * Formats clinician info for display (bold, italics).
-   */
-function formatClinicianInfo(text) {
-  if (!text) return '';
-  // Bold all 'Ordering' and 'Performing' words anywhere
-  text = text.replace(/\b(Ordering|Performing)\b/g, '<b>$1</b>');
-  // Keep italicizing Dr
-  text = text.replace(/\bDr\b\s/g, '<i>Dr</i> ');
-  return text;
-}
-
+  
+  function showNoResults() {
+    resultsDiv.innerHTML = '<p>No results found.</p>';
+  }
+  
+  function renderSummary(results) {
+    const validCount = results.filter(r => r.valid).length;
+    const total = results.length;
+    const pct = Math.round((validCount / total) * 100);
+  
+    validationDiv.textContent = `Validation completed: ${validCount}/${total} valid (${pct}%)`;
+    validationDiv.className = pct > 90
+      ? 'valid-message'
+      : pct > 70
+        ? 'warning-message'
+        : 'error-message';
+  }
+  
+  function renderTableHeader() {
+    const thead = document.createElement('thead');
+    const row = document.createElement('tr');
+    ['Claim ID', 'Act ID', 'Clinicians', 'Privileges', 'Categories', 'Valid', 'Remarks']
+      .forEach(text => {
+        const th = document.createElement('th');
+        th.scope = 'col';
+        th.textContent = text;
+        row.appendChild(th);
+      });
+    thead.appendChild(row);
+    return thead;
+  }
+  
+  function renderTableBody(results) {
+    const tbody = document.createElement('tbody');
+    let prevClaimId = null;
+  
+    results.forEach(r => tbody.appendChild(renderRow(r, prevClaimId)));
+    return tbody;
+  }
+  
+  function renderRow(record, lastClaimId) {
+    const tr = document.createElement('tr');
+    tr.className = record.valid ? 'valid' : 'invalid';
+  
+    appendCell(tr, record.claimId === lastClaimId ? '' : record.claimId, { verticalAlign: 'top' });
+    appendCell(tr, record.activityId);
+    appendCell(tr, record.clinicianInfo, { isHTML: true });
+    appendCell(tr, record.privilegesInfo);
+    appendCell(tr, record.categoryInfo);
+    appendCell(tr, record.valid ? '\u2714\ufe0f' : '\u274c');
+    appendCell(tr, record.remarks, { isArray: true });
+  
+    return tr;
+  }
+  
+  function appendCell(tr, content, { isHTML=false, isArray=false, verticalAlign='' } = {}) {
+    const td = document.createElement('td');
+    if (verticalAlign) td.style.verticalAlign = verticalAlign;
+    if (isArray) {
+      td.style.whiteSpace = 'pre-line';
+      td.innerHTML = (content || []).map(x => `<div>${x}</div>`).join('');
+    } else if (isHTML) {
+      td.style.whiteSpace = 'pre-line';
+      td.innerHTML = content
+        .replace(/Ordering:/g, '<strong>Ordering:</strong>')
+        .replace(/Performing:/g, '<strong>Performing:</strong>');
+    } else {
+      const txt = String(content || '');
+      td.style.whiteSpace = txt.includes('\n') ? 'pre-line' : 'nowrap';
+      td.textContent = txt;
+    }
+    tr.appendChild(td);
+  }
 
   // === DATA PROCESSING ===
 
