@@ -51,42 +51,61 @@ function validateXMLString(str) {
     throw new Error('File does not appear to be valid XML.');
   }
 }
-
 /**
- * Extracts all claims from the XML document.
+ * Builds rows from XML Claims, now including encounterStart/end and activityStart,
+ * and adds a remark if there's insufficient time between activityStart and encounter end.
  */
 function extractClaims(xmlDoc) {
+  const MIN_GAP_MINUTES = 15; // adjust buffer as needed
+
   return Array.from(xmlDoc.getElementsByTagName('Claim')).flatMap(claimEl => {
     const claimId = getTextContent(claimEl, 'ID');
-    const encounter = extractEncounterDetails(claimEl);
+    const { start: encounterStart, end: encounterEnd, validity } = extractEncounterDetails(claimEl);
 
-    return Array.from(claimEl.getElementsByTagName('Activity')).map(activityEl => {
-      const activityId = getTextContent(activityEl, 'ID');
-      const doctor = getTextContent(activityEl, 'Clinician');
-      const start = encounter.start;
-      const end = encounter.end;
-      const duration = computeDuration(start, end);
-      const validity = encounter.validity;
+    const encStartDate = parseDateTime(encounterStart);
+    const encEndDate   = parseDateTime(encounterEnd);
+
+    return Array.from(claimEl.getElementsByTagName('Activity')).map(actEl => {
+      const { activityId, activityStart, doctor } = extractActivityDetails(claimEl);
+      const actStartDate = parseDateTime(activityStart);
+      const duration = computeDuration(encounterStart, encounterEnd);
+
+      const remarks = [];
+      if (validity !== 'Valid') remarks.push(validity);
+
+      // New gap check
+      if (encEndDate && actStartDate) {
+        const gap = (encEndDate - actStartDate) / 60000;
+        if (gap < MIN_GAP_MINUTES) {
+          remarks.push('Not enough time between activity start and encounter end time.');
+        }
+      }
 
       return {
         claimId,
         activityId,
-        start,
-        end,
+        encounterStart,           // new column
+        encounterEnd,             // new column
+        start: activityStart,
+        end: encounterEnd,
         duration,
         doctor,
-        isValid: validity === 'Valid',
-        remarks: validity === 'Valid' ? [] : [validity]
+        isValid: remarks.length === 0,
+        remarks
       };
     });
   });
 }
 
+/**
+ * Extracts activity/doctor details (including ID and Start) from a claim element.
+ */
 function extractActivityDetails(claimEl) {
   const act = claimEl.querySelector('Activity');
   return {
     doctor: act ? getTextContent(act, 'Clinician') : 'N/A',
-    activityId: act ? getTextContent(act, 'ID') : 'N/A'
+    activityId: act ? getTextContent(act, 'ID') : 'N/A',
+    activityStart: act ? getTextContent(act, 'Start') : 'N/A'
   };
 }
 
@@ -199,51 +218,87 @@ function isSameDay(a, b) {
 /**
  * Renders the claims in a table, or a message if none found.
  */
+/**
+ * Renders the timing validation results table, including two new columns:
+ * - Encounter Start
+ * - Encounter End
+ * Also handles the summary, export button visibility, and hides repeated Claim IDs.
+ *
+ * @param {HTMLElement} container – the DOM element to render into
+ * @param {Array} rows – array of result objects with fields:
+ *   claimId, activityId, encounterStart, encounterEnd, start, end, duration, remarks, isValid
+ */
 function renderResults(container, rows) {
+  // Summary and export button elements
   const summaryBox = document.getElementById('resultsSummary');
-  const exportBtn = document.getElementById('exportBtn');
+  const exportBtn  = document.getElementById('exportBtn');
 
+  // No rows case
   if (!rows.length) {
-    container.innerHTML = '<p>No entries found.</p>';
+    container.innerHTML    = '<p>No entries found.</p>';
     summaryBox.textContent = '';
     exportBtn.style.display = 'none';
     return;
   }
 
+  // Determine invalid rows and toggle export button
   const invalidRows = rows.filter(r => !r.isValid);
-  window.invalidRows = invalidRows; // for export
+  window.invalidRows  = invalidRows; // global for export handler
   exportBtn.style.display = invalidRows.length ? 'inline-block' : 'none';
 
+  // Render summary: valid count, total, percentage
   const validCount = rows.length - invalidRows.length;
   const percentage = ((validCount / rows.length) * 100).toFixed(1);
   summaryBox.textContent = `Valid: ${validCount} / ${rows.length} (${percentage}%)`;
 
+  // Build table rows, hiding repeated Claim IDs
   let prevClaimId = null;
   const tableRows = rows.map(r => {
-    const claimIdCell = r.claimId === prevClaimId ? '' : r.claimId;
+    // Only show Claim ID when it changes
+    const claimIdCell = (r.claimId !== prevClaimId) ? r.claimId : '';
     prevClaimId = r.claimId;
+
+    // Generate <tr> with new Encounter Start/End columns
     return `
       <tr class="${r.isValid ? 'valid' : 'invalid'}">
         <td>${claimIdCell}</td>
         <td>${r.activityId}</td>
+
+        <!-- New columns for Encounter Start and Encounter End -->
+        <td>${r.encounterStart}</td>
+        <td>${r.encounterEnd}</td>
+
+        <!-- Existing columns: Activity Start, Activity End, Duration -->
         <td>${r.start}</td>
         <td>${r.end}</td>
         <td>${r.duration}</td>
+
+        <!-- Remarks column (multi-line) -->
         <td>${r.remarks.join('<br>')}</td>
       </tr>`;
   }).join('');
 
+  // Full table HTML with headers
   const html = `
     <table border="1" style="width:100%;border-collapse:collapse">
       <thead>
         <tr>
-          <th>Claim ID</th><th>Activity ID</th><th>Start</th>
-          <th>End</th><th>Duration</th><th>Remarks</th>
+          <th>Claim ID</th>
+          <th>Activity ID</th>
+          <th>Encounter Start</th>
+          <th>Encounter End</th>
+          <th>Activity Start</th>
+          <th>Activity End</th>
+          <th>Duration</th>
+          <th>Remarks</th>
         </tr>
       </thead>
-      <tbody>${tableRows}</tbody>
+      <tbody>
+        ${tableRows}
+      </tbody>
     </table>`;
 
+  // Render into container
   container.innerHTML = html;
 }
 
