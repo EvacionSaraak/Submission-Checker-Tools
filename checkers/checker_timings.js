@@ -91,51 +91,69 @@ function extractClaims(xmlDoc) {
   const results = [];
 
   claimElements.forEach(claim => {
-    const claimId      = claim.querySelector('ID')?.textContent || 'Unknown';
-    const encStartStr  = claim.querySelector('Encounter > Start')?.textContent;
-    const encEndStr    = claim.querySelector('Encounter > End')?.textContent;
-    const encStartDate = parseDateTime(encStartStr);
-    const encEndDate   = parseDateTime(encEndStr);
-    if (!encStartDate || !encEndDate) return;
+    const claimId = claim.querySelector('ID')?.textContent || 'Unknown';
+    const encounterStartStr = claim.querySelector('Encounter > Start')?.textContent;
+    const encounterEndStr = claim.querySelector('Encounter > End')?.textContent;
 
-    // Compute encounter duration and its remarks
-    const encDiffMs  = encEndDate - encStartDate;
-    const encMin     = Math.floor(encDiffMs / 60000);
-    const durationRemarks = [];
-    if (encMin < 10)       durationRemarks.push('Duration <10 min');
-    else if (encMin > 240) durationRemarks.push('Duration >4 h');
+    if (!encounterStartStr || !encounterEndStr) return;
 
-    claim.querySelectorAll('Activity').forEach(act => {
-      const activityId    = act.querySelector('ID')?.textContent || 'Unknown';
-      const actStartStr   = act.querySelector('Start')?.textContent;
-      const actStartDate  = parseDateTime(actStartStr);
-      if (!actStartDate) return;
+    const encounterStart = parseDateTime(encounterStartStr);
+    const encounterEnd = parseDateTime(encounterEndStr);
 
-      // Compute excess time and its remarks
-      const excessMs      = encEndDate - actStartDate;
-      const excessMin     = Math.floor(excessMs / 60000);
-      const excessRemarks = [];
-      if (actStartDate > encEndDate) {
-        excessRemarks.push('Activity starts after encounter end');
-      } else if (excessMin < 2) {
-        excessRemarks.push(`Excess <2 min (${excessMin} min)`);
+    if (!encounterStart || !encounterEnd) return;
+
+    const encMs = encounterEnd - encounterStart;
+    const encMin = Math.floor(encMs / 60000);
+
+    const activityElements = claim.querySelectorAll('Activity');
+
+    activityElements.forEach(activity => {
+      const activityId = activity.querySelector('ID')?.textContent || 'Unknown';
+      const activityStartStr = activity.querySelector('Start')?.textContent;
+      if (!activityStartStr) return;
+
+      const activityStart = parseDateTime(activityStartStr);
+      if (!activityStart) return;
+
+      const excessMs = encounterEnd - activityStart;
+      const excessMin = Math.floor(excessMs / 60000);
+
+      const remarks = [];
+      let isValid = true;
+
+      // Core validation logic
+      if (activityStart > encounterEnd) {
+        remarks.push('Activity start is after encounter end.');
+        isValid = false;
       }
 
-      // Combine all remarks
-      const remarks = [
-        ...durationRemarks,
-        ...excessRemarks
-      ];
+      if (activityStart < encounterStart) {
+        remarks.push('Activity start is before encounter start.');
+        isValid = false;
+      }
+
+      if (encMin < 10) {
+        remarks.push(`Duration too short (${encMin} min).`);
+        isValid = false;
+      } else if (encMin > 240) {
+        remarks.push(`Duration too long (${(encMin / 60).toFixed(1)} hrs).`);
+        isValid = false;
+      }
+
+      if (activityStart < encounterStart || activityStart > encounterEnd) {
+        remarks.push('Activity start is outside encounter period.');
+        isValid = false;
+      }
 
       results.push({
         claimId,
         activityId,
-        encounterStart: encStartStr,
-        encounterEnd:   encEndStr,
-        start:          actStartStr,
-        duration:       `${encMin} min`,
-        excess:         isNaN(excessMin) ? 'N/A' : `${excessMin} min`,
-        isValid:        remarks.length === 0,
+        encounterStart: encounterStartStr,
+        encounterEnd: encounterEndStr,
+        start: activityStartStr,
+        duration: formatDuration(encMin),
+        excess: formatDuration(excessMin),
+        isValid,
         remarks
       });
     });
@@ -306,10 +324,13 @@ function computeDuration(start, end) {
 /**
  * Formats minutes as 'Xh Ym'.
  */
-function formatDuration(minutes) {
-  const h = Math.floor(minutes / 60);
-  const m = Math.round(minutes % 60);
-  return `${h}h ${m}m`;
+function formatDuration(mins) {
+  if (isNaN(mins) || mins < 0) return 'N/A';
+  if (mins >= 60) {
+    const hours = (mins / 60).toFixed(1);
+    return `${hours} hr${hours !== '1.0' ? 's' : ''}`;
+  }
+  return `${mins} min`;
 }
 
 /**
@@ -404,41 +425,37 @@ function buildResultsTable(rows) {
     <table border="1" style="width:100%;border-collapse:collapse">
       <thead>
         <tr>
-          <th>Claim ID</th>
-          <th>Activity ID</th>
-          <th>Encounter Start</th>
-          <th>Encounter End</th>
-          <th>Activity Start</th>
-          <th>Duration</th>
-          <th>Excess</th>
-          <th>Remarks</th>
+          <th>Claim ID</th><th>Activity ID</th><th>Encounter Start</th>
+          <th>Encounter End</th><th>Activity Start</th>
+          <th>Duration</th><th>Excess</th><th>Remarks</th>
         </tr>
       </thead>
       <tbody>
   `;
 
   rows.forEach(r => {
-    const claimCell   = (r.claimId !== prevClaimId) ? sanitize(r.claimId) : '';
-    prevClaimId       = r.claimId;
-    const remarkLines = (r.remarks || [])
-      .map(line => `<div>${sanitize(line)}</div>`)
-      .join('');
+    const claimCell = (r.claimId !== prevClaimId) ? r.claimId : '';
+    prevClaimId = r.claimId;
+    const remarkLines = (r.remarks || []).map(line => `<div>${sanitize(line)}</div>`).join('');
 
     html += `
       <tr class="${r.isValid ? 'valid' : 'invalid'}">
-        <td>${claimCell}</td>
+        <td>${sanitize(claimCell)}</td>
         <td>${sanitize(r.activityId)}</td>
-        <td>${formatDateTimeCell(r.encounterStart)}</td>
-        <td>${formatDateTimeCell(r.encounterEnd)}</td>
-        <td>${formatDateTimeCell(r.start)}</td>
+        <td>${sanitize(r.encounterStart)}</td>
+        <td>${sanitize(r.encounterEnd)}</td>
+        <td>${sanitize(r.start)}</td>
         <td>${sanitize(r.duration)}</td>
         <td>${sanitize(r.excess)}</td>
         <td>${remarkLines}</td>
-      </tr>`;
+      </tr>
+    `;
   });
 
   html += `
       </tbody>
-    </table>`;
+    </table>
+  `;
+
   return html;
 }
