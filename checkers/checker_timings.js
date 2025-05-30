@@ -56,12 +56,39 @@ function validateXMLString(str) {
  * Extracts all claims from the XML document.
  */
 function extractClaims(xmlDoc) {
-  return Array.from(xmlDoc.getElementsByTagName('Claim')).map(el => ({
-    id: getTextContent(el, 'ID'),
-    ...extractEncounterDetails(el),
-    ...extractActivityDetails(el),
-    amount: getTextContent(el, 'Net'),
-  }));
+  return Array.from(xmlDoc.getElementsByTagName('Claim')).map(el => {
+    const claimId = getTextContent(el, 'ID');
+    const { start, end, patient, validity } = extractEncounterDetails(el);
+    const { doctor, activityId } = extractActivityDetails(el);
+
+    const sd = parseDateTime(start);
+    const ed = parseDateTime(end);
+    const duration = (sd && ed) ? formatDuration((ed - sd) / 1000 / 60) : 'N/A';
+
+    return {
+      claimId,
+      activityId,
+      start,
+      end,
+      duration,
+      remarks: [validity],
+      isValid: validity === 'Valid'
+    };
+  });
+}
+
+function extractActivityDetails(claimEl) {
+  const act = claimEl.querySelector('Activity');
+  return {
+    doctor: act ? getTextContent(act, 'Clinician') : 'N/A',
+    activityId: act ? getTextContent(act, 'ID') : 'N/A'
+  };
+}
+
+function formatDuration(minutes) {
+  const h = Math.floor(minutes / 60);
+  const m = Math.round(minutes % 60);
+  return `${h}h ${m}m`;
 }
 
 /**
