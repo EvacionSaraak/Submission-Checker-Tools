@@ -91,28 +91,27 @@ function extractClaims(xmlDoc) {
   const results = [];
 
   claimElements.forEach(claim => {
-    const claimId = claim.querySelector('ID')?.textContent || 'Unknown';
-    const encounterStart = claim.querySelector('Encounter > Start')?.textContent;
-    const encounterEnd = claim.querySelector('Encounter > End')?.textContent;
+    const claimId        = claim.querySelector('ID')?.textContent || 'Unknown';
+    const encStartStr    = claim.querySelector('Encounter > Start')?.textContent;
+    const encEndStr      = claim.querySelector('Encounter > End')?.textContent;
+    const encStartDate   = parseDateTime(encStartStr);
+    const encEndDate     = parseDateTime(encEndStr);
+    if (!encStartDate || !encEndDate) return;
 
-    if (!encounterStart || !encounterEnd) return;
+    claim.querySelectorAll('Activity').forEach(act => {
+      const activityId     = act.querySelector('ID')?.textContent || 'Unknown';
+      const actStartStr    = act.querySelector('Start')?.textContent;
+      const actStartDate   = parseDateTime(actStartStr);
+      if (!actStartDate) return;
 
-    const encounterStartDate = new Date(encounterStart);
-    const encounterEndDate = new Date(encounterEnd);
-
-    const activityElements = claim.querySelectorAll('Activity');
-
-    activityElements.forEach(activity => {
-      const activityId = activity.querySelector('ID')?.textContent || 'Unknown';
-      const activityStartStr = activity.querySelector('Start')?.textContent;
-      const activityStart = new Date(activityStartStr);
-      const durationMs = encounterEndDate - activityStart;
-      const durationMin = Math.floor(durationMs / 60000);
+      // compute duration in minutes
+      const diffMs       = encEndDate - actStartDate;
+      const durationMin  = Math.floor(diffMs / 60000);
 
       const remarks = [];
       let isValid = true;
 
-      if (activityStart > encounterEndDate) {
+      if (actStartDate > encEndDate) {
         remarks.push('Activity start is after encounter end.');
         isValid = false;
       } else if (durationMin < 2) {
@@ -123,11 +122,11 @@ function extractClaims(xmlDoc) {
       results.push({
         claimId,
         activityId,
-        encounterStart,
-        encounterEnd,
-        start: activityStartStr,
-        end: encounterEnd,
-        duration: isNaN(durationMin) ? 'N/A' : `${durationMin} min`,
+        encounterStart: encStartStr,
+        encounterEnd:   encEndStr,
+        start:          actStartStr,
+        // no more Activity End column
+        duration:       `${durationMin} min`,
         isValid,
         remarks
       });
@@ -136,7 +135,6 @@ function extractClaims(xmlDoc) {
 
   return results;
 }
-
 
 /**
  * Extracts encounter details from a claim element.
