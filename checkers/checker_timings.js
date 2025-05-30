@@ -86,68 +86,50 @@ function parseXML(xmlString) {
  * Builds rows from XML Claims, now including encounterStart/end and activityStart,
  * and adds a remark if there's insufficient time between activityStart and encounter end.
  */
-function extractClaims(xmlData, encounterMap) {
+function extractClaims(xmlDoc) {
+  const claimElements = xmlDoc.querySelectorAll('Claim');
   const results = [];
 
-  const claimsArray = Array.isArray(xmlData.claims) ? xmlData.claims : [];
+  claimElements.forEach(claim => {
+    const claimId = claim.querySelector('ID')?.textContent || 'Unknown';
+    const encounterStart = claim.querySelector('Encounter > Start')?.textContent;
+    const encounterEnd = claim.querySelector('Encounter > End')?.textContent;
 
-  claimsArray.forEach(claim => {
-    const claimId = claim.claimId || '';
-    const activities = claim.activities || [];
+    if (!encounterStart || !encounterEnd) return;
 
-    activities.forEach(activity => {
-      const activityId = activity.activityId || '';
-      const startStr = activity.start || '';
-      const endStr = activity.end || '';
-      const encounter = encounterMap[claimId] || {};
-      const encounterStartStr = encounter.start || '';
-      const encounterEndStr = encounter.end || '';
+    const encounterStartDate = new Date(encounterStart);
+    const encounterEndDate = new Date(encounterEnd);
+
+    const activityElements = claim.querySelectorAll('Activity');
+
+    activityElements.forEach(activity => {
+      const activityId = activity.querySelector('ID')?.textContent || 'Unknown';
+      const activityStartStr = activity.querySelector('Start')?.textContent;
+      const activityStart = new Date(activityStartStr);
+      const durationMs = encounterEndDate - activityStart;
+      const durationMin = Math.floor(durationMs / 60000);
 
       const remarks = [];
       let isValid = true;
 
-      const activityStart = new Date(startStr);
-      const activityEnd = new Date(endStr);
-      const encounterStart = new Date(encounterStartStr);
-      const encounterEnd = new Date(encounterEndStr);
-
-      // Duration
-      let duration = '';
-      if (!isNaN(activityStart) && !isNaN(activityEnd)) {
-        const diffMs = activityEnd - activityStart;
-        const mins = Math.floor(diffMs / 60000);
-        const secs = Math.floor((diffMs % 60000) / 1000);
-        duration = `${mins}m ${secs}s`;
-      }
-
-      // Encounter end vs Activity end
-      if (!isNaN(encounterEnd) && !isNaN(activityEnd)) {
-        const diffMs = encounterEnd - activityEnd;
-
-        if (diffMs < 0) {
-          const absMs = Math.abs(diffMs);
-          const mins = Math.floor(absMs / 60000);
-          const secs = Math.floor((absMs % 60000) / 1000);
-          remarks.push(`Activity ends after encounter ends (Time difference: -${mins}m ${secs}s)`);
-          isValid = false;
-        } else if (diffMs < 120000) { // Less than 2 minutes
-          const mins = Math.floor(diffMs / 60000);
-          const secs = Math.floor((diffMs % 60000) / 1000);
-          remarks.push(`Not enough time between activity end and encounter end (Time difference: ${mins}m ${secs}s)`);
-          isValid = false;
-        }
+      if (activityStart > encounterEndDate) {
+        remarks.push('Activity start is after encounter end.');
+        isValid = false;
+      } else if (durationMin < 2) {
+        remarks.push(`Not enough time between activity and encounter end (${durationMin} min).`);
+        isValid = false;
       }
 
       results.push({
         claimId,
         activityId,
-        encounterStart: encounterStartStr,
-        encounterEnd: encounterEndStr,
-        start: startStr,
-        end: endStr,
-        duration,
-        remarks,
-        isValid
+        encounterStart,
+        encounterEnd,
+        start: activityStartStr,
+        end: encounterEnd,
+        duration: `${durationMin} min`,
+        isValid,
+        remarks
       });
     });
   });
