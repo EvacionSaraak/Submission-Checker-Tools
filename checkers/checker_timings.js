@@ -108,7 +108,7 @@ function extractClaims(xmlDoc) {
       if (encEndDate && actStartDate) {
         const gap = (encEndDate - actStartDate) / 60000;
         if (gap < MIN_GAP_MINUTES) {
-          remarks.push('Not enough time between activity start and encounter end time.');
+          remarks.push('Not enough time between activity start and encounter end time (minimum 2 mins.');
         }
       }
 
@@ -173,6 +173,15 @@ const VALID_TYPES = {
   START: '1',
   END: '1'
 };
+
+/**
+ * Gets difference between two points of time.
+ */
+function getTimeDifferenceInMinutes(startTimeStr, endTimeStr) {
+  const start = new Date(startTimeStr);
+  const end = new Date(endTimeStr);
+  return (end - start) / 60000; // milliseconds to minutes
+}
 
 /**
  * Validates encounter timings and types.
@@ -288,19 +297,15 @@ function formatDuration(minutes) {
 }
 
 /*** --------------- RENDERING FUNCTIONS --------------- ***/
-
 /**
- * Renders the timing validation results table, including new Encounter Start/End columns.
- * Safely handles .includes() when checking for newline in remarks.
+ * Renders results
  */
 function renderResults(container, rows) {
   const summaryBox = document.getElementById('resultsSummary');
   const exportBtn  = document.getElementById('exportBtn');
 
   if (!rows.length) {
-    container.innerHTML = '<p>No entries found.</p>';
-    summaryBox.textContent = '';
-    exportBtn.style.display = 'none';
+    renderNoResults(container, summaryBox, exportBtn);
     return;
   }
 
@@ -308,41 +313,29 @@ function renderResults(container, rows) {
   window.invalidRows = invalidRows;
   exportBtn.style.display = invalidRows.length ? 'inline-block' : 'none';
 
-  const validCount = rows.length - invalidRows.length;
-  const percentage = ((validCount / rows.length) * 100).toFixed(1);
-  summaryBox.textContent = `Valid: ${validCount} / ${rows.length} (${percentage}%)`;
+  const summaryText = generateSummaryText(rows.length, invalidRows.length);
+  summaryBox.textContent = summaryText;
 
-  let prevClaimId = null;
-  const tableRows = rows.map(r => {
-    const claimCell = (r.claimId !== prevClaimId) ? r.claimId : '';
-    prevClaimId = r.claimId;
+  const htmlTable = buildResultsTable(rows);
+  container.innerHTML = htmlTable;
+}
 
-    return `
-      <tr class="${r.isValid ? 'valid' : 'invalid'}">
-        <td>${claimCell}</td>
-        <td>${r.activityId}</td>
-        <td>${r.encounterStart}</td>
-        <td>${r.encounterEnd}</td>
-        <td>${r.start}</td>
-        <td>${r.end}</td>
-        <td>${r.duration}</td>
-        <td>${r.remarks.map(line => `<div>${line}</div>`).join('')}</td>
-      </tr>`;
-  }).join('');
+/**
+ * Renders no result
+ */
+function renderNoResults(container, summaryBox, exportBtn) {
+  container.innerHTML = '<p>No entries found.</p>';
+  summaryBox.textContent = '';
+  exportBtn.style.display = 'none';
+}
 
-  const html = `
-    <table border="1" style="width:100%;border-collapse:collapse">
-      <thead>
-        <tr>
-          <th>Claim ID</th><th>Activity ID</th><th>Encounter Start</th>
-          <th>Encounter End</th><th>Activity Start</th><th>Activity End</th>
-          <th>Duration</th><th>Remarks</th>
-        </tr>
-      </thead>
-      <tbody>${tableRows}</tbody>
-    </table>`;
-
-  container.innerHTML = html;
+/**
+ * Makes a summary
+ */
+function generateSummaryText(total, invalidCount) {
+  const validCount = total - invalidCount;
+  const percentage = ((validCount / total) * 100).toFixed(1);
+  return `Valid: ${validCount} / ${total} (${percentage}%)`;
 }
 
 /**
@@ -369,4 +362,44 @@ function sanitize(str) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
+}
+
+/**
+ * Builds a Table
+ */
+function buildResultsTable(rows) {
+  let prevClaimId = null;
+
+  const tableRows = rows.map(r => {
+    const claimCell = (r.claimId !== prevClaimId) ? r.claimId : '';
+    prevClaimId = r.claimId;
+
+    const remarkLines = Array.isArray(r.remarks)
+      ? r.remarks.map(line => `<div>${line}</div>`).join('')
+      : '';
+
+    return `
+      <tr class="${r.isValid ? 'valid' : 'invalid'}">
+        <td>${claimCell}</td>
+        <td>${r.activityId || ''}</td>
+        <td>${r.encounterStart || ''}</td>
+        <td>${r.encounterEnd || ''}</td>
+        <td>${r.start || ''}</td>
+        <td>${r.end || ''}</td>
+        <td>${r.duration || ''}</td>
+        <td>${remarkLines}</td>
+      </tr>`;
+  }).join('');
+
+  return `
+    <table border="1" style="width:100%;border-collapse:collapse">
+      <thead>
+        <tr>
+          <th>Claim ID</th><th>Activity ID</th><th>Encounter Start</th>
+          <th>Encounter End</th><th>Activity Start</th><th>Activity End</th>
+          <th>Duration</th><th>Remarks</th>
+        </tr>
+      </thead>
+      <tbody>${tableRows}</tbody>
+    </table>`;
 }
