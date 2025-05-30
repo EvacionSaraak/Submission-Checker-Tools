@@ -296,6 +296,21 @@ function formatDuration(minutes) {
   return `${h}h ${m}m`;
 }
 
+/**
+ * Formats Date/Time for Table Output.
+ */
+function formatDateTimeCell(datetimeStr) {
+  if (!datetimeStr) return '';
+  const dt = new Date(datetimeStr);
+  if (isNaN(dt)) return datetimeStr; // Fallback for invalid date
+
+  const datePart = dt.toISOString().split('T')[0]; // YYYY-MM-DD
+  const timePart = dt.toTimeString().split(' ')[0]; // HH:MM:SS
+
+  return `<div style="white-space:nowrap">${datePart}<br><small>${timePart}</small></div>`;
+}
+
+
 /*** --------------- RENDERING FUNCTIONS --------------- ***/
 /**
  * Renders results
@@ -382,10 +397,10 @@ function buildResultsTable(rows) {
       <tr class="${r.isValid ? 'valid' : 'invalid'}">
         <td>${claimCell}</td>
         <td>${r.activityId || ''}</td>
-        <td>${r.encounterStart || ''}</td>
-        <td>${r.encounterEnd || ''}</td>
-        <td>${r.start || ''}</td>
-        <td>${r.end || ''}</td>
+        <td>${formatDateTimeCell(r.encounterStart)}</td>
+        <td>${formatDateTimeCell(r.encounterEnd)}</td>
+        <td>${formatDateTimeCell(r.start)}</td>
+        <td>${formatDateTimeCell(r.end)}</td>
         <td>${r.duration || ''}</td>
         <td>${remarkLines}</td>
       </tr>`;
