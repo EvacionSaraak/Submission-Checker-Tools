@@ -1,0 +1,82 @@
+/* shared_tables.css */
+
+/* General body and font styles (optional, can be overridden by page-specific CSS) */
+body {
+  font-family: Arial, sans-serif;
+  padding: 20px;
+  max-width: 900px;
+  margin: auto;
+}
+
+/* Center container for tables and results */
+#results {
+  display: flex;
+  justify-content: center;
+  margin-top: 20px;
+}
+
+#explanationBox {
+  background-color: #f0f8ff;
+  border: 1px solid #99c;
+  padding: 15px;
+  margin-bottom: 20px;
+  border-radius: 5px;
+  font-family: Arial, sans-serif;
+  color: #333;
+  max-width: 900px;
+  margin-left: auto;
+  margin-right: auto;
+}
+/* Table styling */
+table {
+  width: 100%;
+  max-width: 900px;
+  border-collapse: collapse;
+  font-size: 14px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+  background: #fff;
+}
+
+th, td {
+  padding: 8px 10px;
+  border: 1px solid #ccc;
+  text-align: left;
+  vertical-align: top;
+}
+
+th {
+  background-color: #f4f4f4;
+  font-weight: bold;
+}
+
+/* Remarks column no-wrap if needed */
+table td:nth-child(7), /* For checker_timings validity column */
+table td:nth-child(6)  /* For checker_tooths remarks column (adjust if different) */
+{
+  white-space: nowrap;
+}
+
+/* Valid / Invalid row background colors */
+.valid {
+  background-color: #e0f7e9; /* light green */
+}
+
+.invalid {
+  background-color: #ffe4e1; /* light red */
+}
+
+.error-box {
+  background-color: #ffdddd;
+  border: 1px solid #ff5c5c;
+  padding: 12px;
+  margin-top: 12px;
+  color: #a30000;
+  border-radius: 4px;
+}
+
+/* Message styling */
+#messageBox {
+  color: red;
+  font-weight: bold;
+  margin-top: 10px;
+}

@@ -1,36 +1,26 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Claim Activity Observation Checker</title>
-  <link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Checker Tools</title>
+  <link rel="stylesheet" href="index.css" />
 </head>
 <body>
-  <h1>Activities with Observations</h1>
-  <hr>
-  <form id="fileInputs">
-    <div class="input-group">
-      <label for="xmlFile">Upload XML File:</label>
-      <input type="file" id="xmlFile" accept=".xml">
-      <span class="file-name" id="xmlFileName">No file chosen</span>
+  <nav>
+    <div class="nav-container">
+      <div class="nav-left" id="navLeft">
+        <!-- Your nav buttons go here -->
+      </div>
+      <div class="nav-right">
+        Found an issue? Please report it to the
+        <a href="https://github.com/EvacionSaraak/Submission-Checker-Tools" target="_blank" rel="noopener">developer</a>.
+      </div>
     </div>
-  
-    <div class="input-group">
-      <button type="button" onclick="parseXML()">Parse XML</button>
-    </div>
-  
-    <div class="input-group" id="devMode">
-      <label for="jsonFile">Upload JSON File (optional):</label>
-      <input type="file" id="jsonFile" accept=".json">
-      <span class="file-name" id="jsonFileName">No file chosen</span>
-    </div>
-  </form>
-  <div class="form-link">
-    Found an issue? Report it to the <a href="https://github.com/EvacionSaraak/procedure-tooth-code-error-check" target="_blank">developer</a>.
+  </nav>
+  <div id="mainContent">
+    <iframe id="mainIframe" src="" title="Checker Tool"></iframe>
   </div>
-  <hr>
-  <div id="results"></div>
-  <script src="script.js"></script>
+  <script src="index.js"></script>
 </body>
 </html>

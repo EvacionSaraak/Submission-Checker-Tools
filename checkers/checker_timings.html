@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Claim Submission Checker</title>
+  <link rel="stylesheet" href="tables.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+  <h2>Timing Validity Checker</h2>
+
+  <div id="explanationBox">
+    <strong>What this script does:</strong>
+    <p>
+      This tool validates the timing-related elements within a Claim Submission XML file.
+      It checks that service dates, encounter times, and other time-sensitive values follow the required logic and order.
+      Upload a Claim Submission XML to begin the verification process.
+    </p>
+  </div>
+
+  <label>Upload XML: <input type="file" id="xmlFileInput" accept=".xml" /><button id="exportBtn" style="display:none;margin-top:10px">Export Invalid Entries</button></label>
+  
+  <div id="resultsSummary" style="margin:10px;font-weight:bold;"></div>
+  <div id="results"></div>
+
+  <script src="checker_timings.js"></script>
+</body>
+</html>

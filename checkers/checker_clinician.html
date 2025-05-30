@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Clinician License Checker</title>
+  <link rel="stylesheet" href="tables.css">
+</head>
+<body>
+  <h2>Upload Claim Submission XML and Clinician Excel</h2>
+
+  <div id="explanationBox">
+    <strong>What this script does:</strong>  
+    <p>
+      This tool allows you to upload a Claim Submission XML file along with two Excel files containing clinician license information and eligibility data. It validates the clinician licenses against the claims data, checks eligibility using the Open Jet export, and helps identify any discrepancies or mismatches. After processing, you can export the validation results for further review.
+    </p>
+  </div>
+
+  <div id="fileInputs">
+    <div class="input-group">
+      <label for="xmlFileInput">Claim Submissions XML File:</label>
+      <input type="file" id="xmlFileInput" accept=".xml" />
+    </div>
+    <div class="input-group">
+      <label for="excelFileInput">Clinician Licenses Export File (.xlsx):</label>
+      <input type="file" id="excelFileInput" accept=".xlsx" />
+    </div>
+    <div class="input-group">
+      <label for="openJetFileInput">Open Jet Eligibility Export File (.xlsx):</label>
+      <input type="file" id="openJetFileInput" accept=".xlsx" />
+    </div>
+    <div class="input-group">
+      <button id="processBtn" disabled>Process Files</button>
+      <button id="exportCsvBtn" disabled>Export CSV</button>
+    </div>
+  </div>
+
+  <div id="uploadStatus"></div>
+  <div id="results"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="checker_clinician.js"></script>
+</body>
+</html>
