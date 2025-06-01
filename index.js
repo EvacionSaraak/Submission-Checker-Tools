@@ -20,16 +20,34 @@ document.addEventListener('DOMContentLoaded', () => {
     setActiveButton(index);
   }
 
+  function enhanceIframeTable() {
+    const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+    const table = iframeDoc.querySelector("table");
+
+    if (table) {
+      table.classList.add("table", "table-striped", "table-bordered", "table-hover");
+      if (typeof $(table).DataTable === 'function') {
+        $(table).DataTable(); // jQuery DataTable activation
+      }
+    }
+  }
+
   function buildNavbar() {
-    navLeft.innerHTML = ""; // Clear existing buttons if any
+    navLeft.innerHTML = "";
     pages.forEach((page, i) => {
       const btn = document.createElement("button");
       btn.textContent = page.label;
-      btn.onclick = () => loadPage(page.file, i);
+      btn.onclick = () => {
+        loadPage(page.file, i);
+      };
       navLeft.appendChild(btn);
     });
     loadPage(pages[0].file, 0);
   }
+
+  iframe.addEventListener("load", () => {
+    setTimeout(enhanceIframeTable, 100); // Delay to ensure DOM is ready
+  });
 
   buildNavbar();
 });
