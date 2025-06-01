@@ -156,11 +156,95 @@ function buildCodeMeta(data) {
   return map;
 }
 
+// ---------------------------------------
+// Helper: Map a tooth code into a quadrant
+// ---------------------------------------
+function getQuadrant(tooth) {
+  const t = String(tooth).toUpperCase();
+  const num = Number(t);
+  if (!isNaN(num)) {
+    if (num >= 1 && num <= 8)   return 'UR';
+    if (num >= 9 && num <= 16)  return 'UL';
+    if (num >= 17 && num <= 24) return 'LL';
+    if (num >= 25 && num <= 32) return 'LR';
+  }
+  if ('ABCDE'.includes(t))      return 'UR';
+  if ('FGHIJ'.includes(t))      return 'UL';
+  if ('KLMNO'.includes(t))      return 'LL';
+  if ('PQRST'.includes(t))      return 'LR';
+  return 'Unknown';
+}
+
+// ---------------------------------------
+// Helper: Map a tooth code into a sextant
+// Sextants:  
+//  S1 = Upper Right Posterior (teeth 1–3 or A–C)  
+//  S2 = Upper Anterior (4–13 or D–K)  
+//  S3 = Upper Left Posterior (14–16 or L–O)  
+//  S4 = Lower Left Posterior (17–19 or P–R)  
+//  S5 = Lower Anterior (20–29 or S–T)  
+//  S6 = Lower Right Posterior (30–32 or None)  
+// Adjust as needed for primary/secondary mapping.
+// ---------------------------------------
+function getSextant(tooth) {
+  const t = String(tooth).toUpperCase();
+  const num = Number(t);
+
+  if (!isNaN(num)) {
+    if (num >= 1 && num <= 5)   return 'S1'; // Upper Right Posterior
+    if (num >= 6 && num <= 11)  return 'S2'; // Upper Anterior
+    if (num >= 12 && num <= 16) return 'S3'; // Upper Left Posterior
+    if (num >= 17 && num <= 21) return 'S4'; // Lower Left Posterior
+    if (num >= 22 && num <= 27) return 'S5'; // Lower Anterior
+    if (num >= 28 && num <= 32) return 'S6'; // Lower Right Posterior
+  } else {
+    if ('A,B,C'.includes(t)) return 'S1';
+    if ('D,E,F,G'.includes(t)) return 'S2';
+    if ('H,I,J'.includes(t)) return 'S3';
+    if ('K,L,M'.includes(t)) return 'S4';
+    if ('N,O,P,Q'.includes(t)) return 'S5';
+    if ('R,S,T'.includes(t)) return 'S6';
+  }
+
+  return 'Unknown';
+}
+
+// ---------------------------------------
+// Optional label helpers
+// ---------------------------------------
+function quadrantLabel(q) {
+  switch (q) {
+    case 'UR': return 'Upper Right';
+    case 'UL': return 'Upper Left';
+    case 'LL': return 'Lower Left';
+    case 'LR': return 'Lower Right';
+    default:   return q;
+  }
+}
+function sextantLabel(s) {
+  switch (s) {
+    case 'S1': return 'Upper Right Posterior';
+    case 'S2': return 'Upper Anterior';
+    case 'S3': return 'Upper Left Posterior';
+    case 'S4': return 'Lower Left Posterior';
+    case 'S5': return 'Lower Anterior';
+    case 'S6': return 'Lower Right Posterior';
+    default:   return s;
+  }
+}
+
+// --------------------------------------------------------
+// Updated validateActivities: support conditional region‐check
+// --------------------------------------------------------
 function validateActivities(xmlDoc, codeToMeta, authMap) {
   const rows = [];
 
   Array.from(xmlDoc.getElementsByTagName('Claim')).forEach(claim => {
     const claimId = claim.querySelector('ID')?.textContent || '(no claim ID)';
+
+    // We’ll track seen keys separately per claim:
+    const seenQuadrantPairs = new Set();
+    const seenSextantPairs = new Set();
 
     Array.from(claim.getElementsByTagName('Activity')).forEach(act => {
       const obsList = act.getElementsByTagName('Observation');
@@ -170,7 +254,7 @@ function validateActivities(xmlDoc, codeToMeta, authMap) {
       const rawCode    = act.querySelector('Code')?.textContent || '';
       const code       = rawCode.trim();
 
-      // 1) If any Observation code is "PDF", skip all checks and mark valid:
+      // 1) PDF override as before
       let containsPDF = false;
       Array.from(obsList).forEach(obs => {
         const obsCodeRaw = obs.querySelector('Code')?.textContent.trim() || '';
@@ -178,9 +262,7 @@ function validateActivities(xmlDoc, codeToMeta, authMap) {
           containsPDF = true;
         }
       });
-
       if (containsPDF) {
-        // Simple row: valid, skip description/teeth checks entirely
         rows.push({
           claimId,
           activityId,
@@ -190,49 +272,83 @@ function validateActivities(xmlDoc, codeToMeta, authMap) {
           remarks: ['PDF override—marked valid'],
           isValid: true
         });
-        return; // move to next activity
+        return;
       }
 
-      // 2) Normal path: look up tooth metadata first
+      // 2) Lookup tooth metadata + fallback to authMap for description
       const toothMeta   = codeToMeta[code] || { teethSet: new Set(), description: '' };
       let description   = (toothMeta.description || '').trim();
-
-      // 3) Fallback to authMap if description is blank
-      if (!description) {
-        const authEntry = authMap[code];
-        if (authEntry?.description) {
-          description = authEntry.description;
-        }
+      if (!description && authMap[code]?.description) {
+        description = authMap[code].description.trim();
       }
+      const descMissing = !description;
 
-      // 4) If still no description, mark invalid later
-      const descriptionMissing = !description;
+      // 3) Determine if we must enforce quadrant or sextant checks
+      //    We do NOT enforce either unless description contains the keyword
+      const enforceQuadrant = /quadrant/i.test(description);
+      const enforceSextant  = /sextant/i.test(description);
 
-      // 5) Build set of valid teeth for this code
+      // 4) Build the set of valid teeth for this code
       const teethSet = toothMeta.teethSet;
 
       let isValid = true;
       const details = [];
       const remarks = [];
 
+      // 5) Loop through each Observation
       Array.from(obsList).forEach(obs => {
         const obsCodeRaw = obs.querySelector('Code')?.textContent.trim() || '';
         const obsCode    = obsCodeRaw.toUpperCase();
 
-        // Collect detail: “TOOTH – REGION”
-        details.push(`${obsCode} - ${getRegionName(obsCode)}`);
+        // Collect detail: “TOOTH – REGION (Quadrant/Sextant if enforced)”
+        let regionInfo = '';
+        if (enforceQuadrant) {
+          const q = getQuadrant(obsCode);
+          regionInfo = ` (${quadrantLabel(q)})`;
+        } else if (enforceSextant) {
+          const s = getSextant(obsCode);
+          regionInfo = ` (${sextantLabel(s)})`;
+        }
+        details.push(`${obsCode} - ${getRegionName(obsCode)}${regionInfo}`);
 
-        // Check tooth membership against teethSet
+        // Check if tooth is allowed at all
         if (!teethSet.has(obsCode)) {
           isValid = false;
-          remarks.push(`Invalid - ${obsCode}`);
+          remarks.push(`Invalid tooth ${obsCode}`);
         } else {
-          remarks.push(`Valid - ${obsCode}`);
+          // If quadrant enforcement is ON:
+          if (enforceQuadrant) {
+            const q = getQuadrant(obsCode);
+            const key = `${code}|${q}`;
+            if (seenQuadrantPairs.has(key)) {
+              isValid = false;
+              remarks.push(`Duplicate code ${code} in ${q}`);
+            } else {
+              seenQuadrantPairs.add(key);
+              remarks.push(`Valid ${obsCode} in ${q}`);
+            }
+          }
+          // Else if sextant enforcement is ON:
+          else if (enforceSextant) {
+            const s = getSextant(obsCode);
+            const key = `${code}|${s}`;
+            if (seenSextantPairs.has(key)) {
+              isValid = false;
+              remarks.push(`Duplicate code ${code} in ${s}`);
+            } else {
+              seenSextantPairs.add(key);
+              remarks.push(`Valid ${obsCode} in ${s}`);
+            }
+          }
+          // Otherwise (neither), just mark valid by default
+          else {
+            remarks.push(`Valid - ${obsCode}`);
+          }
         }
       });
 
-      // 6) If description is missing in both, mark invalid here
-      if (descriptionMissing) {
+      // 6) If description is still missing → invalid
+      if (descMissing) {
         isValid = false;
         remarks.unshift('No description found for code');
       }
