@@ -1,6 +1,4 @@
 # Submission Tools
-Here’s a reformatted version suitable for inclusion in a `README.md`:
-
 ---
 
 # 🦷 Checker Tools Suite
