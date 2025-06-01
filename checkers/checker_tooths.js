@@ -170,25 +170,45 @@ function validateActivities(xmlDoc, codeToMeta, authMap) {
       const rawCode    = act.querySelector('Code')?.textContent || '';
       const code       = rawCode.trim();
 
-      // Lookup in tooth‐map first:
-      const toothMeta = codeToMeta[code] || { teethSet: new Set(), description: '' };
-      let description = (toothMeta.description || '').trim();
+      // 1) If any Observation code is "PDF", skip all checks and mark valid:
+      let containsPDF = false;
+      Array.from(obsList).forEach(obs => {
+        const obsCodeRaw = obs.querySelector('Code')?.textContent.trim() || '';
+        if (obsCodeRaw.toUpperCase() === 'PDF') {
+          containsPDF = true;
+        }
+      });
 
-      // If still blank, fallback to authMap:
+      if (containsPDF) {
+        // Simple row: valid, skip description/teeth checks entirely
+        rows.push({
+          claimId,
+          activityId,
+          code,
+          description: '(PDF—no tooth validation)',
+          details: 'PDF',
+          remarks: ['PDF override—marked valid'],
+          isValid: true
+        });
+        return; // move to next activity
+      }
+
+      // 2) Normal path: look up tooth metadata first
+      const toothMeta   = codeToMeta[code] || { teethSet: new Set(), description: '' };
+      let description   = (toothMeta.description || '').trim();
+
+      // 3) Fallback to authMap if description is blank
       if (!description) {
         const authEntry = authMap[code];
-        if (authEntry && authEntry.description) {
+        if (authEntry?.description) {
           description = authEntry.description;
         }
       }
 
-      // If description remains blank, mark invalid:
+      // 4) If still no description, mark invalid later
       const descriptionMissing = !description;
-      if (descriptionMissing) {
-        // We’ll still collect observations, but will add one extra remark
-      }
 
-      // Build a Set of valid tooth codes for this activity
+      // 5) Build set of valid teeth for this code
       const teethSet = toothMeta.teethSet;
 
       let isValid = true;
@@ -199,10 +219,10 @@ function validateActivities(xmlDoc, codeToMeta, authMap) {
         const obsCodeRaw = obs.querySelector('Code')?.textContent.trim() || '';
         const obsCode    = obsCodeRaw.toUpperCase();
 
-        // Observation detail line (tooth + region)
+        // Collect detail: “TOOTH – REGION”
         details.push(`${obsCode} - ${getRegionName(obsCode)}`);
 
-        // Check if that observed tooth is valid for this code:
+        // Check tooth membership against teethSet
         if (!teethSet.has(obsCode)) {
           isValid = false;
           remarks.push(`Invalid - ${obsCode}`);
@@ -211,11 +231,10 @@ function validateActivities(xmlDoc, codeToMeta, authMap) {
         }
       });
 
-      // If description was missing in both maps, mark invalid:
+      // 6) If description is missing in both, mark invalid here
       if (descriptionMissing) {
         isValid = false;
-        remarks.unshift('No description found for code'); 
-        // (put this at the front so it’s obvious)
+        remarks.unshift('No description found for code');
       }
 
       rows.push({
@@ -232,7 +251,6 @@ function validateActivities(xmlDoc, codeToMeta, authMap) {
 
   return rows;
 }
-
 
 function renderResults(container, rows) {
   const summaryBox = document.getElementById('resultsSummary');
