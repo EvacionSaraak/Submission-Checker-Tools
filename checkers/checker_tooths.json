@@ -3929,6 +3929,14 @@
     },
     {
         "code": [
+            "02934"
+        ],
+        "description": "Radiographs, Tomography Four views",
+        "dentition_type": "all",
+        "affiliated_teeth": "all"
+    },
+    {
+        "code": [
             "49211"
         ],
         "description": "Periodontal Irrigation, Subgingival + E One unit of time +E",
