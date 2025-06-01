@@ -3921,6 +3921,14 @@
     },
     {
         "code": [
+            "02112"
+        ],
+        "description": "Test/Analysis, Histopathological, Two images",
+        "dentition_type": "all",
+        "affiliated_teeth": "all"
+    },
+    {
+        "code": [
             "49211"
         ],
         "description": "Periodontal Irrigation, Subgingival + E One unit of time +E",
