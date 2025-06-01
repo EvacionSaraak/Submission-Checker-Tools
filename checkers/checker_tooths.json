@@ -4081,6 +4081,14 @@
     },
     {
         "code": [
+            "01201"
+        ],
+        "description": "Examination and Diagnosis, Limited, Oral, New Patient. Examination and Diagnosis of hard and soft tissues, including checking of occlusion and appliances, but not including specific test/analysis as for 01100. (May include PSR)",
+        "dentition_type": "all",
+        "affiliated_teeth": "all"
+    },
+    {
+        "code": [
             "01204"
         ],
         "description": "Examination and Diagnosis, Specific  Examination and evaluation of a specific situation",
