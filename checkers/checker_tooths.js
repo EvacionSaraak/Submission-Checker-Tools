@@ -116,8 +116,14 @@ function parseXML() {
 function buildCodeMeta(data) {
   const map = {};
   data.forEach(entry => {
-    const codesArray = entry.codes || entry.code || [];
+    const codesArray = Array.isArray(entry.codes) ? entry.codes : (
+      entry.codes ? [entry.codes] : (
+        entry.code ? [entry.code] : []
+      )
+    );
+
     const teethSet = getTeethSet(entry.affiliated_teeth);
+
     codesArray.forEach(rawCode => {
       const code = rawCode.toString().trim();
       map[code] = {
