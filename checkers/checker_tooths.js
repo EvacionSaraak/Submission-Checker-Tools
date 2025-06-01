@@ -31,6 +31,21 @@ function normalizeToothCode(code) {
   return code?.toString().trim().toUpperCase() || '';
 }
 
+function buildAuthMap(authData) {
+  // authData is assumed to be an array of entries like { code: "...", description: "...", ... }
+  const map = {};
+  authData.forEach(entry => {
+    const code = entry.code?.toString().trim();
+    if (code) {
+      map[code] = {
+        description: entry.description?.trim() || ''
+      };
+    }
+  });
+  return map;
+}
+
+
 function getTeethSet(region) {
   if (!region) return ALL_TEETH;
   const lc = region.toLowerCase().trim();
@@ -79,11 +94,11 @@ document.getElementById('exportBtn').addEventListener('click', () => {
 
 
 function parseXML() {
-  const xmlInput = document.getElementById('xmlFile');
-  const resultsDiv = document.getElementById('results');
-  const messageBox = document.getElementById('messageBox');
+  const xmlInput    = document.getElementById('xmlFile');
+  const resultsDiv  = document.getElementById('results');
+  const messageBox  = document.getElementById('messageBox');
   messageBox.textContent = '';
-  resultsDiv.innerHTML = '';
+  resultsDiv.innerHTML   = '';
 
   if (!xmlInput.files.length) {
     messageBox.textContent = 'Please upload an XML file.';
@@ -92,20 +107,26 @@ function parseXML() {
   const file = xmlInput.files[0];
 
   Promise.all([
+    // Read uploaded XML
     new Promise((res, rej) => {
       const rdr = new FileReader();
-      rdr.onload = () => res(rdr.result);
+      rdr.onload  = () => res(rdr.result);
       rdr.onerror = () => rej('Error reading XML');
       rdr.readAsText(file);
     }),
+    // Load tooth‐code metadata
     fetch(repoJsonUrl)
-      .then(r => r.ok ? r.json() : Promise.reject(`Failed to load JSON (HTTP ${r.status})`))
+      .then(r => r.ok ? r.json() : Promise.reject(`Failed to load ${repoJsonUrl} (HTTP ${r.status})`)),
+    // Load authorization metadata for fallback
+    fetch('checker_auths.json')
+      .then(r => r.ok ? r.json() : Promise.reject(`Failed to load checker_auths.json (HTTP ${r.status})`))
   ])
-  .then(([xmlText, jsonData]) => {
-    const codeToMeta = buildCodeMeta(jsonData);
-    const xmlDoc = new DOMParser().parseFromString(xmlText, 'application/xml');
+  .then(([xmlText, toothJson, authJson]) => {
+    const toothMap = buildCodeMeta(toothJson);
+    const authMap  = buildAuthMap(authJson);
+    const xmlDoc   = new DOMParser().parseFromString(xmlText, 'application/xml');
     if (xmlDoc.querySelector('parsererror')) throw new Error('Invalid XML file');
-    const rows = validateActivities(xmlDoc, codeToMeta);
+    const rows     = validateActivities(xmlDoc, toothMap, authMap);
     renderResults(resultsDiv, rows);
   })
   .catch(err => {
@@ -135,7 +156,7 @@ function buildCodeMeta(data) {
   return map;
 }
 
-function validateActivities(xmlDoc, codeToMeta) {
+function validateActivities(xmlDoc, codeToMeta, authMap) {
   const rows = [];
 
   Array.from(xmlDoc.getElementsByTagName('Claim')).forEach(claim => {
@@ -146,34 +167,63 @@ function validateActivities(xmlDoc, codeToMeta) {
       if (!obsList.length) return;
 
       const activityId = act.querySelector('ID')?.textContent || '';
-      const rawCode = act.querySelector('Code')?.textContent || '';
-      const code = rawCode.trim();
+      const rawCode    = act.querySelector('Code')?.textContent || '';
+      const code       = rawCode.trim();
 
-      const meta = codeToMeta[code] || { teethSet: new Set(), description: '(no description)' };
+      // Lookup in tooth‐map first:
+      const toothMeta = codeToMeta[code] || { teethSet: new Set(), description: '' };
+      let description = (toothMeta.description || '').trim();
+
+      // If still blank, fallback to authMap:
+      if (!description) {
+        const authEntry = authMap[code];
+        if (authEntry && authEntry.description) {
+          description = authEntry.description;
+        }
+      }
+
+      // If description remains blank, mark invalid:
+      const descriptionMissing = !description;
+      if (descriptionMissing) {
+        // We’ll still collect observations, but will add one extra remark
+      }
+
+      // Build a Set of valid tooth codes for this activity
+      const teethSet = toothMeta.teethSet;
 
       let isValid = true;
+      const details = [];
       const remarks = [];
 
-      const details = Array.from(obsList).map(obs => {
+      Array.from(obsList).forEach(obs => {
         const obsCodeRaw = obs.querySelector('Code')?.textContent.trim() || '';
-        const obsCode = obsCodeRaw.toUpperCase();
+        const obsCode    = obsCodeRaw.toUpperCase();
 
-        if (!meta.teethSet.has(obsCode)) {
+        // Observation detail line (tooth + region)
+        details.push(`${obsCode} - ${getRegionName(obsCode)}`);
+
+        // Check if that observed tooth is valid for this code:
+        if (!teethSet.has(obsCode)) {
           isValid = false;
           remarks.push(`Invalid - ${obsCode}`);
         } else {
           remarks.push(`Valid - ${obsCode}`);
         }
+      });
 
-        return `${obsCode} - ${getRegionName(obsCode)}`;
-      }).join('<br>');
+      // If description was missing in both maps, mark invalid:
+      if (descriptionMissing) {
+        isValid = false;
+        remarks.unshift('No description found for code'); 
+        // (put this at the front so it’s obvious)
+      }
 
       rows.push({
         claimId,
         activityId,
         code,
-        description: meta.description,
-        details,
+        description: description || '(no description)',
+        details: details.join('<br>'),
         remarks,
         isValid
       });
@@ -182,6 +232,7 @@ function validateActivities(xmlDoc, codeToMeta) {
 
   return rows;
 }
+
 
 function renderResults(container, rows) {
   const summaryBox = document.getElementById('resultsSummary');
