@@ -1,11 +1,21 @@
 const repoJsonUrl = 'checker_tooths.json';
 
 const SEXTANT_MAP = {
-  'UR Sextant': new Set(['1','2','3','4','5','A','B']),
-  'Anterior Sextant': new Set(['6','7','8','9','10','11','C','D','E','F','G','H','22','23','24','25','26','27','28','M','N','O','P','Q','R']),
-  'UL Sextant': new Set(['12','13','14','15','16','I','J']),
-  'LL Sextant': new Set(['17','18','19','20','21','K','L']),
-  'LR Sextant': new Set(['29','30','31','32','S','T'])
+  // Permanent Dentition
+  'Upper Right Sextant': new Set(['1', '2', '3', '4', '5']),
+  'Upper Anterior Sextant': new Set(['6', '7', '8', '9', '10', '11']),
+  'Upper Left Sextant': new Set(['12', '13', '14', '15', '16']),
+  'Lower Left Sextant': new Set(['17', '18', '19', '20', '21']),
+  'Lower Anterior Sextant': new Set(['22', '23', '24', '25', '26', '27']),
+  'Lower Right Sextant': new Set(['28', '29', '30', '31', '32']),
+
+  // Primary Dentition
+  'Upper Right Sextant (Primary)': new Set(['A', 'B', 'C']),
+  'Upper Anterior Sextant (Primary)': new Set(['D', 'E', 'F', 'G']),
+  'Upper Left Sextant (Primary)': new Set(['H', 'I', 'J']),
+  'Lower Left Sextant (Primary)': new Set(['K', 'L', 'M']),
+  'Lower Anterior Sextant (Primary)': new Set(['N', 'O', 'P', 'Q']),
+  'Lower Right Sextant (Primary)': new Set(['R', 'S', 'T'])
 };
 
 const QUADRANT_MAP = {
