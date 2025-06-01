@@ -4062,5 +4062,89 @@
         "description": "Excision of Cyst 1 cm and under.",
         "dentition_type": "all",
         "affiliated_teeth": "all"
+    },
+    {
+        "code": [
+            "01204"
+        ],
+        "description": "Examination and Diagnosis, Specific  Examination and evaluation of a specific situation",
+        "dentition_type": "all",
+        "affiliated_teeth": "all"
+    },
+    {
+        "code": [
+            "01205"
+        ],
+        "description": "Examination and Diagnosis, Emergency.  Examination and Diagnosis for the investigation of discomfort and/or infection in a localized area.",
+        "dentition_type": "all",
+        "affiliated_teeth": "all"
+    },
+    {
+        "code": [
+            "01501"
+        ],
+        "description": "Examination and Diagnosis, Periodontal, General  Recording History, Charting, Treatment Planning and Case Presentation: (a) History, Medical and Dental; (b) Clinical Examination includes evaluation of topography of the gingiva and related structures; degree of gingival inflammation; location, extent, sulcular depth; furcation involvement, mobility of teeth; tooth contact relationships; evaluation of occlusion; TMJ, examination of oral soft tissue pathosis; evaluation of the existing restorative and/or prosthetic appliances; caries and pulpal vitality.",
+        "dentition_type": "all",
+        "affiliated_teeth": "all"
+    },
+    {
+        "code": [
+            "01502"
+        ],
+        "description": "Examination and Diagnosis, Periodontal, Limited (previous patient).",
+        "dentition_type": "all",
+        "affiliated_teeth": "all"
+    },
+    {
+        "code": [
+            "01601"
+        ],
+        "description": "Examination and Diagnosis, Surgical, General; (a) History, Medical and Dental; (b) Clinical Examination as above, may include in-depth analysis of medical status, medication, anaesthetic and surgical risk, initial consultation with referring dentist or physician, parent or guardian, evaluation of source of chief complaint, evaluation of pulpal vitality, mobility of teeth, occlusal factors, TMJ, or where the patient is to be admitted to hospital for dental procedures.",
+        "dentition_type": "all",
+        "affiliated_teeth": "all"
+    },
+    {
+        "code": [
+            "01602"
+        ],
+        "description": "Examination and Diagnosis,  Surgical, Specific",
+        "dentition_type": "all",
+        "affiliated_teeth": "all"
+    },
+    {
+        "code": "1701",
+        "description": "Examination and Diagnosis, Prosthodontic, Edentulous (a) Extended Examination of the Edentulous Mouth, including detailed Medical and Dental History (including Prosthetic history), visual and digital examination of the oral structures, head and neck (including TMJ), lips, oral mucosa, tongue, oral pharynx, salivary glands and lymph nodes, and including evaluation for implant-supported or retained prosthesis.",
+        "dentition_type": "all",
+        "affiliated_teeth": "all"
+    },
+    {
+        "code": "1702",
+        "description": "Examination and Diagnosis, Prosthodontic, Specific.",
+        "dentition_type": "all",
+        "affiliated_teeth": "all"
+    },
+    {
+        "code": "1801",
+        "description": "Examination and Diagnosis, Endodontic, Complete Endodontic examination and diagnosis and/or complicated diagnosis. Recording history, charting treatment planning and case history. Includes the following: (a) History, Medical and Dental; (b) Clinical Examination and Diagnosis may include, vitality test/analysis, thermal test/analysis, cracked tooth test/analysis, occlusal exams, percussion, palpation, transillumination, anaesthetic test/analysis and mobility test/analysis.",
+        "dentition_type": "all",
+        "affiliated_teeth": "all"
+    },
+    {
+        "code": "1802",
+        "description": "Examination and Diagnosis, Endodontic, Specific. Endodontic examination and evaluation of a specific situation in a localized area and vitality test analysis.",
+        "dentition_type": "all",
+        "affiliated_teeth": "all"
+    },
+    {
+        "code": "1901",
+        "description": "Examination and Diagnosis, Orthodontic, General. To include: (a) Diagnosis models, complete intraoral radiograph series, or panoramic film, cephalograms, facial and intraoral photographs, consultation and case presentation.",
+        "dentition_type": "all",
+        "affiliated_teeth": "all"
+    },
+    {
+        "code": "1902",
+        "description": "Examination and Diagnosis, Orthodontic, Specific",
+        "dentition_type": "all",
+        "affiliated_teeth": "all"
     }
 ]
