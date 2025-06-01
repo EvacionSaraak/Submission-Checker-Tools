@@ -133,15 +133,10 @@ function extractClaims(xmlDoc) {
       }
 
       if (encMin < 10) {
-        remarks.push(`Duration too short (${encMin} min).`);
+        remarks.push(`Encounter duration too short (${encMin} min).`);
         isValid = false;
       } else if (encMin > 240) {
-        remarks.push(`Duration too long (${(encMin / 60).toFixed(1)} hrs).`);
-        isValid = false;
-      }
-
-      if (activityStart < encounterStart || activityStart > encounterEnd) {
-        remarks.push('Activity start is outside encounter period.');
+        remarks.push(`Encounter duration too long (${(encMin / 60).toFixed(1)} hrs).`);
         isValid = false;
       }
 
