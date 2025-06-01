@@ -1,5 +1,21 @@
 const repoJsonUrl = 'checker_tooths.json';
 
+const SEXTANT_MAP = {
+  'UR Sextant': new Set(['1','2','3','4','5','A','B']),
+  'Anterior Sextant': new Set(['6','7','8','9','10','11','C','D','E','F','G','H','22','23','24','25','26','27','28','M','N','O','P','Q','R']),
+  'UL Sextant': new Set(['12','13','14','15','16','I','J']),
+  'LL Sextant': new Set(['17','18','19','20','21','K','L']),
+  'LR Sextant': new Set(['29','30','31','32','S','T'])
+};
+
+const QUADRANT_MAP = {
+  'Upper Right': new Set(['1','2','3','4','5','6','7','8','9','10','11','A','B','C','D','E']),
+  'Upper Left': new Set(['12','13','14','15','16','17','18','19','20','21','22','F','G','H','I','J']),
+  'Lower Left': new Set(['23','24','25','26','27','28','29','30','31','32','K','L','M','N','O']),
+  'Lower Right': new Set(['33','34','35','36','37','38','39','40','41','42','43','44','45','46','47','48','P','Q','R','S','T'])
+};
+
+
 // Tooth sets (unchanged)
 const ANTERIOR_TEETH = new Set([
   // Permanent Anterior
@@ -61,6 +77,22 @@ function getRegionName(tooth) {
   if (ANTERIOR_TEETH.has(tooth))  return 'Anterior';
   if (BICUSPID_TEETH.has(tooth))  return 'Bicuspid';
   if (POSTERIOR_TEETH.has(tooth)) return 'Posterior';
+  return 'Unknown';
+}
+
+function getQuadrant(tooth) {
+  const t = normalizeToothCode(tooth);
+  for (const [quadrant, set] of Object.entries(QUADRANT_MAP)) {
+    if (set.has(t)) return quadrant;
+  }
+  return 'Unknown';
+}
+
+function getSextant(tooth) {
+  const t = normalizeToothCode(tooth);
+  for (const [sextant, set] of Object.entries(SEXTANT_MAP)) {
+    if (set.has(t)) return sextant;
+  }
   return 'Unknown';
 }
 
@@ -236,129 +268,107 @@ function sextantLabel(s) {
 // --------------------------------------------------------
 // Updated validateActivities: support conditional region‐check
 // --------------------------------------------------------
-function validateActivities(xmlDoc, codeToMeta, authMap) {
+function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions) {
   const rows = [];
+  const claimRegionTrack = {}; // Tracks code usage per quadrant/sextant per claim
 
   Array.from(xmlDoc.getElementsByTagName('Claim')).forEach(claim => {
     const claimId = claim.querySelector('ID')?.textContent || '(no claim ID)';
-
-    // We’ll track seen keys separately per claim:
-    const seenQuadrantPairs = new Set();
-    const seenSextantPairs = new Set();
+    claimRegionTrack[claimId] = { sextant: {}, quadrant: {} };
 
     Array.from(claim.getElementsByTagName('Activity')).forEach(act => {
       const obsList = act.getElementsByTagName('Observation');
       if (!obsList.length) return;
 
       const activityId = act.querySelector('ID')?.textContent || '';
-      const rawCode    = act.querySelector('Code')?.textContent || '';
-      const code       = rawCode.trim();
+      const rawCode = act.querySelector('Code')?.textContent || '';
+      const code = rawCode.trim();
+      const codeLastDigit = code.slice(-1);
 
-      // 1) PDF override as before
-      let containsPDF = false;
-      Array.from(obsList).forEach(obs => {
-        const obsCodeRaw = obs.querySelector('Code')?.textContent.trim() || '';
-        if (obsCodeRaw.toUpperCase() === 'PDF') {
-          containsPDF = true;
+      // Get metadata or fallback
+      let meta = codeToMeta[code];
+      if (!meta || !meta.description || meta.description === '(no description)') {
+        const fallback = fallbackDescriptions?.[code];
+        if (fallback && fallback.description) {
+          meta = {
+            teethSet: ALL_TEETH, // fallback description implies no region restriction
+            description: fallback.description
+          };
         }
-      });
-      if (containsPDF) {
+      }
+
+      // Still no valid description? Mark invalid
+      if (!meta || !meta.description || meta.description === '(no description)') {
         rows.push({
           claimId,
           activityId,
           code,
-          description: '(PDF—no tooth validation)',
-          details: 'PDF',
-          remarks: ['PDF override—marked valid'],
-          isValid: true
+          description: '(no description)',
+          details: 'N/A',
+          remarks: ['Invalid - Missing description'],
+          isValid: false
         });
         return;
       }
 
-      // 2) Lookup tooth metadata + fallback to authMap for description
-      const toothMeta   = codeToMeta[code] || { teethSet: new Set(), description: '' };
-      let description   = (toothMeta.description || '').trim();
-      if (!description && authMap[code]?.description) {
-        description = authMap[code].description.trim();
-      }
-      const descMissing = !description;
-
-      // 3) Determine if we must enforce quadrant or sextant checks
-      //    We do NOT enforce either unless description contains the keyword
-      const enforceQuadrant = /quadrant/i.test(description);
-      const enforceSextant  = /sextant/i.test(description);
-
-      // 4) Build the set of valid teeth for this code
-      const teethSet = toothMeta.teethSet;
-
       let isValid = true;
-      const details = [];
       const remarks = [];
+      const regionType = meta.description.toLowerCase().includes('sextant') ? 'sextant'
+                        : meta.description.toLowerCase().includes('quadrant') ? 'quadrant'
+                        : null;
 
-      // 5) Loop through each Observation
-      Array.from(obsList).forEach(obs => {
+      let regionKey = null;
+
+      const details = Array.from(obsList).map(obs => {
         const obsCodeRaw = obs.querySelector('Code')?.textContent.trim() || '';
-        const obsCode    = obsCodeRaw.toUpperCase();
+        const obsCode = obsCodeRaw.toUpperCase();
 
-        // Collect detail: “TOOTH – REGION (Quadrant/Sextant if enforced)”
-        let regionInfo = '';
-        if (enforceQuadrant) {
-          const q = getQuadrant(obsCode);
-          regionInfo = ` (${quadrantLabel(q)})`;
-        } else if (enforceSextant) {
-          const s = getSextant(obsCode);
-          regionInfo = ` (${sextantLabel(s)})`;
+        if (obsCode === 'PDF') {
+          remarks.push('Valid - PDF override');
+          return 'PDF (no validation)';
         }
-        details.push(`${obsCode} - ${getRegionName(obsCode)}${regionInfo}`);
 
-        // Check if tooth is allowed at all
-        if (!teethSet.has(obsCode)) {
+        if (!meta.teethSet.has(obsCode)) {
           isValid = false;
-          remarks.push(`Invalid tooth ${obsCode}`);
+          remarks.push(`Invalid - ${obsCode}`);
         } else {
-          // If quadrant enforcement is ON:
-          if (enforceQuadrant) {
-            const q = getQuadrant(obsCode);
-            const key = `${code}|${q}`;
-            if (seenQuadrantPairs.has(key)) {
-              isValid = false;
-              remarks.push(`Duplicate code ${code} in ${q}`);
-            } else {
-              seenQuadrantPairs.add(key);
-              remarks.push(`Valid ${obsCode} in ${q}`);
-            }
-          }
-          // Else if sextant enforcement is ON:
-          else if (enforceSextant) {
-            const s = getSextant(obsCode);
-            const key = `${code}|${s}`;
-            if (seenSextantPairs.has(key)) {
-              isValid = false;
-              remarks.push(`Duplicate code ${code} in ${s}`);
-            } else {
-              seenSextantPairs.add(key);
-              remarks.push(`Valid ${obsCode} in ${s}`);
-            }
-          }
-          // Otherwise (neither), just mark valid by default
-          else {
-            remarks.push(`Valid - ${obsCode}`);
-          }
+          remarks.push(`Valid - ${obsCode}`);
         }
-      });
 
-      // 6) If description is still missing → invalid
-      if (descMissing) {
-        isValid = false;
-        remarks.unshift('No description found for code');
+        // Region-based duplication tracking (if description contains quadrant or sextant)
+        if (regionType === 'sextant') {
+          regionKey = getSextant(obsCode);
+        } else if (regionType === 'quadrant') {
+          regionKey = getQuadrant(obsCode);
+        }
+
+        return `${obsCode} - ${getRegionName(obsCode)}`;
+      }).join('<br>');
+
+      // If it's region-based (sextant/quadrant), check for duplicate usage
+      if (regionType && regionKey && regionKey !== 'Unknown') {
+        const tracker = claimRegionTrack[claimId][regionType];
+        const key = `${regionKey}_${code}`;
+
+        if (tracker[key]) {
+          // Allow if code ends with 9
+          if (codeLastDigit !== '9') {
+            isValid = false;
+            remarks.push(`Invalid - Duplicate ${regionType} code (${regionKey})`);
+          } else {
+            remarks.push(`Valid - Duplicate ${regionType} allowed (ends with 9)`);
+          }
+        } else {
+          tracker[key] = true;
+        }
       }
 
       rows.push({
         claimId,
         activityId,
         code,
-        description: description || '(no description)',
-        details: details.join('<br>'),
+        description: meta.description,
+        details,
         remarks,
         isValid
       });
