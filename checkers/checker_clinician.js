@@ -1,7 +1,7 @@
 /**
  * Clinician Checker Tool (refactored)
  * Validates XML submissions for clinician assignments.
- * Handles Excel and OpenJet files for metadata.
+ * Handles Excel and OpenJet files for metadata, including eligibility window checks.
  * Applies robust error handling, modular utilities, and improved UI feedback.
  * (c) 2025
  */
@@ -10,16 +10,16 @@
   'use strict';
 
   // === GLOBAL STATE ===
-  let openJetClinicianList = [];
+  let openJetData = [];           // Array of objects from Open Jet XLSX, each row has Clinician, EffectiveDate, ExpiryDate, Eligibility
   let xmlDoc = null;
-  let clinicianMap = null;
+  let clinicianMap = null;        // From Shafafiya Excel: map[clinicianID] → { name, category, privileges }
   let xmlInput, excelInput, openJetInput, resultsDiv, validationDiv, processBtn, exportCsvBtn;
   let clinicianCount = 0, openJetCount = 0, claimCount = 0;
 
   // === UTILITY FUNCTIONS ===
 
   /**
-   * Converts an Excel file (File object) to JSON with header parsing.
+   * Converts an Excel file to JSON, using a specific sheet and header row.
    */
   function sheetToJsonWithHeader(file, sheetIndex = 0, headerRow = 1, skipRowAboveHeader = false) {
     return file.arrayBuffer().then(buffer => {
@@ -47,43 +47,32 @@
   }
 
   /**
-   * Shows a processing message with spinner.
+   * Shows a processing spinner/message.
    */
   function showProcessing(msg = "Processing...") {
     resultsDiv.innerHTML = `<div class="loading-spinner" aria-live="polite"></div><p>${msg}</p>`;
   }
 
   /**
-   * Utility logger for development/debug.
-   */
-  function log(level, ...args) {
-    if (level === 'error') {
-      console.error('[ClinicianChecker]', ...args);
-    } else {
-      console.log('[ClinicianChecker]', ...args);
-    }
-  }
-
-  /**
-   * Returns a default clinician data object.
+   * Returns a default clinician data object if not found in Shafafiya map.
    */
   function defaultClinicianData() {
     return { name: 'Unknown', category: 'Unknown', privileges: 'Unknown' };
   }
 
   /**
-   * Validates clinician assignments based on IDs, categories, privileges.
+   * Validates clinician assignments based on IDs, categories, and privileges.
    */
-  function validateClinicians(o, p, od, pd) {
-    if (!o || !p) return false;
-    if (o === p) return true;
+  function validateClinicians(orderingId, performingId, od, pd) {
+    if (!orderingId || !performingId) return false;
+    if (orderingId === performingId) return true;
     if (od.category !== pd.category) return false;
     if (!String(od.privileges).includes('Allowed') || !String(pd.privileges).includes('Allowed')) return false;
     return true;
   }
 
   /**
-   * Generates remarks based on mismatches.
+   * Generates remarks for category/privilege mismatches.
    */
   function generateRemarks(od, pd) {
     const r = [];
@@ -100,30 +89,71 @@
   }
 
   /**
-   * Gets text content from a child tag.
+   * Parses a date string (e.g., "YYYY-MM-DD") into a JavaScript Date object.
    */
-  function getText(p, tag) {
-    const el = p.getElementsByTagName(tag)[0];
+  function parseDate(dateStr) {
+    const d = new Date(dateStr);
+    return isNaN(d.getTime()) ? new Date('Invalid') : d;
+  }
+
+  /**
+   * Checks if the encounter window (start/end) falls within the clinician's eligibility window.
+   * Returns an object: { eligible: boolean, remarks: [...], eligibilityValue: string }
+   */
+  function checkEligibility(encounterStartStr, encounterEndStr, xlsxRow) {
+    const encounterStart = parseDate(encounterStartStr);
+    const encounterEnd = parseDate(encounterEndStr);
+    const effectiveDate = parseDate(xlsxRow.EffectiveDate);
+    const expiryDate = parseDate(xlsxRow.ExpiryDate);
+
+    const remarks = [];
+    let eligible = true;
+
+    if (isNaN(encounterStart) || isNaN(encounterEnd)) {
+      remarks.push("Invalid Encounter dates in XML");
+      eligible = false;
+    } else if (isNaN(effectiveDate) || isNaN(expiryDate)) {
+      remarks.push("Invalid Effective/Expiry dates in Open Jet XLSX");
+      eligible = false;
+    } else {
+      if (!(encounterStart >= effectiveDate && encounterEnd <= expiryDate)) {
+        remarks.push("Procedure is done outside of Eligibility window");
+        eligible = false;
+      }
+    }
+
+    return {
+      eligible,
+      remarks,
+      eligibilityValue: xlsxRow.Eligibility || ''
+    };
+  }
+
+  /**
+   * Retrieves text content of a child tag from a parent element.
+   */
+  function getText(parent, tag) {
+    const el = parent.getElementsByTagName(tag)[0];
     return el ? el.textContent.trim() : '';
   }
 
   // === UI FUNCTIONS ===
 
   function toggleProcessButton() {
-    processBtn.disabled = !(xmlDoc && clinicianMap && openJetClinicianList.length > 0);
+    processBtn.disabled = !(xmlDoc && clinicianMap && openJetData.length > 0);
   }
 
   function updateResultsDiv() {
-    let messages = [];
+    const messages = [];
     if (clinicianCount > 0) messages.push(`${clinicianCount} clinicians loaded`);
-    if (openJetCount > 0) messages.push(`${openJetCount} Open Jet IDs loaded`);
+    if (openJetCount > 0) messages.push(`${openJetCount} Open Jet rows loaded`);
     if (claimCount > 0) messages.push(`${claimCount} claims loaded`);
     resultsDiv.textContent = messages.join(', ');
     toggleProcessButton();
   }
 
   /**
-   * Renders results in a table, applies accessibility and styling.
+   * Renders the results in a table, with summary, styling, and accessibility.
    */
   function renderResults(results) {
     clearOutput();
@@ -132,29 +162,28 @@
       return;
     }
     renderSummary(results);
-  
+
     const table = document.createElement('table');
     table.setAttribute('aria-label', 'Clinician validation results');
     table.appendChild(renderTableHeader());
     table.appendChild(renderTableBody(results));
-  
     resultsDiv.appendChild(table);
   }
-  
+
   function clearOutput() {
     resultsDiv.innerHTML = '';
-    validationDiv.innerHTML = '';
+    validationDiv.textContent = '';
   }
-  
+
   function showNoResults() {
     resultsDiv.innerHTML = '<p>No results found.</p>';
   }
-  
+
   function renderSummary(results) {
     const validCount = results.filter(r => r.valid).length;
     const total = results.length;
-    const pct = Math.round((validCount / total) * 100);
-  
+    const pct = total ? Math.round((validCount / total) * 100) : 0;
+
     validationDiv.textContent = `Validation completed: ${validCount}/${total} valid (${pct}%)`;
     validationDiv.className = pct > 90
       ? 'valid-message'
@@ -162,124 +191,158 @@
         ? 'warning-message'
         : 'error-message';
   }
-  
+
   function renderTableHeader() {
     const thead = document.createElement('thead');
     const row = document.createElement('tr');
-    ['Claim ID', 'Act ID', 'Clinicians', 'Privileges', 'Categories', 'Valid', 'Remarks']
-      .forEach(text => {
-        const th = document.createElement('th');
-        th.scope = 'col';
-        th.textContent = text;
-        row.appendChild(th);
-      });
+    ['Claim ID', 'Activity ID',
+     'Ordering Clinician', 'Ordering Category', 'Ordering Eligibility',
+     'Performing Clinician', 'Performing Category', 'Performing Eligibility',
+     'Valid', 'Remarks'
+    ].forEach(text => {
+      const th = document.createElement('th');
+      th.scope = 'col';
+      th.textContent = text;
+      row.appendChild(th);
+    });
     thead.appendChild(row);
     return thead;
   }
-  
+
   function renderTableBody(results) {
     const tbody = document.createElement('tbody');
-    let prevClaimId = null;
-  
-    results.forEach(r => tbody.appendChild(renderRow(r, prevClaimId)));
+    results.forEach(r => {
+      const tr = document.createElement('tr');
+      tr.className = r.valid ? 'valid' : 'invalid';
+
+      appendCell(tr, r.claimId, { verticalAlign: 'top' });
+      appendCell(tr, r.activityId);
+      appendCell(tr, `${r.orderingId} - ${r.orderingName}`, { isHTML: false });
+      appendCell(tr, r.orderingCategory);
+      appendCell(tr, r.orderingEligibility);
+      appendCell(tr, `${r.performingId} - ${r.performingName}`, { isHTML: false });
+      appendCell(tr, r.performingCategory);
+      appendCell(tr, r.performingEligibility);
+      appendCell(tr, r.valid ? '✔︎' : '✘');
+      appendCell(tr, r.remarks, { isArray: true });
+
+      tbody.appendChild(tr);
+    });
     return tbody;
   }
-  
-  function renderRow(record, lastClaimId) {
-    const tr = document.createElement('tr');
-    tr.className = record.valid ? 'valid' : 'invalid';
-  
-    appendCell(tr, record.claimId === lastClaimId ? '' : record.claimId, { verticalAlign: 'top' });
-    appendCell(tr, record.activityId);
-    appendCell(tr, record.clinicianInfo, { isHTML: true });
-    appendCell(tr, record.privilegesInfo);
-    appendCell(tr, record.categoryInfo);
-    appendCell(tr, record.valid ? '\u2714\ufe0f' : '\u274c');
-    appendCell(tr, record.remarks, { isArray: true });
-  
-    return tr;
-  }
-  
-  function appendCell(tr, content, { isHTML=false, isArray=false, verticalAlign='' } = {}) {
+
+  function appendCell(tr, content, { isHTML = false, isArray = false, verticalAlign = '' } = {}) {
     const td = document.createElement('td');
     if (verticalAlign) td.style.verticalAlign = verticalAlign;
     if (isArray) {
       td.style.whiteSpace = 'pre-line';
-      td.innerHTML = (content || []).map(x => `<div>${x}</div>`).join('');
+      td.textContent = ''; 
+      content.forEach(text => {
+        const div = document.createElement('div');
+        div.textContent = text;
+        td.appendChild(div);
+      });
     } else if (isHTML) {
       td.style.whiteSpace = 'pre-line';
       td.innerHTML = content;
     } else {
-      const txt = String(content || '');
-      td.style.whiteSpace = txt.includes('\n') ? 'pre-line' : 'nowrap';
-      td.textContent = txt;
+      td.style.whiteSpace = String(content).includes('\n') ? 'pre-line' : 'nowrap';
+      td.textContent = content;
     }
-    const prebold = td.innerHTML
-        .replace(/Ordering:/g, '<strong>Ordering:</strong>')
-        .replace(/Performing:/g, '<strong>Performing:</strong>');
-    
-    td.innerHTML = prebold;
     tr.appendChild(td);
   }
 
   // === DATA PROCESSING ===
 
-  function processClaims(d, m) {
+  /**
+   * Main processing function: iterates over claims, validates clinicians, and checks eligibility windows.
+   */
+  function processClaims(d, map) {
     showProcessing();
     setTimeout(() => {
-      const claims = Array.from(d.getElementsByTagName('Claim'));
-      const res = [];
-      claims.forEach(cl => {
+      const claimNodes = Array.from(d.getElementsByTagName('Claim'));
+      const results = [];
+      claimCount = claimNodes.length;
+
+      claimNodes.forEach(cl => {
         const cid = getText(cl, 'ID') || 'N/A';
-        const acts = Array.from(cl.getElementsByTagName('Activity'));
-        acts.forEach(act => {
+        const encounterNode = cl.getElementsByTagName('Encounter')[0];
+        const encounterStartStr = encounterNode ? getText(encounterNode, 'Start') : '';
+        const encounterEndStr   = encounterNode ? getText(encounterNode, 'End')   : '';
+        const activities = Array.from(cl.getElementsByTagName('Activity'));
+
+        activities.forEach(act => {
           const aid = getText(act, 'ID') || 'N/A';
           const oid = getText(act, 'OrderingClinician') || '';
           const pid = getText(act, 'Clinician') || '';
-          const od = m[oid] || defaultClinicianData();
-          const pd = m[pid] || defaultClinicianData();
 
-          const rem = [];
-          if (pid && !openJetClinicianList.includes(pid)) {
-            rem.push(`Performing Clinician (${pid}) not in Open Jet`);
+          const od = map[oid] || defaultClinicianData();
+          const pd = map[pid] || defaultClinicianData();
+
+          const rowRemarks = [];
+          let rowValid = true;
+
+          // --- 1. Check presence in Open Jet data and capture XLSX row ---
+          const ordXlsxRow = openJetData.find(r => r.Clinician === oid);
+          const perfXlsxRow = openJetData.find(r => r.Clinician === pid);
+
+          if (!ordXlsxRow) {
+            rowRemarks.push(`Ordering Clinician (${oid}) not in Open Jet`);
+            rowValid = false;
           }
-          if (oid && !openJetClinicianList.includes(oid)) {
-            rem.push(`Ordering Clinician (${oid}) not in Open Jet`);
+          if (!perfXlsxRow) {
+            rowRemarks.push(`Performing Clinician (${pid}) not in Open Jet`);
+            rowValid = false;
           }
 
-          const valid = validateClinicians(oid, pid, od, pd);
-          if (!valid) {
-            rem.push(generateRemarks(od, pd));
+          // --- 2. Validate categories & privileges from Shafafiya data ---
+          const basicValid = validateClinicians(oid, pid, od, pd);
+          if (!basicValid) {
+            rowRemarks.push(generateRemarks(od, pd));
+            rowValid = false;
           }
 
-          res.push({
+          // --- 3. Eligibility date checks for both clinicians ---
+          if (ordXlsxRow) {
+            const ordEligRes = checkEligibility(encounterStartStr, encounterEndStr, ordXlsxRow);
+            if (!ordEligRes.eligible) {
+              rowRemarks.push(`Ordering: ${ordEligRes.remarks.join('; ')}`);
+              rowValid = false;
+            }
+          }
+          if (perfXlsxRow) {
+            const perfEligRes = checkEligibility(encounterStartStr, encounterEndStr, perfXlsxRow);
+            if (!perfEligRes.eligible) {
+              rowRemarks.push(`Performing: ${perfEligRes.remarks.join('; ')}`);
+              rowValid = false;
+            }
+          }
+
+          // --- 4. Build the result record ---
+          results.push({
             claimId: cid,
             activityId: aid,
-            clinicianInfo: `Ordering: ${oid} - ${od.name}\nPerforming: ${pid} - ${pd.name}`,
-            privilegesInfo: `Ordering: ${od.privileges}\nPerforming: ${pd.privileges}`,
-            categoryInfo: `Ordering: ${od.category}\nPerforming: ${pd.category}`,
-            valid,
-            remarks: rem.join('; '),
-            rowSpan: 1
+            orderingId: oid,
+            orderingName: od.name,
+            orderingCategory: od.category,
+            orderingEligibility: ordXlsxRow ? ordXlsxRow.Eligibility : 'N/A',
+            performingId: pid,
+            performingName: pd.name,
+            performingCategory: pd.category,
+            performingEligibility: perfXlsxRow ? perfXlsxRow.Eligibility : 'N/A',
+            valid: rowValid,
+            remarks: rowRemarks
           });
         });
       });
 
-      // Merge claim rows for display
-      for (let i = 1; i < res.length; i++) {
-        if (res[i].claimId === res[i - 1].claimId) {
-          res[i].rowSpan = 0;
-          res[i - 1].rowSpan++;
-        }
-      }
-
-      renderResults(res);
-      setupExportHandler(res);
-    }, 300); // Simulate loading
+      renderResults(results);
+      setupExportHandler(results);
+    }, 300); // simulate loading
   }
 
   /**
-   * Handles exporting results to Excel (or add CSV/JSON as needed).
+   * Prepares and triggers the Excel export of results.
    */
   function setupExportHandler(results) {
     exportCsvBtn.disabled = false;
@@ -290,7 +353,7 @@
       }
       // Extract SenderID
       const senderID = (xmlDoc.querySelector('Header > SenderID')?.textContent || 'UnknownSender').trim();
-      // Extract TransactionDate (format: dd/MM/yyyy HH:mm)
+      // Extract TransactionDate (dd/MM/yyyy HH:mm)
       const transactionDateRaw = (xmlDoc.querySelector('Header > TransactionDate')?.textContent || '').trim();
       let transactionDateFormatted = 'UnknownDate';
       if (transactionDateRaw) {
@@ -299,51 +362,42 @@
           transactionDateFormatted = `${dateParts[2]}-${dateParts[1].padStart(2, '0')}-${dateParts[0].padStart(2, '0')}`;
         }
       }
-      // Prepare data rows for XLSX
+
+      // Prepare data rows
       const headers = [
-        'Claim ID', 'Activity ID', 'Valid/Invalid', 'Remarks',
-        'Ordering Clinician ID', 'Ordering Privilege', 'Ordering Category',
-        'Performing Clinician ID', 'Performing Privilege', 'Performing Category'
+        'Claim ID', 'Activity ID',
+        'Ordering Clinician ID', 'Ordering Category', 'Ordering Eligibility',
+        'Performing Clinician ID', 'Performing Category', 'Performing Eligibility',
+        'Valid/Invalid', 'Remarks'
       ];
-      const rows = results.map(r => {
-        let orderingID = '', performingID = '';
-        if (r.clinicianInfo) {
-          const lines = r.clinicianInfo.split('\n');
-          const orderingLine = lines.find(l => l.startsWith('Ordering:')) || '';
-          const performingLine = lines.find(l => l.startsWith('Performing:')) || '';
-          const orderMatch = orderingLine.match(/^Ordering:\s*(\S+)\s*-/);
-          orderingID = orderMatch ? orderMatch[1] : '';
-          const performMatch = performingLine.match(/^Performing:\s*(\S+)\s*-/);
-          performingID = performMatch ? performMatch[1] : '';
-        }
-        return [
-          r.claimId,
-          r.activityId,
-          r.valid ? 'Valid' : 'Invalid',
-          r.remarks,
-          orderingID,
-          r.privilegesInfo.split('\n')[0].replace(/^Ordering:\s*/, '') || '',
-          r.categoryInfo.split('\n')[0].replace(/^Ordering:\s*/, '') || '',
-          performingID,
-          r.privilegesInfo.split('\n')[1]?.replace(/^Performing:\s*/, '') || '',
-          r.categoryInfo.split('\n')[1]?.replace(/^Performing:\s*/, '') || ''
-        ];
-      });
-      // Create workbook and worksheet
+      const rows = results.map(r => [
+        r.claimId,
+        r.activityId,
+        r.orderingId,
+        r.orderingCategory,
+        r.orderingEligibility,
+        r.performingId,
+        r.performingCategory,
+        r.performingEligibility,
+        r.valid ? 'Valid' : 'Invalid',
+        r.remarks.join('; ')
+      ]);
+
       const wb = XLSX.utils.book_new();
-      const wsData = [headers, ...rows];
-      const ws = XLSX.utils.aoa_to_sheet(wsData);
+      const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
       ws['!freeze'] = { xSplit: 0, ySplit: 1 };
       ws['!cols'] = headers.map((h, i) => {
         let maxLen = h.length;
         rows.forEach(r => {
           const v = r[i];
-          if (v) maxLen = Math.max(maxLen, v.toString().length);
+          if (v && v.toString().length > maxLen) {
+            maxLen = v.toString().length;
+          }
         });
         return { wch: Math.min(maxLen + 5, 50) };
       });
       XLSX.utils.book_append_sheet(wb, ws, 'Validation Results');
-      const filename = `ClaimsValidation__${senderID}__${transactionDateFormatted}.xlsx`;
+      const filename = `ClinicianCheck_${senderID}_${transactionDateFormatted}.xlsx`;
       XLSX.writeFile(wb, filename);
     };
   }
@@ -351,12 +405,14 @@
   // === EVENT HANDLERS ===
 
   /**
-   * Handles Excel/OpenJet file input changes.
+   * Handles Shafafiya Excel and Open Jet Excel inputs.
    */
   function handleUnifiedExcelInput() {
     showProcessing('Loading Excel files...');
     processBtn.disabled = true;
     const promises = [];
+
+    // Load Shafafiya Excel → clinicianMap
     if (excelInput.files[0]) {
       promises.push(
         sheetToJsonWithHeader(excelInput.files[0], 0, 1, false).then(data => {
@@ -376,19 +432,23 @@
         })
       );
     }
+
+    // Load Open Jet Excel → openJetData
     if (openJetInput.files[0]) {
       promises.push(
-        sheetToJsonWithHeader(openJetInput.files[0], 0, 1, true).then(data => {
-          openJetClinicianList = [];
-          data.forEach(row => {
-            const lic = (row['Clinician'] || '').toString().trim();
-            if (lic) openJetClinicianList.push(lic);
-          });
-          openJetCount = openJetClinicianList.length;
+        sheetToJsonWithHeader(openJetInput.files[0], 0, 1, false).then(data => {
+          openJetData = data.map(row => ({
+            Clinician: (row['Clinician'] || '').toString().trim(),
+            EffectiveDate: (row['EffectiveDate'] || '').toString().trim(),
+            ExpiryDate: (row['ExpiryDate'] || '').toString().trim(),
+            Eligibility: (row['Eligibility'] || '').toString().trim()
+          }));
+          openJetCount = openJetData.length;
           updateResultsDiv();
         })
       );
     }
+
     Promise.all(promises).catch(e => {
       resultsDiv.innerHTML = `<p class="error-message">Error loading Excel files: ${e.message}</p>`;
       toggleProcessButton();
@@ -426,7 +486,7 @@
   }
 
   /**
-   * Sets up file input listeners and UI.
+   * Initializes UI elements and event listeners.
    */
   function initEventListeners() {
     xmlInput = document.getElementById('xmlFileInput');
@@ -439,25 +499,24 @@
     processBtn = document.getElementById('processBtn');
     exportCsvBtn = document.getElementById('exportCsvBtn');
 
-    // Accessibility: add ARIA roles
+    // ARIA roles
     resultsDiv.setAttribute('role', 'region');
     validationDiv.setAttribute('role', 'status');
 
     // Input listeners
-    if (xmlInput) xmlInput.addEventListener('change', handleXmlInput);
-    if (excelInput) excelInput.addEventListener('change', handleUnifiedExcelInput);
-    if (openJetInput) openJetInput.addEventListener('change', handleUnifiedExcelInput);
+    xmlInput.addEventListener('change', handleXmlInput);
+    excelInput.addEventListener('change', handleUnifiedExcelInput);
+    openJetInput.addEventListener('change', handleUnifiedExcelInput);
 
     // Process button
     processBtn.addEventListener('click', () => {
-      if (xmlDoc && clinicianMap && openJetClinicianList.length > 0) {
+      if (xmlDoc && clinicianMap && openJetData.length > 0) {
         processClaims(xmlDoc, clinicianMap);
       }
     });
   }
 
   // === INITIALIZE ===
-
   document.addEventListener('DOMContentLoaded', initEventListeners);
 
   // Global error handler
