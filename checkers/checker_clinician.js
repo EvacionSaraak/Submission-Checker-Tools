@@ -176,34 +176,51 @@
   function toggleProcessButton() {
     processBtn.disabled = !(xmlDoc && clinicianMap && openJetData.length > 0);
   }
-
+  // ================================================================
+  // 1) MODIFIED: updateResultsDiv
+  // - No longer writes into resultsDiv
+  // - Now writes into uploadStatusDiv (separate <div id="uploadStatus">)
+  // ================================================================
   function updateResultsDiv() {
     const messages = [];
-    if (claimCount > 0) messages.push(`${claimCount} Claims Loaded`);
-    if (clinicianCount > 0) messages.push(`${clinicianCount} Clinicians Loaded`);
-    if (openJetCount > 0) messages.push(`${openJetCount} Auths Loaded`);
-    resultsDiv.textContent = messages.join(', ');
+    if (claimCount > 0)      messages.push(`${claimCount} Claims Loaded`);
+    if (clinicianCount > 0)  messages.push(`${clinicianCount} Clinicians Loaded`);
+    if (openJetCount > 0)    messages.push(`${openJetCount} Auths Loaded`);
+  
+    // Write into the "uploadStatus" container, not resultsDiv
+    document.getElementById('uploadStatus').textContent = messages.join(', ');
+  
     toggleProcessButton();
   }
 
-  /**
-   * Renders the results in a table, with summary, styling, and accessibility.
-   */
+  // ================================================================
+  // 2) MODIFIED: renderResults
+  // - renderSummary() target is still validationDiv
+  // - table is injected into resultsDiv
+  // - Does NOT clear validationDiv
+  // ================================================================
   function renderResults(results) {
-    clearOutput();
+    // 1) If no results, show “No results” BELOW existing summary
     if (!results.length) {
-      showNoResults();
+      renderSummary(results);
+      resultsDiv.innerHTML = '<p>No results found.</p>';
       return;
     }
+  
+    // 2) Always re‐render summary in validationDiv
     renderSummary(results);
-
+  
+    // 3) Clear only the resultsDiv (so old tables vanish)
+    resultsDiv.innerHTML = '';
+  
+    // 4) Build and append new table under resultsDiv
     const table = document.createElement('table');
     table.setAttribute('aria-label', 'Clinician validation results');
     table.appendChild(renderTableHeader());
     table.appendChild(renderTableBody(results));
-    console.log(table);
     resultsDiv.appendChild(table);
   }
+
 
   function clearOutput() {
     resultsDiv.innerHTML = '';
