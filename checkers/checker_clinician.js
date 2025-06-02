@@ -4,6 +4,12 @@
  * Handles Excel and OpenJet files for metadata, including eligibility window checks.
  * Applies robust error handling, modular utilities, and improved UI feedback.
  * (c) 2025
+ * 
+ * MODIFICATIONS:
+ * 1. Enhanced OpenJet XLSX loading with flexible column name matching
+ * 2. Improved date parsing for both string and Excel serial formats
+ * 3. Added better error handling and debugging outputs
+ * 4. Added column name flexibility for clinician ID, dates, and eligibility
  */
 
 (function () {
@@ -89,11 +95,33 @@
   }
 
   /**
-   * Parses a date string (e.g., "YYYY-MM-DD") into a JavaScript Date object.
+   * Parses a date string or Excel serial number into a JavaScript Date object.
+   * MODIFIED: Now handles Excel serial dates and multiple string formats
    */
   function parseDate(dateStr) {
-    const d = new Date(dateStr);
-    return isNaN(d.getTime()) ? new Date('Invalid') : d;
+    if (!dateStr) return new Date('Invalid');
+    
+    // Handle Excel serial dates (numbers)
+    if (!isNaN(dateStr)) {
+      const excelSerial = parseFloat(dateStr);
+      if (!isNaN(excelSerial)) {
+        // Convert Excel serial date (days since 1900-01-01) to JS Date
+        return new Date((excelSerial - (25567 + 2)) * 86400 * 1000);
+      }
+    }
+    
+    // Try ISO format (YYYY-MM-DD)
+    let d = new Date(dateStr);
+    if (!isNaN(d.getTime())) return d;
+    
+    // Try other common formats
+    d = new Date(dateStr.replace(/(\d+)\/(\d+)\/(\d+)/, '$2/$1/$3')); // DD/MM/YYYY
+    if (!isNaN(d.getTime())) return d;
+    
+    d = new Date(dateStr.replace(/(\d+)-(\d+)-(\d+)/, '$1/$2/$3')); // YYYY-MM-DD
+    if (!isNaN(d.getTime())) return d;
+    
+    return new Date('Invalid');
   }
 
   /**
@@ -409,6 +437,7 @@
 
   /**
    * Handles Shafafiya Excel and Open Jet Excel inputs.
+   * MODIFIED: Added flexible column name matching and better date parsing
    */
   function handleUnifiedExcelInput() {
     showProcessing('Loading Excel files...');
@@ -423,16 +452,39 @@
         sheetToJsonWithHeader(excelInput.files[0], 0, 1, false).then(data => {
           clinicianMap = {};
           data.forEach(row => {
-            const id = (row['Clinician License'] || '').toString().trim();
+            // Flexible column name matching for clinician ID
+            const idCol = Object.keys(row).find(k => 
+              k.toLowerCase().includes('clinician') || 
+              k.toLowerCase().includes('license') ||
+              k.toLowerCase().includes('id')
+            );
+            const id = idCol ? String(row[idCol] || '').trim() : '';
+            
             if (id) {
+              // Flexible column name matching for other fields
+              const nameCol = Object.keys(row).find(k => 
+                k.toLowerCase().includes('name')
+              );
+              const categoryCol = Object.keys(row).find(k => 
+                k.toLowerCase().includes('category')
+              );
+              const privilegesCol = Object.keys(row).find(k => 
+                k.toLowerCase().includes('privileges') || 
+                k.toLowerCase().includes('activity group')
+              );
+
               clinicianMap[id] = {
-                name: row['Clinician Name'] || row['Name'] || '',
-                category: row['Clinician Category'] || row['Category'] || '',
-                privileges: row['Activity Group'] || row['Privileges'] || ''
+                name: nameCol ? String(row[nameCol] || '').trim() : '',
+                category: categoryCol ? String(row[categoryCol] || '').trim() : '',
+                privileges: privilegesCol ? String(row[privilegesCol] || '').trim() : ''
               };
             }
           });
           clinicianCount = Object.keys(clinicianMap).length;
+          console.log('Clinician map sample:', Object.entries(clinicianMap).slice(0, 3));
+        }).catch(e => {
+          console.error('Shafafiya Excel processing error:', e);
+          throw e;
         })
       );
     }
@@ -442,16 +494,45 @@
       promises.push(
         sheetToJsonWithHeader(openJetInput.files[0], 0, 1, false).then(data => {
           openJetData = data.map(row => {
-            const eff = (row['EffectiveDate'] || '').toString().trim();
-            const exp = (row['ExpiryDate'] || '').toString().trim();
+            // Flexible column name matching
+            const clinicianCol = Object.keys(row).find(k => 
+              k.toLowerCase().includes('clinician') || 
+              k.toLowerCase().includes('license') ||
+              k.toLowerCase().includes('id')
+            );
+            const effDateCol = Object.keys(row).find(k => 
+              k.toLowerCase().includes('effective') || 
+              k.toLowerCase().includes('start')
+            );
+            const expDateCol = Object.keys(row).find(k => 
+              k.toLowerCase().includes('expiry') || 
+              k.toLowerCase().includes('end')
+            );
+            const eligCol = Object.keys(row).find(k => 
+              k.toLowerCase().includes('eligibility')
+            );
+
+            // Parse dates more robustly
+            const effDateStr = effDateCol ? String(row[effDateCol] || '').trim() : '';
+            const expDateStr = expDateCol ? String(row[expDateCol] || '').trim() : '';
+            
+            // Convert Excel date numbers if needed
+            let effDate = parseDate(effDateStr);
+            let expDate = parseDate(expDateStr);
+            
             return {
-              clinicianId: (row['Clinician'] || '').toString().trim(),
-              effectiveDate: parseDate(eff),
-              expiryDate: parseDate(exp),
-              eligibility: (row['Eligibility'] || '').toString().trim()
+              clinicianId: clinicianCol ? String(row[clinicianCol] || '').trim() : '',
+              effectiveDate: effDate,
+              expiryDate: expDate,
+              eligibility: eligCol ? String(row[eligCol] || '').trim() : ''
             };
           }).filter(entry => entry.clinicianId);
+          
           openJetCount = openJetData.length;
+          console.log('OpenJet data sample:', openJetData.slice(0, 3));
+        }).catch(e => {
+          console.error('OpenJet Excel processing error:', e);
+          throw e;
         })
       );
     }
@@ -462,6 +543,7 @@
       })
       .catch(e => {
         resultsDiv.innerHTML = `<p class="error-message">Error loading Excel files: ${e.message}</p>`;
+        console.error('Excel loading error:', e);
         toggleProcessButton();
       });
   }
@@ -494,6 +576,7 @@
       xmlDoc = null;
       claimCount = 0;
       resultsDiv.innerHTML = `<p class="error-message">Error loading XML: ${e.message}</p>`;
+      console.error('XML loading error:', e);
       toggleProcessButton();
     });
   }
@@ -537,6 +620,7 @@
     if (resultsDiv) {
       resultsDiv.innerHTML = `<p class="error-message">Unexpected error: ${msg} at ${line}:${col}</p>`;
     }
+    console.error('Global error:', { msg, url, line, col, error });
   };
 
 })();
