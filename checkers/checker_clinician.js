@@ -26,7 +26,7 @@
   /**
    * Modified sheetToJsonWithHeader to handle the specific OpenJet format
    */
-  function sheetToJsonWithHeader(file, sheetIndex = 0, headerRow = 1, hasExtraHeader = false) {
+  function sheetToJsonWithHeader(file, sheetIndex = 0, headerRow = 1) {
       return file.arrayBuffer().then(buffer => {
           const data = new Uint8Array(buffer);
           const wb = XLSX.read(data, { type: 'array' });
@@ -37,9 +37,9 @@
           const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
           
           // Handle the extra header row in OpenJet files
-          const headerRowIndex = hasExtraHeader ? headerRow : (headerRow - 1);
+          const headerRowIndex = headerRow - 1;
           if (!rows || rows.length <= headerRowIndex) {
-              throw new Error(`Header row not found at position ${headerRowIndex}`);
+              throw new Error(`Header row not found at position ${headerRowIndex + 1}`);
           }
           
           const rawHeaders = rows[headerRowIndex];
@@ -457,7 +457,7 @@
       // Load Shafafiya Excel → clinicianMap (unchanged)
       if (excelInput.files[0]) {
           promises.push(
-              sheetToJsonWithHeader(excelInput.files[0], 0, 1, false).then(data => {
+              sheetToJsonWithHeader(excelInput.files[0], 0, 1).then(data => {
                   clinicianMap = {};
                   data.forEach(row => {
                       const id = (row['Clinician License'] || '').toString().trim();
@@ -477,7 +477,7 @@
       // Load Open Jet Excel → openJetData (modified for specific format)
       if (openJetInput.files[0]) {
           promises.push(
-              sheetToJsonWithHeader(openJetInput.files[0], 0, 2, true).then(data => {
+              sheetToJsonWithHeader(openJetInput.files[0], 0, 2).then(data => {
                   openJetData = data.map(row => {
                       // Parse dates from the specific format "dd-MMM-yyyy HH:mm:ss"
                       const parseOpenJetDate = (dateStr) => {
