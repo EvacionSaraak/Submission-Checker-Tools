@@ -10,7 +10,7 @@
   'use strict';
 
   // === GLOBAL STATE ===
-  let openJetData = [];           // Array of objects from Open Jet XLSX, each row has Clinician, EffectiveDate, ExpiryDate, Eligibility
+  let openJetData = [];           // Array of objects from Open Jet XLSX, each: { clinicianId, effectiveDate, expiryDate, eligibility }
   let xmlDoc = null;
   let clinicianMap = null;        // From Shafafiya Excel: map[clinicianID] → { name, category, privileges }
   let xmlInput, excelInput, openJetInput, resultsDiv, validationDiv, processBtn, exportCsvBtn;
@@ -98,13 +98,14 @@
 
   /**
    * Checks if the encounter window (start/end) falls within the clinician's eligibility window.
+   * xlsxRow already has Date objects for effectiveDate and expiryDate.
    * Returns an object: { eligible: boolean, remarks: [...], eligibilityValue: string }
    */
   function checkEligibility(encounterStartStr, encounterEndStr, xlsxRow) {
     const encounterStart = parseDate(encounterStartStr);
     const encounterEnd = parseDate(encounterEndStr);
-    const effectiveDate = parseDate(xlsxRow.EffectiveDate);
-    const expiryDate = parseDate(xlsxRow.ExpiryDate);
+    const effectiveDate = xlsxRow.effectiveDate;
+    const expiryDate = xlsxRow.expiryDate;
 
     const remarks = [];
     let eligible = true;
@@ -112,7 +113,7 @@
     if (isNaN(encounterStart) || isNaN(encounterEnd)) {
       remarks.push("Invalid Encounter dates in XML");
       eligible = false;
-    } else if (isNaN(effectiveDate) || isNaN(expiryDate)) {
+    } else if (!effectiveDate || !expiryDate || isNaN(effectiveDate) || isNaN(expiryDate)) {
       remarks.push("Invalid Effective/Expiry dates in Open Jet XLSX");
       eligible = false;
     } else {
@@ -125,7 +126,7 @@
     return {
       eligible,
       remarks,
-      eligibilityValue: xlsxRow.Eligibility || ''
+      eligibilityValue: xlsxRow.eligibility || ''
     };
   }
 
@@ -217,10 +218,10 @@
 
       appendCell(tr, r.claimId, { verticalAlign: 'top' });
       appendCell(tr, r.activityId);
-      appendCell(tr, `${r.orderingId} - ${r.orderingName}`, { isHTML: false });
+      appendCell(tr, `${r.orderingId} - ${r.orderingName}`);
       appendCell(tr, r.orderingCategory);
       appendCell(tr, r.orderingEligibility);
-      appendCell(tr, `${r.performingId} - ${r.performingName}`, { isHTML: false });
+      appendCell(tr, `${r.performingId} - ${r.performingName}`);
       appendCell(tr, r.performingCategory);
       appendCell(tr, r.performingEligibility);
       appendCell(tr, r.valid ? '✔︎' : '✘');
@@ -236,7 +237,7 @@
     if (verticalAlign) td.style.verticalAlign = verticalAlign;
     if (isArray) {
       td.style.whiteSpace = 'pre-line';
-      td.textContent = ''; 
+      td.textContent = '';
       content.forEach(text => {
         const div = document.createElement('div');
         div.textContent = text;
@@ -282,9 +283,9 @@
           const rowRemarks = [];
           let rowValid = true;
 
-          // --- 1. Check presence in Open Jet data and capture XLSX row ---
-          const ordXlsxRow = openJetData.find(r => r.Clinician === oid);
-          const perfXlsxRow = openJetData.find(r => r.Clinician === pid);
+          // --- 1. Match by Clinician ID (ignore second policy block) ---
+          const ordXlsxRow = openJetData.find(r => r.clinicianId === oid);
+          const perfXlsxRow = openJetData.find(r => r.clinicianId === pid);
 
           if (!ordXlsxRow) {
             rowRemarks.push(`Ordering Clinician (${oid}) not in Open Jet`);
@@ -302,7 +303,7 @@
             rowValid = false;
           }
 
-          // --- 3. Eligibility date checks for both clinicians ---
+          // --- 3. Eligibility date checks using first EffectiveDate/ExpiryDate only ---
           if (ordXlsxRow) {
             const ordEligRes = checkEligibility(encounterStartStr, encounterEndStr, ordXlsxRow);
             if (!ordEligRes.eligible) {
@@ -325,11 +326,11 @@
             orderingId: oid,
             orderingName: od.name,
             orderingCategory: od.category,
-            orderingEligibility: ordXlsxRow ? ordXlsxRow.Eligibility : 'N/A',
+            orderingEligibility: ordXlsxRow ? ordXlsxRow.eligibility : 'N/A',
             performingId: pid,
             performingName: pd.name,
             performingCategory: pd.category,
-            performingEligibility: perfXlsxRow ? perfXlsxRow.Eligibility : 'N/A',
+            performingEligibility: perfXlsxRow ? perfXlsxRow.eligibility : 'N/A',
             valid: rowValid,
             remarks: rowRemarks
           });
@@ -433,16 +434,20 @@
       );
     }
 
-    // Load Open Jet Excel → openJetData
+    // Load Open Jet Excel → openJetData (ignore second policy block)
     if (openJetInput.files[0]) {
       promises.push(
         sheetToJsonWithHeader(openJetInput.files[0], 0, 1, false).then(data => {
-          openJetData = data.map(row => ({
-            Clinician: (row['Clinician'] || '').toString().trim(),
-            EffectiveDate: (row['EffectiveDate'] || '').toString().trim(),
-            ExpiryDate: (row['ExpiryDate'] || '').toString().trim(),
-            Eligibility: (row['Eligibility'] || '').toString().trim()
-          }));
+          openJetData = data.map(row => {
+            const eff = row['EffectiveDate'] || '';
+            const exp = row['ExpiryDate'] || '';
+            return {
+              clinicianId: (row['Clinician'] || '').toString().trim(),
+              effectiveDate: parseDate(eff),
+              expiryDate: parseDate(exp),
+              eligibility: (row['Eligibility'] || '').toString().trim()
+            };
+          }).filter(entry => entry.clinicianId);
           openJetCount = openJetData.length;
           updateResultsDiv();
         })
