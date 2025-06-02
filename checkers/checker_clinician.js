@@ -43,6 +43,7 @@
           }
           
           const rawHeaders = rows[headerRowIndex];
+          console.log(rawHeaders);
           const headers = rawHeaders.map(h => (h || '').toString().trim());
           const dataRows = rows.slice(headerRowIndex + 1);
           
