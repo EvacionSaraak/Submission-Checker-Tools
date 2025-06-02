@@ -146,9 +146,9 @@
 
   function updateResultsDiv() {
     const messages = [];
-    if (clinicianCount > 0) messages.push(`${clinicianCount} clinicians loaded`);
-    if (openJetCount > 0) messages.push(`${openJetCount} Open Jet rows loaded`);
-    if (claimCount > 0) messages.push(`${claimCount} claims loaded`);
+    if (claimCount > 0) messages.push(`${claimCount} Claims Loaded`);
+    if (clinicianCount > 0) messages.push(`${clinicianCount} Clinicians Loaded`);
+    if (openJetCount > 0) messages.push(`${openJetCount} Auths Loaded`);
     resultsDiv.textContent = messages.join(', ');
     toggleProcessButton();
   }
@@ -259,7 +259,8 @@
    * Main processing function: iterates over claims, validates clinicians, and checks eligibility windows.
    */
   function processClaims(d, map) {
-    showProcessing();
+    showProcessing("Validating Claims...");
+    exportCsvBtn.disabled = true;
     setTimeout(() => {
       const claimNodes = Array.from(d.getElementsByTagName('Claim'));
       const results = [];
@@ -339,6 +340,7 @@
 
       renderResults(results);
       setupExportHandler(results);
+      updateResultsDiv();
     }, 300); // simulate loading
   }
 
@@ -411,6 +413,8 @@
   function handleUnifiedExcelInput() {
     showProcessing('Loading Excel files...');
     processBtn.disabled = true;
+    exportCsvBtn.disabled = true;
+
     const promises = [];
 
     // Load Shafafiya Excel → clinicianMap
@@ -429,7 +433,6 @@
             }
           });
           clinicianCount = Object.keys(clinicianMap).length;
-          updateResultsDiv();
         })
       );
     }
@@ -439,8 +442,8 @@
       promises.push(
         sheetToJsonWithHeader(openJetInput.files[0], 0, 1, false).then(data => {
           openJetData = data.map(row => {
-            const eff = row['EffectiveDate'] || '';
-            const exp = row['ExpiryDate'] || '';
+            const eff = (row['EffectiveDate'] || '').toString().trim();
+            const exp = (row['ExpiryDate'] || '').toString().trim();
             return {
               clinicianId: (row['Clinician'] || '').toString().trim(),
               effectiveDate: parseDate(eff),
@@ -449,15 +452,18 @@
             };
           }).filter(entry => entry.clinicianId);
           openJetCount = openJetData.length;
-          updateResultsDiv();
         })
       );
     }
 
-    Promise.all(promises).catch(e => {
-      resultsDiv.innerHTML = `<p class="error-message">Error loading Excel files: ${e.message}</p>`;
-      toggleProcessButton();
-    });
+    Promise.all(promises)
+      .then(() => {
+        updateResultsDiv();
+      })
+      .catch(e => {
+        resultsDiv.innerHTML = `<p class="error-message">Error loading Excel files: ${e.message}</p>`;
+        toggleProcessButton();
+      });
   }
 
   /**
@@ -466,6 +472,8 @@
   function handleXmlInput() {
     showProcessing('Loading XML...');
     processBtn.disabled = true;
+    exportCsvBtn.disabled = true;
+
     const file = xmlInput.files[0];
     if (!file) {
       xmlDoc = null;
