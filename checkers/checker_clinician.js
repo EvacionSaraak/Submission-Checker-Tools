@@ -377,6 +377,80 @@
     }, 300); // simulate loading
   }
 
+  // ================================================================
+// NEW FUNCTION: setupExportHandler
+// - Renamed from setupExportr and updated to build an XLSX via SheetJS
+// - Extracts SenderID and TransactionDate from xmlDoc for filename
+// - Freezes header row and auto-adjusts column widths
+// ================================================================
+function setupExportHandler(results) {
+  exportCsvBtn.disabled = false;
+
+  exportCsvBtn.onclick = function () {
+    if (!xmlDoc) {
+      alert('No XML document loaded for export.');
+      return;
+    }
+
+    // 1) Extract SenderID from <Header><SenderID>
+    const senderID = (xmlDoc.querySelector('Header > SenderID')?.textContent || 'UnknownSender').trim();
+
+    // 2) Extract TransactionDate (assumed format dd/MM/yyyy HH:mm)
+    const transactionDateRaw = (xmlDoc.querySelector('Header > TransactionDate')?.textContent || '').trim();
+    let transactionDateFormatted = 'UnknownDate';
+    if (transactionDateRaw) {
+      const dateParts = transactionDateRaw.split(' ')[0].split('/');
+      if (dateParts.length === 3) {
+        transactionDateFormatted = `${dateParts[2]}-${dateParts[1].padStart(2, '0')}-${dateParts[0].padStart(2, '0')}`;
+      }
+    }
+
+    // 3) Build header row and data rows for SheetJS
+    const headers = [
+      'Claim ID', 'Activity ID',
+      'Ordering Clinician ID', 'Ordering Category', 'Ordering Eligibility',
+      'Performing Clinician ID', 'Performing Category', 'Performing Eligibility',
+      'Valid/Invalid', 'Remarks'
+    ];
+
+    const rows = results.map(r => [
+      r.claimId,
+      r.activityId,
+      r.orderingId,
+      r.orderingCategory,
+      r.orderingEligibility,
+      r.performingId,
+      r.performingCategory,
+      r.performingEligibility,
+      r.valid ? 'Valid' : 'Invalid',
+      r.remarks.join('; ')
+    ]);
+
+    // 4) Create new workbook/sheet, freeze header row, auto‐adjust column widths
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    ws['!freeze'] = { xSplit: 0, ySplit: 1 };
+
+    ws['!cols'] = headers.map((h, i) => {
+      let maxLen = h.length;
+      rows.forEach(r => {
+        const v = r[i];
+        if (v && v.toString().length > maxLen) {
+          maxLen = v.toString().length;
+        }
+      });
+      return { wch: Math.min(maxLen + 5, 50) };
+    });
+
+    XLSX.utils.book_append_sheet(wb, ws, 'Validation Results');
+
+    // 5) Filename: ClinicianCheck_<SenderID>_<YYYY-MM-DD>.xlsx
+    const filename = `ClinicianCheck_${senderID}_${transactionDateFormatted}.xlsx`;
+    XLSX.writeFile(wb, filename);
+  };
+}
+
+
   /**
    * Prepares and triggers the Excel export of results.
    */
