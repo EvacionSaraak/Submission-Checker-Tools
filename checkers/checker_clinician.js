@@ -201,6 +201,7 @@
     table.setAttribute('aria-label', 'Clinician validation results');
     table.appendChild(renderTableHeader());
     table.appendChild(renderTableBody(results));
+    console.log(table);
     resultsDiv.appendChild(table);
   }
 
