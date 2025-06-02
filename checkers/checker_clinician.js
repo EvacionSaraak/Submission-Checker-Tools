@@ -39,7 +39,7 @@
           // Handle the extra header row in OpenJet files
           const headerRowIndex = hasExtraHeader ? headerRow : (headerRow - 1);
           if (!rows || rows.length <= headerRowIndex) {
-              throw new Error(`Header row not found at position ${headerRowIndex + 1}`);
+              throw new Error(`Header row not found at position ${headerRowIndex}`);
           }
           
           const rawHeaders = rows[headerRowIndex];
