@@ -137,17 +137,17 @@
   function checkEligibility(encounterStartStr, encounterEndStr, xlsxRow) {
     const encounterStart = parseDate(encounterStartStr);
     const encounterEnd = parseDate(encounterEndStr);
-    const effectiveDate = xlsxRow.effectiveDate;
-    const expiryDate = xlsxRow.expiryDate;
-
+    const effectiveDate = new Date(xlsxRow.from);
+    const expiryDate = new Date(xlsxRow.to);
+  
     const remarks = [];
     let eligible = true;
-
+  
     if (isNaN(encounterStart) || isNaN(encounterEnd)) {
       remarks.push("Invalid Encounter dates in XML");
       eligible = false;
     } else if (!effectiveDate || !expiryDate || isNaN(effectiveDate) || isNaN(expiryDate)) {
-      remarks.push("Invalid Effective/Expiry dates in Open Jet XLSX");
+      remarks.push("Invalid Effective/Expiry dates in Excel");
       eligible = false;
     } else {
       if (!(encounterStart >= effectiveDate && encounterEnd <= expiryDate)) {
@@ -155,7 +155,7 @@
         eligible = false;
       }
     }
-
+  
     return {
       eligible,
       remarks,
@@ -320,8 +320,8 @@
       claimNodes.forEach(cl => {
         const cid = getText(cl, 'ID') || 'N/A';
         const encounterNode = cl.getElementsByTagName('Encounter')[0];
-        const encounterStartStr = encounterNode ? getText(encounterNode, 'Start') : '';
-        const encounterEndStr   = encounterNode ? getText(encounterNode, 'End')   : '';
+        const encounterStartStr = encounterNode ? getText(encounterNode, 'From') : '';
+        const encounterEndStr   = encounterNode ? getText(encounterNode, 'To')   : '';
         const activities = Array.from(cl.getElementsByTagName('Activity'));
 
         activities.forEach(act => {
@@ -548,24 +548,25 @@ function setupExportHandler(results) {
   
       // Load Shafafiya Excel → clinicianMap (unchanged)
       if (excelInput.files[0]) {
-          promises.push(
-              sheetToJsonWithHeader(excelInput.files[0], 0, 1).then(data => {
-                  clinicianMap = {};
-                  data.forEach(row => {
-                      const id = (row['Clinician License'] || '').toString().trim();
-                      if (id) {
-                          clinicianMap[id] = {
-                              name: row['Clinician Name'] || row['Name'] || '',
-                              category: row['Clinician Category'] || row['Category'] || '',
-                              privileges: row['Activity Group'] || row['Privileges'] || ''
-                          };
-                      }
-                  });
-                  clinicianCount = Object.keys(clinicianMap).length;
-              })
-          );
-      }
-  
+        promises.push(
+          sheetToJsonWithHeader(excelInput.files[0], 0, 1).then(data => {
+            clinicianMap = {};
+            data.forEach(row => {
+              const id = (row['Clinician License'] || '').toString().trim();
+              if (id) {
+                clinicianMap[id] = {
+                  name: row['Clinician Name'] || row['Name'] || '',
+                  category: row['Clinician Category'] || row['Category'] || '',
+                  privileges: row['Activity Group'] || row['Privileges'] || '',
+                  from: row['From'] || '',
+                  to: row['To'] || ''
+                };
+              }
+            });
+            clinicianCount = Object.keys(clinicianMap).length;
+          })
+        );
+      }  
       // Load Open Jet Excel → openJetData (modified for specific format)
       if (openJetInput.files[0]) {
           promises.push(
