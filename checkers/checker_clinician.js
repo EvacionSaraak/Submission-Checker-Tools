@@ -221,21 +221,11 @@
     resultsDiv.appendChild(table);
   }
 
-
-  function clearOutput() {
-    resultsDiv.innerHTML = '';
-    validationDiv.textContent = '';
-  }
-
-  function showNoResults() {
-    resultsDiv.innerHTML = '<p>No results found.</p>';
-  }
-
   function renderSummary(results) {
     const validCount = results.filter(r => r.valid).length;
     const total = results.length;
     const pct = total ? Math.round((validCount / total) * 100) : 0;
-
+  
     validationDiv.textContent = `Validation completed: ${validCount}/${total} valid (${pct}%)`;
     validationDiv.className = pct > 90
       ? 'valid-message'
@@ -243,14 +233,15 @@
         ? 'warning-message'
         : 'error-message';
   }
-
+  
   function renderTableHeader() {
     const thead = document.createElement('thead');
     const row = document.createElement('tr');
-    ['Claim ID', 'Activity ID',
-     'Ordering Clinician', 'Ordering Category', 'Ordering Eligibility',
-     'Performing Clinician', 'Performing Category', 'Performing Eligibility',
-     'Valid', 'Remarks'
+    [
+      'Claim ID', 'Activity ID', 'Activity Start',
+      'Ordering Clinician', 'Performing Clinician',
+      'Validity Window', 'Clinician Status',
+      'Valid', 'Remarks'
     ].forEach(text => {
       const th = document.createElement('th');
       th.scope = 'col';
@@ -266,18 +257,25 @@
     results.forEach(r => {
       const tr = document.createElement('tr');
       tr.className = r.valid ? 'valid' : 'invalid';
-
+  
+      // Format ordering/performing info stacked
+      const ordStack = `${r.orderingId || ''}\n${r.orderingName || ''}\n${r.orderingCategory || ''}`;
+      const perfStack = `${r.performingId || ''}\n${r.performingName || ''}\n${r.performingCategory || ''}`;
+  
+      // Format validity window
+      const validityWindow = r.from && r.to ? `${r.from} - ${r.to}` : 'N/A';
+  
+      // Append all cells
       appendCell(tr, r.claimId, { verticalAlign: 'top' });
       appendCell(tr, r.activityId);
-      appendCell(tr, `${r.orderingId} - ${r.orderingName}`);
-      appendCell(tr, r.orderingCategory);
-      appendCell(tr, r.orderingEligibility);
-      appendCell(tr, `${r.performingId} - ${r.performingName}`);
-      appendCell(tr, r.performingCategory);
-      appendCell(tr, r.performingEligibility);
+      appendCell(tr, (r.activityStart || '').split('T')[0]); // Only date part
+      appendCell(tr, ordStack);
+      appendCell(tr, perfStack);
+      appendCell(tr, validityWindow);
+      appendCell(tr, r.status || 'N/A');
       appendCell(tr, r.valid ? '✔︎' : '✘');
       appendCell(tr, r.remarks, { isArray: true });
-
+  
       tbody.appendChild(tr);
     });
     return tbody;
@@ -302,7 +300,7 @@
       td.textContent = content;
     }
     tr.appendChild(td);
-  }
+  }  
 
   // === DATA PROCESSING ===
 
