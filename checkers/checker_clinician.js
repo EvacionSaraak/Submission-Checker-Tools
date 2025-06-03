@@ -23,33 +23,32 @@
     xmlInput = document.getElementById('xmlFileInput');
     excelInput = document.getElementById('excelFileInput');
     openJetInput = document.getElementById('openJetFileInput');
-    // New listener for the “Clinician Status” XLSX upload:
     const historyInput = document.getElementById('clinicianStatusFileInput');
-  
+
     resultsDiv = document.getElementById('results');
     validationDiv = document.createElement('div');
     validationDiv.id = 'validation-message';
     resultsDiv.parentNode.insertBefore(validationDiv, resultsDiv);
     processBtn = document.getElementById('processBtn');
     exportCsvBtn = document.getElementById('exportCsvBtn');
-  
+
     resultsDiv.setAttribute('role', 'region');
     validationDiv.setAttribute('role', 'status');
-  
+
     xmlInput.addEventListener('change', handleXmlInput);
     excelInput.addEventListener('change', handleUnifiedExcelInput);
     openJetInput.addEventListener('change', handleUnifiedExcelInput);
-    // Attach the new listener here:
+
     historyInput.addEventListener('change', () => {
       const file = historyInput.files[0];
       if (file) {
         handleClinicianStatusExcelInput(file).then(() => {
-          updateLoaderMessages();    // Refresh counts after loading histories
-          toggleProcessButton();     // Re-enable Process button if applicable
+          updateLoaderMessages();
+          toggleProcessButton();
         });
       }
     });
-  
+
     processBtn.addEventListener('click', () => {
       if (xmlDoc && clinicianMap && openJetData.length > 0) {
         processClaims(xmlDoc, clinicianMap);
@@ -63,7 +62,10 @@
     processBtn.disabled = true;
     exportCsvBtn.disabled = true;
     const file = xmlInput.files[0];
-    if (!file) { xmlDoc = null; claimCount = 0; updateResultsDiv(); toggleProcessButton(); return; }
+    if (!file) {
+      xmlDoc = null; claimCount = 0;
+      updateResultsDiv(); toggleProcessButton(); return;
+    }
     file.text().then(text => {
       if (!text.trim()) throw new Error('Empty XML file');
       const doc = new DOMParser().parseFromString(text, 'application/xml');
@@ -147,7 +149,9 @@
   }
 
   // Enables/disables the process button based on data readiness.
-  function toggleProcessButton() { processBtn.disabled = !(xmlDoc && clinicianMap && openJetData.length > 0); }
+  function toggleProcessButton() {
+    processBtn.disabled = !(xmlDoc && clinicianMap && openJetData.length > 0);
+  }
 
   // Updates the UI with the current loading status.
   function updateResultsDiv() {
@@ -187,6 +191,8 @@
           const rowRemarks = [];
           const ordXlsxRow = openJetData.find(r => r.clinicianId === oid);
           const perfXlsxRow = openJetData.find(r => r.clinicianId === pid);
+
+          // Eligibility and mapping logic
           if (!ordXlsxRow) rowRemarks.push(`Ordering Clinician (${oid}) not in Open Jet`);
           if (!perfXlsxRow) rowRemarks.push(`Performing Clinician (${pid}) not in Open Jet`);
           if (!validateClinicians(oid, pid, od, pd)) rowRemarks.push(generateRemarks(od, pd));
@@ -198,26 +204,43 @@
             const perfEligRes = checkEligibility(encounterStartStr, encounterEndStr, perfXlsxRow);
             if (!perfEligRes.eligible) rowRemarks.push(`Performing: ${perfEligRes.remarks.join('; ')}`);
           }
-  
-          // New: Validate clinician status against the clinicianStatusMap with Provider ID and encounter start date
+
+          // Validate clinician status using provider ID and encounter date
           if (clinicianStatusMap) {
-            const ordStatus = validateClinicianStatus(oid, getText(cl, 'ProviderID'), encounterStartStr);
-            const perfStatus = validateClinicianStatus(pid, getText(cl, 'ProviderID'), encounterStartStr);
+            const providerId = getText(cl, 'ProviderID');
+            const ordStatus = validateClinicianStatus(oid, providerId, encounterStartStr);
+            const perfStatus = validateClinicianStatus(pid, providerId, encounterStartStr);
             rowRemarks.push(...ordStatus.remarks);
             rowRemarks.push(...perfStatus.remarks);
           }
-  
+
+          // Compose result row, defensively filling fields for export/table
           results.push({
             claimId: cid,
             activityId: aid,
+            activityStart: encounterStartStr,
             orderingId: oid,
             orderingName: od.name,
             orderingCategory: od.category,
+            orderingPrivileges: od.privileges || '',
+            orderingFrom: od.from || '',
+            orderingTo: od.to || '',
             orderingEligibility: ordXlsxRow ? ordXlsxRow.eligibility : 'N/A',
             performingId: pid,
             performingName: pd.name,
             performingCategory: pd.category,
+            performingPrivileges: pd.privileges || '',
+            performingFrom: pd.from || '',
+            performingTo: pd.to || '',
             performingEligibility: perfXlsxRow ? perfXlsxRow.eligibility : 'N/A',
+            status: '', // Placeholder, can be filled out with more granular status logic if needed
+            packageName: '',
+            serviceCategory: '',
+            consultationStatus: '',
+            effectiveDate: '',
+            expiryDate: '',
+            cardNumber: '',
+            cardStatus: '',
             valid: rowRemarks.length === 0,
             remarks: rowRemarks
           });
@@ -271,12 +294,6 @@
           <div style="display:inline-block; width:48%;">To: ${to || 'N/A'}</div>
         </div>
       `;
-      const formatEligibility = r => `
-        <div>${r.packageName || 'NO PACKAGE NAME'}</div>
-        <div>${r.serviceCategory || ''} ${r.consultationStatus || ''}</div>
-        <div>${r.effectiveDate || ''} → ${r.expiryDate || ''}</div>
-        <div>${r.cardNumber || ''} (${r.cardStatus || ''})</div>
-      `;
       appendCell(tr, r.claimId, { verticalAlign: 'top' });
       appendCell(tr, r.activityId);
       appendCell(tr, encounterDate);
@@ -297,7 +314,7 @@
         r.performingTo
       ), { isHTML: true });
       appendCell(tr, r.status || 'N/A');
-      appendCell(tr, formatEligibility(r), { isHTML: true });
+      appendCell(tr, '', { isHTML: true }); // Eligibility column placeholder
       appendCell(tr, r.valid ? '✔︎' : '✘');
       appendCell(tr, r.remarks, { isArray: true });
       tbody.appendChild(tr);
@@ -402,8 +419,8 @@
   function checkEligibility(encounterStartStr, encounterEndStr, xlsxRow) {
     const encounterStart = parseDate(encounterStartStr);
     const encounterEnd = parseDate(encounterEndStr);
-    const effectiveDate = new Date(xlsxRow.from);
-    const expiryDate = new Date(xlsxRow.to);
+    const effectiveDate = new Date(xlsxRow.effectiveDate || xlsxRow.from);
+    const expiryDate = new Date(xlsxRow.expiryDate || xlsxRow.to);
     const remarks = [];
     let eligible = true;
 
@@ -423,7 +440,7 @@
   }
 
   // Returns a default clinician data object if not found in Shafafiya map.
-  function defaultClinicianData() { return { name: 'Unknown', category: 'Unknown', privileges: 'Unknown' }; }
+  function defaultClinicianData() { return { name: 'Unknown', category: 'Unknown', privileges: 'Unknown', from: '', to: '' }; }
 
   // Generates remarks for category/privilege mismatches.
   function generateRemarks(od, pd) {
@@ -462,11 +479,6 @@
     return el ? el.textContent.trim() : '';
   }
 
-  // Utility function to extract text from an element
-  function getTextContent(parent, selector, fallback = '') {
-    return parent.querySelector(selector)?.textContent.trim() || fallback;
-  }
-
   // Facility/license/status/other helpers, called during claim processing
   function checkFacilityMismatch(license, providerId) {
     const statusRecords = clinicianStatusMap[license];
@@ -485,43 +497,35 @@
   function validateClinicianStatus(clinicianId, providerId, encounterStartStr) {
     const remarks = [];
     let eligible = true;
-  
+
     if (!clinicianId) {
       remarks.push('Missing Clinician ID');
       eligible = false; return { eligible, remarks };
     }
-  
     if (!providerId) {
       remarks.push('Missing Provider ID');
       eligible = false; return { eligible, remarks };
     }
-  
     if (!encounterStartStr) {
       remarks.push('Missing Encounter Start Date');
       eligible = false; return { eligible, remarks };
     }
-  
     const records = clinicianStatusMap[clinicianId];
     if (!records || records.length === 0) {
       remarks.push(`Clinician (${clinicianId}) not found in status data`);
       eligible = false; return { eligible, remarks };
     }
-  
-    // Parse encounter date as Date object for comparison
     const encounterDate = new Date(encounterStartStr);
     if (isNaN(encounterDate.getTime())) {
       remarks.push('Invalid Encounter Start Date');
       eligible = false; return { eligible, remarks };
     }
-  
-    // Filter records by matching providerId (Facility License Number)
     const providerMatches = records.filter(rec => rec.facilityLicenseNumber === providerId);
     if (providerMatches.length === 0) {
       remarks.push(`No matching Facility License Number (${providerId}) for clinician`);
       eligible = false; return { eligible, remarks };
     }
-  
-    // Find the most recent effective date on or before encounterDate
+    // Find the most recent effective date on or before encounter date
     let validRecord = null;
     for (const rec of providerMatches) {
       const effDate = new Date(rec.effectiveDate);
@@ -531,12 +535,10 @@
         }
       }
     }
-  
     if (!validRecord) {
       remarks.push(`No effective date record on or before encounter date for clinician`);
       eligible = false; return { eligible, remarks };
     }
-  
     if (validRecord.status.toLowerCase() === 'inactive') {
       remarks.push(`Clinician status is Inactive as of ${validRecord.effectiveDate}`);
       eligible = false;
@@ -546,12 +548,10 @@
 
   // Load clinician status XLSX and build clinicianStatusMap; update the unified message div
   function handleClinicianStatusExcelInput(file) {
-    // Show a loading message in the unified update area
     const messageDiv = document.getElementById('update-message');
     if (messageDiv) {
       messageDiv.textContent = 'Loading clinician history…';
     }
-  
     return sheetToJsonWithHeader(file, 0, 1).then(data => {
       clinicianStatusMap = {};
       data.forEach(row => {
@@ -559,9 +559,7 @@
         const facilityLicenseNumber = (row['Facility License Number'] || '').toString().trim();
         const effectiveDate = (row['Effective Date'] || '').toString().trim();
         const status = (row['Status'] || '').toString().trim();
-  
         if (!licenseNumber) return;
-  
         if (!clinicianStatusMap[licenseNumber]) {
           clinicianStatusMap[licenseNumber] = [];
         }
@@ -571,8 +569,6 @@
           status
         });
       });
-  
-      // Count unique license numbers for histories
       const count = Object.keys(clinicianStatusMap).length;
       if (messageDiv) {
         messageDiv.textContent = `Loaded license history for ${count} unique clinician${count === 1 ? '' : 's'}.`;
@@ -587,10 +583,6 @@
 
   /**
    * Updates the unified loader message area using current global counts.
-   * - Claims: Based on `claimCount`
-   * - Clinicians: Based on `clinicianCount`
-   * - Eligibilities: Based on `openJetCount`
-   * - Histories: Based on unique license numbers in `clinicianStatusMap`
    */
   function updateLoaderMessages() {
     const m = [], c = document.getElementById('update-message'); if (!c) return;
@@ -602,12 +594,6 @@
     c.textContent = m.length === 0 ? '' : m.length === 1 ? m[0] : m.slice(0, -1).join(', ') + ' and ' + m[m.length - 1];
   }
 
-
-  function capitalize(str) {
-    return str.charAt(0).toUpperCase() + str.slice(1);
-  }
-
-
   // Helpers used only for export/XLSX or HTML table
   function appendCell(tr, content, { isHTML = false, isArray = false, verticalAlign = '' } = {}) {
     const td = document.createElement('td');
@@ -615,7 +601,7 @@
     if (isArray) {
       td.style.whiteSpace = 'pre-line';
       td.textContent = '';
-      content.forEach(text => {
+      (Array.isArray(content) ? content : [content]).forEach(text => {
         const div = document.createElement('div');
         div.textContent = text;
         td.appendChild(div);
