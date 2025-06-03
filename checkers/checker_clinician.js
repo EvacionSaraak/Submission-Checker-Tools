@@ -1,585 +1,687 @@
-// Global declarations and initializations
+(function () {
+  'use strict';
 
-// Reference to HTML input elements for the Excel files
-const insurerInput = document.getElementById('insurerExcelInput');
-const openJetInput = document.getElementById('openJetExcelInput');
-const clinicianStatusInput = document.getElementById('clinicianStatusExcelInput');
+  // === GLOBAL STATE ===
+  let openJetData = [];
+  let xmlDoc = null;
+  let clinicianMap = null;
+  let xmlInput, excelInput, openJetInput, clinicianStatusInput, resultsDiv, validationDiv, processBtn, exportCsvBtn;
+  let clinicianCount = 0, openJetCount = 0, claimCount = 0;
+  let clinicianStatusMap = {};
 
-// Data containers to hold parsed Excel data
-let insurerData = [];
-let openJetData = [];
-let clinicianStatusData = [];
+  // === INITIALIZE ===
+  document.addEventListener('DOMContentLoaded', initEventListeners);
 
-// Utility function to convert Excel serial date to JS Date object
-function excelDateToJSDate(serial) {
-  // Excel's date origin is 1 Jan 1900, and serial days since then
-  // JavaScript Date starts at 1 Jan 1970, so adjust accordingly
-  // Excel mistakenly treats 1900 as leap year, so subtract 1 day offset
-  const utc_days = Math.floor(serial - 25569);
-  const utc_value = utc_days * 86400; // seconds in a day
-  const date_info = new Date(utc_value * 1000);
-  const fractional_day = serial - Math.floor(serial) + 0.0000001;
-
-  let total_seconds = Math.floor(86400 * fractional_day);
-  let seconds = total_seconds % 60;
-  total_seconds -= seconds;
-  let hours = Math.floor(total_seconds / (60 * 60));
-  let minutes = Math.floor(total_seconds / 60) % 60;
-
-  return new Date(
-    date_info.getFullYear(),
-    date_info.getMonth(),
-    date_info.getDate(),
-    hours,
-    minutes,
-    seconds
-  );
-}
-
-// ------------------------------
-// 1. Handler for Insurer Excel Input
-// ------------------------------
-insurerInput.addEventListener('change', function (event) {
-  const file = event.target.files[0];
-  if (!file) {
-    console.log('No file selected for Insurer input.');
-    return;
-  }
-  
-  const reader = new FileReader();
-  reader.onload = function (e) {
-    const data = new Uint8Array(e.target.result);
-    const workbook = XLSX.read(data, { type: 'array' });
-    
-    // Assuming the insurer data is in the first sheet
-    const firstSheetName = workbook.SheetNames[0];
-    const worksheet = workbook.Sheets[firstSheetName];
-    
-    // Convert sheet to JSON
-    insurerData = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
-    
-    // Log for debug
-    console.log('Insurer Excel Data loaded:', insurerData);
-    
-    // TODO: Trigger any processing that depends on insurerData being loaded
+  // Global error handler
+  window.onerror = function (msg, url, line, col, error) {
+    if (resultsDiv) resultsDiv.innerHTML = `<p class="error-message">Unexpected error: ${msg} at ${line}:${col}</p>`;
+    console.error('Global error:', { msg, url, line, col, error });
   };
-  
-  reader.readAsArrayBuffer(file);
-});
 
-// ------------------------------
-// 2. Handler for Open Jet Excel Input
-// ------------------------------
-openJetInput.addEventListener('change', function (event) {
-  const file = event.target.files[0];
-  if (!file) {
-    console.log('No file selected for Open Jet input.');
-    return;
+  // Initializes UI elements and event listeners.
+  function initEventListeners() {
+    xmlInput = document.getElementById('xmlFileInput');
+    excelInput = document.getElementById('excelFileInput');
+    openJetInput = document.getElementById('openJetFileInput');
+    clinicianStatusInput = document.getElementById('clinicianStatusFileInput');
+
+    resultsDiv = document.getElementById('results');
+    validationDiv = document.createElement('div');
+    validationDiv.id = 'validation-message';
+    resultsDiv.parentNode.insertBefore(validationDiv, resultsDiv);
+    processBtn = document.getElementById('processBtn');
+    exportCsvBtn = document.getElementById('exportCsvBtn');
+
+    resultsDiv.setAttribute('role', 'region');
+    validationDiv.setAttribute('role', 'status');
+
+    xmlInput.addEventListener('change', handleXmlInput);
+    excelInput.addEventListener('change', handleUnifiedExcelInput);
+    openJetInput.addEventListener('change', handleUnifiedExcelInput);
+    clinicianStatusInput.addEventListener('change', handleUnifiedExcelInput);
+
+    processBtn.addEventListener('click', () => {
+      if (xmlDoc && clinicianMap && openJetData.length > 0) {
+        processClaims(xmlDoc, clinicianMap);
+      }
+    });
   }
+
+  // Handles XML file input changes.
+  function handleXmlInput() {
+    showProcessing('Loading XML...');
+    processBtn.disabled = true;
+    exportCsvBtn.disabled = true;
+    const file = xmlInput.files[0];
+    if (!file) {
+      xmlDoc = null; claimCount = 0;
+      updateResultsDiv(); toggleProcessButton(); return;
+    }
+    file.text().then(text => {
+      if (!text.trim()) throw new Error('Empty XML file');
+      const doc = new DOMParser().parseFromString(text, 'application/xml');
+      if (doc.querySelector('parsererror')) throw new Error('Invalid XML');
+      xmlDoc = doc;
+      claimCount = xmlDoc.getElementsByTagName('Claim').length;
+      updateResultsDiv();
+      toggleProcessButton();
+    }).catch(e => {
+      xmlDoc = null;
+      claimCount = 0;
+      resultsDiv.innerHTML = `<p class="error-message">Error loading XML: ${e.message}</p>`;
+      console.error('XML loading error:', e);
+      toggleProcessButton();
+    });
+  }
+
+  // Helper: process any Excel file given its input element and a parsing callback.
+  // Returns a Promise that resolves if no file is selected or after parseFn(data) completes.
+  function processExcelInput(inputElement, sheetIndex, headerRow, parseFn) {
+    if (!inputElement.files[0]) {
+      return Promise.resolve();
+    }
+    return sheetToJsonWithHeader(inputElement.files[0], sheetIndex, headerRow)
+      .then(data => parseFn(data))
+      .catch(e => {
+        console.error(`Error processing ${inputElement.id}:`, e);
+        throw new Error(`Failed to process ${inputElement.id}: ${e.message}`);
+      });
+  }
+
+
+  function handleUnifiedExcelInput() {
+    showProcessing('Loading Excel files...');
+    processBtn.disabled = true;
+    exportCsvBtn.disabled = true;
   
-  const reader = new FileReader();
-  reader.onload = function (e) {
-    const data = new Uint8Array(e.target.result);
-    const workbook = XLSX.read(data, { type: 'array' });
-    
-    // The Open Jet Excel data is assumed to be in the SECOND sheet (index 1)
-    if (workbook.SheetNames.length < 2) {
-      console.error('Open Jet Excel file does not contain a second sheet.');
+    // Define each loader by specifying: input element, sheet index, header‐row, and how to parse.
+    const loaders = [
+      {
+        inputElement: excelInput,
+        sheetIndex:   0,
+        headerRow:    1,
+        parseFn: data => {
+          clinicianMap = {};
+          data.forEach(row => {
+            const id = (row['Clinician License'] || '').toString().trim();
+            if (!id) return;
+            clinicianMap[id] = {
+              name:       row['Clinician Name']     || row['Name']     || '',
+              category:   row['Clinician Category'] || row['Category'] || '',
+              privileges: row['Activity Group']     || row['Privileges'] || '',
+              from:       row['From'] || '',
+              to:         row['To']   || ''
+            };
+          });
+          clinicianCount = Object.keys(clinicianMap).length;
+          updateLoaderMessages();
+        }
+      },
+      {
+        inputElement: openJetInput,
+        sheetIndex:   0,
+        headerRow:    2,
+        parseFn: data => {
+          openJetData = data.map(row => {
+            const parseOpenJetDate = dateStr => {
+              if (!dateStr) return new Date('Invalid');
+              const parts    = dateStr.split(' ');
+              const [day, mon, year] = parts[0].split('-');
+              const monthMap = {
+                'Jan':'01','Feb':'02','Mar':'03','Apr':'04',
+                'May':'05','Jun':'06','Jul':'07','Aug':'08',
+                'Sep':'09','Oct':'10','Nov':'11','Dec':'12'
+              };
+              return new Date(`${year}-${monthMap[mon]}-${day.padStart(2,'0')}`);
+            };
+            return {
+              clinicianId:   (row['Clinician']   || '').toString().trim(),
+              effectiveDate: parseOpenJetDate(row['EffectiveDate']),
+              expiryDate:    parseOpenJetDate(row['ExpiryDate']),
+              eligibility:   (row['Status']      || '').toString().trim()
+            };
+          }).filter(entry => entry.clinicianId);
+          openJetCount = openJetData.length;
+          updateLoaderMessages();
+        }
+      },
+      {
+        inputElement: clinicianStatusInput,
+        sheetIndex:   0,
+        headerRow:    1,
+        parseFn: data => {
+          clinicianStatusMap = {};
+          data.forEach(row => {
+            const licenseNumber         = (row['License Number']           || '').toString().trim();
+            const facilityLicenseNumber = (row['Facility License Number']  || '').toString().trim();
+            const effectiveDate         = (row['Effective Date']           || '').toString().trim();
+            const status                = (row['Status']                   || '').toString().trim();
+            if (!licenseNumber) return;
+            if (!clinicianStatusMap[licenseNumber]) {
+              clinicianStatusMap[licenseNumber] = [];
+            }
+            clinicianStatusMap[licenseNumber].push({
+              facilityLicenseNumber,
+              effectiveDate,
+              status
+            });
+          });
+          updateLoaderMessages();
+        }
+      }
+    ];
+  
+    // Kick off all parsers in parallel:
+    const promises = loaders.map(loader =>
+      processExcelInput(
+        loader.inputElement,
+        loader.sheetIndex,
+        loader.headerRow,
+        loader.parseFn
+      )
+    );
+  
+    Promise.all(promises)
+      .then(() => {
+        updateResultsDiv();
+        toggleProcessButton();
+      })
+      .catch(e => {
+        resultsDiv.innerHTML = `<p class="error-message">${e.message}</p>`;
+        console.error('Excel loading error:', e);
+        toggleProcessButton();
+      });
+  }
+
+
+  // Enables/disables the process button based on data readiness.
+  function toggleProcessButton() {
+    processBtn.disabled = !(xmlDoc && clinicianMap && openJetData.length > 0);
+  }
+
+  // Updates the UI with the current loading status.
+  function updateResultsDiv() {
+    const messages = [];
+    if (claimCount > 0) messages.push(`${claimCount} Claims Loaded`);
+    if (clinicianCount > 0) messages.push(`${clinicianCount} Clinicians Loaded`);
+    if (openJetCount > 0) messages.push(`${openJetCount} Auths Loaded`);
+    document.getElementById('uploadStatus').textContent = messages.join(', ');
+    toggleProcessButton();
+  }
+
+  // Shows a processing spinner/message.
+  function showProcessing(msg = "Processing...") {
+    resultsDiv.innerHTML = `<div class="loading-spinner" aria-live="polite"></div><p>${msg}</p>`;
+  }
+
+  // Main processing function: iterates over claims, validates clinicians, and checks eligibility windows.
+  function processClaims(d, map) {
+    showProcessing("Validating Claims...");
+    exportCsvBtn.disabled = true;
+    setTimeout(() => {
+      const claimNodes = Array.from(d.getElementsByTagName('Claim'));
+      const results = [];
+      claimCount = claimNodes.length;
+      claimNodes.forEach(cl => {
+        const cid = getText(cl, 'ID') || 'N/A';
+        const encounterNode = cl.getElementsByTagName('Encounter')[0];
+        const encounterStartStr = encounterNode ? getText(encounterNode, 'From') : '';
+        const encounterEndStr = encounterNode ? getText(encounterNode, 'To') : '';
+        const activities = Array.from(cl.getElementsByTagName('Activity'));
+        activities.forEach(act => {
+          const aid = getText(act, 'ID') || 'N/A';
+          const oid = getText(act, 'OrderingClinician') || '';
+          const pid = getText(act, 'Clinician') || '';
+          const od = map[oid] || defaultClinicianData();
+          const pd = map[pid] || defaultClinicianData();
+          const rowRemarks = [];
+          const ordXlsxRow = openJetData.find(r => r.clinicianId === oid);
+          const perfXlsxRow = openJetData.find(r => r.clinicianId === pid);
+
+          // Eligibility and mapping logic
+          if (!ordXlsxRow) rowRemarks.push(`Ordering Clinician (${oid}) not in Open Jet`);
+          if (!perfXlsxRow) rowRemarks.push(`Performing Clinician (${pid}) not in Open Jet`);
+          if (!validateClinicians(oid, pid, od, pd)) rowRemarks.push(generateRemarks(od, pd));
+          if (ordXlsxRow) {
+            const ordEligRes = checkEligibility(encounterStartStr, encounterEndStr, ordXlsxRow);
+            if (!ordEligRes.eligible) rowRemarks.push(`Ordering: ${ordEligRes.remarks.join('; ')}`);
+          }
+          if (perfXlsxRow) {
+            const perfEligRes = checkEligibility(encounterStartStr, encounterEndStr, perfXlsxRow);
+            if (!perfEligRes.eligible) rowRemarks.push(`Performing: ${perfEligRes.remarks.join('; ')}`);
+          }
+
+          // Validate clinician status using provider ID and encounter date
+          if (clinicianStatusMap) {
+            const providerId = getText(cl, 'ProviderID');
+            const ordStatus = validateClinicianStatus(oid, providerId, encounterStartStr);
+            const perfStatus = validateClinicianStatus(pid, providerId, encounterStartStr);
+            rowRemarks.push(...ordStatus.remarks);
+            rowRemarks.push(...perfStatus.remarks);
+          }
+
+          // Compose result row, defensively filling fields for export/table
+          results.push({
+            claimId: cid,
+            activityId: aid,
+            activityStart: encounterStartStr,
+            orderingId: oid,
+            orderingName: od.name,
+            orderingCategory: od.category,
+            orderingPrivileges: od.privileges || '',
+            orderingFrom: od.from || '',
+            orderingTo: od.to || '',
+            orderingEligibility: ordXlsxRow ? ordXlsxRow.eligibility : 'N/A',
+            performingId: pid,
+            performingName: pd.name,
+            performingCategory: pd.category,
+            performingPrivileges: pd.privileges || '',
+            performingFrom: pd.from || '',
+            performingTo: pd.to || '',
+            performingEligibility: perfXlsxRow ? perfXlsxRow.eligibility : 'N/A',
+            status: '', // Placeholder, can be filled out with more granular status logic if needed
+            packageName: '',
+            serviceCategory: '',
+            consultationStatus: '',
+            effectiveDate: '',
+            expiryDate: '',
+            cardNumber: '',
+            cardStatus: '',
+            valid: rowRemarks.length === 0,
+            remarks: rowRemarks
+          });
+        });
+      });
+      renderResults(results);
+      setupExportHandler(results);
+      updateResultsDiv();
+    }, 300);
+  }
+
+  // Renders the validation results table in the UI.
+  function renderResults(results) {
+    if (!results.length) {
+      renderSummary(results);
+      resultsDiv.innerHTML = '<p>No results found.</p>';
       return;
     }
-    
-    const secondSheetName = workbook.SheetNames[1];
-    const worksheet = workbook.Sheets[secondSheetName];
-    
-    // Convert sheet to JSON
-    openJetData = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
-    
-    // Log for debug
-    console.log('Open Jet Excel Data loaded (Sheet 2):', openJetData);
-    
-    // TODO: Trigger any processing that depends on openJetData being loaded
-  };
-  
-  reader.readAsArrayBuffer(file);
-});
-
-// ------------------------------
-// 3. Handler for Clinician Status Excel Input
-// ------------------------------
-
-// This handler reads the Clinician Status Excel sheet which includes:
-// License Number, Facility License Number, Effective Date, Status, etc.
-// We will convert the Effective Date strings into JS Date objects for comparisons
-
-clinicianStatusInput.addEventListener('change', function (event) {
-  const file = event.target.files[0];
-  if (!file) {
-    console.log('No file selected for Clinician Status input.');
-    return;
+    renderSummary(results);
+    resultsDiv.innerHTML = '';
+    const table = document.createElement('table');
+    table.setAttribute('aria-label', 'Clinician validation results');
+    table.appendChild(renderTableHeader());
+    table.appendChild(renderTableBody(results));
+    resultsDiv.appendChild(table);
   }
-  
-  const reader = new FileReader();
-  reader.onload = function (e) {
-    const data = new Uint8Array(e.target.result);
-    const workbook = XLSX.read(data, { type: 'array' });
-    
-    // Assuming data is in the first sheet
-    const firstSheetName = workbook.SheetNames[0];
-    const worksheet = workbook.Sheets[firstSheetName];
-    
-    // Raw data as JSON, with empty cells replaced with ''
-    let rawData = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
-    
-    // Mapping for month abbreviations to numbers
-    const monthMap = {
-      Jan: 0,
-      Feb: 1,
-      Mar: 2,
-      Apr: 3,
-      May: 4,
-      Jun: 5,
-      Jul: 6,
-      Aug: 7,
-      Sep: 8,
-      Oct: 9,
-      Nov: 10,
-      Dec: 11,
+
+  // Renders a summary of validation results.
+  function renderSummary(results) {
+    const validCount = results.filter(r => r.valid).length;
+    const total = results.length;
+    const pct = total ? Math.round((validCount / total) * 100) : 0;
+    validationDiv.textContent = `Validation completed: ${validCount}/${total} valid (${pct}%)`;
+    validationDiv.className = pct > 90 ? 'valid-message' : pct > 70 ? 'warning-message' : 'error-message';
+  }
+
+  // Renders the table body for the results table.
+  function renderTableBody(results) {
+    const tbody = document.createElement('tbody');
+    results.forEach(r => {
+      const tr = document.createElement('tr');
+      tr.className = r.valid ? 'valid' : 'invalid';
+      const encounterDate = (r.activityStart || '').split('T')[0];
+      const formatClinicianCell = (id, name, category, privileges, from, to) => `
+        <div><strong>${id || ''}</strong></div>
+        <div>${name || ''}</div>
+        <div>${category || ''}</div>
+        <div><em>${privileges || ''}</em></div>
+        <div style="margin-top: 4px;">
+          <div style="display:inline-block; width:48%;">From: ${from || 'N/A'}</div>
+          <div style="display:inline-block; width:48%;">To: ${to || 'N/A'}</div>
+        </div>
+      `;
+      appendCell(tr, r.claimId, { verticalAlign: 'top' });
+      appendCell(tr, r.activityId);
+      appendCell(tr, encounterDate);
+      appendCell(tr, formatClinicianCell(
+        r.orderingId,
+        r.orderingName,
+        r.orderingCategory,
+        r.orderingPrivileges,
+        r.orderingFrom,
+        r.orderingTo
+      ), { isHTML: true });
+      appendCell(tr, formatClinicianCell(
+        r.performingId,
+        r.performingName,
+        r.performingCategory,
+        r.performingPrivileges,
+        r.performingFrom,
+        r.performingTo
+      ), { isHTML: true });
+      appendCell(tr, r.status || 'N/A');
+      appendCell(tr, '', { isHTML: true }); // Eligibility column placeholder
+      appendCell(tr, r.valid ? '✔︎' : '✘');
+      appendCell(tr, r.remarks, { isArray: true });
+      tbody.appendChild(tr);
+    });
+    return tbody;
+  }
+
+  // Renders the table header for the results table.
+  function renderTableHeader() {
+    const thead = document.createElement('thead');
+    const row = document.createElement('tr');
+    [
+      'Claim ID',
+      'Activity ID',
+      'Activity Start (Encounter Date)',
+      'Ordering Clinician',
+      'Performing Clinician',
+      'License Status',
+      'Eligibility',
+      'Valid',
+      'Remarks'
+    ].forEach(text => {
+      const th = document.createElement('th');
+      th.scope = 'col';
+      th.textContent = text;
+      row.appendChild(th);
+    });
+    thead.appendChild(row);
+    return thead;
+  }
+
+  // Sets up the export button to generate and download the results as an XLSX file.
+  function setupExportHandler(results) {
+    exportCsvBtn.disabled = false;
+    exportCsvBtn.onclick = function () {
+      if (!xmlDoc) { alert('No XML document loaded for export.'); return; }
+      const senderID = (xmlDoc.querySelector('Header > SenderID')?.textContent || 'UnknownSender').trim();
+      const transactionDateRaw = (xmlDoc.querySelector('Header > TransactionDate')?.textContent || '').trim();
+      let transactionDateFormatted = 'UnknownDate';
+      if (transactionDateRaw) {
+        const dateParts = transactionDateRaw.split(' ')[0].split('/');
+        if (dateParts.length === 3) transactionDateFormatted = `${dateParts[2]}-${dateParts[1].padStart(2, '0')}-${dateParts[0].padStart(2, '0')}`;
+      }
+      const headers = [
+        'Claim ID', 'Activity ID', 'Activity Start',
+        'Ordering Clinician ID', 'Ordering Name', 'Ordering Category', 'Ordering Privileges', 'Ordering From', 'Ordering To',
+        'Performing Clinician ID', 'Performing Name', 'Performing Category', 'Performing Privileges', 'Performing From', 'Performing To',
+        'License Status', 'Eligibility: Package Name',
+        'Eligibility: Service Category', 'Eligibility: Consultation Status',
+        'Eligibility: Effective Date', 'Eligibility: Expiry Date',
+        'Eligibility: Card Number', 'Eligibility: Card Status',
+        'Valid/Invalid', 'Remarks'
+      ];
+      const rows = results.map(r => [
+        r.claimId, r.activityId, (r.activityStart || '').split('T')[0],
+        r.orderingId, r.orderingName, r.orderingCategory, r.orderingPrivileges, r.orderingFrom || '', r.orderingTo || '',
+        r.performingId, r.performingName, r.performingCategory, r.performingPrivileges, r.performingFrom || '', r.performingTo || '',
+        r.status || '', r.packageName || '',
+        r.serviceCategory || '', r.consultationStatus || '',
+        r.effectiveDate || '', r.expiryDate || '',
+        r.cardNumber || '', r.cardStatus || '',
+        r.valid ? 'Valid' : 'Invalid',
+        r.remarks.join('; ')
+      ]);
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+      ws['!freeze'] = { xSplit: 0, ySplit: 1 };
+      ws['!cols'] = headers.map((h, i) => {
+        let maxLen = h.length;
+        rows.forEach(r => { const v = r[i]; if (v && v.toString().length > maxLen) maxLen = v.toString().length; });
+        return { wch: Math.min(maxLen + 5, 50) };
+      });
+      XLSX.utils.book_append_sheet(wb, ws, 'Validation Results');
+      const filename = `ClinicianCheck_${senderID}_${transactionDateFormatted}.xlsx`;
+      XLSX.writeFile(wb, filename);
     };
-    
-    // Process each row to parse Effective Date into Date object
-    clinicianStatusData = rawData.map((row) => {
-      // Expected format for 'Effective Date' is something like "01 Jan 2023"
-      const rawDateStr = row['Effective Date'];
-      
-      let parsedDate = null;
-      if (typeof rawDateStr === 'string' && rawDateStr.trim() !== '') {
-        // Split date string into parts, example: '01 Jan 2023'
-        const parts = rawDateStr.trim().split(' ');
-        if (parts.length === 3) {
-          const day = parseInt(parts[0], 10);
-          const monthStr = parts[1];
-          const year = parseInt(parts[2], 10);
-          const monthNum = monthMap[monthStr];
-          if (!isNaN(day) && !isNaN(monthNum) && !isNaN(year)) {
-            parsedDate = new Date(year, monthNum, day);
-          } else {
-            console.warn(`Invalid date components in row: ${JSON.stringify(row)}`);
-          }
-        } else {
-          console.warn(`Unexpected date format in 'Effective Date': ${rawDateStr}`);
+  }
+
+  // Converts an Excel sheet to JSON, respecting custom headers and row structure.
+  function sheetToJsonWithHeader(file, sheetIndex = 0, headerRow = 1) {
+    return file.arrayBuffer().then(buffer => {
+      const data = new Uint8Array(buffer);
+      const wb = XLSX.read(data, { type: 'array' });
+      const name = wb.SheetNames[sheetIndex];
+      if (!name) throw new Error(`Sheet index ${sheetIndex} not found`);
+      const sheet = wb.Sheets[name];
+      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+      const headerRowIndex = headerRow - 1;
+      if (!rows || rows.length <= headerRowIndex) throw new Error(`Header row not found at position ${headerRowIndex + 1}`);
+      const rawHeaders = rows[headerRowIndex];
+      const headers = rawHeaders.map(h => (h || '').toString().trim());
+      const dataRows = rows.slice(headerRowIndex + 1);
+      return dataRows.map(row => {
+        const obj = {};
+        headers.forEach((h, i) => { obj[h] = row[i] || ''; });
+        return obj;
+      });
+    });
+  }
+
+  // Checks if the encounter window (start/end) falls within the clinician's eligibility window.
+  function checkEligibility(encounterStartStr, encounterEndStr, xlsxRow) {
+    const encounterStart = parseDate(encounterStartStr);
+    const encounterEnd = parseDate(encounterEndStr);
+    const effectiveDate = new Date(xlsxRow.effectiveDate || xlsxRow.from);
+    const expiryDate = new Date(xlsxRow.expiryDate || xlsxRow.to);
+    const remarks = [];
+    let eligible = true;
+
+    if (isNaN(encounterStart) || isNaN(encounterEnd)) {
+      remarks.push("Invalid Encounter dates in XML");
+      eligible = false;
+    } else if (!effectiveDate || !expiryDate || isNaN(effectiveDate) || isNaN(expiryDate)) {
+      remarks.push("Invalid Effective/Expiry dates in Excel");
+      eligible = false;
+    } else {
+      if (!(encounterStart >= effectiveDate && encounterEnd <= expiryDate)) {
+        remarks.push("Procedure is done outside of Eligibility window");
+        eligible = false;
+      }
+    }
+    return { eligible, remarks, eligibilityValue: xlsxRow.eligibility || '' };
+  }
+
+  // Returns a default clinician data object if not found in Shafafiya map.
+  function defaultClinicianData() { return { name: 'Unknown', category: 'Unknown', privileges: 'Unknown', from: '', to: '' }; }
+
+  // Generates remarks for category/privilege mismatches.
+  function generateRemarks(od, pd) {
+    const r = [];
+    if (od.category !== pd.category) r.push(`Category mismatch (${od.category} vs ${pd.category})`);
+    return r.join('; ');
+  }
+
+  // Validates clinician assignments based on IDs, categories, and privileges.
+  function validateClinicians(orderingId, performingId, od, pd) {
+    if (!orderingId || !performingId) return false;
+    if (orderingId === performingId) return true;
+    if (od.category !== pd.category) return false;
+    return true;
+  }
+
+  // Parses a date string or Excel serial number into a JavaScript Date object.
+  function parseDate(dateStr) {
+    if (!dateStr) return new Date('Invalid');
+    if (!isNaN(dateStr)) {
+      const excelSerial = parseFloat(dateStr);
+      if (!isNaN(excelSerial)) return new Date((excelSerial - (25567 + 2)) * 86400 * 1000);
+    }
+    let d = new Date(dateStr);
+    if (!isNaN(d.getTime())) return d;
+    d = new Date(dateStr.replace(/(\d+)\/(\d+)\/(\d+)/, '$2/$1/$3')); // DD/MM/YYYY
+    if (!isNaN(d.getTime())) return d;
+    d = new Date(dateStr.replace(/(\d+)-(\d+)-(\d+)/, '$1/$2/$3')); // YYYY-MM-DD
+    if (!isNaN(d.getTime())) return d;
+    return new Date('Invalid');
+  }
+
+  // Retrieves text content of a child tag from a parent element.
+  function getText(parent, tag) {
+    const el = parent.getElementsByTagName(tag)[0];
+    return el ? el.textContent.trim() : '';
+  }
+
+  // Facility/license/status/other helpers, called during claim processing
+  function checkFacilityMismatch(license, providerId) {
+    const statusRecords = clinicianStatusMap[license];
+    return statusRecords?.every(entry => entry.facility !== providerId);
+  }
+
+  function checkMostRecentStatus(license, activityDate) {
+    const statusRecords = clinicianStatusMap[license];
+    if (!statusRecords || statusRecords.length === 0) return null;
+    const pastRecords = statusRecords.filter(entry => entry.effectiveDate <= activityDate);
+    if (pastRecords.length === 0) return null;
+    pastRecords.sort((a, b) => b.effectiveDate - a.effectiveDate);
+    return pastRecords[0];
+  }
+
+  function validateClinicianStatus(clinicianId, providerId, encounterStartStr) {
+    const remarks = [];
+    let eligible = true;
+
+    if (!clinicianId) {
+      remarks.push('Missing Clinician ID');
+      eligible = false; return { eligible, remarks };
+    }
+    if (!providerId) {
+      remarks.push('Missing Provider ID');
+      eligible = false; return { eligible, remarks };
+    }
+    if (!encounterStartStr) {
+      remarks.push('Missing Encounter Start Date');
+      eligible = false; return { eligible, remarks };
+    }
+    const records = clinicianStatusMap[clinicianId];
+    if (!records || records.length === 0) {
+      remarks.push(`Clinician (${clinicianId}) not found in status data`);
+      eligible = false; return { eligible, remarks };
+    }
+    const encounterDate = new Date(encounterStartStr);
+    if (isNaN(encounterDate.getTime())) {
+      remarks.push('Invalid Encounter Start Date');
+      eligible = false; return { eligible, remarks };
+    }
+    const providerMatches = records.filter(rec => rec.facilityLicenseNumber === providerId);
+    if (providerMatches.length === 0) {
+      remarks.push(`No matching Facility License Number (${providerId}) for clinician`);
+      eligible = false; return { eligible, remarks };
+    }
+    // Find the most recent effective date on or before encounter date
+    let validRecord = null;
+    for (const rec of providerMatches) {
+      const effDate = new Date(rec.effectiveDate);
+      if (!isNaN(effDate.getTime()) && effDate <= encounterDate) {
+        if (!validRecord || effDate > new Date(validRecord.effectiveDate)) {
+          validRecord = rec;
         }
-      } else if (typeof rawDateStr === 'number') {
-        // Sometimes Excel stores dates as serial numbers, convert them
-        parsedDate = excelDateToJSDate(rawDateStr);
       }
-      
-      return {
-        ...row,
-        EffectiveDateParsed: parsedDate,
-      };
+    }
+    if (!validRecord) {
+      remarks.push(`No effective date record on or before encounter date for clinician`);
+      eligible = false; return { eligible, remarks };
+    }
+    if (validRecord.status.toLowerCase() === 'inactive') {
+      remarks.push(`Clinician status is Inactive as of ${validRecord.effectiveDate}`);
+      eligible = false;
+    }
+    return { eligible, remarks };
+  }
+
+  // Load clinician status XLSX and build clinicianStatusMap; update the unified message div
+  function handleClinicianStatusExcelInput(file) {
+    const messageDiv = document.getElementById('update-message');
+    if (messageDiv) {
+      messageDiv.textContent = 'Loading clinician history…';
+    }
+    return sheetToJsonWithHeader(file, 0, 1).then(data => {
+      clinicianStatusMap = {};
+      data.forEach(row => {
+        const licenseNumber = (row['License Number'] || '').toString().trim();
+        const facilityLicenseNumber = (row['Facility License Number'] || '').toString().trim();
+        const effectiveDate = (row['Effective Date'] || '').toString().trim();
+        const status = (row['Status'] || '').toString().trim();
+        if (!licenseNumber) return;
+        if (!clinicianStatusMap[licenseNumber]) {
+          clinicianStatusMap[licenseNumber] = [];
+        }
+        clinicianStatusMap[licenseNumber].push({
+          facilityLicenseNumber,
+          effectiveDate,
+          status
+        });
+      });
+      const count = Object.keys(clinicianStatusMap).length;
+      if (messageDiv) {
+        messageDiv.textContent = `Loaded license history for ${count} unique clinician${count === 1 ? '' : 's'}.`;
+      }
+    }).catch(err => {
+      const messageDiv = document.getElementById('update-message');
+      if (messageDiv) {
+        messageDiv.textContent = `Error loading clinician history: ${err.message}`;
+      }
     });
-    
-    console.log('Clinician Status Excel Data loaded with parsed dates:', clinicianStatusData);
-    
-    // TODO: Trigger any processing that depends on clinicianStatusData being loaded
-  };
+  }
+
+  /**
+   * Updates the single‐line loader message based on global counts.
+   * - claimCount
+   * - clinicianCount
+   * - openJetCount
+   * - unique license histories in clinicianStatusMap
+   */
+  function updateLoaderMessages() {
+    const container = document.getElementById('update-message');
+    if (!container) return;
   
-  reader.readAsArrayBuffer(file);
-});
-
-// ------------------------------
-// Utility: Format Date as YYYY-MM-DD string
-// ------------------------------
-function formatDate(date) {
-  if (!(date instanceof Date)) return '';
-  const y = date.getFullYear();
-  const m = ('0' + (date.getMonth() + 1)).slice(-2);
-  const d = ('0' + date.getDate()).slice(-2);
-  return `${y}-${m}-${d}`;
-}
-
-// ------------------------------
-// Utility: Compare two dates ignoring time (only date part)
-// Returns:
-//   0 if dates equal,
-//   negative if date1 < date2,
-//   positive if date1 > date2
-// ------------------------------
-function compareDates(date1, date2) {
-  const d1 = new Date(date1.getFullYear(), date1.getMonth(), date1.getDate());
-  const d2 = new Date(date2.getFullYear(), date2.getMonth(), date2.getDate());
-  return d1 - d2;
-}
-
-// ------------------------------
-// Validate a single clinician license status given Activity Date and Provider License Number
-// ------------------------------
-// Arguments:
-//   clinicianLicenseNumber (string) - License Number of clinician to validate
-//   providerFacilityLicenseNumber (string) - Facility License Number from XML Claim
-//   activityDate (Date) - Date of the Activity to validate against
-//
-// Returns:
-//   { valid: boolean, reason: string }
-//   - valid is false if status is inactive or no matching license found
-//   - reason provides explanatory text for logging or UI display
-// ------------------------------
-function validateClinicianStatus(clinicianLicenseNumber, providerFacilityLicenseNumber, activityDate) {
-  // Filter clinicianStatusData for rows matching License Number AND Facility License Number
-  const relevantRows = clinicianStatusData.filter(row =>
-    row['License Number'] === clinicianLicenseNumber &&
-    row['Facility License Number'] === providerFacilityLicenseNumber
-  );
-
-  if (relevantRows.length === 0) {
-    return {
-      valid: false,
-      reason: `No status data found for License Number ${clinicianLicenseNumber} and Facility License Number ${providerFacilityLicenseNumber}`
-    };
-  }
-
-  // From relevant rows, find those with EffectiveDateParsed <= activityDate
-  const validDateRows = relevantRows.filter(row => {
-    if (row.EffectiveDateParsed instanceof Date) {
-      return compareDates(row.EffectiveDateParsed, activityDate) <= 0;
+    const m = [];
+    if (claimCount) {
+      m.push(`${claimCount} claim${claimCount === 1 ? '' : 's'} loaded`);
     }
-    return false;
-  });
-
-  if (validDateRows.length === 0) {
-    return {
-      valid: false,
-      reason: `No status row with Effective Date before or on ${formatDate(activityDate)} found`
-    };
-  }
-
-  // Find the row with the latest EffectiveDateParsed before or on activityDate
-  let latestRow = validDateRows[0];
-  validDateRows.forEach(row => {
-    if (row.EffectiveDateParsed > latestRow.EffectiveDateParsed) {
-      latestRow = row;
+    if (clinicianCount) {
+      m.push(`${clinicianCount} clinician${clinicianCount === 1 ? '' : 's'} loaded`);
     }
-  });
-
-  // Check if status is 'Inactive' or otherwise invalid
-  if (latestRow['Status'] && latestRow['Status'].toLowerCase() === 'inactive') {
-    return {
-      valid: false,
-      reason: `License status is Inactive as of ${formatDate(latestRow.EffectiveDateParsed)}`
-    };
+    if (openJetCount) {
+      m.push(`${openJetCount} eligibilit${openJetCount === 1 ? 'y' : 'ies'} loaded`);
+    }
+    const historyCount = Object.keys(clinicianStatusMap).length;
+    if (historyCount) {
+      m.push(`${historyCount} unique license histor${historyCount === 1 ? 'y' : 'ies'} loaded`);
+    }
+  
+    if (m.length === 0) {
+      container.textContent = '';
+    } else if (m.length === 1) {
+      container.textContent = m[0];
+    } else {
+      container.textContent = m.slice(0, -1).join(', ') + ' and ' + m[m.length - 1];
+    }
   }
 
-  // Passed all checks, license is valid at activity date
-  return {
-    valid: true,
-    reason: `Active license found with status '${latestRow['Status']}' effective from ${formatDate(latestRow.EffectiveDateParsed)}`
-  };
-}
-
-// ------------------------------
-// Main function to process XML Claims and validate clinician statuses
-// Arguments:
-//   xmlDoc - parsed XML Document of claims
-//   outputElement - DOM element where results will be displayed (e.g., a table or div)
-// ------------------------------
-function processClaimsAndValidate(xmlDoc, outputElement) {
-  if (!xmlDoc) {
-    console.error('No XML Document provided for claim processing.');
-    return;
-  }
-
-  // Clear previous output
-  outputElement.innerHTML = '';
-
-  // Extract <Claim> elements - assuming XML structure contains Claim.Submission > Claim elements
-  const claims = xmlDoc.getElementsByTagName('Claim');
-
-  if (claims.length === 0) {
-    outputElement.textContent = 'No claims found in the uploaded XML.';
-    return;
-  }
-
-  // Create a table to show results
-  const table = document.createElement('table');
-  table.classList.add('results-table');
-  const headerRow = document.createElement('tr');
-  [
-    'Claim Number',
-    'Activity Start Date',
-    'Clinician License Number',
-    'Provider Facility License Number',
-    'Validation Result',
-    'Remarks'
-  ].forEach(headerText => {
-    const th = document.createElement('th');
-    th.textContent = headerText;
-    headerRow.appendChild(th);
-  });
-  table.appendChild(headerRow);
-
-  // Iterate through claims
-  for (let i = 0; i < claims.length; i++) {
-    const claim = claims[i];
-    
-    // Extract Claim Number
-    const claimNumberElem = claim.getElementsByTagName('ClaimNumber')[0];
-    const claimNumber = claimNumberElem ? claimNumberElem.textContent.trim() : `Claim#${i + 1}`;
-
-    // Extract Provider Facility License Number from Claim Header or Provider block
-    // Assuming XML has a Provider block with LicenseNumber or FacilityLicenseNumber
-    const providerLicenseElem = claim.getElementsByTagName('ProviderLicenseNumber')[0] || claim.getElementsByTagName('FacilityLicenseNumber')[0];
-    const providerFacilityLicenseNumber = providerLicenseElem ? providerLicenseElem.textContent.trim() : '';
-
-    // Extract Activities
-    const activities = claim.getElementsByTagName('Activity');
-    if (activities.length === 0) {
-      // No activities found - log in table
-      const row = document.createElement('tr');
-      [claimNumber, '-', '-', '-', 'No activities found', ''].forEach(text => {
-        const td = document.createElement('td');
-        td.textContent = text;
-        row.appendChild(td);
+  // Helpers used only for export/XLSX or HTML table
+  function appendCell(tr, content, { isHTML = false, isArray = false, verticalAlign = '' } = {}) {
+    const td = document.createElement('td');
+    if (verticalAlign) td.style.verticalAlign = verticalAlign;
+    if (isArray) {
+      td.style.whiteSpace = 'pre-line';
+      td.textContent = '';
+      (Array.isArray(content) ? content : [content]).forEach(text => {
+        const div = document.createElement('div');
+        div.textContent = text;
+        td.appendChild(div);
       });
-      table.appendChild(row);
-      continue;
+    } else if (isHTML) {
+      td.style.whiteSpace = 'pre-line';
+      td.innerHTML = content;
+    } else {
+      td.style.whiteSpace = String(content).includes('\n') ? 'pre-line' : 'nowrap';
+      td.textContent = content;
     }
-
-    // Iterate over activities inside the claim
-    for (let j = 0; j < activities.length; j++) {
-      const activity = activities[j];
-
-      // Extract Activity Start Date (Expected format: YYYY-MM-DD or something else)
-      const activityStartDateElem = activity.getElementsByTagName('StartDate')[0];
-      if (!activityStartDateElem) {
-        continue; // skip activity if no start date
-      }
-      const activityStartDateStr = activityStartDateElem.textContent.trim();
-      const activityStartDate = new Date(activityStartDateStr);
-      if (isNaN(activityStartDate.getTime())) {
-        continue; // invalid date, skip
-      }
-
-      // Extract Clinician License Number from Activity
-      const clinicianLicenseElem = activity.getElementsByTagName('ClinicianLicenseNumber')[0];
-      if (!clinicianLicenseElem) {
-        continue; // skip if no clinician license info
-      }
-      const clinicianLicenseNumber = clinicianLicenseElem.textContent.trim();
-
-      // Perform the validation for this clinician at this activity date
-      const validation = validateClinicianStatus(
-        clinicianLicenseNumber,
-        providerFacilityLicenseNumber,
-        activityStartDate
-      );
-
-      // Append row with validation results
-      const row = document.createElement('tr');
-      [
-        claimNumber,
-        formatDate(activityStartDate),
-        clinicianLicenseNumber,
-        providerFacilityLicenseNumber,
-        validation.valid ? 'Valid' : 'Invalid',
-        validation.reason
-      ].forEach(text => {
-        const td = document.createElement('td');
-        td.textContent = text;
-        row.appendChild(td);
-      });
-      table.appendChild(row);
-    }
+    tr.appendChild(td);
   }
 
-  outputElement.appendChild(table);
-}
-
-// ------------------------------
-// Example Usage
-// ------------------------------
-
-// You can call processClaimsAndValidate(xmlDoc, document.getElementById('resultsContainer'));
-// after XML file input and Excel inputs are loaded and parsed.
-
-// ------------------------------
-// Additional Notes:
-// - Ensure the XML claim file is parsed as XMLDocument before calling processClaimsAndValidate
-// - The Clinician Status Excel should be loaded before validation is triggered
-// - The Provider Facility License Number is critical and must be present in the XML claims for proper validation
-// - The function logs detailed reasons for each validation result
-// ------------------------------
-// ------------------------------
-// File Input Handlers and Event Listeners
-// ------------------------------
-
-// DOM Elements for file inputs
-const insurerExcelInput = document.getElementById('insurerExcelInput');
-const openJetExcelInput = document.getElementById('openJetExcelInput');
-const clinicianStatusExcelInput = document.getElementById('clinicianStatusExcelInput');
-const xmlClaimInput = document.getElementById('xmlClaimInput');
-const validateButton = document.getElementById('validateButton');
-const resultsContainer = document.getElementById('resultsContainer');
-
-// Variables to hold loaded data
-let insurerData = [];
-let openJetData = [];
-let clinicianStatusData = [];
-let xmlDoc = null;
-
-// ------------------------------
-// Load Excel file helper function
-// Uses FileReader + XLSX.js to parse the first sheet
-// Returns a Promise resolving to JSON array of rows
-// ------------------------------
-function loadExcelFile(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-
-    reader.onload = (e) => {
-      const data = new Uint8Array(e.target.result);
-      const workbook = XLSX.read(data, { type: 'array' });
-      const firstSheetName = workbook.SheetNames[0];
-      const worksheet = workbook.Sheets[firstSheetName];
-      const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
-      resolve(jsonData);
-    };
-
-    reader.onerror = (err) => reject(err);
-    reader.readAsArrayBuffer(file);
-  });
-}
-
-// ------------------------------
-// Parse XML file helper function
-// ------------------------------
-function parseXmlFile(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-
-    reader.onload = (e) => {
-      const parser = new DOMParser();
-      const xml = parser.parseFromString(e.target.result, 'application/xml');
-
-      // Check for parse errors
-      const parserError = xml.getElementsByTagName('parsererror');
-      if (parserError.length > 0) {
-        reject(new Error('Error parsing XML file'));
-        return;
-      }
-      resolve(xml);
-    };
-
-    reader.onerror = (err) => reject(err);
-    reader.readAsText(file);
-  });
-}
-
-// ------------------------------
-// Event Handlers for Excel file inputs
-// Each loads their respective Excel file data and stores globally
-// ------------------------------
-insurerExcelInput.addEventListener('change', async (event) => {
-  if (event.target.files.length === 0) return;
-  try {
-    insurerData = await loadExcelFile(event.target.files[0]);
-    console.log('Insurer Excel loaded:', insurerData.length, 'rows');
-    alert('Insurer Excel loaded successfully.');
-  } catch (error) {
-    console.error('Error loading Insurer Excel:', error);
-    alert('Failed to load Insurer Excel.');
-  }
-});
-
-openJetExcelInput.addEventListener('change', async (event) => {
-  if (event.target.files.length === 0) return;
-  try {
-    openJetData = await loadExcelFile(event.target.files[0]);
-    console.log('Open Jet Excel loaded:', openJetData.length, 'rows');
-
-    // Parse EffectiveDate fields into Date objects and add property EffectiveDateParsed
-    openJetData.forEach(row => {
-      if (row['EffectiveDate']) {
-        row.EffectiveDateParsed = new Date(row['EffectiveDate']);
-      }
-    });
-
-    alert('Open Jet Excel loaded successfully.');
-  } catch (error) {
-    console.error('Error loading Open Jet Excel:', error);
-    alert('Failed to load Open Jet Excel.');
-  }
-});
-
-clinicianStatusExcelInput.addEventListener('change', async (event) => {
-  if (event.target.files.length === 0) return;
-  try {
-    clinicianStatusData = await loadExcelFile(event.target.files[0]);
-    console.log('Clinician Status Excel loaded:', clinicianStatusData.length, 'rows');
-
-    // Parse Effective Date for clinician status rows
-    clinicianStatusData.forEach(row => {
-      if (row['Effective Date']) {
-        row.EffectiveDateParsed = new Date(row['Effective Date']);
-      }
-    });
-
-    alert('Clinician Status Excel loaded successfully.');
-  } catch (error) {
-    console.error('Error loading Clinician Status Excel:', error);
-    alert('Failed to load Clinician Status Excel.');
-  }
-});
-
-// ------------------------------
-// Event Handler for XML Claim input
-// ------------------------------
-xmlClaimInput.addEventListener('change', async (event) => {
-  if (event.target.files.length === 0) return;
-  try {
-    xmlDoc = await parseXmlFile(event.target.files[0]);
-    console.log('XML Claim file loaded');
-    alert('XML Claim file loaded successfully.');
-  } catch (error) {
-    console.error('Error loading XML Claim file:', error);
-    alert('Failed to load XML Claim file.');
-  }
-});
-
-// ------------------------------
-// Validate Button Click Handler
-// Triggers validation only if all inputs are loaded
-// ------------------------------
-validateButton.addEventListener('click', () => {
-  if (insurerData.length === 0) {
-    alert('Please load the Insurer Excel file first.');
-    return;
-  }
-  if (openJetData.length === 0) {
-    alert('Please load the Open Jet Excel file first.');
-    return;
-  }
-  if (clinicianStatusData.length === 0) {
-    alert('Please load the Clinician Status Excel file first.');
-    return;
-  }
-  if (!xmlDoc) {
-    alert('Please load the XML Claim file first.');
-    return;
-  }
-
-  // Clear previous results
-  resultsContainer.innerHTML = '';
-
-  // Call the main processing and validation function
-  processClaimsAndValidate(xmlDoc, resultsContainer);
-});
-
-// ------------------------------
-// Additional Fixes and Comments:
-// - Added detailed parsing of date fields after Excel loading for all relevant files
-// - Added alerts and console logs for better user feedback on file loading
-// - Added XML parsing error detection and handling
-// - Added checks to ensure all required files are loaded before validation
-// - Used global variables to hold parsed data for validation functions
-// - File inputs and button should be defined in the HTML with matching IDs
-// ------------------------------
+})();
