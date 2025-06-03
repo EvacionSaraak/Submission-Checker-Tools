@@ -11,22 +11,36 @@
   <div id="explanationBox">
     <strong>What this script does:</strong>  
     <p>
-      This tool allows you to upload a Claim Submission XML file along with two Excel files containing clinician license information and eligibility data. It validates the clinician licenses against the claims data, checks eligibility using the Open Jet export, and helps identify any discrepancies or mismatches. After processing, you can export the validation results for further review.
+      This tool allows you to upload a Claim Submission XML file along with three Excel files containing important clinician data:
+    </p>
+    <ul>
+      <li><strong>Clinician Licenses Export:</strong> Contains clinician license details used to verify the licensing status and privileges of clinicians appearing in the claims.</li>
+      <li><strong>Open Jet Eligibility Export:</strong> Provides eligibility information including effective and expiry dates, which helps validate whether clinicians were eligible during the service period.</li>
+      <li><strong>Clinician Status Export:</strong> Contains detailed status history per clinician license, including effective dates and facility assignments, used to check if the clinician's license was active and valid for the facility on the claim date.</li>
+    </ul>
+    <p>
+      After processing these files together with the claim data, the tool will identify discrepancies such as mismatched facility licenses, inactive clinician statuses at the time of service, missing license records, or category conflicts. You can then export the validation results as a CSV for further review or reporting.
     </p>
   </div>
+
 
   <div id="fileInputs">
     <div class="input-group">
       <label for="xmlFileInput">Claim Submissions XML File:</label>
       <input type="file" id="xmlFileInput" accept=".xml" />
     </div>
+    
+    <div class="input-group">
+      <label for="openJetFileInput">Open Jet Eligibility Export File (.xlsx):</label>
+      <input type="file" id="openJetFileInput" accept=".xlsx" />
+    </div>
     <div class="input-group">
       <label for="excelFileInput">Clinician Licenses Export File (.xlsx):</label>
       <input type="file" id="excelFileInput" accept=".xlsx" />
     </div>
     <div class="input-group">
-      <label for="openJetFileInput">Open Jet Eligibility Export File (.xlsx):</label>
-      <input type="file" id="openJetFileInput" accept=".xlsx" />
+      <label for="clinicianStatusFileInput">Clinician Status Export File (.xlsx):</label> <!-- New input for clinician status XLSX -->
+      <input type="file" id="clinicianStatusFileInput" accept=".xlsx" /> <!-- Added -->
     </div>
     <div class="input-group">
       <button id="processBtn" disabled>Process Files</button>
