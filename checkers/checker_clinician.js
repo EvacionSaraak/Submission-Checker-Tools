@@ -5,7 +5,7 @@
   let openJetData = [];
   let xmlDoc = null;
   let clinicianMap = null;
-  let xmlInput, excelInput, openJetInput, resultsDiv, validationDiv, processBtn, exportCsvBtn;
+  let xmlInput, excelInput, openJetInput, clinicianStatusInput, resultsDiv, validationDiv, processBtn, exportCsvBtn;
   let clinicianCount = 0, openJetCount = 0, claimCount = 0;
   let clinicianStatusMap = {};
 
@@ -23,19 +23,37 @@
     xmlInput = document.getElementById('xmlFileInput');
     excelInput = document.getElementById('excelFileInput');
     openJetInput = document.getElementById('openJetFileInput');
+    // New listener for the “Clinician Status” XLSX upload:
+    const historyInput = document.getElementById('clinicianStatusFileInput');
+  
     resultsDiv = document.getElementById('results');
     validationDiv = document.createElement('div');
     validationDiv.id = 'validation-message';
     resultsDiv.parentNode.insertBefore(validationDiv, resultsDiv);
     processBtn = document.getElementById('processBtn');
     exportCsvBtn = document.getElementById('exportCsvBtn');
+  
     resultsDiv.setAttribute('role', 'region');
     validationDiv.setAttribute('role', 'status');
+  
     xmlInput.addEventListener('change', handleXmlInput);
     excelInput.addEventListener('change', handleUnifiedExcelInput);
     openJetInput.addEventListener('change', handleUnifiedExcelInput);
+    // Attach the new listener here:
+    historyInput.addEventListener('change', () => {
+      const file = historyInput.files[0];
+      if (file) {
+        handleClinicianStatusExcelInput(file).then(() => {
+          updateLoaderMessages();    // Refresh counts after loading histories
+          toggleProcessButton();     // Re-enable Process button if applicable
+        });
+      }
+    });
+  
     processBtn.addEventListener('click', () => {
-      if (xmlDoc && clinicianMap && openJetData.length > 0) processClaims(xmlDoc, clinicianMap);
+      if (xmlDoc && clinicianMap && openJetData.length > 0) {
+        processClaims(xmlDoc, clinicianMap);
+      }
     });
   }
 
@@ -526,12 +544,12 @@
     return { eligible, remarks };
   }
 
-  // Load clinician status Excel and build map; shows loading and update messages on the page.
+  // Load clinician status XLSX and build clinicianStatusMap; update the unified message div
   function handleClinicianStatusExcelInput(file) {
-    // Show loading message immediately
-    const messageDiv = document.getElementById('uploadStatus');
+    // Show a loading message in the unified update area
+    const messageDiv = document.getElementById('update-message');
     if (messageDiv) {
-      messageDiv.textContent = 'Loading Excel...';
+      messageDiv.textContent = 'Loading clinician history…';
     }
   
     return sheetToJsonWithHeader(file, 0, 1).then(data => {
@@ -554,13 +572,15 @@
         });
       });
   
-      const clinicianCount = Object.keys(clinicianStatusMap).length;
+      // Count unique license numbers for histories
+      const count = Object.keys(clinicianStatusMap).length;
       if (messageDiv) {
-        messageDiv.textContent = `Loaded license history for ${clinicianCount} unique clinicians.`;
+        messageDiv.textContent = `Loaded license history for ${count} unique clinician${count === 1 ? '' : 's'}.`;
       }
     }).catch(err => {
+      const messageDiv = document.getElementById('update-message');
       if (messageDiv) {
-        messageDiv.textContent = `Error loading clinician status Excel: ${err.message}`;
+        messageDiv.textContent = `Error loading clinician history: ${err.message}`;
       }
     });
   }
