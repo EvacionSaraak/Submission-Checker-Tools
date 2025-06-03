@@ -39,7 +39,7 @@
     excelInput.addEventListener('change', handleUnifiedExcelInput);
     openJetInput.addEventListener('change', handleUnifiedExcelInput);
 
-    historyInput.addEventListener('change', () => {
+    clinicianStatusInput.addEventListener('change', () => {
       const file = clinicianStatusInput.files[0];
       if (file) {
         handleClinicianStatusExcelInput(file).then(() => {
