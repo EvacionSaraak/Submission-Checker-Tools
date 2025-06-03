@@ -439,25 +439,51 @@
     results.forEach(r => {
       const tr = document.createElement('tr');
       tr.className = r.valid ? 'valid' : 'invalid';
-
-      const ordStack = `${r.orderingId || ''}\n${r.orderingName || ''}\n${r.orderingCategory || ''}`;
-      const perfStack = `${r.performingId || ''}\n${r.performingName || ''}\n${r.performingCategory || ''}`;
-      const validityWindow = r.from && r.to ? `${r.from} - ${r.to}` : 'N/A';
-
+  
+      const encounterDate = (r.activityStart || '').split('T')[0];
+  
+      const formatClinicianCell = (id, name, category, privileges, from, to) => {
+        return `
+          <div><strong>${id || ''}</strong></div>
+          <div>${name || ''}</div>
+          <div>${category || ''}</div>
+          <div><em>${privileges || ''}</em></div>
+          <div style="margin-top: 4px;">
+            <div style="display:inline-block; width:48%;">From: ${from || 'N/A'}</div>
+            <div style="display:inline-block; width:48%;">To: ${to || 'N/A'}</div>
+          </div>
+        `;
+      };
+  
       appendCell(tr, r.claimId, { verticalAlign: 'top' });
       appendCell(tr, r.activityId);
-      appendCell(tr, (r.activityStart || '').split('T')[0]);
-      appendCell(tr, ordStack);
-      appendCell(tr, perfStack);
-      appendCell(tr, validityWindow);
+      appendCell(tr, encounterDate);
+      appendCell(tr, formatClinicianCell(
+        r.orderingId,
+        r.orderingName,
+        r.orderingCategory,
+        r.orderingPrivileges,
+        r.orderingFrom,
+        r.orderingTo
+      ), { isHTML: true });
+      appendCell(tr, formatClinicianCell(
+        r.performingId,
+        r.performingName,
+        r.performingCategory,
+        r.performingPrivileges,
+        r.performingFrom,
+        r.performingTo
+      ), { isHTML: true });
       appendCell(tr, r.status || 'N/A');
       appendCell(tr, r.valid ? '✔︎' : '✘');
       appendCell(tr, r.remarks, { isArray: true });
-
+  
       tbody.appendChild(tr);
     });
     return tbody;
   }
+
+
 
   /**
    * Renders the table header for the results table.
@@ -466,10 +492,14 @@
     const thead = document.createElement('thead');
     const row = document.createElement('tr');
     [
-      'Claim ID', 'Activity ID', 'Activity Start',
-      'Ordering Clinician', 'Performing Clinician',
-      'Validity Window', 'Clinician Status',
-      'Valid', 'Remarks'
+      'Claim ID',
+      'Activity ID',
+      'Activity Start (Encounter Date)',
+      'Ordering Clinician',
+      'Performing Clinician',
+      'License Status',
+      'Valid',
+      'Remarks'
     ].forEach(text => {
       const th = document.createElement('th');
       th.scope = 'col';
@@ -479,6 +509,8 @@
     thead.appendChild(row);
     return thead;
   }
+
+
 
   /**
    * Shows a processing spinner/message.
