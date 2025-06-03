@@ -109,8 +109,9 @@
               name:       row['Clinician Name']     || row['Name']     || '',
               category:   row['Clinician Category'] || row['Category'] || '',
               privileges: row['Activity Group']     || row['Privileges'] || '',
-              from:       row['From'] || '',
-              to:         row['To']   || ''
+              from:       row['Effective Date'] || '',
+              to:         row['Expiry Date']   || '',
+              status:     row['Status'] || ''
             };
           });
           clinicianCount = Object.keys(clinicianMap).length;
@@ -225,8 +226,8 @@
       claimNodes.forEach(cl => {
         const cid = getText(cl, 'ID') || 'N/A';
         const encounterNode = cl.getElementsByTagName('Encounter')[0];
-        const encounterStartStr = encounterNode ? getText(encounterNode, 'From') : '';
-        const encounterEndStr = encounterNode ? getText(encounterNode, 'To') : '';
+        const encounterStartStr = encounterNode ? getText(encounterNode, 'Start') : '';
+        const encounterEndStr = encounterNode ? getText(encounterNode, 'End') : '';
         const activities = Array.from(cl.getElementsByTagName('Activity'));
         activities.forEach(act => {
           const aid = getText(act, 'ID') || 'N/A';
@@ -359,8 +360,8 @@
         r.performingFrom,
         r.performingTo
       ), { isHTML: true });
-      appendCell(tr, r.status || 'N/A');
-      appendCell(tr, '', { isHTML: true }); // Eligibility column placeholder
+      appendCell(tr, (clinicianMap[r.performingId]?.status || clinicianMap[r.orderingId]?.status || 'N/A'));
+      appendCell(tr, r.performingEligibility || r.orderingEligibility || 'N/A');
       appendCell(tr, r.valid ? '✔︎' : '✘');
       appendCell(tr, r.remarks, { isArray: true });
       tbody.appendChild(tr);
