@@ -180,12 +180,15 @@
             const perfEligRes = checkEligibility(encounterStartStr, encounterEndStr, perfXlsxRow);
             if (!perfEligRes.eligible) rowRemarks.push(`Performing: ${perfEligRes.remarks.join('; ')}`);
           }
+  
+          // New: Validate clinician status against the clinicianStatusMap with Provider ID and encounter start date
           if (clinicianStatusMap) {
             const ordStatus = validateClinicianStatus(oid, getText(cl, 'ProviderID'), encounterStartStr);
             const perfStatus = validateClinicianStatus(pid, getText(cl, 'ProviderID'), encounterStartStr);
             rowRemarks.push(...ordStatus.remarks);
             rowRemarks.push(...perfStatus.remarks);
           }
+  
           results.push({
             claimId: cid,
             activityId: aid,
@@ -461,40 +464,91 @@
     return pastRecords[0];
   }
 
-  function validateClinicianStatus(license, providerId, activityDateStr) {
-    const activityDate = parseDate(activityDateStr);
+  function validateClinicianStatus(clinicianId, providerId, encounterStartStr) {
     const remarks = [];
-    const statusRecords = clinicianStatusMap[license];
-    if (!statusRecords || statusRecords.length === 0) { remarks.push('No clinician status records found'); return { valid: false, remarks }; }
-    const facilityMismatch = checkFacilityMismatch(license, providerId);
-    if (facilityMismatch) remarks.push('Facility license mismatch');
-    const effectiveRow = checkMostRecentStatus(license, activityDate);
-    if (effectiveRow) {
-      if (effectiveRow.status.toLowerCase() === 'inactive') remarks.push(`Clinician status inactive as of ${formatDate(effectiveRow.effectiveDate)}`);
-    } else remarks.push('No valid effective date found before encounter');
-    return { valid: !remarks.some(r => r.toLowerCase().includes('inactive')), remarks };
+    let eligible = true;
+  
+    if (!clinicianId) {
+      remarks.push('Missing Clinician ID');
+      eligible = false; return { eligible, remarks };
+    }
+  
+    if (!providerId) {
+      remarks.push('Missing Provider ID');
+      eligible = false; return { eligible, remarks };
+    }
+  
+    if (!encounterStartStr) {
+      remarks.push('Missing Encounter Start Date');
+      eligible = false; return { eligible, remarks };
+    }
+  
+    const records = clinicianStatusMap[clinicianId];
+    if (!records || records.length === 0) {
+      remarks.push(`Clinician (${clinicianId}) not found in status data`);
+      eligible = false; return { eligible, remarks };
+    }
+  
+    // Parse encounter date as Date object for comparison
+    const encounterDate = new Date(encounterStartStr);
+    if (isNaN(encounterDate.getTime())) {
+      remarks.push('Invalid Encounter Start Date');
+      eligible = false; return { eligible, remarks };
+    }
+  
+    // Filter records by matching providerId (Facility License Number)
+    const providerMatches = records.filter(rec => rec.facilityLicenseNumber === providerId);
+    if (providerMatches.length === 0) {
+      remarks.push(`No matching Facility License Number (${providerId}) for clinician`);
+      eligible = false; return { eligible, remarks };
+    }
+  
+    // Find the most recent effective date on or before encounterDate
+    let validRecord = null;
+    for (const rec of providerMatches) {
+      const effDate = new Date(rec.effectiveDate);
+      if (!isNaN(effDate.getTime()) && effDate <= encounterDate) {
+        if (!validRecord || effDate > new Date(validRecord.effectiveDate)) {
+          validRecord = rec;
+        }
+      }
+    }
+  
+    if (!validRecord) {
+      remarks.push(`No effective date record on or before encounter date for clinician`);
+      eligible = false; return { eligible, remarks };
+    }
+  
+    if (validRecord.status.toLowerCase() === 'inactive') {
+      remarks.push(`Clinician status is Inactive as of ${validRecord.effectiveDate}`);
+      eligible = false;
+    }
+    return { eligible, remarks };
   }
 
   // Handles loading of clinician status Excel
-  function handleClinicianStatusXlsx(file) {
+  function handleClinicianStatusExcelInput(file) {
     return sheetToJsonWithHeader(file, 0, 1).then(data => {
       clinicianStatusMap = {};
       data.forEach(row => {
-        const license = (row['License Number'] || '').trim();
-        if (!license) return;
-        if (!clinicianStatusMap[license]) clinicianStatusMap[license] = [];
-        clinicianStatusMap[license].push({
-          facility: (row['Facility License Number'] || '').trim(),
-          effectiveDate: parseDate(row['Effective Date']),
-          status: (row['Status'] || '').trim().toLowerCase()
+        const licenseNumber = (row['License Number'] || '').toString().trim();
+        const facilityLicenseNumber = (row['Facility License Number'] || '').toString().trim();
+        const effectiveDate = (row['Effective Date'] || '').toString().trim();
+        const status = (row['Status'] || '').toString().trim();
+  
+        if (!licenseNumber) return;
+  
+        if (!clinicianStatusMap[licenseNumber]) {
+          clinicianStatusMap[licenseNumber] = [];
+        }
+        clinicianStatusMap[licenseNumber].push({
+          facilityLicenseNumber,
+          effectiveDate,
+          status
         });
       });
-      Object.values(clinicianStatusMap).forEach(arr =>
-        arr.sort((a, b) => b.effectiveDate - a.effectiveDate)
-      );
     });
   }
-
   // Helpers used only for export/XLSX or HTML table
   function appendCell(tr, content, { isHTML = false, isArray = false, verticalAlign = '' } = {}) {
     const td = document.createElement('td');
