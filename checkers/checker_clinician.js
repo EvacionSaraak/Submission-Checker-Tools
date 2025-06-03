@@ -526,8 +526,14 @@
     return { eligible, remarks };
   }
 
-  // Handles loading of clinician status Excel
+  // Load clinician status Excel and build map; shows loading and update messages on the page.
   function handleClinicianStatusExcelInput(file) {
+    // Show loading message immediately
+    const messageDiv = document.getElementById('uploadStatus');
+    if (messageDiv) {
+      messageDiv.textContent = 'Loading Excel...';
+    }
+  
     return sheetToJsonWithHeader(file, 0, 1).then(data => {
       clinicianStatusMap = {};
       data.forEach(row => {
@@ -537,7 +543,10 @@
         const status = (row['Status'] || '').toString().trim();
   
         if (!licenseNumber) return;
-        if (!clinicianStatusMap[licenseNumber]) clinicianStatusMap[licenseNumber] = [];
+  
+        if (!clinicianStatusMap[licenseNumber]) {
+          clinicianStatusMap[licenseNumber] = [];
+        }
         clinicianStatusMap[licenseNumber].push({
           facilityLicenseNumber,
           effectiveDate,
@@ -546,9 +555,38 @@
       });
   
       const clinicianCount = Object.keys(clinicianStatusMap).length;
-      console.log(`Loaded license history for ${clinicianCount} unique clinicians.`);
+      if (messageDiv) {
+        messageDiv.textContent = `Loaded license history for ${clinicianCount} unique clinicians.`;
+      }
+    }).catch(err => {
+      if (messageDiv) {
+        messageDiv.textContent = `Error loading clinician status Excel: ${err.message}`;
+      }
     });
   }
+
+  /**
+   * Updates the unified loader message area using current global counts.
+   * - Claims: Based on `claimCount`
+   * - Clinicians: Based on `clinicianCount`
+   * - Eligibilities: Based on `openJetCount`
+   * - Histories: Based on unique license numbers in `clinicianStatusMap`
+   */
+  function updateLoaderMessages() {
+    const m = [], c = document.getElementById('update-message'); if (!c) return;
+    if (claimCount) m.push(`${claimCount} claim${claimCount === 1 ? '' : 's'} loaded`);
+    if (clinicianCount) m.push(`${clinicianCount} clinician${clinicianCount === 1 ? '' : 's'} loaded`);
+    if (openJetCount) m.push(`${openJetCount} eligibilit${openJetCount === 1 ? 'y' : 'ies'} loaded`);
+    const h = Object.keys(clinicianStatusMap).length;
+    if (h) m.push(`${h} unique license histor${h === 1 ? 'y' : 'ies'} loaded`);
+    c.textContent = m.length === 0 ? '' : m.length === 1 ? m[0] : m.slice(0, -1).join(', ') + ' and ' + m[m.length - 1];
+  }
+
+
+  function capitalize(str) {
+    return str.charAt(0).toUpperCase() + str.slice(1);
+  }
+
 
   // Helpers used only for export/XLSX or HTML table
   function appendCell(tr, content, { isHTML = false, isArray = false, verticalAlign = '' } = {}) {
