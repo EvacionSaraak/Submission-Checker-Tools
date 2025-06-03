@@ -537,18 +537,19 @@
         const status = (row['Status'] || '').toString().trim();
   
         if (!licenseNumber) return;
-  
-        if (!clinicianStatusMap[licenseNumber]) {
-          clinicianStatusMap[licenseNumber] = [];
-        }
+        if (!clinicianStatusMap[licenseNumber]) clinicianStatusMap[licenseNumber] = [];
         clinicianStatusMap[licenseNumber].push({
           facilityLicenseNumber,
           effectiveDate,
           status
         });
       });
+  
+      const clinicianCount = Object.keys(clinicianStatusMap).length;
+      console.log(`Loaded license history for ${clinicianCount} unique clinicians.`);
     });
   }
+
   // Helpers used only for export/XLSX or HTML table
   function appendCell(tr, content, { isHTML = false, isArray = false, verticalAlign = '' } = {}) {
     const td = document.createElement('td');
