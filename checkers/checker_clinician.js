@@ -23,7 +23,7 @@
     xmlInput = document.getElementById('xmlFileInput');
     excelInput = document.getElementById('excelFileInput');
     openJetInput = document.getElementById('openJetFileInput');
-    const historyInput = document.getElementById('clinicianStatusFileInput');
+    clinicianStatusInput = document.getElementById('clinicianStatusFileInput');
 
     resultsDiv = document.getElementById('results');
     validationDiv = document.createElement('div');
@@ -40,7 +40,7 @@
     openJetInput.addEventListener('change', handleUnifiedExcelInput);
 
     historyInput.addEventListener('change', () => {
-      const file = historyInput.files[0];
+      const file = clinicianStatusInput.files[0];
       if (file) {
         handleClinicianStatusExcelInput(file).then(() => {
           updateLoaderMessages();
