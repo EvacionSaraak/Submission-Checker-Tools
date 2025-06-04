@@ -9,7 +9,7 @@
   <h2>Upload Claim Submission XML and Clinician Excel</h2>
 
   <div id="explanationBox">
-    <strong>What this script does:</strong>  
+    <strong>What this script does:</strong>
     <p>
       This tool allows you to upload a Claim Submission XML file along with three Excel files containing important clinician data:
     </p>
@@ -23,13 +23,11 @@
     </p>
   </div>
 
-
   <div id="fileInputs">
     <div class="input-group">
       <label for="xmlFileInput">Claim Submissions XML File:</label>
       <input type="file" id="xmlFileInput" accept=".xml" />
     </div>
-    
     <div class="input-group">
       <label for="openJetFileInput">Open Jet Eligibility Export File (.xlsx):</label>
       <input type="file" id="openJetFileInput" accept=".xlsx" />
@@ -39,8 +37,8 @@
       <input type="file" id="excelFileInput" accept=".xlsx" />
     </div>
     <div class="input-group">
-      <label for="clinicianStatusFileInput">Clinician License History Export File (.xlsx):</label> <!-- New input for clinician status XLSX -->
-      <input type="file" id="clinicianStatusFileInput" accept=".xlsx" /> <!-- Added -->
+      <label for="clinicianStatusFileInput">Clinician License History Export File (.xlsx):</label>
+      <input type="file" id="clinicianStatusFileInput" accept=".xlsx" />
     </div>
     <div class="input-group">
       <button id="processBtn" disabled>Process Files</button>
@@ -48,7 +46,9 @@
     </div>
   </div>
 
-  <div id="uploadStatus"></div>
+  <!-- This will be dynamically updated by the script -->
+  <div id="uploadStatus" aria-live="polite"></div>
+  <div id="validation-message" aria-live="polite"></div>
   <div id="results"></div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
