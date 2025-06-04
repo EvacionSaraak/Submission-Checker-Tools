@@ -558,6 +558,10 @@
       eligible = false; return { eligible, remarks };
     }
     const records = clinicianStatusMap[clinicianId];
+    
+    console.log(clinicianStatusMap);
+    console.log(clinicianStatusMap[clinicianId]);
+    
     if (!records || records.length === 0) {
       remarks.push(`Clinician (${clinicianId}) not found in status data`);
       eligible = false; return { eligible, remarks };
