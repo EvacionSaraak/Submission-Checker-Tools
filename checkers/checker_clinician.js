@@ -1,7 +1,6 @@
 (function () {
   'use strict';
 
-  // === GLOBAL STATE ===
   let openJetData = [], xmlDoc = null, clinicianMap = null;
   let xmlInput, excelInput, openJetInput, clinicianStatusInput, resultsDiv, validationDiv, processBtn, exportCsvBtn;
   let clinicianCount = 0, openJetCount = 0, claimCount = 0, clinicianStatusMap = {};
@@ -13,13 +12,12 @@
     openJetInput = document.getElementById('openJetFileInput');
     clinicianStatusInput = document.getElementById('clinicianStatusFileInput');
     resultsDiv = document.getElementById('results');
+    processBtn = document.getElementById('processBtn');
+    exportCsvBtn = document.getElementById('exportCsvBtn');
     validationDiv = document.createElement('div');
     validationDiv.id = 'validation-message';
     resultsDiv.parentNode.insertBefore(validationDiv, resultsDiv);
-    processBtn = document.getElementById('processBtn');
-    exportCsvBtn = document.getElementById('exportCsvBtn');
-    resultsDiv.setAttribute('role', 'region');
-    validationDiv.setAttribute('role', 'status');
+
     xmlInput.addEventListener('change', handleXmlInput);
     excelInput.addEventListener('change', handleUnifiedExcelInput);
     openJetInput.addEventListener('change', handleUnifiedExcelInput);
@@ -27,14 +25,15 @@
     processBtn.addEventListener('click', () => {
       if (xmlDoc && clinicianMap && openJetData.length > 0) processClaims(xmlDoc, clinicianMap);
     });
+
+    updateResultsDiv();
+    processBtn.disabled = exportCsvBtn.disabled = true;
   });
 
   window.onerror = (msg, url, line, col) => {
     if (resultsDiv) resultsDiv.innerHTML = `<p class="error-message">Unexpected error: ${msg} at ${line}:${col}</p>`;
     console.error('Global error:', msg, url, line, col);
   };
-
-  // === FILE INPUT HANDLERS ===
 
   function handleXmlInput() {
     showProcessing('Loading XML...');
@@ -51,7 +50,7 @@
     }).catch(e => {
       xmlDoc = null; claimCount = 0;
       resultsDiv.innerHTML = `<p class="error-message">Error loading XML: ${e.message}</p>`;
-      console.error('XML loading error:', e); toggleProcessButton();
+      toggleProcessButton();
     });
   }
 
@@ -59,25 +58,57 @@
     showProcessing('Loading Excel files...');
     processBtn.disabled = exportCsvBtn.disabled = true;
     const loaders = [
-      { inputElement: excelInput, sheetIndex: 0, headerRow: 1, parseFn: handleClinicianExcelData },
-      { inputElement: openJetInput, sheetIndex: 0, headerRow: 2, parseFn: handleOpenJetExcelData },
-      { inputElement: clinicianStatusInput, sheetIndex: 0, headerRow: 1, parseFn: handleClinicianStatusExcelData }
+      { inputElement: excelInput, sheetIndex: 0, headerRow: 1, parseFn: handleClinicianExcelData, label: 'Clinician Licenses' },
+      { inputElement: openJetInput, sheetIndex: 0, headerRow: 2, parseFn: handleOpenJetExcelData, label: 'Open Jet Eligibility' },
+      { inputElement: clinicianStatusInput, sheetIndex: 0, headerRow: 1, parseFn: handleClinicianStatusExcelData, label: 'Clinician License History' }
     ];
-    Promise.all(loaders.map(({inputElement, sheetIndex, headerRow, parseFn}) =>
-      processExcelInput(inputElement, sheetIndex, headerRow, parseFn)
+    Promise.all(loaders.map(loader =>
+      processExcelInputWithLogging(loader.inputElement, loader.sheetIndex, loader.headerRow, loader.parseFn, loader.label)
     )).then(() => { updateResultsDiv(); toggleProcessButton(); })
      .catch(e => {
         resultsDiv.innerHTML = `<p class="error-message">${e.message}</p>`;
-        console.error('Excel loading error:', e); toggleProcessButton();
+        toggleProcessButton();
      });
+  }
+
+  // Wrapper to log header and remove loading message per file
+  function processExcelInputWithLogging(inputElement, sheetIndex, headerRow, parseFn, label) {
+    if (!inputElement.files[0]) return Promise.resolve();
+    return fileHeadersAndData(inputElement.files[0], sheetIndex, headerRow)
+      .then(({headers, data}) => {
+        console.log(`[${label} Header]`, headers); // LOG HEADER
+        parseFn(data);
+        removeLoadingMessage(); // REMOVE LOADING MESSAGE
+      });
+  }
+
+  // Utility to read both headers and data in one go
+  function fileHeadersAndData(file, sheetIndex = 0, headerRow = 1) {
+    return file.arrayBuffer().then(buffer => {
+      const data = new Uint8Array(buffer), wb = XLSX.read(data, { type: 'array' }), name = wb.SheetNames[sheetIndex];
+      if (!name) throw new Error(`Sheet index ${sheetIndex} not found`);
+      const sheet = wb.Sheets[name], rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+      const headerRowIndex = headerRow - 1;
+      if (!rows || rows.length <= headerRowIndex) throw new Error(`Header row not found at position ${headerRowIndex + 1}`);
+      const headers = rows[headerRowIndex].map(h => (h || '').toString().trim());
+      const dataRows = rows.slice(headerRowIndex + 1).map(row => {
+        const obj = {}; headers.forEach((h, i) => { obj[h] = row[i] || ''; }); return obj;
+      });
+      return { headers, data: dataRows };
+    });
+  }
+
+  function removeLoadingMessage() {
+    // Only remove if the "Loading Excel files..." is present
+    if (resultsDiv && resultsDiv.innerHTML.includes('Loading Excel files...')) {
+      resultsDiv.innerHTML = '';
+    }
   }
 
   function processExcelInput(inputElement, sheetIndex, headerRow, parseFn) {
     if (!inputElement.files[0]) return Promise.resolve();
     return sheetToJsonWithHeader(inputElement.files[0], sheetIndex, headerRow).then(data => parseFn(data));
   }
-
-  // === EXCEL DATA LOADERS ===
 
   function handleClinicianExcelData(data) {
     clinicianMap = {};
@@ -96,7 +127,6 @@
     clinicianCount = Object.keys(clinicianMap).length;
     updateLoaderMessages();
   }
-
   function handleOpenJetExcelData(data) {
     openJetData = data.map(row => {
       const parseOpenJetDate = dateStr => {
@@ -115,7 +145,6 @@
     openJetCount = openJetData.length;
     updateLoaderMessages();
   }
-
   function handleClinicianStatusExcelData(data) {
     clinicianStatusMap = {};
     data.forEach(row => {
@@ -128,10 +157,8 @@
         facilityLicenseNumber, effectiveDate, status
       });
     });
-    updateLoaderMessages(); // Ensures uploadStatus is updated right after loading this file
+    updateLoaderMessages();
   }
-
-  // === MAIN CLAIM PROCESSING ===
 
   function processClaims(d, map) {
     showProcessing("Validating Claims...");
@@ -155,7 +182,6 @@
           const ordXlsxRow = openJetData.find(r => r.clinicianId === oid), perfXlsxRow = openJetData.find(r => r.clinicianId === pid);
           const providerId = getText(cl, 'ProviderID');
           const encounterDate = encounterStartStr ? new Date(encounterStartStr) : null;
-          // Facility mismatch
           if (clinicianStatusMap) {
             if (oid && checkFacilityMismatch(oid, providerId)) rowRemarks.push(`Ordering Clinician (${oid}) not matched to Provider Facility (${providerId})`);
             if (pid && checkFacilityMismatch(pid, providerId)) rowRemarks.push(`Performing Clinician (${pid}) not matched to Provider Facility (${providerId})`);
@@ -168,10 +194,9 @@
               if (perfRec && perfRec.status && perfRec.status.toLowerCase() === 'inactive') rowRemarks.push(`Performing Clinician (${pid}) has INACTIVE license as of ${perfRec.effectiveDate}`);
             }
           }
-          // Other validations
           if (!ordXlsxRow) rowRemarks.push(`Ordering Clinician (${oid}) not in Open Jet`);
           if (!perfXlsxRow) rowRemarks.push(`Performing Clinician (${pid}) not in Open Jet`);
-          if (!validateClinicians(oid, pid, od, pd)) rowRemarks.push(generateRemarks(od, pd));
+          if (!validateClinicians(oid, pid, od, pd)) rowRemarks.push(...generateRemarks(od, pd));
           if (ordXlsxRow) {
             const ordEligRes = checkEligibility(encounterStartStr, encounterEndStr, ordXlsxRow);
             if (!ordEligRes.eligible) rowRemarks.push(`Ordering: ${ordEligRes.remarks.join('; ')}`);
@@ -199,8 +224,6 @@
       updateResultsDiv();
     }, 300);
   }
-
-  // === VALIDATION HELPERS ===
 
   function checkFacilityMismatch(license, providerId) {
     const statusRecords = clinicianStatusMap[license];
@@ -258,8 +281,6 @@
     return od.category !== pd.category ? [`Category mismatch (${od.category} vs ${pd.category})`] : [];
   }
   function defaultClinicianData() { return { name: 'Unknown', category: 'Unknown', privileges: 'Unknown', from: '', to: '' }; }
-
-  // === UI & EXPORT ===
 
   function renderResults(results) {
     if (!results.length) { renderSummary(results); resultsDiv.innerHTML = '<p>No results found.</p>'; return; }
@@ -357,8 +378,6 @@
     };
   }
 
-  // === UTILITIES ===
-
   function sheetToJsonWithHeader(file, sheetIndex = 0, headerRow = 1) {
     return file.arrayBuffer().then(buffer => {
       const data = new Uint8Array(buffer), wb = XLSX.read(data, { type: 'array' }), name = wb.SheetNames[sheetIndex];
@@ -384,19 +403,13 @@
     if (claimCount) messages.push(`${claimCount} Claims Loaded`);
     if (clinicianCount) messages.push(`${clinicianCount} Clinicians Loaded`);
     if (openJetCount) messages.push(`${openJetCount} Auths Loaded`);
+    const historiesCount = Object.keys(clinicianStatusMap || {}).length;
+    if (historiesCount) messages.push(`${historiesCount} License Histories Loaded`);
     document.getElementById('uploadStatus').textContent = messages.join(', ');
     toggleProcessButton();
   }
   function updateLoaderMessages() {
-    const container = document.getElementById('uploadStatus');
-    if (!container) return;
-    const messages = [];
-    if (claimCount)      messages.push(`${claimCount} Claims Loaded`);
-    if (clinicianCount)  messages.push(`${clinicianCount} Clinicians Loaded`);
-    if (openJetCount)    messages.push(`${openJetCount} Auths Loaded`);
-    const historiesCount = Object.keys(clinicianStatusMap || {}).length;
-    if (historiesCount)  messages.push(`${historiesCount} License Histories Loaded`);
-    container.textContent = messages.join(', ');
+    updateResultsDiv();
   }
   function getText(parent, tag) {
     const el = parent.getElementsByTagName(tag)[0]; return el ? el.textContent.trim() : '';
