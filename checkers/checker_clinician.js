@@ -61,7 +61,7 @@
     const loaders = [
       { inputElement: openJetInput, sheetIndex: 0, headerRow: 2, parseFn: handleOpenJetExcelData, label: 'Open Jet Eligibility' },
       { inputElement: excelInput, sheetIndex: 0, sheetName: 'Clinicians', headerRow: 1, parseFn: handleClinicianExcelData, label: 'Clinician Licenses' },
-      { inputElement: clinicianStatusInput, sheetIndex: 0, headerRow: 1, parseFn: handleClinicianStatusExcelData, label: 'Clinician Licensing Status' }
+      { inputElement: clinicianStatusInput, sheetIndex: 1, headerRow: 1, parseFn: handleClinicianStatusExcelData, label: 'Clinician Licensing Status' }
     ];
 
     Promise.all(loaders.map(loader =>
