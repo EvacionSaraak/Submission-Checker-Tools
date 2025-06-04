@@ -304,6 +304,12 @@
   }
   function defaultClinicianData() { return { name: 'Unknown', category: 'Unknown', privileges: 'Unknown', from: '', to: '' }; }
 
+  function removeLoadingMessage() {
+    if (resultsDiv && resultsDiv.innerHTML.includes('Loading Excel files...')) {
+      resultsDiv.innerHTML = '';
+    }
+  }
+
   function renderResults(results) {
     if (!results.length) { renderSummary(results); resultsDiv.innerHTML = '<p>No results found.</p>'; return; }
     renderSummary(results); resultsDiv.innerHTML = '';
