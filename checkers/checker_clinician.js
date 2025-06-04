@@ -59,9 +59,9 @@
     processBtn.disabled = exportCsvBtn.disabled = true;
 
     const loaders = [
-      { inputElement: excelInput, sheetName: 'Clinician Licensing Status', headerRow: 1, parseFn: handleClinicianExcelData, label: 'Clinician Licenses' },
       { inputElement: openJetInput, sheetIndex: 0, headerRow: 2, parseFn: handleOpenJetExcelData, label: 'Open Jet Eligibility' },
-      { inputElement: clinicianStatusInput, sheetIndex: 0, headerRow: 1, parseFn: handleClinicianStatusExcelData, label: 'Clinician License History' }
+      { inputElement: excelInput, sheetIndex: 0, sheetName: 'Clinicians', headerRow: 1, parseFn: handleClinicianExcelData, label: 'Clinician Licenses' },
+      { inputElement: clinicianStatusInput, sheetIndex: 0, headerRow: 1, parseFn: handleClinicianStatusExcelData, label: 'Clinician Licensing Status' }
     ];
 
     Promise.all(loaders.map(loader =>
