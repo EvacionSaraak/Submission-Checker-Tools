@@ -22,6 +22,10 @@
     clinicianStatusExcel: false,
   };
 
+  processBtn.addEventListener('click', (e) => {
+    console.log('Process button CLICKED. isTrusted:', e.isTrusted);
+  });
+
   const monthMap = {
     Jan: '01', Feb: '02', Mar: '03', Apr: '04', May: '05', Jun: '06',
     Jul: '07', Aug: '08', Sep: '09', Oct: '10', Nov: '11', Dec: '12'
@@ -272,7 +276,11 @@
         clinicianId: (row['Clinician'] || '').toString().trim(),
         effectiveDate: parseOpenJetDate(row['EffectiveDate']),
         expiryDate: parseOpenJetDate(row['ExpiryDate']),
-        eligibility: (row['Eligibility'] || '').toString().trim(),
+        package: (row['Package Name'] || ''.toString().trim()),
+        network: (row['Card Network'] || ''.toString().trim()),
+        service: (row['Service Category'] || ''.toString().trim()),
+        consultation: (row['Consultation Status'] || ''.toString().trim()),
+        eligibility: (row['Eligibility Request Number'] || '').toString().trim(),
         status: (row['Status'] || '').toString().trim()
       };
     }).filter(entry => entry.clinicianId);
@@ -607,7 +615,13 @@
       appendCell(tr, formatClinicianCell(r.orderingId, r.orderingName, r.orderingCategory, r.orderingPrivileges, r.orderingFrom, r.orderingTo), { isHTML: true });
       appendCell(tr, formatClinicianCell(r.performingId, r.performingName, r.performingCategory, r.performingPrivileges, r.performingFrom, r.performingTo), { isHTML: true });
       appendCell(tr, (clinicianMap[r.performingId]?.status || clinicianMap[r.orderingId]?.status || 'N/A'));
-      appendCell(tr, r.performingEligibility || r.orderingEligibility || 'N/A');
+      appendCell(tr, formatEligibilityCell(
+        r.performingEligibility || r.orderingEligibility || '',
+        r.packageName || '',
+        r.cardStatus || '',
+        r.serviceCategory || '',
+        r.consultationStatus || ''
+      ), { isHTML: true });
       appendCell(tr, r.valid ? '✔︎' : '✘');
       appendCell(tr, r.remarks, { isArray: true });
 
@@ -802,4 +816,15 @@
     }
   }
 
+  function formatEligibilityCell(eligibility, pkg, network, service, consultation) {
+    return `
+      <div>${eligibility || ''}</div>
+      <div>
+        <span>${pkg || ''} - ${network || ''}</span>
+      </div>
+      <div>
+        <span>${service || ''} - ${consultation || ''}</span>
+      </div>
+    `;
+  }
 })();
