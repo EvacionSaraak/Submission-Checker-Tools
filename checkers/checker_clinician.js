@@ -8,6 +8,7 @@
   let xmlInput, excelInput, openJetInput, clinicianStatusInput, resultsDiv, validationDiv, processBtn, exportCsvBtn;
   let clinicianCount = 0, openJetCount = 0, claimCount = 0;
   let clinicianStatusMap = {};
+  const monthMap = { Jan:'01', Feb:'02', Mar:'03', Apr:'04', May:'05', Jun:'06', Jul:'07', Aug:'08', Sep:'09', Oct:'10', Nov:'11', Dec:'12' };
 
   // === INITIALIZE ===
   document.addEventListener('DOMContentLoaded', initEventListeners);
@@ -153,10 +154,10 @@
         parseFn: data => {
           clinicianStatusMap = {};
           data.forEach(row => {
-            const licenseNumber         = (row['License Number']           || '').toString().trim();
-            const facilityLicenseNumber = (row['Facility License Number']  || '').toString().trim();
-            const effectiveDate         = (row['Effective Date']           || '').toString().trim();
-            const status                = (row['Status']                   || '').toString().trim();
+            const licenseNumber         = (row['License Number']           || '').toString().trim().toUpperCase();
+            const facilityLicenseNumber = (row['Facility License Number']  || '').toString().trim().toUpperCase();
+            const effectiveDate         = (row['Effective Date']           || '').toString().trim().toUpperCase();
+            const status                = (row['Status']                   || '').toString().trim().toUpperCase();
             if (!licenseNumber) return;
             if (!clinicianStatusMap[licenseNumber]) {
               clinicianStatusMap[licenseNumber] = [];
@@ -606,10 +607,10 @@
     return sheetToJsonWithHeader(file, 0, 1).then(data => {
       clinicianStatusMap = {};
       data.forEach(row => {
-        const licenseNumber = (row['License Number'] || '').toString().trim();
-        const facilityLicenseNumber = (row['Facility License Number'] || '').toString().trim();
-        const effectiveDate = (row['Effective Date'] || '').toString().trim();
-        const status = (row['Status'] || '').toString().trim();
+        const licenseNumber = (row['License Number'] || '').toString().trim().toUpperCase();
+        const facilityLicenseNumber = (row['Facility License Number'] || '').toString().trim().toUpperCase();
+        const effectiveDate = (row['Effective Date'] || '').toString().trim().toUpperCase();
+        const status = (row['Status'] || '').toString().trim().toUpperCase();
         if (!licenseNumber) return;
         if (!clinicianStatusMap[licenseNumber]) {
           clinicianStatusMap[licenseNumber] = [];
