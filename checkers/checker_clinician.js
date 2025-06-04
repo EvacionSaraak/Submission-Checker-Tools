@@ -183,7 +183,9 @@
    * Wrap Excel input processing with header logging and loading message removal
    */
   function processExcelInputWithLogging(inputElement, sheetIndex, headerRow, parseFn, label, sheetName) {
-    if (!inputElement.files[0]) return Promise.resolve();
+    if (!inputElement.files[0]) {
+      return Promise.reject(new Error('No file selected'));
+    }
     return fileHeadersAndData(inputElement.files[0], sheetIndex, headerRow, sheetName)
       .then(({ headers, data }) => {
         console.log(`[${label} Header]`, headers);
