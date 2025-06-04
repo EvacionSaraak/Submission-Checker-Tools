@@ -30,7 +30,7 @@
   // ============================================================================
   // DOM READY & EVENT BINDINGS
   // ============================================================================
-  
+
   document.addEventListener('DOMContentLoaded', () => {
 
     // Grab DOM elements
@@ -48,22 +48,25 @@
     resultsDiv.parentNode.insertBefore(validationDiv, resultsDiv);
 
     // Attach event listeners
-    xmlInput.addEventListener('change', handleXmlInput);
-    excelInput.addEventListener('change', handleUnifiedExcelInput);
-    openJetInput.addEventListener('change', handleUnifiedExcelInput);
-    clinicianStatusInput.addEventListener('change', handleUnifiedExcelInput);
+    if (xmlInput) xmlInput.addEventListener('change', handleXmlInput);
+    if (excelInput) excelInput.addEventListener('change', handleClinicianExcelInput);
+    if (openJetInput) openJetInput.addEventListener('change', handleOpenJetExcelInput);
+    if (clinicianStatusInput) clinicianStatusInput.addEventListener('change', handleClinicianStatusExcelInput);
 
-    processBtn.addEventListener('click', () => {
-      if (xmlDoc && clinicianMap && openJetData.length > 0) {
-        processClaims(xmlDoc, clinicianMap);
-      }
-    });
-    processBtn.addEventListener('click', (e) => {
-      console.log('Process button CLICKED. isTrusted:', e.isTrusted);
-    });
+    if (processBtn) {
+      processBtn.addEventListener('click', () => {
+        if (xmlDoc && clinicianMap && openJetData.length > 0) {
+          processClaims(xmlDoc, clinicianMap);
+        }
+      });
+      processBtn.addEventListener('click', (e) => {
+        console.log('Process button CLICKED. isTrusted:', e.isTrusted);
+      });
+      processBtn.disabled = true;
+    }
+    if (exportCsvBtn) exportCsvBtn.disabled = true;
 
     updateResultsDiv();
-    processBtn.disabled = exportCsvBtn.disabled = true;
   });
 
   // ============================================================================
@@ -86,14 +89,15 @@
    */
   function handleXmlInput() {
     showProcessing('Loading XML...');
-    processBtn.disabled = exportCsvBtn.disabled = true;
+    if (processBtn) processBtn.disabled = true;
+    if (exportCsvBtn) exportCsvBtn.disabled = true;
     const file = xmlInput.files[0];
 
     if (!file) {
       xmlDoc = null;
       claimCount = 0;
       fileLoadStatus.xml = false;
-      resultsDiv.innerHTML = '';           // Clear resultsDiv here
+      resultsDiv.innerHTML = '';
       updateResultsDiv();
       toggleProcessButton();
       return;
@@ -106,97 +110,102 @@
       xmlDoc = doc;
       claimCount = xmlDoc.getElementsByTagName('Claim').length;
       fileLoadStatus.xml = true;
-      resultsDiv.innerHTML = '';           // Clear the loading message here
+      resultsDiv.innerHTML = '';
       updateResultsDiv();
       toggleProcessButton();
     }).catch(e => {
       xmlDoc = null; claimCount = 0;
       fileLoadStatus.xml = false;
       resultsDiv.innerHTML = `<p class="error-message">Error loading XML: ${e.message}</p>`;
+      updateResultsDiv();
       toggleProcessButton();
     });
   }
 
-  /**
-   * Handle all Excel file inputs and parsing
-   */
-  function handleUnifiedExcelInput() {
-    showProcessing('Loading Excel files...');
-    processBtn.disabled = exportCsvBtn.disabled = true;
-
-    const loaders = [
-      {
-        inputElement: openJetInput,
-        sheetIndex: 0,
-        headerRow: 2,
-        parseFn: handleOpenJetExcelData,
-        label: 'Open Jet Eligibility',
-        statusKey: 'openJetExcel'
-      },
-      {
-        inputElement: excelInput,
-        sheetIndex: 0,
-        sheetName: 'Clinicians',
-        headerRow: 1,
-        parseFn: handleClinicianExcelData,
-        label: 'Clinician Licenses',
-        statusKey: 'clinicianExcel'
-      },
-      {
-        inputElement: clinicianStatusInput,
-        sheetIndex: 1,
-        headerRow: 1,
-        parseFn: handleClinicianStatusExcelData,
-        label: 'Clinician Licensing Status',
-        statusKey: 'clinicianStatusExcel'
-      }
-    ];
-
-    // Reset file status for Excel files each time
-    fileLoadStatus.clinicianExcel = false;
-    fileLoadStatus.openJetExcel = false;
-    fileLoadStatus.clinicianStatusExcel = false;
-
-    Promise.all(
-      loaders.map(loader =>
-        processExcelInputWithLogging(
-          loader.inputElement,
-          loader.sheetIndex,
-          loader.headerRow,
-          loader.parseFn,
-          loader.label,
-          loader.sheetName
-        ).then(() => {
-          fileLoadStatus[loader.statusKey] = true;
-        }).catch(() => {
-          fileLoadStatus[loader.statusKey] = false;
-        })
-      )
-    )
-    .then(() => {
-      removeLoadingMessage();   
+  function handleOpenJetExcelInput() {
+    showProcessing('Loading Open Jet Excel...');
+    if (processBtn) processBtn.disabled = true;
+    if (exportCsvBtn) exportCsvBtn.disabled = true;
+    const file = openJetInput.files[0];
+    if (!file) {
+      fileLoadStatus.openJetExcel = false;
+      openJetData = [];
+      resultsDiv.innerHTML = '';
       updateResultsDiv();
-      toggleProcessButton();  // Only check after all loaders finish
-    })
-    .catch(e => {
-      resultsDiv.innerHTML = `<p class="error-message">${e.message}</p>`;
-      toggleProcessButton();  // Only check after all loaders finish
+      toggleProcessButton();
+      return;
+    }
+    fileHeadersAndData(file, 0, 2).then(({ headers, data }) => {
+      handleOpenJetExcelData(data);
+      fileLoadStatus.openJetExcel = true;
+      resultsDiv.innerHTML = '';
+      updateResultsDiv();
+      toggleProcessButton();
+    }).catch(e => {
+      fileLoadStatus.openJetExcel = false;
+      openJetData = [];
+      resultsDiv.innerHTML = `<p class="error-message">Error loading Open Jet Excel: ${e.message}</p>`;
+      updateResultsDiv();
+      toggleProcessButton();
     });
   }
 
-
-  /**
-   * Wrap Excel input processing with header logging and loading message removal
-   */
-  function processExcelInputWithLogging(inputElement, sheetIndex, headerRow, parseFn, label, sheetName) {
-    if (!inputElement.files[0]) {
-      return Promise.reject(new Error('No file selected'));
+  function handleClinicianExcelInput() {
+    showProcessing('Loading Clinician Excel...');
+    if (processBtn) processBtn.disabled = true;
+    if (exportCsvBtn) exportCsvBtn.disabled = true;
+    const file = excelInput.files[0];
+    if (!file) {
+      fileLoadStatus.clinicianExcel = false;
+      clinicianMap = null;
+      clinicianCount = 0;
+      resultsDiv.innerHTML = '';
+      updateResultsDiv();
+      toggleProcessButton();
+      return;
     }
-    return fileHeadersAndData(inputElement.files[0], sheetIndex, headerRow, sheetName)
-      .then(({ headers, data }) => {
-        console.log(`[${label} Header]`, headers);
-        parseFn(data);
-      });
+    fileHeadersAndData(file, 0, 1, 'Clinicians').then(({ headers, data }) => {
+      handleClinicianExcelData(data);
+      fileLoadStatus.clinicianExcel = true;
+      resultsDiv.innerHTML = '';
+      updateResultsDiv();
+      toggleProcessButton();
+    }).catch(e => {
+      fileLoadStatus.clinicianExcel = false;
+      clinicianMap = null;
+      clinicianCount = 0;
+      resultsDiv.innerHTML = `<p class="error-message">Error loading Clinician Excel: ${e.message}</p>`;
+      updateResultsDiv();
+      toggleProcessButton();
+    });
+  }
+
+  function handleClinicianStatusExcelInput() {
+    showProcessing('Loading Clinician Status Excel...');
+    if (processBtn) processBtn.disabled = true;
+    if (exportCsvBtn) exportCsvBtn.disabled = true;
+    const file = clinicianStatusInput.files[0];
+    if (!file) {
+      fileLoadStatus.clinicianStatusExcel = false;
+      clinicianStatusMap = {};
+      resultsDiv.innerHTML = '';
+      updateResultsDiv();
+      toggleProcessButton();
+      return;
+    }
+    fileHeadersAndData(file, 1, 1).then(({ headers, data }) => {
+      handleClinicianStatusExcelData(data);
+      fileLoadStatus.clinicianStatusExcel = true;
+      resultsDiv.innerHTML = '';
+      updateResultsDiv();
+      toggleProcessButton();
+    }).catch(e => {
+      fileLoadStatus.clinicianStatusExcel = false;
+      clinicianStatusMap = {};
+      resultsDiv.innerHTML = `<p class="error-message">Error loading Clinician Status Excel: ${e.message}</p>`;
+      updateResultsDiv();
+      toggleProcessButton();
+    });
   }
 
   /**
@@ -249,12 +258,12 @@
       if (!id) return;
 
       clinicianMap[id] = {
-        name: row['Clinician Name'] || row['Name'] || '',
-        category: row['Clinician Category'] || row['Category'] || '',
-        privileges: row['Activity Group'] || row['Privileges'] || '',
-        from: row['Effective Date'] || '',
-        to: row['Expiry Date'] || '',
-        status: row['Status'] || ''
+        name: (row['Clinician Name'] || row['Name'] || '').toString().trim(),
+        category: (row['Clinician Category'] || row['Category'] || '').toString().trim(),
+        privileges: (row['Activity Group'] || row['Privileges'] || '').toString().trim(),
+        from: (row['Effective Date'] || '').toString().trim(),
+        to: (row['Expiry Date'] || '').toString().trim(),
+        status: (row['Status'] || '').toString().trim()
       };
     });
 
@@ -277,10 +286,10 @@
         clinicianId: (row['Clinician'] || '').toString().trim(),
         effectiveDate: parseOpenJetDate(row['EffectiveDate']),
         expiryDate: parseOpenJetDate(row['ExpiryDate']),
-        package: (row['Package Name'] || ''.toString().trim()),
-        network: (row['Card Network'] || ''.toString().trim()),
-        service: (row['Service Category'] || ''.toString().trim()),
-        consultation: (row['Consultation Status'] || ''.toString().trim()),
+        package: (row['Package Name'] || '').toString().trim(),
+        network: (row['Card Network'] || '').toString().trim(),
+        service: (row['Service Category'] || '').toString().trim(),
+        consultation: (row['Consultation Status'] || '').toString().trim(),
         eligibility: (row['Eligibility Request Number'] || '').toString().trim(),
         status: (row['Status'] || '').toString().trim()
       };
@@ -322,7 +331,7 @@
    */
   function processClaims(d, map) {
     showProcessing("Validating Claims...");
-    exportCsvBtn.disabled = true;
+    if (exportCsvBtn) exportCsvBtn.disabled = true;
 
     setTimeout(() => {
       const claimNodes = Array.from(d.getElementsByTagName('Claim'));
@@ -379,10 +388,10 @@
 
           //Checks Status of Eligibility
           if (!(ordXlsxRow && ordXlsxRow.status.toLowerCase() === 'eligible')) {
-            rowRemarks.push(`Ordering Clinician status is ${ordXlsxRow.status.toLowerCase()} in Open Jet`);
+            rowRemarks.push(`Ordering Clinician status is ${ordXlsxRow && ordXlsxRow.status ? ordXlsxRow.status.toLowerCase() : 'unknown'} in Open Jet`);
           }
           if (!(perfXlsxRow && perfXlsxRow.status.toLowerCase() === 'eligible')) {
-            rowRemarks.push(`Performing Clinician status is ${perfXlsxRow.status.toLowerCase()} in Open Jet`);
+            rowRemarks.push(`Performing Clinician status is ${perfXlsxRow && perfXlsxRow.status ? perfXlsxRow.status.toLowerCase() : 'unknown'} in Open Jet`);
           }
 
           // Date eligibility
@@ -655,6 +664,7 @@
    * Enable export button and attach export handler for results
    */
   function setupExportHandler(results) {
+    if (!exportCsvBtn) return;
     exportCsvBtn.disabled = false;
     exportCsvBtn.onclick = function () {
       if (!xmlDoc) {
@@ -731,7 +741,7 @@
                       fileLoadStatus.clinicianExcel &&
                       fileLoadStatus.openJetExcel &&
                       fileLoadStatus.clinicianStatusExcel;
-    processBtn.disabled = !allLoaded;
+    if (processBtn) processBtn.disabled = !allLoaded;
   }
 
   /**
@@ -744,7 +754,8 @@
     if (openJetCount) messages.push(`${openJetCount} Eligibilities Loaded`);
     const historiesCount = Object.keys(clinicianStatusMap || {}).length;
     if (historiesCount) messages.push(`${historiesCount} License Histories Loaded`);
-    document.getElementById('uploadStatus').textContent = messages.join(', ');
+    const uploadStatusElem = document.getElementById('uploadStatus');
+    if (uploadStatusElem) uploadStatusElem.textContent = messages.join(', ');
     toggleProcessButton();
   }
 
@@ -806,15 +817,6 @@
       td.textContent = content;
     }
     tr.appendChild(td);
-  }
-
-  /**
-   * Remove "Loading Excel files..." message if present
-   */
-  function removeLoadingMessage() {
-    if (resultsDiv && resultsDiv.innerHTML.includes('Loading Excel files...')) {
-      resultsDiv.innerHTML = '';
-    }
   }
 
   function formatEligibilityCell(eligibility, pkg, network, service, consultation) {
