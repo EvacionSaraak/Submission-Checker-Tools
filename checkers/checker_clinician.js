@@ -345,7 +345,7 @@
         const encounterEndStr = encounterNode ? getText(encounterNode, 'End') : '';
         const activities = Array.from(cl.getElementsByTagName('Activity'));
 
-        console.log(`Start: ${encounterStartStr}; End: ${encounterEndStr}`);
+        // console.log(`Start: ${encounterStartStr}; End: ${encounterEndStr}`);
 
         activities.forEach(act => {
           const aid = getText(act, 'ID') || 'N/A';
@@ -603,6 +603,14 @@
     const tbody = document.createElement('tbody');
 
     results.forEach(r => {
+      
+      
+      
+      //YWA
+      console.log(r);
+
+
+
       const tr = document.createElement('tr');
       tr.className = r.valid ? 'valid' : 'invalid';
       const encounterDate = (r.activityStart || '').split('T')[0];
