@@ -266,15 +266,14 @@
         if (!day || !mon || !year || !monthMap[mon]) return new Date('Invalid');
         return new Date(`${year}-${monthMap[mon]}-${day.padStart(2, '0')}`);
       };
-
       return {
         clinicianId: (row['Clinician'] || '').toString().trim(),
         effectiveDate: parseOpenJetDate(row['EffectiveDate']),
         expiryDate: parseOpenJetDate(row['ExpiryDate']),
-        eligibility: (row['Status'] || '').toString().trim()
+        eligibility: (row['Eligibility'] || '').toString().trim(),
+        status: (row['Status'] || '').toString().trim()
       };
     }).filter(entry => entry.clinicianId);
-
     openJetCount = openJetData.length;
     updateLoaderMessages();
   }
@@ -367,6 +366,14 @@
           if (!perfXlsxRow) rowRemarks.push(`Performing Clinician (${pid}) not in Open Jet`);
           if (!validateClinicians(oid, pid, od, pd)) rowRemarks.push(...generateRemarks(od, pd));
 
+          //Checks Status of Eligibility
+          if (!(ordXlsxRow && ordXlsxRow.status.toLowerCase() === 'eligible')) {
+            rowRemarks.push(`Ordering Clinician status is ${ordXlsxRow.status.toLowerCase()} in Open Jet`);
+          }
+          if (!(perfXlsxRow && perfXlsxRow.status.toLowerCase() === 'eligible')) {
+            rowRemarks.push(`Performing Clinician status is ${perfXlsxRow.status.toLowerCase()} in Open Jet`);
+          }
+
           // Date eligibility
           if (ordXlsxRow) {
             const ordEligRes = checkEligibility(encounterStartStr, encounterEndStr, ordXlsxRow);
@@ -398,6 +405,7 @@
             orderingFrom: od.from || '',
             orderingTo: od.to || '',
             orderingEligibility: ordXlsxRow ? ordXlsxRow.eligibility : 'N/A',
+            orderingStatus: ordXlsxRow ? ordXlsxRow.status : 'N/A',
             performingId: pid,
             performingName: pd.name,
             performingCategory: pd.category,
@@ -405,6 +413,7 @@
             performingFrom: pd.from || '',
             performingTo: pd.to || '',
             performingEligibility: perfXlsxRow ? perfXlsxRow.eligibility : 'N/A',
+            performingStatus: perfXlsxRow ? perfXlsxRow.status : 'N/A',
             status: '',
             packageName: '',
             serviceCategory: '',
