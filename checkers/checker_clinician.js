@@ -600,38 +600,51 @@
 
   // Load clinician status XLSX and build clinicianStatusMap; update the unified message div
   function handleClinicianStatusExcelInput(file) {
-    const messageDiv = document.getElementById('update-message');
-    if (messageDiv) {
-      messageDiv.textContent = 'Loading clinician history…';
-    }
-    return sheetToJsonWithHeader(file, 0, 1).then(data => {
-      clinicianStatusMap = {};
-      data.forEach(row => {
-        const licenseNumber = (row['License Number'] || '').toString().trim().toUpperCase();
-        const facilityLicenseNumber = (row['Facility License Number'] || '').toString().trim().toUpperCase();
-        const effectiveDate = (row['Effective Date'] || '').toString().trim().toUpperCase();
-        const status = (row['Status'] || '').toString().trim().toUpperCase();
-        if (!licenseNumber) return;
-        if (!clinicianStatusMap[licenseNumber]) {
-          clinicianStatusMap[licenseNumber] = [];
-        }
-        clinicianStatusMap[licenseNumber].push({
-          facilityLicenseNumber,
-          effectiveDate,
-          status
-        });
-      });
-      const count = Object.keys(clinicianStatusMap).length;
-      if (messageDiv) {
-        messageDiv.textContent = `Loaded license history for ${count} unique clinician${count === 1 ? '' : 's'}.`;
-      }
-    }).catch(err => {
-      const messageDiv = document.getElementById('update-message');
-      if (messageDiv) {
-        messageDiv.textContent = `Error loading clinician history: ${err.message}`;
-      }
-    });
+  const messageDiv = document.getElementById('update-message');
+  if (messageDiv) {
+    messageDiv.textContent = 'Loading clinician history…';
   }
+
+  // Load by named sheet: "Clinician Licensing Status"
+  return loadSheetByName(file, 'Clinician Licensing Status').then(data => {
+    clinicianStatusMap = {};
+
+    data.forEach(row => {
+      const licenseNumber = (row['License Number'] || '').toString().trim().toUpperCase();
+      const facilityLicenseNumber = (row['Facility License Number'] || '').toString().trim().toUpperCase();
+      const rawDate = (row['Effective Date'] || '').toString().trim();
+      const status = (row['Status'] || '').toString().trim().toUpperCase();
+
+      if (!licenseNumber || !facilityLicenseNumber || !status || !rawDate) return;
+
+      // Convert 'DD-MMM-YYYY' to Date object
+      const [day, mon, year] = rawDate.split('-');
+      const monthMap = { Jan: '01', Feb: '02', Mar: '03', Apr: '04', May: '05', Jun: '06', Jul: '07', Aug: '08', Sep: '09', Oct: '10', Nov: '11', Dec: '12' };
+      if (!day || !mon || !year || !monthMap[mon]) return;
+      const isoDateStr = `${year}-${monthMap[mon]}-${day.padStart(2, '0')}`;
+      const effectiveDate = new Date(isoDateStr);
+
+      if (!clinicianStatusMap[licenseNumber]) {
+        clinicianStatusMap[licenseNumber] = [];
+      }
+
+      clinicianStatusMap[licenseNumber].push({
+        facilityLicenseNumber,
+        effectiveDate,
+        status
+      });
+    });
+
+    const count = Object.keys(clinicianStatusMap).length;
+    if (messageDiv) {
+      messageDiv.textContent = `Loaded license history for ${count} unique clinician${count === 1 ? '' : 's'}.`;
+    }
+  }).catch(err => {
+    if (messageDiv) {
+      messageDiv.textContent = `Error loading clinician history: ${err.message}`;
+    }
+  });
+}
 
   /**
    * Updates the single‐line loader message based on global counts.
@@ -645,27 +658,15 @@
     if (!container) return;
   
     const m = [];
-    if (claimCount) {
-      m.push(`${claimCount} claim${claimCount === 1 ? '' : 's'} loaded`);
-    }
-    if (clinicianCount) {
-      m.push(`${clinicianCount} clinician${clinicianCount === 1 ? '' : 's'} loaded`);
-    }
-    if (openJetCount) {
-      m.push(`${openJetCount} eligibilit${openJetCount === 1 ? 'y' : 'ies'} loaded`);
-    }
+    if (claimCount) { m.push(`${claimCount} claim${claimCount === 1 ? '' : 's'} loaded`); }
+    if (clinicianCount) { m.push(`${clinicianCount} clinician${clinicianCount === 1 ? '' : 's'} loaded`); }
+    if (openJetCount) { m.push(`${openJetCount} eligibilit${openJetCount === 1 ? 'y' : 'ies'} loaded`); }
     const historyCount = Object.keys(clinicianStatusMap).length;
-    if (historyCount) {
-      m.push(`${historyCount} unique license histor${historyCount === 1 ? 'y' : 'ies'} loaded`);
-    }
+    if (historyCount) { m.push(`${historyCount} unique license histor${historyCount === 1 ? 'y' : 'ies'} loaded`); }
   
-    if (m.length === 0) {
-      container.textContent = '';
-    } else if (m.length === 1) {
-      container.textContent = m[0];
-    } else {
-      container.textContent = m.slice(0, -1).join(', ') + ' and ' + m[m.length - 1];
-    }
+    if (m.length === 0) { container.textContent = ''; } 
+    else if (m.length === 1) { container.textContent = m[0]; } 
+    else { container.textContent = m.slice(0, -1).join(', ') + ' and ' + m[m.length - 1]; }
   }
 
   // Helpers used only for export/XLSX or HTML table
@@ -689,5 +690,25 @@
     }
     tr.appendChild(td);
   }
+
+  function loadSheetByName(file, sheetName) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const data = new Uint8Array(e.target.result);
+          const workbook = XLSX.read(data, { type: 'array' });
+          const sheet = workbook.Sheets[sheetName];
+          if (!sheet) return reject(new Error(`Sheet "${sheetName}" not found`));
+          const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+          resolve(rows);
+        } catch (err) {
+          reject(err);
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    });
+  }
+
 
 })();
