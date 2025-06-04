@@ -128,7 +128,7 @@
         facilityLicenseNumber, effectiveDate, status
       });
     });
-    updateLoaderMessages();
+    updateLoaderMessages(); // Ensures uploadStatus is updated right after loading this file
   }
 
   // === MAIN CLAIM PROCESSING ===
@@ -388,14 +388,15 @@
     toggleProcessButton();
   }
   function updateLoaderMessages() {
-    const container = document.getElementById('update-message'); if (!container) return;
-    const m = [];
-    if (claimCount) m.push(`${claimCount} claim${claimCount === 1 ? '' : 's'} loaded`);
-    if (clinicianCount) m.push(`${clinicianCount} clinician${clinicianCount === 1 ? '' : 's'} loaded`);
-    if (openJetCount) m.push(`${openJetCount} eligibilit${openJetCount === 1 ? 'y' : 'ies'} loaded`);
-    const historyCount = Object.keys(clinicianStatusMap).length;
-    if (historyCount) m.push(`${historyCount} unique license histor${historyCount === 1 ? 'y' : 'ies'} loaded`);
-    container.textContent = !m.length ? '' : m.length === 1 ? m[0] : m.slice(0, -1).join(', ') + ' and ' + m[m.length - 1];
+    const container = document.getElementById('uploadStatus');
+    if (!container) return;
+    const messages = [];
+    if (claimCount)      messages.push(`${claimCount} Claims Loaded`);
+    if (clinicianCount)  messages.push(`${clinicianCount} Clinicians Loaded`);
+    if (openJetCount)    messages.push(`${openJetCount} Auths Loaded`);
+    const historiesCount = Object.keys(clinicianStatusMap || {}).length;
+    if (historiesCount)  messages.push(`${historiesCount} License Histories Loaded`);
+    container.textContent = messages.join(', ');
   }
   function getText(parent, tag) {
     const el = parent.getElementsByTagName(tag)[0]; return el ? el.textContent.trim() : '';
