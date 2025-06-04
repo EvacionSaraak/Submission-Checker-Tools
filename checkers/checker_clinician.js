@@ -14,6 +14,14 @@
   let resultsDiv, validationDiv, processBtn, exportCsvBtn;
   let clinicianCount = 0, openJetCount = 0, claimCount = 0;
 
+  // Add at the top with your globals:
+  let fileLoadStatus = {
+    xml: false,
+    clinicianExcel: false,
+    openJetExcel: false,
+    clinicianStatusExcel: false,
+  };
+
   const monthMap = {
     Jan: '01', Feb: '02', Mar: '03', Apr: '04', May: '05', Jun: '06',
     Jul: '07', Aug: '08', Sep: '09', Oct: '10', Nov: '11', Dec: '12'
@@ -76,11 +84,12 @@
   function handleXmlInput() {
     showProcessing('Loading XML...');
     processBtn.disabled = exportCsvBtn.disabled = true;
-
     const file = xmlInput.files[0];
+
     if (!file) {
       xmlDoc = null;
       claimCount = 0;
+      fileLoadStatus.xml = false;
       updateResultsDiv();
       toggleProcessButton();
       return;
@@ -92,11 +101,12 @@
       if (doc.querySelector('parsererror')) throw new Error('Invalid XML');
       xmlDoc = doc;
       claimCount = xmlDoc.getElementsByTagName('Claim').length;
+      fileLoadStatus.xml = true;
       updateResultsDiv();
       toggleProcessButton();
     }).catch(e => {
-      xmlDoc = null;
-      claimCount = 0;
+      xmlDoc = null; claimCount = 0;
+      fileLoadStatus.xml = false;
       resultsDiv.innerHTML = `<p class="error-message">Error loading XML: ${e.message}</p>`;
       toggleProcessButton();
     });
@@ -109,14 +119,14 @@
     showProcessing('Loading Excel files...');
     processBtn.disabled = exportCsvBtn.disabled = true;
 
-    // Define loader configs for each Excel file
     const loaders = [
       {
         inputElement: openJetInput,
         sheetIndex: 0,
         headerRow: 2,
         parseFn: handleOpenJetExcelData,
-        label: 'Open Jet Eligibility'
+        label: 'Open Jet Eligibility',
+        statusKey: 'openJetExcel'
       },
       {
         inputElement: excelInput,
@@ -124,17 +134,20 @@
         sheetName: 'Clinicians',
         headerRow: 1,
         parseFn: handleClinicianExcelData,
-        label: 'Clinician Licenses'
+        label: 'Clinicians',
+        statusKey: 'clinicianExcel'
       },
       {
         inputElement: clinicianStatusInput,
         sheetIndex: 1,
         headerRow: 1,
         parseFn: handleClinicianStatusExcelData,
-        label: 'Clinician Licensing Status'
+        label: 'Clinician Licensing Status',
+        statusKey: 'clinicianStatusExcel'
       }
     ];
 
+    // Track loader promises and handle individual file status
     Promise.all(
       loaders.map(loader =>
         processExcelInputWithLogging(
@@ -145,6 +158,14 @@
           loader.label,
           loader.sheetName
         )
+        .then(() => {
+          fileLoadStatus[loader.statusKey] = true;
+          toggleProcessButton();
+        })
+        .catch(() => {
+          fileLoadStatus[loader.statusKey] = false;
+          toggleProcessButton();
+        })
       )
     )
     .then(() => {
@@ -156,6 +177,7 @@
       toggleProcessButton();
     });
   }
+
 
   /**
    * Wrap Excel input processing with header logging and loading message removal
@@ -678,7 +700,12 @@
    * Enable or disable the process button
    */
   function toggleProcessButton() {
-    processBtn.disabled = !(xmlDoc && clinicianMap && openJetData.length > 0);
+    // Only enable if all files are loaded successfully
+    const allLoaded = fileLoadStatus.xml &&
+                      fileLoadStatus.clinicianExcel &&
+                      fileLoadStatus.openJetExcel &&
+                      fileLoadStatus.clinicianStatusExcel;
+    processBtn.disabled = !allLoaded;
   }
 
   /**
