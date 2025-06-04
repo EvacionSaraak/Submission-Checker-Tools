@@ -172,6 +172,7 @@
       )
     )
     .then(() => {
+      removeLoadingMessage();   
       updateResultsDiv();
       toggleProcessButton();  // Only check after all loaders finish
     })
@@ -193,7 +194,6 @@
       .then(({ headers, data }) => {
         console.log(`[${label} Header]`, headers);
         parseFn(data);
-        removeLoadingMessage();
       });
   }
 
