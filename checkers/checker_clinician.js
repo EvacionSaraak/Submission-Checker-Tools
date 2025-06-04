@@ -57,18 +57,31 @@
   function handleUnifiedExcelInput() {
     showProcessing('Loading Excel files...');
     processBtn.disabled = exportCsvBtn.disabled = true;
+
     const loaders = [
-      { inputElement: excelInput, sheetIndex: 0, headerRow: 1, parseFn: handleClinicianExcelData, label: 'Clinician Licenses' },
+      { inputElement: excelInput, sheetName: 'Clinician Licensing Status', headerRow: 1, parseFn: handleClinicianExcelData, label: 'Clinician Licenses' },
       { inputElement: openJetInput, sheetIndex: 0, headerRow: 2, parseFn: handleOpenJetExcelData, label: 'Open Jet Eligibility' },
       { inputElement: clinicianStatusInput, sheetIndex: 0, headerRow: 1, parseFn: handleClinicianStatusExcelData, label: 'Clinician License History' }
     ];
+
     Promise.all(loaders.map(loader =>
-      processExcelInputWithLogging(loader.inputElement, loader.sheetIndex, loader.headerRow, loader.parseFn, loader.label)
-    )).then(() => { updateResultsDiv(); toggleProcessButton(); })
-     .catch(e => {
-        resultsDiv.innerHTML = `<p class="error-message">${e.message}</p>`;
-        toggleProcessButton();
-     });
+      processExcelInputWithLogging(
+        loader.inputElement,
+        loader.sheetIndex,
+        loader.headerRow,
+        loader.parseFn,
+        loader.label,
+        loader.sheetName
+      )
+    ))
+    .then(() => {
+      updateResultsDiv();
+      toggleProcessButton();
+    })
+    .catch(e => {
+      resultsDiv.innerHTML = `<p class="error-message">${e.message}</p>`;
+      toggleProcessButton();
+    });
   }
 
   // Wrapper to log header and remove loading message per file
@@ -83,11 +96,20 @@
   }
 
   // Utility to read both headers and data in one go
-  function fileHeadersAndData(file, sheetIndex = 0, headerRow = 1) {
+  function fileHeadersAndData(file, sheetIndex, headerRow, sheetName) {
     return file.arrayBuffer().then(buffer => {
-      const data = new Uint8Array(buffer), wb = XLSX.read(data, { type: 'array' }), name = wb.SheetNames[sheetIndex];
-      if (!name) throw new Error(`Sheet index ${sheetIndex} not found`);
-      const sheet = wb.Sheets[name], rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+      const data = new Uint8Array(buffer);
+      const wb = XLSX.read(data, { type: 'array' });
+      let name;
+      if (sheetName) {
+        name = wb.SheetNames.find(s => s.trim().toLowerCase() === sheetName.trim().toLowerCase());
+        if (!name) throw new Error(`Sheet named "${sheetName}" not found`);
+      } else {
+        name = wb.SheetNames[sheetIndex];
+        if (!name) throw new Error(`Sheet index ${sheetIndex} not found`);
+      }
+      const sheet = wb.Sheets[name];
+      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
       const headerRowIndex = headerRow - 1;
       if (!rows || rows.length <= headerRowIndex) throw new Error(`Header row not found at position ${headerRowIndex + 1}`);
       const headers = rows[headerRowIndex].map(h => (h || '').toString().trim());
@@ -97,7 +119,7 @@
       return { headers, data: dataRows };
     });
   }
-
+  
   function removeLoadingMessage() {
     // Only remove if the "Loading Excel files..." is present
     if (resultsDiv && resultsDiv.innerHTML.includes('Loading Excel files...')) {
