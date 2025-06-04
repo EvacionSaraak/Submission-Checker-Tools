@@ -93,6 +93,7 @@
       xmlDoc = null;
       claimCount = 0;
       fileLoadStatus.xml = false;
+      resultsDiv.innerHTML = '';           // Clear resultsDiv here
       updateResultsDiv();
       toggleProcessButton();
       return;
@@ -105,6 +106,7 @@
       xmlDoc = doc;
       claimCount = xmlDoc.getElementsByTagName('Claim').length;
       fileLoadStatus.xml = true;
+      resultsDiv.innerHTML = '';           // Clear the loading message here
       updateResultsDiv();
       toggleProcessButton();
     }).catch(e => {
