@@ -134,7 +134,7 @@
         sheetName: 'Clinicians',
         headerRow: 1,
         parseFn: handleClinicianExcelData,
-        label: 'Clinicians',
+        label: 'Clinician Licenses',
         statusKey: 'clinicianExcel'
       },
       {
@@ -147,7 +147,11 @@
       }
     ];
 
-    // Track loader promises and handle individual file status
+    // Reset file status for Excel files each time
+    fileLoadStatus.clinicianExcel = false;
+    fileLoadStatus.openJetExcel = false;
+    fileLoadStatus.clinicianStatusExcel = false;
+
     Promise.all(
       loaders.map(loader =>
         processExcelInputWithLogging(
@@ -157,24 +161,20 @@
           loader.parseFn,
           loader.label,
           loader.sheetName
-        )
-        .then(() => {
+        ).then(() => {
           fileLoadStatus[loader.statusKey] = true;
-          toggleProcessButton();
-        })
-        .catch(() => {
+        }).catch(() => {
           fileLoadStatus[loader.statusKey] = false;
-          toggleProcessButton();
         })
       )
     )
     .then(() => {
       updateResultsDiv();
-      toggleProcessButton();
+      toggleProcessButton();  // Only check after all loaders finish
     })
     .catch(e => {
       resultsDiv.innerHTML = `<p class="error-message">${e.message}</p>`;
-      toggleProcessButton();
+      toggleProcessButton();  // Only check after all loaders finish
     });
   }
 
