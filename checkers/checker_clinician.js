@@ -261,8 +261,8 @@
         name: (row['Clinician Name'] || row['Name'] || '').toString().trim(),
         category: (row['Clinician Category'] || row['Category'] || '').toString().trim(),
         privileges: (row['Activity Group'] || row['Privileges'] || '').toString().trim(),
-        from: (row['Effective Date'] || '').toString().trim(),
-        to: (row['Expiry Date'] || '').toString().trim(),
+        from: (row['From'] || '').toString().trim(),
+        to: (row['To'] || '').toString().trim(),
         status: (row['Status'] || '').toString().trim()
       };
     });
