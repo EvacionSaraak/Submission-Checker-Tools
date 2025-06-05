@@ -280,6 +280,7 @@
 
   /**
    * Processes Clinician Status Excel data and creates a map of clinician license histories.
+   * Converts the effective date to a standardized ISO format or empty string if invalid.
    */
   function handleClinicianStatusExcelData(data) {
     clinicianStatusMap = {};
@@ -287,17 +288,17 @@
       const licenseNumber = (row['License Number'] || '').toString().trim().toUpperCase();
       const facilityLicenseNumber = (row['Facility License Number'] || '').toString().trim().toUpperCase();
 
-      // *** Parse the effective date to a Date object immediately ***
+      // Parse and standardize the effective date
       const effectiveDateRaw = (row['Effective Date'] || '').toString().trim();
-      const effectiveDateObj = parseDate(effectiveDateRaw); // <- your robust parseDate function
-      // Save as ISO string for consistency (or keep as Date object if you prefer)
+      const effectiveDateObj = parseDate(effectiveDateRaw);
+      // Save as ISO string for consistency, or empty if invalid
       const effectiveDate = isNaN(effectiveDateObj) ? "" : effectiveDateObj.toISOString().slice(0, 10);
 
       const status = (row['Status'] || '').toString().trim().toUpperCase();
       if (!licenseNumber) return;
       (clinicianStatusMap[licenseNumber] = clinicianStatusMap[licenseNumber] || []).push({
         facilityLicenseNumber,
-        effectiveDate, // Now always ISO "YYYY-MM-DD" or "" if invalid
+        effectiveDate, // Always ISO "YYYY-MM-DD" or "" if invalid
         status
       });
     });
@@ -312,11 +313,21 @@
         if (!dateStr) return new Date('Invalid');
         // Try ISO
         if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return new Date(dateStr);
+        // Try Excel serial
+        if (!isNaN(dateStr) && Number(dateStr) > 59) {
+          const excelSerial = Number(dateStr);
+          return new Date((excelSerial - 25567) * 86400 * 1000);
+        }
         // Try DD-MMM-YYYY
         const ddMmmYyyy = /^(\d{1,2})-([A-Za-z]{3})-(\d{4})$/;
         const m = dateStr.match(ddMmmYyyy);
         if (m && monthMap[m[2]]) {
           return new Date(`${m[3]}-${monthMap[m[2]]}-${m[1].padStart(2, '0')}`);
+        }
+        // Try DD/MM/YYYY
+        if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) {
+          const [day, month, year] = dateStr.split('/');
+          return new Date(`${year}-${month}-${day}`);
         }
         return new Date('Invalid');
       };
@@ -349,7 +360,7 @@
     // Excel serial numbers (numbers > 59)
     if (!isNaN(dateStr) && Number(dateStr) > 59) {
       const excelSerial = Number(dateStr);
-      // Excel incorrectly thinks 1900 is a leap year so we add 2
+      // Excel's leap year bug is only relevant for serials before March 1, 1900, so -25567 is correct for modern dates
       return new Date((excelSerial - 25567) * 86400 * 1000);
     }
     // ISO format (YYYY-MM-DD)
@@ -359,10 +370,6 @@
     // DD-MMM-YYYY (e.g. 13-Jun-2015)
     if (/^\d{1,2}-[A-Za-z]{3}-\d{4}$/.test(dateStr)) {
       const [day, mon, year] = dateStr.split('-');
-      const monthMap = {
-        Jan: '01', Feb: '02', Mar: '03', Apr: '04', May: '05', Jun: '06',
-        Jul: '07', Aug: '08', Sep: '09', Oct: '10', Nov: '11', Dec: '12'
-      };
       if (monthMap[mon]) return new Date(`${year}-${monthMap[mon]}-${day.padStart(2, '0')}`);
     }
     // DD/MM/YYYY
@@ -378,19 +385,20 @@
 
   /**
    * Checks if the encounter dates are within the eligibility window from the Excel row.
+   * The sourceLabel argument is used to specify which Excel file the data is from.
    */
-  function checkEligibility(encounterStartStr, encounterEndStr, xlsxRow) {
+  function checkEligibility(encounterStartStr, encounterEndStr, xlsxRow, sourceLabel = "Excel") {
     const encounterStart = parseDate(encounterStartStr);
     const encounterEnd = parseDate(encounterEndStr);
-    const effectiveDate = new Date(xlsxRow.effectiveDate || xlsxRow.from);
-    const expiryDate = new Date(xlsxRow.expiryDate || xlsxRow.to);
+    const effectiveDate = xlsxRow.effectiveDate instanceof Date ? xlsxRow.effectiveDate : parseDate(xlsxRow.effectiveDate || xlsxRow.from);
+    const expiryDate = xlsxRow.expiryDate instanceof Date ? xlsxRow.expiryDate : parseDate(xlsxRow.expiryDate || xlsxRow.to);
     const remarks = [];
     let eligible = true;
 
     if (isNaN(encounterStart) || isNaN(encounterEnd)) {
       remarks.push("Invalid Encounter dates in XML"); eligible = false;
     } else if (!effectiveDate || !expiryDate || isNaN(effectiveDate) || isNaN(expiryDate)) {
-      remarks.push("Invalid Effective/Expiry dates in Excel"); eligible = false;
+      remarks.push(`Invalid Effective/Expiry dates in ${sourceLabel}`); eligible = false;
     } else if (!(encounterStart >= effectiveDate && encounterEnd <= expiryDate)) {
       remarks.push("Procedure is done outside of Eligibility window"); eligible = false;
     }
@@ -407,7 +415,7 @@
 
   /**
    * Gets the license status history for the performing clinician and logs it.
-   * Returns a remark if the license is inactive at the time of encounter.
+   * Returns a remark if the license is not ACTIVE at the time of encounter, showing the actual status.
    */
   function getPerformingLicenseRemark(performingId, providerId, encounterStartStr) {
     const records = clinicianStatusMap[performingId];
@@ -433,8 +441,10 @@
     }
 
     if (!validRecord) return `No effective date record on or before encounter date for Performing Clinician (${performingId})`;
-    if (validRecord.status.toLowerCase() !== 'active') return `Performing Clinician (${performingId}) has ${validRecord.status.toUpperCase()} license as of ${validRecord.effectiveDate}`;
-    
+
+    if (validRecord.status.toLowerCase() !== 'active') {
+      return `Performing Clinician (${performingId}) has ${validRecord.status.toUpperCase()} license as of ${validRecord.effectiveDate}`;
+    }
     return null;
   }
 
@@ -505,12 +515,12 @@
 
           // Date eligibility window validation (OpenJet)
           if (ordXlsxRow) {
-            const ordEligRes = checkEligibility(encounterStartStr, encounterEndStr, ordXlsxRow);
+            const ordEligRes = checkEligibility(encounterStartStr, encounterEndStr, ordXlsxRow, "Open Jet Excel");
             if (!ordEligRes.eligible)
               rowRemarks.push(`Ordering: ${ordEligRes.remarks.join('; ')}`);
           }
           if (perfXlsxRow) {
-            const perfEligRes = checkEligibility(encounterStartStr, encounterEndStr, perfXlsxRow);
+            const perfEligRes = checkEligibility(encounterStartStr, encounterEndStr, perfXlsxRow, "Open Jet Excel");
             if (!perfEligRes.eligible)
               rowRemarks.push(`Performing: ${perfEligRes.remarks.join('; ')}`);
           }
