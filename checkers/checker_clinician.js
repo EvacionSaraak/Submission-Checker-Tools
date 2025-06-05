@@ -543,6 +543,12 @@
               rowRemarks.push(`Performing: ${perfEligRes.remarks.join('; ')}`);
           }
 
+          // New: Collapse all eligibility data into a single "Eligibilities" field
+          const eligibilities = [
+            (ordXlsxRow && ordXlsxRow.eligibility) ? `Ordering: ${ordXlsxRow.eligibility}` : null,
+            (perfXlsxRow && perfXlsxRow.eligibility) ? `Performing: ${perfXlsxRow.eligibility}` : null
+          ].filter(Boolean).join(' | ');
+
           const resultRow = {
             claimId: cid,
             activityId: aid,
@@ -553,16 +559,12 @@
             orderingPrivileges: od.privileges || '',
             orderingFrom: od.from || '',
             orderingTo: od.to || '',
-            orderingEligibility: ordXlsxRow ? ordXlsxRow.eligibility : 'N/A',
-            orderingStatus: ordXlsxRow?.status ?? 'N/A',
             performingId: pid,
             performingName: pd.name,
             performingCategory: pd.category,
             performingPrivileges: pd.privileges || '',
             performingFrom: pd.from || '',
             performingTo: pd.to || '',
-            performingEligibility: perfXlsxRow ? perfXlsxRow.eligibility : 'N/A',
-            performingStatus: perfXlsxRow?.status ?? 'N/A',
             status: perfXlsxRow?.status ?? ordXlsxRow?.status ?? 'N/A',
             packageName: perfXlsxRow?.package ?? ordXlsxRow?.package ?? '',
             serviceCategory: perfXlsxRow?.service ?? ordXlsxRow?.service ?? '',
@@ -571,6 +573,7 @@
             expiryDate: perfXlsxRow?.expiryDate ?? ordXlsxRow?.expiryDate ?? '',
             cardNumber: perfXlsxRow?.cardNumber ?? ordXlsxRow?.cardNumber ?? '',
             cardStatus: perfXlsxRow?.cardStatus ?? ordXlsxRow?.cardStatus ?? '',
+            eligibilities: eligibilities || 'N/A',
             valid: rowRemarks.length === 0,
             remarks: rowRemarks
           };
@@ -612,18 +615,6 @@
       td.textContent = content;
     }
     tr.appendChild(td);
-  }
-
-  function formatEligibilityCell(eligibility, pkg, network, service, consultation) {
-    return `
-      <div>${eligibility || ''}</div>
-      <div>
-        <span>${pkg || ''} - ${network || ''}</span>
-      </div>
-      <div>
-        <span>${service || ''} - ${consultation || ''}</span>
-      </div>
-    `;
   }
 
   function renderResults(results) {
@@ -676,13 +667,8 @@
       appendCell(tr, formatClinicianCell(r.orderingId, r.orderingName, r.orderingCategory, r.orderingPrivileges, r.orderingFrom, r.orderingTo), { isHTML: true });
       appendCell(tr, formatClinicianCell(r.performingId, r.performingName, r.performingCategory, r.performingPrivileges, r.performingFrom, r.performingTo), { isHTML: true });
       appendCell(tr, r.status || 'N/A');
-      appendCell(tr, formatEligibilityCell(
-        r.performingEligibility || r.orderingEligibility || '',
-        r.packageName || '',
-        r.cardStatus || '',
-        r.serviceCategory || '',
-        r.consultationStatus || ''
-      ), { isHTML: true });
+      // Replaces "Ordering/Performing Eligibilities" with just "Eligibilities"
+      appendCell(tr, r.eligibilities || 'N/A');
       appendCell(tr, r.valid ? '✔︎' : '✘');
       appendCell(tr, r.remarks, { isArray: true });
 
@@ -696,7 +682,7 @@
     const row = document.createElement('tr');
     [
       'Claim ID', 'Activity ID', 'Activity Start (Encounter Date)', 'Ordering Clinician',
-      'Performing Clinician', 'License Status', 'Eligibility', 'Valid', 'Remarks'
+      'Performing Clinician', 'License Status', 'Eligibilities', 'Valid', 'Remarks'
     ].forEach(text => {
       const th = document.createElement('th');
       th.scope = 'col';
@@ -729,7 +715,8 @@
         'Claim ID', 'Activity ID', 'Activity Start',
         'Ordering Clinician ID', 'Ordering Name', 'Ordering Category', 'Ordering Privileges', 'Ordering From', 'Ordering To',
         'Performing Clinician ID', 'Performing Name', 'Performing Category', 'Performing Privileges', 'Performing From', 'Performing To',
-        'License Status', 'Eligibility: Package Name',
+        'License Status', 'Eligibilities',
+        'Eligibility: Package Name',
         'Eligibility: Service Category', 'Eligibility: Consultation Status',
         'Eligibility: Effective Date', 'Eligibility: Expiry Date',
         'Eligibility: Card Number', 'Eligibility: Card Status',
@@ -740,7 +727,8 @@
         r.claimId, r.activityId, (r.activityStart || '').split('T')[0],
         r.orderingId, r.orderingName, r.orderingCategory, r.orderingPrivileges, r.orderingFrom || '', r.orderingTo || '',
         r.performingId, r.performingName, r.performingCategory, r.performingPrivileges, r.performingFrom || '', r.performingTo || '',
-        r.status || 'N/A', r.packageName || '',
+        r.status || 'N/A', r.eligibilities || 'N/A',
+        r.packageName || '',
         r.serviceCategory || '', r.consultationStatus || '',
         r.effectiveDate || '', r.expiryDate || '',
         r.cardNumber || '', r.cardStatus || '',
