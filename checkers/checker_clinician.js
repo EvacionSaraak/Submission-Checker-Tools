@@ -217,35 +217,23 @@
       const effectiveDateCols = getAllColumnIndices(headerRow, "EffectiveDate");
       const expiryDateCols = getAllColumnIndices(headerRow, "ExpiryDate");
       const clinicianCol = headerRow.findIndex(h => (h || '').toString().trim() === "Clinician");
-      const packageCol = headerRow.findIndex(h => (h || '').toString().trim() === "Package Name");
-      const networkCol = headerRow.findIndex(h => (h || '').toString().trim() === "Card Network");
-      const cardNumberCol = headerRow.findIndex(h => (h || '').toString().trim() === "Card Number");
-      const cardStatusCol = headerRow.findIndex(h => (h || '').toString().trim() === "Card Status");
-      const serviceCol = headerRow.findIndex(h => (h || '').toString().trim() === "Service Category");
-      const consultationCol = headerRow.findIndex(h => (h || '').toString().trim() === "Consultation Status");
-      const eligibilityCol = headerRow.findIndex(h => (h || '').toString().trim() === "Eligibility Request Number");
-      const statusCol = headerRow.findIndex(h => (h || '').toString().trim() === "Status");
 
       openJetData = [];
-      dataRows.forEach(row => {
+      dataRows.forEach((row, rowIdx) => {
         const clinicianId = row[clinicianCol]?.toString().trim();
         if (!clinicianId) return;
         // Use the latest (right-most) non-empty value for each date field
         const effectiveDateRaw = getLatestValueFromColumns(row, effectiveDateCols);
         const expiryDateRaw = getLatestValueFromColumns(row, expiryDateCols);
 
+        // Debugging output
+        console.log(`Row ${rowIdx + 1}: Clinician=${clinicianId}, EffectiveDateRaw=${effectiveDateRaw}, ExpiryDateRaw=${expiryDateRaw}`);
+
         openJetData.push({
           clinicianId,
           effectiveDate: parseDate(effectiveDateRaw),
           expiryDate: parseDate(expiryDateRaw),
-          package: packageCol > -1 ? (row[packageCol] || '').toString().trim() : '',
-          network: networkCol > -1 ? (row[networkCol] || '').toString().trim() : '',
-          cardNumber: cardNumberCol > -1 ? (row[cardNumberCol] || '').toString().trim() : '',
-          cardStatus: cardStatusCol > -1 ? (row[cardStatusCol] || '').toString().trim() : '',
-          service: serviceCol > -1 ? (row[serviceCol] || '').toString().trim() : '',
-          consultation: consultationCol > -1 ? (row[consultationCol] || '').toString().trim() : '',
-          eligibility: eligibilityCol > -1 ? (row[eligibilityCol] || '').toString().trim() : '',
-          status: statusCol > -1 ? (row[statusCol] || '').toString().trim() : ''
+          // ... (add other fields as needed)
         });
       });
       openJetCount = openJetData.length;
