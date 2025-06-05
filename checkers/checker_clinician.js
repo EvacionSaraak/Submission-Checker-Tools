@@ -286,12 +286,18 @@
     data.forEach(row => {
       const licenseNumber = (row['License Number'] || '').toString().trim().toUpperCase();
       const facilityLicenseNumber = (row['Facility License Number'] || '').toString().trim().toUpperCase();
-      const effectiveDate = (row['Effective Date'] || '').toString().trim();
+
+      // *** Parse the effective date to a Date object immediately ***
+      const effectiveDateRaw = (row['Effective Date'] || '').toString().trim();
+      const effectiveDateObj = parseDate(effectiveDateRaw); // <- your robust parseDate function
+      // Save as ISO string for consistency (or keep as Date object if you prefer)
+      const effectiveDate = isNaN(effectiveDateObj) ? "" : effectiveDateObj.toISOString().slice(0, 10);
+
       const status = (row['Status'] || '').toString().trim().toUpperCase();
       if (!licenseNumber) return;
       (clinicianStatusMap[licenseNumber] = clinicianStatusMap[licenseNumber] || []).push({
         facilityLicenseNumber,
-        effectiveDate,
+        effectiveDate, // Now always ISO "YYYY-MM-DD" or "" if invalid
         status
       });
     });
