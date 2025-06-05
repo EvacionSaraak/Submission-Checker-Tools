@@ -37,6 +37,52 @@
   // 2. DOM READY, UI BINDINGS, & GLOBAL ERROR HANDLER
   // ============================================================================
 
+  // --- 1. Place all function declarations before DOMContentLoaded ---
+
+  function handleXmlInput() {
+    console.log('[Input] XML file selection');
+    showProcessing('Loading XML...');
+    disableButtons();
+    const file = xmlInput.files[0];
+
+    if (!file) {
+      xmlDoc = null;
+      claimCount = 0;
+      fileLoadStatus.xml = false;
+      resultsDiv.innerHTML = '';
+      updateResultsDiv();
+      toggleProcessButton();
+      return;
+    }
+
+    file.text().then(text => {
+      if (!text.trim()) throw new Error('Empty XML file');
+      const doc = new DOMParser().parseFromString(text, 'application/xml');
+      if (doc.querySelector('parsererror')) throw new Error('Invalid XML');
+      xmlDoc = doc;
+      claimCount = xmlDoc.getElementsByTagName('Claim').length;
+      fileLoadStatus.xml = true;
+      resultsDiv.innerHTML = '';
+      updateResultsDiv();
+      toggleProcessButton();
+      console.log(`[Input] XML loaded: ${claimCount} claims`);
+    }).catch(e => {
+      xmlDoc = null; claimCount = 0;
+      fileLoadStatus.xml = false;
+      resultsDiv.innerHTML = `<p class="error-message">Error loading XML: ${e.message}</p>`;
+      updateResultsDiv();
+      toggleProcessButton();
+      console.error('[Input] Error loading XML:', e);
+    });
+  }
+
+  // ... all other function declarations as in your script ...
+  // (the rest of your code remains unchanged, except for moving the handleXmlInput definition above)
+
+  // ============================================================================
+  // 2. DOM READY, UI BINDINGS, & GLOBAL ERROR HANDLER
+  // ============================================================================
+
   document.addEventListener('DOMContentLoaded', () => {
     console.log('[Init] DOMContentLoaded');
     xmlInput = document.getElementById('xmlFileInput');
@@ -416,9 +462,8 @@
   // ============================================================================
 
   function processClaims(d, map) {
-    console.log('[Process] processClaims called');
     showProcessing("Validating Claims...");
-    disableButtons();
+    if (exportCsvBtn) exportCsvBtn.disabled = true;
 
     setTimeout(() => {
       const claimNodes = Array.from(d.getElementsByTagName('Claim'));
@@ -443,42 +488,69 @@
           const ordXlsxRow = openJetData.find(r => r.clinicianId === oid);
           const perfXlsxRow = openJetData.find(r => r.clinicianId === pid);
           const providerId = getText(cl, 'ProviderID');
-          const encounterDate = encounterStartStr ? parseDate(encounterStartStr) : null;
+          const encounterDate = encounterStartStr ? new Date(encounterStartStr) : null;
 
-          if (clinicianStatusMap && pid && providerId && encounterStartStr) {
-            const licenseStatusRemark = getPerformingLicenseRemark(pid, providerId, encounterStartStr);
-            if (licenseStatusRemark) rowRemarks.push(licenseStatusRemark);
+          // Facility & license validation
+          if (clinicianStatusMap) {
+            if (oid && checkFacilityMismatch(oid, providerId))
+              rowRemarks.push(`Ordering Clinician (${oid}) not matched to Provider Facility (${providerId})`);
+
+            if (pid && checkFacilityMismatch(pid, providerId))
+              rowRemarks.push(`Performing Clinician (${pid}) not matched to Provider Facility (${providerId})`);
+
+            if (oid && encounterDate) {
+              const ordRec = checkMostRecentStatus(oid, encounterDate);
+              if (ordRec && ordRec.status && ordRec.status.toLowerCase() === 'inactive')
+                rowRemarks.push(`Ordering Clinician (${oid}) has INACTIVE license as of ${ordRec.effectiveDate}`);
+            }
+
+            if (pid && encounterDate) {
+              const perfRec = checkMostRecentStatus(pid, encounterDate);
+              if (perfRec && perfRec.status && perfRec.status.toLowerCase() === 'inactive')
+                rowRemarks.push(`Performing Clinician (${pid}) has INACTIVE license as of ${perfRec.effectiveDate}`);
+            }
           }
 
+          // Open Jet and category validation
           if (!ordXlsxRow) rowRemarks.push(`Ordering Clinician (${oid}) not in Open Jet`);
           if (!perfXlsxRow) rowRemarks.push(`Performing Clinician (${pid}) not in Open Jet`);
           if (!validateClinicians(oid, pid, od, pd)) rowRemarks.push(...generateRemarks(od, pd));
 
-          if (!(ordXlsxRow && typeof ordXlsxRow.status === 'string' && ordXlsxRow.status.toLowerCase() === 'eligible')) {
-            rowRemarks.push(`Ordering Clinician status is ${ordXlsxRow && typeof ordXlsxRow.status === 'string' ? ordXlsxRow.status.toLowerCase() : 'unknown'} in Open Jet`);
+          //Checks Status of Eligibility
+          if (!(ordXlsxRow && ordXlsxRow.status && ordXlsxRow.status.toLowerCase() === 'eligible')) {
+            rowRemarks.push(`Ordering Clinician status is ${ordXlsxRow && ordXlsxRow.status ? ordXlsxRow.status.toLowerCase() : 'unknown'} in Open Jet`);
           }
-          if (!(perfXlsxRow && typeof perfXlsxRow.status === 'string' && perfXlsxRow.status.toLowerCase() === 'eligible')) {
-            rowRemarks.push(`Performing Clinician status is ${perfXlsxRow && typeof perfXlsxRow.status === 'string' ? perfXlsxRow.status.toLowerCase() : 'unknown'} in Open Jet`);
+          if (!(perfXlsxRow && perfXlsxRow.status && perfXlsxRow.status.toLowerCase() === 'eligible')) {
+            rowRemarks.push(`Performing Clinician status is ${perfXlsxRow && perfXlsxRow.status ? perfXlsxRow.status.toLowerCase() : 'unknown'} in Open Jet`);
           }
 
+          // Date eligibility
           if (ordXlsxRow) {
-            const ordEligRes = checkEligibility(encounterStartStr, encounterEndStr, ordXlsxRow, "Open Jet Excel");
+            const ordEligRes = checkEligibility(encounterStartStr, encounterEndStr, ordXlsxRow);
             if (!ordEligRes.eligible)
               rowRemarks.push(`Ordering: ${ordEligRes.remarks.join('; ')}`);
           }
           if (perfXlsxRow) {
-            const perfEligRes = checkEligibility(encounterStartStr, encounterEndStr, perfXlsxRow, "Open Jet Excel");
+            const perfEligRes = checkEligibility(encounterStartStr, encounterEndStr, perfXlsxRow);
             if (!perfEligRes.eligible)
               rowRemarks.push(`Performing: ${perfEligRes.remarks.join('; ')}`);
           }
 
-          // Collapse all eligibility data into a single "Eligibilities" field
+          // Clinician status validation
+          if (clinicianStatusMap) {
+            const ordStatus = validateClinicianStatus(oid, providerId, encounterStartStr);
+            const perfStatus = validateClinicianStatus(pid, providerId, encounterStartStr);
+            rowRemarks.push(...ordStatus.remarks, ...perfStatus.remarks);
+          }
+
+          // Single "eligibilities" field combining both
           const eligibilities = [
             ordXlsxRow?.eligibility ? `Ordering: ${ordXlsxRow.eligibility}` : null,
             perfXlsxRow?.eligibility ? `Performing: ${perfXlsxRow.eligibility}` : null
           ].filter(Boolean).join(' | ') || 'N/A';
 
-          const resultRow = {
+          // Store result row
+          results.push({
             claimId: cid,
             activityId: aid,
             activityStart: encounterStartStr,
@@ -494,31 +566,20 @@
             performingPrivileges: pd.privileges || '',
             performingFrom: pd.from || '',
             performingTo: pd.to || '',
-            status: perfXlsxRow?.status ?? ordXlsxRow?.status ?? 'N/A',
-            packageName: perfXlsxRow?.package ?? ordXlsxRow?.package ?? '',
-            serviceCategory: perfXlsxRow?.service ?? ordXlsxRow?.service ?? '',
-            consultationStatus: perfXlsxRow?.consultation ?? ordXlsxRow?.consultation ?? '',
-            effectiveDate: perfXlsxRow?.effectiveDate ?? ordXlsxRow?.effectiveDate ?? '',
-            expiryDate: perfXlsxRow?.expiryDate ?? ordXlsxRow?.expiryDate ?? '',
-            cardNumber: perfXlsxRow?.cardNumber ?? ordXlsxRow?.cardNumber ?? '',
-            cardStatus: perfXlsxRow?.cardStatus ?? ordXlsxRow?.cardStatus ?? '',
-            eligibilities: eligibilities,
+            status: (clinicianMap[pid]?.status || clinicianMap[oid]?.status || 'N/A'),
+            eligibilities,
             valid: rowRemarks.length === 0,
             remarks: rowRemarks
-          };
-
-          console.log('[Process] Result row:', resultRow);
-
-          results.push(resultRow);
+          });
         });
       });
 
       renderResults(results);
       setupExportHandler(results);
       updateResultsDiv();
-      console.log('[Process] All claims processed');
     }, 300);
   }
+
 
   // ============================================================================
   // 7. RENDERING & EXPORT
@@ -574,11 +635,13 @@
 
   function renderTableBody(results) {
     const tbody = document.createElement('tbody');
+
     results.forEach(r => {
       const tr = document.createElement('tr');
       tr.className = r.valid ? 'valid' : 'invalid';
       const encounterDate = (r.activityStart || '').split('T')[0];
 
+      // Format cell for clinician info
       const formatClinicianCell = (id, name, category, privileges, from, to) => `
         <div><strong>${id || ''}</strong></div>
         <div>${name || ''}</div>
@@ -596,12 +659,14 @@
       appendCell(tr, formatClinicianCell(r.orderingId, r.orderingName, r.orderingCategory, r.orderingPrivileges, r.orderingFrom, r.orderingTo), { isHTML: true });
       appendCell(tr, formatClinicianCell(r.performingId, r.performingName, r.performingCategory, r.performingPrivileges, r.performingFrom, r.performingTo), { isHTML: true });
       appendCell(tr, r.status || 'N/A');
+      // Use only the single eligibilities field
       appendCell(tr, r.eligibilities || 'N/A');
       appendCell(tr, r.valid ? '✔︎' : '✘');
       appendCell(tr, r.remarks, { isArray: true });
 
       tbody.appendChild(tr);
     });
+
     return tbody;
   }
 
@@ -644,10 +709,6 @@
         'Ordering Clinician ID', 'Ordering Name', 'Ordering Category', 'Ordering Privileges', 'Ordering From', 'Ordering To',
         'Performing Clinician ID', 'Performing Name', 'Performing Category', 'Performing Privileges', 'Performing From', 'Performing To',
         'License Status', 'Eligibilities',
-        'Eligibility: Package Name',
-        'Eligibility: Service Category', 'Eligibility: Consultation Status',
-        'Eligibility: Effective Date', 'Eligibility: Expiry Date',
-        'Eligibility: Card Number', 'Eligibility: Card Status',
         'Valid/Invalid', 'Remarks'
       ];
 
@@ -656,10 +717,6 @@
         r.orderingId, r.orderingName, r.orderingCategory, r.orderingPrivileges, r.orderingFrom || '', r.orderingTo || '',
         r.performingId, r.performingName, r.performingCategory, r.performingPrivileges, r.performingFrom || '', r.performingTo || '',
         r.status || 'N/A', r.eligibilities || 'N/A',
-        r.packageName || '',
-        r.serviceCategory || '', r.consultationStatus || '',
-        r.effectiveDate || '', r.expiryDate || '',
-        r.cardNumber || '', r.cardStatus || '',
         r.valid ? 'Valid' : 'Invalid',
         r.remarks.join('; ')
       ]);
@@ -678,7 +735,6 @@
       XLSX.utils.book_append_sheet(wb, ws, 'Validation Results');
       const filename = `ClinicianCheck_${senderID}_${transactionDateFormatted}.xlsx`;
       XLSX.writeFile(wb, filename);
-      console.log(`[Export] Results exported as ${filename}`);
     };
   }
 
