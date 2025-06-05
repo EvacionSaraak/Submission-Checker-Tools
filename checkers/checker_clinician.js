@@ -171,34 +171,39 @@
           }
         }
 
-        // License status check for ordering and performing clinicians
-        const statusRemark = (id, label) => {
+        // Only the Performing's license status matters for the table
+        function performingStatusCheck(id) {
           const entries = clinicianStatusMap[id] || [];
           const rec = getMostRecentStatusRecord(entries, providerId, encounterStart);
-          if (!rec) return `${label}: No matching license record before encounter date`;
-          if ((rec.status || '').toLowerCase() !== 'active')
-            return `${label}: Inactive as of ${rec.effective}`;
-          return null;
-        };
-        if (oid) {
-          const ordStatus = statusRemark(oid, 'Ordering');
-          if (ordStatus) {
-            remarks.push(ordStatus);
-            valid = false;
+          let statusInfo = {effectivity: '', status: '', invalidRemark: null};
+          if (!rec) {
+            statusInfo.invalidRemark = `Performing: No matching license record before encounter date`;
+          } else {
+            statusInfo.effectivity = rec.effective;
+            statusInfo.status = rec.status;
+            if ((rec.status || '').toLowerCase() !== 'active') {
+              statusInfo.invalidRemark = `Performing: Inactive as of ${rec.effective}`;
+            }
           }
-        }
-        if (pid) {
-          const perfStatus = statusRemark(pid, 'Performing');
-          if (perfStatus) {
-            remarks.push(perfStatus);
-            valid = false;
-          }
+          return statusInfo;
         }
 
+        const performingStatus = pid ? performingStatusCheck(pid) : {effectivity: '', status: '', invalidRemark: null};
+
+        if (performingStatus.invalidRemark) {
+          remarks.push(performingStatus.invalidRemark);
+          valid = false;
+        }
+
+        // For legacy/consistency, keep ordering ID & name in output
         results.push({
           claimId, activityId,
           ordering: oid,
+          orderingName: (clinicianMap[oid]?.name || '').trim(),
           performing: pid,
+          performingName: (clinicianMap[pid]?.name || '').trim(),
+          performingEff: performingStatus.effectivity,
+          performingStatus: performingStatus.status,
           remarks,
           valid
         });
@@ -222,24 +227,30 @@
       `<div class="${pct > 90 ? 'valid-message' : pct > 70 ? 'warning-message' : 'error-message'}">
         Validation: ${validCt}/${total} valid (${pct}%)
       </div>` +
-      '<table><tr><th>Claim</th><th>Activity</th><th>Ordering</th><th>Performing</th><th>Remarks</th><th>Valid</th></tr>' +
+      '<table><tr>' +
+      '<th>Claim</th><th>Activity</th>' +
+      '<th>Ordering</th>' +
+      '<th>Performing</th><th>Performing License Status</th>' +
+      '<th>Remarks</th></tr>' +
       results.map(r => {
         if (displayedClaims.has(r.claimId)) return '';
         displayedClaims.add(r.claimId);
 
-        // Add name in parentheses if present
-        const orderingName = (clinicianMap[r.ordering]?.name || '').trim();
-        const performingName = (clinicianMap[r.performing]?.name || '').trim();
-        const orderingDisplay = r.ordering ? (orderingName ? `${r.ordering} (${orderingName})` : r.ordering) : '';
-        const performingDisplay = r.performing ? (performingName ? `${r.performing} (${performingName})` : r.performing) : '';
+        const orderingDisplay =
+          r.ordering ? (r.orderingName ? `${r.ordering} (${r.orderingName})` : r.ordering) : '';
+        const performingDisplay =
+          r.performing ? (r.performingName ? `${r.performing} (${r.performingName})` : r.performing) : '';
+
+        const performingStatusDisplay = (r.performingEff || r.performingStatus) ?
+          `${r.performingEff || ''}${r.performingEff && r.performingStatus ? ' (' : ''}${r.performingStatus || ''}${r.performingEff && r.performingStatus ? ')' : ''}` : '';
 
         return `<tr class="${r.valid ? 'valid' : 'invalid'}">
           <td>${r.claimId}</td>
           <td>${r.activityId}</td>
           <td>${orderingDisplay}</td>
           <td>${performingDisplay}</td>
+          <td>${performingStatusDisplay}</td>
           <td>${r.remarks.join('; ')}</td>
-          <td>${r.valid ? '✔' : '✘'}</td>
         </tr>`;
       }).join('') + '</table>';
     updateUploadStatus();
@@ -250,17 +261,25 @@
     // Same duplicate-claim logic for export
     const displayedClaims = new Set();
     const headers = [
-      'Claim ID', 'Activity ID', 'Ordering ID (Name)', 'Performing ID (Name)', 'Remarks', 'Valid'
+      'Claim ID', 'Activity ID',
+      'Ordering ID (Name)',
+      'Performing ID (Name)', 'Performing License Status',
+      'Remarks'
     ];
     const rows = lastResults.map(r => {
       if (displayedClaims.has(r.claimId)) return null;
       displayedClaims.add(r.claimId);
-      const orderingName = (clinicianMap[r.ordering]?.name || '').trim();
-      const performingName = (clinicianMap[r.performing]?.name || '').trim();
-      const orderingDisplay = r.ordering ? (orderingName ? `${r.ordering} (${orderingName})` : r.ordering) : '';
-      const performingDisplay = r.performing ? (performingName ? `${r.performing} (${performingName})` : r.performing) : '';
+      const orderingDisplay =
+        r.ordering ? (r.orderingName ? `${r.ordering} (${r.orderingName})` : r.ordering) : '';
+      const performingDisplay =
+        r.performing ? (r.performingName ? `${r.performing} (${r.performingName})` : r.performing) : '';
+      const performingStatusDisplay = (r.performingEff || r.performingStatus) ?
+        `${r.performingEff || ''}${r.performingEff && r.performingStatus ? ' (' : ''}${r.performingStatus || ''}${r.performingEff && r.performingStatus ? ')' : ''}` : '';
       return [
-        r.claimId, r.activityId, orderingDisplay, performingDisplay, r.remarks.join('; '), r.valid ? 'Valid' : 'Invalid'
+        r.claimId, r.activityId,
+        orderingDisplay,
+        performingDisplay, performingStatusDisplay,
+        r.remarks.join('; ')
       ];
     }).filter(Boolean);
     const wb = XLSX.utils.book_new();
