@@ -235,7 +235,10 @@
       const headers = rows[headerRowIndex].map(h => (h || '').toString().trim());
       const dataRows = rows.slice(headerRowIndex + 1).map(row => {
         const obj = {};
-        headers.forEach((h, i) => { obj[h] = row[i] || ''; });
+        headers.forEach((h, i) => {
+          // Only assign the first instance (leftmost) of a duplicate column name
+          if (obj[h] === undefined) obj[h] = row[i] || '';
+        });
         return obj;
       });
 
@@ -246,6 +249,34 @@
   // ============================================================================
   // DATA PARSING FUNCTIONS
   // ============================================================================
+
+  /**
+   * Parse and store Open Jet eligibility data from Excel
+   */
+  function handleOpenJetExcelData(data) {
+    openJetData = data.map(row => {
+      const parseOpenJetDate = dateStr => {
+        if (!dateStr) return new Date('Invalid');
+        const [day, mon, year] = ((dateStr.split(' ')[0] || '').split('-'));
+        if (!day || !mon || !year || !monthMap[mon]) return new Date('Invalid');
+        return new Date(`${year}-${monthMap[mon]}-${day.padStart(2, '0')}`);
+      };
+      return {
+        clinicianId: (row['Clinician'] || '').toString().trim(),
+        effectiveDate: parseOpenJetDate(row['EffectiveDate']),
+        expiryDate: parseOpenJetDate(row['ExpiryDate']),
+        cardNumber: (row['Card Number'] || '').toString().trim(),
+        package: (row['Package Name'] || '').toString().trim(),
+        network: (row['Card Network'] || '').toString().trim(),
+        service: (row['Service Category'] || '').toString().trim(),
+        consultation: (row['Consultation Status'] || '').toString().trim(),
+        eligibility: (row['Eligibility Request Number'] || '').toString().trim(),
+        cardStatus: (row['Status'] || '').toString().trim()
+      };
+    }).filter(entry => entry.clinicianId);
+    openJetCount = openJetData.length;
+    updateResultsDiv();
+  }
 
   /**
    * Parse and store clinician data from Excel
@@ -268,34 +299,7 @@
     });
 
     clinicianCount = Object.keys(clinicianMap).length;
-    updateLoaderMessages();
-  }
-
-  /**
-   * Parse and store Open Jet eligibility data from Excel
-   */
-  function handleOpenJetExcelData(data) {
-    openJetData = data.map(row => {
-      const parseOpenJetDate = dateStr => {
-        if (!dateStr) return new Date('Invalid');
-        const [day, mon, year] = ((dateStr.split(' ')[0] || '').split('-'));
-        if (!day || !mon || !year || !monthMap[mon]) return new Date('Invalid');
-        return new Date(`${year}-${monthMap[mon]}-${day.padStart(2, '0')}`);
-      };
-      return {
-        clinicianId: (row['Clinician'] || '').toString().trim(),
-        effectiveDate: parseOpenJetDate(row['EffectiveDate']),
-        expiryDate: parseOpenJetDate(row['ExpiryDate']),
-        package: (row['Package Name'] || '').toString().trim(),
-        network: (row['Card Network'] || '').toString().trim(),
-        service: (row['Service Category'] || '').toString().trim(),
-        consultation: (row['Consultation Status'] || '').toString().trim(),
-        eligibility: (row['Eligibility Request Number'] || '').toString().trim(),
-        status: (row['Status'] || '').toString().trim()
-      };
-    }).filter(entry => entry.clinicianId);
-    openJetCount = openJetData.length;
-    updateLoaderMessages();
+    updateResultsDiv();
   }
 
   /**
@@ -319,7 +323,7 @@
       });
     });
 
-    updateLoaderMessages();
+    updateResultsDiv();
   }
 
   // ============================================================================
@@ -434,14 +438,14 @@
             performingTo: pd.to || '',
             performingEligibility: perfXlsxRow ? perfXlsxRow.eligibility : 'N/A',
             performingStatus: perfXlsxRow ? perfXlsxRow.status : 'N/A',
-            status: '',
-            packageName: '',
-            serviceCategory: '',
-            consultationStatus: '',
-            effectiveDate: '',
-            expiryDate: '',
-            cardNumber: '',
-            cardStatus: '',
+            status: ordXlsxRow ? ordXlsxRow.status : (perfXlsxRow ? perfXlsxRow.status : ''),
+            packageName: ordXlsxRow ? ordXlsxRow.package : (perfXlsxRow ? perfXlsxRow.package : ''),
+            serviceCategory: ordXlsxRow ? ordXlsxRow.service : (perfXlsxRow ? perfXlsxRow.service : ''),
+            consultationStatus: ordXlsxRow ? ordXlsxRow.consultation : (perfXlsxRow ? perfXlsxRow.consultation : ''),
+            effectiveDate: ordXlsxRow ? ordXlsxRow.effectiveDate : (perfXlsxRow ? perfXlsxRow.effectiveDate : ''),
+            expiryDate: ordXlsxRow ? ordXlsxRow.expiryDate : (perfXlsxRow ? perfXlsxRow.expiryDate : ''),
+            cardNumber: ordXlsxRow ? ordXlsxRow.cardNumber : (perfXlsxRow ? perfXlsxRow.cardNumber : ''),
+            cardStatus: ordXlsxRow ? ordXlsxRow.cardStatus : (perfXlsxRow ? perfXlsxRow.cardStatus : ''),
             valid: rowRemarks.length === 0,
             remarks: rowRemarks
           });
@@ -745,11 +749,7 @@
    */
   function toggleProcessButton() {
     // Only enable if all files are loaded successfully
-    const allLoaded = fileLoadStatus.xml &&
-                      fileLoadStatus.clinicianExcel &&
-                      fileLoadStatus.openJetExcel &&
-                      fileLoadStatus.clinicianStatusExcel;
-    if (processBtn) processBtn.disabled = !allLoaded;
+    if (processBtn) processBtn.disabled = !(fileLoadStatus.xml && fileLoadStatus.clinicianExcel && fileLoadStatus.openJetExcel && fileLoadStatus.clinicianStatusExcel);
   }
 
   /**
@@ -768,13 +768,6 @@
   }
 
   /**
-   * Update loader messages (alias for updateResultsDiv)
-   */
-  function updateLoaderMessages() {
-    updateResultsDiv();
-  }
-
-  /**
    * Get the text content of a child tag within a parent XML element
    */
   function getText(parent, tag) {
@@ -787,20 +780,19 @@
    */
   function parseDate(dateStr) {
     if (!dateStr) return new Date('Invalid');
-    // Handle Excel serial numbers
+    // Excel serial support
     if (!isNaN(dateStr)) {
       const excelSerial = parseFloat(dateStr);
       if (!isNaN(excelSerial) && excelSerial > 59)
         return new Date((excelSerial - (25567 + 2)) * 86400 * 1000);
     }
-    // Try dd/MM/yyyy format
+    // dd/MM/yyyy
     const ddmmyyyy = /^(\d{2})\/(\d{2})\/(\d{4})$/;
     const m = dateStr.match(ddmmyyyy);
     if (m) {
-      // JS Date: yyyy-mm-dd
       return new Date(`${m[3]}-${m[2]}-${m[1]}`);
     }
-    // Fall back to built-in parser
+    // Fallback
     let d = new Date(dateStr);
     if (!isNaN(d.getTime())) return d;
     return new Date('Invalid');
