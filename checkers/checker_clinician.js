@@ -775,4 +775,18 @@
     console.log('[UI] Status updated:', messages.join(', '));
   }
 
+  function checkMostRecentStatus(license, activityDate) {
+    const statusRecords = clinicianStatusMap[license];
+    if (!statusRecords?.length) return null;
+
+    const pastRecords = statusRecords.filter(entry => {
+      const effDate = new Date(entry.effectiveDate);
+      return !isNaN(effDate) && effDate <= activityDate;
+    });
+
+    if (!pastRecords.length) return null;
+
+    pastRecords.sort((a, b) => new Date(b.effectiveDate) - new Date(a.effectiveDate));
+    return pastRecords[0];
+  }
 })();
