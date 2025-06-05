@@ -9,7 +9,6 @@
   let lastResults = [];
 
   document.addEventListener('DOMContentLoaded', () => {
-    // DOM Element references
     xmlInput = document.getElementById('xmlFileInput');
     clinicianInput = document.getElementById('clinicianFileInput');
     statusInput = document.getElementById('statusFileInput');
@@ -18,12 +17,10 @@
     resultsDiv = document.getElementById('results');
     uploadDiv = document.getElementById('uploadStatus');
 
-    // Bind file input events
     xmlInput.addEventListener('change', handleXmlInput);
     clinicianInput.addEventListener('change', handleClinicianInput);
     statusInput.addEventListener('change', handleStatusInput);
 
-    // Action buttons
     processBtn.addEventListener('click', validateClinicians);
     if (csvBtn) csvBtn.addEventListener('click', exportResults);
 
@@ -71,7 +68,7 @@
       clinicianCount = Object.keys(clinicianMap).length;
       resultsDiv.innerHTML = '';
       updateUploadStatus();
-    });
+    }, 'Clinicians');
   }
 
   function handleStatusInput(e) {
@@ -98,16 +95,25 @@
       historyCount = Object.keys(clinicianStatusMap).length;
       resultsDiv.innerHTML = '';
       updateUploadStatus();
-    });
+    }, 'Clinician Licensing Status');
   }
 
-  function readExcel(file, callback) {
+  function readExcel(file, callback, sheetName) {
     const reader = new FileReader();
     reader.onload = function (e) {
       const data = new Uint8Array(e.target.result);
       const workbook = XLSX.read(data, { type: 'array' });
-      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(firstSheet);
+      let sheet;
+      // Use the correct sheet name if present
+      if (sheetName && workbook.SheetNames.includes(sheetName)) {
+        sheet = workbook.Sheets[sheetName];
+      } else {
+        sheet = workbook.Sheets[workbook.SheetNames[0]];
+        if (sheetName) {
+          console.warn(`[Excel] Sheet "${sheetName}" not found. Using first sheet "${workbook.SheetNames[0]}".`);
+        }
+      }
+      const rows = XLSX.utils.sheet_to_json(sheet);
       callback(rows);
     };
     reader.readAsArrayBuffer(file);
@@ -120,9 +126,6 @@
     return el ? el.textContent.trim() : '';
   }
 
-  /**
-   * Returns the most recent license status record for a clinician at a facility before/on a given date.
-   */
   function getMostRecentStatusRecord(entries, providerId, encounterStart) {
     const encounterD = new Date(encounterStart);
     return entries
