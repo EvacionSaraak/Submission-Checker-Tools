@@ -228,8 +228,8 @@
         toggleProcessButton();
         return;
       }
-      const headerRow = rows[0];
-      const dataRows = rows.slice(1);
+      const headerRow = rows[1];
+      const dataRows = rows.slice(2);
 
       // Log headers and first data row for debugging
       console.log('[OpenJet] Header row:', headerRow);
