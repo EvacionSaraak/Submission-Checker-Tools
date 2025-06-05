@@ -37,9 +37,6 @@
   // 2. DOM READY, UI BINDINGS, & GLOBAL ERROR HANDLER
   // ============================================================================
 
-  /**
-   * Handles initial DOM setup, binds UI, and sets up global error handler.
-   */
   document.addEventListener('DOMContentLoaded', () => {
     console.log('[Init] DOMContentLoaded');
     xmlInput = document.getElementById('xmlFileInput');
@@ -88,9 +85,6 @@
     console.log('[Init] UI ready');
   });
 
-  /**
-   * Global error handler to display errors in the UI and log them.
-   */
   window.onerror = (msg, url, line, col) => {
     if (resultsDiv) {
       resultsDiv.innerHTML = `<p class="error-message">Unexpected error: ${msg} at ${line}:${col}</p>`;
@@ -199,13 +193,6 @@
     });
   }
   
-  /**
-   * Handles the user selecting an Open Jet Excel file.
-   * - Uses only the ordering clinician to look up Open Jet data.
-   * - Card number, card status, eligibility, package, service, consultation, effective/expiry all pulled from ordering clinician's Open Jet row.
-   * - All fields are mapped from Open Jet by dynamic header lookup.
-   * - Includes logging for debugging.
-   */
   function handleOpenJetExcelInput() {
     console.log('[Input] Open Jet Excel selection');
     showProcessing('Loading Open Jet Excel...');
@@ -225,13 +212,12 @@
       const sheet = wb.Sheets[wb.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
 
-      // Robust: Header is second row, data starts after that.
+      // Header is second row, data starts after that.
       const headerRow = rows[1];
       const dataRows = rows.slice(2);
 
       console.log('[OpenJet] Header row:', headerRow);
 
-      // Dynamically look up all field indices
       const getColIdx = (name) => headerRow.findIndex(h => (h || '').toString().trim().toLowerCase() === name.toLowerCase());
 
       const clinicianCol      = getColIdx("Clinician");
@@ -244,7 +230,6 @@
       const effectiveDateCol  = getColIdx("EffectiveDate");
       const expiryDateCol     = getColIdx("ExpiryDate");
 
-      // Support duplicate EffectiveDate/ExpiryDate columns (use rightmost)
       const getAllColumnIndices = (targetName) => headerRow.map((h, idx) => ((h || '').toString().trim() === targetName) ? idx : -1).filter(idx => idx !== -1);
       const effectiveDateCols = getAllColumnIndices("EffectiveDate");
       const expiryDateCols = getAllColumnIndices("ExpiryDate");
@@ -253,7 +238,6 @@
       dataRows.forEach((row, rowIdx) => {
         const clinicianId = row[clinicianCol] ? row[clinicianCol].toString().trim() : '';
         if (!clinicianId) return;
-        // Use latest (right-most) non-empty value for each date field
         const getLatestValueFromColumns = (row, indices) => {
           for (let i = indices.length - 1; i >= 0; i--) {
             const val = row[indices[i]];
@@ -293,61 +277,6 @@
       updateResultsDiv();
       toggleProcessButton();
       console.error('[Input] Error loading Open Jet Excel:', e);
-    });
-  }
-
-  function getAllColumnIndices(headerRow, targetName) {
-    const indices = [];
-    headerRow.forEach((h, idx) => {
-      if ((h || '').toString().trim() === targetName) indices.push(idx);
-    });
-    return indices;
-  }
-
-  function getLatestValueFromColumns(row, indices) {
-    for (let i = indices.length - 1; i >= 0; i--) {
-      const val = row[indices[i]];
-      if (val !== undefined && val !== null && String(val).trim() !== '') {
-        return val;
-      }
-    }
-    return '';
-  }
-
-  function handleXmlInput() {
-    console.log('[Input] XML file selection');
-    showProcessing('Loading XML...');
-    disableButtons();
-    const file = xmlInput.files[0];
-
-    if (!file) {
-      xmlDoc = null;
-      claimCount = 0;
-      fileLoadStatus.xml = false;
-      resultsDiv.innerHTML = '';
-      updateResultsDiv();
-      toggleProcessButton();
-      return;
-    }
-
-    file.text().then(text => {
-      if (!text.trim()) throw new Error('Empty XML file');
-      const doc = new DOMParser().parseFromString(text, 'application/xml');
-      if (doc.querySelector('parsererror')) throw new Error('Invalid XML');
-      xmlDoc = doc;
-      claimCount = xmlDoc.getElementsByTagName('Claim').length;
-      fileLoadStatus.xml = true;
-      resultsDiv.innerHTML = '';
-      updateResultsDiv();
-      toggleProcessButton();
-      console.log(`[Input] XML loaded: ${claimCount} claims`);
-    }).catch(e => {
-      xmlDoc = null; claimCount = 0;
-      fileLoadStatus.xml = false;
-      resultsDiv.innerHTML = `<p class="error-message">Error loading XML: ${e.message}</p>`;
-      updateResultsDiv();
-      toggleProcessButton();
-      console.error('[Input] Error loading XML:', e);
     });
   }
 
@@ -543,11 +472,11 @@
               rowRemarks.push(`Performing: ${perfEligRes.remarks.join('; ')}`);
           }
 
-          // New: Collapse all eligibility data into a single "Eligibilities" field
+          // Collapse all eligibility data into a single "Eligibilities" field
           const eligibilities = [
-            (ordXlsxRow && ordXlsxRow.eligibility) ? `Ordering: ${ordXlsxRow.eligibility}` : null,
-            (perfXlsxRow && perfXlsxRow.eligibility) ? `Performing: ${perfXlsxRow.eligibility}` : null
-          ].filter(Boolean).join(' | ');
+            ordXlsxRow?.eligibility ? `Ordering: ${ordXlsxRow.eligibility}` : null,
+            perfXlsxRow?.eligibility ? `Performing: ${perfXlsxRow.eligibility}` : null
+          ].filter(Boolean).join(' | ') || 'N/A';
 
           const resultRow = {
             claimId: cid,
@@ -573,7 +502,7 @@
             expiryDate: perfXlsxRow?.expiryDate ?? ordXlsxRow?.expiryDate ?? '',
             cardNumber: perfXlsxRow?.cardNumber ?? ordXlsxRow?.cardNumber ?? '',
             cardStatus: perfXlsxRow?.cardStatus ?? ordXlsxRow?.cardStatus ?? '',
-            eligibilities: eligibilities || 'N/A',
+            eligibilities: eligibilities,
             valid: rowRemarks.length === 0,
             remarks: rowRemarks
           };
@@ -667,7 +596,6 @@
       appendCell(tr, formatClinicianCell(r.orderingId, r.orderingName, r.orderingCategory, r.orderingPrivileges, r.orderingFrom, r.orderingTo), { isHTML: true });
       appendCell(tr, formatClinicianCell(r.performingId, r.performingName, r.performingCategory, r.performingPrivileges, r.performingFrom, r.performingTo), { isHTML: true });
       appendCell(tr, r.status || 'N/A');
-      // Replaces "Ordering/Performing Eligibilities" with just "Eligibilities"
       appendCell(tr, r.eligibilities || 'N/A');
       appendCell(tr, r.valid ? '✔︎' : '✘');
       appendCell(tr, r.remarks, { isArray: true });
