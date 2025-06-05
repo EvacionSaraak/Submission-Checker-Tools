@@ -490,14 +490,8 @@
           const providerId = getText(cl, 'ProviderID');
           const encounterDate = encounterStartStr ? new Date(encounterStartStr) : null;
 
-          // Facility & license validation
+          // License status validation only
           if (clinicianStatusMap) {
-            if (oid && checkFacilityMismatch(oid, providerId))
-              rowRemarks.push(`Ordering Clinician (${oid}) not matched to Provider Facility (${providerId})`);
-
-            if (pid && checkFacilityMismatch(pid, providerId))
-              rowRemarks.push(`Performing Clinician (${pid}) not matched to Provider Facility (${providerId})`);
-
             if (oid && encounterDate) {
               const ordRec = checkMostRecentStatus(oid, encounterDate);
               if (ordRec && ordRec.status && ordRec.status.toLowerCase() === 'inactive')
