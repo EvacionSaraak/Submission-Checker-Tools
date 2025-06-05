@@ -793,11 +793,15 @@
       if (!isNaN(excelSerial) && excelSerial > 59)
         return new Date((excelSerial - (25567 + 2)) * 86400 * 1000);
     }
+    // Try dd/MM/yyyy format
+    const ddmmyyyy = /^(\d{2})\/(\d{2})\/(\d{4})$/;
+    const m = dateStr.match(ddmmyyyy);
+    if (m) {
+      // JS Date: yyyy-mm-dd
+      return new Date(`${m[3]}-${m[2]}-${m[1]}`);
+    }
+    // Fall back to built-in parser
     let d = new Date(dateStr);
-    if (!isNaN(d.getTime())) return d;
-    d = new Date(dateStr.replace(/(\d+)\/(\d+)\/(\d+)/, '$2/$1/$3'));
-    if (!isNaN(d.getTime())) return d;
-    d = new Date(dateStr.replace(/(\d+)-(\d+)-(\d+)/, '$1/$2/$3'));
     if (!isNaN(d.getTime())) return d;
     return new Date('Invalid');
   }
