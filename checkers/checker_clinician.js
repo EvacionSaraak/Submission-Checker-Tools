@@ -340,19 +340,23 @@
    */
   function parseDate(dateStr) {
     if (!dateStr) return new Date('Invalid');
+    // Excel serial numbers (numbers > 59)
+    if (!isNaN(dateStr) && Number(dateStr) > 59) {
+      const excelSerial = Number(dateStr);
+      // Excel incorrectly thinks 1900 is a leap year so we add 2
+      return new Date((excelSerial - 25567) * 86400 * 1000);
+    }
     // ISO format (YYYY-MM-DD)
     if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
       return new Date(dateStr);
     }
-    // Excel serial numbers
-    if (!isNaN(dateStr)) {
-      const excelSerial = parseFloat(dateStr);
-      if (!isNaN(excelSerial) && excelSerial > 59)
-        return new Date((excelSerial - (25567 + 2)) * 86400 * 1000);
-    }
     // DD-MMM-YYYY (e.g. 13-Jun-2015)
     if (/^\d{1,2}-[A-Za-z]{3}-\d{4}$/.test(dateStr)) {
       const [day, mon, year] = dateStr.split('-');
+      const monthMap = {
+        Jan: '01', Feb: '02', Mar: '03', Apr: '04', May: '05', Jun: '06',
+        Jul: '07', Aug: '08', Sep: '09', Oct: '10', Nov: '11', Dec: '12'
+      };
       if (monthMap[mon]) return new Date(`${year}-${monthMap[mon]}-${day.padStart(2, '0')}`);
     }
     // DD/MM/YYYY
