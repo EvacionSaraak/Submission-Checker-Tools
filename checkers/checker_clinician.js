@@ -57,6 +57,7 @@
       updateUploadStatus();
       return;
     }
+    resultsDiv.innerHTML = 'Loading Excel...';
     readExcel(file, data => {
       clinicianMap = {};
       data.forEach(row => {
@@ -68,6 +69,7 @@
         };
       });
       clinicianCount = Object.keys(clinicianMap).length;
+      resultsDiv.innerHTML = '';
       updateUploadStatus();
     });
   }
@@ -80,6 +82,7 @@
       updateUploadStatus();
       return;
     }
+    resultsDiv.innerHTML = 'Loading Excel...';
     readExcel(file, data => {
       clinicianStatusMap = {};
       data.forEach(row => {
@@ -93,6 +96,7 @@
         });
       });
       historyCount = Object.keys(clinicianStatusMap).length;
+      resultsDiv.innerHTML = '';
       updateUploadStatus();
     });
   }
@@ -241,6 +245,10 @@
     if (historyCount) messages.push(`${historyCount} License Histories Loaded`);
     uploadDiv.textContent = messages.join(', ');
     processBtn.disabled = !(claimCount && clinicianCount && historyCount);
+    // Console log for totals
+    console.log(
+      `[Loaded] Claims: ${claimCount}, Clinicians: ${clinicianCount}, License Histories: ${historyCount}`
+    );
   }
 
 })();
