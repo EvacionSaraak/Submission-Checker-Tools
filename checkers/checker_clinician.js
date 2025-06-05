@@ -1,37 +1,50 @@
 (function () {
   'use strict';
 
-  // === STATE ===
-  let xmlDoc = null, clinicianMap = {}, clinicianStatusMap = {};
-  let xmlInput, clinicianInput, statusInput, processBtn, resultsDiv, uploadDiv;
+  // ======= 1. DOM/Initialization =======
 
-  // === DOM READY & BINDINGS ===
+  let xmlDoc = null, clinicianMap = {}, clinicianStatusMap = {};
+  let xmlInput, clinicianInput, statusInput, processBtn, csvBtn, resultsDiv, uploadDiv;
+  let claimCount = 0, clinicianCount = 0, historyCount = 0;
+  let lastResults = [];
+
   document.addEventListener('DOMContentLoaded', () => {
+    // DOM Element references
     xmlInput = document.getElementById('xmlFileInput');
     clinicianInput = document.getElementById('clinicianFileInput');
     statusInput = document.getElementById('statusFileInput');
     processBtn = document.getElementById('processBtn');
+    csvBtn = document.getElementById('csvBtn');
     resultsDiv = document.getElementById('results');
     uploadDiv = document.getElementById('uploadStatus');
 
+    // Bind file input events
     xmlInput.addEventListener('change', handleXmlInput);
     clinicianInput.addEventListener('change', handleClinicianInput);
     statusInput.addEventListener('change', handleStatusInput);
+
+    // Action buttons
     processBtn.addEventListener('click', validateClinicians);
+    if (csvBtn) csvBtn.addEventListener('click', exportResults);
 
     processBtn.disabled = true;
+    if (csvBtn) csvBtn.disabled = true;
     updateUploadStatus();
   });
+
+  // ======= 2. File Handling & Parsing =======
 
   function handleXmlInput(e) {
     const file = e.target.files[0];
     if (!file) {
       xmlDoc = null;
+      claimCount = 0;
       updateUploadStatus();
       return;
     }
     file.text().then(text => {
       xmlDoc = new DOMParser().parseFromString(text, 'application/xml');
+      claimCount = xmlDoc.getElementsByTagName('Claim').length;
       updateUploadStatus();
     });
   }
@@ -40,6 +53,7 @@
     const file = e.target.files[0];
     if (!file) {
       clinicianMap = {};
+      clinicianCount = 0;
       updateUploadStatus();
       return;
     }
@@ -53,6 +67,7 @@
           category: row['Clinician Category'] || row['Category'] || '',
         };
       });
+      clinicianCount = Object.keys(clinicianMap).length;
       updateUploadStatus();
     });
   }
@@ -61,6 +76,7 @@
     const file = e.target.files[0];
     if (!file) {
       clinicianStatusMap = {};
+      historyCount = 0;
       updateUploadStatus();
       return;
     }
@@ -76,9 +92,41 @@
           status: row['Status'] || ''
         });
       });
+      historyCount = Object.keys(clinicianStatusMap).length;
       updateUploadStatus();
     });
   }
+
+  function readExcel(file, callback) {
+    const reader = new FileReader();
+    reader.onload = function (e) {
+      const data = new Uint8Array(e.target.result);
+      const workbook = XLSX.read(data, { type: 'array' });
+      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(firstSheet);
+      callback(rows);
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  // ======= 3. Data Utilities =======
+
+  function getText(parent, tag) {
+    const el = parent.getElementsByTagName(tag)[0];
+    return el ? el.textContent.trim() : '';
+  }
+
+  /**
+   * Returns the most recent license status record for a clinician at a facility before/on a given date.
+   */
+  function getMostRecentStatusRecord(entries, providerId, encounterStart) {
+    const encounterD = new Date(encounterStart);
+    return entries
+      .filter(e => e.facility === providerId && new Date(e.effective) <= encounterD)
+      .sort((a, b) => new Date(b.effective) - new Date(a.effective))[0];
+  }
+
+  // ======= 4. Validation Logic =======
 
   function validateClinicians() {
     if (!xmlDoc) return;
@@ -108,17 +156,13 @@
           }
         }
 
-        // License status check (Performing)
+        // License status check (Ordering/Performing)
         const statusRemark = (id, label) => {
           const entries = clinicianStatusMap[id] || [];
-          const encounterD = new Date(encounterStart);
-          // Filter for facility and effective date <= encounter
-          const validRec = entries
-            .filter(e => e.facility === providerId && new Date(e.effective) <= encounterD)
-            .sort((a, b) => new Date(b.effective) - new Date(a.effective))[0];
-          if (!validRec) return `${label}: No matching license record`;
-          if ((validRec.status || '').toLowerCase() !== 'active')
-            return `${label}: Inactive as of ${validRec.effective}`;
+          const rec = getMostRecentStatusRecord(entries, providerId, encounterStart);
+          if (!rec) return `${label}: No matching license record`;
+          if ((rec.status || '').toLowerCase() !== 'active')
+            return `${label}: Inactive as of ${rec.effective}`;
           return null;
         };
         if (oid) {
@@ -145,10 +189,14 @@
         });
       }
     }
-    render(results);
+    lastResults = results;
+    renderResults(results);
+    if (csvBtn) csvBtn.disabled = !(results.length > 0);
   }
 
-  function render(results) {
+  // ======= 5. Results Rendering =======
+
+  function renderResults(results) {
     let validCt = results.filter(r => r.valid).length;
     let total = results.length;
     let pct = total ? Math.round(validCt / total * 100) : 0;
@@ -167,32 +215,32 @@
           <td>${r.valid ? '✔' : '✘'}</td>
         </tr>`
       ).join('') + '</table>';
+    updateUploadStatus();
   }
 
-  function getText(parent, tag) {
-    const el = parent.getElementsByTagName(tag)[0];
-    return el ? el.textContent.trim() : '';
+  function exportResults() {
+    if (!window.XLSX || !lastResults.length) return;
+    const headers = [
+      'Claim ID', 'Activity ID', 'Ordering ID', 'Performing ID', 'Remarks', 'Valid'
+    ];
+    const rows = lastResults.map(r => [
+      r.claimId, r.activityId, r.ordering, r.performing, r.remarks.join('; '), r.valid ? 'Valid' : 'Invalid'
+    ]);
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    XLSX.utils.book_append_sheet(wb, ws, 'Results');
+    XLSX.writeFile(wb, `ClinicianValidation.xlsx`);
   }
 
-  function readExcel(file, callback) {
-    const reader = new FileReader();
-    reader.onload = function (e) {
-      const data = new Uint8Array(e.target.result);
-      const workbook = XLSX.read(data, { type: 'array' });
-      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(firstSheet);
-      callback(rows);
-    };
-    reader.readAsArrayBuffer(file);
-  }
+  // ======= 6. Status/State Display =======
 
   function updateUploadStatus() {
-    const loaded = [
-      xmlDoc ? "XML loaded" : "",
-      Object.keys(clinicianMap).length ? "Clinicians loaded" : "",
-      Object.keys(clinicianStatusMap).length ? "License history loaded" : ""
-    ].filter(Boolean).join(", ");
-    uploadDiv.textContent = loaded;
-    processBtn.disabled = !(xmlDoc && Object.keys(clinicianMap).length && Object.keys(clinicianStatusMap).length);
+    const messages = [];
+    if (claimCount) messages.push(`${claimCount} Claims Loaded`);
+    if (clinicianCount) messages.push(`${clinicianCount} Clinicians Loaded`);
+    if (historyCount) messages.push(`${historyCount} License Histories Loaded`);
+    uploadDiv.textContent = messages.join(', ');
+    processBtn.disabled = !(claimCount && clinicianCount && historyCount);
   }
+
 })();
