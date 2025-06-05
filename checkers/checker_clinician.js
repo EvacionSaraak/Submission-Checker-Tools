@@ -394,8 +394,14 @@
   }
 
   function checkEligibility(encounterStartStr, encounterEndStr, xlsxRow) {
+    const encounterNode = cl.getElementsByTagName('Encounter')[0];
+
+    const encounterStartStr = encounterNode ? getText(encounterNode, 'Start') : '';
+    const encounterEndStr = encounterNode ? getText(encounterNode, 'End') : '';
+    
     const encounterStart = parseDate(encounterStartStr);
     const encounterEnd = parseDate(encounterEndStr);
+
     const effectiveDate = parseDate(xlsxRow.from);
     const expiryDate = parseDate(xlsxRow.to);
     const remarks = [];
