@@ -4,46 +4,48 @@
   <meta charset="UTF-8" />
   <title>Clinician License Checker</title>
   <link rel="stylesheet" href="tables.css" />
+  <style>
+    .valid-message { color: green; margin: 0.5em 0; }
+    .warning-message { color: #bfa100; margin: 0.5em 0; }
+    .error-message { color: darkred; margin: 0.5em 0; }
+    .valid { background: #e7ffe7; }
+    .invalid { background: #ffe7e7; }
+    #results table { border-collapse: collapse; width: 100%; }
+    #results th, #results td { border: 1px solid #ccc; padding: 2px 6px; }
+    #results th { background: #f0f0f0; }
+  </style>
 </head>
 <body>
   <h2>Clinician License Validation Tool</h2>
-
   <div id="explanationBox">
     <strong>What this tool does:</strong>
     <p>
-      This tool validates clinician license assignments and category consistency by checking:
-    </p>
-    <ul>
-      <li><strong>Clinician License Export:</strong> Used to confirm the clinician's name, category, and privileges.</li>
-      <li><strong>Clinician License History:</strong> Used to verify license status (active/inactive) and facility matching on the date of service.</li>
-    </ul>
-    <p>
-      Upload the Claim XML, clinician list, and license history Excel files. The tool will compare categories, validate facility licenses, and flag inactive clinicians. Results are shown below and can be exported.
+      Upload the Claim XML, clinician Excel, Open Jet eligibility Excel, and license status Excel files.
+      The tool checks category, eligibility window, Open Jet and license status, and renders results below.
     </p>
   </div>
-
   <div id="fileInputs">
     <div class="input-group">
       <label for="xmlFileInput">Claim Submissions XML File:</label>
       <input type="file" id="xmlFileInput" accept=".xml" />
     </div>
     <div class="input-group">
-      <label for="clinicianFileInput">Clinician License Export (.xlsx):</label>
+      <label for="clinicianFileInput">Clinician List (.xlsx):</label>
       <input type="file" id="clinicianFileInput" accept=".xlsx" />
     </div>
     <div class="input-group">
-      <label for="statusFileInput">Clinician License History (.xlsx):</label>
+      <label for="statusFileInput">License Status (.xlsx):</label>
       <input type="file" id="statusFileInput" accept=".xlsx" />
     </div>
     <div class="input-group">
       <button id="processBtn" disabled>Validate</button>
+      <button id="exportCsvBtn" disabled>Export to Excel</button>
     </div>
   </div>
-
   <div id="uploadStatus" aria-live="polite"></div>
   <div id="results"></div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <script src="checker_clinicians.js"></script>
+  <script src="checker_clinician.js"></script>
 </body>
 </html>
