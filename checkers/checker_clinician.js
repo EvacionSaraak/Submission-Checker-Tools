@@ -28,8 +28,10 @@
   // 2. DOM READY, UI BINDINGS, & GLOBAL ERROR HANDLER
   // ============================================================================
 
+  /**
+   * Handles initial DOM setup, binds UI, and sets up global error handler.
+   */
   document.addEventListener('DOMContentLoaded', () => {
-    // Grab DOM elements by their IDs
     xmlInput = document.getElementById('xmlFileInput');
     excelInput = document.getElementById('excelFileInput');
     openJetInput = document.getElementById('openJetFileInput');
@@ -38,24 +40,18 @@
     processBtn = document.getElementById('processBtn');
     exportCsvBtn = document.getElementById('exportCsvBtn');
 
-    // Insert validation message div before results
     validationDiv = document.createElement('div');
     validationDiv.id = 'validation-message';
     resultsDiv.parentNode.insertBefore(validationDiv, resultsDiv);
 
-    // Attach event listeners to file inputs
     if (xmlInput) xmlInput.addEventListener('change', handleXmlInput);
     if (excelInput) excelInput.addEventListener('change', handleClinicianExcelInput);
     if (openJetInput) openJetInput.addEventListener('change', handleOpenJetExcelInput);
     if (clinicianStatusInput) clinicianStatusInput.addEventListener('change', handleClinicianStatusExcelInput);
 
-    // Attach process button handler and disable initially
     if (processBtn) {
       processBtn.addEventListener('click', () => {
         if (xmlDoc && clinicianMap && openJetData.length > 0) processClaims(xmlDoc, clinicianMap);
-      });
-      processBtn.addEventListener('click', (e) => {
-        console.log('Process button CLICKED. isTrusted:', e.isTrusted);
       });
       processBtn.disabled = true;
     }
@@ -64,7 +60,9 @@
     updateResultsDiv();
   });
 
-  // Global error handler to display errors in the UI and log them
+  /**
+   * Global error handler to display errors in the UI and log them.
+   */
   window.onerror = (msg, url, line, col) => {
     if (resultsDiv) {
       resultsDiv.innerHTML = `<p class="error-message">Unexpected error: ${msg} at ${line}:${col}</p>`;
@@ -77,8 +75,12 @@
   // ============================================================================
 
   /**
-   * Parse headers and data from an Excel file, giving priority to the leftmost columns
-   * if duplicates exist.
+   * Reads headers and data rows from an Excel file using XLSX.
+   * @param {*} file The file object
+   * @param {*} sheetIndex Sheet index to read (0-based)
+   * @param {*} headerRow Row with headers (1-based)
+   * @param {*} sheetName Sheet name (optional)
+   * @returns {Promise<{headers: string[], data: object[]}>}
    */
   function fileHeadersAndData(file, sheetIndex, headerRow, sheetName) {
     return file.arrayBuffer().then(buffer => {
@@ -115,12 +117,11 @@
   }
 
   /**
-   * Handler for Clinician Excel file input.
+   * Handles the user selecting a Clinician Excel file.
    */
   function handleClinicianExcelInput() {
     showProcessing('Loading Clinician Excel...');
-    if (processBtn) processBtn.disabled = true;
-    if (exportCsvBtn) exportCsvBtn.disabled = true;
+    disableButtons();
     const file = excelInput.files[0];
     if (!file) {
       fileLoadStatus.clinicianExcel = false;
@@ -148,12 +149,11 @@
   }
 
   /**
-   * Handler for Clinician Status Excel file input.
+   * Handles the user selecting a Clinician Status Excel file.
    */
   function handleClinicianStatusExcelInput() {
     showProcessing('Loading Clinician Status Excel...');
-    if (processBtn) processBtn.disabled = true;
-    if (exportCsvBtn) exportCsvBtn.disabled = true;
+    disableButtons();
     const file = clinicianStatusInput.files[0];
     if (!file) {
       fileLoadStatus.clinicianStatusExcel = false;
@@ -179,12 +179,11 @@
   }
 
   /**
-   * Handler for Open Jet Excel file input.
+   * Handles the user selecting an Open Jet Excel file.
    */
   function handleOpenJetExcelInput() {
     showProcessing('Loading Open Jet Excel...');
-    if (processBtn) processBtn.disabled = true;
-    if (exportCsvBtn) exportCsvBtn.disabled = true;
+    disableButtons();
     const file = openJetInput.files[0];
     if (!file) {
       fileLoadStatus.openJetExcel = false;
@@ -210,12 +209,11 @@
   }
 
   /**
-   * Handler for XML file input.
+   * Handles the user selecting an XML file.
    */
   function handleXmlInput() {
     showProcessing('Loading XML...');
-    if (processBtn) processBtn.disabled = true;
-    if (exportCsvBtn) exportCsvBtn.disabled = true;
+    disableButtons();
     const file = xmlInput.files[0];
 
     if (!file) {
@@ -252,7 +250,7 @@
   // ============================================================================
 
   /**
-   * Parses Clinician Excel data into a map keyed by clinician license.
+   * Processes Clinician Excel data and creates a map of clinician data.
    */
   function handleClinicianExcelData(data) {
     clinicianMap = {};
@@ -272,7 +270,7 @@
   }
 
   /**
-   * Parses Clinician Status Excel data into a map keyed by clinician license.
+   * Processes Clinician Status Excel data and creates a map of clinician license histories.
    */
   function handleClinicianStatusExcelData(data) {
     clinicianStatusMap = {};
@@ -291,7 +289,7 @@
   }
 
   /**
-   * Parses Open Jet Excel data into an array of eligibility entries.
+   * Processes Open Jet Excel data and returns an array of eligibility entries.
    */
   function handleOpenJetExcelData(data) {
     openJetData = data.map(row => {
@@ -323,7 +321,7 @@
   // ============================================================================
 
   /**
-   * Checks if the encounter date is within the eligibility window from the Excel.
+   * Checks if the encounter dates are within the eligibility window from the Excel row.
    */
   function checkEligibility(encounterStartStr, encounterEndStr, xlsxRow) {
     const encounterStart = parseDate(encounterStartStr);
@@ -345,18 +343,21 @@
   }
 
   /**
-   * Generates remarks when ordering/performing categories do not match.
+   * Generates remarks for mismatched clinician categories.
    */
   function generateRemarks(od, pd) {
     return od.category !== pd.category ? [`Category mismatch (${od.category} vs ${pd.category})`] : [];
   }
 
   /**
-   * Determines the license status of the performing clinician on the activity date,
-   * pushing a remark if license is inactive.
+   * Gets the license status history for the performing clinician and logs it.
+   * Returns a remark if the license is inactive at the time of encounter.
    */
   function getPerformingLicenseRemark(performingId, providerId, encounterStartStr) {
     const records = clinicianStatusMap[performingId];
+    // --- LOG: Show the entire license history for this clinician ---
+    console.log(`[History lookup] Performing Clinician: ${performingId} | Provider: ${providerId} | Full license history:`, records);
+
     if (!records?.length) return `Performing Clinician (${performingId}) not found in status data`;
 
     const encounterDate = new Date(encounterStartStr);
@@ -384,7 +385,7 @@
   }
 
   /**
-   * Validates that both ordering and performing clinicians are present and categories match.
+   * Validates that ordering and performing clinicians are present and categories match.
    */
   function validateClinicians(orderingId, performingId, od, pd) {
     if (!orderingId || !performingId) return false;
@@ -398,10 +399,11 @@
 
   /**
    * Processes all claims/activities, validates them, and prepares the results for rendering/export.
+   * Logs the final row before pushing.
    */
   function processClaims(d, map) {
     showProcessing("Validating Claims...");
-    if (exportCsvBtn) exportCsvBtn.disabled = true;
+    disableButtons();
 
     setTimeout(() => {
       const claimNodes = Array.from(d.getElementsByTagName('Claim'));
@@ -428,7 +430,7 @@
           const providerId = getText(cl, 'ProviderID');
           const encounterDate = encounterStartStr ? new Date(encounterStartStr) : null;
 
-          // License status validation for performing clinician
+          // License status validation for performing clinician (logs the history inside)
           if (clinicianStatusMap && pid && providerId && encounterStartStr) {
             const licenseStatusRemark = getPerformingLicenseRemark(pid, providerId, encounterStartStr);
             if (licenseStatusRemark) rowRemarks.push(licenseStatusRemark);
@@ -459,8 +461,8 @@
               rowRemarks.push(`Performing: ${perfEligRes.remarks.join('; ')}`);
           }
 
-          // Store result row
-          results.push({
+          // Compose result row
+          const resultRow = {
             claimId: cid,
             activityId: aid,
             activityStart: encounterStartStr,
@@ -490,7 +492,12 @@
             cardStatus: perfXlsxRow?.cardStatus ?? ordXlsxRow?.cardStatus ?? '',
             valid: rowRemarks.length === 0,
             remarks: rowRemarks
-          });
+          };
+
+          // --- LOG: Log the final data row before pushing ---
+          console.log(`[Row push] Final result row for claim ${cid}, activity ${aid}:`, resultRow);
+
+          results.push(resultRow);
         });
       });
 
@@ -530,7 +537,7 @@
   }
 
   /**
-   * Formats eligibility cell for display in the table.
+   * Returns formatted HTML cell for eligibility info.
    */
   function formatEligibilityCell(eligibility, pkg, network, service, consultation) {
     return `
@@ -545,7 +552,7 @@
   }
 
   /**
-   * Renders the full results table.
+   * Renders the results table to the page.
    */
   function renderResults(results) {
     if (!results.length) {
@@ -564,7 +571,7 @@
   }
 
   /**
-   * Renders the summary/validation message.
+   * Renders the summary validation message.
    */
   function renderSummary(results) {
     const validCount = results.filter(r => r.valid).length;
@@ -575,7 +582,7 @@
   }
 
   /**
-   * Renders the table body with result rows.
+   * Renders the table body for all results.
    */
   function renderTableBody(results) {
     const tbody = document.createElement('tbody');
@@ -584,7 +591,6 @@
       tr.className = r.valid ? 'valid' : 'invalid';
       const encounterDate = (r.activityStart || '').split('T')[0];
 
-      // Helper to format clinician cell
       const formatClinicianCell = (id, name, category, privileges, from, to) => `
         <div><strong>${id || ''}</strong></div>
         <div>${name || ''}</div>
@@ -601,7 +607,7 @@
       appendCell(tr, encounterDate);
       appendCell(tr, formatClinicianCell(r.orderingId, r.orderingName, r.orderingCategory, r.orderingPrivileges, r.orderingFrom, r.orderingTo), { isHTML: true });
       appendCell(tr, formatClinicianCell(r.performingId, r.performingName, r.performingCategory, r.performingPrivileges, r.performingFrom, r.performingTo), { isHTML: true });
-      appendCell(tr, r.status || 'N/A'); // License status from OpenJet
+      appendCell(tr, r.status || 'N/A');
       appendCell(tr, formatEligibilityCell(
         r.performingEligibility || r.orderingEligibility || '',
         r.packageName || '',
@@ -618,7 +624,7 @@
   }
 
   /**
-   * Renders the table header.
+   * Renders the table header row.
    */
   function renderTableHeader() {
     const thead = document.createElement('thead');
@@ -637,7 +643,7 @@
   }
 
   /**
-   * Sets up the handler for exporting results as an Excel file.
+   * Sets up the Excel export button.
    */
   function setupExportHandler(results) {
     if (!exportCsvBtn) return;
@@ -702,14 +708,14 @@
   // ============================================================================
 
   /**
-   * Returns a default clinician data object.
+   * Returns a default clinician object with placeholder values.
    */
   function defaultClinicianData() {
     return { name: 'Unknown', category: 'Unknown', privileges: 'Unknown', from: '', to: '' };
   }
 
   /**
-   * Helper to get text content from a child tag of a parent XML node.
+   * Gets text content from a child tag of a parent XML node.
    */
   function getText(parent, tag) {
     const el = parent.getElementsByTagName(tag)[0];
@@ -717,7 +723,7 @@
   }
 
   /**
-   * Parses a date string in various formats to a Date object.
+   * Attempts to parse a date string or Excel serial to a Date object.
    */
   function parseDate(dateStr) {
     if (!dateStr) return new Date('Invalid');
@@ -735,7 +741,7 @@
   }
 
   /**
-   * Displays a loading spinner and processing message.
+   * Shows a loading spinner and message.
    */
   function showProcessing(msg = "Processing...") {
     resultsDiv.innerHTML = `<div class="loading-spinner" aria-live="polite"></div><p>${msg}</p>`;
@@ -750,6 +756,14 @@
                       fileLoadStatus.openJetExcel &&
                       fileLoadStatus.clinicianStatusExcel;
     if (processBtn) processBtn.disabled = !allLoaded;
+  }
+
+  /**
+   * Disables both process and export buttons.
+   */
+  function disableButtons() {
+    if (processBtn) processBtn.disabled = true;
+    if (exportCsvBtn) exportCsvBtn.disabled = true;
   }
 
   /**
