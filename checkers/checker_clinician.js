@@ -375,43 +375,38 @@
 
   function parseDate(dateStr) {
     if (!dateStr) return new Date('Invalid');
-    if (!isNaN(dateStr) && Number(dateStr) > 59) {
-      const excelSerial = Number(dateStr);
-      return new Date((excelSerial - 25567) * 86400 * 1000);
+    // Remove time if present
+    const datePart = dateStr.split(' ')[0];
+    // Try dd/MM/yyyy
+    const ddmmyyyy = /^(\d{2})\/(\d{2})\/(\d{4})$/;
+    const m = datePart.match(ddmmyyyy);
+    if (m) {
+      return new Date(`${m[3]}-${m[2]}-${m[1]}`);
     }
-    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-      return new Date(dateStr);
+    // Try yyyy-mm-dd
+    if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
+      return new Date(datePart);
     }
-    if (/^\d{1,2}-[A-Za-z]{3}-\d{4}$/.test(dateStr)) {
-      const [day, mon, year] = dateStr.split('-');
-      if (monthMap[mon]) return new Date(`${year}-${monthMap[mon]}-${day.padStart(2, '0')}`);
-    }
-    if (/^\d{1,2}-[A-Za-z]{3}-\d{4} \d{2}:\d{2}:\d{2}$/.test(dateStr)) {
-      const [datePart] = dateStr.split(' ');
-      const [day, mon, year] = datePart.split('-');
-      if (monthMap[mon]) return new Date(`${year}-${monthMap[mon]}-${day.padStart(2, '0')}`);
-    }
-    if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) {
-      const [day, month, year] = dateStr.split('/');
-      return new Date(`${year}-${month}-${day}`);
-    }
-    let d = new Date(dateStr);
-    if (!isNaN(d)) return d;
+    // Fallback
+    let d = new Date(datePart);
+    if (!isNaN(d.getTime())) return d;
     return new Date('Invalid');
   }
 
-  function checkEligibility(encounterStartStr, encounterEndStr, xlsxRow, sourceLabel = "Excel") {
+  function checkEligibility(encounterStartStr, encounterEndStr, xlsxRow) {
     const encounterStart = parseDate(encounterStartStr);
     const encounterEnd = parseDate(encounterEndStr);
-    const effectiveDate = xlsxRow.effectiveDate instanceof Date ? xlsxRow.effectiveDate : parseDate(xlsxRow.effectiveDate || xlsxRow.from);
-    const expiryDate = xlsxRow.expiryDate instanceof Date ? xlsxRow.expiryDate : parseDate(xlsxRow.expiryDate || xlsxRow.to);
+    const effectiveDate = parseDate(xlsxRow.from);
+    const expiryDate = parseDate(xlsxRow.to);
     const remarks = [];
     let eligible = true;
 
+    console.log("encounterStart", encounterStart, "effectiveDate", effectiveDate, "expiryDate", expiryDate);
+
     if (isNaN(encounterStart) || isNaN(encounterEnd)) {
       remarks.push("Invalid Encounter dates in XML"); eligible = false;
-    } else if (!effectiveDate || !expiryDate || isNaN(effectiveDate) || isNaN(expiryDate)) {
-      remarks.push(`Invalid Effective/Expiry dates in ${sourceLabel}`); eligible = false;
+    } else if (isNaN(effectiveDate) || isNaN(expiryDate)) {
+      remarks.push("Invalid Effective/Expiry dates in Excel"); eligible = false;
     } else if (!(encounterStart >= effectiveDate && encounterEnd <= expiryDate)) {
       remarks.push("Procedure is done outside of Eligibility window"); eligible = false;
     }
@@ -502,10 +497,10 @@
 
       claimNodes.forEach(cl => {
         const cid = getText(cl, 'ID') || 'N/A';
-        const encounterNode = cl.getElementsByTagName('Encounter')[0];
-        const encounterStartStr = encounterNode ? getText(encounterNode, 'Start') : '';
-        const encounterEndStr = encounterNode ? getText(encounterNode, 'End') : '';
-        const activities = Array.from(cl.getElementsByTagName('Activity'));
+        const encounterStart = parseDate(encounterStartStr);
+        const encounterEnd = parseDate(encounterEndStr);
+        const effectiveDate = parseDate(xlsxRow.from);
+        const expiryDate = parseDate(xlsxRow.to);
 
         activities.forEach(act => {
           const aid = getText(act, 'ID') || 'N/A';
