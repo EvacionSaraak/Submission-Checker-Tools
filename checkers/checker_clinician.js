@@ -126,11 +126,19 @@
     return el ? el.textContent.trim() : '';
   }
 
+  // Returns the most recent license status record for a clinician at a facility before/on a given date.
   function getMostRecentStatusRecord(entries, providerId, encounterStart) {
     const encounterD = new Date(encounterStart);
-    return entries
-      .filter(e => e.facility === providerId && new Date(e.effective) <= encounterD)
-      .sort((a, b) => new Date(b.effective) - new Date(a.effective))[0];
+    // Only consider records for this facility and effective date <= encounter date
+    const eligible = entries.filter(e =>
+      e.facility === providerId &&
+      !!e.effective && !isNaN(new Date(e.effective)) &&
+      new Date(e.effective) <= encounterD
+    );
+    if (eligible.length === 0) return null;
+    // Find the most recent (latest effective date)
+    eligible.sort((a, b) => new Date(b.effective) - new Date(a.effective));
+    return eligible[0];
   }
 
   // ======= 4. Validation Logic =======
@@ -163,11 +171,11 @@
           }
         }
 
-        // License status check (Ordering/Performing)
+        // License status check for ordering and performing clinicians
         const statusRemark = (id, label) => {
           const entries = clinicianStatusMap[id] || [];
           const rec = getMostRecentStatusRecord(entries, providerId, encounterStart);
-          if (!rec) return `${label}: No matching license record`;
+          if (!rec) return `${label}: No matching license record before encounter date`;
           if ((rec.status || '').toLowerCase() !== 'active')
             return `${label}: Inactive as of ${rec.effective}`;
           return null;
@@ -207,32 +215,54 @@
     let validCt = results.filter(r => r.valid).length;
     let total = results.length;
     let pct = total ? Math.round(validCt / total * 100) : 0;
+
+    // Track displayed claim IDs to avoid duplicates
+    const displayedClaims = new Set();
     resultsDiv.innerHTML =
       `<div class="${pct > 90 ? 'valid-message' : pct > 70 ? 'warning-message' : 'error-message'}">
         Validation: ${validCt}/${total} valid (${pct}%)
       </div>` +
       '<table><tr><th>Claim</th><th>Activity</th><th>Ordering</th><th>Performing</th><th>Remarks</th><th>Valid</th></tr>' +
-      results.map(r =>
-        `<tr class="${r.valid ? 'valid' : 'invalid'}">
+      results.map(r => {
+        if (displayedClaims.has(r.claimId)) return '';
+        displayedClaims.add(r.claimId);
+
+        // Add name in parentheses if present
+        const orderingName = (clinicianMap[r.ordering]?.name || '').trim();
+        const performingName = (clinicianMap[r.performing]?.name || '').trim();
+        const orderingDisplay = r.ordering ? (orderingName ? `${r.ordering} (${orderingName})` : r.ordering) : '';
+        const performingDisplay = r.performing ? (performingName ? `${r.performing} (${performingName})` : r.performing) : '';
+
+        return `<tr class="${r.valid ? 'valid' : 'invalid'}">
           <td>${r.claimId}</td>
           <td>${r.activityId}</td>
-          <td>${r.ordering}</td>
-          <td>${r.performing}</td>
+          <td>${orderingDisplay}</td>
+          <td>${performingDisplay}</td>
           <td>${r.remarks.join('; ')}</td>
           <td>${r.valid ? '✔' : '✘'}</td>
-        </tr>`
-      ).join('') + '</table>';
+        </tr>`;
+      }).join('') + '</table>';
     updateUploadStatus();
   }
 
   function exportResults() {
     if (!window.XLSX || !lastResults.length) return;
+    // Same duplicate-claim logic for export
+    const displayedClaims = new Set();
     const headers = [
-      'Claim ID', 'Activity ID', 'Ordering ID', 'Performing ID', 'Remarks', 'Valid'
+      'Claim ID', 'Activity ID', 'Ordering ID (Name)', 'Performing ID (Name)', 'Remarks', 'Valid'
     ];
-    const rows = lastResults.map(r => [
-      r.claimId, r.activityId, r.ordering, r.performing, r.remarks.join('; '), r.valid ? 'Valid' : 'Invalid'
-    ]);
+    const rows = lastResults.map(r => {
+      if (displayedClaims.has(r.claimId)) return null;
+      displayedClaims.add(r.claimId);
+      const orderingName = (clinicianMap[r.ordering]?.name || '').trim();
+      const performingName = (clinicianMap[r.performing]?.name || '').trim();
+      const orderingDisplay = r.ordering ? (orderingName ? `${r.ordering} (${orderingName})` : r.ordering) : '';
+      const performingDisplay = r.performing ? (performingName ? `${r.performing} (${performingName})` : r.performing) : '';
+      return [
+        r.claimId, r.activityId, orderingDisplay, performingDisplay, r.remarks.join('; '), r.valid ? 'Valid' : 'Invalid'
+      ];
+    }).filter(Boolean);
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
     XLSX.utils.book_append_sheet(wb, ws, 'Results');
