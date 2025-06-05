@@ -198,7 +198,7 @@
       console.error('[Input] Error loading Clinician Status Excel:', e);
     });
   }
-
+  
   function handleOpenJetExcelInput() {
     console.log('[Input] Open Jet Excel selection');
     showProcessing('Loading Open Jet Excel...');
@@ -210,6 +210,7 @@
       resultsDiv.innerHTML = '';
       updateResultsDiv();
       toggleProcessButton();
+      console.log('[Input] No Open Jet Excel file selected.');
       return;
     }
     file.arrayBuffer().then(buffer => {
@@ -218,25 +219,52 @@
       const sheet = wb.Sheets[wb.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
 
-      if (!rows.length) return;
+      if (!rows.length) {
+        console.warn('[OpenJet] Excel file has no rows.');
+        openJetCount = 0;
+        openJetData = [];
+        fileLoadStatus.openJetExcel = false;
+        updateResultsDiv();
+        toggleProcessButton();
+        return;
+      }
       const headerRow = rows[0];
       const dataRows = rows.slice(1);
 
+      // Log headers and first data row for debugging
+      console.log('[OpenJet] Header row:', headerRow);
+      if (dataRows.length > 0) {
+        console.log('[OpenJet] First data row:', dataRows[0]);
+      }
+
+      // Find all relevant columns
       const effectiveDateCols = getAllColumnIndices(headerRow, "EffectiveDate");
       const expiryDateCols = getAllColumnIndices(headerRow, "ExpiryDate");
       const clinicianCol = headerRow.findIndex(h => (h || '').toString().trim() === "Clinician");
+      console.log('[OpenJet] Clinician column index:', clinicianCol);
+      console.log('[OpenJet] EffectiveDate column indices:', effectiveDateCols);
+      console.log('[OpenJet] ExpiryDate column indices:', expiryDateCols);
 
       openJetData = [];
       dataRows.forEach((row, rowIdx) => {
-        const clinicianId = row[clinicianCol]?.toString().trim();
-        if (!clinicianId) return;
+        const clinicianId = row[clinicianCol] ? row[clinicianCol].toString().trim() : '';
+        console.log(`[OpenJet] Row ${rowIdx + 1}: ClinicianCol value:`, clinicianId);
+
+        if (!clinicianId) {
+          console.log(`[OpenJet] Skipping row ${rowIdx + 1} (no clinician ID)`);
+          return;
+        }
+        // Use the latest (right-most) non-empty value for each date field
         const effectiveDateRaw = getLatestValueFromColumns(row, effectiveDateCols);
         const expiryDateRaw = getLatestValueFromColumns(row, expiryDateCols);
-        console.log(`[OpenJet] Row ${rowIdx + 1}: Clinician=${clinicianId}, EffectiveDateRaw=${effectiveDateRaw}, ExpiryDateRaw=${expiryDateRaw}`);
+
+        console.log(`[OpenJet] Row ${rowIdx + 1}: EffectiveDateRaw=${effectiveDateRaw}, ExpiryDateRaw=${expiryDateRaw}`);
+
         openJetData.push({
           clinicianId,
           effectiveDate: parseDate(effectiveDateRaw),
           expiryDate: parseDate(expiryDateRaw),
+          // Add other fields here if needed!
         });
       });
       openJetCount = openJetData.length;
@@ -245,6 +273,9 @@
       updateResultsDiv();
       toggleProcessButton();
       console.log(`[Input] Open Jet Excel loaded: ${openJetCount} eligibilities`);
+      if (openJetCount === 0) {
+        console.warn('[OpenJet] No eligibilities loaded. Check if Clinician column is populated in your data.');
+      }
     }).catch(e => {
       fileLoadStatus.openJetExcel = false;
       openJetData = [];
