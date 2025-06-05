@@ -88,7 +88,7 @@
         clinicianStatusMap[id] = clinicianStatusMap[id] || [];
         clinicianStatusMap[id].push({
           facility: row['Facility License Number'] || '',
-          effective: row['Effective Date'] || '',
+          effective: excelDateToISO(row['Effective Date']),
           status: row['Status'] || ''
         });
       });
@@ -119,6 +119,20 @@
     reader.readAsArrayBuffer(file);
   }
 
+  // ======= Date Conversion Utility =======
+
+  function excelDateToISO(excelDate) {
+    if (!excelDate) return '';
+    if (typeof excelDate === 'string' && /^\d{4}-\d{2}-\d{2}/.test(excelDate)) return excelDate.slice(0, 10); // already ISO
+    const serial = Number(excelDate);
+    if (isNaN(serial)) return excelDate;
+    // Excel's "zero" is 1899-12-31, but JS Date UTC counts from 1970
+    const utc_days = serial - 25569;
+    const utc_value = utc_days * 86400 * 1000;
+    const d = new Date(utc_value);
+    return d.toISOString().slice(0, 10);
+  }
+
   // ======= 3. Data Utilities =======
 
   function getText(parent, tag) {
@@ -128,16 +142,16 @@
 
   // Returns the most recent license status record for a clinician at a facility before/on a given date.
   function getMostRecentStatusRecord(entries, providerId, encounterStart) {
-    const encounterD = new Date(encounterStart);
-    // Only consider records for this facility and effective date <= encounter date
+    const encounterD = new Date(excelDateToISO(encounterStart));
     const eligible = entries.filter(e =>
       e.facility === providerId &&
-      !!e.effective && !isNaN(new Date(e.effective)) &&
-      new Date(e.effective) <= encounterD
+      !!e.effective && !isNaN(new Date(excelDateToISO(e.effective))) &&
+      new Date(excelDateToISO(e.effective)) <= encounterD
     );
     if (eligible.length === 0) return null;
-    // Find the most recent (latest effective date)
-    eligible.sort((a, b) => new Date(b.effective) - new Date(a.effective));
+    eligible.sort((a, b) =>
+      new Date(excelDateToISO(b.effective)) - new Date(excelDateToISO(a.effective))
+    );
     return eligible[0];
   }
 
@@ -179,10 +193,10 @@
           if (!rec) {
             statusInfo.invalidRemark = `Performing: No matching license record before encounter date`;
           } else {
-            statusInfo.effectivity = rec.effective;
+            statusInfo.effectivity = excelDateToISO(rec.effective);
             statusInfo.status = rec.status;
             if ((rec.status || '').toLowerCase() !== 'active') {
-              statusInfo.invalidRemark = `Performing: Inactive as of ${rec.effective}`;
+              statusInfo.invalidRemark = `Performing: Inactive as of ${statusInfo.effectivity}`;
             }
           }
           return statusInfo;
