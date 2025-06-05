@@ -189,6 +189,7 @@
 
   /**
    * Handles the user selecting an Open Jet Excel file.
+   * Handles duplicate EffectiveDate/ExpiryDate columns by using the latest non-empty value.
    */
   function handleOpenJetExcelInput() {
     showProcessing('Loading Open Jet Excel...');
@@ -202,8 +203,52 @@
       toggleProcessButton();
       return;
     }
-    fileHeadersAndData(file, 0, 2).then(({ headers, data }) => {
-      handleOpenJetExcelData(data);
+    file.arrayBuffer().then(buffer => {
+      const data = new Uint8Array(buffer);
+      const wb = XLSX.read(data, { type: 'array' });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+
+      if (!rows.length) return;
+      const headerRow = rows[0];
+      const dataRows = rows.slice(1);
+
+      // Find all relevant columns
+      const effectiveDateCols = getAllColumnIndices(headerRow, "EffectiveDate");
+      const expiryDateCols = getAllColumnIndices(headerRow, "ExpiryDate");
+      const clinicianCol = headerRow.findIndex(h => (h || '').toString().trim() === "Clinician");
+      const packageCol = headerRow.findIndex(h => (h || '').toString().trim() === "Package Name");
+      const networkCol = headerRow.findIndex(h => (h || '').toString().trim() === "Card Network");
+      const cardNumberCol = headerRow.findIndex(h => (h || '').toString().trim() === "Card Number");
+      const cardStatusCol = headerRow.findIndex(h => (h || '').toString().trim() === "Card Status");
+      const serviceCol = headerRow.findIndex(h => (h || '').toString().trim() === "Service Category");
+      const consultationCol = headerRow.findIndex(h => (h || '').toString().trim() === "Consultation Status");
+      const eligibilityCol = headerRow.findIndex(h => (h || '').toString().trim() === "Eligibility Request Number");
+      const statusCol = headerRow.findIndex(h => (h || '').toString().trim() === "Status");
+
+      openJetData = [];
+      dataRows.forEach(row => {
+        const clinicianId = row[clinicianCol]?.toString().trim();
+        if (!clinicianId) return;
+        // Use the latest (right-most) non-empty value for each date field
+        const effectiveDateRaw = getLatestValueFromColumns(row, effectiveDateCols);
+        const expiryDateRaw = getLatestValueFromColumns(row, expiryDateCols);
+
+        openJetData.push({
+          clinicianId,
+          effectiveDate: parseDate(effectiveDateRaw),
+          expiryDate: parseDate(expiryDateRaw),
+          package: packageCol > -1 ? (row[packageCol] || '').toString().trim() : '',
+          network: networkCol > -1 ? (row[networkCol] || '').toString().trim() : '',
+          cardNumber: cardNumberCol > -1 ? (row[cardNumberCol] || '').toString().trim() : '',
+          cardStatus: cardStatusCol > -1 ? (row[cardStatusCol] || '').toString().trim() : '',
+          service: serviceCol > -1 ? (row[serviceCol] || '').toString().trim() : '',
+          consultation: consultationCol > -1 ? (row[consultationCol] || '').toString().trim() : '',
+          eligibility: eligibilityCol > -1 ? (row[eligibilityCol] || '').toString().trim() : '',
+          status: statusCol > -1 ? (row[statusCol] || '').toString().trim() : ''
+        });
+      });
+      openJetCount = openJetData.length;
       fileLoadStatus.openJetExcel = true;
       resultsDiv.innerHTML = '';
       updateResultsDiv();
@@ -215,6 +260,30 @@
       updateResultsDiv();
       toggleProcessButton();
     });
+  }
+
+  /**
+   * Helper to find all column indices for a header (handles duplicate headers).
+   */
+  function getAllColumnIndices(headerRow, targetName) {
+    const indices = [];
+    headerRow.forEach((h, idx) => {
+      if ((h || '').toString().trim() === targetName) indices.push(idx);
+    });
+    return indices;
+  }
+
+  /**
+   * Helper to get the latest (right-most non-empty) value from a set of columns in a row.
+   */
+  function getLatestValueFromColumns(row, indices) {
+    for (let i = indices.length - 1; i >= 0; i--) {
+      const val = row[indices[i]];
+      if (val !== undefined && val !== null && String(val).trim() !== '') {
+        return val;
+      }
+    }
+    return '';
   }
 
   /**
@@ -304,56 +373,12 @@
     });
   }
 
-  /**
-   * Processes Open Jet Excel data and returns an array of eligibility entries.
-   */
-  function handleOpenJetExcelData(data) {
-    openJetData = data.map(row => {
-      const parseOpenJetDate = dateStr => {
-        if (!dateStr) return new Date('Invalid');
-        // Try ISO
-        if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return new Date(dateStr);
-        // Try Excel serial
-        if (!isNaN(dateStr) && Number(dateStr) > 59) {
-          const excelSerial = Number(dateStr);
-          return new Date((excelSerial - 25567) * 86400 * 1000);
-        }
-        // Try DD-MMM-YYYY
-        const ddMmmYyyy = /^(\d{1,2})-([A-Za-z]{3})-(\d{4})$/;
-        const m = dateStr.match(ddMmmYyyy);
-        if (m && monthMap[m[2]]) {
-          return new Date(`${m[3]}-${monthMap[m[2]]}-${m[1].padStart(2, '0')}`);
-        }
-        // Try DD/MM/YYYY
-        if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) {
-          const [day, month, year] = dateStr.split('/');
-          return new Date(`${year}-${month}-${day}`);
-        }
-        return new Date('Invalid');
-      };
-      return {
-        clinicianId: (row['Clinician'] || '').toString().trim(),
-        effectiveDate: parseOpenJetDate(row['EffectiveDate']),
-        expiryDate: parseOpenJetDate(row['ExpiryDate']),
-        package: (row['Package Name'] || '').toString().trim(),
-        network: (row['Card Network'] || '').toString().trim(),
-        cardNumber: (row['Card Number'] || '').toString().trim(),
-        cardStatus: (row['Card Status'] || '').toString().trim(),
-        service: (row['Service Category'] || '').toString().trim(),
-        consultation: (row['Consultation Status'] || '').toString().trim(),
-        eligibility: (row['Eligibility Request Number'] || '').toString().trim(),
-        status: (row['Status'] || '').toString().trim()
-      };
-    }).filter(entry => entry.clinicianId);
-    openJetCount = openJetData.length;
-  }
-
   // ============================================================================
   // 5. VALIDATION & LICENSE STATUS LOGIC
   // ============================================================================
 
   /**
-   * Attempts to parse a date string (ISO, DD-MMM-YYYY, DD/MM/YYYY, or Excel serial) to a Date object.
+   * Attempts to parse a date string (ISO, DD-MMM-YYYY, DD-MMM-YYYY HH:MM:SS, DD/MM/YYYY, or Excel serial) to a Date object.
    */
   function parseDate(dateStr) {
     if (!dateStr) return new Date('Invalid');
@@ -370,6 +395,12 @@
     // DD-MMM-YYYY (e.g. 13-Jun-2015)
     if (/^\d{1,2}-[A-Za-z]{3}-\d{4}$/.test(dateStr)) {
       const [day, mon, year] = dateStr.split('-');
+      if (monthMap[mon]) return new Date(`${year}-${monthMap[mon]}-${day.padStart(2, '0')}`);
+    }
+    // DD-MMM-YYYY HH:MM:SS (e.g. 13-Jun-2015 00:00:00)
+    if (/^\d{1,2}-[A-Za-z]{3}-\d{4} \d{2}:\d{2}:\d{2}$/.test(dateStr)) {
+      const [datePart] = dateStr.split(' ');
+      const [day, mon, year] = datePart.split('-');
       if (monthMap[mon]) return new Date(`${year}-${monthMap[mon]}-${day.padStart(2, '0')}`);
     }
     // DD/MM/YYYY
