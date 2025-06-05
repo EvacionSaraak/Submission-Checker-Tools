@@ -232,33 +232,33 @@
       const dataRows = rows.slice(2);
 
       // Log headers and first data row for debugging
-      console.log('[OpenJet] Header row:', headerRow);
-      if (dataRows.length > 0) {
-        console.log('[OpenJet] First data row:', dataRows[0]);
-      }
+      // console.log('[OpenJet] Header row:', headerRow);
+      // if (dataRows.length > 0) {
+      //   console.log('[OpenJet] First data row:', dataRows[0]);
+      // }
 
       // Find all relevant columns
       const effectiveDateCols = getAllColumnIndices(headerRow, "EffectiveDate");
       const expiryDateCols = getAllColumnIndices(headerRow, "ExpiryDate");
       const clinicianCol = headerRow.findIndex(h => (h || '').toString().trim() === "Clinician");
-      console.log('[OpenJet] Clinician column index:', clinicianCol);
-      console.log('[OpenJet] EffectiveDate column indices:', effectiveDateCols);
-      console.log('[OpenJet] ExpiryDate column indices:', expiryDateCols);
+      // console.log('[OpenJet] Clinician column index:', clinicianCol);
+      // console.log('[OpenJet] EffectiveDate column indices:', effectiveDateCols);
+      // console.log('[OpenJet] ExpiryDate column indices:', expiryDateCols);
 
       openJetData = [];
       dataRows.forEach((row, rowIdx) => {
         const clinicianId = row[clinicianCol] ? row[clinicianCol].toString().trim() : '';
-        console.log(`[OpenJet] Row ${rowIdx + 1}: ClinicianCol value:`, clinicianId);
+        // console.log(`[OpenJet] Row ${rowIdx + 1}: ClinicianCol value:`, clinicianId);
 
-        if (!clinicianId) {
-          console.log(`[OpenJet] Skipping row ${rowIdx + 1} (no clinician ID)`);
-          return;
-        }
+        // if (!clinicianId) {
+        //   console.log(`[OpenJet] Skipping row ${rowIdx + 1} (no clinician ID)`);
+        //   return;
+        // }
         // Use the latest (right-most) non-empty value for each date field
         const effectiveDateRaw = getLatestValueFromColumns(row, effectiveDateCols);
         const expiryDateRaw = getLatestValueFromColumns(row, expiryDateCols);
 
-        console.log(`[OpenJet] Row ${rowIdx + 1}: EffectiveDateRaw=${effectiveDateRaw}, ExpiryDateRaw=${expiryDateRaw}`);
+        // console.log(`[OpenJet] Row ${rowIdx + 1}: EffectiveDateRaw=${effectiveDateRaw}, ExpiryDateRaw=${expiryDateRaw}`);
 
         openJetData.push({
           clinicianId,
