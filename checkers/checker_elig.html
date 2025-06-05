@@ -1,1 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Eligibility Validation Tool</title>
+  <link rel="stylesheet" href="tables.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+  <h2>Eligibility Validation Tool</h2>
 
+  <div id="explanationBox">
+    <strong>What this tool does:</strong>
+    <p>
+      This tool validates the eligibility of clinicians based on Open Jet export data.
+    </p>
+    <ul>
+      <li><strong>Eligibility Period Validation:</strong> Verifies that each clinician was active during the Encounter Start and End dates from the claim XML.</li>
+      <li><strong>Card Status Check:</strong> Ensures that the clinician’s card status is <code>Active</code> during the service date.</li>
+    </ul>
+    <p>
+      Upload a Claim Submission XML file and the Open Jet Eligibility Export. The tool will display any mismatches between eligibility data and claim dates. You can use this to validate service coverage periods.
+    </p>
+  </div>
+
+  <div id="fileInputs">
+    <div class="input-group">
+      <label for="xmlFileInput">Claim Submissions XML File:</label>
+      <input type="file" id="xmlFileInput" accept=".xml" />
+    </div>
+    <div class="input-group">
+      <label for="eligibilityFileInput">Open Jet Eligibility Export (.xlsx):</label>
+      <input type="file" id="eligibilityFileInput" accept=".xlsx" />
+    </div>
+    <div class="input-group">
+      <button id="processBtn">Validate</button>
+    </div>
+  </div>
+
+  <div id="uploadStatus" aria-live="polite"></div>
+  <div id="results"></div>
+
+  <script src="checker_eligibilities.js"></script>
+</body>
+</html>
