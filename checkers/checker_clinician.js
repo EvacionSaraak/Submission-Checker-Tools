@@ -457,6 +457,36 @@
     return od.category === pd.category;
   }
 
+  function validateClinicianStatus(clinicianId, providerId, encounterStartStr) {
+    const remarks = [];
+    const records = clinicianStatusMap[clinicianId];
+    let eligible = true;
+
+    if (!clinicianId) { remarks.push('Missing Clinician ID'); eligible = false; return { eligible, remarks }; }
+    if (!providerId) { remarks.push('Missing Provider ID'); eligible = false; return { eligible, remarks }; }
+    if (!encounterStartStr) { remarks.push('Missing Encounter Start Date'); eligible = false; return { eligible, remarks }; }
+    if (!records?.length) { remarks.push(`Clinician (${clinicianId}) not found in status data`); eligible = false; return { eligible, remarks }; }
+
+    const encounterDate = new Date(encounterStartStr);
+    if (isNaN(encounterDate)) { remarks.push('Invalid Encounter Start Date'); eligible = false; return { eligible, remarks }; }
+
+    const providerMatches = records.filter(rec => rec.facilityLicenseNumber === providerId);
+    if (!providerMatches.length) { remarks.push(`No matching Facility License Number (${providerId}) for clinician`); eligible = false; return { eligible, remarks }; }
+
+    let validRecord = null;
+    for (const rec of providerMatches) {
+      const effDate = new Date(rec.effectiveDate);
+      if (!isNaN(effDate) && effDate <= encounterDate) {
+        if (!validRecord || effDate > new Date(validRecord.effectiveDate)) validRecord = rec;
+      }
+    }
+
+    if (!validRecord) { remarks.push(`No effective date record on or before encounter date for clinician`); eligible = false; return { eligible, remarks }; }
+    if (validRecord.status.toLowerCase() === 'inactive') { remarks.push(`Clinician status is Inactive as of ${validRecord.effectiveDate}`); eligible = false; }
+
+    return { eligible, remarks };
+  }
+
   // ============================================================================
   // 6. MAIN PROCESSING FUNCTION
   // ============================================================================
