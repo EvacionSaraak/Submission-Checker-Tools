@@ -391,11 +391,11 @@
           if (!validateClinicians(oid, pid, od, pd)) rowRemarks.push(...generateRemarks(od, pd));
 
           //Checks Status of Eligibility
-          if (!(ordXlsxRow && ordXlsxRow.status.toLowerCase() === 'eligible')) {
-            rowRemarks.push(`Ordering Clinician status is ${ordXlsxRow && ordXlsxRow.status ? ordXlsxRow.status.toLowerCase() : 'unknown'} in Open Jet`);
+          if (!(ordXlsxRow && safeToLower(ordXlsxRow.status) === 'eligible')) {
+            rowRemarks.push(`Ordering Clinician status is ${ordXlsxRow && ordXlsxRow.status ? safeToLower(ordXlsxRow.status) : 'unknown'} in Open Jet`);
           }
-          if (!(perfXlsxRow && perfXlsxRow.status.toLowerCase() === 'eligible')) {
-            rowRemarks.push(`Performing Clinician status is ${perfXlsxRow && perfXlsxRow.status ? perfXlsxRow.status.toLowerCase() : 'unknown'} in Open Jet`);
+          if (!(perfXlsxRow && safeToLower(perfXlsxRow.status) === 'eligible')) {
+            rowRemarks.push(`Performing Clinician status is ${perfXlsxRow && perfXlsxRow.status ? safeToLower(perfXlsxRow.status) : 'unknown'} in Open Jet`);
           }
 
           // Date eligibility
@@ -823,6 +823,16 @@
     tr.appendChild(td);
   }
 
+  /**
+   * Checks if a string value is safe to change into lowercasse
+   */
+  function safeToLower(val) {
+    return typeof val === 'string' ? val.toLowerCase() : '';
+  }
+
+  /**
+   * Formats the Eligibility Cell for output display
+   */
   function formatEligibilityCell(eligibility, pkg, network, service, consultation) {
     return `
       <div>${eligibility || ''}</div>
