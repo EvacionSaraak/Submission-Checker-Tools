@@ -120,7 +120,7 @@ function extractClaims(xmlDoc) {
       const remarks = [];
       if (typeValue !== '6') {
         isValid = false;
-        remarks.push(`Invalid Type: expected 6 but found ${typeValue || '(missing)'}`);
+        remarks.push(`Invalid Type: expected 6 but found ${typeValue || '(missing)'}.`);
       }
 
       if (!activityStartStr) {
