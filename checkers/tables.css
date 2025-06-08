@@ -38,13 +38,13 @@ th, td {
 }
 
 /* Allow only the description column to wrap and grow */
-th.description-col, td.description-col {
-  white-space: normal;          /* Allow wrapping */
-  overflow: visible;            /* Show overflowed content */
-  text-overflow: unset;         /* No ellipsis */
-  word-break: break-word;       /* Break long words */
-  word-wrap: break-word;        /* Break and wrap long words */
-  max-width: 600px;             /* Constrain width */
+th.description-col,
+td.description-col {
+  white-space: normal;         /* Allow breaking onto multiple lines */
+  word-break: break-word;      /* Break long words if necessary */
+  overflow-wrap: break-word;   /* Break words at arbitrary points if needed (modern, preferred) */
+  word-wrap: break-word;       /* Legacy support for word breaking */
+  max-width: 600px;            /* Adjust as needed */
 }
 
 /* Table header background */
