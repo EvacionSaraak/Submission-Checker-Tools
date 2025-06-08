@@ -332,7 +332,7 @@ function renderResults(results) {
       <th>Member ID</th>
       <th>Activity ID</th>
       <th>Code</th>
-      <th>Description</th>
+      <th class="description-col">Description</th>
       <th>Net Total</th>
       <th>Payer Share</th>
       <th>Ordering Clinician</th>
@@ -368,58 +368,75 @@ function renderRow(r, lastClaimId) {
   // Claim ID (hide repeats)
   const cid = document.createElement("td");
   cid.textContent = (r.claimId === lastClaimId) ? "" : r.claimId;
+  cid.className = "nowrap-col";
   tr.appendChild(cid);
 
-  // XML fields
-  [r.memberId, r.id, r.code, r.description].forEach(val => {
+  // XML fields (memberId, id, code, description)
+  [r.memberId, r.id, r.code].forEach(val => {
     const td = document.createElement("td");
     td.textContent = val || "";
+    td.className = "nowrap-col";
     tr.appendChild(td);
   });
+
+  // Description (wrap allowed)
+  const descTd = document.createElement("td");
+  descTd.textContent = r.description || "";
+  descTd.className = "wrap-col description-col";
+  tr.appendChild(descTd);
 
   // Net Total
   const netTd = document.createElement("td");
   netTd.textContent = r.netTotal || "";
+  netTd.className = "nowrap-col";
   tr.appendChild(netTd);
 
   // Payer Share
   const payerTd = document.createElement("td");
   payerTd.textContent = xls["Payer Share"] || "";
+  payerTd.className = "nowrap-col";
   tr.appendChild(payerTd);
 
   // Ordering Clinician, Auth ID
   [r.ordering, r.authID].forEach(val => {
     const td = document.createElement("td");
     td.textContent = val || "";
+    td.className = "nowrap-col";
     tr.appendChild(td);
   });
 
   // Start Date (discard time)
   const startDateTd = document.createElement("td");
   startDateTd.textContent = r.start.split(' ')[0] || "";
+  startDateTd.className = "nowrap-col";
   tr.appendChild(startDateTd);
 
   // Ordered On date (discard time)
   const orderedOnTd = document.createElement("td");
   orderedOnTd.textContent = (xls["Ordered On"] || "").split(' ')[0];
+  orderedOnTd.className = "nowrap-col";
   tr.appendChild(orderedOnTd);
 
   // Status
   const statusTd = document.createElement("td");
   statusTd.textContent = xls["Status"] || xls.status || "";
+  statusTd.className = "nowrap-col";
   tr.appendChild(statusTd);
 
   // Denial Code / Reason
   const dc = document.createElement("td");
   dc.textContent = r.denialCode;
+  dc.className = "nowrap-col";
   tr.appendChild(dc);
   const dr = document.createElement("td");
   dr.textContent = r.denialReason;
+  dr.className = "nowrap-col";
   tr.appendChild(dr);
 
-  // Remarks
+  // Remarks (wrap allowed)
   const remarksTd = document.createElement("td");
   remarksTd.innerHTML = (r.remarks || []).map(m => `<div>${m}</div>`).join("");
+  remarksTd.className = "wrap-col remarks-col";
   tr.appendChild(remarksTd);
 
   return tr;
