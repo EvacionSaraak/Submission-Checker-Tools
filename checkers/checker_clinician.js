@@ -156,7 +156,7 @@
   }
 
   // ======= 4. Validation Logic =======
-
+  
   function validateClinicians() {
     if (!xmlDoc) return;
     const claims = xmlDoc.getElementsByTagName('Claim');
@@ -165,7 +165,7 @@
       const providerId = getText(claim, 'ProviderID');
       const encounter = claim.getElementsByTagName('Encounter')[0];
       const encounterStart = getText(encounter, 'Start');
-
+  
       const activities = claim.getElementsByTagName('Activity');
       for (const act of activities) {
         const claimId = getText(claim, 'ID');
@@ -173,18 +173,20 @@
         const oid = getText(act, 'OrderingClinician');
         const pid = getText(act, 'Clinician');
         const remarks = [];
-        let valid = true;
-
+  
+        // Check for missing fields
+        if (!oid) { remarks.push('OrderingClinician missing'); }
+        if (!pid) { remarks.push('Clinician missing'); }
+  
         // Category check
         if (oid && pid && oid !== pid) {
           const oCat = clinicianMap[oid]?.category;
           const pCat = clinicianMap[pid]?.category;
           if (oCat && pCat && oCat !== pCat) {
             remarks.push('Category mismatch');
-            valid = false;
           }
         }
-
+  
         // Only the Performing's license status matters for the table
         function performingStatusCheck(id) {
           const entries = clinicianStatusMap[id] || [];
@@ -201,23 +203,20 @@
           }
           return statusInfo;
         }
-
+  
         const performingStatus = pid ? performingStatusCheck(pid) : {effectivity: '', status: '', invalidRemark: null};
 
-        if (performingStatus.invalidRemark) {
-          remarks.push(performingStatus.invalidRemark);
-          valid = false;
-        }
+        if (performingStatus.invalidRemark) { remarks.push(performingStatus.invalidRemark); }
         
         // Console log only when remarks are present
         if (remarks.length > 0) { console.log(`Claim ${claimId}, Activity ${activityId}:`, remarks); }
-
-        // For legacy/consistency, keep ordering ID & name in output
+  
+        // Instead of 'valid', use remarks.length === 0
         results.push({
           claimId,
           activityId,
           encounterStart,
-          facilityLicenseNumber: providerId, // <-- add this property
+          facilityLicenseNumber: providerId,
           ordering: oid,
           orderingName: (clinicianMap[oid]?.name || '').trim(),
           performing: pid,
@@ -225,7 +224,8 @@
           performingEff: performingStatus.effectivity,
           performingStatus: performingStatus.status,
           remarks,
-          valid
+          // Validity is determined by remarks array length
+          valid: remarks.length === 0
         });
       }
     }
