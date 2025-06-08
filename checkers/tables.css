@@ -39,11 +39,12 @@ th, td {
 
 /* Allow only the description column to wrap and grow */
 th.description-col, td.description-col {
-  white-space: normal;
-  overflow: visible;
-  text-overflow: unset;
-  word-break: break-word;
-  max-width: 600px; /* Adjust as needed for description */
+  white-space: normal;          /* Allow wrapping */
+  overflow: visible;            /* Show overflowed content */
+  text-overflow: unset;         /* No ellipsis */
+  word-break: break-word;       /* Break long words */
+  word-wrap: break-word;        /* Break and wrap long words */
+  max-width: 600px;             /* Constrain width */
 }
 
 /* Table header background */
