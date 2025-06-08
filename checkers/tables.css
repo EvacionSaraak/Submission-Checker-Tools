@@ -25,28 +25,32 @@ table {
   margin-bottom: 12px;
 }
 
+/* Universal table cell styles: force single line, ellipsis if overflow */
 th, td {
   padding: 8px 10px;
   border: 1px solid #ccc;
   text-align: left;
   vertical-align: top;
-  white-space: normal;       /* Let cell content wrap */
-  word-break: break-word;    /* Break long words/URLs if needed */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 300px; /* Adjust as needed for most columns */
 }
 
+/* Allow only the description column to wrap and grow */
+th.description-col, td.description-col {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: unset;
+  word-break: break-word;
+  max-width: 600px; /* Adjust as needed for description */
+}
+
+/* Table header background */
 th {
   background-color: #f4f4f4;
   font-weight: bold;
 }
-
-/* Remove forced nowrap from columns */
-/* 
-table td:nth-child(7), 
-table td:nth-child(6)  
-{
-  white-space: nowrap;
-}
-*/
 
 /* Valid / Invalid row background colors */
 .valid {
