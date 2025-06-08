@@ -272,7 +272,7 @@
           <td>${orderingDisplay}</td>
           <td>${performingDisplay}</td>
           <td>${performingStatusDisplay}</td>
-          <td>${r.remarks.join('; ')}</td>
+          <td class="description-col">${r.remarks.join('; ')}</td>
         </tr>`;
       }).join('') + '</table>';
     updateUploadStatus();
