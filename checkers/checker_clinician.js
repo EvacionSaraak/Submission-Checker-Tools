@@ -208,10 +208,14 @@
           remarks.push(performingStatus.invalidRemark);
           valid = false;
         }
+        
+        // Console log only when remarks are present
+        if (remarks.length > 0) { console.log(`Claim ${claimId}, Activity ${activityId}:`, remarks); }
 
         // For legacy/consistency, keep ordering ID & name in output
         results.push({
           claimId, activityId,
+          encounterStart,      // <-- Add this line
           ordering: oid,
           orderingName: (clinicianMap[oid]?.name || '').trim(),
           performing: pid,
@@ -242,7 +246,7 @@
         Validation: ${validCt}/${total} valid (${pct}%)
       </div>` +
       '<table><tr>' +
-      '<th>Claim</th><th>Activity</th>' +
+      '<th>Claim</th><th>Activity</th><th>Encounter Start</th>' +
       '<th>Ordering</th>' +
       '<th>Performing</th><th>Performing License Status</th>' +
       '<th>Remarks</th></tr>' +
@@ -261,6 +265,7 @@
         return `<tr class="${r.valid ? 'valid' : 'invalid'}">
           <td>${r.claimId}</td>
           <td>${r.activityId}</td>
+          <td>${r.encounterStart}</td>
           <td>${orderingDisplay}</td>
           <td>${performingDisplay}</td>
           <td>${performingStatusDisplay}</td>
@@ -275,7 +280,7 @@
     // Same duplicate-claim logic for export
     const displayedClaims = new Set();
     const headers = [
-      'Claim ID', 'Activity ID',
+      'Claim ID', 'Activity ID', 'Encounter Start',
       'Ordering ID (Name)',
       'Performing ID (Name)', 'Performing License Status',
       'Remarks'
@@ -290,7 +295,7 @@
       const performingStatusDisplay = (r.performingEff || r.performingStatus) ?
         `${r.performingEff || ''}${r.performingEff && r.performingStatus ? ' (' : ''}${r.performingStatus || ''}${r.performingEff && r.performingStatus ? ')' : ''}` : '';
       return [
-        r.claimId, r.activityId,
+        r.claimId, r.activityId, r.encounterStart,
         orderingDisplay,
         performingDisplay, performingStatusDisplay,
         r.remarks.join('; ')
