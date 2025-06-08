@@ -16,15 +16,19 @@ document.getElementById('exportBtn').addEventListener('click', () => {
 
   const wb = XLSX.utils.book_new();
   const wsData = [
-    ['Claim ID', 'Activity ID', 'Start', 'End', 'Duration', 'Remarks'],
-    ...window.invalidRows.map(r => [
-      r.claimId,
-      r.activityId,
-      r.start,
-      r.end,
-      r.duration,
-      r.remarks.join('; ')
-    ])
+    const wsData = [
+      ['Claim ID', 'Activity ID', 'Encounter Start', 'Encounter End', 'Activity Start', 'Duration', 'Excess', 'Remarks'],
+      ...window.invalidRows.map(r => [
+        r.claimId,
+        r.activityId,
+        r.encounterStart,
+        r.encounterEnd,
+        r.start,
+        r.duration,
+        r.excess,
+        r.remarks.join('; ')
+      ])
+    ];
   ];
 
   const ws = XLSX.utils.aoa_to_sheet(wsData);
