@@ -191,12 +191,12 @@
           const rec = getMostRecentStatusRecord(entries, providerId, encounterStart);
           let statusInfo = {effectivity: '', status: '', invalidRemark: null};
           if (!rec) {
-            statusInfo.invalidRemark = `Performing: No matching license record before encounter date`;
+            statusInfo.invalidRemark = `Performing: No matching license record at Facility License Number ${providerId} before encounter date`;
           } else {
             statusInfo.effectivity = excelDateToISO(rec.effective);
             statusInfo.status = rec.status;
             if ((rec.status || '').toLowerCase() !== 'active') {
-              statusInfo.invalidRemark = `Performing: Inactive as of ${statusInfo.effectivity}`;
+              statusInfo.invalidRemark = `Performing: Inactive as of ${statusInfo.effectivity} at Facility License Number ${providerId}`;
             }
           }
           return statusInfo;
@@ -214,8 +214,10 @@
 
         // For legacy/consistency, keep ordering ID & name in output
         results.push({
-          claimId, activityId,
-          encounterStart,      // <-- Add this line
+          claimId,
+          activityId,
+          encounterStart,
+          facilityLicenseNumber: providerId, // <-- add this property
           ordering: oid,
           orderingName: (clinicianMap[oid]?.name || '').trim(),
           performing: pid,
@@ -246,7 +248,7 @@
         Validation: ${validCt}/${total} valid (${pct}%)
       </div>` +
       '<table><tr>' +
-      '<th>Claim</th><th>Activity</th><th>Encounter Start</th>' +
+      '<th>Claim</th><th>Activity</th><th>Encounter Start</th><th>Facility License Number</th>' +
       '<th>Ordering</th>' +
       '<th>Performing</th><th>Performing License Status</th>' +
       '<th>Remarks</th></tr>' +
@@ -266,6 +268,7 @@
           <td>${r.claimId}</td>
           <td>${r.activityId}</td>
           <td>${r.encounterStart}</td>
+          <td>${r.facilityLicenseNumber}</td>
           <td>${orderingDisplay}</td>
           <td>${performingDisplay}</td>
           <td>${performingStatusDisplay}</td>
@@ -281,6 +284,7 @@
     const displayedClaims = new Set();
     const headers = [
       'Claim ID', 'Activity ID', 'Encounter Start',
+      'Facility License Number', // <-- add this
       'Ordering ID (Name)',
       'Performing ID (Name)', 'Performing License Status',
       'Remarks'
@@ -296,6 +300,7 @@
         `${r.performingEff || ''}${r.performingEff && r.performingStatus ? ' (' : ''}${r.performingStatus || ''}${r.performingEff && r.performingStatus ? ')' : ''}` : '';
       return [
         r.claimId, r.activityId, r.encounterStart,
+        r.facilityLicenseNumber || '', // <-- add this
         orderingDisplay,
         performingDisplay, performingStatusDisplay,
         r.remarks.join('; ')
