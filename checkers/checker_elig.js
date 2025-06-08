@@ -12,18 +12,10 @@ const parseExcel = async (file) => {
 const parseXML = async (file) => {
   const text = await file.text();
   const json = xmljs.xml2js(text, { compact: true });
-
-  const claims = json['Claim.Submission']?.Claim;
-  const normalized = Array.isArray(claims) ? claims : [claims];
-
-  // Normalize Activity arrays
-  normalized.forEach(claim => {
-    if (claim.Activity && !Array.isArray(claim.Activity)) {
-      claim.Activity = [claim.Activity];
-    }
-  });
-
-  return normalized;
+  const claim = json['Claim.Submission']['Claim'];
+  const encounter = claim['Encounter'];
+  const claimEID = claim['EmiratesIDNumber']?._text || '';
+  return { encounter, claimEID };
 };
 
 const validateEID = (eid) => {
@@ -72,13 +64,14 @@ const findEligibilityMatch = (activity, eligRows) => {
 
 const validateActivities = (xmlPayload, eligRows) => {
   const { encounter, claimEID } = xmlPayload;
-  const activities = [].concat(encounter.Activity || []);
+  let activities = [].concat(encounter.Activity || []);
+  if (!Array.isArray(activities)) activities = [activities];
 
   const results = [];
   for (const activity of activities) {
     const clinicianID = activity.Clinician?._text || '';
     const providerID = activity.ProviderID?._text || '';
-    const start = activity.ActivityStart?._text || '';
+    const start = activity.Start?._text || '';
 
     const remarks = [];
 
@@ -93,7 +86,7 @@ const validateActivities = (xmlPayload, eligRows) => {
       remarks.push('No matching eligibility row');
     } else {
       const status = (match['Status'] || '').toLowerCase();
-      if (status !== 'eligible') {
+      if (!['eligible'].includes(status)) {
         remarks.push(`Status not eligible (${match['Status']})`);
       }
 
@@ -122,7 +115,7 @@ const validateActivities = (xmlPayload, eligRows) => {
 
 const renderResults = (results) => {
   const table = document.getElementById('results');
-  table.innerHTML = '<tr><th>#</th><th>Clinician</th><th>ProviderID</th><th>ActivityStart</th><th>Eligibility Details</th><th>Valid</th><th>Remarks</th></tr>';
+  table.innerHTML = '<tr><th>#</th><th>Clinician</th><th>ProviderID</th><th>ActivityStart</th><th>Eligibility Details</th><th>Remarks</th></tr>';
 
   results.forEach((r, i) => {
     const row = document.createElement('tr');
@@ -132,25 +125,62 @@ const renderResults = (results) => {
       <td>${r.providerID}</td>
       <td>${r.start}</td>
       <td style="white-space: pre-line">${r.details}</td>
-      <td>${r.remarks.length === 0 ? '✅' : '❌'}</td>
       <td>${r.remarks}</td>
     `;
     table.appendChild(row);
   });
 };
 
-// Hook up file inputs
+// UI and status management
+
+const status = document.getElementById('status');
+const checkBtn = document.getElementById('check');
+
+window.xmlData = null;
+window.eligData = null;
+
+const updateStatus = () => {
+  const claimsCount = window.xmlData ? (Array.isArray(window.xmlData.activities) ? window.xmlData.activities.length : 1) : 0;
+  const eligCount = window.eligData ? window.eligData.length : 0;
+
+  let msgs = [];
+  if (claimsCount) msgs.push(`${claimsCount} Claim${claimsCount !== 1 ? 's' : ''} loaded`);
+  if (eligCount) msgs.push(`${eligCount} Eligibilit${eligCount !== 1 ? 'ies' : 'y'} loaded`);
+
+  status.textContent = msgs.join(', ');
+
+  checkBtn.disabled = !(window.xmlData && window.eligData);
+};
 
 document.getElementById('xml').addEventListener('change', async (e) => {
+  status.textContent = 'Loading Claims...';
+  checkBtn.disabled = true;
   window.xmlData = await parseXML(e.target.files[0]);
+
+  let activities = window.xmlData.encounter?.Activity || [];
+  if (!Array.isArray(activities)) activities = [activities];
+  window.xmlData.activities = activities;
+
+  updateStatus();
 });
 
 document.getElementById('xlsx').addEventListener('change', async (e) => {
+  status.textContent = 'Loading Eligibilities...';
+  checkBtn.disabled = true;
   window.eligData = await parseExcel(e.target.files[0]);
+  updateStatus();
 });
 
-document.getElementById('check').addEventListener('click', () => {
-  if (!window.xmlData || !window.eligData) return alert('Upload both files');
-  const results = validateActivities(window.xmlData, window.eligData);
-  renderResults(results);
+checkBtn.addEventListener('click', () => {
+  if (!(window.xmlData && window.eligData)) return alert('Upload both files');
+
+  checkBtn.disabled = true;
+  status.textContent = 'Validating...';
+
+  setTimeout(() => {
+    const results = validateActivities(window.xmlData, window.eligData);
+    renderResults(results);
+    status.textContent = `Validation completed: ${results.length} activities processed`;
+    checkBtn.disabled = false;
+  }, 100);
 });
