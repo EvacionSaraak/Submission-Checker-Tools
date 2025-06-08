@@ -7,7 +7,16 @@
   let xmlInput, clinicianInput, statusInput, processBtn, csvBtn, resultsDiv, uploadDiv;
   let claimCount = 0, clinicianCount = 0, historyCount = 0;
   let lastResults = [];
+  
+  // Load facilities.json and create a Set of valid license numbers (somewhere at the top, after facilities.json is loaded)
+  let affiliatedLicenses = new Set();
+  fetch('checkers/facilities.json')
+    .then(response => response.json())
+    .then(data => {
+      affiliatedLicenses = new Set(data.facilities.map(f => f.license));
+    });
 
+  
   document.addEventListener('DOMContentLoaded', () => {
     xmlInput = document.getElementById('xmlFileInput');
     clinicianInput = document.getElementById('clinicianFileInput');
@@ -154,6 +163,14 @@
     );
     return eligible[0];
   }
+  
+  function isClinicianActiveAtAffiliated(clinicianId) {
+    const entries = clinicianStatusMap[clinicianId] || [];
+    return entries.some(entry =>
+      affiliatedLicenses.has(entry.facility) &&
+      (entry.status || '').toLowerCase() === 'active'
+    );
+  }  
 
   // ======= 4. Validation Logic =======
   
@@ -175,43 +192,20 @@
         const remarks = [];
   
         // Check for missing fields
-        if (!oid) { remarks.push('OrderingClinician missing'); }
-        if (!pid) { remarks.push('Clinician missing'); }
+        if (!oid) remarks.push('OrderingClinician missing');
+        if (!pid) remarks.push('Clinician missing');
   
         // Category check
         if (oid && pid && oid !== pid) {
           const oCat = clinicianMap[oid]?.category;
           const pCat = clinicianMap[pid]?.category;
-          if (oCat && pCat && oCat !== pCat) {
-            remarks.push('Category mismatch');
-          }
+          if (oCat && pCat && oCat !== pCat) remarks.push('Category mismatch');
         }
   
-        // Only the Performing's license status matters for the table
-        function performingStatusCheck(id) {
-          const entries = clinicianStatusMap[id] || [];
-          const rec = getMostRecentStatusRecord(entries, providerId, encounterStart);
-          let statusInfo = {effectivity: '', status: '', invalidRemark: null};
-          if (!rec) {
-            statusInfo.invalidRemark = `Performing: No matching license record at Facility License Number ${providerId} before encounter date`;
-          } else {
-            statusInfo.effectivity = excelDateToISO(rec.effective);
-            statusInfo.status = rec.status;
-            if ((rec.status || '').toLowerCase() !== 'active') {
-              statusInfo.invalidRemark = `Performing: Inactive as of ${statusInfo.effectivity} at Facility License Number ${providerId}`;
-            }
-          }
-          return statusInfo;
-        }
+        // NEW: Check if performing clinician is ACTIVE at any affiliated facility
+        if (pid && !isClinicianActiveAtAffiliated(pid)) remarks.push('Performing: Not ACTIVE at any affiliated facility');
+        if (remarks.length > 0) console.log(`Claim ${claimId}, Activity ${activityId}:`, remarks);
   
-        const performingStatus = pid ? performingStatusCheck(pid) : {effectivity: '', status: '', invalidRemark: null};
-
-        if (performingStatus.invalidRemark) { remarks.push(performingStatus.invalidRemark); }
-        
-        // Console log only when remarks are present
-        if (remarks.length > 0) { console.log(`Claim ${claimId}, Activity ${activityId}:`, remarks); }
-  
-        // Instead of 'valid', use remarks.length === 0
         results.push({
           claimId,
           activityId,
@@ -221,10 +215,9 @@
           orderingName: (clinicianMap[oid]?.name || '').trim(),
           performing: pid,
           performingName: (clinicianMap[pid]?.name || '').trim(),
-          performingEff: performingStatus.effectivity,
-          performingStatus: performingStatus.status,
+          performingEff: '', // You may update this as needed
+          performingStatus: '', // You may update this as needed
           remarks,
-          // Validity is determined by remarks array length
           valid: remarks.length === 0
         });
       }
@@ -233,7 +226,6 @@
     renderResults(results);
     if (csvBtn) csvBtn.disabled = !(results.length > 0);
   }
-
   // ======= 5. Results Rendering =======
 
   function renderResults(results) {
