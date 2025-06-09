@@ -174,7 +174,6 @@ function validateDateAndStatus(row, start) {
   return remarks;
 }
 
-
 function logInvalidRow(xlsRow, context, remarks) {
   if (remarks.length) {
     console.group(`Validation errors for AuthorizationID: ${context.authID}, Code: ${context.code}`);
@@ -348,9 +347,10 @@ function renderResults(results) {
     return;
   }
 
-  const table = document.createElement("table");
+  // Preprocess claimCodeSums ahead of rendering
+  const claimCodeSums = preprocessClaimCodeSums(results);
 
-  // Table header
+  const table = document.createElement("table");
   table.innerHTML = `
   <thead>
     <tr>
@@ -372,7 +372,9 @@ function renderResults(results) {
   let lastClaim = null;
 
   results.forEach((result, idx) => {
-    const row = renderRow(result, lastClaim, idx);
+    // Attach grouped info to result for this row for later use
+    const codeGroup = claimCodeSums[result.claimId][result.code];
+    const row = renderRow(result, lastClaim, idx, codeGroup);
     lastClaim = result.claimId;
     tbody.appendChild(row);
   });
@@ -380,11 +382,10 @@ function renderResults(results) {
   table.appendChild(tbody);
   container.appendChild(table);
 
-  // Modal setup (only one modal needed)
-  setupDetailsModal(results);
+  setupDetailsModal(results, claimCodeSums);
 }
 
-function renderRow(r, lastClaimId, idx) {
+function renderRow(r, lastClaimId, idx, codeGroup) {
   const tr = document.createElement("tr");
   tr.className = r.remarks.length ? 'invalid' : 'valid';
 
@@ -404,7 +405,7 @@ function renderRow(r, lastClaimId, idx) {
     tr.appendChild(td);
   });
 
-  // Auth ID (now outside, always visible)
+  // Auth ID (always visible)
   const authTd = document.createElement("td");
   authTd.textContent = r.authID || "";
   authTd.className = "nowrap-col";
@@ -416,15 +417,15 @@ function renderRow(r, lastClaimId, idx) {
   descTd.className = "description-col";
   tr.appendChild(descTd);
 
-  // Net Total
+  // Net Total (as 2 decimals, with source)
   const netTd = document.createElement("td");
-  netTd.textContent = r.netTotal || "";
+  netTd.textContent = (parseFloat(r.netTotal || 0)).toFixed(2) + " (xml)";
   netTd.className = "nowrap-col";
   tr.appendChild(netTd);
 
-  // Payer Share
+  // Payer Share (as 2 decimals, with source)
   const payerTd = document.createElement("td");
-  payerTd.textContent = xls["Payer Share"] || "";
+  payerTd.textContent = (parseFloat(xls["Payer Share"] || 0)).toFixed(2) + " (xlsx)";
   payerTd.className = "nowrap-col";
   tr.appendChild(payerTd);
 
@@ -451,6 +452,8 @@ function renderRow(r, lastClaimId, idx) {
   detailsBtn.textContent = "View";
   detailsBtn.className = "details-btn";
   detailsBtn.setAttribute("data-result-idx", idx);
+  detailsBtn.setAttribute("data-claim-id", r.claimId);
+  detailsBtn.setAttribute("data-code", r.code);
   detailsBtn.style.padding = "2px 10px";
   detailsBtn.style.fontSize = "13px";
   detailsBtn.style.borderRadius = "4px";
@@ -466,11 +469,17 @@ function renderRow(r, lastClaimId, idx) {
   detailsTd.appendChild(detailsBtn);
   tr.appendChild(detailsTd);
 
+  // Optionally, add a badge if this code is grouped in this claim
+  if (codeGroup && codeGroup.activities.length > 1) {
+    tr.setAttribute("data-grouped", "true");
+    tr.style.fontWeight = "bold";
+    tr.title = `Grouped: ${codeGroup.activities.length} activities for code ${r.code} in claim ${r.claimId}`;
+  }
+
   return tr;
 }
 
-// === MODAL HANDLING ===
-function setupDetailsModal(results) {
+function setupDetailsModal(results, claimCodeSums) {
   let modal = document.getElementById("details-modal");
   if (!modal) {
     modal = document.createElement("div");
@@ -513,19 +522,14 @@ function setupDetailsModal(results) {
   document.querySelectorAll(".details-btn").forEach(btn => {
     btn.onclick = function() {
       const idx = parseInt(this.getAttribute("data-result-idx"), 10);
+      const claimId = this.getAttribute("data-claim-id");
+      const code = this.getAttribute("data-code");
       const r = results[idx];
       const xls = r.xlsRow || {};
 
-      // Find all activities in this claim with the same code
-      const claimActivities = results.filter(
-        act => act.claimId === r.claimId
-      );
-      const codeGroups = groupActivitiesByCode(claimActivities);
+      // Use the preprocessed claimCodeSums
+      const codeGroup = claimCodeSums[claimId][code];
 
-      // Find the group for this code
-      const codeGroup = codeGroups.find(g => g.code === r.code);
-
-      // Modal content with bracketed data sources
       modalBody.innerHTML = `
         <h3 style="margin-top:0;">Details for Claim ID: ${r.claimId}, Activity ID: ${r.id}</h3>
         <table class="modal-license-table">
@@ -537,19 +541,19 @@ function setupDetailsModal(results) {
           <tr><th>Denial Reason</th><td>${r.denialReason || ""}</td></tr>
           <tr><th>All Remarks</th><td>${(r.remarks || []).map(m => `<div>${m}</div>`).join("") || ""}</td></tr>
         </table>
-        ${codeGroup && codeGroup.rows.length > 1 ? `
-          <h4 style="margin-top:2em;">Grouped Calculation for Code <b>${codeGroup.code}</b> (this claim)</h4>
+        ${codeGroup && codeGroup.activities.length > 1 ? `
+          <h4 style="margin-top:2em;">Grouped Calculation for Code <b>${codeGroup.activities[0].code}</b> (this claim)</h4>
           <table class="modal-license-table">
             <tr>
               <th>Activity ID</th>
               <th>Net Total</th>
               <th>Payer Share</th>
             </tr>
-            ${codeGroup.rows.map(act => `
+            ${codeGroup.activities.map(act => `
               <tr>
-                <td>${act.activityID}</td>
-                <td>${act.netTotal.toFixed(2)} <span style="color:#888;">(xml)</span></td>
-                <td>${act.payerShare.toFixed(2)} <span style="color:#888;">(xlsx)</span></td>
+                <td>${act.id}</td>
+                <td>${parseFloat(act.netTotal || 0).toFixed(2)} <span style="color:#888;">(xml)</span></td>
+                <td>${parseFloat(act.xlsRow?.["Payer Share"] || 0).toFixed(2)} <span style="color:#888;">(xlsx)</span></td>
               </tr>
             `).join("")}
             <tr>
@@ -572,82 +576,6 @@ function setupDetailsModal(results) {
       setTimeout(() => { closeBtn.focus(); }, 0);
     };
   });
-}
-
-
-// === MAIN PROCESSING ===
-// After renderResults, add this helper to wire up export and summary:
-function postProcessResults(results) {
-  const container = document.getElementById("results-container");
-  container.innerHTML = "";
-
-  const total = results.length;
-  const invalidEntries = results.filter(r => r.remarks.length > 0);
-  const invalidCount = invalidEntries.length;
-  const validCount   = total - invalidCount;
-  const pctValid     = total ? ((validCount / total) * 100).toFixed(1) : "0.0";
-
-  // 1) Show summary
-  const summary = document.createElement("div");
-  summary.textContent = `Valid: ${validCount} / ${total} (${pctValid}% valid)`;
-  container.appendChild(summary);
-
-  // 2) If any invalid, show export button
-  if (invalidCount > 0) {
-    const btn = document.createElement("button");
-    btn.textContent = `Export ${invalidCount} Invalid Entries`;
-    btn.id = "exportInvalidBtn";
-    btn.className = "btn btn-sm btn-outline-danger mt-2";
-    container.appendChild(btn);
-
-    btn.addEventListener("click", () => {
-      // Build array of objects matching your table headers
-      const headers = [
-        "Claim ID","Member ID","Activity ID","Code","Description","Net Total",
-        "Payer Share","Ordering Clinician","Auth ID","Start Date",
-        "Ordered On","Status","Denial Code","Denial Reason","Remarks"
-      ];
-
-      const data = invalidEntries.map(r => {
-        const x = r.xlsRow || {};
-        return {
-          "Claim ID": r.claimId,
-          "Member ID": r.memberId,
-          "Activity ID": r.id,
-          "Code": r.code,
-          "Description": r.description,
-          "Net Total": r.netTotal,
-          "Payer Share": x["Payer Share"] || "",
-          "Ordering Clinician": r.ordering,
-          "Auth ID": r.authID,
-          "Start Date": r.start,
-          "Ordered On": x["Ordered On"] || "",
-          "Status": x["Status"] || x.status || "",
-          "Denial Code": x["Denial Code (if any)"] || "",
-          "Denial Reason": x["Denial Reason (if any)"] || "",
-          "Remarks": r.remarks.join("; ")
-        };
-      });
-
-      // Use SheetJS to export
-      const wb = XLSX.utils.book_new();
-      const ws = XLSX.utils.json_to_sheet(data, { header: headers });
-      XLSX.utils.book_append_sheet(wb, ws, "InvalidEntries");
-      XLSX.writeFile(wb, `invalid_entries_${Date.now()}.xlsx`);
-    });
-  }
-}
-
-// Finally, modify your handleRun() to call postProcessResults after renderResults:
-async function handleRun() {
-  try {
-    await loadAuthRules();
-    const results = validateClaims(parsedXmlDoc, parsedXlsxData, authRules);
-    renderResults(results);
-    postProcessResults(results);
-  } catch (err) {
-    console.error("Processing error:", err);
-  }
 }
 
 // === EVENT LISTENERS ===
