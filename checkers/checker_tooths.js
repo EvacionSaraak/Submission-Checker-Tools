@@ -293,38 +293,84 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions) {
       const code = rawCode.trim();
       const codeLastDigit = code.slice(-1);
 
-      // If the code does NOT exist in the repo JSON, ignore it for validation,
-      // but if it has obsCodes, flag it; include all in the table
       let meta = codeToMeta[code];
+      let fallback = fallbackDescriptions?.[code];
+      let useFallback = false;
 
+      // If code is NOT in repo JSON
       if (!meta) {
-        // Collect all obsCodes for this activity
-        let obsCodes = [];
-        if (obsList.length) {
-          obsCodes = Array.from(obsList).map(obs => {
-            const obsCodeRaw = obs.querySelector('Code')?.textContent.trim() || '';
-            return obsCodeRaw.toUpperCase();
-          }).filter(Boolean);
+        let description = '(unknown code)';
+        if (fallback && fallback.description) {
+          description = fallback.description;
+          useFallback = true;
         }
+
         let remarks = [];
         let details = '';
-        let isValid;
+        let isValid = false;
 
-        if (obsCodes.length > 0) {
+        // Region logic if sextant/quadrant, otherwise just simple line
+        const isRegion = description.toLowerCase().includes('sextant') || description.toLowerCase().includes('quadrant');
+        let regionType = null;
+        if (isRegion) {
+          regionType = description.toLowerCase().includes('sextant') ? 'sextant' : 'quadrant';
+        }
+
+        let regionKey = null;
+        const obsCodes = Array.from(obsList).map(obs => {
+          const obsCodeRaw = obs.querySelector('Code')?.textContent.trim() || '';
+          return obsCodeRaw.toUpperCase();
+        }).filter(Boolean);
+
+        if (isRegion && obsCodes.length > 0) {
+          // Validate region logic using fallback description
+          let allValid = true;
+          details = obsCodes.map(obsCode => {
+            let regionRemark = '';
+            if (regionType === 'sextant') {
+              regionKey = getSextant(obsCode);
+            } else if (regionType === 'quadrant') {
+              regionKey = getQuadrant(obsCode);
+            }
+            // No teethSet fallback, so skip tooth set check
+
+            // Region duplication check
+            if (regionType && regionKey && regionKey !== 'Unknown') {
+              const tracker = claimRegionTrack[claimId][regionType];
+              const key = `${regionKey}_${code}`;
+              if (tracker[key]) {
+                if (codeLastDigit !== '9') {
+                  allValid = false;
+                  regionRemark = `Invalid - Duplicate ${regionType} code (${regionKey})`;
+                } else {
+                  regionRemark = `Valid - Duplicate ${regionType} allowed (ends with 9)`;
+                }
+              } else {
+                tracker[key] = true;
+                regionRemark = `Valid - ${obsCode}`;
+              }
+            } else {
+              regionRemark = `Valid - ${obsCode}`;
+            }
+            remarks.push(regionRemark);
+            return `${obsCode} - ${regionRemark}`;
+          }).join('<br>');
+          isValid = allValid;
+        } else if (obsCodes.length > 0) {
           remarks.push(`Unknown code in repo; obsCodes present: ${obsCodes.join(', ')}`);
           details = obsCodes.join('<br>');
           isValid = false;
         } else {
-          remarks.push(`Unknown code in repo; no obsCodes`);
+          remarks.push(fallback ? `Unknown code in repo; found in checker_auths.json` : `Unknown code in repo; no obsCodes`);
           details = 'N/A';
-          isValid = true; // <-- MARK AS VALID HERE!
+          isValid = true;
         }
 
         rows.push({
           claimId,
           activityId,
           code,
-          description: '(not in repository)',
+          description,
           details,
           remarks,
           isValid
