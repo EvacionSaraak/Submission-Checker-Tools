@@ -241,13 +241,13 @@
           }
         }
 
-        // --- New logic: Validate if clinician has an ACTIVE license at any affiliated facility for that date ---
-        let performingEff = '', performingStatus = '', performingStatusDisplay = '', mostRecentRemark = '';
+        // New logic: Valid if clinician has ACTIVE license at any affiliated facility before/on encounter date
+        let performingEff = '', performingStatus = '', performingStatusDisplay = '';
         let valid = false;
 
         const entries = clinicianStatusMap[pid] || [];
         const encounterD = new Date(excelDateToISO(encounterStart));
-        // Find all status records at any affiliated facility, ACTIVE, before/on encounter date
+        // Find all ACTIVE licenses at any affiliated facility before/on encounter date
         const eligible = entries.filter(e => {
           const fac = (e.facility || '').toString().trim().toUpperCase();
           const effDate = new Date(excelDateToISO(e.effective));
@@ -274,13 +274,14 @@
           performingStatus = mostRecent.status || '';
           performingStatusDisplay = (performingEff ? `${performingEff}${performingStatus ? ' (' + performingStatus + ')' : ''}` : '');
         } else {
-          mostRecentRemark = 'No ACTIVE affiliated facility license for encounter date';
+          // Only add this remark if there was no eligible license at all (not if valid)
+          remarks.push('No ACTIVE affiliated facility license for encounter date');
         }
 
         if (!oid) remarks.push('OrderingClinician missing');
         if (!pid) remarks.push('Clinician missing');
-        if (mostRecentRemark) remarks.push(mostRecentRemark);
 
+        // Only push the result as invalid if valid is false
         results.push({
           claimId,
           activityId,
@@ -327,7 +328,7 @@
           <td>${r.performingDisplay}</td>
           <td>${r.recentStatus}</td>
           <td class="description-col">${r.fullHistory}</td>
-          <td class="description-col">${r.remarks.join('; ')}</td>
+          <td class="description-col">${r.valid ? '' : r.remarks.join('; ')}</td>
         </tr>`;
       }).join('') + '</table>';
     updateUploadStatus();
@@ -353,7 +354,7 @@
       r.performingDisplay || '',
       r.recentStatus || '',
       r.fullHistory || '',
-      r.remarks.join('; ')
+      r.valid ? '' : r.remarks.join('; ')
     ]);
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
