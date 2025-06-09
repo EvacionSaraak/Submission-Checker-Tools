@@ -16,9 +16,14 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  function saveLastPage(index) {
+    localStorage.setItem('lastOpenedPageIndex', index);
+  }
+
   function loadPage(file, index) {
     iframe.src = file;
     setActiveButton(index);
+    saveLastPage(index);
   }
 
   function enhanceIframeTable() {
@@ -43,7 +48,14 @@ document.addEventListener('DOMContentLoaded', () => {
       };
       navLeft.appendChild(btn);
     });
-    loadPage(pages[0].file, 0);
+
+    // Load last opened page if available, otherwise load first page
+    const lastIndex = parseInt(localStorage.getItem('lastOpenedPageIndex'), 10);
+    if (!isNaN(lastIndex) && lastIndex >= 0 && lastIndex < pages.length) {
+      loadPage(pages[lastIndex].file, lastIndex);
+    } else {
+      loadPage(pages[0].file, 0);
+    }
   }
 
   iframe.addEventListener("load", () => {
