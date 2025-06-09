@@ -90,3 +90,51 @@ th {
   margin-left: auto;
   margin-right: auto;
 }
+
+/* Modal styles for Full License History */
+.modal {
+  display: none;
+  position: fixed;
+  z-index: 999;
+  left: 0;
+  top: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0,0,0,0.5);
+}
+
+.modal-content {
+  background: #fff;
+  margin: 10% auto;
+  padding: 20px;
+  border-radius: 8px;
+  width: 90%;
+  max-width: 600px;
+  position: relative;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.2);
+}
+
+.close {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  font-size: 24px;
+  cursor: pointer;
+  color: #888;
+  transition: color 0.2s;
+}
+
+.close:hover {
+  color: #333;
+}
+
+#licenseHistoryText {
+  font-family: monospace;
+  background: #f6f8fa;
+  padding: 1em;
+  border-radius: 4px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 60vh;
+  overflow-y: auto;
+}
