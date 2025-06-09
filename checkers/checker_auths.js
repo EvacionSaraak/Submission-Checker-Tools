@@ -185,6 +185,33 @@ function logInvalidRow(xlsRow, context, remarks) {
   }
 }
 
+// === GROUPED SUMS LOGIC ===
+
+/**
+ * Returns an array of grouped activity sums by code for a given claim's activities.
+ * Each object has: code, sumNet, sumPayer, rows (activities), and formatting tags.
+ */
+function groupActivitiesByCode(activities) {
+  const codeMap = {};
+  activities.forEach((activity) => {
+    const code = activity.code;
+    if (!codeMap[code]) codeMap[code] = { code, sumNet: 0, sumPayer: 0, rows: [] };
+    // Track original values for bracketed source
+    const netVal = parseFloat(activity.netTotal || 0);
+    const payerVal = parseFloat(activity.xlsRow?.["Payer Share"] || 0);
+    codeMap[code].sumNet += netVal;
+    codeMap[code].sumPayer += payerVal;
+    codeMap[code].rows.push({
+      activityID: activity.id,
+      netTotal: netVal,
+      payerShare: payerVal,
+      netSource: "xml",
+      payerSource: "xlsx"
+    });
+  });
+  return Object.values(codeMap);
+}
+
 function validateActivity(activityEl, xlsxMap, claimId, memberId) {
   const id       = getText(activityEl, "ID");
   const code     = getText(activityEl, "Code");
@@ -436,11 +463,10 @@ function renderRow(r, lastClaimId, idx) {
   return tr;
 }
 
-// Setup modal HTML and event listeners
+// === MODAL HANDLING ===
 function setupDetailsModal(results) {
   let modal = document.getElementById("details-modal");
   if (!modal) {
-    // Modal HTML (use CSS from shared_tables.css: .modal, .modal-content, .close)
     modal = document.createElement("div");
     modal.id = "details-modal";
     modal.className = "modal";
@@ -455,7 +481,6 @@ function setupDetailsModal(results) {
   const modalBody = modal.querySelector("#modal-body");
   const closeBtn = modal.querySelector(".close");
 
-  // Close modal
   closeBtn.onclick = () => {
     modal.style.display = "none";
     modalBody.innerHTML = "";
@@ -479,35 +504,70 @@ function setupDetailsModal(results) {
     }
   };
 
-  // Attach event listeners to all details buttons
   document.querySelectorAll(".details-btn").forEach(btn => {
     btn.onclick = function() {
       const idx = parseInt(this.getAttribute("data-result-idx"), 10);
       const r = results[idx];
       const xls = r.xlsRow || {};
-      // Modal content
+
+      // Find all activities in this claim with the same code
+      const claimActivities = results.filter(
+        act => act.claimId === r.claimId
+      );
+      const codeGroups = groupActivitiesByCode(claimActivities);
+
+      // Find the group for this code
+      const codeGroup = codeGroups.find(g => g.code === r.code);
+
+      // Modal content with bracketed data sources
       modalBody.innerHTML = `
         <h3 style="margin-top:0;">Details for Claim ID: ${r.claimId}, Activity ID: ${r.id}</h3>
         <table class="modal-license-table">
           <tr><th>Ordering Clinician</th><td>${r.ordering || ""}</td></tr>
           <tr><th>Auth ID</th><td>${r.authID || ""}</td></tr>
-          <tr><th>Start Date</th><td>${r.start ? r.start.split(' ')[0] : ""}</td></tr>
-          <tr><th>Ordered On</th><td>${(xls["Ordered On"] || "").split(' ')[0]}</td></tr>
+          <tr><th>Start Date</th><td>${r.start ? r.start.split(' ')[0] : ""} <span style="color:#888;">(xml)</span></td></tr>
+          <tr><th>Ordered On</th><td>${(xls["Ordered On"] || "").split(' ')[0]} <span style="color:#888;">(xlsx)</span></td></tr>
           <tr><th>Denial Code</th><td>${r.denialCode || ""}</td></tr>
           <tr><th>Denial Reason</th><td>${r.denialReason || ""}</td></tr>
           <tr><th>All Remarks</th><td>${(r.remarks || []).map(m => `<div>${m}</div>`).join("") || ""}</td></tr>
         </table>
+        ${codeGroup && codeGroup.rows.length > 1 ? `
+          <h4 style="margin-top:2em;">Grouped Calculation for Code <b>${codeGroup.code}</b> (this claim)</h4>
+          <table class="modal-license-table">
+            <tr>
+              <th>Activity ID</th>
+              <th>Net Total</th>
+              <th>Payer Share</th>
+            </tr>
+            ${codeGroup.rows.map(act => `
+              <tr>
+                <td>${act.activityID}</td>
+                <td>${act.netTotal.toFixed(2)} <span style="color:#888;">(xml)</span></td>
+                <td>${act.payerShare.toFixed(2)} <span style="color:#888;">(xlsx)</span></td>
+              </tr>
+            `).join("")}
+            <tr>
+              <th>Total</th>
+              <th>${codeGroup.sumNet.toFixed(2)} <span style="color:#888;">(xml)</span></th>
+              <th>${codeGroup.sumPayer.toFixed(2)} <span style="color:#888;">(xlsx)</span></th>
+            </tr>
+          </table>
+          <div style="margin-top:1em;">
+            <b>Comparison:</b>
+            <span>${codeGroup.sumNet.toFixed(2)} (Net, xml) vs. ${codeGroup.sumPayer.toFixed(2)} (Payer Share, xlsx)</span>
+          </div>
+        ` : ""}
         <details>
           <summary>Full Row Data</summary>
           <pre id="licenseHistoryText">${JSON.stringify(r, null, 2)}</pre>
         </details>
       `;
       modal.style.display = "block";
-      // Accessibility: focus close button
       setTimeout(() => { closeBtn.focus(); }, 0);
     };
   });
 }
+
 
 // === MAIN PROCESSING ===
 // After renderResults, add this helper to wire up export and summary:
