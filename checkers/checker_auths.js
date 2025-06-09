@@ -147,20 +147,18 @@ function validateApprovalRequirement(code, authID) {
   return remarks;
 }
 
-function validateXLSXMatch(row, { memberId, code, qty, netTotal, ordering, authID }) {
+function validateXLSXMatch(row, { memberId, code, netTotal, ordering, authID }) {
   const remarks = [];
-  if ((row["Card Number / DHA Member ID"] || "").trim() !== memberId.trim()) remarks.push(`MemberID mismatch: XLSX=${row["Card Number / DHA Member ID"]}`);
-  if ((row["Item Code"] || "").trim() !== code.trim()) remarks.push(`Item Code mismatch: XLSX=${row["Item Code"]}`);
-  // No qty check! Only compare as decimals
-  const unitNet = parseFloat(netTotal || "0");
-  const xlsxPayerShare = parseFloat(row["Payer Share"] || "0");
-  if (unitNet.toFixed(2) !== xlsxPayerShare.toFixed(2))
-    remarks.push(
-      `Net/Payer Mismatch: Net ${unitNet.toFixed(2)} (xml) vs XLSX Payer Share ${xlsxPayerShare.toFixed(2)}`
-    );
+  if ((row["Card Number / DHA Member ID"] || "").trim() !== memberId.trim())
+    remarks.push(`MemberID mismatch: XLSX=${row["Card Number / DHA Member ID"]}`);
+  if ((row["Item Code"] || "").trim() !== code.trim())
+    remarks.push(`Item Code mismatch: XLSX=${row["Item Code"]}`);
+  // (REMOVED: Net/Payer Mismatch check)
   const xOrdering = (row["Ordering Clinician"] || "").trim().toUpperCase();
-  if (xOrdering !== (ordering || "").trim().toUpperCase()) remarks.push(`Ordering Clinician mismatch: XLSX=${row["Ordering Clinician"]}`);
-  if ((row.AuthorizationID || "").trim() !== authID.trim()) remarks.push(`AuthorizationID mismatch: XLSX=${row.AuthorizationID}`);
+  if (xOrdering !== (ordering || "").trim().toUpperCase())
+    remarks.push(`Ordering Clinician mismatch: XLSX=${row["Ordering Clinician"]}`);
+  if ((row.AuthorizationID || "").trim() !== authID.trim())
+    remarks.push(`AuthorizationID mismatch: XLSX=${row.AuthorizationID}`);
   return remarks;
 }
 
@@ -463,7 +461,7 @@ function setupDetailsModal(results, claimCodeSums) {
     modal.id = "details-modal";
     modal.className = "modal";
     modal.innerHTML = `
-      <div class="modal-content">
+      <div class="modal-content" id="modalContent">
         <span class="close" tabindex="0" role="button" aria-label="Close">&times;</span>
         <div id="modal-body"></div>
       </div>
@@ -472,13 +470,46 @@ function setupDetailsModal(results, claimCodeSums) {
   }
   const modalBody = modal.querySelector("#modal-body");
   const closeBtn = modal.querySelector(".close");
+  const modalContent = modal.querySelector(".modal-content");
+
+  // Draggable modal
+  let isDragging = false, startX, startY, initialLeft, initialTop;
+  modalContent.onmousedown = function(e) {
+    if (!e.target.classList.contains('close')) {
+      isDragging = true;
+      modalContent.classList.add('draggable');
+      startX = e.clientX;
+      startY = e.clientY;
+      const rect = modalContent.getBoundingClientRect();
+      initialLeft = rect.left;
+      initialTop = rect.top;
+      document.body.style.userSelect = 'none';
+      e.preventDefault();
+    }
+  };
+  document.onmousemove = function(e) {
+    if (isDragging) {
+      let dx = e.clientX - startX, dy = e.clientY - startY;
+      modalContent.style.position = 'fixed';
+      modalContent.style.left = (initialLeft + dx) + 'px';
+      modalContent.style.top = (initialTop + dy) + 'px';
+      modalContent.style.margin = 0;
+    }
+  };
+  document.onmouseup = function() {
+    if (isDragging) {
+      isDragging = false;
+      modalContent.classList.remove('draggable');
+      document.body.style.userSelect = '';
+    }
+  };
 
   closeBtn.onclick = () => {
     modal.style.display = "none";
     modalBody.innerHTML = "";
   };
   closeBtn.onkeydown = (e) => {
-    if (e.key === "Escape" || e.key === " " || e.key === "Enter") {
+    if (["Escape", " ", "Enter"].includes(e.key)) {
       modal.style.display = "none";
       modalBody.innerHTML = "";
     }
@@ -498,13 +529,11 @@ function setupDetailsModal(results, claimCodeSums) {
 
   document.querySelectorAll(".details-btn").forEach(btn => {
     btn.onclick = function() {
-      const idx = parseInt(this.getAttribute("data-result-idx"), 10);
-      const claimId = this.getAttribute("data-claim-id");
-      const code = this.getAttribute("data-code");
-      const r = results[idx];
-      const xls = r.xlsRow || {};
-
-      // Use the preprocessed claimCodeSums
+      const idx = +this.dataset.resultIdx,
+        claimId = this.dataset.claimId,
+        code = this.dataset.code,
+        r = results[idx],
+        xls = r.xlsRow || {};
       const codeGroup = claimCodeSums[claimId][code];
 
       modalBody.innerHTML = `
@@ -512,8 +541,8 @@ function setupDetailsModal(results, claimCodeSums) {
         <table class="modal-license-table">
           <tr><th>Ordering Clinician</th><td>${r.ordering || ""}</td></tr>
           <tr><th>Auth ID</th><td>${r.authID || ""}</td></tr>
-          <tr><th>Start Date</th><td>${r.start ? r.start.split(' ')[0] : ""} <span style="color:#888;">(xml)</span></td></tr>
-          <tr><th>Ordered On</th><td>${(xls["Ordered On"] || "").split(' ')[0]} <span style="color:#888;">(xlsx)</span></td></tr>
+          <tr><th>Start Date</th><td>${r.start ? r.start.split(' ')[0] : ""} <span class="source-note">(xml)</span></td></tr>
+          <tr><th>Ordered On</th><td>${(xls["Ordered On"] || "").split(' ')[0]} <span class="source-note">(xlsx)</span></td></tr>
           <tr><th>Denial Code</th><td>${r.denialCode || ""}</td></tr>
           <tr><th>Denial Reason</th><td>${r.denialReason || ""}</td></tr>
           <tr><th>All Remarks</th><td>${(r.remarks || []).map(m => `<div>${m}</div>`).join("") || ""}</td></tr>
@@ -546,13 +575,17 @@ function setupDetailsModal(results, claimCodeSums) {
         </details>
       `;
       modal.style.display = "block";
+      // Center modal if not dragged yet
+      modalContent.style.position = '';
+      modalContent.style.left = '';
+      modalContent.style.top = '';
+      modalContent.style.margin = '';
       setTimeout(() => { closeBtn.focus(); }, 0);
     };
   });
 }
 
 // === MAIN PROCESSING ===
-// After renderResults, add this helper to wire up export and summary:
 function postProcessResults(results) {
   const container = document.getElementById("results-container");
   container.innerHTML = "";
