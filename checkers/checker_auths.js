@@ -349,7 +349,6 @@ function renderResults(results) {
   }
 
   const table = document.createElement("table");
-  // Table class is styled by shared_tables.css
 
   // Table header
   table.innerHTML = `
@@ -359,6 +358,7 @@ function renderResults(results) {
       <th>Member ID</th>
       <th>Activity ID</th>
       <th>Code</th>
+      <th>Auth ID</th>
       <th class="description-col">Description</th>
       <th>Net Total</th>
       <th>Payer Share</th>
@@ -404,7 +404,13 @@ function renderRow(r, lastClaimId, idx) {
     tr.appendChild(td);
   });
 
-  // Description (wrap allowed)
+  // Auth ID (now outside, always visible)
+  const authTd = document.createElement("td");
+  authTd.textContent = r.authID || "";
+  authTd.className = "nowrap-col";
+  tr.appendChild(authTd);
+
+  // Description (wrap allowed, class='description-col')
   const descTd = document.createElement("td");
   descTd.textContent = r.description || "";
   descTd.className = "description-col";
