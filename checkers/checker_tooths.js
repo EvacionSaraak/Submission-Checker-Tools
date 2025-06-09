@@ -295,19 +295,16 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions) {
 
       let meta = codeToMeta[code];
       let fallback = fallbackDescriptions?.[code];
-      let useFallback = false;
 
       // If code is NOT in repo JSON
       if (!meta) {
         let description = '(unknown code)';
         if (fallback && fallback.description) {
           description = fallback.description;
-          useFallback = true;
         }
 
         let remarks = [];
         let details = '';
-        let isValid = false;
 
         // Region logic if sextant/quadrant, otherwise just simple line
         const isRegion = description.toLowerCase().includes('sextant') || description.toLowerCase().includes('quadrant');
@@ -323,8 +320,6 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions) {
         }).filter(Boolean);
 
         if (isRegion && obsCodes.length > 0) {
-          // Validate region logic using fallback description
-          let allValid = true;
           details = obsCodes.map(obsCode => {
             let regionRemark = '';
             if (regionType === 'sextant') {
@@ -332,7 +327,6 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions) {
             } else if (regionType === 'quadrant') {
               regionKey = getQuadrant(obsCode);
             }
-            // No teethSet fallback, so skip tooth set check
 
             // Region duplication check
             if (regionType && regionKey && regionKey !== 'Unknown') {
@@ -340,8 +334,8 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions) {
               const key = `${regionKey}_${code}`;
               if (tracker[key]) {
                 if (codeLastDigit !== '9') {
-                  allValid = false;
                   regionRemark = `Invalid - Duplicate ${regionType} code (${regionKey})`;
+                  remarks.push(regionRemark);
                 } else {
                   regionRemark = `Valid - Duplicate ${regionType} allowed (ends with 9)`;
                 }
@@ -352,18 +346,13 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions) {
             } else {
               regionRemark = `Valid - ${obsCode}`;
             }
-            remarks.push(regionRemark);
             return `${obsCode} - ${regionRemark}`;
           }).join('<br>');
-          isValid = allValid;
         } else if (obsCodes.length > 0) {
           remarks.push(`Unknown code in repo; obsCodes present: ${obsCodes.join(', ')}`);
           details = obsCodes.join('<br>');
-          isValid = false;
         } else {
-          remarks.push(fallback ? `Unknown code in repo; found in checker_auths.json` : `Unknown code in repo; no obsCodes`);
           details = 'N/A';
-          isValid = true;
         }
 
         rows.push({
@@ -372,8 +361,7 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions) {
           code,
           description,
           details,
-          remarks,
-          isValid
+          remarks
         });
         return; // skip further validation
       }
@@ -384,7 +372,6 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions) {
                         : null;
 
       let regionKey = null;
-      let isValid = true;
       const remarks = [];
 
       const details = Array.from(obsList).map(obs => {
@@ -392,15 +379,15 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions) {
         const obsCode = obsCodeRaw.toUpperCase();
 
         if (obsCode === 'PDF') {
-          remarks.push('Valid - PDF override');
           return 'PDF (no validation)';
         }
 
         if (!meta.teethSet.has(obsCode)) {
-          isValid = false;
           remarks.push(`Invalid - ${obsCode}`);
         } else {
-          remarks.push(`Valid - ${obsCode}`);
+          // Only add a valid remark if you want the table to always have some text for valid obsCodes.
+          // Otherwise, remove this line to only show remarks for invalid cases.
+          // remarks.push(`Valid - ${obsCode}`);
         }
 
         // Region-based duplication tracking (if description contains quadrant or sextant)
@@ -421,10 +408,7 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions) {
         if (tracker[key]) {
           // Allow if code ends with 9
           if (codeLastDigit !== '9') {
-            isValid = false;
             remarks.push(`Invalid - Duplicate ${regionType} code (${regionKey})`);
-          } else {
-            remarks.push(`Valid - Duplicate ${regionType} allowed (ends with 9)`);
           }
         } else {
           tracker[key] = true;
@@ -437,8 +421,7 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions) {
         code,
         description: meta.description,
         details,
-        remarks,
-        isValid
+        remarks
       });
     });
   });
@@ -456,11 +439,12 @@ function renderResults(container, rows) {
   }
 
   let lastClaimId = null;
-  window.invalidRows = rows.filter(r => !r.isValid);
+  // Now: Invalid if remarks.length > 0
+  window.invalidRows = rows.filter(r => r.remarks && r.remarks.length > 0);
   document.getElementById('exportBtn').style.display = window.invalidRows.length ? 'inline-block' : 'none';
 
   // Summary statistics
-  const validCount = rows.filter(r => r.isValid).length;
+  const validCount = rows.filter(r => !r.remarks || r.remarks.length === 0).length;
   const totalCount = rows.length;
   const percentage = ((validCount / totalCount) * 100).toFixed(1);
 
@@ -478,11 +462,12 @@ function renderResults(container, rows) {
         ${rows.map(r => {
           const showClaimId = r.claimId !== lastClaimId;
           lastClaimId = r.claimId;
+          const invalidClass = r.remarks && r.remarks.length > 0 ? 'invalid' : 'valid';
           return `
-            <tr class="${r.isValid ? 'valid' : 'invalid'}">
+            <tr class="${invalidClass}">
               <td>${showClaimId ? r.claimId : ''}</td>
               <td>${r.activityId}</td><td>${r.code}</td>
-              <td>${r.description}</td><td>${r.details}</td>
+              <td class="description-col">${r.description}</td><td>${r.details}</td>
               <td>${r.remarks.join('<br>')}</td>
             </tr>`;
         }).join('')}
