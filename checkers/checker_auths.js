@@ -7,12 +7,15 @@ const getText = (parent, tag) => (parent.querySelector(tag)?.textContent || "").
 function updateStatus() {
   const resultsDiv = document.getElementById("results");
   let messages = [];
-  if (xmlClaimCount === -1) messages.push("XML file selected, awaiting processing...");
-  else if (xmlClaimCount > 0) messages.push(`${xmlClaimCount} Claims Loaded`);
-  else if (xmlClaimCount === 0) messages.push("No claims loaded");
-  if (xlsxAuthCount === -1) messages.push("XLSX file selected, awaiting processing...");
-  else if (xlsxAuthCount > 0) messages.push(`${xlsxAuthCount} Auths Loaded`);
-  else if (xlsxAuthCount === 0) messages.push("No auths loaded");
+  const sources = [
+    { count: xmlClaimCount, label: "XML", loaded: "Claims", plural: "claims" },
+    { count: xlsxAuthCount, label: "XLSX", loaded: "Auths", plural: "auths" }
+  ];
+  for (const src of sources) {
+    if (src.count === -1) messages.push(`${src.label} file selected, awaiting processing...`);
+    else if (src.count > 0) messages.push(`${src.count} ${src.loaded} Loaded`);
+    else if (src.count === 0) messages.push(`No ${src.plural} loaded`);
+  }
   if (resultsDiv) resultsDiv.textContent = messages.join(" | ");
   const processBtn = document.getElementById("processBtn");
   if (processBtn) processBtn.disabled = !(xmlClaimCount > 0 && xlsxAuthCount > 0);
