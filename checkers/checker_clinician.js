@@ -1,15 +1,12 @@
 (function () {
   'use strict';
 
-  // ======= 1. DOM/Initialization =======
-
   let xmlDoc = null, clinicianMap = {}, clinicianStatusMap = {};
   let xmlInput, clinicianInput, statusInput, processBtn, csvBtn, resultsDiv, uploadDiv;
   let claimCount = 0, clinicianCount = 0, historyCount = 0;
   let lastResults = [];
-  
-  // Load facilities.json and create a Set of valid license numbers
   let affiliatedLicenses = new Set();
+
   fetch('checkers/facilities.json')
     .then(response => response.json())
     .then(data => {
@@ -36,8 +33,6 @@
     if (csvBtn) csvBtn.disabled = true;
     updateUploadStatus();
   });
-
-  // ======= 2. File Handling & Parsing =======
 
   function handleXmlInput(e) {
     const file = e.target.files[0];
@@ -112,7 +107,6 @@
       const data = new Uint8Array(e.target.result);
       const workbook = XLSX.read(data, { type: 'array' });
       let sheet;
-      // Use the correct sheet name if present
       if (sheetName && workbook.SheetNames.includes(sheetName)) {
         sheet = workbook.Sheets[sheetName];
       } else {
@@ -127,28 +121,22 @@
     reader.readAsArrayBuffer(file);
   }
 
-  // ======= Date Conversion Utility =======
-
   function excelDateToISO(excelDate) {
     if (!excelDate) return '';
-    if (typeof excelDate === 'string' && /^\d{4}-\d{2}-\d{2}/.test(excelDate)) return excelDate.slice(0, 10); // already ISO
+    if (typeof excelDate === 'string' && /^\d{4}-\d{2}-\d{2}/.test(excelDate)) return excelDate.slice(0, 10);
     const serial = Number(excelDate);
     if (isNaN(serial)) return excelDate;
-    // Excel's "zero" is 1899-12-31, but JS Date UTC counts from 1970
     const utc_days = serial - 25569;
     const utc_value = utc_days * 86400 * 1000;
     const d = new Date(utc_value);
     return d.toISOString().slice(0, 10);
   }
 
-  // ======= 3. Data Utilities =======
-
   function getText(parent, tag) {
     const el = parent.getElementsByTagName(tag)[0];
     return el ? el.textContent.trim() : '';
   }
 
-  // Returns the most recent license status record for a clinician at a facility before/on a given date.
   function getMostRecentStatusRecord(entries, providerId, encounterStart) {
     const encounterD = new Date(excelDateToISO(encounterStart));
     const eligible = entries.filter(e =>
@@ -163,16 +151,7 @@
     return eligible[0];
   }
 
-  function isClinicianActiveAtAffiliated(clinicianId) {
-    const entries = clinicianStatusMap[clinicianId] || [];
-    return entries.some(entry =>
-      affiliatedLicenses.has(entry.facility) &&
-      (entry.status || '').toLowerCase() === 'active'
-    );
-  }
-
-  // ======= 4. Validation Logic =======
-  // ======= MODIFIED SECTION: Detect All Status Entries =======
+  // Main validation logic
   function validateClinicians() {
     if (!xmlDoc) return;
     const claims = xmlDoc.getElementsByTagName('Claim');
@@ -190,9 +169,13 @@
         const pid = getText(act, 'Clinician');
         const remarks = [];
 
-        // Check for missing fields
-        if (!oid) remarks.push('OrderingClinician missing');
-        if (!pid) remarks.push('Clinician missing');
+        // Ordering and performing display
+        const orderingDisplay = oid ? (
+          clinicianMap[oid]?.name ? `${oid} (${clinicianMap[oid].name})` : oid
+        ) : '';
+        const performingDisplay = pid ? (
+          clinicianMap[pid]?.name ? `${pid} (${clinicianMap[pid].name})` : pid
+        ) : '';
 
         // Category check
         if (oid && pid && oid !== pid) {
@@ -201,55 +184,55 @@
           if (oCat && pCat && oCat !== pCat) remarks.push('Category mismatch');
         }
 
-        // === NEW: Check and report all status entries for the performing clinician ===
-        let allStatusRemarks = [];
-        let performingStatusEntries = [];
-        if (pid && clinicianStatusMap[pid]) {
-          // Log the full array of license history for this clinician
-          console.log(`All license history entries for clinician ${pid}:`, clinicianStatusMap[pid]);
-          clinicianStatusMap[pid].forEach((entry) => {
-            let entryRemark = '';
-            const isAffiliated = affiliatedLicenses.has(entry.facility);
-            const isActive = (entry.status || '').toLowerCase() === 'active';
-        
-            performingStatusEntries.push(
-              `${entry.facility || '[No Facility]'}: ${entry.effective || '[No Date]'} (${entry.status || '[No Status]'})`
-            );
-        
-            if (!isAffiliated) entryRemark += `Not affiliated with facility ${entry.facility || '[No Facility]'}`;
-            if (!isActive) entryRemark += (entryRemark ? '; ' : '') + `Status is not ACTIVE (${entry.status || '[No Status]'})`;
-        
-            if (entryRemark) {
-              allStatusRemarks.push(
-                `Facility ${entry.facility || '[No Facility]'} on ${entry.effective || '[No Date]'}: ${entryRemark}`
-              );
-            }
-          });
-        } else if (pid) {
-          allStatusRemarks.push('No status history found for clinician');
+        // Most recent status for performing clinician at this facility and encounter date
+        let performingEff = '', performingStatus = '', performingStatusDisplay = '', mostRecentRemark = '';
+        let valid = true;
+
+        const entries = clinicianStatusMap[pid] || [];
+        const mostRecent = getMostRecentStatusRecord(entries, providerId, encounterStart);
+
+        // Full license history for this clinician
+        // Also log to console as you requested
+        console.log(`All license history entries for clinician ${pid}:`, entries);
+        const fullHistory = entries.map(e =>
+          `${e.facility || '[No Facility]'}: ${e.effective || '[No Date]'} (${e.status || '[No Status]'})`
+        ).join('; ');
+
+        if (mostRecent) {
+          performingEff = mostRecent.effective || '';
+          performingStatus = mostRecent.status || '';
+          performingStatusDisplay = (performingEff ? `${performingEff}${performingStatus ? ' (' + performingStatus + ')' : ''}` : '');
+
+          if ((mostRecent.status || '').toLowerCase() !== 'active') {
+            mostRecentRemark = `Performing: Status is not ACTIVE (${mostRecent.status})`;
+            valid = false;
+          }
+          if (!affiliatedLicenses.has(mostRecent.facility)) {
+            mostRecentRemark += (mostRecentRemark ? '; ' : '') + `Not affiliated facility (${mostRecent.facility})`;
+            valid = false;
+          }
+        } else {
+          mostRecentRemark = 'No license record at this facility for encounter date';
+          valid = false;
         }
 
-        if (allStatusRemarks.length > 0) {
-          remarks.push(...allStatusRemarks);
-        }
-
-        // Legacy: If you still want to keep the "Not ACTIVE at any affiliated facility" summary
-        if (pid && !isClinicianActiveAtAffiliated(pid)) remarks.push('Performing: Not ACTIVE at any affiliated facility');
-
-        if (remarks.length > 0) console.log(`Claim ${claimId}, Activity ${activityId}:`, remarks);
+        if (!oid) remarks.push('OrderingClinician missing');
+        if (!pid) remarks.push('Clinician missing');
+        if (mostRecentRemark) remarks.push(mostRecentRemark);
 
         results.push({
           claimId,
           activityId,
           encounterStart,
           facilityLicenseNumber: providerId,
-          ordering: oid,
-          orderingName: (clinicianMap[oid]?.name || '').trim(),
-          performing: pid,
-          performingName: (clinicianMap[pid]?.name || '').trim(),
-          performingStatuses: performingStatusEntries.join('; '),
+          orderingDisplay,
+          performingDisplay,
+          performingEff,
+          performingStatus,
+          recentStatus: performingStatusDisplay,
+          fullHistory,
           remarks,
-          valid: remarks.length === 0
+          valid
         });
       }
     }
@@ -258,15 +241,12 @@
     if (csvBtn) csvBtn.disabled = !(results.length > 0);
   }
 
-  // ======= 5. Results Rendering (Show All Status Entries) =======
-
+  // Render results (with full history column and recent performing status)
   function renderResults(results) {
     let validCt = results.filter(r => r.valid).length;
     let total = results.length;
     let pct = total ? Math.round(validCt / total * 100) : 0;
 
-    // Track displayed claim IDs to avoid duplicates
-    const displayedClaims = new Set();
     resultsDiv.innerHTML =
       `<div class="${pct > 90 ? 'valid-message' : pct > 70 ? 'warning-message' : 'error-message'}">
         Validation: ${validCt}/${total} valid (${pct}%)
@@ -274,67 +254,51 @@
       '<table><tr>' +
       '<th>Claim</th><th>Activity</th><th>Encounter Start</th><th>Facility License Number</th>' +
       '<th>Ordering</th>' +
-      '<th>Performing</th><th>All Performing License Statuses</th>' +
+      '<th>Performing</th><th>Recent Performing License Status</th><th>Full License History</th>' +
       '<th>Remarks</th></tr>' +
       results.map(r => {
-        if (displayedClaims.has(r.claimId)) return '';
-        displayedClaims.add(r.claimId);
-
-        const orderingDisplay =
-          r.ordering ? (r.orderingName ? `${r.ordering} (${r.orderingName})` : r.ordering) : '';
-        const performingDisplay =
-          r.performing ? (r.performingName ? `${r.performing} (${r.performingName})` : r.performing) : '';
-
-        const performingStatusDisplay = r.performingStatuses || '';
-
         return `<tr class="${r.valid ? 'valid' : 'invalid'}">
           <td>${r.claimId}</td>
           <td>${r.activityId}</td>
           <td>${r.encounterStart}</td>
           <td>${r.facilityLicenseNumber}</td>
-          <td>${orderingDisplay}</td>
-          <td>${performingDisplay}</td>
-          <td class="description-col">${performingStatusDisplay}</td>
+          <td>${r.orderingDisplay}</td>
+          <td>${r.performingDisplay}</td>
+          <td>${r.recentStatus}</td>
+          <td class="description-col">${r.fullHistory}</td>
           <td class="description-col">${r.remarks.join('; ')}</td>
         </tr>`;
       }).join('') + '</table>';
     updateUploadStatus();
   }
 
+  // Export with your specified headers
   function exportResults() {
     if (!window.XLSX || !lastResults.length) return;
-    // Same duplicate-claim logic for export
-    const displayedClaims = new Set();
     const headers = [
       'Claim ID', 'Activity ID', 'Encounter Start',
       'Facility License Number',
-      'Ordering ID (Name)',
-      'Performing ID (Name)', 'All Performing License Statuses',
+      'Ordering',
+      'Performing', 'Recent Performing License Status',
+      'Full License History',
       'Remarks'
     ];
-    const rows = lastResults.map(r => {
-      if (displayedClaims.has(r.claimId)) return null;
-      displayedClaims.add(r.claimId);
-      const orderingDisplay =
-        r.ordering ? (r.orderingName ? `${r.ordering} (${r.orderingName})` : r.ordering) : '';
-      const performingDisplay =
-        r.performing ? (r.performingName ? `${r.performing} (${r.performingName})` : r.performing) : '';
-      const performingStatusDisplay = r.performingStatuses || '';
-      return [
-        r.claimId, r.activityId, r.encounterStart,
-        r.facilityLicenseNumber || '',
-        orderingDisplay,
-        performingDisplay, performingStatusDisplay,
-        r.remarks.join('; ')
-      ];
-    }).filter(Boolean);
+    const rows = lastResults.map(r => [
+      r.claimId,
+      r.activityId,
+      r.encounterStart,
+      r.facilityLicenseNumber || '',
+      r.orderingDisplay || '',
+      r.performingDisplay || '',
+      r.recentStatus || '',
+      r.fullHistory || '',
+      r.remarks.join('; ')
+    ]);
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
     XLSX.utils.book_append_sheet(wb, ws, 'Results');
     XLSX.writeFile(wb, `ClinicianValidation.xlsx`);
   }
-
-  // ======= 6. Status/State Display =======
 
   function updateUploadStatus() {
     const messages = [];
@@ -343,7 +307,6 @@
     if (historyCount) messages.push(`${historyCount} License Histories Loaded`);
     uploadDiv.textContent = messages.join(', ');
     processBtn.disabled = !(claimCount && clinicianCount && historyCount);
-    // Console log for totals
     console.log(
       `[Loaded] Claims: ${claimCount}, Clinicians: ${clinicianCount}, License Histories: ${historyCount}`
     );
