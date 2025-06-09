@@ -308,14 +308,16 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions) {
         }
         let remarks = [];
         let details = '';
-        let isValid = false;
+        let isValid;
 
         if (obsCodes.length > 0) {
           remarks.push(`Unknown code in repo; obsCodes present: ${obsCodes.join(', ')}`);
           details = obsCodes.join('<br>');
+          isValid = false;
         } else {
           remarks.push(`Unknown code in repo; no obsCodes`);
           details = 'N/A';
+          isValid = true; // <-- MARK AS VALID HERE!
         }
 
         rows.push({
@@ -325,7 +327,7 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions) {
           description: '(not in repository)',
           details,
           remarks,
-          isValid: false
+          isValid
         });
         return; // skip further validation
       }
