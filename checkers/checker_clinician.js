@@ -241,7 +241,7 @@
           }
         }
 
-        // New logic: Valid if clinician has ACTIVE license at any affiliated facility before/on encounter date
+        // --- Valid if clinician has ACTIVE license at any affiliated facility before/on encounter date ---
         let performingEff = '', performingStatus = '', performingStatusDisplay = '';
         let valid = false;
 
@@ -274,14 +274,12 @@
           performingStatus = mostRecent.status || '';
           performingStatusDisplay = (performingEff ? `${performingEff}${performingStatus ? ' (' + performingStatus + ')' : ''}` : '');
         } else {
-          // Only add this remark if there was no eligible license at all (not if valid)
           remarks.push('No ACTIVE affiliated facility license for encounter date');
         }
 
         if (!oid) remarks.push('OrderingClinician missing');
         if (!pid) remarks.push('Clinician missing');
 
-        // Only push the result as invalid if valid is false
         results.push({
           claimId,
           activityId,
@@ -303,7 +301,7 @@
     if (csvBtn) csvBtn.disabled = !(results.length > 0);
   }
 
-  // Render results (with full history column and recent performing status)
+  // Render results (with full history column as modal trigger)
   function renderResults(results) {
     let validCt = results.filter(r => r.valid).length;
     let total = results.length;
@@ -318,7 +316,7 @@
       '<th>Ordering</th>' +
       '<th>Performing</th><th>Recent Performing License Status</th><th>Full License History</th>' +
       '<th>Remarks</th></tr>' +
-      results.map(r => {
+      results.map((r, idx) => {
         return `<tr class="${r.valid ? 'valid' : 'invalid'}">
           <td>${r.claimId}</td>
           <td>${r.activityId}</td>
@@ -327,10 +325,42 @@
           <td>${r.orderingDisplay}</td>
           <td>${r.performingDisplay}</td>
           <td>${r.recentStatus}</td>
-          <td class="description-col">${r.fullHistory}</td>
-          <td class="description-col">${r.valid ? '' : r.remarks.join('; ')}</td>
+          <td class="description-col">
+            <button class="view-license-history" data-fullhistory="${encodeURIComponent(r.fullHistory)}">View</button>
+          </td>
+          <td class="description-col">${r.remarks.join('; ')}</td>
         </tr>`;
-      }).join('') + '</table>';
+      }).join('') + '</table>' +
+      // Modal
+      `<div id="licenseHistoryModal" class="modal" style="display:none;">
+        <div class="modal-content">
+          <span class="close" id="licenseHistoryClose">&times;</span>
+          <h3>Full License History</h3>
+          <pre id="licenseHistoryText"></pre>
+        </div>
+      </div>
+      <style>
+      .modal { display:none; position:fixed; z-index:999; left:0; top:0; width:100vw; height:100vh; background:rgba(0,0,0,0.5);}
+      .modal-content { background:#fff; margin:10% auto; padding:20px; border-radius:8px; width:90%; max-width:600px; position:relative;}
+      .close { position:absolute; right:12px; top:12px; font-size:24px; cursor:pointer;}
+      </style>
+      `;
+
+    // Attach click handlers for license history modal
+    document.querySelectorAll('.view-license-history').forEach(btn => {
+      btn.addEventListener('click', function() {
+        const fullHistory = decodeURIComponent(this.getAttribute('data-fullhistory'));
+        document.getElementById('licenseHistoryText').textContent = fullHistory;
+        document.getElementById('licenseHistoryModal').style.display = 'block';
+      });
+    });
+    document.getElementById('licenseHistoryClose').onclick = function() {
+      document.getElementById('licenseHistoryModal').style.display = 'none';
+    };
+    document.getElementById('licenseHistoryModal').onclick = function(event) {
+      if (event.target === this) this.style.display = 'none';
+    };
+
     updateUploadStatus();
   }
 
@@ -354,7 +384,7 @@
       r.performingDisplay || '',
       r.recentStatus || '',
       r.fullHistory || '',
-      r.valid ? '' : r.remarks.join('; ')
+      r.remarks.join('; ')
     ]);
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
