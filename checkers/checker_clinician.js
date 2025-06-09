@@ -205,18 +205,20 @@
         let allStatusRemarks = [];
         let performingStatusEntries = [];
         if (pid && clinicianStatusMap[pid]) {
+          // Log the full array of license history for this clinician
+          console.log(`All license history entries for clinician ${pid}:`, clinicianStatusMap[pid]);
           clinicianStatusMap[pid].forEach((entry) => {
             let entryRemark = '';
             const isAffiliated = affiliatedLicenses.has(entry.facility);
             const isActive = (entry.status || '').toLowerCase() === 'active';
-
+        
             performingStatusEntries.push(
               `${entry.facility || '[No Facility]'}: ${entry.effective || '[No Date]'} (${entry.status || '[No Status]'})`
             );
-
+        
             if (!isAffiliated) entryRemark += `Not affiliated with facility ${entry.facility || '[No Facility]'}`;
             if (!isActive) entryRemark += (entryRemark ? '; ' : '') + `Status is not ACTIVE (${entry.status || '[No Status]'})`;
-
+        
             if (entryRemark) {
               allStatusRemarks.push(
                 `Facility ${entry.facility || '[No Facility]'} on ${entry.effective || '[No Date]'}: ${entryRemark}`
