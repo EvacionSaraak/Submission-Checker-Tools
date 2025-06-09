@@ -8,14 +8,21 @@
   let affiliatedLicenses = new Set();
   let facilitiesLoaded = false;
 
-  // Robust fetch and post-processing for facilities
-  fetch('checkers/facilities.json')
-    .then(response => response.json())
+  // Robust fetch and error logging for facilities
+  fetch('/Submission-Checker-Tools/checkers/facilities.json')
+    .then(response => {
+      if (!response.ok) {
+        throw new Error(`[FACILITIES FETCH ERROR] HTTP status ${response.status} - ${response.statusText}`);
+      }
+      return response.json();
+    })
     .then(data => {
+      console.log('[DEBUG] Raw facilities.json:', data);
       if (!data || !Array.isArray(data.facilities)) {
-        console.error('[DEBUG] Malformed facilities.json, expected { facilities: [...] }');
+        logFacilityError('Malformed facilities.json, expected { facilities: [...] }', data);
         affiliatedLicenses = new Set();
         facilitiesLoaded = false;
+        updateUploadStatus();
         return;
       }
       affiliatedLicenses = new Set(
@@ -25,15 +32,30 @@
       );
       facilitiesLoaded = true;
       console.log('[DEBUG] Affiliated Licenses Loaded:', Array.from(affiliatedLicenses));
-      console.log('[DEBUG] Raw facilities.json:', data);
       updateUploadStatus();
     })
     .catch(err => {
       affiliatedLicenses = new Set();
       facilitiesLoaded = false;
-      console.error('[DEBUG] Failed to load facilities.json:', err);
+      logFacilityError('Failed to load facilities.json', err);
       updateUploadStatus();
     });
+
+  function logFacilityError(message, detail) {
+    let errorMsg = `[FACILITIES ERROR] ${message}`;
+    if (detail !== undefined) {
+      try {
+        errorMsg += '\nDetail: ' + (typeof detail === 'object' ? JSON.stringify(detail, null, 2) : detail.toString());
+      } catch (e) {
+        errorMsg += '\n[Unable to stringify error detail]';
+      }
+    }
+    console.error(errorMsg);
+    // Optionally, display in UI:
+    if (uploadDiv) {
+      uploadDiv.textContent = 'Facilities Error: ' + message;
+    }
+  }
 
   document.addEventListener('DOMContentLoaded', () => {
     xmlInput = document.getElementById('xmlFileInput');
@@ -65,9 +87,15 @@
       return;
     }
     file.text().then(text => {
-      xmlDoc = new DOMParser().parseFromString(text, 'application/xml');
-      claimCount = xmlDoc.getElementsByTagName('Claim').length;
-      updateUploadStatus();
+      try {
+        xmlDoc = new DOMParser().parseFromString(text, 'application/xml');
+        claimCount = xmlDoc.getElementsByTagName('Claim').length;
+        updateUploadStatus();
+      } catch (err) {
+        logCriticalError('Parsing XML failed', err);
+      }
+    }).catch(err => {
+      logCriticalError('Reading XML file failed', err);
     });
   }
 
@@ -81,19 +109,23 @@
     }
     resultsDiv.innerHTML = 'Loading Excel...';
     readExcel(file, data => {
-      clinicianMap = {};
-      data.forEach(row => {
-        const id = (row['Clinician License'] || '').toString().trim();
-        if (!id) return;
-        clinicianMap[id] = {
-          name: row['Clinician Name'] || row['Name'] || '',
-          category: row['Clinician Category'] || row['Category'] || '',
-        };
-      });
-      clinicianCount = Object.keys(clinicianMap).length;
-      resultsDiv.innerHTML = '';
-      updateUploadStatus();
-      console.log('[DEBUG] Clinician Map Loaded:', clinicianMap);
+      try {
+        clinicianMap = {};
+        data.forEach(row => {
+          const id = (row['Clinician License'] || '').toString().trim();
+          if (!id) return;
+          clinicianMap[id] = {
+            name: row['Clinician Name'] || row['Name'] || '',
+            category: row['Clinician Category'] || row['Category'] || '',
+          };
+        });
+        clinicianCount = Object.keys(clinicianMap).length;
+        resultsDiv.innerHTML = '';
+        updateUploadStatus();
+        console.log('[DEBUG] Clinician Map Loaded:', clinicianMap);
+      } catch (err) {
+        logCriticalError('Processing Clinician Excel failed', err);
+      }
     }, 'Clinicians');
   }
 
@@ -107,40 +139,66 @@
     }
     resultsDiv.innerHTML = 'Loading Excel...';
     readExcel(file, data => {
-      clinicianStatusMap = {};
-      data.forEach(row => {
-        const id = (row['License Number'] || '').toString().trim();
-        if (!id) return;
-        clinicianStatusMap[id] = clinicianStatusMap[id] || [];
-        clinicianStatusMap[id].push({
-          facility: row['Facility License Number'] || '',
-          effective: excelDateToISO(row['Effective Date']),
-          status: row['Status'] || ''
+      try {
+        clinicianStatusMap = {};
+        data.forEach(row => {
+          const id = (row['License Number'] || '').toString().trim();
+          if (!id) return;
+          clinicianStatusMap[id] = clinicianStatusMap[id] || [];
+          clinicianStatusMap[id].push({
+            facility: row['Facility License Number'] || '',
+            effective: excelDateToISO(row['Effective Date']),
+            status: row['Status'] || ''
+          });
         });
-      });
-      historyCount = Object.keys(clinicianStatusMap).length;
-      resultsDiv.innerHTML = '';
-      updateUploadStatus();
-      console.log('[DEBUG] Clinician Status Map Loaded:', clinicianStatusMap);
+        historyCount = Object.keys(clinicianStatusMap).length;
+        resultsDiv.innerHTML = '';
+        updateUploadStatus();
+        console.log('[DEBUG] Clinician Status Map Loaded:', clinicianStatusMap);
+      } catch (err) {
+        logCriticalError('Processing Status Excel failed', err);
+      }
     }, 'Clinician Licensing Status');
+  }
+
+  function logCriticalError(message, detail) {
+    let errorMsg = `[CRITICAL ERROR] ${message}`;
+    if (detail !== undefined) {
+      try {
+        errorMsg += '\nDetail: ' + (typeof detail === 'object' ? JSON.stringify(detail, null, 2) : detail.toString());
+      } catch (e) {
+        errorMsg += '\n[Unable to stringify error detail]';
+      }
+    }
+    console.error(errorMsg);
+    if (resultsDiv) {
+      resultsDiv.innerHTML = `<span style="color:red">${errorMsg.replace(/\n/g, '<br>')}</span>`;
+    }
   }
 
   function readExcel(file, callback, sheetName) {
     const reader = new FileReader();
     reader.onload = function (e) {
-      const data = new Uint8Array(e.target.result);
-      const workbook = XLSX.read(data, { type: 'array' });
-      let sheet;
-      if (sheetName && workbook.SheetNames.includes(sheetName)) {
-        sheet = workbook.Sheets[sheetName];
-      } else {
-        sheet = workbook.Sheets[workbook.SheetNames[0]];
-        if (sheetName) {
-          console.warn(`[Excel] Sheet "${sheetName}" not found. Using first sheet "${workbook.SheetNames[0]}".`);
+      try {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        let sheet;
+        if (sheetName && workbook.SheetNames.includes(sheetName)) {
+          sheet = workbook.Sheets[sheetName];
+        } else {
+          sheet = workbook.Sheets[workbook.SheetNames[0]];
+          if (sheetName) {
+            console.warn(`[Excel] Sheet "${sheetName}" not found. Using first sheet "${workbook.SheetNames[0]}".`);
+          }
         }
+        const rows = XLSX.utils.sheet_to_json(sheet);
+        callback(rows);
+      } catch (err) {
+        logCriticalError('Reading Excel file failed', err);
       }
-      const rows = XLSX.utils.sheet_to_json(sheet);
-      callback(rows);
+    };
+    reader.onerror = function(err) {
+      logCriticalError('FileReader error while reading Excel', err);
     };
     reader.readAsArrayBuffer(file);
   }
@@ -163,7 +221,6 @@
 
   function getMostRecentStatusRecord(entries, providerId, encounterStart) {
     const encounterD = new Date(excelDateToISO(encounterStart));
-    // Normalize facility IDs for robust comparison
     const normalizedProviderId = (providerId || '').toString().trim().toUpperCase();
     const eligible = entries.filter(e =>
       (e.facility || '').toString().trim().toUpperCase() === normalizedProviderId &&
@@ -179,14 +236,16 @@
 
   // Main validation logic
   function validateClinicians() {
-    if (!xmlDoc) return;
+    if (!xmlDoc) {
+      logCriticalError('No XML loaded', '');
+      return;
+    }
     if (!facilitiesLoaded || affiliatedLicenses.size === 0) {
-      alert('Facility list not loaded. Please check facilities.json and reload.');
+      logCriticalError('Facility list not loaded. Please check facilities.json and reload.', '');
       return;
     }
     const claims = xmlDoc.getElementsByTagName('Claim');
     const results = [];
-    // affiliatedLicenses is already normalized at fetch
 
     for (const claim of claims) {
       const providerId = getText(claim, 'ProviderID');
@@ -373,7 +432,6 @@
       messages.push('Facilities not loaded');
     }
     uploadDiv.textContent = messages.join(', ');
-    // Only allow process if all are loaded and facilities loaded with at least one entry
     processBtn.disabled = !(claimCount && clinicianCount && historyCount && facilitiesLoaded && affiliatedLicenses.size);
     console.log(
       `[Loaded] Claims: ${claimCount}, Clinicians: ${clinicianCount}, License Histories: ${historyCount}, Facilities: ${affiliatedLicenses.size}`
