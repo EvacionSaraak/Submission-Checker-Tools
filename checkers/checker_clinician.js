@@ -198,6 +198,31 @@
     return el ? el.textContent.trim() : '';
   }
 
+  // Format the license history for modal display as a table
+  function formatLicenseHistory(fullHistory) {
+    // Split by ';' and further by ':', '(', ')'
+    const rows = fullHistory.split(';').map(e => e.trim()).filter(Boolean);
+    if (rows.length === 0) return "<em>No history</em>";
+    let table = `<table class="modal-license-table"><tr>
+      <th>Facility</th><th>Effective Date</th><th>Status</th></tr>`;
+    for (const row of rows) {
+      // Example: MF5020: 2024-04-19 (ACTIVE)
+      const match = row.match(/^([^:]+):\s*([^\(]+)\s*\(([^)]+)\)$/);
+      if (match) {
+        table += `<tr>
+          <td>${match[1].trim()}</td>
+          <td>${match[2].trim()}</td>
+          <td>${match[3].trim()}</td>
+        </tr>`;
+      } else {
+        // fallback: just show the line
+        table += `<tr><td colspan="3">${row}</td></tr>`;
+      }
+    }
+    table += `</table>`;
+    return table;
+  }
+
   // Main validation logic
   function validateClinicians() {
     if (!xmlDoc) {
@@ -301,7 +326,7 @@
     if (csvBtn) csvBtn.disabled = !(results.length > 0);
   }
 
-  // Render results (with full history column as modal trigger)
+  // Render results (with full history column as modal trigger and formatted modal content)
   function renderResults(results) {
     let validCt = results.filter(r => r.valid).length;
     let total = results.length;
@@ -336,21 +361,15 @@
         <div class="modal-content">
           <span class="close" id="licenseHistoryClose">&times;</span>
           <h3>Full License History</h3>
-          <pre id="licenseHistoryText"></pre>
+          <div id="licenseHistoryText"></div>
         </div>
-      </div>
-      <style>
-      .modal { display:none; position:fixed; z-index:999; left:0; top:0; width:100vw; height:100vh; background:rgba(0,0,0,0.5);}
-      .modal-content { background:#fff; margin:10% auto; padding:20px; border-radius:8px; width:90%; max-width:600px; position:relative;}
-      .close { position:absolute; right:12px; top:12px; font-size:24px; cursor:pointer;}
-      </style>
-      `;
+      </div>`;
 
     // Attach click handlers for license history modal
     document.querySelectorAll('.view-license-history').forEach(btn => {
       btn.addEventListener('click', function() {
         const fullHistory = decodeURIComponent(this.getAttribute('data-fullhistory'));
-        document.getElementById('licenseHistoryText').textContent = fullHistory;
+        document.getElementById('licenseHistoryText').innerHTML = formatLicenseHistory(fullHistory);
         document.getElementById('licenseHistoryModal').style.display = 'block';
       });
     });
