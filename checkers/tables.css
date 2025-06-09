@@ -163,10 +163,19 @@ th {
   background: #f6f8fa;
   padding: 1em;
   border-radius: 4px;
-  white-space: pre-wrap;
+  white-space: pre;
   word-break: break-word;
   max-height: 60vh;
-  overflow-y: auto;
+  max-width: 80vw;
+  overflow: auto;
+  resize: both;
+  box-sizing: border-box;
+}
+
+/* Make modal content draggable when grabbing the header */
+.modal-content.draggable {
+  cursor: move;
+  user-select: none;
 }
 
 .modal-license-table {
