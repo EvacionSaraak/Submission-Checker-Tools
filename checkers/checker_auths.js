@@ -309,7 +309,7 @@ function validateClaims(xmlDoc, xlsxData) {
 // === RENDERERS ===
 
 /**
- * Renders validation results in a table
+ * Renders validation results in a table with details modal
  * @param {Array} results - Validation results
  */
 function renderResults(results) {
@@ -322,7 +322,7 @@ function renderResults(results) {
   }
 
   const table = document.createElement("table");
-  table.className = "styled-table";
+  // Table class is styled by shared_tables.css
 
   // Table header
   table.innerHTML = `
@@ -335,31 +335,29 @@ function renderResults(results) {
       <th class="description-col">Description</th>
       <th>Net Total</th>
       <th>Payer Share</th>
-      <th>Ordering Clinician</th>
-      <th>Auth ID</th>
-      <th>Start Date</th>
-      <th>Ordered On</th>
       <th>Status</th>
-      <th>Denial Code</th>
-      <th>Denial Reason</th>
       <th>Remarks</th>
+      <th>Details</th>
     </tr>
   </thead>`;
 
   const tbody = document.createElement("tbody");
   let lastClaim = null;
 
-  results.forEach(result => {
-    const row = renderRow(result, lastClaim);
+  results.forEach((result, idx) => {
+    const row = renderRow(result, lastClaim, idx);
     lastClaim = result.claimId;
     tbody.appendChild(row);
   });
 
   table.appendChild(tbody);
   container.appendChild(table);
+
+  // Modal setup (only one modal needed)
+  setupDetailsModal(results);
 }
 
-function renderRow(r, lastClaimId) {
+function renderRow(r, lastClaimId, idx) {
   const tr = document.createElement("tr");
   tr.className = r.remarks.length ? 'invalid' : 'valid';
 
@@ -371,7 +369,7 @@ function renderRow(r, lastClaimId) {
   cid.className = "nowrap-col";
   tr.appendChild(cid);
 
-  // XML fields (memberId, id, code, description)
+  // XML fields (memberId, id, code)
   [r.memberId, r.id, r.code].forEach(val => {
     const td = document.createElement("td");
     td.textContent = val || "";
@@ -382,7 +380,7 @@ function renderRow(r, lastClaimId) {
   // Description (wrap allowed)
   const descTd = document.createElement("td");
   descTd.textContent = r.description || "";
-  descTd.className = "wrap-col description-col";
+  descTd.className = "description-col";
   tr.appendChild(descTd);
 
   // Net Total
@@ -397,49 +395,118 @@ function renderRow(r, lastClaimId) {
   payerTd.className = "nowrap-col";
   tr.appendChild(payerTd);
 
-  // Ordering Clinician, Auth ID
-  [r.ordering, r.authID].forEach(val => {
-    const td = document.createElement("td");
-    td.textContent = val || "";
-    td.className = "nowrap-col";
-    tr.appendChild(td);
-  });
-
-  // Start Date (discard time)
-  const startDateTd = document.createElement("td");
-  startDateTd.textContent = r.start.split(' ')[0] || "";
-  startDateTd.className = "nowrap-col";
-  tr.appendChild(startDateTd);
-
-  // Ordered On date (discard time)
-  const orderedOnTd = document.createElement("td");
-  orderedOnTd.textContent = (xls["Ordered On"] || "").split(' ')[0];
-  orderedOnTd.className = "nowrap-col";
-  tr.appendChild(orderedOnTd);
-
   // Status
   const statusTd = document.createElement("td");
   statusTd.textContent = xls["Status"] || xls.status || "";
   statusTd.className = "nowrap-col";
   tr.appendChild(statusTd);
 
-  // Denial Code / Reason
-  const dc = document.createElement("td");
-  dc.textContent = r.denialCode;
-  dc.className = "nowrap-col";
-  tr.appendChild(dc);
-  const dr = document.createElement("td");
-  dr.textContent = r.denialReason;
-  dr.className = "nowrap-col";
-  tr.appendChild(dr);
-
-  // Remarks (wrap allowed)
+  // Remarks (summary only)
   const remarksTd = document.createElement("td");
-  remarksTd.innerHTML = (r.remarks || []).map(m => `<div>${m}</div>`).join("");
+  if (r.remarks && r.remarks.length) {
+    remarksTd.innerHTML = `<div>${r.remarks[0]}${r.remarks.length > 1 ? " (+)" : ""}</div>`;
+    remarksTd.title = r.remarks.join('\n');
+  } else {
+    remarksTd.textContent = "";
+  }
   remarksTd.className = "wrap-col remarks-col";
   tr.appendChild(remarksTd);
 
+  // Details button (opens modal)
+  const detailsTd = document.createElement("td");
+  const detailsBtn = document.createElement("button");
+  detailsBtn.textContent = "View";
+  detailsBtn.className = "details-btn";
+  detailsBtn.setAttribute("data-result-idx", idx);
+  detailsBtn.style.padding = "2px 10px";
+  detailsBtn.style.fontSize = "13px";
+  detailsBtn.style.borderRadius = "4px";
+  detailsBtn.style.border = "1px solid #bbb";
+  detailsBtn.style.background = "#f6f8fa";
+  detailsBtn.style.cursor = "pointer";
+  detailsBtn.onmouseover = function() {
+    this.style.background = "#eaeaea";
+  };
+  detailsBtn.onmouseout = function() {
+    this.style.background = "#f6f8fa";
+  };
+  detailsTd.appendChild(detailsBtn);
+  tr.appendChild(detailsTd);
+
   return tr;
+}
+
+// Setup modal HTML and event listeners
+function setupDetailsModal(results) {
+  let modal = document.getElementById("details-modal");
+  if (!modal) {
+    // Modal HTML (use CSS from shared_tables.css: .modal, .modal-content, .close)
+    modal = document.createElement("div");
+    modal.id = "details-modal";
+    modal.className = "modal";
+    modal.innerHTML = `
+      <div class="modal-content">
+        <span class="close" tabindex="0" role="button" aria-label="Close">&times;</span>
+        <div id="modal-body"></div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+  }
+  const modalBody = modal.querySelector("#modal-body");
+  const closeBtn = modal.querySelector(".close");
+
+  // Close modal
+  closeBtn.onclick = () => {
+    modal.style.display = "none";
+    modalBody.innerHTML = "";
+  };
+  closeBtn.onkeydown = (e) => {
+    if (e.key === "Escape" || e.key === " " || e.key === "Enter") {
+      modal.style.display = "none";
+      modalBody.innerHTML = "";
+    }
+  };
+  window.addEventListener("keydown", (event) => {
+    if (modal.style.display === "block" && event.key === "Escape") {
+      modal.style.display = "none";
+      modalBody.innerHTML = "";
+    }
+  });
+  window.onclick = event => {
+    if (event.target === modal) {
+      modal.style.display = "none";
+      modalBody.innerHTML = "";
+    }
+  };
+
+  // Attach event listeners to all details buttons
+  document.querySelectorAll(".details-btn").forEach(btn => {
+    btn.onclick = function() {
+      const idx = parseInt(this.getAttribute("data-result-idx"), 10);
+      const r = results[idx];
+      const xls = r.xlsRow || {};
+      // Modal content
+      modalBody.innerHTML = `
+        <h3 style="margin-top:0;">Details for Claim ID: ${r.claimId}, Activity ID: ${r.id}</h3>
+        <table class="modal-license-table">
+          <tr><th>Ordering Clinician</th><td>${r.ordering || ""}</td></tr>
+          <tr><th>Auth ID</th><td>${r.authID || ""}</td></tr>
+          <tr><th>Start Date</th><td>${r.start ? r.start.split(' ')[0] : ""}</td></tr>
+          <tr><th>Ordered On</th><td>${(xls["Ordered On"] || "").split(' ')[0]}</td></tr>
+          <tr><th>Denial Code</th><td>${r.denialCode || ""}</td></tr>
+          <tr><th>Denial Reason</th><td>${r.denialReason || ""}</td></tr>
+          <tr><th>All Remarks</th><td>${(r.remarks || []).map(m => `<div>${m}</div>`).join("") || ""}</td></tr>
+        </table>
+        <details>
+          <summary>Full Row Data</summary>
+          <pre id="licenseHistoryText">${JSON.stringify(r, null, 2)}</pre>
+        </details>
+      `;
+      modal.style.display = "block";
+      // Accessibility: focus close button
+      setTimeout(() => { closeBtn.focus(); }, 0);
+    };
+  });
 }
 
 // === MAIN PROCESSING ===
