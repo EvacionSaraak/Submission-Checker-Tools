@@ -278,13 +278,17 @@ function sextantLabel(s) {
 // --------------------------------------------------------
 // Modified validateActivities: ignore non-repo codes except for obsCode flagging
 // --------------------------------------------------------
+// ... [unchanged constants and helpers remain above this point]
 function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions) {
   const rows = [];
+  const claimSummaries = {}; // Track per-claim validity
   const claimRegionTrack = {}; // Tracks code usage per quadrant/sextant per claim
 
   Array.from(xmlDoc.getElementsByTagName('Claim')).forEach(claim => {
     const claimId = claim.querySelector('ID')?.textContent || '(no claim ID)';
     claimRegionTrack[claimId] = { sextant: {}, quadrant: {} };
+
+    let claimHasInvalid = false;
 
     Array.from(claim.getElementsByTagName('Activity')).forEach(act => {
       const obsList = act.getElementsByTagName('Observation');
@@ -355,6 +359,8 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions) {
           details = 'N/A';
         }
 
+        if (remarks.length > 0) claimHasInvalid = true;
+
         rows.push({
           claimId,
           activityId,
@@ -384,10 +390,6 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions) {
 
         if (!meta.teethSet.has(obsCode)) {
           remarks.push(`Invalid - ${obsCode}`);
-        } else {
-          // Only add a valid remark if you want the table to always have some text for valid obsCodes.
-          // Otherwise, remove this line to only show remarks for invalid cases.
-          // remarks.push(`Valid - ${obsCode}`);
         }
 
         // Region-based duplication tracking (if description contains quadrant or sextant)
@@ -415,6 +417,8 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions) {
         }
       }
 
+      if (remarks.length > 0) claimHasInvalid = true;
+
       rows.push({
         claimId,
         activityId,
@@ -424,8 +428,12 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions) {
         remarks
       });
     });
+
+    claimSummaries[claimId] = claimHasInvalid;
   });
 
+  // Attach claim validity summary to rows for further reference (if needed)
+  rows.__claimSummaries = claimSummaries;
   return rows;
 }
 
@@ -443,12 +451,13 @@ function renderResults(container, rows) {
   window.invalidRows = rows.filter(r => r.remarks && r.remarks.length > 0);
   document.getElementById('exportBtn').style.display = window.invalidRows.length ? 'inline-block' : 'none';
 
-  // Summary statistics
-  const validCount = rows.filter(r => !r.remarks || r.remarks.length === 0).length;
-  const totalCount = rows.length;
-  const percentage = ((validCount / totalCount) * 100).toFixed(1);
+  // Summary statistics, per claim (use __claimSummaries)
+  const claimSummaries = rows.__claimSummaries || {};
+  const totalClaims = Object.keys(claimSummaries).length;
+  const validClaims = Object.values(claimSummaries).filter(isInvalid => !isInvalid).length;
+  const percentage = totalClaims === 0 ? "0.0" : ((validClaims / totalClaims) * 100).toFixed(1);
 
-  summaryBox.textContent = `Valid: ${validCount} / ${totalCount} (${percentage}%)`;
+  summaryBox.textContent = `Valid claims: ${validClaims} / ${totalClaims} (${percentage}%)`;
 
   const html = `
     <table border="1" style="width:100%;border-collapse:collapse">
