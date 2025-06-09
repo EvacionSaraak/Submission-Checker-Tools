@@ -276,7 +276,7 @@ function sextantLabel(s) {
 }
 
 // --------------------------------------------------------
-// Updated validateActivities: support conditional region‐check
+// Modified validateActivities: ignore non-repo codes except for obsCode flagging
 // --------------------------------------------------------
 function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions) {
   const rows = [];
@@ -288,46 +288,56 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions) {
 
     Array.from(claim.getElementsByTagName('Activity')).forEach(act => {
       const obsList = act.getElementsByTagName('Observation');
-      if (!obsList.length) return;
-
       const activityId = act.querySelector('ID')?.textContent || '';
       const rawCode = act.querySelector('Code')?.textContent || '';
       const code = rawCode.trim();
       const codeLastDigit = code.slice(-1);
 
-      // Get metadata or fallback
+      // If the code does NOT exist in the repo JSON, ignore it for validation,
+      // but if it has obsCodes, flag it; include all in the table
       let meta = codeToMeta[code];
-      if (!meta || !meta.description || meta.description === '(no description)') {
-        const fallback = fallbackDescriptions?.[code];
-        if (fallback && fallback.description) {
-          meta = {
-            teethSet: ALL_TEETH, // fallback description implies no region restriction
-            description: fallback.description
-          };
-        }
-      }
 
-      // Still no valid description? Mark invalid
-      if (!meta || !meta.description || meta.description === '(no description)') {
+      if (!meta) {
+        // Collect all obsCodes for this activity
+        let obsCodes = [];
+        if (obsList.length) {
+          obsCodes = Array.from(obsList).map(obs => {
+            const obsCodeRaw = obs.querySelector('Code')?.textContent.trim() || '';
+            return obsCodeRaw.toUpperCase();
+          }).filter(Boolean);
+        }
+        let remarks = [];
+        let details = '';
+        let isValid = false;
+
+        if (obsCodes.length > 0) {
+          remarks.push(`Unknown code in repo; obsCodes present: ${obsCodes.join(', ')}`);
+          details = obsCodes.join('<br>');
+        } else {
+          remarks.push(`Unknown code in repo; no obsCodes`);
+          details = 'N/A';
+        }
+
         rows.push({
           claimId,
           activityId,
           code,
-          description: '(no description)',
-          details: 'N/A',
-          remarks: ['Invalid - Missing description'],
+          description: '(not in repository)',
+          details,
+          remarks,
           isValid: false
         });
-        return;
+        return; // skip further validation
       }
 
-      let isValid = true;
-      const remarks = [];
+      // Standard validation for known codes
       const regionType = meta.description.toLowerCase().includes('sextant') ? 'sextant'
                         : meta.description.toLowerCase().includes('quadrant') ? 'quadrant'
                         : null;
 
       let regionKey = null;
+      let isValid = true;
+      const remarks = [];
 
       const details = Array.from(obsList).map(obs => {
         const obsCodeRaw = obs.querySelector('Code')?.textContent.trim() || '';
