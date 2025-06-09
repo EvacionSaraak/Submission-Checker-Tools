@@ -6,14 +6,33 @@
   let claimCount = 0, clinicianCount = 0, historyCount = 0;
   let lastResults = [];
   let affiliatedLicenses = new Set();
+  let facilitiesLoaded = false;
 
+  // Robust fetch and post-processing for facilities
   fetch('checkers/facilities.json')
     .then(response => response.json())
     .then(data => {
+      if (!data || !Array.isArray(data.facilities)) {
+        console.error('[DEBUG] Malformed facilities.json, expected { facilities: [...] }');
+        affiliatedLicenses = new Set();
+        facilitiesLoaded = false;
+        return;
+      }
       affiliatedLicenses = new Set(
-        data.facilities.map(f => (f.license || '').toString().trim().toUpperCase())
+        data.facilities
+          .map(f => (f.license || '').toString().trim().toUpperCase())
+          .filter(x => !!x)
       );
+      facilitiesLoaded = true;
       console.log('[DEBUG] Affiliated Licenses Loaded:', Array.from(affiliatedLicenses));
+      console.log('[DEBUG] Raw facilities.json:', data);
+      updateUploadStatus();
+    })
+    .catch(err => {
+      affiliatedLicenses = new Set();
+      facilitiesLoaded = false;
+      console.error('[DEBUG] Failed to load facilities.json:', err);
+      updateUploadStatus();
     });
 
   document.addEventListener('DOMContentLoaded', () => {
@@ -161,10 +180,13 @@
   // Main validation logic
   function validateClinicians() {
     if (!xmlDoc) return;
+    if (!facilitiesLoaded || affiliatedLicenses.size === 0) {
+      alert('Facility list not loaded. Please check facilities.json and reload.');
+      return;
+    }
     const claims = xmlDoc.getElementsByTagName('Claim');
     const results = [];
-    // Prepare normalized affiliated license set for robust comparison
-    const normalizedAffiliatedLicenses = affiliatedLicenses; // already normalized at fetch
+    // affiliatedLicenses is already normalized at fetch
 
     for (const claim of claims) {
       const providerId = getText(claim, 'ProviderID');
@@ -219,16 +241,16 @@
 
           // Normalize facility for robust comparison
           const fac = (mostRecent.facility || '').toString().trim().toUpperCase();
-          const isAffiliated = normalizedAffiliatedLicenses.has(fac);
+          const isAffiliated = affiliatedLicenses.has(fac);
 
           console.log(`[Validator] Checking performing clinician for claim ${claimId}, activity ${activityId}:`);
           console.log('  Facility being checked:', JSON.stringify(fac));
-          console.log('  All affiliated:', Array.from(normalizedAffiliatedLicenses));
+          console.log('  All affiliated:', Array.from(affiliatedLicenses));
           console.log('  Is Affiliated:', isAffiliated);
           console.log('  Status:', (mostRecent.status || '').toLowerCase());
           if (!isAffiliated) {
             // Show matches if not found
-            const similar = Array.from(normalizedAffiliatedLicenses).filter(x => x.includes(fac) || fac.includes(x));
+            const similar = Array.from(affiliatedLicenses).filter(x => x.includes(fac) || fac.includes(x));
             console.log('  Similar entries in set:', similar);
           }
 
@@ -345,10 +367,16 @@
     if (claimCount) messages.push(`${claimCount} Claims Loaded`);
     if (clinicianCount) messages.push(`${clinicianCount} Clinicians Loaded`);
     if (historyCount) messages.push(`${historyCount} License Histories Loaded`);
+    if (facilitiesLoaded && affiliatedLicenses.size) {
+      messages.push(`${affiliatedLicenses.size} Facilities Loaded`);
+    } else {
+      messages.push('Facilities not loaded');
+    }
     uploadDiv.textContent = messages.join(', ');
-    processBtn.disabled = !(claimCount && clinicianCount && historyCount);
+    // Only allow process if all are loaded and facilities loaded with at least one entry
+    processBtn.disabled = !(claimCount && clinicianCount && historyCount && facilitiesLoaded && affiliatedLicenses.size);
     console.log(
-      `[Loaded] Claims: ${claimCount}, Clinicians: ${clinicianCount}, License Histories: ${historyCount}`
+      `[Loaded] Claims: ${claimCount}, Clinicians: ${clinicianCount}, License Histories: ${historyCount}, Facilities: ${affiliatedLicenses.size}`
     );
   }
 
