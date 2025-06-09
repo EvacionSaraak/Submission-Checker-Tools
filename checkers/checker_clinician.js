@@ -8,7 +8,7 @@
   let claimCount = 0, clinicianCount = 0, historyCount = 0;
   let lastResults = [];
   
-  // Load facilities.json and create a Set of valid license numbers (somewhere at the top, after facilities.json is loaded)
+  // Load facilities.json and create a Set of valid license numbers
   let affiliatedLicenses = new Set();
   fetch('checkers/facilities.json')
     .then(response => response.json())
@@ -16,7 +16,6 @@
       affiliatedLicenses = new Set(data.facilities.map(f => f.license));
     });
 
-  
   document.addEventListener('DOMContentLoaded', () => {
     xmlInput = document.getElementById('xmlFileInput');
     clinicianInput = document.getElementById('clinicianFileInput');
@@ -163,17 +162,17 @@
     );
     return eligible[0];
   }
-  
+
   function isClinicianActiveAtAffiliated(clinicianId) {
     const entries = clinicianStatusMap[clinicianId] || [];
     return entries.some(entry =>
       affiliatedLicenses.has(entry.facility) &&
       (entry.status || '').toLowerCase() === 'active'
     );
-  }  
+  }
 
   // ======= 4. Validation Logic =======
-  
+  // ======= MODIFIED SECTION: Detect All Status Entries =======
   function validateClinicians() {
     if (!xmlDoc) return;
     const claims = xmlDoc.getElementsByTagName('Claim');
@@ -182,7 +181,7 @@
       const providerId = getText(claim, 'ProviderID');
       const encounter = claim.getElementsByTagName('Encounter')[0];
       const encounterStart = getText(encounter, 'Start');
-  
+
       const activities = claim.getElementsByTagName('Activity');
       for (const act of activities) {
         const claimId = getText(claim, 'ID');
@@ -190,22 +189,53 @@
         const oid = getText(act, 'OrderingClinician');
         const pid = getText(act, 'Clinician');
         const remarks = [];
-  
+
         // Check for missing fields
         if (!oid) remarks.push('OrderingClinician missing');
         if (!pid) remarks.push('Clinician missing');
-  
+
         // Category check
         if (oid && pid && oid !== pid) {
           const oCat = clinicianMap[oid]?.category;
           const pCat = clinicianMap[pid]?.category;
           if (oCat && pCat && oCat !== pCat) remarks.push('Category mismatch');
         }
-  
-        // NEW: Check if performing clinician is ACTIVE at any affiliated facility
+
+        // === NEW: Check and report all status entries for the performing clinician ===
+        let allStatusRemarks = [];
+        let performingStatusEntries = [];
+        if (pid && clinicianStatusMap[pid]) {
+          clinicianStatusMap[pid].forEach((entry) => {
+            let entryRemark = '';
+            const isAffiliated = affiliatedLicenses.has(entry.facility);
+            const isActive = (entry.status || '').toLowerCase() === 'active';
+
+            performingStatusEntries.push(
+              `${entry.facility || '[No Facility]'}: ${entry.effective || '[No Date]'} (${entry.status || '[No Status]'})`
+            );
+
+            if (!isAffiliated) entryRemark += `Not affiliated with facility ${entry.facility || '[No Facility]'}`;
+            if (!isActive) entryRemark += (entryRemark ? '; ' : '') + `Status is not ACTIVE (${entry.status || '[No Status]'})`;
+
+            if (entryRemark) {
+              allStatusRemarks.push(
+                `Facility ${entry.facility || '[No Facility]'} on ${entry.effective || '[No Date]'}: ${entryRemark}`
+              );
+            }
+          });
+        } else if (pid) {
+          allStatusRemarks.push('No status history found for clinician');
+        }
+
+        if (allStatusRemarks.length > 0) {
+          remarks.push(...allStatusRemarks);
+        }
+
+        // Legacy: If you still want to keep the "Not ACTIVE at any affiliated facility" summary
         if (pid && !isClinicianActiveAtAffiliated(pid)) remarks.push('Performing: Not ACTIVE at any affiliated facility');
+
         if (remarks.length > 0) console.log(`Claim ${claimId}, Activity ${activityId}:`, remarks);
-  
+
         results.push({
           claimId,
           activityId,
@@ -215,8 +245,7 @@
           orderingName: (clinicianMap[oid]?.name || '').trim(),
           performing: pid,
           performingName: (clinicianMap[pid]?.name || '').trim(),
-          performingEff: '', // You may update this as needed
-          performingStatus: '', // You may update this as needed
+          performingStatuses: performingStatusEntries.join('; '),
           remarks,
           valid: remarks.length === 0
         });
@@ -226,7 +255,8 @@
     renderResults(results);
     if (csvBtn) csvBtn.disabled = !(results.length > 0);
   }
-  // ======= 5. Results Rendering =======
+
+  // ======= 5. Results Rendering (Show All Status Entries) =======
 
   function renderResults(results) {
     let validCt = results.filter(r => r.valid).length;
@@ -242,7 +272,7 @@
       '<table><tr>' +
       '<th>Claim</th><th>Activity</th><th>Encounter Start</th><th>Facility License Number</th>' +
       '<th>Ordering</th>' +
-      '<th>Performing</th><th>Performing License Status</th>' +
+      '<th>Performing</th><th>All Performing License Statuses</th>' +
       '<th>Remarks</th></tr>' +
       results.map(r => {
         if (displayedClaims.has(r.claimId)) return '';
@@ -253,8 +283,7 @@
         const performingDisplay =
           r.performing ? (r.performingName ? `${r.performing} (${r.performingName})` : r.performing) : '';
 
-        const performingStatusDisplay = (r.performingEff || r.performingStatus) ?
-          `${r.performingEff || ''}${r.performingEff && r.performingStatus ? ' (' : ''}${r.performingStatus || ''}${r.performingEff && r.performingStatus ? ')' : ''}` : '';
+        const performingStatusDisplay = r.performingStatuses || '';
 
         return `<tr class="${r.valid ? 'valid' : 'invalid'}">
           <td>${r.claimId}</td>
@@ -263,7 +292,7 @@
           <td>${r.facilityLicenseNumber}</td>
           <td>${orderingDisplay}</td>
           <td>${performingDisplay}</td>
-          <td>${performingStatusDisplay}</td>
+          <td class="description-col">${performingStatusDisplay}</td>
           <td class="description-col">${r.remarks.join('; ')}</td>
         </tr>`;
       }).join('') + '</table>';
@@ -276,9 +305,9 @@
     const displayedClaims = new Set();
     const headers = [
       'Claim ID', 'Activity ID', 'Encounter Start',
-      'Facility License Number', // <-- add this
+      'Facility License Number',
       'Ordering ID (Name)',
-      'Performing ID (Name)', 'Performing License Status',
+      'Performing ID (Name)', 'All Performing License Statuses',
       'Remarks'
     ];
     const rows = lastResults.map(r => {
@@ -288,11 +317,10 @@
         r.ordering ? (r.orderingName ? `${r.ordering} (${r.orderingName})` : r.ordering) : '';
       const performingDisplay =
         r.performing ? (r.performingName ? `${r.performing} (${r.performingName})` : r.performing) : '';
-      const performingStatusDisplay = (r.performingEff || r.performingStatus) ?
-        `${r.performingEff || ''}${r.performingEff && r.performingStatus ? ' (' : ''}${r.performingStatus || ''}${r.performingEff && r.performingStatus ? ')' : ''}` : '';
+      const performingStatusDisplay = r.performingStatuses || '';
       return [
         r.claimId, r.activityId, r.encounterStart,
-        r.facilityLicenseNumber || '', // <-- add this
+        r.facilityLicenseNumber || '',
         orderingDisplay,
         performingDisplay, performingStatusDisplay,
         r.remarks.join('; ')
