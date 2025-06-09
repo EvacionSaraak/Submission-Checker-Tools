@@ -10,7 +10,10 @@
   fetch('checkers/facilities.json')
     .then(response => response.json())
     .then(data => {
-      affiliatedLicenses = new Set(data.facilities.map(f => f.license));
+      affiliatedLicenses = new Set(
+        data.facilities.map(f => (f.license || '').toString().trim().toUpperCase())
+      );
+      console.log('[DEBUG] Affiliated Licenses Loaded:', Array.from(affiliatedLicenses));
     });
 
   document.addEventListener('DOMContentLoaded', () => {
@@ -71,6 +74,7 @@
       clinicianCount = Object.keys(clinicianMap).length;
       resultsDiv.innerHTML = '';
       updateUploadStatus();
+      console.log('[DEBUG] Clinician Map Loaded:', clinicianMap);
     }, 'Clinicians');
   }
 
@@ -98,6 +102,7 @@
       historyCount = Object.keys(clinicianStatusMap).length;
       resultsDiv.innerHTML = '';
       updateUploadStatus();
+      console.log('[DEBUG] Clinician Status Map Loaded:', clinicianStatusMap);
     }, 'Clinician Licensing Status');
   }
 
@@ -159,9 +164,7 @@
     const claims = xmlDoc.getElementsByTagName('Claim');
     const results = [];
     // Prepare normalized affiliated license set for robust comparison
-    const normalizedAffiliatedLicenses = new Set(
-      Array.from(affiliatedLicenses).map(x => x.toString().trim().toUpperCase())
-    );
+    const normalizedAffiliatedLicenses = affiliatedLicenses; // already normalized at fetch
 
     for (const claim of claims) {
       const providerId = getText(claim, 'ProviderID');
@@ -204,7 +207,6 @@
         const mostRecent = getMostRecentStatusRecord(entries, providerId, encounterStart);
 
         // Full license history for this clinician
-        // Also log to console as you requested
         console.log(`All license history entries for clinician ${pid}:`, entries);
         const fullHistory = entries.map(e =>
           `${e.facility || '[No Facility]'}: ${e.effective || '[No Date]'} (${e.status || '[No Status]'})`
@@ -220,10 +222,15 @@
           const isAffiliated = normalizedAffiliatedLicenses.has(fac);
 
           console.log(`[Validator] Checking performing clinician for claim ${claimId}, activity ${activityId}:`);
-          console.log('  Most Recent Facility:', fac);
-          console.log('  Affiliated Licenses:', normalizedAffiliatedLicenses);
+          console.log('  Facility being checked:', JSON.stringify(fac));
+          console.log('  All affiliated:', Array.from(normalizedAffiliatedLicenses));
           console.log('  Is Affiliated:', isAffiliated);
           console.log('  Status:', (mostRecent.status || '').toLowerCase());
+          if (!isAffiliated) {
+            // Show matches if not found
+            const similar = Array.from(normalizedAffiliatedLicenses).filter(x => x.includes(fac) || fac.includes(x));
+            console.log('  Similar entries in set:', similar);
+          }
 
           if ((mostRecent.status || '').toLowerCase() !== 'active') {
             mostRecentRemark = `Performing: Status is not ACTIVE (${mostRecent.status})`;
@@ -266,6 +273,8 @@
           valid
         });
       }
+      // Log claim separator for clarity
+      console.log('---------------------------');
     }
     lastResults = results;
     renderResults(results);
