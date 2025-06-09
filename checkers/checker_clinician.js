@@ -139,8 +139,10 @@
 
   function getMostRecentStatusRecord(entries, providerId, encounterStart) {
     const encounterD = new Date(excelDateToISO(encounterStart));
+    // Normalize facility IDs for robust comparison
+    const normalizedProviderId = (providerId || '').toString().trim().toUpperCase();
     const eligible = entries.filter(e =>
-      e.facility === providerId &&
+      (e.facility || '').toString().trim().toUpperCase() === normalizedProviderId &&
       !!e.effective && !isNaN(new Date(excelDateToISO(e.effective))) &&
       new Date(excelDateToISO(e.effective)) <= encounterD
     );
@@ -156,11 +158,17 @@
     if (!xmlDoc) return;
     const claims = xmlDoc.getElementsByTagName('Claim');
     const results = [];
+    // Prepare normalized affiliated license set for robust comparison
+    const normalizedAffiliatedLicenses = new Set(
+      Array.from(affiliatedLicenses).map(x => x.toString().trim().toUpperCase())
+    );
+  
     for (const claim of claims) {
       const providerId = getText(claim, 'ProviderID');
+      const normalizedProviderId = (providerId || '').toString().trim().toUpperCase();
       const encounter = claim.getElementsByTagName('Encounter')[0];
       const encounterStart = getText(encounter, 'Start');
-
+  
       const activities = claim.getElementsByTagName('Activity');
       for (const act of activities) {
         const claimId = getText(claim, 'ID');
@@ -168,7 +176,7 @@
         const oid = getText(act, 'OrderingClinician');
         const pid = getText(act, 'Clinician');
         const remarks = [];
-
+  
         // Ordering and performing display
         const orderingDisplay = oid ? (
           clinicianMap[oid]?.name ? `${oid} (${clinicianMap[oid].name})` : oid
@@ -176,38 +184,42 @@
         const performingDisplay = pid ? (
           clinicianMap[pid]?.name ? `${pid} (${clinicianMap[pid].name})` : pid
         ) : '';
-
+  
         // Category check
         if (oid && pid && oid !== pid) {
           const oCat = clinicianMap[oid]?.category;
           const pCat = clinicianMap[pid]?.category;
           if (oCat && pCat && oCat !== pCat) remarks.push('Category mismatch');
         }
-
+  
         // Most recent status for performing clinician at this facility and encounter date
         let performingEff = '', performingStatus = '', performingStatusDisplay = '', mostRecentRemark = '';
         let valid = true;
-
+  
         const entries = clinicianStatusMap[pid] || [];
         const mostRecent = getMostRecentStatusRecord(entries, providerId, encounterStart);
-
+  
         // Full license history for this clinician
         // Also log to console as you requested
         console.log(`All license history entries for clinician ${pid}:`, entries);
         const fullHistory = entries.map(e =>
           `${e.facility || '[No Facility]'}: ${e.effective || '[No Date]'} (${e.status || '[No Status]'})`
         ).join('; ');
-
+  
         if (mostRecent) {
           performingEff = mostRecent.effective || '';
           performingStatus = mostRecent.status || '';
           performingStatusDisplay = (performingEff ? `${performingEff}${performingStatus ? ' (' + performingStatus + ')' : ''}` : '');
-
+  
+          // Normalize facility for robust comparison
+          const fac = (mostRecent.facility || '').toString().trim().toUpperCase();
+          const isAffiliated = normalizedAffiliatedLicenses.has(fac);
+  
           if ((mostRecent.status || '').toLowerCase() !== 'active') {
             mostRecentRemark = `Performing: Status is not ACTIVE (${mostRecent.status})`;
             valid = false;
           }
-          if (!affiliatedLicenses.has(mostRecent.facility)) {
+          if (!isAffiliated) {
             mostRecentRemark += (mostRecentRemark ? '; ' : '') + `Not affiliated facility (${mostRecent.facility})`;
             valid = false;
           }
@@ -215,11 +227,11 @@
           mostRecentRemark = 'No license record at this facility for encounter date';
           valid = false;
         }
-
+  
         if (!oid) remarks.push('OrderingClinician missing');
         if (!pid) remarks.push('Clinician missing');
         if (mostRecentRemark) remarks.push(mostRecentRemark);
-
+  
         results.push({
           claimId,
           activityId,
