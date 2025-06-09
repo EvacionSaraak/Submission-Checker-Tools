@@ -8,7 +8,8 @@
   let affiliatedLicenses = new Set();
   let facilitiesLoaded = false;
 
-  // Robust fetch and error logging for facilities
+  // Load affiliated facilities
+  console.log('[INFO] Loading facilities.json...');
   fetch('/Submission-Checker-Tools/checkers/facilities.json')
     .then(response => {
       if (!response.ok) {
@@ -17,9 +18,8 @@
       return response.json();
     })
     .then(data => {
-      console.log('[DEBUG] Raw facilities.json:', data);
       if (!data || !Array.isArray(data.facilities)) {
-        logFacilityError('Malformed facilities.json, expected { facilities: [...] }', data);
+        console.error('[FACILITIES ERROR] Malformed facilities.json, expected { facilities: [...] }');
         affiliatedLicenses = new Set();
         facilitiesLoaded = false;
         updateUploadStatus();
@@ -31,31 +31,15 @@
           .filter(x => !!x)
       );
       facilitiesLoaded = true;
-      console.log('[DEBUG] Affiliated Licenses Loaded:', Array.from(affiliatedLicenses));
+      console.log(`[INFO] Facilities loaded: ${affiliatedLicenses.size}`);
       updateUploadStatus();
     })
     .catch(err => {
       affiliatedLicenses = new Set();
       facilitiesLoaded = false;
-      logFacilityError('Failed to load facilities.json', err);
+      console.error('[FACILITIES ERROR] Failed to load facilities.json:', err);
       updateUploadStatus();
     });
-
-  function logFacilityError(message, detail) {
-    let errorMsg = `[FACILITIES ERROR] ${message}`;
-    if (detail !== undefined) {
-      try {
-        errorMsg += '\nDetail: ' + (typeof detail === 'object' ? JSON.stringify(detail, null, 2) : detail.toString());
-      } catch (e) {
-        errorMsg += '\n[Unable to stringify error detail]';
-      }
-    }
-    console.error(errorMsg);
-    // Optionally, display in UI:
-    if (uploadDiv) {
-      uploadDiv.textContent = 'Facilities Error: ' + message;
-    }
-  }
 
   document.addEventListener('DOMContentLoaded', () => {
     xmlInput = document.getElementById('xmlFileInput');
@@ -122,7 +106,6 @@
         clinicianCount = Object.keys(clinicianMap).length;
         resultsDiv.innerHTML = '';
         updateUploadStatus();
-        console.log('[DEBUG] Clinician Map Loaded:', clinicianMap);
       } catch (err) {
         logCriticalError('Processing Clinician Excel failed', err);
       }
@@ -154,7 +137,6 @@
         historyCount = Object.keys(clinicianStatusMap).length;
         resultsDiv.innerHTML = '';
         updateUploadStatus();
-        console.log('[DEBUG] Clinician Status Map Loaded:', clinicianStatusMap);
       } catch (err) {
         logCriticalError('Processing Status Excel failed', err);
       }
@@ -187,9 +169,6 @@
           sheet = workbook.Sheets[sheetName];
         } else {
           sheet = workbook.Sheets[workbook.SheetNames[0]];
-          if (sheetName) {
-            console.warn(`[Excel] Sheet "${sheetName}" not found. Using first sheet "${workbook.SheetNames[0]}".`);
-          }
         }
         const rows = XLSX.utils.sheet_to_json(sheet);
         callback(rows);
@@ -219,21 +198,6 @@
     return el ? el.textContent.trim() : '';
   }
 
-  function getMostRecentStatusRecord(entries, providerId, encounterStart) {
-    const encounterD = new Date(excelDateToISO(encounterStart));
-    const normalizedProviderId = (providerId || '').toString().trim().toUpperCase();
-    const eligible = entries.filter(e =>
-      (e.facility || '').toString().trim().toUpperCase() === normalizedProviderId &&
-      !!e.effective && !isNaN(new Date(excelDateToISO(e.effective))) &&
-      new Date(excelDateToISO(e.effective)) <= encounterD
-    );
-    if (eligible.length === 0) return null;
-    eligible.sort((a, b) =>
-      new Date(excelDateToISO(b.effective)) - new Date(excelDateToISO(a.effective))
-    );
-    return eligible[0];
-  }
-
   // Main validation logic
   function validateClinicians() {
     if (!xmlDoc) {
@@ -252,7 +216,6 @@
       const normalizedProviderId = (providerId || '').toString().trim().toUpperCase();
       const encounter = claim.getElementsByTagName('Encounter')[0];
       const encounterStart = getText(encounter, 'Start');
-
       const activities = claim.getElementsByTagName('Activity');
       for (const act of activities) {
         const claimId = getText(claim, 'ID');
@@ -273,70 +236,49 @@
         if (oid && pid && oid !== pid) {
           const oCat = clinicianMap[oid]?.category;
           const pCat = clinicianMap[pid]?.category;
-          console.log(`[Validator] Comparing categories for claim ${claimId}, activity ${activityId}: Ordering (${oCat}), Performing (${pCat})`);
           if (oCat && pCat && oCat !== pCat) {
             remarks.push('Category mismatch');
-            console.log(`[Validator] Category mismatch detected for claim ${claimId}, activity ${activityId}`);
           }
         }
 
-        // Most recent status for performing clinician at this facility and encounter date
+        // --- New logic: Validate if clinician has an ACTIVE license at any affiliated facility for that date ---
         let performingEff = '', performingStatus = '', performingStatusDisplay = '', mostRecentRemark = '';
-        let valid = true;
+        let valid = false;
 
         const entries = clinicianStatusMap[pid] || [];
-        const mostRecent = getMostRecentStatusRecord(entries, providerId, encounterStart);
+        const encounterD = new Date(excelDateToISO(encounterStart));
+        // Find all status records at any affiliated facility, ACTIVE, before/on encounter date
+        const eligible = entries.filter(e => {
+          const fac = (e.facility || '').toString().trim().toUpperCase();
+          const effDate = new Date(excelDateToISO(e.effective));
+          return affiliatedLicenses.has(fac) &&
+                 !!e.effective &&
+                 !isNaN(effDate) &&
+                 effDate <= encounterD &&
+                 (e.status || '').toLowerCase() === 'active';
+        });
+        let mostRecent = null;
+        if (eligible.length > 0) {
+          eligible.sort((a, b) => new Date(excelDateToISO(b.effective)) - new Date(excelDateToISO(a.effective)));
+          mostRecent = eligible[0];
+          valid = true;
+        }
 
         // Full license history for this clinician
-        console.log(`All license history entries for clinician ${pid}:`, entries);
         const fullHistory = entries.map(e =>
-          `${e.facility || '[No Facility]'}: ${e.effective || '[No Date]'} (${e.status || '[No Status]'})`
+          `${(e.facility || '[No Facility]').toString().trim().toUpperCase()}: ${e.effective || '[No Date]'} (${e.status || '[No Status]'})`
         ).join('; ');
 
         if (mostRecent) {
           performingEff = mostRecent.effective || '';
           performingStatus = mostRecent.status || '';
           performingStatusDisplay = (performingEff ? `${performingEff}${performingStatus ? ' (' + performingStatus + ')' : ''}` : '');
-
-          // Normalize facility for robust comparison
-          const fac = (mostRecent.facility || '').toString().trim().toUpperCase();
-          const isAffiliated = affiliatedLicenses.has(fac);
-
-          console.log(`[Validator] Checking performing clinician for claim ${claimId}, activity ${activityId}:`);
-          console.log('  Facility being checked:', JSON.stringify(fac));
-          console.log('  All affiliated:', Array.from(affiliatedLicenses));
-          console.log('  Is Affiliated:', isAffiliated);
-          console.log('  Status:', (mostRecent.status || '').toLowerCase());
-          if (!isAffiliated) {
-            // Show matches if not found
-            const similar = Array.from(affiliatedLicenses).filter(x => x.includes(fac) || fac.includes(x));
-            console.log('  Similar entries in set:', similar);
-          }
-
-          if ((mostRecent.status || '').toLowerCase() !== 'active') {
-            mostRecentRemark = `Performing: Status is not ACTIVE (${mostRecent.status})`;
-            valid = false;
-            console.log(`[Validator] Not ACTIVE for claim ${claimId}, activity ${activityId}`);
-          }
-          if (!isAffiliated) {
-            mostRecentRemark += (mostRecentRemark ? '; ' : '') + `Not affiliated facility (${mostRecent.facility})`;
-            valid = false;
-            console.log(`[Validator] Not affiliated for claim ${claimId}, activity ${activityId}`);
-          }
         } else {
-          mostRecentRemark = 'No license record at this facility for encounter date';
-          valid = false;
-          console.log(`[Validator] No license record found for claim ${claimId}, activity ${activityId}`);
+          mostRecentRemark = 'No ACTIVE affiliated facility license for encounter date';
         }
 
-        if (!oid) {
-          remarks.push('OrderingClinician missing');
-          console.log(`[Validator] OrderingClinician missing for claim ${claimId}, activity ${activityId}`);
-        }
-        if (!pid) {
-          remarks.push('Clinician missing');
-          console.log(`[Validator] Clinician missing for claim ${claimId}, activity ${activityId}`);
-        }
+        if (!oid) remarks.push('OrderingClinician missing');
+        if (!pid) remarks.push('Clinician missing');
         if (mostRecentRemark) remarks.push(mostRecentRemark);
 
         results.push({
@@ -354,8 +296,6 @@
           valid
         });
       }
-      // Log claim separator for clarity
-      console.log('---------------------------');
     }
     lastResults = results;
     renderResults(results);
@@ -433,9 +373,6 @@
     }
     uploadDiv.textContent = messages.join(', ');
     processBtn.disabled = !(claimCount && clinicianCount && historyCount && facilitiesLoaded && affiliatedLicenses.size);
-    console.log(
-      `[Loaded] Claims: ${claimCount}, Clinicians: ${clinicianCount}, License Histories: ${historyCount}, Facilities: ${affiliatedLicenses.size}`
-    );
   }
 
 })();
