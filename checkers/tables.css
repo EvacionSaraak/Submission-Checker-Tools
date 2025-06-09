@@ -138,3 +138,18 @@ th {
   max-height: 60vh;
   overflow-y: auto;
 }
+
+.modal-license-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1em;
+}
+.modal-license-table th, .modal-license-table td {
+  border: 1px solid #eee;
+  padding: 0.5em 1em;
+  text-align: left;
+}
+.modal-license-table th {
+  background: #f6f8fa;
+  font-weight: bold;
+}
