@@ -162,13 +162,13 @@
     const normalizedAffiliatedLicenses = new Set(
       Array.from(affiliatedLicenses).map(x => x.toString().trim().toUpperCase())
     );
-  
+
     for (const claim of claims) {
       const providerId = getText(claim, 'ProviderID');
       const normalizedProviderId = (providerId || '').toString().trim().toUpperCase();
       const encounter = claim.getElementsByTagName('Encounter')[0];
       const encounterStart = getText(encounter, 'Start');
-  
+
       const activities = claim.getElementsByTagName('Activity');
       for (const act of activities) {
         const claimId = getText(claim, 'ID');
@@ -176,7 +176,7 @@
         const oid = getText(act, 'OrderingClinician');
         const pid = getText(act, 'Clinician');
         const remarks = [];
-  
+
         // Ordering and performing display
         const orderingDisplay = oid ? (
           clinicianMap[oid]?.name ? `${oid} (${clinicianMap[oid].name})` : oid
@@ -184,54 +184,73 @@
         const performingDisplay = pid ? (
           clinicianMap[pid]?.name ? `${pid} (${clinicianMap[pid].name})` : pid
         ) : '';
-  
+
         // Category check
         if (oid && pid && oid !== pid) {
           const oCat = clinicianMap[oid]?.category;
           const pCat = clinicianMap[pid]?.category;
-          if (oCat && pCat && oCat !== pCat) remarks.push('Category mismatch');
+          console.log(`[Validator] Comparing categories for claim ${claimId}, activity ${activityId}: Ordering (${oCat}), Performing (${pCat})`);
+          if (oCat && pCat && oCat !== pCat) {
+            remarks.push('Category mismatch');
+            console.log(`[Validator] Category mismatch detected for claim ${claimId}, activity ${activityId}`);
+          }
         }
-  
+
         // Most recent status for performing clinician at this facility and encounter date
         let performingEff = '', performingStatus = '', performingStatusDisplay = '', mostRecentRemark = '';
         let valid = true;
-  
+
         const entries = clinicianStatusMap[pid] || [];
         const mostRecent = getMostRecentStatusRecord(entries, providerId, encounterStart);
-  
+
         // Full license history for this clinician
         // Also log to console as you requested
         console.log(`All license history entries for clinician ${pid}:`, entries);
         const fullHistory = entries.map(e =>
           `${e.facility || '[No Facility]'}: ${e.effective || '[No Date]'} (${e.status || '[No Status]'})`
         ).join('; ');
-  
+
         if (mostRecent) {
           performingEff = mostRecent.effective || '';
           performingStatus = mostRecent.status || '';
           performingStatusDisplay = (performingEff ? `${performingEff}${performingStatus ? ' (' + performingStatus + ')' : ''}` : '');
-  
+
           // Normalize facility for robust comparison
           const fac = (mostRecent.facility || '').toString().trim().toUpperCase();
           const isAffiliated = normalizedAffiliatedLicenses.has(fac);
-  
+
+          console.log(`[Validator] Checking performing clinician for claim ${claimId}, activity ${activityId}:`);
+          console.log('  Most Recent Facility:', fac);
+          console.log('  Affiliated Licenses:', normalizedAffiliatedLicenses);
+          console.log('  Is Affiliated:', isAffiliated);
+          console.log('  Status:', (mostRecent.status || '').toLowerCase());
+
           if ((mostRecent.status || '').toLowerCase() !== 'active') {
             mostRecentRemark = `Performing: Status is not ACTIVE (${mostRecent.status})`;
             valid = false;
+            console.log(`[Validator] Not ACTIVE for claim ${claimId}, activity ${activityId}`);
           }
           if (!isAffiliated) {
             mostRecentRemark += (mostRecentRemark ? '; ' : '') + `Not affiliated facility (${mostRecent.facility})`;
             valid = false;
+            console.log(`[Validator] Not affiliated for claim ${claimId}, activity ${activityId}`);
           }
         } else {
           mostRecentRemark = 'No license record at this facility for encounter date';
           valid = false;
+          console.log(`[Validator] No license record found for claim ${claimId}, activity ${activityId}`);
         }
-  
-        if (!oid) remarks.push('OrderingClinician missing');
-        if (!pid) remarks.push('Clinician missing');
+
+        if (!oid) {
+          remarks.push('OrderingClinician missing');
+          console.log(`[Validator] OrderingClinician missing for claim ${claimId}, activity ${activityId}`);
+        }
+        if (!pid) {
+          remarks.push('Clinician missing');
+          console.log(`[Validator] Clinician missing for claim ${claimId}, activity ${activityId}`);
+        }
         if (mostRecentRemark) remarks.push(mostRecentRemark);
-  
+
         results.push({
           claimId,
           activityId,
