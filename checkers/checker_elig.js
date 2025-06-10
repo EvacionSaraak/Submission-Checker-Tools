@@ -164,7 +164,7 @@ document.getElementById('xmlFileInput').addEventListener('change', async (e) => 
   updateStatus();
 });
 
-document.getElementById('xlsx').addEventListener('change', async (e) => {
+document.getElementById('eligibilityFileInput').addEventListener('change', async (e) => {
   status.textContent = 'Loading Eligibilities...';
   checkBtn.disabled = true;
   window.eligData = await parseExcel(e.target.files[0]);
