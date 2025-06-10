@@ -152,7 +152,7 @@ const updateStatus = () => {
   checkBtn.disabled = !(window.xmlData && window.eligData);
 };
 
-document.getElementById('xml').addEventListener('change', async (e) => {
+document.getElementById('xmlFileInput').addEventListener('change', async (e) => {
   status.textContent = 'Loading Claims...';
   checkBtn.disabled = true;
   window.xmlData = await parseXML(e.target.files[0]);
