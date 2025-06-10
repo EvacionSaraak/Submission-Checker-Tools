@@ -133,8 +133,8 @@ const renderResults = (results) => {
 
 // UI and status management
 
-const status = document.getElementById('status');
-const checkBtn = document.getElementById('check');
+const status = document.getElementById('uploadStatus');
+const checkBtn = document.getElementById('processBtn');
 
 window.xmlData = null;
 window.eligData = null;
@@ -171,7 +171,7 @@ document.getElementById('eligibilityFileInput').addEventListener('change', async
   updateStatus();
 });
 
-checkBtn.addEventListener('processBtn', () => {
+checkBtn.addEventListener('click', () => {
   if (!(window.xmlData && window.eligData)) return alert('Upload both files');
 
   checkBtn.disabled = true;
