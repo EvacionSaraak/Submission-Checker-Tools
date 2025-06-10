@@ -171,7 +171,7 @@ document.getElementById('eligibilityFileInput').addEventListener('change', async
   updateStatus();
 });
 
-checkBtn.addEventListener('click', () => {
+checkBtn.addEventListener('processBtn', () => {
   if (!(window.xmlData && window.eligData)) return alert('Upload both files');
 
   checkBtn.disabled = true;
