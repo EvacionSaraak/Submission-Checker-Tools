@@ -233,6 +233,8 @@ async function parseExcel(file) {
     const tbody = buildTableContainer(containerId);
     const modalElements = setupModal(containerId);
     results.forEach((r, i) => {
+      // Log each data object before creating/pushing the row
+      console.log('Row data about to be rendered:', r);
       const row = createRow(r, i, modalElements);
       tbody.appendChild(row);
     });
