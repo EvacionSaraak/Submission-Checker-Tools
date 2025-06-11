@@ -227,4 +227,61 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // UI & Status Elements
+  const status = document.getElementById('uploadStatus');
+  const checkBtn = document.getElementById('processBtn');
+  window.xmlData = null;
+  window.eligData = null;
+
+  const updateStatus = () => {
+    const claimsCount = window.xmlData ? window.xmlData.claimsCount : 0;
+    const eligCount = window.eligData ? window.eligData.length : 0;
+    const msgs = [];
+    if (claimsCount) msgs.push(`${claimsCount} Claim${claimsCount !== 1 ? 's' : ''} loaded`);
+    if (eligCount) msgs.push(`${eligCount} Eligibilit${eligCount !== 1 ? 'ies' : 'y'} loaded`);
+    status.textContent = msgs.join(', ');
+    console.log(stats.textContent);
+    checkBtn.disabled = !(window.xmlData && window.eligData);
+  };
+
+  document.getElementById('xmlFileInput').addEventListener('change', async (e) => {
+    status.textContent = 'Loading Claims…';
+    checkBtn.disabled = true;
+    try {
+      window.xmlData = await parseXML(e.target.files[0]);
+      updateStatus();
+    } catch (err) {
+      status.textContent = `XML Error: ${err.message}`;
+      console.error(err);
+      window.xmlData = null;
+    }
+  });
+
+  document.getElementById('eligibilityFileInput').addEventListener('change', async (e) => {
+    status.textContent = 'Loading Eligibilities…';
+    checkBtn.disabled = true;
+    try {
+      window.eligData = await parseExcel(e.target.files[0]);
+      updateStatus();
+    } catch (err) {
+      status.textContent = `XLSX Error: ${err.message}`;
+      console.error(err);
+      window.eligData = null;
+    }
+  });
+
+  checkBtn.addEventListener('click', () => {
+    if (!(window.xmlData && window.eligData)) {
+      alert('Please upload both XML Claims and Eligibility XLSX files');
+      return;
+    }
+    checkBtn.disabled = true;
+    status.textContent = 'Validating…';
+    setTimeout(() => {
+      const results = validateActivities(window.xmlData, window.eligData);
+      renderResults(results);
+      status.textContent = `Validation completed: ${results.length} activities processed`;
+      checkBtn.disabled = false;
+    }, 100);
+  });
 });
