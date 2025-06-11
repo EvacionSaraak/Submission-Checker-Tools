@@ -11,15 +11,29 @@ window.addEventListener('DOMContentLoaded', () => {
   let eligData = null;
 
   // Parses the uploaded Excel file and returns JSON representation
-  async function parseExcel(file) {
+async function parseExcel(file) {
     const reader = new FileReader();
     return new Promise((resolve, reject) => {
       reader.onload = e => {
         try {
           const data = new Uint8Array(e.target.result);
           const workbook = XLSX.read(data, { type: 'array' });
-          const worksheet = workbook.Sheets[workbook.SheetNames[1]];
+          console.log('SheetNames:', workbook.SheetNames); // <--- Sheet names
+
+          const worksheet = workbook.Sheets['Eligibility'];
+          if (!worksheet) {
+            throw new Error('No worksheet named "Eligibility" found in uploaded file.');
+          }
           const json = XLSX.utils.sheet_to_json(worksheet, { defval: '', range: 1 });
+          console.log('Elig parsed json:', json);
+
+          // Log all headers from the parsed sheet
+          if (json.length > 0) {
+            console.log('Eligibility headers:', Object.keys(json[0]));
+          } else {
+            console.log('Eligibility headers: [No data rows parsed]');
+          }
+
           resolve(json);
         } catch (err) {
           reject(err);
@@ -29,7 +43,7 @@ window.addEventListener('DOMContentLoaded', () => {
       reader.readAsArrayBuffer(file);
     });
   }
-
+  
   // Parses the uploaded XML file and extracts all claims and encounters
   function parseXML(file) {
     return file.text().then(xmlText => {
