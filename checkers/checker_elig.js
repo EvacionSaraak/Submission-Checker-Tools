@@ -42,18 +42,21 @@ window.addEventListener('DOMContentLoaded', () => {
     return file.text().then(xmlText => {
       const parser = new DOMParser();
       const xmlDoc = parser.parseFromString(xmlText, "application/xml");
-      const claim = xmlDoc.querySelector('Claim');
-      // Extract MemberID from XML (Card Number)
-      const memberID = claim?.querySelector('MemberID')?.textContent.trim() || '';
-      // Encounters may be multiple
-      const encounterNodes = claim.querySelectorAll('Encounter');
-      // Map over encounters to get Start date (and optionally other fields if needed)
-      const encounters = Array.from(encounterNodes).map(enc => ({
-        Start: enc.querySelector('Start')?.textContent.trim() || '',
-        // Optionally store more fields here
-      }));
-      console.log("parseXML: Successfully parsed XML file");
-      return { memberID, encounters };
+      const claimNodes = xmlDoc.querySelectorAll('Claim');
+      const encounters = [];
+      claimNodes.forEach(claim => {
+        const memberID = claim.querySelector('MemberID')?.textContent.trim() || '';
+        const encounterNodes = claim.querySelectorAll('Encounter');
+        encounterNodes.forEach(enc => {
+          encounters.push({
+            memberID,
+            start: enc.querySelector('Start')?.textContent.trim() || '',
+            // Add more fields as needed
+          });
+        });
+      });
+      console.log(`parseXML: Loaded ${claimNodes.length} claims and ${encounters.length} encounters`);
+      return { claimsCount: claimNodes.length, encounters };
     });
   }
 
@@ -227,13 +230,15 @@ window.addEventListener('DOMContentLoaded', () => {
   // Updates the status text and process button state
   function updateStatus() {
     console.log("updateStatus: Updating status");
+    const claimsCount = xmlData?.claimsCount || 0;
     const encountersCount = xmlData?.encounters?.length || 0;
     const eligCount = eligData?.length || 0;
     const msgs = [];
+    if (claimsCount) msgs.push(`${claimsCount} Claim${claimsCount !== 1 ? 's' : ''} loaded`);
     if (encountersCount) msgs.push(`${encountersCount} Encounter${encountersCount !== 1 ? 's' : ''} loaded`);
     if (eligCount) msgs.push(`${eligCount} Eligibilit${eligCount !== 1 ? 'ies' : 'y'} loaded`);
     status.textContent = msgs.join(', ');
-    processBtn.disabled = !(xmlData && eligData);
+    processBtn.disabled = !(encountersCount && eligCount);
   }
 
   xmlInput.addEventListener('change', async (e) => {
