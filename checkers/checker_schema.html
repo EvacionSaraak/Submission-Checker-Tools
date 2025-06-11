@@ -8,6 +8,17 @@
 </head>
 <body>
   <h1>XML Schema Checker</h1>
+  
+  <div class="explanation-box">
+    <strong>What this tool does:</strong>
+    <ul>
+      <li>Checks if the uploaded XML is well-formed (basic parsing only).</li>
+      <li>Reports parsing errors like malformed tags or invalid structure.</li>
+      <li><strong>Note:</strong> This tool does <em>not</em> validate against an XSD schema file.</li>
+    </ul>
+    <p>If you need full schema validation against an XSD, contact your developer to enable server-side or advanced validation.</p>
+  </div>
+  
   <input type="file" id="xmlFile" accept=".xml" />
   <button onclick="validateXmlSchema()">Check Schema</button>
   <table id="resultTable" border="1">
