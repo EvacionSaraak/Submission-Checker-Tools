@@ -70,16 +70,29 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Validates encounters against eligibility data
+  // Returns all eligibility rows matching the card number (ignores date)
+  function findEligibilityMatchesByCard(memberID, eligRows) {
+    const cardCol = 'Card Number / DHA Member ID';
+    const matches = eligRows.filter(row => {
+      const xlsCard = (row[cardCol] || '').replace(/-/g, '').trim();
+      return xlsCard === memberID.replace(/-/g, '').trim();
+    });
+    return matches;
+  }
+
+  // Validates encounters against eligibility data (ignoring date, returns all matches)
   function validateEncounters(xmlPayload, eligRows) {
     const { encounters } = xmlPayload;
     return encounters.map(encounter => {
-      const match = findEligibilityMatchByCardAndDate(encounter.memberID, encounter.encounterStart, eligRows);
+      const matches = findEligibilityMatchesByCard(encounter.memberID, eligRows);
       const remarks = [];
       let status = '';
-      if (!match) {
-        remarks.push('No matching eligibility row found');
+      let match = null;
+      if (matches.length === 0) {
+        remarks.push('No eligibility rows found for card number');
       } else {
+        // Pick the first match for main display (could be improved later)
+        match = matches[0];
         status = match['Status'] || '';
         if ((status || '').toLowerCase() !== 'eligible') remarks.push(`Status not eligible (${status})`);
         const excelCard = (match['Card Number / DHA Member ID'] || '').replace(/-/g, '').trim();
@@ -88,6 +101,8 @@ window.addEventListener('DOMContentLoaded', () => {
         }
       }
       const details = match ? formatEligibilityDetailsModal(match) : '';
+      // Log the array of matches for debug
+      console.log('All Excel matches for card:', encounter.memberID, matches);
       // Log the data before it is pushed to a row
       console.log('Row data about to be rendered:', {
         claimID: encounter.claimID,
@@ -97,7 +112,8 @@ window.addEventListener('DOMContentLoaded', () => {
         eligibilityRequestNumber: match?.['Eligibility Request Number'] || null,
         status,
         remarks,
-        match
+        match,
+        matches // all matches for this card number
       });
       return {
         claimID: encounter.claimID,
@@ -107,24 +123,10 @@ window.addEventListener('DOMContentLoaded', () => {
         eligibilityRequestNumber: match?.['Eligibility Request Number'] || null,
         status,
         remarks,
-        match
+        match,
+        matches // array of all matching eligibility rows for later filtering
       };
     });
-  }
-
-  // Finds the best eligibility row matching the card number and date
-  function findEligibilityMatchByCardAndDate(memberID, encounterStart, eligRows) {
-    const startDate = parseDMYorISO(encounterStart);
-    const cardCol = 'Card Number / DHA Member ID';
-    const dateCol = 'Ordered On';
-    const matches = eligRows.filter(row => {
-      const xlsCard = (row[cardCol] || '').replace(/-/g, '').trim();
-      if (xlsCard !== memberID.replace(/-/g, '').trim()) return false;
-      const excelDate = parseDMYorISO(row[dateCol]);
-      return isSameDay(excelDate, startDate);
-    });
-    if (matches.length === 0) return null;
-    return matches[0];
   }
 
   // Utility: Compare if two Date objects refer to the same day (ignoring time)
