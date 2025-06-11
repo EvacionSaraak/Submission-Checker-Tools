@@ -129,57 +129,31 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Utility: Compare if two Date objects refer to the same day (ignoring time)
-  function isSameDay(d1, d2) {
-    if (!(d1 instanceof Date) || !(d2 instanceof Date)) return false;
-    if (isNaN(d1.valueOf()) || isNaN(d2.valueOf())) return false;
-    return d1.getFullYear() === d2.getFullYear() &&
-      d1.getMonth() === d2.getMonth() &&
-      d1.getDate() === d2.getDate();
-  }
-
-  // Parses Excel or ISO date string to JS Date object
-  function parseDMYorISO(str) {
-    if (!str) return new Date('Invalid Date');
-    // Excel often uses D-MMM-YYYY HH:mm:ss or similar
-    const dmyParts = str.split(' ');
-    if (dmyParts.length >= 2 && dmyParts[0].includes('-')) {
-      const [day, monStr, year] = dmyParts[0].split('-');
-      const monthMap = {
-        Jan: '01', Feb: '02', Mar: '03', Apr: '04', May: '05', Jun: '06',
-        Jul: '07', Aug: '08', Sep: '09', Oct: '10', Nov: '11', Dec: '12',
-      };
-      const month = monthMap[monStr];
-      if (month) {
-        // Support if time is present, else "00:00:00"
-        const time = dmyParts[1] ? dmyParts[1] : "00:00:00";
-        return new Date(`${year}-${month}-${day}T${time}`);
-      }
-    }
-    // Support for DD/MM/YYYY or DD-MM-YYYY
-    const parts = str.split(/[\/\-]/);
-    if (parts.length === 3 && parts[2].length === 4) {
-      return new Date(parts[2], parts[1] - 1, parts[0]);
-    }
-    // Try native Date
-    const d = new Date(str);
-    if (!isNaN(d.valueOf())) return d;
-    return new Date('Invalid Date');
-  }
-
-  // Format details string for the modal in the specified order
+  // Format details string for the modal in the specified order, formatted as a table using tables.css
   function formatEligibilityDetailsModal(match) {
-    return [
-      'Eligibility Request Number: ' + (match['Eligibility Request Number'] || ''),
-      'Payer Name: ' + (match['Payer Name'] || ''),
-      'Service Category: ' + (match['Service Category'] || ''),
-      'Consultation Status: ' + (match['Consultation Status'] || ''),
-      'Clinician: ' + (match['Clinician'] || ''),
-      'Clinician Name: ' + (match['Clinician Name'] || ''),
-      'Authorization Number: ' + (match['Authorization Number'] || ''),
-      'EID: ' + (match['EID'] || ''),
-      'Member Name: ' + (match['Member Name'] || '')
-    ].join('\n');
+    // Prepare each field as a table row
+    const fields = [
+      { label: 'Eligibility Request Number', value: match['Eligibility Request Number'] || '' },
+      { label: 'Payer Name', value: match['Payer Name'] || '' },
+      { label: 'Service Category', value: match['Service Category'] || '' },
+      { label: 'Consultation Status', value: match['Consultation Status'] || '' },
+      { label: 'Clinician', value: match['Clinician'] || '' },
+      { label: 'Clinician Name', value: match['Clinician Name'] || '' },
+      { label: 'Authorization Number', value: match['Authorization Number'] || '' },
+      { label: 'EID', value: match['EID'] || '' },
+      { label: 'Member Name', value: match['Member Name'] || '' },
+      { label: 'Ordered On', value: match['Ordered On'] || '' },
+      { label: 'Answered On', value: match['Answered On'] || '' },
+      { label: 'EffectiveDate', value: match['EffectiveDate'] || match['Effective Date'] || '' },
+      { label: 'ExpiryDate', value: match['ExpiryDate'] || match['Expiry Date'] || '' }
+    ];
+    // Build table HTML for modal, using classes from tables.css
+    let table = '<table class="shared-table details-table"><tbody>';
+    fields.forEach(f => {
+      table += `<tr><th>${f.label}</th><td>${f.value}</td></tr>`;
+    });
+    table += '</tbody></table>';
+    return table;
   }
 
   // Builds the results table container
@@ -208,7 +182,7 @@ window.addEventListener('DOMContentLoaded', () => {
         <div id="eligibilityModal" class="modal" style="display:none;">
           <div class="modal-content">
             <span class="close">&times;</span>
-            <pre id="modalContent" style="white-space: pre-wrap;"></pre>
+            <div id="modalContent" style="white-space: normal;"></div>
           </div>
         </div>
       `);
@@ -225,9 +199,6 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // Creates a row in the results table for each encounter
   function createRow(r, index, { modal, modalContent }) {
-    // Optionally log here as well if you want to see row data at this point
-    // console.log('createRow data:', r);
-
     const row = document.createElement('tr');
     row.classList.add(r.remarks.length ? 'invalid' : 'valid');
     const btn = document.createElement('button');
@@ -236,7 +207,7 @@ window.addEventListener('DOMContentLoaded', () => {
     btn.className = 'details-btn';
     btn.addEventListener('click', () => {
       if (!r.eligibilityRequestNumber) return;
-      modalContent.textContent = r.details;
+      modalContent.innerHTML = r.details; // Insert formatted table
       modal.style.display = 'block';
     });
     const tdBtn = document.createElement('td');
@@ -260,8 +231,6 @@ window.addEventListener('DOMContentLoaded', () => {
     const tbody = buildTableContainer(containerId);
     const modalElements = setupModal(containerId);
     results.forEach((r, i) => {
-      // Already logged in validateEncounters, but can log here if needed
-      // console.log('Row data about to be rendered:', r);
       const row = createRow(r, i, modalElements);
       tbody.appendChild(row);
     });
