@@ -1,54 +1,50 @@
-// checker_elig.js
-
-// Dependencies: SheetJS (xlsx) — no xml-js needed anymore
-
-// parse DD/MM/YYYY HH:MM strings into JS Date
+// parse DD/MM/YYYY HH:mm strings to Date
 const parseDMY = (str) => {
   if (!str) return new Date('Invalid Date');
   const [day, month, yearAndTime] = str.split('/');
-  const [year, time] = yearAndTime.split(' ');
-  return new Date(`${year}-${month}-${day}T${time || '00:00'}`);
+  if (!yearAndTime) return new Date('Invalid Date');
+  const [year, time = '00:00'] = yearAndTime.split(' ');
+  // Construct ISO format: YYYY-MM-DDTHH:mm
+  return new Date(`${year}-${month}-${day}T${time}`);
 };
 
-// Excel → JSON
+// Parse XLSX file to JSON rows
 const parseExcel = async (file) => {
   const data = await file.arrayBuffer();
   const workbook = XLSX.read(data, { type: 'array' });
-  const sheet = workbook.Sheets[workbook.SheetNames[0]];
-  return XLSX.utils.sheet_to_json(sheet);
+  // Use second sheet since headers start at second row
+  const sheetName = workbook.SheetNames[1] || workbook.SheetNames[0];
+  const sheet = workbook.Sheets[sheetName];
+  return XLSX.utils.sheet_to_json(sheet, { range: 1 }); // skip first row, start from second row (0-based)
 };
 
-// Replace xml-js: use DOMParser, capture all <Claim> elements
+// Parse XML Claims file
 const parseXML = async (file) => {
   const text = await file.text();
   const parser = new DOMParser();
   const xml = parser.parseFromString(text, 'application/xml');
 
   const claimEls = Array.from(xml.querySelectorAll('Claim'));
-  if (claimEls.length === 0) throw new Error('Invalid XML structure: Missing <Claim>');
+  if (claimEls.length === 0) throw new Error('Invalid XML: No <Claim> elements found');
 
-  // For status display
-  const claimsCount = claimEls.length;
+  // Extract EmiratesIDNumber from first Claim (assumes same across claims)
+  const claimEID = claimEls[0].querySelector('EmiratesIDNumber')?.textContent.trim() || '';
 
-  // We’ll just parse the first claim’s EID here, since all claims share the same XML root
-  // (if they differ, you can adjust to store per-claim EIDs)
-  const firstEIDel = claimEls[0].querySelector('EmiratesIDNumber');
-  const claimEID = firstEIDel ? firstEIDel.textContent.trim() : '';
-
-  // Flatten all <Activity> elements across all claims
+  // Extract all Activity elements from all claims, flatten
   const activities = claimEls.flatMap((claimEl) =>
     Array.from(claimEl.querySelectorAll('Activity')).map((act) => {
       const obj = {};
-      Array.from(act.children).forEach((child) => {
-        obj[child.tagName] = { _text: child.textContent.trim() };
-      });
+      for (const child of act.children) {
+        obj[child.tagName] = child.textContent.trim();
+      }
       return obj;
     })
   );
 
-  return { claimsCount, claimEID, activities };
+  return { claimsCount: claimEls.length, claimEID, activities };
 };
 
+// Validate Emirates ID format (784-XXXX-XXXXXXX-X)
 const validateEID = (eid) => {
   const parts = eid.split('-');
   if (parts.length !== 4) return 'Invalid EID format';
@@ -59,10 +55,11 @@ const validateEID = (eid) => {
   return null;
 };
 
+// Find matching eligibility row(s) for an activity
 const findEligibilityMatch = (activity, eligRows) => {
-  const clinician = activity.Clinician?._text || '';
-  const providerID = activity.ProviderID?._text || '';
-  const startDate = parseDMY(activity.Start?._text);
+  const clinician = activity.Clinician || '';
+  const providerID = activity.ProviderID || '';
+  const startDate = parseDMY(activity.Start);
 
   const eligibleMatches = [];
 
@@ -75,8 +72,8 @@ const findEligibilityMatch = (activity, eligRows) => {
     const effDate = parseDMY(row['EffectiveDate']);
     const expDate = row['ExpiryDate'] ? parseDMY(row['ExpiryDate']) : null;
 
-    if (effDate > startDate) continue;
-    if (expDate && expDate < startDate) continue;
+    if (effDate > startDate) continue; // eligibility starts after activity start
+    if (expDate && expDate < startDate) continue; // eligibility expired before activity start
 
     if ((row['Status'] || '').toLowerCase() === 'eligible') {
       eligibleMatches.push(row);
@@ -85,6 +82,7 @@ const findEligibilityMatch = (activity, eligRows) => {
 
   if (eligibleMatches.length === 0) return null;
 
+  // Sort by EffectiveDate descending (latest first)
   eligibleMatches.sort((a, b) =>
     parseDMY(b['EffectiveDate']) - parseDMY(a['EffectiveDate'])
   );
@@ -92,6 +90,7 @@ const findEligibilityMatch = (activity, eligRows) => {
   return eligibleMatches[0];
 };
 
+// Validate all activities and build result objects
 const validateActivities = (xmlPayload, eligRows) => {
   const { activities, claimEID } = xmlPayload;
   const results = [];
@@ -99,9 +98,9 @@ const validateActivities = (xmlPayload, eligRows) => {
   const eidRemark = validateEID(claimEID);
 
   for (const activity of activities) {
-    const clinicianID = activity.Clinician?._text || '';
-    const providerID = activity.ProviderID?._text || '';
-    const start = activity.Start?._text || '';
+    const clinicianID = activity.Clinician || '';
+    const providerID = activity.ProviderID || '';
+    const start = activity.Start || '';
 
     const remarks = [];
     if (eidRemark) remarks.push(`EID: ${eidRemark}`);
@@ -120,7 +119,7 @@ const validateActivities = (xmlPayload, eligRows) => {
       }
     }
 
-    const clinician = match
+    const clinicianDisplay = match
       ? `${clinicianID}\n${match['Clinician Name'] || ''}`
       : clinicianID;
     const details = match
@@ -128,55 +127,97 @@ const validateActivities = (xmlPayload, eligRows) => {
       : '';
 
     results.push({
-      clinician,
+      clinician: clinicianDisplay,
       providerID,
       start,
       details,
-      remarks: remarks.join('; '),
+      remarks,
     });
   }
   return results;
 };
 
+// Render results table with modal buttons and row coloring
 const renderResults = (results) => {
   const container = document.getElementById('results');
 
-  // Build full table markup inside the container
   container.innerHTML = `
-    <table>
+    <table class="shared-table">
       <thead>
         <tr>
           <th>#</th>
           <th>Clinician</th>
           <th>ProviderID</th>
-          <th>ActivityStart</th>
+          <th>Activity Start</th>
           <th>Eligibility Details</th>
           <th>Remarks</th>
         </tr>
       </thead>
       <tbody></tbody>
     </table>
+
+    <div id="eligibilityModal" class="modal" style="display:none;">
+      <div class="modal-content">
+        <span class="close">&times;</span>
+        <pre id="modalContent" style="white-space: pre-wrap;"></pre>
+      </div>
+    </div>
   `;
 
-  // Select the new tbody element
   const tbody = container.querySelector('tbody');
+  const modal = container.querySelector('#eligibilityModal');
+  const modalContent = modal.querySelector('#modalContent');
+  const closeBtn = modal.querySelector('.close');
 
-  // Populate each row into the tbody
+  closeBtn.onclick = () => {
+    modal.style.display = 'none';
+  };
+  window.onclick = (event) => {
+    if (event.target === modal) {
+      modal.style.display = 'none';
+    }
+  };
+
   results.forEach((r, i) => {
     const row = document.createElement('tr');
+
+    if (r.remarks.length > 0) {
+      row.classList.add('invalid');
+    } else {
+      row.classList.add('valid');
+    }
+
+    // Join remarks array for display with line breaks
+    const remarksText = r.remarks.join('\n');
+
+    // Eligibility button that opens modal with details
+    const eligibilityButton = document.createElement('button');
+    eligibilityButton.textContent = r.details.split('\n')[0] || 'View Eligibility';
+    eligibilityButton.onclick = () => {
+      modalContent.textContent = r.details || 'No details available';
+      modal.style.display = 'block';
+    };
+
+    const tdEligibility = document.createElement('td');
+    tdEligibility.appendChild(eligibilityButton);
+
     row.innerHTML = `
       <td>${i + 1}</td>
-      <td style="white-space: pre-line">${r.clinician}</td>
+      <td class="wrap-col">${r.clinician.replace(/\n/g, '<br>')}</td>
       <td>${r.providerID}</td>
       <td>${r.start}</td>
-      <td style="white-space: pre-line">${r.details}</td>
-      <td>${r.remarks}</td>
+      <td></td>
+      <td style="white-space: pre-line;">${remarksText}</td>
     `;
+
+    // Replace empty eligibility cell with button
+    row.querySelector('td:nth-child(5)').replaceWith(tdEligibility);
+
     tbody.appendChild(row);
   });
 };
 
-// UI & status
+// UI & Status Elements
 const status = document.getElementById('uploadStatus');
 const checkBtn = document.getElementById('processBtn');
 window.xmlData = null;
@@ -184,10 +225,10 @@ window.eligData = null;
 
 const updateStatus = () => {
   const claimsCount = window.xmlData ? window.xmlData.claimsCount : 0;
-  const eligCount   = window.eligData ? window.eligData.length    : 0;
+  const eligCount = window.eligData ? window.eligData.length : 0;
   const msgs = [];
   if (claimsCount) msgs.push(`${claimsCount} Claim${claimsCount !== 1 ? 's' : ''} loaded`);
-  if (eligCount)   msgs.push(`${eligCount} Eligibilit${eligCount !== 1 ? 'ies' : 'y'} loaded`);
+  if (eligCount) msgs.push(`${eligCount} Eligibilit${eligCount !== 1 ? 'ies' : 'y'} loaded`);
   status.textContent = msgs.join(', ');
   checkBtn.disabled = !(window.xmlData && window.eligData);
 };
@@ -208,12 +249,21 @@ document.getElementById('xmlFileInput').addEventListener('change', async (e) => 
 document.getElementById('eligibilityFileInput').addEventListener('change', async (e) => {
   status.textContent = 'Loading Eligibilities…';
   checkBtn.disabled = true;
-  window.eligData = await parseExcel(e.target.files[0]);
-  updateStatus();
+  try {
+    window.eligData = await parseExcel(e.target.files[0]);
+    updateStatus();
+  } catch (err) {
+    status.textContent = `XLSX Error: ${err.message}`;
+    console.error(err);
+    window.eligData = null;
+  }
 });
 
 checkBtn.addEventListener('click', () => {
-  if (!(window.xmlData && window.eligData)) return alert('Upload both files');
+  if (!(window.xmlData && window.eligData)) {
+    alert('Please upload both XML Claims and Eligibility XLSX files');
+    return;
+  }
   checkBtn.disabled = true;
   status.textContent = 'Validating…';
   setTimeout(() => {
