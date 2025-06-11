@@ -1,37 +1,18 @@
 // checker_eligibilities.js
 
 window.addEventListener('DOMContentLoaded', () => {
-  const excelInput = document.getElementById('excelFile');
-  const xmlInput = document.getElementById('xmlFile');
-  const validateBtn = document.getElementById('processBtn');
+  const xmlInput = document.getElementById('xmlFileInput');
+  const excelInput = document.getElementById('eligibilityFileInput');
+  const processBtn = document.getElementById('processBtn');
   const resultContainer = document.getElementById('results');
+  const status = document.getElementById('uploadStatus');
 
-  validateBtn.onclick = () => {
-    const excelFile = excelInput.files[0];
-    const xmlFile = xmlInput.files[0];
-    if (!excelFile || !xmlFile) {
-      alert('Please select both Excel and XML files.');
-      return;
-    }
-    handleFiles(excelFile, xmlFile);
-  };
+  let xmlData = null;
+  let eligData = null;
 
-  async function handleFiles(excelFile, xmlFile) {
-    try {
-      const eligRows = await parseExcelFile(excelFile);
-      const xmlText = await xmlFile.text();
-      const xmlPayload = parseXml(xmlText);
-      const validationResults = validateActivities(xmlPayload, eligRows);
-      renderResults(validationResults);
-    } catch (err) {
-      console.error('Error:', err);
-      resultContainer.innerHTML = `<div style="color:red">Error: ${err.message}</div>`;
-    }
-  }
-
-  function parseExcelFile(file) {
+  async function parseExcel(file) {
+    const reader = new FileReader();
     return new Promise((resolve, reject) => {
-      const reader = new FileReader();
       reader.onload = e => {
         try {
           const data = new Uint8Array(e.target.result);
@@ -48,18 +29,20 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  function parseXml(xmlText) {
-    const parser = new DOMParser();
-    const xmlDoc = parser.parseFromString(xmlText, "application/xml");
-    const claim = xmlDoc.querySelector('Claim');
-    const claimEID = claim?.querySelector('EmiratesIDNumber')?.textContent.trim() || '';
-    const activityNodes = claim.querySelectorAll('Activity');
-    const activities = Array.from(activityNodes).map(act => ({
-      Clinician: act.querySelector('Clinician')?.textContent.trim() || '',
-      ProviderID: act.querySelector('ProviderID')?.textContent.trim() || '',
-      Start: act.querySelector('Start')?.textContent.trim() || '',
-    }));
-    return { claimEID, activities };
+  function parseXML(file) {
+    return file.text().then(xmlText => {
+      const parser = new DOMParser();
+      const xmlDoc = parser.parseFromString(xmlText, "application/xml");
+      const claim = xmlDoc.querySelector('Claim');
+      const claimEID = claim?.querySelector('EmiratesIDNumber')?.textContent.trim() || '';
+      const activityNodes = claim.querySelectorAll('Activity');
+      const activities = Array.from(activityNodes).map(act => ({
+        Clinician: act.querySelector('Clinician')?.textContent.trim() || '',
+        ProviderID: act.querySelector('ProviderID')?.textContent.trim() || '',
+        Start: act.querySelector('Start')?.textContent.trim() || '',
+      }));
+      return { claimEID, activities };
+    });
   }
 
   function validateActivities(xmlPayload, eligRows) {
@@ -146,20 +129,17 @@ window.addEventListener('DOMContentLoaded', () => {
     return new Date(str);
   }
 
-  // 1. Build the table skeleton and return its <tbody>
   function buildTableContainer(containerId = 'results') {
     const c = document.getElementById(containerId);
     c.innerHTML = `<table class="shared-table">
-          <thead><tr>
-            <th>#</th> <th>Clinician</th><th>ProviderID</th><th>Activity Start</th><th>Eligibility Details</th><th>Remarks</th>
-          </tr></thead>
+        <thead><tr>
+          <th>#</th><th>Clinician</th><th>ProviderID</th><th>Activity Start</th><th>Eligibility Details</th><th>Remarks</th>
+        </tr></thead>
         <tbody></tbody>
-      </table>
-    `;
+      </table>`;
     return c.querySelector('tbody');
   }
 
-  // 2. Inject the modal markup and wire its basic close behavior
   function setupModal(containerId = 'results') {
     const c = document.getElementById(containerId);
     c.insertAdjacentHTML('beforeend', `
@@ -170,7 +150,6 @@ window.addEventListener('DOMContentLoaded', () => {
         </div>
       </div>
     `);
-
     const modal = c.querySelector('#eligibilityModal');
     const modalContent = modal.querySelector('#modalContent');
     const closeBtn = modal.querySelector('.close');
@@ -183,12 +162,10 @@ window.addEventListener('DOMContentLoaded', () => {
     return { modal, modalContent };
   }
 
-  // 3. Create and return a fully-populated <tr> for one result
   function createRow(r, index, { modal, modalContent }) {
     const row = document.createElement('tr');
     row.classList.add(r.remarks.length ? 'invalid' : 'valid');
 
-    // Eligibility button cell
     const btn = document.createElement('button');
     btn.textContent = r.eligibilityRequestNumber || 'No Request';
     btn.disabled = !r.eligibilityRequestNumber;
@@ -201,86 +178,81 @@ window.addEventListener('DOMContentLoaded', () => {
     const tdBtn = document.createElement('td');
     tdBtn.appendChild(btn);
 
-    // Fill other cells
     row.innerHTML = `
       <td>${index + 1}</td>
-      <td class="wrap-col">${r.clinician.replace(/\n/g,'<br>')}</td>
+      <td class="wrap-col">${r.clinician.replace(/\n/g, '<br>')}</td>
       <td>${r.providerID}</td>
       <td>${r.start}</td>
       <td></td>
       <td style="white-space: pre-line;">${r.remarks.join('\n')}</td>
     `;
-    // Replace the empty 5th cell with the button cell
     row.querySelector('td:nth-child(5)').replaceWith(tdBtn);
-
     return row;
   }
 
-  // 4. Main renderResults orchestration
   function renderResults(results, containerId = 'results') {
     const tbody = buildTableContainer(containerId);
     const modalElements = setupModal(containerId);
-
     results.forEach((r, i) => {
       const row = createRow(r, i, modalElements);
       tbody.appendChild(row);
     });
   }
 
-  // UI & Status Elements
-  const status = document.getElementById('uploadStatus');
-  const checkBtn = document.getElementById('processBtn');
-  window.xmlData = null;
-  window.eligData = null;
-
-  const updateStatus = () => {
-    const claimsCount = window.xmlData ? window.xmlData.claimsCount : 0;
-    const eligCount = window.eligData ? window.eligData.length : 0;
+  function updateStatus() {
+    const claimsCount = xmlData?.activities?.length || 0;
+    const eligCount = eligData?.length || 0;
     const msgs = [];
     if (claimsCount) msgs.push(`${claimsCount} Claim${claimsCount !== 1 ? 's' : ''} loaded`);
     if (eligCount) msgs.push(`${eligCount} Eligibilit${eligCount !== 1 ? 'ies' : 'y'} loaded`);
     status.textContent = msgs.join(', ');
-    checkBtn.disabled = !(window.xmlData && window.eligData);
-  };
+    processBtn.disabled = !(xmlData && eligData);
+  }
 
-  document.getElementById('xmlFileInput').addEventListener('change', async (e) => {
+  xmlInput.addEventListener('change', async (e) => {
     status.textContent = 'Loading Claims…';
-    checkBtn.disabled = true;
+    processBtn.disabled = true;
     try {
-      window.xmlData = await parseXML(e.target.files[0]);
-      updateStatus();
+      xmlData = await parseXML(e.target.files[0]);
     } catch (err) {
       status.textContent = `XML Error: ${err.message}`;
       console.error(err);
-      window.xmlData = null;
+      xmlData = null;
     }
+    updateStatus();
   });
 
-  document.getElementById('eligibilityFileInput').addEventListener('change', async (e) => {
+  excelInput.addEventListener('change', async (e) => {
     status.textContent = 'Loading Eligibilities…';
-    checkBtn.disabled = true;
+    processBtn.disabled = true;
     try {
-      window.eligData = await parseExcel(e.target.files[0]);
-      updateStatus();
+      eligData = await parseExcel(e.target.files[0]);
     } catch (err) {
       status.textContent = `XLSX Error: ${err.message}`;
       console.error(err);
-      window.eligData = null;
+      eligData = null;
     }
+    updateStatus();
   });
 
-  checkBtn.addEventListener('click', () => {
-    if (!(window.xmlData && window.eligData)) {
+  processBtn.addEventListener('click', async () => {
+    if (!xmlData || !eligData) {
       alert('Please upload both XML Claims and Eligibility XLSX files');
       return;
     }
-    checkBtn.disabled = true;
+
+    processBtn.disabled = true;
     status.textContent = 'Validating…';
-    setTimeout(() => {
-      const results = validateActivities(window.xmlData, window.eligData);
+
+    try {
+      const results = validateActivities(xmlData, eligData);
       renderResults(results);
       status.textContent = `Validation completed: ${results.length} activities processed`;
-      checkBtn.disabled = false;
-    }, 100);
+    } catch (err) {
+      status.textContent = `Validation error: ${err.message}`;
+      console.error(err);
+    }
+
+    processBtn.disabled = false;
   });
 });
