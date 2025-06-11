@@ -19,7 +19,7 @@ window.addEventListener('DOMContentLoaded', () => {
           const data = new Uint8Array(e.target.result);
           const workbook = XLSX.read(data, { type: 'array' });
           const worksheet = workbook.Sheets[workbook.SheetNames[1]];
-          const json = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+          const json = XLSX.utils.sheet_to_json(worksheet, { defval: '', range: 1 });
           resolve(json);
         } catch (err) {
           reject(err);
