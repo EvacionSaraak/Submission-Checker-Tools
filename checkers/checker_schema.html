@@ -1,1 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>XML Schema Checker</title>
+  <link rel="stylesheet" href="tables.css" />
+</head>
+<body>
+  <h1>XML Schema Checker</h1>
+  <input type="file" id="xmlFile" accept=".xml" />
+  <button onclick="validateXmlSchema()">Check Schema</button>
+  <table id="resultTable" border="1">
+    <thead>
+      <tr>
+        <th>Error Type</th>
+        <th>Line</th>
+        <th>Message</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
 
+  <script src="checker_schema.js"></script>
+</body>
+</html>
