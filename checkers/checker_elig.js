@@ -294,7 +294,13 @@ window.addEventListener('DOMContentLoaded', () => {
       console.log(`Validation completed: ${results.length} encounters processed`);
       console.log('Validation results:', results);
       renderResults(results);
-      status.textContent = `Validation completed: ${results.length} encounters processed`;
+
+      // NEW: Show summary of valid encounters
+      const validCount = results.filter(r => r.remarks.length === 0).length;
+      const totalCount = results.length;
+      const percent = totalCount > 0 ? Math.round((validCount / totalCount) * 100) : 0;
+      status.textContent = `Valid: ${validCount} / ${totalCount} (${percent}%)`;
+
     } catch (err) {
       status.textContent = `Validation error: ${err.message}`;
       console.error("Validation error:", err);
