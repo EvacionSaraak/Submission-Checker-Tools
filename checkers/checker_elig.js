@@ -9,6 +9,20 @@ window.addEventListener('DOMContentLoaded', () => {
 
   let xmlData = null;
   let eligData = null;
+  let insuranceLicenses = null;
+
+  // Load insurance_licenses.json from the same folder
+  fetch('insurance_licenses.json')
+    .then(r => r.json())
+    .then(json => {
+      insuranceLicenses = json;
+      console.log('Loaded insurance licenses:', insuranceLicenses);
+      updateStatus();
+    })
+    .catch(err => {
+      console.error('Could not load insurance_licenses.json:', err);
+      insuranceLicenses = null;
+    });
 
   // Parses the uploaded Excel file and returns JSON representation
   async function parseExcel(file) {
@@ -18,19 +32,14 @@ window.addEventListener('DOMContentLoaded', () => {
         try {
           const data = new Uint8Array(e.target.result);
           const workbook = XLSX.read(data, { type: 'array' });
-          // Log all sheet names for debugging
           console.log('SheetNames:', workbook.SheetNames);
 
-          // Use the sheet name 'Eligibility', case/space sensitive
           const worksheet = workbook.Sheets['Eligibility'];
           if (!worksheet) {
             throw new Error('No worksheet named "Eligibility" found in uploaded file.');
           }
-
-          // Use the second row (range: 1) as headers
           const json = XLSX.utils.sheet_to_json(worksheet, { defval: '', range: 1 });
 
-          // Log all headers for debugging
           if (json.length > 0) {
             console.log('Eligibility headers:', Object.keys(json[0]));
             console.log('First eligibility row:', json[0]);
@@ -57,13 +66,15 @@ window.addEventListener('DOMContentLoaded', () => {
       const claims = Array.from(claimNodes).map(claim => {
         const claimID = claim.querySelector('ID')?.textContent.trim() || '';
         const memberID = claim.querySelector('MemberID')?.textContent.trim() || '';
+        const payerID = claim.querySelector('PayerID')?.textContent.trim() || '';
         const encounterNodes = claim.querySelectorAll('Encounter');
         const encounters = Array.from(encounterNodes).map(enc => ({
           claimID,
           memberID,
+          payerID,
           encounterStart: enc.querySelector('Start')?.textContent.trim() || ''
         }));
-        return { claimID, memberID, encounters };
+        return { claimID, memberID, payerID, encounters };
       });
       const allEncounters = claims.flatMap(c => c.encounters);
       return { claimsCount: claims.length, encounters: allEncounters };
@@ -81,7 +92,7 @@ window.addEventListener('DOMContentLoaded', () => {
   }
 
   // Validates encounters against eligibility data (ignoring date, returns all matches)
-  function validateEncounters(xmlPayload, eligRows) {
+  function validateEncounters(xmlPayload, eligRows, insuranceLicenses) {
     const { encounters } = xmlPayload;
     return encounters.map(encounter => {
       const matches = findEligibilityMatchesByCard(encounter.memberID, eligRows);
@@ -100,13 +111,25 @@ window.addEventListener('DOMContentLoaded', () => {
           remarks.push('Card Number mismatch between XML and Excel');
         }
       }
+
+      // Insurance license validation
+      if (insuranceLicenses && match) {
+        const payerID = encounter.payerID || '';
+        const payerName = match['Payer Name'] || '';
+        const license = insuranceLicenses.licenses.find(l => l.PayerID === payerID);
+        if (!license) {
+          remarks.push(`No matching license for PayerID: ${payerID}`);
+        } else if (!payerName.includes(license.Plan)) {
+          remarks.push(`Plan "${license.Plan}" not found in Payer Name "${payerName}"`);
+        }
+      }
+
       const details = match ? formatEligibilityDetailsModal(match) : '';
-      // Log the array of matches for debug
       console.log('All Excel matches for card:', encounter.memberID, matches);
-      // Log the data before it is pushed to a row
       console.log('Row data about to be rendered:', {
         claimID: encounter.claimID,
         memberID: encounter.memberID,
+        payerID: encounter.payerID,
         encounterStart: encounter.encounterStart,
         details,
         eligibilityRequestNumber: match?.['Eligibility Request Number'] || null,
@@ -118,6 +141,7 @@ window.addEventListener('DOMContentLoaded', () => {
       return {
         claimID: encounter.claimID,
         memberID: encounter.memberID,
+        payerID: encounter.payerID,
         encounterStart: encounter.encounterStart,
         details,
         eligibilityRequestNumber: match?.['Eligibility Request Number'] || null,
@@ -129,9 +153,7 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Format details string for the modal in the specified order, formatted as a table using tables.css
   function formatEligibilityDetailsModal(match) {
-    // Prepare each field as a table row
     const fields = [
       { label: 'Eligibility Request Number', value: match['Eligibility Request Number'] || '' },
       { label: 'Payer Name', value: match['Payer Name'] || '' },
@@ -145,9 +167,10 @@ window.addEventListener('DOMContentLoaded', () => {
       { label: 'Ordered On', value: match['Ordered On'] || '' },
       { label: 'Answered On', value: match['Answered On'] || '' },
       { label: 'EffectiveDate', value: match['EffectiveDate'] || match['Effective Date'] || '' },
-      { label: 'ExpiryDate', value: match['ExpiryDate'] || match['Expiry Date'] || '' }
+      { label: 'ExpiryDate', value: match['ExpiryDate'] || match['Expiry Date'] || '' },
+      { label: 'Package Name', value: match['Package Name'] || '' },
+      { label: 'Network Billing Reference', value: match['Network Billing Reference'] || '' }
     ];
-    // Build table HTML for modal, using classes from tables.css
     let table = '<table class="shared-table details-table"><tbody>';
     fields.forEach(f => {
       table += `<tr><th>${f.label}</th><td>${f.value}</td></tr>`;
@@ -156,7 +179,6 @@ window.addEventListener('DOMContentLoaded', () => {
     return table;
   }
 
-  // Builds the results table container
   function buildTableContainer(containerId = 'results') {
     const c = document.getElementById(containerId);
     c.innerHTML = `<table class="shared-table">
@@ -164,6 +186,7 @@ window.addEventListener('DOMContentLoaded', () => {
           <th>#</th>
           <th>ID</th>
           <th>MemberID</th>
+          <th>PayerID</th>
           <th>Encounter Start</th>
           <th>Eligibility Details</th>
           <th>Status</th>
@@ -174,7 +197,6 @@ window.addEventListener('DOMContentLoaded', () => {
     return c.querySelector('tbody');
   }
 
-  // Sets up the modal for displaying eligibility details
   function setupModal(containerId = 'results') {
     const c = document.getElementById(containerId);
     if (!c.querySelector('#eligibilityModal')) {
@@ -197,7 +219,6 @@ window.addEventListener('DOMContentLoaded', () => {
     return { modal, modalContent };
   }
 
-  // Creates a row in the results table for each encounter
   function createRow(r, index, { modal, modalContent }) {
     const row = document.createElement('tr');
     row.classList.add(r.remarks.length ? 'invalid' : 'valid');
@@ -207,7 +228,7 @@ window.addEventListener('DOMContentLoaded', () => {
     btn.className = 'details-btn';
     btn.addEventListener('click', () => {
       if (!r.eligibilityRequestNumber) return;
-      modalContent.innerHTML = r.details; // Insert formatted table
+      modalContent.innerHTML = r.details;
       modal.style.display = 'block';
     });
     const tdBtn = document.createElement('td');
@@ -217,16 +238,16 @@ window.addEventListener('DOMContentLoaded', () => {
       <td>${index + 1}</td>
       <td class="wrap-col">${r.claimID}</td>
       <td class="wrap-col">${r.memberID}</td>
+      <td class="wrap-col">${r.payerID}</td>
       <td>${r.encounterStart}</td>
       <td></td>
       <td>${r.status || ''}</td>
       <td style="white-space: pre-line;">${r.remarks.join('\n')}</td>
     `;
-    row.querySelector('td:nth-child(5)').replaceWith(tdBtn);
+    row.querySelector('td:nth-child(6)').replaceWith(tdBtn);
     return row;
   }
 
-  // Renders the results table with all encounter rows
   function renderResults(results, containerId = 'results') {
     const tbody = buildTableContainer(containerId);
     const modalElements = setupModal(containerId);
@@ -236,20 +257,21 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Updates the status text and process button state
   function updateStatus() {
     const claimsCount = xmlData?.claimsCount || 0;
     const eligCount = eligData?.length || 0;
+    const licensesLoaded = insuranceLicenses ? true : false;
     const msgs = [];
     if (claimsCount) msgs.push(`${claimsCount} Claim${claimsCount !== 1 ? 's' : ''} loaded`);
     if (eligCount) msgs.push(`${eligCount} Eligibilit${eligCount !== 1 ? 'ies' : 'y'} loaded`);
+    if (licensesLoaded) msgs.push('Insurance Licenses loaded');
     status.textContent = msgs.join(', ');
-    processBtn.disabled = !(claimsCount && eligCount);
+    processBtn.disabled = !(claimsCount && eligCount && licensesLoaded);
 
-    // Console logging for debugging
-    console.log(`updateStatus: ${claimsCount} claims loaded, ${eligCount} eligibilities loaded`);
+    console.log(`updateStatus: ${claimsCount} claims loaded, ${eligCount} eligibilities loaded, licenses loaded: ${licensesLoaded}`);
     if (xmlData) console.log('Claims data:', xmlData);
     if (eligData) console.log('Eligibility data:', eligData);
+    if (insuranceLicenses) console.log('Insurance licenses:', insuranceLicenses);
   }
 
   xmlInput.addEventListener('change', async (e) => {
@@ -283,19 +305,19 @@ window.addEventListener('DOMContentLoaded', () => {
   });
 
   processBtn.addEventListener('click', async () => {
-    if (!xmlData || !eligData) {
-      alert('Please upload both XML Claims and Eligibility XLSX files');
+    if (!xmlData || !eligData || !insuranceLicenses) {
+      alert('Please upload both XML Claims, Eligibility XLSX files, and ensure insurance_licenses.json is present');
       return;
     }
     processBtn.disabled = true;
     status.textContent = 'Validating…';
     try {
-      const results = validateEncounters(xmlData, eligData);
+      const results = validateEncounters(xmlData, eligData, insuranceLicenses);
       console.log(`Validation completed: ${results.length} encounters processed`);
       console.log('Validation results:', results);
       renderResults(results);
 
-      // NEW: Show summary of valid encounters
+      // Validity summary
       const validCount = results.filter(r => r.remarks.length === 0).length;
       const totalCount = results.length;
       const percent = totalCount > 0 ? Math.round((validCount / totalCount) * 100) : 0;
