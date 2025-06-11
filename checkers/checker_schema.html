@@ -21,16 +21,9 @@
   
   <input type="file" id="xmlFile" accept=".xml" />
   <button onclick="validateXmlSchema()">Check Schema</button>
-  <table id="resultTable" border="1">
-    <thead>
-      <tr>
-        <th>Error Type</th>
-        <th>Line</th>
-        <th>Message</th>
-      </tr>
-    </thead>
-    <tbody></tbody>
-  </table>
+
+  <div id="uploadStatus" aria-live="polite"></div>
+  <div id="results"></div>
 
   <script src="checker_schema.js"></script>
 </body>
