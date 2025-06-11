@@ -36,55 +36,52 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Parses the uploaded XML file and extracts claim and activities
+  // Parses the uploaded XML file and extracts MemberID and Encounter details
   function parseXML(file) {
     console.log("parseXML: Starting to parse XML file");
     return file.text().then(xmlText => {
       const parser = new DOMParser();
       const xmlDoc = parser.parseFromString(xmlText, "application/xml");
       const claim = xmlDoc.querySelector('Claim');
-      const claimEID = claim?.querySelector('EmiratesIDNumber')?.textContent.trim() || '';
-      const activityNodes = claim.querySelectorAll('Activity');
-      const activities = Array.from(activityNodes).map(act => ({
-        Clinician: act.querySelector('Clinician')?.textContent.trim() || '',
-        ProviderID: act.querySelector('ProviderID')?.textContent.trim() || '',
-        Start: act.querySelector('Start')?.textContent.trim() || '',
+      // Extract MemberID from XML (Card Number)
+      const memberID = claim?.querySelector('MemberID')?.textContent.trim() || '';
+      // Encounters may be multiple
+      const encounterNodes = claim.querySelectorAll('Encounter');
+      // Map over encounters to get Start date (and optionally other fields if needed)
+      const encounters = Array.from(encounterNodes).map(enc => ({
+        Start: enc.querySelector('Start')?.textContent.trim() || '',
+        // Optionally store more fields here
       }));
       console.log("parseXML: Successfully parsed XML file");
-      return { claimEID, activities };
+      return { memberID, encounters };
     });
   }
 
-  // Validates claim activities against eligibility data
-  function validateActivities(xmlPayload, eligRows) {
-    console.log("validateActivities: Validating activities");
-    const { claimEID, activities } = xmlPayload;
-    const normalizedXmlEID = claimEID.replace(/-/g, '');
-    const eidRemark = validateEIDFormat(normalizedXmlEID);
-    return activities.map(activity => {
+  // Validates encounters against eligibility data
+  function validateEncounters(xmlPayload, eligRows) {
+    console.log("validateEncounters: Validating encounters");
+    const { memberID, encounters } = xmlPayload;
+    const normalizedMemberID = memberID.replace(/-/g, '').trim();
+    // For each encounter, find eligibility match
+    return encounters.map(encounter => {
       const remarks = [];
-      if (eidRemark) remarks.push(`XML EID: ${eidRemark}`);
-      const match = findEligibilityMatch(activity, eligRows);
+      const match = findEligibilityMatchByCardAndDate(normalizedMemberID, encounter, eligRows);
       if (!match) {
         remarks.push('No matching eligibility row found');
       } else {
         const status = (match['Status'] || '').toLowerCase();
         if (status !== 'eligible') remarks.push(`Status not eligible (${match['Status']})`);
-        const excelEID = (match['EID'] || '').replace(/-/g, '');
-        if (excelEID && normalizedXmlEID !== excelEID) {
-          remarks.push('EID mismatch between XML and Excel');
+        const excelCard = (match['Card Number / DHA Member ID'] || '').replace(/-/g, '').trim();
+        if (excelCard && normalizedMemberID !== excelCard) {
+          remarks.push('Card Number mismatch between XML and Excel');
         }
       }
-      const clinicianDisplay = match
-        ? `${activity.Clinician}\n${match['Clinician Name'] || ''}`
-        : activity.Clinician;
       const details = match
         ? `${match['Eligibility Request Number'] || ''}\n${match['Service Category'] || ''} - ${match['Consultation Status'] || ''}`
         : '';
       return {
-        clinician: clinicianDisplay,
-        providerID: activity.ProviderID,
-        start: activity.Start,
+        memberID: normalizedMemberID,
+        start: encounter.Start,
         details,
         eligibilityRequestNumber: match?.['Eligibility Request Number'] || null,
         remarks,
@@ -92,61 +89,62 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Checks EID format for validity
-  function validateEIDFormat(eid) {
-    console.log("validateEIDFormat: Validating EID format");
-    if (!eid) return 'Missing EID';
-    if (!/^784\d{12}$/.test(eid)) return 'Invalid EID format (expect 15 digits starting with 784)';
-    return null;
-  }
+  // Finds the best eligibility row matching the card number and date
+  function findEligibilityMatchByCardAndDate(memberID, encounter, eligRows) {
+    console.log("findEligibilityMatchByCardAndDate: Looking for eligibility match");
+    const startDate = parseDMYorISO(encounter.Start);
+    // Allow for different possible column names
+    const cardCol = 'Card Number / DHA Member ID';
+    const dateCol = 'Ordered On';
 
-  // Finds the best eligibility row matching the activity
-  function findEligibilityMatch(activity, eligRows) {
-    console.log("findEligibilityMatch: Looking for eligibility match");
-    const clinician = activity.Clinician;
-    const providerID = activity.ProviderID;
-    const startDate = parseDMY(activity.Start);
+    // Filter for card number match (normalize both)
     const matches = eligRows.filter(row => {
-      if (row['Clinician'] !== clinician) return false;
-      if (row['Provider License'] !== providerID) return false;
-      const effDate = parseExcelDate(row['EffectiveDate']);
-      const expDate = row['ExpiryDate'] ? parseExcelDate(row['ExpiryDate']) : null;
-      if (effDate > startDate) return false;
-      if (expDate && expDate < startDate) return false;
-      return true;
+      const xlsCard = (row[cardCol] || '').replace(/-/g, '').trim();
+      if (xlsCard !== memberID) return false;
+      // Compare date - should match exactly or within a day? Here, we match exact date only
+      const excelDate = parseDMYorISO(row[dateCol]);
+      return isSameDay(excelDate, startDate);
     });
+
     if (matches.length === 0) return null;
-    matches.sort((a, b) => parseExcelDate(b['EffectiveDate']) - parseExcelDate(a['EffectiveDate']));
+    // If multiple, pick the first (or you may sort by date descending if needed)
     return matches[0];
   }
 
-  // Converts Excel date string to JS Date object
-  function parseExcelDate(str) {
-    console.log("parseExcelDate: Parsing Excel date", str);
+  // Utility: Compare if two Date objects refer to the same day (ignoring time)
+  function isSameDay(d1, d2) {
+    if (!(d1 instanceof Date) || !(d2 instanceof Date)) return false;
+    if (isNaN(d1.valueOf()) || isNaN(d2.valueOf())) return false;
+    return d1.getFullYear() === d2.getFullYear() &&
+      d1.getMonth() === d2.getMonth() &&
+      d1.getDate() === d2.getDate();
+  }
+
+  // Parses Excel or ISO date string to JS Date object
+  function parseDMYorISO(str) {
+    console.log("parseDMYorISO: Parsing date", str);
     if (!str) return new Date('Invalid Date');
-    const parts = str.split(' ');
-    if (parts.length === 2) {
-      const [day, monStr, year] = parts[0].split('-');
+    // Try DMY or D-MMM-YYYY HH:mm format first (as in parseExcelDate)
+    const dmyParts = str.split(' ');
+    if (dmyParts.length === 2 && dmyParts[0].includes('-')) {
+      const [day, monStr, year] = dmyParts[0].split('-');
       const monthMap = {
         Jan: '01', Feb: '02', Mar: '03', Apr: '04', May: '05', Jun: '06',
         Jul: '07', Aug: '08', Sep: '09', Oct: '10', Nov: '11', Dec: '12',
       };
       const month = monthMap[monStr];
-      if (!month) return new Date('Invalid Date');
-      return new Date(`${year}-${month}-${day}T${parts[1]}`);
+      if (month) return new Date(`${year}-${month}-${day}T${dmyParts[1]}`);
     }
-    return new Date(str);
-  }
-
-  // Parses dates in DMY format (used for activity Start field)
-  function parseDMY(str) {
-    console.log("parseDMY: Parsing DMY date", str);
-    if (!str) return new Date('Invalid Date');
+    // Try DMY with slashes or dashes, e.g. 15/06/2024 or 15-06-2024
     const parts = str.split(/[\/\-]/);
     if (parts.length === 3 && parts[2].length === 4) {
+      // Could be DD/MM/YYYY or DD-MM-YYYY
       return new Date(parts[2], parts[1] - 1, parts[0]);
     }
-    return new Date(str);
+    // Try ISO
+    const d = new Date(str);
+    if (!isNaN(d.valueOf())) return d;
+    return new Date('Invalid Date');
   }
 
   // Builds the results table container
@@ -155,7 +153,7 @@ window.addEventListener('DOMContentLoaded', () => {
     const c = document.getElementById(containerId);
     c.innerHTML = `<table class="shared-table">
         <thead><tr>
-          <th>#</th><th>Clinician</th><th>ProviderID</th><th>Activity Start</th><th>Eligibility Details</th><th>Remarks</th>
+          <th>#</th><th>MemberID</th><th>Encounter Start</th><th>Eligibility Details</th><th>Remarks</th>
         </tr></thead>
         <tbody></tbody>
       </table>`;
@@ -186,9 +184,9 @@ window.addEventListener('DOMContentLoaded', () => {
     return { modal, modalContent };
   }
 
-  // Creates a row in the results table for each activity
+  // Creates a row in the results table for each encounter
   function createRow(r, index, { modal, modalContent }) {
-    console.log("createRow: Creating row for activity", index + 1);
+    console.log("createRow: Creating row for encounter", index + 1);
     const row = document.createElement('tr');
     row.classList.add(r.remarks.length ? 'invalid' : 'valid');
 
@@ -206,17 +204,16 @@ window.addEventListener('DOMContentLoaded', () => {
 
     row.innerHTML = `
       <td>${index + 1}</td>
-      <td class="wrap-col">${r.clinician.replace(/\n/g, '<br>')}</td>
-      <td>${r.providerID}</td>
+      <td class="wrap-col">${r.memberID}</td>
       <td>${r.start}</td>
       <td></td>
       <td style="white-space: pre-line;">${r.remarks.join('\n')}</td>
     `;
-    row.querySelector('td:nth-child(5)').replaceWith(tdBtn);
+    row.querySelector('td:nth-child(4)').replaceWith(tdBtn);
     return row;
   }
 
-  // Renders the results table with all activity rows
+  // Renders the results table with all encounter rows
   function renderResults(results, containerId = 'results') {
     console.log("renderResults: Rendering results");
     const tbody = buildTableContainer(containerId);
@@ -230,10 +227,10 @@ window.addEventListener('DOMContentLoaded', () => {
   // Updates the status text and process button state
   function updateStatus() {
     console.log("updateStatus: Updating status");
-    const claimsCount = xmlData?.activities?.length || 0;
+    const encountersCount = xmlData?.encounters?.length || 0;
     const eligCount = eligData?.length || 0;
     const msgs = [];
-    if (claimsCount) msgs.push(`${claimsCount} Claim${claimsCount !== 1 ? 's' : ''} loaded`);
+    if (encountersCount) msgs.push(`${encountersCount} Encounter${encountersCount !== 1 ? 's' : ''} loaded`);
     if (eligCount) msgs.push(`${eligCount} Eligibilit${eligCount !== 1 ? 'ies' : 'y'} loaded`);
     status.textContent = msgs.join(', ');
     processBtn.disabled = !(xmlData && eligData);
@@ -278,9 +275,9 @@ window.addEventListener('DOMContentLoaded', () => {
     status.textContent = 'Validating…';
 
     try {
-      const results = validateActivities(xmlData, eligData);
+      const results = validateEncounters(xmlData, eligData);
       renderResults(results);
-      status.textContent = `Validation completed: ${results.length} activities processed`;
+      status.textContent = `Validation completed: ${results.length} encounters processed`;
       console.log("Process: Validation completed", results);
     } catch (err) {
       status.textContent = `Validation error: ${err.message}`;
