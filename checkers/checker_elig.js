@@ -2,7 +2,7 @@
 
 // Dependencies: SheetJS (xlsx) — no xml-js needed anymore
 
-// parseDD/MM/YYYY HH:MM strings into JS Date
+// parse DD/MM/YYYY HH:MM strings into JS Date
 const parseDMY = (str) => {
   if (!str) return new Date('Invalid Date');
   const [day, month, yearAndTime] = str.split('/');
@@ -18,30 +18,35 @@ const parseExcel = async (file) => {
   return XLSX.utils.sheet_to_json(sheet);
 };
 
-// **Replaced xml-js**: use DOMParser, then wrap each <Activity> child into { _text }
+// Replace xml-js: use DOMParser, capture all <Claim> elements
 const parseXML = async (file) => {
   const text = await file.text();
   const parser = new DOMParser();
   const xml = parser.parseFromString(text, 'application/xml');
 
-  const claimEl = xml.querySelector('Claim');
-  if (!claimEl) throw new Error('Invalid XML structure: Missing <Claim>');
+  const claimEls = Array.from(xml.querySelectorAll('Claim'));
+  if (claimEls.length === 0) throw new Error('Invalid XML structure: Missing <Claim>');
 
-  // Grab EID
-  const eidEl = claimEl.querySelector('EmiratesIDNumber');
-  const claimEID = eidEl ? eidEl.textContent.trim() : '';
+  // For status display
+  const claimsCount = claimEls.length;
 
-  // Build activities array in same shape as xml-js compact JSON
-  const activityEls = Array.from(claimEl.querySelectorAll('Activity'));
-  const activities = activityEls.map((act) => {
-    const obj = {};
-    Array.from(act.children).forEach((child) => {
-      obj[child.tagName] = { _text: child.textContent.trim() };
-    });
-    return obj;
-  });
+  // We’ll just parse the first claim’s EID here, since all claims share the same XML root
+  // (if they differ, you can adjust to store per-claim EIDs)
+  const firstEIDel = claimEls[0].querySelector('EmiratesIDNumber');
+  const claimEID = firstEIDel ? firstEIDel.textContent.trim() : '';
 
-  return { claimEID, activities };
+  // Flatten all <Activity> elements across all claims
+  const activities = claimEls.flatMap((claimEl) =>
+    Array.from(claimEl.querySelectorAll('Activity')).map((act) => {
+      const obj = {};
+      Array.from(act.children).forEach((child) => {
+        obj[child.tagName] = { _text: child.textContent.trim() };
+      });
+      return obj;
+    })
+  );
+
+  return { claimsCount, claimEID, activities };
 };
 
 const validateEID = (eid) => {
@@ -73,8 +78,7 @@ const findEligibilityMatch = (activity, eligRows) => {
     if (effDate > startDate) continue;
     if (expDate && expDate < startDate) continue;
 
-    const status = (row['Status'] || '').toLowerCase();
-    if (status === 'eligible') {
+    if ((row['Status'] || '').toLowerCase() === 'eligible') {
       eligibleMatches.push(row);
     }
   }
@@ -90,15 +94,16 @@ const findEligibilityMatch = (activity, eligRows) => {
 
 const validateActivities = (xmlPayload, eligRows) => {
   const { activities, claimEID } = xmlPayload;
-
   const results = [];
+
+  const eidRemark = validateEID(claimEID);
+
   for (const activity of activities) {
     const clinicianID = activity.Clinician?._text || '';
     const providerID = activity.ProviderID?._text || '';
     const start = activity.Start?._text || '';
 
     const remarks = [];
-    const eidRemark = validateEID(claimEID);
     if (eidRemark) remarks.push(`EID: ${eidRemark}`);
 
     const match = findEligibilityMatch(activity, eligRows);
@@ -118,7 +123,6 @@ const validateActivities = (xmlPayload, eligRows) => {
     const clinician = match
       ? `${clinicianID}\n${match['Clinician Name'] || ''}`
       : clinicianID;
-
     const details = match
       ? `${match['Eligibility Request Number'] || ''}\n${match['Service Category'] || ''} - ${match['Consultation Status'] || ''}`
       : '';
@@ -166,11 +170,11 @@ window.xmlData = null;
 window.eligData = null;
 
 const updateStatus = () => {
-  const claimsCount = window.xmlData ? window.xmlData.activities.length : 0;
-  const eligCount = window.eligData ? window.eligData.length : 0;
+  const claimsCount = window.xmlData ? window.xmlData.claimsCount : 0;
+  const eligCount   = window.eligData ? window.eligData.length    : 0;
   const msgs = [];
-  if (claimsCount) msgs.push(`${claimsCount} Claim${claimsCount!==1?'s':''} loaded`);
-  if (eligCount) msgs.push(`${eligCount} Eligibilit${eligCount!==1?'ies':'y'} loaded`);
+  if (claimsCount) msgs.push(`${claimsCount} Claim${claimsCount !== 1 ? 's' : ''} loaded`);
+  if (eligCount)   msgs.push(`${eligCount} Eligibilit${eligCount !== 1 ? 'ies' : 'y'} loaded`);
   status.textContent = msgs.join(', ');
   checkBtn.disabled = !(window.xmlData && window.eligData);
 };
@@ -196,8 +200,7 @@ document.getElementById('eligibilityFileInput').addEventListener('change', async
 });
 
 checkBtn.addEventListener('click', () => {
-  if (!(window.xmlData && window.eligData))
-    return alert('Upload both files');
+  if (!(window.xmlData && window.eligData)) return alert('Upload both files');
   checkBtn.disabled = true;
   status.textContent = 'Validating…';
   setTimeout(() => {
