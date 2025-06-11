@@ -4,7 +4,8 @@ document.addEventListener('DOMContentLoaded', () => {
     { label: "Eligibilities", file: "checkers/checker_elig.html" },
     { label: "Authorizations", file: "checkers/checker_auths.html" },
     { label: "Timings", file: "checkers/checker_timings.html" },
-    { label: "Tooths", file: "checkers/checker_tooths.html" }
+    { label: "Tooths", file: "checkers/checker_tooths.html" },
+    { label: "Schema", file: "checkers/checker_schema.html" }
   ];
 
   const navLeft = document.getElementById("navLeft");
