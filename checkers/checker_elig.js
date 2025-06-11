@@ -3,7 +3,7 @@
 window.addEventListener('DOMContentLoaded', () => {
   const excelInput = document.getElementById('excelFile');
   const xmlInput = document.getElementById('xmlFile');
-  const validateBtn = document.getElementById('validateBtn');
+  const validateBtn = document.getElementById('processBtn');
   const resultContainer = document.getElementById('results');
 
   validateBtn.onclick = () => {
@@ -240,7 +240,6 @@ window.addEventListener('DOMContentLoaded', () => {
     if (claimsCount) msgs.push(`${claimsCount} Claim${claimsCount !== 1 ? 's' : ''} loaded`);
     if (eligCount) msgs.push(`${eligCount} Eligibilit${eligCount !== 1 ? 'ies' : 'y'} loaded`);
     status.textContent = msgs.join(', ');
-    console.log(stats.textContent);
     checkBtn.disabled = !(window.xmlData && window.eligData);
   };
 
