@@ -226,24 +226,30 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // Updates the status text and process button state
   function updateStatus() {
-    const claimsCount = xmlData?.claimsCount || 0;
-    const encountersCount = xmlData?.encounters?.length || 0;
-    const eligCount = eligData?.length || 0;
-    const msgs = [];
-    if (claimsCount) msgs.push(`${claimsCount} Claim${claimsCount !== 1 ? 's' : ''} loaded`);
-    if (encountersCount) msgs.push(`${encountersCount} Encounter${encountersCount !== 1 ? 's' : ''} loaded`);
-    if (eligCount) msgs.push(`${eligCount} Eligibilit${eligCount !== 1 ? 'ies' : 'y'} loaded`);
-    status.textContent = msgs.join(', ');
-    processBtn.disabled = !(encountersCount && eligCount);
-  }
+      const claimsCount = xmlData?.claimsCount || 0;
+      const eligCount = eligData?.length || 0;
+      const msgs = [];
+      if (claimsCount) msgs.push(`${claimsCount} Claim${claimsCount !== 1 ? 's' : ''} loaded`);
+      if (eligCount) msgs.push(`${eligCount} Eligibilit${eligCount !== 1 ? 'ies' : 'y'} loaded`);
+      status.textContent = msgs.join(', ');
+      processBtn.disabled = !(claimsCount && eligCount);
+
+      // Console logging for debugging
+      console.log(`updateStatus: ${claimsCount} claims loaded, ${eligCount} eligibilities loaded`);
+      if (xmlData) console.log('Claims data:', xmlData);
+      if (eligData) console.log('Eligibility data:', eligData);
+    }
 
   xmlInput.addEventListener('change', async (e) => {
     status.textContent = 'Loading Claims…';
     processBtn.disabled = true;
     try {
       xmlData = await parseXML(e.target.files[0]);
+      console.log(`XML parsed: ${xmlData.claimsCount} claims, ${xmlData.encounters.length} encounters`);
+      console.log('Parsed claims:', xmlData);
     } catch (err) {
       status.textContent = `XML Error: ${err.message}`;
+      console.error("XML load error:", err);
       xmlData = null;
     }
     updateStatus();
@@ -254,8 +260,11 @@ window.addEventListener('DOMContentLoaded', () => {
     processBtn.disabled = true;
     try {
       eligData = await parseExcel(e.target.files[0]);
+      console.log(`Excel parsed: ${eligData.length} eligibilities`);
+      console.log('Parsed eligibilities:', eligData);
     } catch (err) {
       status.textContent = `XLSX Error: ${err.message}`;
+      console.error("Excel load error:", err);
       eligData = null;
     }
     updateStatus();
@@ -270,10 +279,13 @@ window.addEventListener('DOMContentLoaded', () => {
     status.textContent = 'Validating…';
     try {
       const results = validateEncounters(xmlData, eligData);
+      console.log(`Validation completed: ${results.length} encounters processed`);
+      console.log('Validation results:', results);
       renderResults(results);
       status.textContent = `Validation completed: ${results.length} encounters processed`;
     } catch (err) {
       status.textContent = `Validation error: ${err.message}`;
+      console.error("Validation error:", err);
     }
     processBtn.disabled = false;
   });
