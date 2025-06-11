@@ -91,6 +91,18 @@ window.addEventListener('DOMContentLoaded', () => {
     return matches;
   }
 
+  // Finds the affiliated Plan for a given payerID and Payer Name using insuranceLicenses
+  function getAffiliatedPlan(payerID, payerName, insuranceLicenses) {
+    if (!insuranceLicenses || !payerID) return "";
+    const possibleLicenses = insuranceLicenses.licenses.filter(l => l.PayerID === payerID);
+    for (const lic of possibleLicenses) {
+      if (payerName.includes(lic.Plan)) {
+        return lic.Plan;
+      }
+    }
+    return "";
+  }
+
   // Validates encounters against eligibility data (ignoring date, returns all matches)
   function validateEncounters(xmlPayload, eligRows, insuranceLicenses) {
     const { encounters } = xmlPayload;
@@ -99,6 +111,7 @@ window.addEventListener('DOMContentLoaded', () => {
       const remarks = [];
       let status = '';
       let match = null;
+      let affiliatedPlan = "";
       if (matches.length === 0) {
         remarks.push('No eligibility rows found for card number');
       } else {
@@ -112,15 +125,25 @@ window.addEventListener('DOMContentLoaded', () => {
         }
       }
 
-      // Insurance license validation
+      // Insurance license validation (iterate for all plans for this PayerID)
+      let foundLicense = null;
       if (insuranceLicenses && match) {
         const payerID = encounter.payerID || '';
         const payerName = match['Payer Name'] || '';
-        const license = insuranceLicenses.licenses.find(l => l.PayerID === payerID);
-        if (!license) {
+        const possibleLicenses = insuranceLicenses.licenses.filter(l => l.PayerID === payerID);
+        for (const lic of possibleLicenses) {
+          if (payerName.includes(lic.Plan)) {
+            foundLicense = lic;
+            affiliatedPlan = lic.Plan;
+            break;
+          }
+        }
+        if (!possibleLicenses.length) {
           remarks.push(`No matching license for PayerID: ${payerID}`);
-        } else if (!payerName.includes(license.Plan)) {
-          remarks.push(`Plan "${license.Plan}" not found in Payer Name "${payerName}"`);
+        } else if (!foundLicense) {
+          remarks.push(
+            `No license Plan for PayerID "${payerID}" matches Payer Name "${payerName}". (Tried: ${possibleLicenses.map(l=>l.Plan).join(", ")})`
+          );
         }
       }
 
@@ -130,6 +153,7 @@ window.addEventListener('DOMContentLoaded', () => {
         claimID: encounter.claimID,
         memberID: encounter.memberID,
         payerID: encounter.payerID,
+        affiliatedPlan,
         encounterStart: encounter.encounterStart,
         details,
         eligibilityRequestNumber: match?.['Eligibility Request Number'] || null,
@@ -142,6 +166,7 @@ window.addEventListener('DOMContentLoaded', () => {
         claimID: encounter.claimID,
         memberID: encounter.memberID,
         payerID: encounter.payerID,
+        affiliatedPlan,
         encounterStart: encounter.encounterStart,
         details,
         eligibilityRequestNumber: match?.['Eligibility Request Number'] || null,
@@ -186,7 +211,7 @@ window.addEventListener('DOMContentLoaded', () => {
           <th>#</th>
           <th>ID</th>
           <th>MemberID</th>
-          <th>PayerID</th>
+          <th>PayerID & Plan</th>
           <th>Encounter Start</th>
           <th>Eligibility Details</th>
           <th>Status</th>
@@ -234,11 +259,17 @@ window.addEventListener('DOMContentLoaded', () => {
     const tdBtn = document.createElement('td');
     tdBtn.appendChild(btn);
 
+    // Compose payerID and affiliatedPlan in the same column
+    let payerIDPlan = r.payerID || '';
+    if (r.affiliatedPlan) {
+      payerIDPlan += ` (${r.affiliatedPlan})`;
+    }
+
     row.innerHTML = `
       <td>${index + 1}</td>
       <td class="wrap-col">${r.claimID}</td>
       <td class="wrap-col">${r.memberID}</td>
-      <td class="wrap-col">${r.payerID}</td>
+      <td class="wrap-col">${payerIDPlan}</td>
       <td>${r.encounterStart}</td>
       <td></td>
       <td>${r.status || ''}</td>
