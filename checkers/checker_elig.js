@@ -139,16 +139,29 @@ const validateActivities = (xmlPayload, eligRows) => {
 };
 
 const renderResults = (results) => {
-  const table = document.getElementById('results');
-  table.innerHTML = `
-    <thead>
-      <tr>
-        <th>#</th><th>Clinician</th><th>ProviderID</th>
-        <th>ActivityStart</th><th>Eligibility Details</th><th>Remarks</th>
-      </tr>
-    </thead><tbody></tbody>
+  const container = document.getElementById('results');
+
+  // Build full table markup inside the container
+  container.innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Clinician</th>
+          <th>ProviderID</th>
+          <th>ActivityStart</th>
+          <th>Eligibility Details</th>
+          <th>Remarks</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
   `;
-  const tbody = table.querySelector('tbody');
+
+  // Select the new tbody element
+  const tbody = container.querySelector('tbody');
+
+  // Populate each row into the tbody
   results.forEach((r, i) => {
     const row = document.createElement('tr');
     row.innerHTML = `
