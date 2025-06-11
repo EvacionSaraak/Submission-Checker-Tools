@@ -11,25 +11,29 @@ window.addEventListener('DOMContentLoaded', () => {
   let eligData = null;
 
   // Parses the uploaded Excel file and returns JSON representation
-async function parseExcel(file) {
+  async function parseExcel(file) {
     const reader = new FileReader();
     return new Promise((resolve, reject) => {
       reader.onload = e => {
         try {
           const data = new Uint8Array(e.target.result);
           const workbook = XLSX.read(data, { type: 'array' });
-          console.log('SheetNames:', workbook.SheetNames); // <--- Sheet names
+          // Log all sheet names for debugging
+          console.log('SheetNames:', workbook.SheetNames);
 
+          // Use the sheet name 'Eligibility', case/space sensitive
           const worksheet = workbook.Sheets['Eligibility'];
           if (!worksheet) {
             throw new Error('No worksheet named "Eligibility" found in uploaded file.');
           }
-          const json = XLSX.utils.sheet_to_json(worksheet, { defval: '', range: 1 });
-          console.log('Elig parsed json:', json);
 
-          // Log all headers from the parsed sheet
+          // Use the second row (range: 1) as headers
+          const json = XLSX.utils.sheet_to_json(worksheet, { defval: '', range: 1 });
+
+          // Log all headers for debugging
           if (json.length > 0) {
             console.log('Eligibility headers:', Object.keys(json[0]));
+            console.log('First eligibility row:', json[0]);
           } else {
             console.log('Eligibility headers: [No data rows parsed]');
           }
@@ -43,7 +47,7 @@ async function parseExcel(file) {
       reader.readAsArrayBuffer(file);
     });
   }
-  
+
   // Parses the uploaded XML file and extracts all claims and encounters
   function parseXML(file) {
     return file.text().then(xmlText => {
@@ -84,6 +88,17 @@ async function parseExcel(file) {
         }
       }
       const details = match ? formatEligibilityDetailsModal(match) : '';
+      // Log the data before it is pushed to a row
+      console.log('Row data about to be rendered:', {
+        claimID: encounter.claimID,
+        memberID: encounter.memberID,
+        encounterStart: encounter.encounterStart,
+        details,
+        eligibilityRequestNumber: match?.['Eligibility Request Number'] || null,
+        status,
+        remarks,
+        match
+      });
       return {
         claimID: encounter.claimID,
         memberID: encounter.memberID,
@@ -124,20 +139,27 @@ async function parseExcel(file) {
   // Parses Excel or ISO date string to JS Date object
   function parseDMYorISO(str) {
     if (!str) return new Date('Invalid Date');
+    // Excel often uses D-MMM-YYYY HH:mm:ss or similar
     const dmyParts = str.split(' ');
-    if (dmyParts.length === 2 && dmyParts[0].includes('-')) {
+    if (dmyParts.length >= 2 && dmyParts[0].includes('-')) {
       const [day, monStr, year] = dmyParts[0].split('-');
       const monthMap = {
         Jan: '01', Feb: '02', Mar: '03', Apr: '04', May: '05', Jun: '06',
         Jul: '07', Aug: '08', Sep: '09', Oct: '10', Nov: '11', Dec: '12',
       };
       const month = monthMap[monStr];
-      if (month) return new Date(`${year}-${month}-${day}T${dmyParts[1]}`);
+      if (month) {
+        // Support if time is present, else "00:00:00"
+        const time = dmyParts[1] ? dmyParts[1] : "00:00:00";
+        return new Date(`${year}-${month}-${day}T${time}`);
+      }
     }
+    // Support for DD/MM/YYYY or DD-MM-YYYY
     const parts = str.split(/[\/\-]/);
     if (parts.length === 3 && parts[2].length === 4) {
       return new Date(parts[2], parts[1] - 1, parts[0]);
     }
+    // Try native Date
     const d = new Date(str);
     if (!isNaN(d.valueOf())) return d;
     return new Date('Invalid Date');
@@ -149,7 +171,7 @@ async function parseExcel(file) {
       'Eligibility Request Number: ' + (match['Eligibility Request Number'] || ''),
       'Payer Name: ' + (match['Payer Name'] || ''),
       'Service Category: ' + (match['Service Category'] || ''),
-      'Consultation status: ' + (match['Consultation status'] || ''),
+      'Consultation Status: ' + (match['Consultation Status'] || ''),
       'Clinician: ' + (match['Clinician'] || ''),
       'Clinician Name: ' + (match['Clinician Name'] || ''),
       'Authorization Number: ' + (match['Authorization Number'] || ''),
@@ -201,6 +223,9 @@ async function parseExcel(file) {
 
   // Creates a row in the results table for each encounter
   function createRow(r, index, { modal, modalContent }) {
+    // Optionally log here as well if you want to see row data at this point
+    // console.log('createRow data:', r);
+
     const row = document.createElement('tr');
     row.classList.add(r.remarks.length ? 'invalid' : 'valid');
     const btn = document.createElement('button');
@@ -233,8 +258,8 @@ async function parseExcel(file) {
     const tbody = buildTableContainer(containerId);
     const modalElements = setupModal(containerId);
     results.forEach((r, i) => {
-      // Log each data object before creating/pushing the row
-      console.log('Row data about to be rendered:', r);
+      // Already logged in validateEncounters, but can log here if needed
+      // console.log('Row data about to be rendered:', r);
       const row = createRow(r, i, modalElements);
       tbody.appendChild(row);
     });
@@ -242,19 +267,19 @@ async function parseExcel(file) {
 
   // Updates the status text and process button state
   function updateStatus() {
-      const claimsCount = xmlData?.claimsCount || 0;
-      const eligCount = eligData?.length || 0;
-      const msgs = [];
-      if (claimsCount) msgs.push(`${claimsCount} Claim${claimsCount !== 1 ? 's' : ''} loaded`);
-      if (eligCount) msgs.push(`${eligCount} Eligibilit${eligCount !== 1 ? 'ies' : 'y'} loaded`);
-      status.textContent = msgs.join(', ');
-      processBtn.disabled = !(claimsCount && eligCount);
+    const claimsCount = xmlData?.claimsCount || 0;
+    const eligCount = eligData?.length || 0;
+    const msgs = [];
+    if (claimsCount) msgs.push(`${claimsCount} Claim${claimsCount !== 1 ? 's' : ''} loaded`);
+    if (eligCount) msgs.push(`${eligCount} Eligibilit${eligCount !== 1 ? 'ies' : 'y'} loaded`);
+    status.textContent = msgs.join(', ');
+    processBtn.disabled = !(claimsCount && eligCount);
 
-      // Console logging for debugging
-      console.log(`updateStatus: ${claimsCount} claims loaded, ${eligCount} eligibilities loaded`);
-      if (xmlData) console.log('Claims data:', xmlData);
-      if (eligData) console.log('Eligibility data:', eligData);
-    }
+    // Console logging for debugging
+    console.log(`updateStatus: ${claimsCount} claims loaded, ${eligCount} eligibilities loaded`);
+    if (xmlData) console.log('Claims data:', xmlData);
+    if (eligData) console.log('Eligibility data:', eligData);
+  }
 
   xmlInput.addEventListener('change', async (e) => {
     status.textContent = 'Loading Claims…';
