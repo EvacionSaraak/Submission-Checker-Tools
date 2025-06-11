@@ -2,6 +2,13 @@
 
 // Dependencies: SheetJS (xlsx), xml-js
 
+const parseDMY = (str) => {
+  if (!str) return new Date('Invalid Date');
+  const [day, month, yearAndTime] = str.split('/');
+  const [year, time] = yearAndTime.split(' ');
+  return new Date(`${year}-${month}-${day}T${time || '00:00'}`);
+};
+
 const parseExcel = async (file) => {
   const data = await file.arrayBuffer();
   const workbook = XLSX.read(data, { type: 'array' });
@@ -14,15 +21,13 @@ const parseXML = async (file) => {
   const json = xmljs.xml2js(text, { compact: true });
 
   const claim = json['Claim.Submission']?.['Claim'];
-  if (!claim || !claim['Encounter']) {
-    throw new Error('Invalid XML structure: Missing Claim or Encounter');
-  }
+  if (!claim) throw new Error('Invalid XML structure: Missing <Claim>');
 
-  const encounter = claim['Encounter'];
+  const encounter = claim['Encounter'] || {};
   const claimEID = claim['EmiratesIDNumber']?._text?.trim() || '';
 
-  // Normalize activity list
-  const activities = [].concat(encounter.Activity || []);
+  // Activities are directly inside <Claim>
+  const activities = [].concat(claim.Activity || []);
 
   return { encounter, claimEID, activities };
 };
@@ -38,20 +43,20 @@ const validateEID = (eid) => {
 };
 
 const findEligibilityMatch = (activity, eligRows) => {
-  const clinician = activity.Clinician?._text?.trim().toLowerCase() || '';
-  const providerID = activity.ProviderID?._text?.trim().toLowerCase() || '';
-  const startDate = new Date(Date.parse(activity.Start?._text));
+  const clinician = activity.Clinician?._text || '';
+  const providerID = activity.ProviderID?._text || '';
+  const startDate = parseDMY(activity.Start?._text);
 
   const eligibleMatches = [];
 
   for (const row of eligRows) {
-    const rowClinician = row['Clinician']?.trim().toLowerCase() || '';
-    const rowProvider = row['Provider License']?.trim().toLowerCase() || '';
+    if (
+      row['Clinician'] !== clinician ||
+      row['Provider License'] !== providerID
+    ) continue;
 
-    if (rowClinician !== clinician || rowProvider !== providerID) continue;
-
-    const effDate = new Date(Date.parse(row['EffectiveDate']));
-    const expDate = row['ExpiryDate'] ? new Date(Date.parse(row['ExpiryDate'])) : null;
+    const effDate = parseDMY(row['EffectiveDate']);
+    const expDate = row['ExpiryDate'] ? parseDMY(row['ExpiryDate']) : null;
 
     if (effDate > startDate) continue;
     if (expDate && expDate < startDate) continue;
@@ -65,7 +70,7 @@ const findEligibilityMatch = (activity, eligRows) => {
   if (eligibleMatches.length === 0) return null;
 
   eligibleMatches.sort((a, b) =>
-    new Date(b['EffectiveDate']) - new Date(a['EffectiveDate'])
+    parseDMY(b['EffectiveDate']) - parseDMY(a['EffectiveDate'])
   );
 
   return eligibleMatches[0];
@@ -75,8 +80,6 @@ const validateActivities = (xmlPayload, eligRows) => {
   const { activities, claimEID } = xmlPayload;
 
   const results = [];
-  const eidRemark = validateEID(claimEID);
-
   for (const activity of activities) {
     const clinicianID = activity.Clinician?._text || '';
     const providerID = activity.ProviderID?._text || '';
@@ -84,6 +87,7 @@ const validateActivities = (xmlPayload, eligRows) => {
 
     const remarks = [];
 
+    const eidRemark = validateEID(claimEID);
     if (eidRemark) {
       remarks.push(`EID: ${eidRemark}`);
     }
@@ -94,11 +98,11 @@ const validateActivities = (xmlPayload, eligRows) => {
       remarks.push('No matching eligibility row');
     } else {
       const status = (match['Status'] || '').toLowerCase();
-      if (status !== 'eligible') {
+      if (!['eligible'].includes(status)) {
         remarks.push(`Status not eligible (${match['Status']})`);
       }
 
-      const excelEID = match['EmiratesIDNumber']?.trim() || '';
+      const excelEID = match['EmiratesIDNumber'] || '';
       if (excelEID && claimEID !== excelEID) {
         remarks.push('EID mismatch between XML and XLSX');
       }
@@ -123,21 +127,7 @@ const validateActivities = (xmlPayload, eligRows) => {
 
 const renderResults = (results) => {
   const table = document.getElementById('results');
-  table.innerHTML = `
-    <thead>
-      <tr>
-        <th>#</th>
-        <th>Clinician</th>
-        <th>ProviderID</th>
-        <th>ActivityStart</th>
-        <th>Eligibility Details</th>
-        <th>Remarks</th>
-      </tr>
-    </thead>
-    <tbody></tbody>
-  `;
-
-  const tbody = table.querySelector('tbody');
+  table.innerHTML = '<tr><th>#</th><th>Clinician</th><th>ProviderID</th><th>ActivityStart</th><th>Eligibility Details</th><th>Remarks</th></tr>';
 
   results.forEach((r, i) => {
     const row = document.createElement('tr');
@@ -149,7 +139,7 @@ const renderResults = (results) => {
       <td style="white-space: pre-line">${r.details}</td>
       <td>${r.remarks}</td>
     `;
-    tbody.appendChild(row);
+    table.appendChild(row);
   });
 };
 
@@ -165,12 +155,11 @@ const updateStatus = () => {
   const claimsCount = window.xmlData ? window.xmlData.activities.length : 0;
   const eligCount = window.eligData ? window.eligData.length : 0;
 
-  const msgs = [];
+  let msgs = [];
   if (claimsCount) msgs.push(`${claimsCount} Claim${claimsCount !== 1 ? 's' : ''} loaded`);
   if (eligCount) msgs.push(`${eligCount} Eligibilit${eligCount !== 1 ? 'ies' : 'y'} loaded`);
 
   status.textContent = msgs.join(', ');
-
   checkBtn.disabled = !(window.xmlData && window.eligData);
 };
 
@@ -182,22 +171,16 @@ document.getElementById('xmlFileInput').addEventListener('change', async (e) => 
     window.xmlData = await parseXML(e.target.files[0]);
     updateStatus();
   } catch (err) {
-    status.textContent = 'Invalid XML format';
-    window.xmlData = null;
+    status.textContent = `XML Error: ${err.message}`;
+    console.error(err);
   }
 });
 
 document.getElementById('eligibilityFileInput').addEventListener('change', async (e) => {
   status.textContent = 'Loading Eligibilities...';
   checkBtn.disabled = true;
-
-  try {
-    window.eligData = await parseExcel(e.target.files[0]);
-    updateStatus();
-  } catch (err) {
-    status.textContent = 'Invalid Excel file';
-    window.eligData = null;
-  }
+  window.eligData = await parseExcel(e.target.files[0]);
+  updateStatus();
 });
 
 checkBtn.addEventListener('click', () => {
