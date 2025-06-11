@@ -112,9 +112,13 @@ window.addEventListener('DOMContentLoaded', () => {
       let status = '';
       let match = null;
       let affiliatedPlan = "";
-      if (matches.length === 0) {
-        remarks.push('No eligibility rows found for card number');
-      } else {
+
+      // --- MemberID error checks ---
+      const memberIdRaw = encounter.memberID || '';
+      if (/^\s+|\s+$/.test(memberIdRaw)) { remarks.push('MemberID has leading or trailing whitespace'); }
+      if (/^0\d+/.test(memberIdRaw)) { remarks.push('MemberID has leading zeroes'); } 
+      if (matches.length === 0) { remarks.push('No eligibility rows found for card number'); } 
+      else {
         // Pick the first match for main display (could be improved later)
         match = matches[0];
         status = match['Status'] || '';
