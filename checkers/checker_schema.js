@@ -1,17 +1,11 @@
-// checker_schema.js
 function validateXmlSchema() {
-  const fileInput = document.getElementById("xmlFile"),
-    status = document.getElementById("uploadStatus"),
-    resultsDiv = document.getElementById("results");
+  const fileInput = document.getElementById("xmlFile"), status = document.getElementById("uploadStatus"), resultsDiv = document.getElementById("results");
   resultsDiv.innerHTML = ""; status.textContent = "";
   const file = fileInput.files[0];
   if (!file) { status.textContent = "Please select an XML file first."; return; }
   const reader = new FileReader();
   reader.onload = function (e) {
-    const xmlContent = e.target.result,
-      parser = new DOMParser(),
-      xmlDoc = parser.parseFromString(xmlContent, "application/xml"),
-      parseErrors = xmlDoc.getElementsByTagName("parsererror");
+    const xmlContent = e.target.result, parser = new DOMParser(), xmlDoc = parser.parseFromString(xmlContent, "application/xml"), parseErrors = xmlDoc.getElementsByTagName("parsererror");
     if (parseErrors.length > 0) { status.textContent = "XML Parsing Error: The file is not well-formed."; resultsDiv.innerHTML = `<pre>${parseErrors[0].textContent}</pre>`; return; }
     status.textContent = "XML parsed successfully. Validating Claims...";
     const results = validateClaimSchema(xmlDoc);
@@ -25,48 +19,54 @@ function validateXmlSchema() {
 function validateClaimSchema(xmlDoc) {
   const results = [], claims = xmlDoc.getElementsByTagName("Claim");
   for (const claim of claims) {
-    let missingFields = [], invalidFields = [], eidRemark = "", diagnosisRemark = "", principalCount = 0;
-    function check(tag, parent = claim, prefix = "") {
+    let missingFields = [], invalidFields = [], diagnosisRemark = "", principalCount = 0;
+    function check(tag, parent = claim, prefix = "", isStrict = false) {
       const el = parent.getElementsByTagName(tag)[0], val = el?.textContent?.trim();
-      if (!el || val === "" || /\s/.test(val)) missingFields.push(prefix + tag);
+      if (!el || val === "") missingFields.push(prefix + tag);
+      else if (isStrict && /\s/.test(val)) invalidFields.push(prefix + tag + " (whitespace found)");
       return val;
     }
     const vals = {}, fields = ["ID", "MemberID", "PayerID", "ProviderID", "EmiratesIDNumber", "Gross", "PatientShare", "Net"];
-    fields.forEach(tag => vals[tag] = check(tag));
-    if (vals["EmiratesIDNumber"] && !missingFields.includes("EmiratesIDNumber")) {
-      const p = vals["EmiratesIDNumber"].split("-");
-      if (p.length !== 4 || p[0] !== "784" || !/^\d{4}$/.test(p[1]) || !/^\d{7}$/.test(p[2]) || !/^\d{1}$/.test(p[3])) { eidRemark = "Invalid EmiratesIDNumber format"; invalidFields.push("EmiratesIDNumber"); }
+    fields.forEach(tag => vals[tag] = check(tag, claim, "", true));
+    // EID validation: present & not missing
+    if (!missingFields.includes("EmiratesIDNumber")) {
+      const eid = vals["EmiratesIDNumber"], p = eid.split("-");
+      if (p.length !== 4 || p[0] !== "784" || !/^\d{4}$/.test(p[1]) || !/^\d{7}$/.test(p[2]) || !/^\d{1}$/.test(p[3])) invalidFields.push("EmiratesIDNumber (invalid format)");
     }
+    // Encounter block
     const encounter = claim.getElementsByTagName("Encounter")[0];
     if (!encounter) missingFields.push("Encounter");
-    else ["FacilityID", "Type", "PatientID", "Start", "End", "StartType", "EndType"].forEach(tag => check(tag, encounter, "Encounter."));
+    else ["FacilityID", "Type", "PatientID", "Start", "End", "StartType", "EndType"].forEach(tag => check(tag, encounter, "Encounter.", true));
+    // Diagnosis block(s)
     const diagnoses = claim.getElementsByTagName("Diagnosis");
     if (!diagnoses.length) missingFields.push("Diagnosis");
     else Array.from(diagnoses).forEach((diag, i) => {
-      const diagPrefix = `Diagnosis[${i}].`, typeVal = check("Type", diag, diagPrefix);
+      const diagPrefix = `Diagnosis[${i}].`, typeVal = check("Type", diag, diagPrefix, true);
       if (typeVal === "Principal") principalCount++;
-      check("Code", diag, diagPrefix);
+      check("Code", diag, diagPrefix, true);
     });
+    // Principal diagnosis count
     if (diagnoses.length > 0) {
-      if (principalCount === 0) diagnosisRemark = "No Principal Diagnosis";
-      else if (principalCount > 1) diagnosisRemark = "Multiple Principal Diagnoses";
+      if (principalCount === 0) invalidFields.push("Principal Diagnosis (none found)");
+      else if (principalCount > 1) invalidFields.push("Principal Diagnosis (multiple found)");
     }
+    // Activity block(s)
     const activities = claim.getElementsByTagName("Activity");
     if (!activities.length) missingFields.push("Activity");
     else Array.from(activities).forEach((act, i) => {
       const actPrefix = `Activity[${i}].`;
-      ["Start", "Type", "Code", "Quantity", "Net", "Clinician"].forEach(tag => check(tag, act, actPrefix));
-      Array.from(act.getElementsByTagName("Observation")).forEach((obs, j) => ["Type", "Code", "Value", "ValueType"].forEach(tag => check(tag, obs, `${actPrefix}Observation[${j}].`)));
+      ["Start", "Type", "Code", "Quantity", "Net", "Clinician"].forEach(tag => check(tag, act, actPrefix, true));
+      Array.from(act.getElementsByTagName("Observation")).forEach((obs, j) => ["Type", "Code", "Value", "ValueType"].forEach(tag => check(tag, obs, `${actPrefix}Observation[${j}].`, true)));
     });
+    // Contract block (optional)
     const contract = claim.getElementsByTagName("Contract")[0];
-    if (contract) check("PackageName", contract, "Contract.");
-    const isValid = missingFields.length === 0 && invalidFields.length === 0 && !eidRemark && !diagnosisRemark;
+    if (contract) check("PackageName", contract, "Contract.", true);
+    // Remarks
     let remarks = [];
     if (missingFields.length) remarks.push("Missing: " + missingFields.join(", "));
-    if (eidRemark) remarks.push(eidRemark);
-    if (diagnosisRemark) remarks.push(diagnosisRemark);
+    if (invalidFields.length) remarks.push("Invalid: " + invalidFields.join(", "));
     if (!remarks.length) remarks.push("OK");
-    results.push({ ClaimID: vals["ID"] || "Unknown", Valid: isValid, Remark: remarks.join("; "), ClaimXML: claim.outerHTML });
+    results.push({ ClaimID: vals["ID"] || "Unknown", Valid: !missingFields.length && !invalidFields.length, Remark: remarks.join("; "), ClaimXML: claim.outerHTML });
   }
   return results;
 }
