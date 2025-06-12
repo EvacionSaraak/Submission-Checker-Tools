@@ -227,7 +227,7 @@
     return table;
   }
 
-  // Main validation logic
+  // Main validation logic (canvas edition: only license at performing facility counts)
   function validateClinicians() {
     if (!xmlDoc) {
       logCriticalError('No XML loaded', '');
@@ -273,28 +273,29 @@
           }
         }
 
-        // --- Valid if clinician has ACTIVE license at any affiliated facility before/on encounter date ---
+        // --- Main fix: only count licenses at the performing facility ---
         let performingEff = '', performingStatus = '', performingStatusDisplay = '';
         let valid = false;
 
         const entries = clinicianStatusMap[pid] || [];
         const encounterD = new Date(excelDateToISO(encounterStart));
-        console.log('[Check] PID:', pid, 'Entries:', entries, 'Affiliated:', Array.from(affiliatedLicenses), 'Encounter Date:', encounterD);
+        console.log('[Check] PID:', pid, 'Entries:', entries, 'Performing Facility:', normalizedProviderId, 'Encounter Date:', encounterD);
 
-        // Find all ACTIVE licenses at any affiliated facility before/on encounter date
+        // Only count licenses at the performing facility
         const eligible = entries.filter(e => {
           const fac = (e.facility || '').toString().trim().toUpperCase();
           const effDate = new Date(excelDateToISO(e.effective));
-          const isAffiliated = affiliatedLicenses.has(fac);
-          const isActive = (e.status || '').toLowerCase() === 'active';
+          const isThisFacility = fac === normalizedProviderId;
           const effOk = !!e.effective && !isNaN(effDate) && effDate <= encounterD;
-          if (isAffiliated && effOk && isActive) {
+          const isActive = (e.status || '').toLowerCase() === 'active';
+          if (isThisFacility && effOk && isActive) {
             console.log('[Eligible] Entry:', e, '| Facility:', fac, '| Effective:', effDate, '| Encounter:', encounterD);
           } else {
-            console.log('[Skip] Entry:', e, '| isAffiliated:', isAffiliated, '| effOk:', effOk, '| isActive:', isActive);
+            console.log('[Skip] Entry:', e, '| isThisFacility:', isThisFacility, '| effOk:', effOk, '| isActive:', isActive);
           }
-          return isAffiliated && effOk && isActive;
+          return isThisFacility && effOk && isActive;
         });
+
         let mostRecent = null;
         if (eligible.length > 0) {
           eligible.sort((a, b) => new Date(excelDateToISO(b.effective)) - new Date(excelDateToISO(a.effective)));
@@ -302,7 +303,7 @@
           valid = true;
           console.log('[Valid] Most recent eligible:', mostRecent);
         } else {
-          console.log('[Invalid] No eligible ACTIVE license for PID:', pid, 'on date:', encounterD);
+          console.log('[Invalid] No eligible ACTIVE license for PID:', pid, 'at facility:', normalizedProviderId, 'on date:', encounterD);
         }
 
         // Full license history for this clinician
@@ -315,7 +316,7 @@
           performingStatus = mostRecent.status || '';
           performingStatusDisplay = (performingEff ? `${performingEff}${performingStatus ? ' (' + performingStatus + ')' : ''}` : '');
         } else {
-          remarks.push('No ACTIVE affiliated facility license for encounter date');
+          remarks.push('No ACTIVE facility license for encounter date at this facility');
         }
 
         if (!oid) {
