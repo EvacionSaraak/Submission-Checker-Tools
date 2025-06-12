@@ -19,54 +19,56 @@ function validateXmlSchema() {
 function validateClaimSchema(xmlDoc) {
   const results = [], claims = xmlDoc.getElementsByTagName("Claim");
   for (const claim of claims) {
-    let missingFields = [], invalidFields = [], diagnosisRemark = "", principalCount = 0;
-    function check(tag, parent = claim, prefix = "", isStrict = false) {
-      const el = parent.getElementsByTagName(tag)[0], val = el?.textContent?.trim();
-      if (!el || val === "") missingFields.push(prefix + tag);
-      else if (isStrict && /\s/.test(val)) invalidFields.push(prefix + tag + " (whitespace found)");
-      return val;
-    }
-    const vals = {}, fields = ["ID", "MemberID", "PayerID", "ProviderID", "EmiratesIDNumber", "Gross", "PatientShare", "Net"];
-    fields.forEach(tag => vals[tag] = check(tag, claim, "", true));
-    // EID validation: present & not missing
-    if (!missingFields.includes("EmiratesIDNumber")) {
-      const eid = vals["EmiratesIDNumber"], p = eid.split("-");
+    let missingFields = [], invalidFields = [], principalCount = 0;
+    function present(tag, parent = claim) { return parent.getElementsByTagName(tag).length > 0; }
+    function text(tag, parent = claim) { return parent.getElementsByTagName(tag)[0]?.textContent?.trim() || ""; }
+
+    // Top-level presence checks
+    ["ID", "MemberID", "PayerID", "ProviderID", "EmiratesIDNumber", "Gross", "PatientShare", "Net"].forEach(tag => { if (!present(tag)) missingFields.push(tag); });
+
+    // EID format check only if present
+    if (present("EmiratesIDNumber")) {
+      const eid = text("EmiratesIDNumber"); const p = eid.split("-");
       if (p.length !== 4 || p[0] !== "784" || !/^\d{4}$/.test(p[1]) || !/^\d{7}$/.test(p[2]) || !/^\d{1}$/.test(p[3])) invalidFields.push("EmiratesIDNumber (invalid format)");
     }
-    // Encounter block
+
+    // Encounter & subfields
     const encounter = claim.getElementsByTagName("Encounter")[0];
     if (!encounter) missingFields.push("Encounter");
-    else ["FacilityID", "Type", "PatientID", "Start", "End", "StartType", "EndType"].forEach(tag => check(tag, encounter, "Encounter.", true));
-    // Diagnosis block(s)
+    else ["FacilityID", "Type", "PatientID", "Start", "End", "StartType", "EndType"].forEach(tag => { if (!present(tag, encounter)) missingFields.push("Encounter." + tag); });
+
+    // Diagnoses
     const diagnoses = claim.getElementsByTagName("Diagnosis");
     if (!diagnoses.length) missingFields.push("Diagnosis");
     else Array.from(diagnoses).forEach((diag, i) => {
-      const diagPrefix = `Diagnosis[${i}].`, typeVal = check("Type", diag, diagPrefix, true);
-      if (typeVal === "Principal") principalCount++;
-      check("Code", diag, diagPrefix, true);
+      if (!present("Type", diag)) missingFields.push(`Diagnosis[${i}].Type`);
+      else if (text("Type", diag) === "Principal") principalCount++;
+      if (!present("Code", diag)) missingFields.push(`Diagnosis[${i}].Code`);
     });
-    // Principal diagnosis count
     if (diagnoses.length > 0) {
       if (principalCount === 0) invalidFields.push("Principal Diagnosis (none found)");
       else if (principalCount > 1) invalidFields.push("Principal Diagnosis (multiple found)");
     }
-    // Activity block(s)
+
+    // Activities & subfields
     const activities = claim.getElementsByTagName("Activity");
     if (!activities.length) missingFields.push("Activity");
     else Array.from(activities).forEach((act, i) => {
-      const actPrefix = `Activity[${i}].`;
-      ["Start", "Type", "Code", "Quantity", "Net", "Clinician"].forEach(tag => check(tag, act, actPrefix, true));
-      Array.from(act.getElementsByTagName("Observation")).forEach((obs, j) => ["Type", "Code", "Value", "ValueType"].forEach(tag => check(tag, obs, `${actPrefix}Observation[${j}].`, true)));
+      ["Start", "Type", "Code", "Quantity", "Net", "Clinician"].forEach(tag => { if (!present(tag, act)) missingFields.push(`Activity[${i}].${tag}`); });
+      Array.from(act.getElementsByTagName("Observation")).forEach((obs, j) =>
+        ["Type", "Code", "Value", "ValueType"].forEach(tag => { if (!present(tag, obs)) missingFields.push(`Activity[${i}].Observation[${j}].${tag}`); })
+      );
     });
-    // Contract block (optional)
+
+    // Contract (optional)
     const contract = claim.getElementsByTagName("Contract")[0];
-    if (contract) check("PackageName", contract, "Contract.", true);
-    // Remarks
+    if (contract && !present("PackageName", contract)) missingFields.push("Contract.PackageName");
+
     let remarks = [];
     if (missingFields.length) remarks.push("Missing: " + missingFields.join(", "));
     if (invalidFields.length) remarks.push("Invalid: " + invalidFields.join(", "));
     if (!remarks.length) remarks.push("OK");
-    results.push({ ClaimID: vals["ID"] || "Unknown", Valid: !missingFields.length && !invalidFields.length, Remark: remarks.join("; "), ClaimXML: claim.outerHTML });
+    results.push({ ClaimID: text("ID") || "Unknown", Valid: !missingFields.length && !invalidFields.length, Remark: remarks.join("; "), ClaimXML: claim.outerHTML });
   }
   return results;
 }
