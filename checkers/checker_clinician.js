@@ -398,7 +398,7 @@
         Validation: ${validCt}/${total} valid (${pct}%)
       </div>` +
       '<table><tr>' +
-      '<th>Claim(s)</th><th>Activity</th><th>Encounter Start</th><th>Facility License Number</th>' +
+      '<th>Claim(s)</th><th>Activity</th><th>Encounter Start(s)</th><th>Facility License Number</th>' +
       '<th>Ordering</th>' +
       '<th>Performing</th><th>Recent Performing License Status</th><th>Full License History</th>' +
       '<th>Remarks</th></tr>' +
@@ -408,7 +408,9 @@
         const uniqueClaimIds = Array.from(new Set(claimIds));
         const activityIds = sortedGroup.map(r => r.activityId);
         const encounterStarts = sortedGroup.map(r => r.encounterStart);
+        const uniqueEncounterStarts = Array.from(new Set(encounterStarts));
 
+        // Table in modal: claim, activity, encounter start (all three columns)
         let lastClaimId = null;
         const tableRows = sortedGroup.map(r => {
           let claimCell = '';
@@ -418,19 +420,19 @@
           } else {
             claimCell = `<td></td>`;
           }
-          return `<tr>${claimCell}<td>${r.activityId}</td></tr>`;
+          return `<tr>${claimCell}<td>${r.activityId}</td><td>${r.encounterStart}</td></tr>`;
         }).join('');
         const modalHtml = `
           <div>
             <b>All Claim IDs:</b> ${uniqueClaimIds.join(', ')}
             <br>
+            <b>All Encounter Starts:</b> ${uniqueEncounterStarts.join(', ')}
+            <br>
             <b>Table:</b>
             <table style="margin:0.5em 0;">
-              <tr><th>Claim ID</th><th>Activity ID</th></tr>
+              <tr><th>Claim ID</th><th>Activity ID</th><th>Encounter Start</th></tr>
               ${tableRows}
             </table>
-            <hr>
-            <b>Encounter Starts:</b> ${encounterStarts.join(', ')}
           </div>
         `;
 
@@ -443,7 +445,7 @@
             <button class="view-claims-group" data-modalid="${modalId}">${uniqueClaimIds.length} Claims</button>
           </td>
           <td>${activityIds[0]}</td>
-          <td>${encounterStarts[0]}</td>
+          <td>${uniqueEncounterStarts.join(', ')}</td>
           <td>${r.facilityLicenseNumber}</td>
           <td>${r.orderingDisplay}</td>
           <td>${r.performingDisplay}</td>
