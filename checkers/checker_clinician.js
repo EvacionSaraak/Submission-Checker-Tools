@@ -13,6 +13,18 @@
     return new Date(`${yyyy}-${mm}-${dd}`);
   }
 
+  // Inject scrollable modal CSS
+  (function () {
+    const style = document.createElement('style');
+    style.innerHTML = `
+      .modal-content {
+        max-height: 70vh;
+        overflow-y: auto;
+      }
+    `;
+    document.head.appendChild(style);
+  })();
+
   let xmlDoc = null, clinicianMap = {}, clinicianStatusMap = {};
   let xmlInput, clinicianInput, statusInput, processBtn, csvBtn, resultsDiv, uploadDiv;
   let claimCount = 0, clinicianCount = 0, historyCount = 0;
@@ -205,13 +217,11 @@
 
   // Format the license history for modal display as a table
   function formatLicenseHistory(fullHistory) {
-    // Split by ';' and further by ':', '(', ')'
     const rows = fullHistory.split(';').map(e => e.trim()).filter(Boolean);
     if (rows.length === 0) return "<em>No history</em>";
     let table = `<table class="modal-license-table"><tr>
       <th>Facility</th><th>Effective Date</th><th>Status</th></tr>`;
     for (const row of rows) {
-      // Example: MF5020: 2024-04-19 (ACTIVE)
       const match = row.match(/^([^:]+):\s*([^\(]+)\s*\(([^)]+)\)$/);
       if (match) {
         table += `<tr>
@@ -220,7 +230,6 @@
           <td>${match[3].trim()}</td>
         </tr>`;
       } else {
-        // fallback: just show the line
         table += `<tr><td colspan="3">${row}</td></tr>`;
       }
     }
@@ -230,7 +239,6 @@
 
   // --- Grouping logic ---
   function groupResults(results) {
-    // Key by all fields except claimId, activityId, encounterStart
     const groups = {};
     for (const row of results) {
       const groupKey = JSON.stringify({
@@ -245,7 +253,7 @@
     return Object.values(groups);
   }
 
-  // Main validation logic (using parseDMY for all dates)
+  // Main validation logic (now checks any affiliated facility)
   function validateClinicians() {
     if (!xmlDoc) {
       logCriticalError('No XML loaded', '');
@@ -258,8 +266,7 @@
     const claims = xmlDoc.getElementsByTagName('Claim');
     const results = [];
 
-    // --- Console grouping per unique clinician+facility+license ---
-    // We'll collect a summary log per unique performing clinician (pid) + facility + license
+    // Console grouping per unique clinician+affiliated+license
     const clinicianLogs = {};
 
     for (const claim of claims) {
@@ -292,21 +299,20 @@
           }
         }
 
-        // --- Main fix: only count licenses at the performing facility ---
         let performingEff = '', performingStatus = '', performingStatusDisplay = '';
         let valid = false;
 
         const entries = clinicianStatusMap[pid] || [];
         const encounterD = parseDMY(encounterStart);
 
-        // Only count licenses at the performing facility
+        // -- FIX: Accept license at any affiliated facility --
         const eligible = entries.filter(e => {
           const fac = (e.facility || '').toString().trim().toUpperCase();
           const effDate = parseDMY(e.effective);
-          const isThisFacility = fac === normalizedProviderId;
+          const isAffiliated = affiliatedLicenses.has(fac);
           const effOk = !!e.effective && !isNaN(effDate) && effDate <= encounterD;
           const isActive = (e.status || '').toLowerCase() === 'active';
-          return isThisFacility && effOk && isActive;
+          return isAffiliated && effOk && isActive;
         });
 
         let mostRecent = null;
@@ -314,9 +320,10 @@
           eligible.sort((a, b) => parseDMY(b.effective) - parseDMY(a.effective));
           mostRecent = eligible[0];
           valid = true;
+        } else {
+          remarks.push('No ACTIVE affiliated facility license for encounter date');
         }
 
-        // Full license history for this clinician
         const fullHistory = entries.map(e =>
           `${(e.facility || '[No Facility]').toString().trim().toUpperCase()}: ${e.effective || '[No Date]'} (${e.status || '[No Status]'})`
         ).join('; ');
@@ -325,18 +332,17 @@
           performingEff = mostRecent.effective || '';
           performingStatus = mostRecent.status || '';
           performingStatusDisplay = (performingEff ? `${performingEff}${performingStatus ? ' (' + performingStatus + ')' : ''}` : '');
-        } else {
-          remarks.push('No ACTIVE facility license for encounter date at this facility');
         }
 
-        // Grouping key: performing clinician, performing facility, and full license history
-        const logKey = `${pid}|${normalizedProviderId}|${fullHistory}`;
+        // Grouping key: performing clinician, any affiliated facility, and full license history
+        // (for logging, you may want to group just on pid and fullHistory)
+        const logKey = `${pid}|${fullHistory}`;
 
         if (!clinicianLogs[logKey]) {
           clinicianLogs[logKey] = {
             pid,
             performingDisplay,
-            facility: normalizedProviderId,
+            affiliated: Array.from(new Set(entries.map(e => (e.facility || '').toString().trim().toUpperCase()).filter(fac => affiliatedLicenses.has(fac)))),
             fullHistory,
             claimIds: [],
             licenses: entries.map(e => ({
@@ -348,7 +354,6 @@
         }
         clinicianLogs[logKey].claimIds.push(claimId);
 
-        // Only push to results for rendering
         results.push({
           claimId,
           activityId,
@@ -366,10 +371,10 @@
       }
     }
 
-    // Now output the console logs, one per unique clinician/facility/license
+    // Output single log per clinician/affiliation/license
     Object.values(clinicianLogs).forEach(log => {
       console.log(
-        `[Clinician] ${log.performingDisplay} | Facility: ${log.facility} | Claim IDs: [${log.claimIds.join(', ')}] | Licenses:`,
+        `[Clinician] ${log.performingDisplay} | Affiliated Facilities: [${log.affiliated.join(', ')}] | Claim IDs: [${log.claimIds.join(', ')}] | Licenses:`,
         log.licenses
       );
     });
@@ -386,8 +391,6 @@
     let pct = total ? Math.round(validCt / total * 100) : 0;
 
     const groupedResults = groupResults(results);
-
-    // Modal data storage
     const modalData = {};
 
     resultsDiv.innerHTML =
@@ -400,13 +403,11 @@
       '<th>Performing</th><th>Recent Performing License Status</th><th>Full License History</th>' +
       '<th>Remarks</th></tr>' +
       groupedResults.map((group, groupIdx) => {
-        // Sort group by encounterStart date
         const sortedGroup = group.slice().sort((a, b) => parseDMY(a.encounterStart) - parseDMY(b.encounterStart));
         const claimIds = sortedGroup.map(r => r.claimId);
         const activityIds = sortedGroup.map(r => r.activityId);
         const encounterStarts = sortedGroup.map(r => r.encounterStart);
 
-        // For modal: table of claimId/activityId, hide repeated claimIds
         let lastClaimId = null;
         const tableRows = sortedGroup.map(r => {
           let claimCell = '';
@@ -435,7 +436,6 @@
         const modalId = `claimModal_${groupIdx}`;
         modalData[modalId] = modalHtml;
 
-        // Representative row: show modal button instead of claim ID
         const r = sortedGroup[0];
         return `<tr class="${r.valid ? 'valid' : 'invalid'}">
           <td>
@@ -453,7 +453,6 @@
           <td class="description-col">${r.remarks.join('; ')}</td>
         </tr>`;
       }).join('') + '</table>' +
-      // Modal containers (will be populated as needed)
       `<div id="claimIdsModal" class="modal" style="display:none;">
         <div class="modal-content">
           <span class="close" id="claimIdsModalClose">&times;</span>
@@ -468,18 +467,6 @@
           <div id="licenseHistoryText"></div>
         </div>
       </div>`;
-
-    // Modal content scrollable
-    (function () {
-      const style = document.createElement('style');
-      style.innerHTML = `
-        .modal-content {
-          max-height: 70vh;
-          overflow-y: auto;
-        }
-      `;
-      document.head.appendChild(style);
-    })();
 
     // Attach click handlers for license history modal
     document.querySelectorAll('.view-license-history').forEach(btn => {
@@ -514,7 +501,6 @@
     updateUploadStatus();
   }
 
-  // Export with your specified headers
   function exportResults() {
     if (!window.XLSX || !lastResults.length) return;
     const headers = [
@@ -555,5 +541,4 @@
     uploadDiv.textContent = messages.join(', ');
     processBtn.disabled = !(claimCount && clinicianCount && historyCount && facilitiesLoaded && affiliatedLicenses.size);
   }
-
 })();
