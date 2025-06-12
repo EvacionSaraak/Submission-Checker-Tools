@@ -62,6 +62,19 @@
     updateUploadStatus();
   });
 
+  // Add this helper function near the top of your script
+  function parseDMY(dateStr) {
+    // Handles 'DD/MM/YYYY' or 'DD/MM/YYYY HH:MM'
+    if (typeof dateStr !== 'string') return new Date(dateStr);
+    const match = dateStr.match(/^(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}):(\d{2}))?/);
+    if (!match) return new Date(dateStr); // fallback
+    const [ , dd, mm, yyyy, HH, MM ] = match;
+    if (HH && MM) {
+      return new Date(`${yyyy}-${mm}-${dd}T${HH}:${MM}:00`);
+    }
+    return new Date(`${yyyy}-${mm}-${dd}`);
+  }
+
   function handleXmlInput(e) {
     const file = e.target.files[0];
     if (!file) {
@@ -227,7 +240,7 @@
     return table;
   }
 
-  // Main validation logic (canvas edition: only license at performing facility counts)
+  // Main validation logic
   function validateClinicians() {
     if (!xmlDoc) {
       logCriticalError('No XML loaded', '');
@@ -273,29 +286,28 @@
           }
         }
 
-        // --- Main fix: only count licenses at the performing facility ---
+        // --- Valid if clinician has ACTIVE license at any affiliated facility before/on encounter date ---
         let performingEff = '', performingStatus = '', performingStatusDisplay = '';
         let valid = false;
 
         const entries = clinicianStatusMap[pid] || [];
-        const encounterD = new Date(excelDateToISO(encounterStart));
-        console.log('[Check] PID:', pid, 'Entries:', entries, 'Performing Facility:', normalizedProviderId, 'Encounter Date:', encounterD);
+        const encounterD = parseDMY(encounterStart);
+        console.log('[Check] PID:', pid, 'Entries:', entries, 'Affiliated:', Array.from(affiliatedLicenses), 'Encounter Date:', encounterD);
 
-        // Only count licenses at the performing facility
+        // Find all ACTIVE licenses at any affiliated facility before/on encounter date
         const eligible = entries.filter(e => {
           const fac = (e.facility || '').toString().trim().toUpperCase();
-          const effDate = new Date(excelDateToISO(e.effective));
-          const isThisFacility = fac === normalizedProviderId;
-          const effOk = !!e.effective && !isNaN(effDate) && effDate <= encounterD;
+          const effDate = parseDMY(e.effective);
+          const isAffiliated = affiliatedLicenses.has(fac);
           const isActive = (e.status || '').toLowerCase() === 'active';
-          if (isThisFacility && effOk && isActive) {
+          const effOk = !!e.effective && !isNaN(effDate) && effDate <= encounterD;
+          if (isAffiliated && effOk && isActive) {
             console.log('[Eligible] Entry:', e, '| Facility:', fac, '| Effective:', effDate, '| Encounter:', encounterD);
           } else {
-            console.log('[Skip] Entry:', e, '| isThisFacility:', isThisFacility, '| effOk:', effOk, '| isActive:', isActive);
+            console.log('[Skip] Entry:', e, '| isAffiliated:', isAffiliated, '| effOk:', effOk, '| isActive:', isActive);
           }
-          return isThisFacility && effOk && isActive;
+          return isAffiliated && effOk && isActive;
         });
-
         let mostRecent = null;
         if (eligible.length > 0) {
           eligible.sort((a, b) => new Date(excelDateToISO(b.effective)) - new Date(excelDateToISO(a.effective)));
@@ -303,7 +315,7 @@
           valid = true;
           console.log('[Valid] Most recent eligible:', mostRecent);
         } else {
-          console.log('[Invalid] No eligible ACTIVE license for PID:', pid, 'at facility:', normalizedProviderId, 'on date:', encounterD);
+          console.log('[Invalid] No eligible ACTIVE license for PID:', pid, 'on date:', encounterD);
         }
 
         // Full license history for this clinician
@@ -316,7 +328,7 @@
           performingStatus = mostRecent.status || '';
           performingStatusDisplay = (performingEff ? `${performingEff}${performingStatus ? ' (' + performingStatus + ')' : ''}` : '');
         } else {
-          remarks.push('No ACTIVE facility license for encounter date at this facility');
+          remarks.push('No ACTIVE affiliated facility license for encounter date');
         }
 
         if (!oid) {
