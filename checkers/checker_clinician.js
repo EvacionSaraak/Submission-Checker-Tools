@@ -405,6 +405,7 @@
       groupedResults.map((group, groupIdx) => {
         const sortedGroup = group.slice().sort((a, b) => parseDMY(a.encounterStart) - parseDMY(b.encounterStart));
         const claimIds = sortedGroup.map(r => r.claimId);
+        const uniqueClaimIds = Array.from(new Set(claimIds));
         const activityIds = sortedGroup.map(r => r.activityId);
         const encounterStarts = sortedGroup.map(r => r.encounterStart);
 
@@ -421,7 +422,7 @@
         }).join('');
         const modalHtml = `
           <div>
-            <b>All Claim IDs:</b> ${claimIds.join(', ')}
+            <b>All Claim IDs:</b> ${uniqueClaimIds.join(', ')}
             <br>
             <b>Table:</b>
             <table style="margin:0.5em 0;">
@@ -439,7 +440,7 @@
         const r = sortedGroup[0];
         return `<tr class="${r.valid ? 'valid' : 'invalid'}">
           <td>
-            <button class="view-claims-group" data-modalid="${modalId}">${claimIds.length} Claims</button>
+            <button class="view-claims-group" data-modalid="${modalId}">${uniqueClaimIds.length} Claims</button>
           </td>
           <td>${activityIds[0]}</td>
           <td>${encounterStarts[0]}</td>
@@ -500,6 +501,7 @@
 
     updateUploadStatus();
   }
+
 
   function exportResults() {
     if (!window.XLSX || !lastResults.length) return;
