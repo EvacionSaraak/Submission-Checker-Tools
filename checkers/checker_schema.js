@@ -29,13 +29,19 @@ function validateXmlSchema() {
     status.textContent = "XML parsed successfully. Validating Claims...";
     const results = validateClaimSchema(xmlDoc);
     renderResults(results, resultsDiv);
-    status.textContent = "Validation complete.";
+
+    // Calculate stats
+    const total = results.length;
+    const valid = results.filter(r => r.Valid).length;
+    const percent = total > 0 ? ((valid / total) * 100).toFixed(1) : "0.0";
+    status.textContent = `Valid claims: ${valid} / ${total} (${percent}%)`;
   };
   reader.onerror = function () {
     status.textContent = "Error reading the file.";
   };
   reader.readAsText(file);
 }
+
 
 function validateClaimSchema(xmlDoc) {
   const results = [];
