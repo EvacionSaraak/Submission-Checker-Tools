@@ -1,6 +1,18 @@
 (function () {
   'use strict';
 
+  // --- Helper: Parse DD/MM/YYYY or DD/MM/YYYY HH:MM ---
+  function parseDMY(dateStr) {
+    if (typeof dateStr !== 'string') return new Date(dateStr);
+    const match = dateStr.match(/^(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}):(\d{2}))?/);
+    if (!match) return new Date(dateStr); // fallback
+    const [ , dd, mm, yyyy, HH, MM ] = match;
+    if (HH && MM) {
+      return new Date(`${yyyy}-${mm}-${dd}T${HH}:${MM}:00`);
+    }
+    return new Date(`${yyyy}-${mm}-${dd}`);
+  }
+
   let xmlDoc = null, clinicianMap = {}, clinicianStatusMap = {};
   let xmlInput, clinicianInput, statusInput, processBtn, csvBtn, resultsDiv, uploadDiv;
   let claimCount = 0, clinicianCount = 0, historyCount = 0;
@@ -61,19 +73,6 @@
     if (csvBtn) csvBtn.disabled = true;
     updateUploadStatus();
   });
-
-  // Add this helper function near the top of your script
-  function parseDMY(dateStr) {
-    // Handles 'DD/MM/YYYY' or 'DD/MM/YYYY HH:MM'
-    if (typeof dateStr !== 'string') return new Date(dateStr);
-    const match = dateStr.match(/^(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}):(\d{2}))?/);
-    if (!match) return new Date(dateStr); // fallback
-    const [ , dd, mm, yyyy, HH, MM ] = match;
-    if (HH && MM) {
-      return new Date(`${yyyy}-${mm}-${dd}T${HH}:${MM}:00`);
-    }
-    return new Date(`${yyyy}-${mm}-${dd}`);
-  }
 
   function handleXmlInput(e) {
     const file = e.target.files[0];
@@ -145,7 +144,7 @@
           clinicianStatusMap[id] = clinicianStatusMap[id] || [];
           clinicianStatusMap[id].push({
             facility: row['Facility License Number'] || '',
-            effective: excelDateToISO(row['Effective Date']),
+            effective: row['Effective Date'] || '',
             status: row['Status'] || ''
           });
         });
@@ -199,17 +198,6 @@
     reader.readAsArrayBuffer(file);
   }
 
-  function excelDateToISO(excelDate) {
-    if (!excelDate) return '';
-    if (typeof excelDate === 'string' && /^\d{4}-\d{2}-\d{2}/.test(excelDate)) return excelDate.slice(0, 10);
-    const serial = Number(excelDate);
-    if (isNaN(serial)) return excelDate;
-    const utc_days = serial - 25569;
-    const utc_value = utc_days * 86400 * 1000;
-    const d = new Date(utc_value);
-    return d.toISOString().slice(0, 10);
-  }
-
   function getText(parent, tag) {
     const el = parent.getElementsByTagName(tag)[0];
     return el ? el.textContent.trim() : '';
@@ -240,7 +228,24 @@
     return table;
   }
 
-  // Main validation logic
+  // --- Grouping logic ---
+  function groupResults(results) {
+    // Key by all fields except claimId, activityId, encounterStart
+    const groups = {};
+    for (const row of results) {
+      const groupKey = JSON.stringify({
+        ...row,
+        claimId: undefined,
+        activityId: undefined,
+        encounterStart: undefined,
+      });
+      if (!groups[groupKey]) groups[groupKey] = [];
+      groups[groupKey].push(row);
+    }
+    return Object.values(groups);
+  }
+
+  // Main validation logic (using parseDMY for all dates)
   function validateClinicians() {
     if (!xmlDoc) {
       logCriticalError('No XML loaded', '');
@@ -286,36 +291,37 @@
           }
         }
 
-        // --- Valid if clinician has ACTIVE license at any affiliated facility before/on encounter date ---
+        // --- Main fix: only count licenses at the performing facility ---
         let performingEff = '', performingStatus = '', performingStatusDisplay = '';
         let valid = false;
 
         const entries = clinicianStatusMap[pid] || [];
         const encounterD = parseDMY(encounterStart);
-        console.log('[Check] PID:', pid, 'Entries:', entries, 'Affiliated:', Array.from(affiliatedLicenses), 'Encounter Date:', encounterD);
+        console.log('[Check] PID:', pid, 'Entries:', entries, 'Performing Facility:', normalizedProviderId, 'Encounter Date:', encounterD);
 
-        // Find all ACTIVE licenses at any affiliated facility before/on encounter date
+        // Only count licenses at the performing facility
         const eligible = entries.filter(e => {
           const fac = (e.facility || '').toString().trim().toUpperCase();
           const effDate = parseDMY(e.effective);
-          const isAffiliated = affiliatedLicenses.has(fac);
-          const isActive = (e.status || '').toLowerCase() === 'active';
+          const isThisFacility = fac === normalizedProviderId;
           const effOk = !!e.effective && !isNaN(effDate) && effDate <= encounterD;
-          if (isAffiliated && effOk && isActive) {
+          const isActive = (e.status || '').toLowerCase() === 'active';
+          if (isThisFacility && effOk && isActive) {
             console.log('[Eligible] Entry:', e, '| Facility:', fac, '| Effective:', effDate, '| Encounter:', encounterD);
           } else {
-            console.log('[Skip] Entry:', e, '| isAffiliated:', isAffiliated, '| effOk:', effOk, '| isActive:', isActive);
+            console.log('[Skip] Entry:', e, '| isThisFacility:', isThisFacility, '| effOk:', effOk, '| isActive:', isActive);
           }
-          return isAffiliated && effOk && isActive;
+          return isThisFacility && effOk && isActive;
         });
+
         let mostRecent = null;
         if (eligible.length > 0) {
-          eligible.sort((a, b) => new Date(excelDateToISO(b.effective)) - new Date(excelDateToISO(a.effective)));
+          eligible.sort((a, b) => parseDMY(b.effective) - parseDMY(a.effective));
           mostRecent = eligible[0];
           valid = true;
           console.log('[Valid] Most recent eligible:', mostRecent);
         } else {
-          console.log('[Invalid] No eligible ACTIVE license for PID:', pid, 'on date:', encounterD);
+          console.log('[Invalid] No eligible ACTIVE license for PID:', pid, 'at facility:', normalizedProviderId, 'on date:', encounterD);
         }
 
         // Full license history for this clinician
@@ -328,7 +334,7 @@
           performingStatus = mostRecent.status || '';
           performingStatusDisplay = (performingEff ? `${performingEff}${performingStatus ? ' (' + performingStatus + ')' : ''}` : '');
         } else {
-          remarks.push('No ACTIVE affiliated facility license for encounter date');
+          remarks.push('No ACTIVE facility license for encounter date at this facility');
         }
 
         if (!oid) {
@@ -361,26 +367,70 @@
     if (csvBtn) csvBtn.disabled = !(results.length > 0);
   }
 
-  // Render results (with full history column as modal trigger and formatted modal content)
+  // --- Streamlined, grouped rendering with modal for Claim IDs ---
   function renderResults(results) {
     let validCt = results.filter(r => r.valid).length;
     let total = results.length;
     let pct = total ? Math.round(validCt / total * 100) : 0;
+
+    const groupedResults = groupResults(results);
+
+    // Modal data storage
+    const modalData = {};
 
     resultsDiv.innerHTML =
       `<div class="${pct > 90 ? 'valid-message' : pct > 70 ? 'warning-message' : 'error-message'}">
         Validation: ${validCt}/${total} valid (${pct}%)
       </div>` +
       '<table><tr>' +
-      '<th>Claim</th><th>Activity</th><th>Encounter Start</th><th>Facility License Number</th>' +
+      '<th>Claim(s)</th><th>Activity</th><th>Encounter Start</th><th>Facility License Number</th>' +
       '<th>Ordering</th>' +
       '<th>Performing</th><th>Recent Performing License Status</th><th>Full License History</th>' +
       '<th>Remarks</th></tr>' +
-      results.map((r, idx) => {
+      groupedResults.map((group, groupIdx) => {
+        // Sort group by encounterStart date
+        const sortedGroup = group.slice().sort((a, b) => parseDMY(a.encounterStart) - parseDMY(b.encounterStart));
+        const claimIds = sortedGroup.map(r => r.claimId);
+        const activityIds = sortedGroup.map(r => r.activityId);
+        const encounterStarts = sortedGroup.map(r => r.encounterStart);
+
+        // For modal: table of claimId/activityId, hide repeated claimIds
+        let lastClaimId = null;
+        const tableRows = sortedGroup.map(r => {
+          let claimCell = '';
+          if (r.claimId !== lastClaimId) {
+            claimCell = `<td>${r.claimId}</td>`;
+            lastClaimId = r.claimId;
+          } else {
+            claimCell = `<td></td>`;
+          }
+          return `<tr>${claimCell}<td>${r.activityId}</td></tr>`;
+        }).join('');
+        const modalHtml = `
+          <div>
+            <b>All Claim IDs:</b> ${claimIds.join(', ')}
+            <br>
+            <b>Table:</b>
+            <table style="margin:0.5em 0;">
+              <tr><th>Claim ID</th><th>Activity ID</th></tr>
+              ${tableRows}
+            </table>
+            <hr>
+            <b>Encounter Starts:</b> ${encounterStarts.join(', ')}
+          </div>
+        `;
+
+        const modalId = `claimModal_${groupIdx}`;
+        modalData[modalId] = modalHtml;
+
+        // Representative row: show modal button instead of claim ID
+        const r = sortedGroup[0];
         return `<tr class="${r.valid ? 'valid' : 'invalid'}">
-          <td>${r.claimId}</td>
-          <td>${r.activityId}</td>
-          <td>${r.encounterStart}</td>
+          <td>
+            <button class="view-claims-group" data-modalid="${modalId}">${claimIds.length} Claims</button>
+          </td>
+          <td>${activityIds[0]}</td>
+          <td>${encounterStarts[0]}</td>
           <td>${r.facilityLicenseNumber}</td>
           <td>${r.orderingDisplay}</td>
           <td>${r.performingDisplay}</td>
@@ -391,8 +441,15 @@
           <td class="description-col">${r.remarks.join('; ')}</td>
         </tr>`;
       }).join('') + '</table>' +
-      // Modal
-      `<div id="licenseHistoryModal" class="modal" style="display:none;">
+      // Modal containers (will be populated as needed)
+      `<div id="claimIdsModal" class="modal" style="display:none;">
+        <div class="modal-content">
+          <span class="close" id="claimIdsModalClose">&times;</span>
+          <h3>Group Details</h3>
+          <div id="claimIdsModalText"></div>
+        </div>
+      </div>
+      <div id="licenseHistoryModal" class="modal" style="display:none;">
         <div class="modal-content">
           <span class="close" id="licenseHistoryClose">&times;</span>
           <h3>Full License History</h3>
@@ -412,6 +469,21 @@
       document.getElementById('licenseHistoryModal').style.display = 'none';
     };
     document.getElementById('licenseHistoryModal').onclick = function(event) {
+      if (event.target === this) this.style.display = 'none';
+    };
+
+    // Attach click handlers for claims group modal
+    document.querySelectorAll('.view-claims-group').forEach(btn => {
+      btn.addEventListener('click', function() {
+        const modalId = this.getAttribute('data-modalid');
+        document.getElementById('claimIdsModalText').innerHTML = modalData[modalId];
+        document.getElementById('claimIdsModal').style.display = 'block';
+      });
+    });
+    document.getElementById('claimIdsModalClose').onclick = function() {
+      document.getElementById('claimIdsModal').style.display = 'none';
+    };
+    document.getElementById('claimIdsModal').onclick = function(event) {
       if (event.target === this) this.style.display = 'none';
     };
 
