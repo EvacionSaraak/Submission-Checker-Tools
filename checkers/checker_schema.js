@@ -30,7 +30,7 @@ function validateXmlSchema() {
     const results = validateClaimSchema(xmlDoc);
     renderResults(results, resultsDiv);
 
-    // Calculate stats
+    // Show validation stats
     const total = results.length;
     const valid = results.filter(r => r.Valid).length;
     const percent = total > 0 ? ((valid / total) * 100).toFixed(1) : "0.0";
@@ -41,7 +41,6 @@ function validateXmlSchema() {
   };
   reader.readAsText(file);
 }
-
 
 function validateClaimSchema(xmlDoc) {
   const results = [];
@@ -164,7 +163,7 @@ function validateClaimSchema(xmlDoc) {
   return results;
 }
 
-// Pretty-print XML for claiming viewing
+// Pretty-print XML for claim viewing
 function formatXml(xml) {
   const formatted = xml.replace(/(>)(<)(\/*)/g, "$1\n$2$3");
   let pad = 0;
@@ -177,6 +176,34 @@ function formatXml(xml) {
     pad += indent;
     return padding + node;
   }).join("\n");
+}
+
+// Render claim fields as an HTML table with field names and values
+function claimToHtmlTable(xmlString) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(xmlString, "application/xml");
+  const claim = doc.documentElement.nodeName === "Claim" ? doc.documentElement : doc.getElementsByTagName("Claim")[0];
+  if (!claim) return "<b>Claim not found!</b>";
+
+  function renderNode(node, level = 0) {
+    let html = "";
+    for (let i = 0; i < node.children.length; ++i) {
+      const child = node.children[i];
+      if (child.children.length === 0) {
+        html += `<tr><td style="padding-left:${level * 20}px"><b>${child.nodeName}</b></td><td>${child.textContent}</td></tr>`;
+      } else {
+        html += `<tr><td style="padding-left:${level * 20}px"><b>${child.nodeName}</b></td><td></td></tr>`;
+        html += renderNode(child, level + 1);
+      }
+    }
+    return html;
+  }
+
+  let html = `<table border="1" cellpadding="4" style="border-collapse:collapse;font-family:sans-serif;font-size:14px;">`;
+  html += `<tr><th style="background:#f0f0f0">Field</th><th style="background:#f0f0f0">Value</th></tr>`;
+  html += renderNode(claim, 0);
+  html += `</table>`;
+  return html;
 }
 
 function renderResults(results, container) {
@@ -218,7 +245,7 @@ function renderResults(results, container) {
     viewBtn.textContent = "View";
     viewBtn.onclick = () => {
       const win = window.open("", "_blank", "width=800,height=600");
-      win.document.write("<pre style='font-size:13px'>" + formatXml(row.ClaimXML) + "</pre>");
+      win.document.write(claimToHtmlTable(row.ClaimXML));
     };
     btnTd.appendChild(viewBtn);
     tr.appendChild(btnTd);
