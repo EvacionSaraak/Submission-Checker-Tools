@@ -258,7 +258,9 @@
     const claims = xmlDoc.getElementsByTagName('Claim');
     const results = [];
 
-    console.log('[Validation] Number of claims:', claims.length);
+    // --- Console grouping per unique clinician+facility+license ---
+    // We'll collect a summary log per unique performing clinician (pid) + facility + license
+    const clinicianLogs = {};
 
     for (const claim of claims) {
       const providerId = getText(claim, 'ProviderID');
@@ -287,7 +289,6 @@
           const pCat = clinicianMap[pid]?.category;
           if (oCat && pCat && oCat !== pCat) {
             remarks.push('Category mismatch');
-            console.log(`[Category] Category mismatch: O(${oid})=${oCat} vs P(${pid})=${pCat}`);
           }
         }
 
@@ -297,7 +298,6 @@
 
         const entries = clinicianStatusMap[pid] || [];
         const encounterD = parseDMY(encounterStart);
-        console.log('[Check] PID:', pid, 'Entries:', entries, 'Performing Facility:', normalizedProviderId, 'Encounter Date:', encounterD);
 
         // Only count licenses at the performing facility
         const eligible = entries.filter(e => {
@@ -306,11 +306,6 @@
           const isThisFacility = fac === normalizedProviderId;
           const effOk = !!e.effective && !isNaN(effDate) && effDate <= encounterD;
           const isActive = (e.status || '').toLowerCase() === 'active';
-          if (isThisFacility && effOk && isActive) {
-            console.log('[Eligible] Entry:', e, '| Facility:', fac, '| Effective:', effDate, '| Encounter:', encounterD);
-          } else {
-            console.log('[Skip] Entry:', e, '| isThisFacility:', isThisFacility, '| effOk:', effOk, '| isActive:', isActive);
-          }
           return isThisFacility && effOk && isActive;
         });
 
@@ -319,9 +314,6 @@
           eligible.sort((a, b) => parseDMY(b.effective) - parseDMY(a.effective));
           mostRecent = eligible[0];
           valid = true;
-          console.log('[Valid] Most recent eligible:', mostRecent);
-        } else {
-          console.log('[Invalid] No eligible ACTIVE license for PID:', pid, 'at facility:', normalizedProviderId, 'on date:', encounterD);
         }
 
         // Full license history for this clinician
@@ -337,15 +329,26 @@
           remarks.push('No ACTIVE facility license for encounter date at this facility');
         }
 
-        if (!oid) {
-          remarks.push('OrderingClinician missing');
-          console.log('[Remark] OrderingClinician missing in claim:', claimId, 'activity:', activityId);
-        }
-        if (!pid) {
-          remarks.push('Clinician missing');
-          console.log('[Remark] Clinician missing in claim:', claimId, 'activity:', activityId);
-        }
+        // Grouping key: performing clinician, performing facility, and full license history
+        const logKey = `${pid}|${normalizedProviderId}|${fullHistory}`;
 
+        if (!clinicianLogs[logKey]) {
+          clinicianLogs[logKey] = {
+            pid,
+            performingDisplay,
+            facility: normalizedProviderId,
+            fullHistory,
+            claimIds: [],
+            licenses: entries.map(e => ({
+              facility: (e.facility || '').toString().trim().toUpperCase(),
+              effective: e.effective,
+              status: e.status
+            }))
+          };
+        }
+        clinicianLogs[logKey].claimIds.push(claimId);
+
+        // Only push to results for rendering
         results.push({
           claimId,
           activityId,
@@ -362,6 +365,15 @@
         });
       }
     }
+
+    // Now output the console logs, one per unique clinician/facility/license
+    Object.values(clinicianLogs).forEach(log => {
+      console.log(
+        `[Clinician] ${log.performingDisplay} | Facility: ${log.facility} | Claim IDs: [${log.claimIds.join(', ')}] | Licenses:`,
+        log.licenses
+      );
+    });
+
     lastResults = results;
     renderResults(results);
     if (csvBtn) csvBtn.disabled = !(results.length > 0);
@@ -456,6 +468,18 @@
           <div id="licenseHistoryText"></div>
         </div>
       </div>`;
+
+    // Modal content scrollable
+    (function () {
+      const style = document.createElement('style');
+      style.innerHTML = `
+        .modal-content {
+          max-height: 70vh;
+          overflow-y: auto;
+        }
+      `;
+      document.head.appendChild(style);
+    })();
 
     // Attach click handlers for license history modal
     document.querySelectorAll('.view-license-history').forEach(btn => {
