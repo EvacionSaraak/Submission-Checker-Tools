@@ -172,7 +172,10 @@ th {
   box-sizing: border-box;
 }
 
-/* Make modal content draggable when grabbing the header */
+.modal-content {
+  overflow-y: auto;
+}
+
 .modal-content.draggable {
   cursor: move;
   user-select: none;
