@@ -74,6 +74,7 @@
       try {
         xmlDoc = new DOMParser().parseFromString(text, 'application/xml');
         claimCount = xmlDoc.getElementsByTagName('Claim').length;
+        console.log('[XML] Claims loaded:', claimCount);
         updateUploadStatus();
       } catch (err) {
         logCriticalError('Parsing XML failed', err);
@@ -104,6 +105,7 @@
           };
         });
         clinicianCount = Object.keys(clinicianMap).length;
+        console.log('[Clinician Excel] Loaded:', clinicianCount, 'clinicians');
         resultsDiv.innerHTML = '';
         updateUploadStatus();
       } catch (err) {
@@ -135,6 +137,7 @@
           });
         });
         historyCount = Object.keys(clinicianStatusMap).length;
+        console.log('[Status Excel] Loaded:', historyCount, 'license histories');
         resultsDiv.innerHTML = '';
         updateUploadStatus();
       } catch (err) {
@@ -171,6 +174,7 @@
           sheet = workbook.Sheets[workbook.SheetNames[0]];
         }
         const rows = XLSX.utils.sheet_to_json(sheet);
+        console.log('[Excel] Rows loaded from', sheetName, ':', rows.length);
         callback(rows);
       } catch (err) {
         logCriticalError('Reading Excel file failed', err);
@@ -236,6 +240,8 @@
     const claims = xmlDoc.getElementsByTagName('Claim');
     const results = [];
 
+    console.log('[Validation] Number of claims:', claims.length);
+
     for (const claim of claims) {
       const providerId = getText(claim, 'ProviderID');
       const normalizedProviderId = (providerId || '').toString().trim().toUpperCase();
@@ -263,6 +269,7 @@
           const pCat = clinicianMap[pid]?.category;
           if (oCat && pCat && oCat !== pCat) {
             remarks.push('Category mismatch');
+            console.log(`[Category] Category mismatch: O(${oid})=${oCat} vs P(${pid})=${pCat}`);
           }
         }
 
@@ -272,21 +279,30 @@
 
         const entries = clinicianStatusMap[pid] || [];
         const encounterD = new Date(excelDateToISO(encounterStart));
+        console.log('[Check] PID:', pid, 'Entries:', entries, 'Affiliated:', Array.from(affiliatedLicenses), 'Encounter Date:', encounterD);
+
         // Find all ACTIVE licenses at any affiliated facility before/on encounter date
         const eligible = entries.filter(e => {
           const fac = (e.facility || '').toString().trim().toUpperCase();
           const effDate = new Date(excelDateToISO(e.effective));
-          return affiliatedLicenses.has(fac) &&
-                 !!e.effective &&
-                 !isNaN(effDate) &&
-                 effDate <= encounterD &&
-                 (e.status || '').toLowerCase() === 'active';
+          const isAffiliated = affiliatedLicenses.has(fac);
+          const isActive = (e.status || '').toLowerCase() === 'active';
+          const effOk = !!e.effective && !isNaN(effDate) && effDate <= encounterD;
+          if (isAffiliated && effOk && isActive) {
+            console.log('[Eligible] Entry:', e, '| Facility:', fac, '| Effective:', effDate, '| Encounter:', encounterD);
+          } else {
+            console.log('[Skip] Entry:', e, '| isAffiliated:', isAffiliated, '| effOk:', effOk, '| isActive:', isActive);
+          }
+          return isAffiliated && effOk && isActive;
         });
         let mostRecent = null;
         if (eligible.length > 0) {
           eligible.sort((a, b) => new Date(excelDateToISO(b.effective)) - new Date(excelDateToISO(a.effective)));
           mostRecent = eligible[0];
           valid = true;
+          console.log('[Valid] Most recent eligible:', mostRecent);
+        } else {
+          console.log('[Invalid] No eligible ACTIVE license for PID:', pid, 'on date:', encounterD);
         }
 
         // Full license history for this clinician
@@ -302,8 +318,14 @@
           remarks.push('No ACTIVE affiliated facility license for encounter date');
         }
 
-        if (!oid) remarks.push('OrderingClinician missing');
-        if (!pid) remarks.push('Clinician missing');
+        if (!oid) {
+          remarks.push('OrderingClinician missing');
+          console.log('[Remark] OrderingClinician missing in claim:', claimId, 'activity:', activityId);
+        }
+        if (!pid) {
+          remarks.push('Clinician missing');
+          console.log('[Remark] Clinician missing in claim:', claimId, 'activity:', activityId);
+        }
 
         results.push({
           claimId,
