@@ -153,23 +153,20 @@ function extractClaims(xmlDoc) {
         excessMin = Math.floor(excessMs / 60000);
       }
 
-      // Existing timing checks (only if Type was correct so far):
-      if (isValid) {
-        if (activityStart < encounterStart) {
-          isValid = false;
-          remarks.push('Activity start is before encounter start.');
-        }
-        if (activityStart > encounterEnd) {
-          isValid = false;
-          remarks.push('Activity start is after encounter end.');
-        }
-        if (encMin < 10) {
-          isValid = false;
-          remarks.push(`Encounter duration too short (${encMin} min).`);
-        } else if (encMin > 240) {
-          isValid = false;
-          remarks.push(`Encounter duration too long (${(encMin / 60).toFixed(1)} hrs).`);
-        }
+      if (activityStart < encounterStart) {
+        isValid = false;
+        remarks.push('Activity start is before encounter start.');
+      }
+      if (activityStart > encounterEnd) {
+        isValid = false;
+        remarks.push('Activity start is after encounter end.');
+      }
+      if (encMin < 10) {
+        isValid = false;
+        remarks.push(`Encounter duration too short (${encMin} min).`);
+      } else if (encMin > 240) {
+        isValid = false;
+        remarks.push(`Encounter duration too long (${(encMin / 60).toFixed(1)} hrs).`);
       }
 
       results.push({
