@@ -19,7 +19,16 @@
   </div>
 
   <label>Upload XML: <input type="file" id="xmlFileInput" accept=".xml" /><button id="exportBtn" style="display:none;margin-top:10px">Export Invalid Entries</button></label>
-  
+  <div id="typeSelector" style="margin-bottom: 1em;">
+    <label>
+      <input type="radio" name="claimType" value="DENTAL" checked>
+      Dental
+    </label>
+    <label>
+      <input type="radio" name="claimType" value="MEDICAL">
+      Medical
+    </label>
+  </div>
   <div id="resultsSummary" style="margin:10px;font-weight:bold;"></div>
   <div id="results"></div>
 
