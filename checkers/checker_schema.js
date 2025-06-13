@@ -1,4 +1,4 @@
-// checker_schema.js
+// checker_schema.js with Person schema support
 // Requires SheetJS for Excel export: 
 // <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
 
@@ -26,15 +26,27 @@ function validateXmlSchema() {
       resultsDiv.innerHTML = `<pre>${parseErrors[0].textContent}</pre>`;
       return;
     }
-    status.textContent = "XML parsed successfully. Validating Claims...";
-    const results = validateClaimSchema(xmlDoc);
-    renderResults(results, resultsDiv);
 
-    // Show validation stats
+    // Detect schema type
+    let results = [];
+    let schemaType = "";
+    if (xmlDoc.documentElement.nodeName === "Claim.Submission") {
+      schemaType = "claim";
+      results = validateClaimSchema(xmlDoc);
+    } else if (xmlDoc.documentElement.nodeName === "Person.Register") {
+      schemaType = "person";
+      results = validatePersonSchema(xmlDoc);
+    } else {
+      status.textContent = "Unknown schema: " + xmlDoc.documentElement.nodeName;
+      return;
+    }
+    renderResults(results, resultsDiv, schemaType);
+
+    // Stats
     const total = results.length;
     const valid = results.filter(r => r.Valid).length;
     const percent = total > 0 ? ((valid / total) * 100).toFixed(1) : "0.0";
-    status.textContent = `Valid claims: ${valid} / ${total} (${percent}%)`;
+    status.textContent = `Valid ${schemaType === "claim" ? "claims" : "persons"}: ${valid} / ${total} (${percent}%)`;
   };
   reader.onerror = function () {
     status.textContent = "Error reading the file.";
@@ -50,10 +62,7 @@ function validateClaimSchema(xmlDoc) {
     let invalidFields = [];
     let principalCount = 0;
 
-    // Utility functions
-    function present(tag, parent = claim) {
-      return parent.getElementsByTagName(tag).length > 0;
-    }
+    function present(tag, parent = claim) { return parent.getElementsByTagName(tag).length > 0; }
     function text(tag, parent = claim) {
       const el = parent.getElementsByTagName(tag)[0];
       return el && el.textContent ? el.textContent.trim() : "";
@@ -63,16 +72,9 @@ function validateClaimSchema(xmlDoc) {
       if (!val) invalidFields.push(prefix + tag + " (null/empty)");
     }
 
-    // Top-level required fields: flag as invalid if value is null/empty
     [
-      "ID",
-      "MemberID",
-      "PayerID",
-      "ProviderID",
-      "EmiratesIDNumber",
-      "Gross",
-      "PatientShare",
-      "Net"
+      "ID", "MemberID", "PayerID", "ProviderID", "EmiratesIDNumber",
+      "Gross", "PatientShare", "Net"
     ].forEach(tag => invalidIfNull(tag, claim));
 
     // EmiratesIDNumber format
@@ -88,16 +90,9 @@ function validateClaimSchema(xmlDoc) {
     if (!encounter) {
       missingFields.push("Encounter");
     } else {
-      [
-        "FacilityID",
-        "Type",
-        "PatientID",
-        // "EligibilityIDPayer" // optional?
-        "Start",
-        "End",
-        "StartType",
-        "EndType"
-      ].forEach(tag => invalidIfNull(tag, encounter, "Encounter."));
+      ["FacilityID", "Type", "PatientID", "Start", "End", "StartType", "EndType"].forEach(
+        tag => invalidIfNull(tag, encounter, "Encounter.")
+      );
     }
 
     // Diagnoses
@@ -112,7 +107,6 @@ function validateClaimSchema(xmlDoc) {
         invalidIfNull("Type", diag, prefix);
         invalidIfNull("Code", diag, prefix);
       });
-      // Principal diagnosis cardinality
       if (principalCount === 0)
         invalidFields.push("Principal Diagnosis (none found)");
       else if (principalCount > 1)
@@ -129,12 +123,10 @@ function validateClaimSchema(xmlDoc) {
         ["Start", "Type", "Code", "Quantity", "Net", "Clinician"].forEach(
           tag => invalidIfNull(tag, act, prefix)
         );
-        // Observations (optional, but if present must have required subfields)
         Array.from(act.getElementsByTagName("Observation")).forEach(
           (obs, j) => {
             const oprefix = `${prefix}Observation[${j}].`;
             ["Type", "Code"].forEach(tag => invalidIfNull(tag, obs, oprefix));
-            // Only check Value/ValueType if present (e.g., for File/PDF obs)
             if (present("Value", obs)) invalidIfNull("Value", obs, oprefix);
             if (present("ValueType", obs)) invalidIfNull("ValueType", obs, oprefix);
           }
@@ -147,7 +139,6 @@ function validateClaimSchema(xmlDoc) {
     if (contract && !text("PackageName", contract))
       invalidFields.push("Contract.PackageName (null/empty)");
 
-    // Prepare output
     let remarks = [];
     if (missingFields.length) remarks.push("Missing: " + missingFields.join(", "));
     if (invalidFields.length) remarks.push("Invalid: " + invalidFields.join(", "));
@@ -157,13 +148,66 @@ function validateClaimSchema(xmlDoc) {
       ClaimID: text("ID") || "Unknown",
       Valid: !missingFields.length && !invalidFields.length,
       Remark: remarks.join("; "),
-      ClaimXML: claim.outerHTML
+      ClaimXML: claim.outerHTML,
+      SchemaType: "claim"
     });
   }
   return results;
 }
 
-// Pretty-print XML for claim viewing
+function validatePersonSchema(xmlDoc) {
+  const results = [];
+  const persons = xmlDoc.getElementsByTagName("Person");
+  for (const person of persons) {
+    let missingFields = [];
+    let invalidFields = [];
+
+    function present(tag, parent = person) { return parent.getElementsByTagName(tag).length > 0; }
+    function text(tag, parent = person) {
+      const el = parent.getElementsByTagName(tag)[0];
+      return el && el.textContent ? el.textContent.trim() : "";
+    }
+    function invalidIfNull(tag, parent = person, prefix = "") {
+      const val = text(tag, parent);
+      if (!val) invalidFields.push(prefix + tag + " (null/empty)");
+    }
+
+    // Required fields for Person
+    [
+      "UnifiedNumber", "FirstName", "FirstNameEn", "LastNameEn", "ContactNumber",
+      "BirthDate", "Gender", "Nationality", "City", "CountryOfResidence", "EmirateOfResidence", "EmiratesIDNumber"
+    ].forEach(tag => invalidIfNull(tag, person));
+
+    // EmiratesIDNumber format
+    if (present("EmiratesIDNumber")) {
+      const eid = text("EmiratesIDNumber");
+      const p = eid.split("-");
+      if (p.length !== 4 || p[0] !== "784" || !/^\d{4}$/.test(p[1]) || !/^\d{7}$/.test(p[2]) || !/^\d{1}$/.test(p[3]))
+        invalidFields.push("EmiratesIDNumber (invalid format)");
+    }
+
+    // Member/ID required
+    const member = person.getElementsByTagName("Member")[0];
+    if (!member || !text("ID", member))
+      invalidFields.push("Member.ID (null/empty)");
+
+    let remarks = [];
+    if (missingFields.length) remarks.push("Missing: " + missingFields.join(", "));
+    if (invalidFields.length) remarks.push("Invalid: " + invalidFields.join(", "));
+    if (!remarks.length) remarks.push("OK");
+
+    results.push({
+      ClaimID: text("UnifiedNumber") || text("EmiratesIDNumber") || "Unknown",
+      Valid: !missingFields.length && !invalidFields.length,
+      Remark: remarks.join("; "),
+      ClaimXML: person.outerHTML,
+      SchemaType: "person"
+    });
+  }
+  return results;
+}
+
+// Pretty-print XML for claim/person viewing
 function formatXml(xml) {
   const formatted = xml.replace(/(>)(<)(\/*)/g, "$1\n$2$3");
   let pad = 0;
@@ -178,12 +222,16 @@ function formatXml(xml) {
   }).join("\n");
 }
 
-// Render claim fields as an HTML table with field names and values
+// Render claim/person fields as an HTML table with field names and values
 function claimToHtmlTable(xmlString) {
   const parser = new DOMParser();
   const doc = parser.parseFromString(xmlString, "application/xml");
-  const claim = doc.documentElement.nodeName === "Claim" ? doc.documentElement : doc.getElementsByTagName("Claim")[0];
-  if (!claim) return "<b>Claim not found!</b>";
+  let root = doc.documentElement;
+  // Support both <Claim> and <Person>
+  if (root.nodeName !== "Claim" && root.nodeName !== "Person") {
+    root = doc.getElementsByTagName("Claim")[0] || doc.getElementsByTagName("Person")[0];
+  }
+  if (!root) return "<b>Entry not found!</b>";
 
   function renderNode(node, level = 0) {
     let html = "";
@@ -201,12 +249,12 @@ function claimToHtmlTable(xmlString) {
 
   let html = `<table border="1" cellpadding="4" style="border-collapse:collapse;font-family:sans-serif;font-size:14px;">`;
   html += `<tr><th style="background:#f0f0f0">Field</th><th style="background:#f0f0f0">Value</th></tr>`;
-  html += renderNode(claim, 0);
+  html += renderNode(root, 0);
   html += `</table>`;
   return html;
 }
 
-function renderResults(results, container) {
+function renderResults(results, container, schemaType) {
   container.innerHTML = "";
 
   const table = document.createElement("table");
@@ -217,7 +265,10 @@ function renderResults(results, container) {
   // Header
   const thead = document.createElement("thead");
   const headerRow = document.createElement("tr");
-  ["Claim ID", "Remark", "Valid", "View Full Claim"].forEach(text => {
+  [
+    schemaType === "person" ? "Unified Number" : "Claim ID",
+    "Remark", "Valid", "View Full Entry"
+  ].forEach(text => {
     const th = document.createElement("th");
     th.textContent = text;
     th.style.padding = "8px";
@@ -239,7 +290,7 @@ function renderResults(results, container) {
       td.style.border = "1px solid #ccc";
       tr.appendChild(td);
     });
-    // View Full Claim button
+    // View Full Entry button
     const btnTd = document.createElement("td");
     const viewBtn = document.createElement("button");
     viewBtn.textContent = "View";
@@ -258,18 +309,18 @@ function renderResults(results, container) {
   const exportBtn = document.createElement("button");
   exportBtn.textContent = "Export XLSX";
   exportBtn.style.marginTop = "10px";
-  exportBtn.onclick = () => exportToXLSX(results);
+  exportBtn.onclick = () => exportToXLSX(results, schemaType);
   container.appendChild(exportBtn);
 }
 
-function exportToXLSX(data) {
+function exportToXLSX(data, schemaType) {
   const exportData = data.map(row => ({
-    ClaimID: row.ClaimID,
+    [schemaType === "person" ? "UnifiedNumber" : "ClaimID"]: row.ClaimID,
     Remark: row.Remark,
     Valid: row.Valid ? "Yes" : "No"
   }));
   const ws = XLSX.utils.json_to_sheet(exportData);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Validation Results");
-  XLSX.writeFile(wb, "claim_schema_validation.xlsx");
+  XLSX.writeFile(wb, (schemaType === "person" ? "person" : "claim") + "_schema_validation.xlsx");
 }
