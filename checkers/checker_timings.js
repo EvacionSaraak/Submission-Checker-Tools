@@ -4,6 +4,30 @@
 
 // Wait for DOM to load before initializing
 document.addEventListener('DOMContentLoaded', () => {
+  // --- Insert radio selector if not present ---
+  if (!document.getElementById('typeSelector')) {
+    const selectorHTML = `
+      <div id="typeSelector" style="margin-bottom: 1em;">
+        <label>
+          <input type="radio" name="claimType" value="DENTAL" checked>
+          Dental
+        </label>
+        <label>
+          <input type="radio" name="claimType" value="MEDICAL">
+          Medical
+        </label>
+      </div>
+    `;
+    // Insert above file input if found
+    const fileInput = document.getElementById('xmlFileInput');
+    if (fileInput && fileInput.parentNode) {
+      fileInput.parentNode.insertBefore(
+        document.createRange().createContextualFragment(selectorHTML),
+        fileInput
+      );
+    }
+  }
+
   const fileInput = document.getElementById('xmlFileInput');
   if (fileInput) {
     fileInput.addEventListener('change', onFileChange);
@@ -52,7 +76,12 @@ async function onFileChange(event) {
     const xmlText = await file.text();
     validateXMLString(xmlText);
     const xmlDoc = parseXML(xmlText);
-    const claims = extractClaims(xmlDoc);
+
+    // --- Get required type from radio button ---
+    const selectedType = document.querySelector('input[name="claimType"]:checked')?.value || "DENTAL";
+    const requiredType = (selectedType === "DENTAL") ? "6" : "3";
+
+    const claims = extractClaims(xmlDoc, requiredType);
 
     const resultsContainer = document.getElementById('results');
     renderResults(resultsContainer, claims);
@@ -87,10 +116,10 @@ function parseXML(xmlString) {
 /**
  * Builds rows from XML Claims, now including encounterStart/end and activityStart,
  * and adds:
- *  • A new “Type” check (must be “6”).
+ *  • A new “Type” check (must be configurable).
  *  • Existing timing checks (start vs. end, encounter duration).
  */
-function extractClaims(xmlDoc) {
+function extractClaims(xmlDoc, requiredType = "6") {
   const claimElements = xmlDoc.querySelectorAll('Claim');
   const results = [];
 
@@ -115,16 +144,15 @@ function extractClaims(xmlDoc) {
       const activityStartStr = activity.querySelector('Start')?.textContent;
       const typeValue        = activity.querySelector('Type')?.textContent?.trim() || '';
 
-      // Mark invalid immediately if Type ≠ “6”
+      // Use requiredType for validation
       let isValid = true;
       const remarks = [];
-      if (typeValue !== '6') {
+      if (typeValue !== requiredType) {
         isValid = false;
-        remarks.push(`Invalid Type: expected 6 but found ${typeValue || '(missing)'}.`);
+        remarks.push(`Invalid Type: expected ${requiredType} but found ${typeValue || '(missing)'}.`);
       }
 
       if (!activityStartStr) {
-        // No need to proceed further if there's no Start value
         remarks.push('Missing Activity Start');
         results.push({
           claimId,
@@ -153,11 +181,12 @@ function extractClaims(xmlDoc) {
         excessMin = Math.floor(excessMs / 60000);
       }
 
-      if (activityStart < encounterStart) {
+      // Always check all timing errors, regardless of Type validity
+      if (activityStart && encounterStart && activityStart < encounterStart) {
         isValid = false;
         remarks.push('Activity start is before encounter start.');
       }
-      if (activityStart > encounterEnd) {
+      if (activityStart && encounterEnd && activityStart > encounterEnd) {
         isValid = false;
         remarks.push('Activity start is after encounter end.');
       }
