@@ -278,7 +278,6 @@ function sextantLabel(s) {
 // --------------------------------------------------------
 // Modified validateActivities: ignore non-repo codes except for obsCode flagging
 // --------------------------------------------------------
-// ... [unchanged constants and helpers remain above this point]
 function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions) {
   const rows = [];
   const claimSummaries = {}; // Track per-claim validity
@@ -310,7 +309,6 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions) {
         let remarks = [];
         let details = '';
 
-        // Region logic if sextant/quadrant, otherwise just simple line
         const isRegion = description.toLowerCase().includes('sextant') || description.toLowerCase().includes('quadrant');
         let regionType = null;
         if (isRegion) {
@@ -338,7 +336,7 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions) {
               const key = `${regionKey}_${code}`;
               if (tracker[key]) {
                 if (codeLastDigit !== '9') {
-                  regionRemark = `Invalid - Duplicate ${regionType} code (${regionKey})`;
+                  regionRemark = `Invalid - Duplicate ${regionType} code "${code}" in ${regionKey}`;
                   remarks.push(regionRemark);
                 } else {
                   regionRemark = `Valid - Duplicate ${regionType} allowed (ends with 9)`;
@@ -357,6 +355,11 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions) {
           details = obsCodes.join('<br>');
         } else {
           details = 'N/A';
+        }
+
+        // More specific reason for missing Observation codes
+        if (obsCodes.length === 0) {
+          remarks.push(`Invalid - No tooth (Observation) specified for unknown code "${code}".`);
         }
 
         if (remarks.length > 0) claimHasInvalid = true;
@@ -380,37 +383,49 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions) {
       let regionKey = null;
       const remarks = [];
 
-      const details = Array.from(obsList).map(obs => {
+      // Parse Observations (obsCodes)
+      const obsCodes = Array.from(obsList).map(obs => {
         const obsCodeRaw = obs.querySelector('Code')?.textContent.trim() || '';
-        const obsCode = obsCodeRaw.toUpperCase();
+        return obsCodeRaw.toUpperCase();
+      }).filter(Boolean);
 
-        if (obsCode === 'PDF') {
-          return 'PDF (no validation)';
-        }
+      // NEW: If no ObsCode, treat as invalid for any repo code
+      if (obsCodes.length === 0) {
+        remarks.push(`Invalid - No tooth number (Observation) provided for code "${code}" which requires one.`);
+      }
 
-        if (!meta.teethSet.has(obsCode)) {
-          remarks.push(`Invalid - ${obsCode}`);
-        }
+      const details = obsCodes.length === 0
+        ? 'None provided'
+        : obsCodes.map(obsCode => {
+          if (obsCode === 'PDF') {
+            return 'PDF (no validation)';
+          }
 
-        // Region-based duplication tracking (if description contains quadrant or sextant)
-        if (regionType === 'sextant') {
-          regionKey = getSextant(obsCode);
-        } else if (regionType === 'quadrant') {
-          regionKey = getQuadrant(obsCode);
-        }
+          let thisRemark = '';
+          // Check if valid tooth for this code's allowed set
+          if (!meta.teethSet.has(obsCode)) {
+            thisRemark = `Invalid - Tooth "${obsCode}" not allowed for code "${code}" (expected: ${meta.description.match(/anterior|posterior|bicuspid|all/i)?.[0] || 'see code description'})`;
+            remarks.push(thisRemark);
+          }
 
-        return `${obsCode} - ${getRegionName(obsCode)}`;
-      }).join('<br>');
+          // Region-based duplication tracking
+          if (regionType === 'sextant') {
+            regionKey = getSextant(obsCode);
+          } else if (regionType === 'quadrant') {
+            regionKey = getQuadrant(obsCode);
+          }
+
+          return `${obsCode} - ${getRegionName(obsCode)}${thisRemark ? ' | ' + thisRemark : ''}`;
+        }).join('<br>');
 
       // If it's region-based (sextant/quadrant), check for duplicate usage
       if (regionType && regionKey && regionKey !== 'Unknown') {
         const tracker = claimRegionTrack[claimId][regionType];
         const key = `${regionKey}_${code}`;
-
         if (tracker[key]) {
           // Allow if code ends with 9
           if (codeLastDigit !== '9') {
-            remarks.push(`Invalid - Duplicate ${regionType} code (${regionKey})`);
+            remarks.push(`Invalid - Duplicate ${regionType} code "${code}" in ${regionKey}`);
           }
         } else {
           tracker[key] = true;
