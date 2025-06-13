@@ -25,8 +25,7 @@ const QUADRANT_MAP = {
   'Lower Right': new Set(['33','34','35','36','37','38','39','40','41','42','43','44','45','46','47','48','P','Q','R','S','T'])
 };
 
-
-// Tooth sets (unchanged)
+// Tooth sets
 const ANTERIOR_TEETH = new Set([
   // Permanent Anterior
   '6','7','8','9','10','11',
@@ -35,13 +34,11 @@ const ANTERIOR_TEETH = new Set([
   'C','D','E','F','G','H',
   'M','N','O','P','Q','R'
 ]);
-
 const BICUSPID_TEETH = new Set([
   // Permanent Bicuspid (no baby premolars)
   '4','5','12','13',
   '20','21','28','29'
 ]);
-
 const POSTERIOR_TEETH = new Set([
   // Permanent Molars
   '1','2','3','14','15','16',
@@ -50,7 +47,6 @@ const POSTERIOR_TEETH = new Set([
   'A','B','I','J',
   'K','L','S','T'
 ]);
-
 const ALL_TEETH = new Set([...ANTERIOR_TEETH, ...BICUSPID_TEETH, ...POSTERIOR_TEETH]);
 
 function normalizeToothCode(code) {
@@ -58,7 +54,6 @@ function normalizeToothCode(code) {
 }
 
 function buildAuthMap(authData) {
-  // authData is assumed to be an array of entries like { code: "...", description: "...", ... }
   const map = {};
   authData.forEach(entry => {
     const code = entry.code?.toString().trim();
@@ -70,7 +65,6 @@ function buildAuthMap(authData) {
   });
   return map;
 }
-
 
 function getTeethSet(region) {
   if (!region) return ALL_TEETH;
@@ -134,7 +128,6 @@ document.getElementById('exportBtn').addEventListener('click', () => {
   XLSX.writeFile(wb, "invalid_tooths.xlsx");
 });
 
-
 function parseXML() {
   const xmlInput    = document.getElementById('xmlFile');
   const resultsDiv  = document.getElementById('results');
@@ -164,7 +157,9 @@ function parseXML() {
       .then(r => r.ok ? r.json() : Promise.reject(`Failed to load checker_auths.json (HTTP ${r.status})`))
   ])
   .then(([xmlText, toothJson, authJson]) => {
+    console.log('[parseXML] XML, tooth codes, and auth metadata loaded');
     const toothMap = buildCodeMeta(toothJson);
+    console.log('[parseXML] Built code meta:', toothMap);
     const authMap  = buildAuthMap(authJson);
     const xmlDoc   = new DOMParser().parseFromString(xmlText, 'application/xml');
     if (xmlDoc.querySelector('parsererror')) throw new Error('Invalid XML file');
@@ -173,6 +168,7 @@ function parseXML() {
   })
   .catch(err => {
     messageBox.textContent = err.toString();
+    console.error('[parseXML] Error:', err);
   });
 }
 
@@ -184,9 +180,7 @@ function buildCodeMeta(data) {
         entry.code ? [entry.code] : []
       )
     );
-
     const teethSet = getTeethSet(entry.affiliated_teeth);
-
     codesArray.forEach(rawCode => {
       const code = rawCode.toString().trim();
       map[code] = {
@@ -198,90 +192,142 @@ function buildCodeMeta(data) {
   return map;
 }
 
-// ---------------------------------------
-// Helper: Map a tooth code into a quadrant
-// ---------------------------------------
-function getQuadrant(tooth) {
-  const t = String(tooth).toUpperCase();
-  const num = Number(t);
-  if (!isNaN(num)) {
-    if (num >= 1 && num <= 8)   return 'UR';
-    if (num >= 9 && num <= 16)  return 'UL';
-    if (num >= 17 && num <= 24) return 'LL';
-    if (num >= 25 && num <= 32) return 'LR';
-  }
-  if ('ABCDE'.includes(t))      return 'UR';
-  if ('FGHIJ'.includes(t))      return 'UL';
-  if ('KLMNO'.includes(t))      return 'LL';
-  if ('PQRST'.includes(t))      return 'LR';
-  return 'Unknown';
+function parseObservationCodes(obsList) {
+  return Array.from(obsList).map(obs => {
+    const obsCodeRaw = obs.querySelector('Code')?.textContent.trim() || '';
+    return obsCodeRaw.toUpperCase();
+  }).filter(Boolean);
 }
 
-// ---------------------------------------
-// Helper: Map a tooth code into a sextant
-// Sextants:  
-//  S1 = Upper Right Posterior (teeth 1–3 or A–C)  
-//  S2 = Upper Anterior (4–13 or D–K)  
-//  S3 = Upper Left Posterior (14–16 or L–O)  
-//  S4 = Lower Left Posterior (17–19 or P–R)  
-//  S5 = Lower Anterior (20–29 or S–T)  
-//  S6 = Lower Right Posterior (30–32 or None)  
-// Adjust as needed for primary/secondary mapping.
-// ---------------------------------------
-function getSextant(tooth) {
-  const t = String(tooth).toUpperCase();
-  const num = Number(t);
+function checkRegionDuplication(tracker, code, regionType, regionKey, codeLastDigit) {
+  const key = `${regionKey}_${code}`;
+  if (tracker[key]) {
+    if (codeLastDigit !== '9') {
+      return [`Duplicate ${regionType} code "${code}" in ${regionKey}`];
+    }
+    // else, valid because code ends with 9
+    return [];
+  }
+  tracker[key] = true;
+  return [];
+}
 
-  if (!isNaN(num)) {
-    if (num >= 1 && num <= 5)   return 'S1'; // Upper Right Posterior
-    if (num >= 6 && num <= 11)  return 'S2'; // Upper Anterior
-    if (num >= 12 && num <= 16) return 'S3'; // Upper Left Posterior
-    if (num >= 17 && num <= 21) return 'S4'; // Lower Left Posterior
-    if (num >= 22 && num <= 27) return 'S5'; // Lower Anterior
-    if (num >= 28 && num <= 32) return 'S6'; // Lower Right Posterior
+function validateUnknownCode({
+  claimId, activityId, code, obsCodes, description, claimRegionTrack, codeLastDigit
+}) {
+  let remarks = [];
+  let details = '';
+  const isRegion = description.toLowerCase().includes('sextant') || description.toLowerCase().includes('quadrant');
+  let regionType = null;
+  if (isRegion) {
+    regionType = description.toLowerCase().includes('sextant') ? 'sextant' : 'quadrant';
+  }
+
+  let regionKey = null;
+
+  if (isRegion && obsCodes.length > 0) {
+    details = obsCodes.map(obsCode => {
+      let regionRemark = '';
+      if (regionType === 'sextant') {
+        regionKey = getSextant(obsCode);
+      } else if (regionType === 'quadrant') {
+        regionKey = getQuadrant(obsCode);
+      }
+      if (regionType && regionKey && regionKey !== 'Unknown') {
+        const tracker = claimRegionTrack[regionType];
+        const dupRemarks = checkRegionDuplication(tracker, code, regionType, regionKey, codeLastDigit);
+        if (dupRemarks.length) {
+          remarks.push(...dupRemarks);
+          regionRemark = dupRemarks[0];
+        } else {
+          regionRemark = `Valid - ${obsCode}`;
+        }
+      } else {
+        regionRemark = `Valid - ${obsCode}`;
+      }
+      return `${obsCode} - ${regionRemark}`;
+    }).join('<br>');
+  } else if (obsCodes.length > 0) {
+    remarks.push(`Unknown code in repo; obsCodes present: ${obsCodes.join(', ')}`);
+    details = obsCodes.join('<br>');
   } else {
-    if ('A,B,C'.includes(t)) return 'S1';
-    if ('D,E,F,G'.includes(t)) return 'S2';
-    if ('H,I,J'.includes(t)) return 'S3';
-    if ('K,L,M'.includes(t)) return 'S4';
-    if ('N,O,P,Q'.includes(t)) return 'S5';
-    if ('R,S,T'.includes(t)) return 'S6';
+    details = 'N/A';
   }
 
-  return 'Unknown';
+  if (obsCodes.length === 0) {
+    remarks.push(`No tooth specified for unknown code "${code}".`);
+  }
+  console.log(`[validateUnknownCode] Activity ${activityId}:`, {code, obsCodes, remarks, details});
+  return buildActivityRow({claimId, activityId, code, description, details, remarks});
 }
 
-// ---------------------------------------
-// Optional label helpers
-// ---------------------------------------
-function quadrantLabel(q) {
-  switch (q) {
-    case 'UR': return 'Upper Right';
-    case 'UL': return 'Upper Left';
-    case 'LL': return 'Lower Left';
-    case 'LR': return 'Lower Right';
-    default:   return q;
+function validateKnownCode({
+  claimId, activityId, code, obsCodes, meta, claimRegionTrack, codeLastDigit
+}) {
+  const regionType = meta.description.toLowerCase().includes('sextant') ? 'sextant'
+    : meta.description.toLowerCase().includes('quadrant') ? 'quadrant'
+    : null;
+
+  let regionKey = null;
+  const remarks = [];
+
+  if (obsCodes.length === 0) {
+    remarks.push(`No tooth number provided for code "${code}".`);
   }
-}
-function sextantLabel(s) {
-  switch (s) {
-    case 'S1': return 'Upper Right Posterior';
-    case 'S2': return 'Upper Anterior';
-    case 'S3': return 'Upper Left Posterior';
-    case 'S4': return 'Lower Left Posterior';
-    case 'S5': return 'Lower Anterior';
-    case 'S6': return 'Lower Right Posterior';
-    default:   return s;
+
+  const details = obsCodes.length === 0
+    ? 'None provided'
+    : obsCodes.map(obsCode => {
+      if (obsCode === 'PDF') {
+        return 'PDF (no validation)';
+      }
+      let thisRemark = '';
+      if (!meta.teethSet.has(obsCode)) {
+        thisRemark = `Tooth "${obsCode}" not allowed for code "${code}" (expected: ${meta.description.match(/anterior|posterior|bicuspid|all/i)?.[0] || 'see code description'})`;
+        remarks.push(thisRemark);
+      }
+      if (regionType === 'sextant') {
+        regionKey = getSextant(obsCode);
+      } else if (regionType === 'quadrant') {
+        regionKey = getQuadrant(obsCode);
+      }
+      return `${obsCode} - ${getRegionName(obsCode)}${thisRemark ? ' | ' + thisRemark : ''}`;
+    }).join('<br>');
+
+  if (regionType && regionKey && regionKey !== 'Unknown') {
+    const tracker = claimRegionTrack[regionType];
+    const dupRemarks = checkRegionDuplication(tracker, code, regionType, regionKey, codeLastDigit);
+    if (dupRemarks.length) {
+      remarks.push(...dupRemarks);
+    }
   }
+  console.log(`[validateKnownCode] Activity ${activityId}:`, {code, obsCodes, remarks, details});
+  return buildActivityRow({
+    claimId,
+    activityId,
+    code,
+    description: meta.description,
+    details,
+    remarks
+  });
 }
 
-// --------------------------------------------------------
-// Modified validateActivities: ignore non-repo codes except for obsCode flagging
-// --------------------------------------------------------
+function buildActivityRow({claimId, activityId, code, description, details, remarks}) {
+  return {
+    claimId,
+    activityId,
+    code,
+    description,
+    details,
+    remarks
+  };
+}
+
 function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions) {
+  console.log('[validateActivities] Start');
   const rows = [];
-  const claimSummaries = {}; // Track per-claim validity
-  const claimRegionTrack = {}; // Tracks code usage per quadrant/sextant per claim
+  const claimSummaries = {};
+  const claimRegionTrack = {};
 
   Array.from(xmlDoc.getElementsByTagName('Claim')).forEach(claim => {
     const claimId = claim.querySelector('ID')?.textContent || '(no claim ID)';
@@ -298,157 +344,32 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions) {
 
       let meta = codeToMeta[code];
       let fallback = fallbackDescriptions?.[code];
+      const obsCodes = parseObservationCodes(obsList);
 
-      // If code is NOT in repo JSON
+      let row;
       if (!meta) {
         let description = '(unknown code)';
         if (fallback && fallback.description) {
           description = fallback.description;
         }
-
-        let remarks = [];
-        let details = '';
-
-        const isRegion = description.toLowerCase().includes('sextant') || description.toLowerCase().includes('quadrant');
-        let regionType = null;
-        if (isRegion) {
-          regionType = description.toLowerCase().includes('sextant') ? 'sextant' : 'quadrant';
-        }
-
-        let regionKey = null;
-        const obsCodes = Array.from(obsList).map(obs => {
-          const obsCodeRaw = obs.querySelector('Code')?.textContent.trim() || '';
-          return obsCodeRaw.toUpperCase();
-        }).filter(Boolean);
-
-        if (isRegion && obsCodes.length > 0) {
-          details = obsCodes.map(obsCode => {
-            let regionRemark = '';
-            if (regionType === 'sextant') {
-              regionKey = getSextant(obsCode);
-            } else if (regionType === 'quadrant') {
-              regionKey = getQuadrant(obsCode);
-            }
-
-            // Region duplication check
-            if (regionType && regionKey && regionKey !== 'Unknown') {
-              const tracker = claimRegionTrack[claimId][regionType];
-              const key = `${regionKey}_${code}`;
-              if (tracker[key]) {
-                if (codeLastDigit !== '9') {
-                  regionRemark = `Invalid - Duplicate ${regionType} code "${code}" in ${regionKey}`;
-                  remarks.push(regionRemark);
-                } else {
-                  regionRemark = `Valid - Duplicate ${regionType} allowed (ends with 9)`;
-                }
-              } else {
-                tracker[key] = true;
-                regionRemark = `Valid - ${obsCode}`;
-              }
-            } else {
-              regionRemark = `Valid - ${obsCode}`;
-            }
-            return `${obsCode} - ${regionRemark}`;
-          }).join('<br>');
-        } else if (obsCodes.length > 0) {
-          remarks.push(`Unknown code in repo; obsCodes present: ${obsCodes.join(', ')}`);
-          details = obsCodes.join('<br>');
-        } else {
-          details = 'N/A';
-        }
-
-        // More specific reason for missing Observation codes
-        if (obsCodes.length === 0) {
-          remarks.push(`Invalid - No tooth (Observation) specified for unknown code "${code}".`);
-        }
-
-        if (remarks.length > 0) claimHasInvalid = true;
-
-        rows.push({
-          claimId,
-          activityId,
-          code,
-          description,
-          details,
-          remarks
+        row = validateUnknownCode({
+          claimId, activityId, code, obsCodes, description, claimRegionTrack: claimRegionTrack[claimId], codeLastDigit
         });
-        return; // skip further validation
+      } else {
+        row = validateKnownCode({
+          claimId, activityId, code, obsCodes, meta, claimRegionTrack: claimRegionTrack[claimId], codeLastDigit
+        });
       }
 
-      // Standard validation for known codes
-      const regionType = meta.description.toLowerCase().includes('sextant') ? 'sextant'
-                        : meta.description.toLowerCase().includes('quadrant') ? 'quadrant'
-                        : null;
-
-      let regionKey = null;
-      const remarks = [];
-
-      // Parse Observations (obsCodes)
-      const obsCodes = Array.from(obsList).map(obs => {
-        const obsCodeRaw = obs.querySelector('Code')?.textContent.trim() || '';
-        return obsCodeRaw.toUpperCase();
-      }).filter(Boolean);
-
-      // NEW: If no ObsCode, treat as invalid for any repo code
-      if (obsCodes.length === 0) {
-        remarks.push(`Invalid - No tooth number (Observation) provided for code "${code}" which requires one.`);
-      }
-
-      const details = obsCodes.length === 0
-        ? 'None provided'
-        : obsCodes.map(obsCode => {
-          if (obsCode === 'PDF') {
-            return 'PDF (no validation)';
-          }
-
-          let thisRemark = '';
-          // Check if valid tooth for this code's allowed set
-          if (!meta.teethSet.has(obsCode)) {
-            thisRemark = `Invalid - Tooth "${obsCode}" not allowed for code "${code}" (expected: ${meta.description.match(/anterior|posterior|bicuspid|all/i)?.[0] || 'see code description'})`;
-            remarks.push(thisRemark);
-          }
-
-          // Region-based duplication tracking
-          if (regionType === 'sextant') {
-            regionKey = getSextant(obsCode);
-          } else if (regionType === 'quadrant') {
-            regionKey = getQuadrant(obsCode);
-          }
-
-          return `${obsCode} - ${getRegionName(obsCode)}${thisRemark ? ' | ' + thisRemark : ''}`;
-        }).join('<br>');
-
-      // If it's region-based (sextant/quadrant), check for duplicate usage
-      if (regionType && regionKey && regionKey !== 'Unknown') {
-        const tracker = claimRegionTrack[claimId][regionType];
-        const key = `${regionKey}_${code}`;
-        if (tracker[key]) {
-          // Allow if code ends with 9
-          if (codeLastDigit !== '9') {
-            remarks.push(`Invalid - Duplicate ${regionType} code "${code}" in ${regionKey}`);
-          }
-        } else {
-          tracker[key] = true;
-        }
-      }
-
-      if (remarks.length > 0) claimHasInvalid = true;
-
-      rows.push({
-        claimId,
-        activityId,
-        code,
-        description: meta.description,
-        details,
-        remarks
-      });
+      if (row.remarks && row.remarks.length > 0) claimHasInvalid = true;
+      rows.push(row);
     });
 
     claimSummaries[claimId] = claimHasInvalid;
   });
 
-  // Attach claim validity summary to rows for further reference (if needed)
   rows.__claimSummaries = claimSummaries;
+  console.log('[validateActivities] Finished, result:', rows);
   return rows;
 }
 
@@ -462,11 +383,9 @@ function renderResults(container, rows) {
   }
 
   let lastClaimId = null;
-  // Now: Invalid if remarks.length > 0
   window.invalidRows = rows.filter(r => r.remarks && r.remarks.length > 0);
   document.getElementById('exportBtn').style.display = window.invalidRows.length ? 'inline-block' : 'none';
 
-  // Summary statistics, per claim (use __claimSummaries)
   const claimSummaries = rows.__claimSummaries || {};
   const totalClaims = Object.keys(claimSummaries).length;
   const validClaims = Object.values(claimSummaries).filter(isInvalid => !isInvalid).length;
@@ -478,8 +397,12 @@ function renderResults(container, rows) {
     <table border="1" style="width:100%;border-collapse:collapse">
       <thead>
         <tr>
-          <th>Claim ID</th><th>Activity ID</th><th>Code</th>
-          <th>Description</th><th>Observations</th><th>Remarks</th>
+          <th>Claim ID</th>
+          <th>Activity ID</th>
+          <th>Code</th>
+          <th class="description-col">Description</th>
+          <th>Observations</th>
+          <th class="description-col">Remarks</th>
         </tr>
       </thead>
       <tbody>
@@ -490,13 +413,16 @@ function renderResults(container, rows) {
           return `
             <tr class="${invalidClass}">
               <td>${showClaimId ? r.claimId : ''}</td>
-              <td>${r.activityId}</td><td>${r.code}</td>
-              <td class="description-col">${r.description}</td><td>${r.details}</td>
-              <td>${r.remarks.join('<br>')}</td>
+              <td>${r.activityId}</td>
+              <td>${r.code}</td>
+              <td class="description-col">${r.description}</td>
+              <td>${r.details}</td>
+              <td class="description-col">${r.remarks.join('<br>')}</td>
             </tr>`;
         }).join('')}
       </tbody>
     </table>`;
 
   container.innerHTML = html;
+  console.log('[renderResults] Rendered table with', rows.length, 'rows');
 }
