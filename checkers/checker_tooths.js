@@ -254,8 +254,9 @@ function validateUnknownCode({
     details = 'N/A';
   }
 
-  if (obsCodes.length === 0) {
-    remarks.push(`No tooth specified for unknown code "${code}".`);
+  if (obsCodes.length === 0 && isRegion) {
+    // Only flag as invalid if description implies region
+    remarks.push(`Invalid - No tooth (Observation) specified for unknown code "${code}" (region type: ${regionType}).`);
   }
   console.log(`[validateUnknownCode] Activity ${activityId}:`, {code, obsCodes, remarks, details});
   return buildActivityRow({claimId, activityId, code, description, details, remarks});
