@@ -4070,5 +4070,21 @@
         "description": "Excision of Cyst 1 cm and under.",
         "dentition_type": "all",
         "affiliated_teeth": "all"
+    },
+    {
+        "code": [
+            "17999"
+        ],
+        "description": "It depends on the procedure.",
+        "dentition_type": "all",
+        "affiliated_teeth": "all"
+    },
+    {
+        "code": [
+            "0232T"
+        ],
+        "description": "No idea, it's a Medical thingy.",
+        "dentition_type": "all",
+        "affiliated_teeth": "all"
     }
 ]
