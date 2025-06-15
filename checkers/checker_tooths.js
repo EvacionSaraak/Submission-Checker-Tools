@@ -272,6 +272,27 @@ function validateKnownCode({
   let regionKey = null;
   const remarks = [];
 
+  // Special handling for codes 17999 and 0232T
+  if (code === "17999" || code === "0232T") {
+    if (obsCodes.length === 0) {
+      remarks.push(`Invalid: Code "${code}" requires at least one observation code, but none were provided.`);
+    } else {
+      // Check if any obsCode is a tooth code
+      const toothCodesUsed = obsCodes.filter(oc => ALL_TEETH.has(oc));
+      if (toothCodesUsed.length > 0) {
+        remarks.push(`Invalid: Code "${code}" cannot be used with tooth codes: ${toothCodesUsed.join(", ")}`);
+      }
+    }
+    return buildActivityRow({
+      claimId,
+      activityId,
+      code,
+      description: meta.description,
+      details: obsCodes.length ? obsCodes.join('<br>') : 'None provided',
+      remarks
+    });
+  }
+
   if (obsCodes.length === 0) {
     remarks.push(`No tooth number provided for code "${code}".`);
   }
