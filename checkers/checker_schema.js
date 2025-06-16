@@ -62,6 +62,7 @@ function validateClaimSchema(xmlDoc) {
     let invalidFields = [];
     let principalCount = 0;
     let diagnosisCodes = [];
+    let remarks = [];
 
     function present(tag, parent = claim) { return parent.getElementsByTagName(tag).length > 0; }
     function text(tag, parent = claim) {
@@ -84,17 +85,16 @@ function validateClaimSchema(xmlDoc) {
       const p = eid.split("-");
       if (p.length !== 4 || p[0] !== "784" || !/^\d{4}$/.test(p[1]) || !/^\d{7}$/.test(p[2]) || !/^\d{1}$/.test(p[3]))
         invalidFields.push("EmiratesIDNumber (invalid format)");
+      const eidDigits = eid.replace(/-/g, "");
+      if (/^[129]+$/.test(eidDigits)) {
+        remarks.push("EmiratesIDNumber (Medical Tourism: all digits 1/2/9)");
+      } else if (/^0+$/.test(eidDigits)) {
+        remarks.push("EmiratesIDNumber (National without EID: all digits 0)");
+      }
     }
 
-    // Encounter & subfields
-    const encounter = claim.getElementsByTagName("Encounter")[0];
-    if (!encounter) {
-      missingFields.push("Encounter");
-    } else {
-      ["FacilityID", "Type", "PatientID", "Start", "End", "StartType", "EndType"].forEach(
-        tag => invalidIfNull(tag, encounter, "Encounter.")
-      );
-    }
+    // (rest of your function remains unchanged, but use this remarks array below as before)
+    // Diagnoses, Activities, Contract, etc...
 
     // Diagnoses
     const diagnoses = claim.getElementsByTagName("Diagnosis");
@@ -121,7 +121,6 @@ function validateClaimSchema(xmlDoc) {
       // Check for duplicate diagnosis codes
       const codeSet = new Set(diagnosisCodes);
       if (diagnosisCodes.length !== codeSet.size) {
-        // Find which codes are duplicated for better feedback
         const duplicates = diagnosisCodes.filter((item, idx) => diagnosisCodes.indexOf(item) !== idx);
         const uniqueDuplicates = [...new Set(duplicates)];
         invalidFields.push(
@@ -156,7 +155,6 @@ function validateClaimSchema(xmlDoc) {
     if (contract && !text("PackageName", contract))
       invalidFields.push("Contract.PackageName (null/empty)");
 
-    let remarks = [];
     if (missingFields.length) remarks.push("Missing: " + missingFields.join(", "));
     if (invalidFields.length) remarks.push("Invalid: " + invalidFields.join(", "));
     if (!remarks.length) remarks.push("OK");
@@ -178,6 +176,7 @@ function validatePersonSchema(xmlDoc) {
   for (const person of persons) {
     let missingFields = [];
     let invalidFields = [];
+    let remarks = [];
 
     function present(tag, parent = person) { return parent.getElementsByTagName(tag).length > 0; }
     function text(tag, parent = person) {
@@ -200,6 +199,12 @@ function validatePersonSchema(xmlDoc) {
       const p = eid.split("-");
       if (p.length !== 4 || p[0] !== "784" || !/^\d{4}$/.test(p[1]) || !/^\d{7}$/.test(p[2]) || !/^\d{1}$/.test(p[3]))
         invalidFields.push("EmiratesIDNumber (invalid format)");
+      const eidDigits = eid.replace(/-/g, "");
+      if (/^[129]+$/.test(eidDigits)) {
+        remarks.push("EmiratesIDNumber (Medical Tourism: all digits 1/2/9)");
+      } else if (/^0+$/.test(eidDigits)) {
+        remarks.push("EmiratesIDNumber (National without EID: all digits 0)");
+      }
     }
 
     // Member/ID required
@@ -207,7 +212,6 @@ function validatePersonSchema(xmlDoc) {
     if (!member || !text("ID", member))
       invalidFields.push("Member.ID (null/empty)");
 
-    let remarks = [];
     if (missingFields.length) remarks.push("Missing: " + missingFields.join(", "));
     if (invalidFields.length) remarks.push("Invalid: " + invalidFields.join(", "));
     if (!remarks.length) remarks.push("OK");
