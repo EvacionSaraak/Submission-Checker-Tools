@@ -277,8 +277,9 @@ function validateKnownCode({
     if (obsCodes.length === 0) {
       remarks.push(`Invalid: Code "${code}" requires at least one observation code, but none were provided.`);
     } else {
-      // Check if any obsCode is a tooth code
-      const toothCodesUsed = obsCodes.filter(oc => ALL_TEETH.has(oc));
+      // Consider obsCodes that are not "PDF" for tooth code check
+      const nonPDFObs = obsCodes.filter(oc => oc !== 'PDF');
+      const toothCodesUsed = nonPDFObs.filter(oc => ALL_TEETH.has(oc));
       if (toothCodesUsed.length > 0) {
         remarks.push(`Invalid: Code "${code}" cannot be used with tooth codes: ${toothCodesUsed.join(", ")}`);
       }
