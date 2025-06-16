@@ -2,6 +2,20 @@
 // Requires SheetJS for Excel export: 
 // <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
 
+// Automatically validate when file is uploaded
+document.addEventListener("DOMContentLoaded", function () {
+  const fileInput = document.getElementById("xmlFile");
+  if (fileInput) {
+    fileInput.addEventListener("change", function () {
+      document.getElementById("uploadStatus").textContent = "";
+      document.getElementById("results").innerHTML = "";
+      if (fileInput.files.length > 0) {
+        validateXmlSchema();
+      }
+    });
+  }
+});
+
 function validateXmlSchema() {
   const fileInput = document.getElementById("xmlFile");
   const status = document.getElementById("uploadStatus");
@@ -79,7 +93,7 @@ function validateClaimSchema(xmlDoc) {
       "Gross", "PatientShare", "Net"
     ].forEach(tag => invalidIfNull(tag, claim));
 
-    // EmiratesIDNumber format
+    // EmiratesIDNumber format and Medical Tourism/National without EID detection
     if (present("EmiratesIDNumber")) {
       const eid = text("EmiratesIDNumber");
       const p = eid.split("-");
@@ -93,8 +107,15 @@ function validateClaimSchema(xmlDoc) {
       }
     }
 
-    // (rest of your function remains unchanged, but use this remarks array below as before)
-    // Diagnoses, Activities, Contract, etc...
+    // Encounter & subfields
+    const encounter = claim.getElementsByTagName("Encounter")[0];
+    if (!encounter) {
+      missingFields.push("Encounter");
+    } else {
+      ["FacilityID", "Type", "PatientID", "Start", "End", "StartType", "EndType"].forEach(
+        tag => invalidIfNull(tag, encounter, "Encounter.")
+      );
+    }
 
     // Diagnoses
     const diagnoses = claim.getElementsByTagName("Diagnosis");
@@ -193,7 +214,7 @@ function validatePersonSchema(xmlDoc) {
       "BirthDate", "Gender", "Nationality", "City", "CountryOfResidence", "EmirateOfResidence", "EmiratesIDNumber"
     ].forEach(tag => invalidIfNull(tag, person));
 
-    // EmiratesIDNumber format
+    // EmiratesIDNumber format and Medical Tourism/National without EID detection
     if (present("EmiratesIDNumber")) {
       const eid = text("EmiratesIDNumber");
       const p = eid.split("-");
@@ -244,13 +265,11 @@ function ensureModal() {
     if (e.target.id === "modalOverlay") hideModal();
   };
 }
-
 function showModal(html) {
   ensureModal();
   document.getElementById("modalTable").innerHTML = html;
   document.getElementById("modalOverlay").style.display = "block";
 }
-
 function hideModal() {
   document.getElementById("modalOverlay").style.display = "none";
 }
