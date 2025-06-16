@@ -228,8 +228,8 @@ function ensureModal() {
   if (document.getElementById("modalOverlay")) return;
   const modalHtml = `
     <div id="modalOverlay" style="display:none;position:fixed;z-index:9999;left:0;top:0;width:100vw;height:100vh;background:rgba(0,0,0,0.35);">
-      <div id="modalContent" style="background:#fff;max-width:800px;max-height:85vh;overflow:auto;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);padding:20px;border-radius:8px;box-s[...]
-        <button id="modalCloseBtn" style="float:right;font-size:18px;padding:2px 10px;">&times;</button>
+      <div id="modalContent" style="background:#fff;max-width:800px;max-height:85vh;overflow:auto;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);padding:20px;border-radius:8px;box-shadow:0 4px 24px rgba(0,0,0,0.2);">
+        <button id="modalCloseBtn" style="float:right;font-size:18px;padding:2px 10px;cursor:pointer;" aria-label="Close">&times;</button>
         <div id="modalTable"></div>
       </div>
     </div>
@@ -240,11 +240,13 @@ function ensureModal() {
     if (e.target.id === "modalOverlay") hideModal();
   };
 }
+
 function showModal(html) {
   ensureModal();
   document.getElementById("modalTable").innerHTML = html;
   document.getElementById("modalOverlay").style.display = "block";
 }
+
 function hideModal() {
   document.getElementById("modalOverlay").style.display = "none";
 }
