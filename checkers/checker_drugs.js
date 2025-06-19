@@ -128,31 +128,32 @@ function buildDrugTable(drugs) {
   drugs.forEach(row => {
     const status = (row["Status"] || "").toLowerCase();
     const statusActive = status === "active";
-    const hasNo = ["UPP Scope", "Included in Thiqa/ ABM - other than 1&7- Drug Formulary", "Included In Basic Drug Formulary"]
-      .some(col => (row[col] || "").toLowerCase() === "no");
+    const hasNo = [
+      "UPP Scope",
+      "Included in Thiqa/ ABM - other than 1&7- Drug Formulary",
+      "Included In Basic Drug Formulary"
+    ].some(col => (row[col] || "").toLowerCase() === "no");
     const rowClass = statusActive ? (hasNo ? "unknown" : "valid") : "invalid";
 
     table += `<tr class="${rowClass}">`;
 
-    // Output each column with inserted "Delete Effective Date" at correct spot
-    DRUG_COLUMNS.forEach((col, idx) => {
-      if (col === "Status") {
-        // Add Status column
-        const cell = row[col] || "";
-        table += `<td>${cell}</td>`;
+    // Now manually output columns in the exact display order
+    table += `<td>${row["Drug Code"] || "N/A"}</td>`;
+    table += `<td>${row["Package Name"] || "N/A"}</td>`;
+    table += `<td>${row["Dosage Form"] || "N/A"}</td>`;
+    table += `<td>${row["Package Size"] || "N/A"}</td>`;
+    table += `<td>${row["Unit Price to Public"] || "N/A"}</td>`;
 
-        // Add Delete Effective Date immediately after
-        const expiry = row["UPP Expiry Date"] || "";
-        table += `<td>${!statusActive ? (expiry || "NO DATE") : ""}</td>`;
-      } else if (col !== "UPP Expiry Date") {
-        // Normal columns, excluding UPP Expiry Date (already used)
-        let cell = row[col];
-        if ((col === "UPP Effective Date" || col === "UPP Updated Date") && (!cell || cell === "")) {
-          cell = "NO DATE";
-        }
-        table += `<td>${cell || ""}</td>`;
-      }
-    });
+    // Status and Delete Effective Date
+    table += `<td>${row["Status"] || "N/A"}</td>`;
+    table += `<td>${!statusActive ? (row["Delete Effective Date"] || "NO DATE") : ""}</td>`;
+
+    table += `<td>${row["UPP Scope"] || "N/A"}</td>`;
+    table += `<td>${row["Included in Thiqa/ ABM - other than 1&7- Drug Formulary"] || "N/A"}</td>`;
+    table += `<td>${row["Included In Basic Drug Formulary"] || "N/A"}</td>`;
+
+    table += `<td>${row["UPP Effective Date"] || "NO DATE"}</td>`;
+    table += `<td>${row["UPP Updated Date"] || "NO DATE"}</td>`;
 
     table += `</tr>`;
   });
@@ -160,4 +161,3 @@ function buildDrugTable(drugs) {
   table += `</tbody></table>`;
   return table;
 }
-
