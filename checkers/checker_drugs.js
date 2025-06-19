@@ -1,7 +1,7 @@
 let drugData = [];
 let xmlData = null;
 
-// Elements
+// Elements for mode switching
 const modeRadios = document.querySelectorAll('input[name="mode"]');
 const lookupPanel = document.getElementById('lookup-panel');
 const analysisPanel = document.getElementById('analysis-panel');
@@ -21,7 +21,7 @@ const xmlClaimCount = document.getElementById('xml-claim-count');
 const analyzeBtn = document.getElementById('analyze-btn');
 const analysisResults = document.getElementById('analysis-results');
 
-// Mode switching
+// Mode switching logic
 modeRadios.forEach(radio => {
   radio.addEventListener('change', () => {
     const selected = document.querySelector('input[name="mode"]:checked').value;
@@ -30,7 +30,7 @@ modeRadios.forEach(radio => {
   });
 });
 
-// Drug data parser
+// Parse XLSX and load drug data function
 function parseDrugsFromXLSX(file, displayTarget, enableInputCallback) {
   const reader = new FileReader();
   reader.onload = e => {
@@ -47,7 +47,7 @@ function parseDrugsFromXLSX(file, displayTarget, enableInputCallback) {
   reader.readAsBinaryString(file);
 }
 
-// Drug lookup
+// Drug lookup: XLSX upload event
 xlsxLookup.addEventListener('change', e => {
   if (e.target.files[0]) {
     parseDrugsFromXLSX(e.target.files[0], drugCountLookup, (enable) => {
@@ -57,6 +57,7 @@ xlsxLookup.addEventListener('change', e => {
   }
 });
 
+// Drug lookup: Search button event
 searchDrugBtn.addEventListener('click', () => {
   const code = drugInput.value.trim();
   const matches = drugData.filter(row => row["Drug Code"] == code);
@@ -67,7 +68,7 @@ searchDrugBtn.addEventListener('click', () => {
   }
 });
 
-// XML Analysis setup (disabled for now)
+// XML Analysis: XLSX and XML upload events (XML analysis currently disabled)
 xlsxAnalysis.addEventListener('change', e => {
   if (e.target.files[0]) {
     parseDrugsFromXLSX(e.target.files[0], drugCountAnalysis, tryEnableAnalyze);
@@ -76,9 +77,9 @@ xlsxAnalysis.addEventListener('change', e => {
 
 xmlUpload.addEventListener('change', e => {
   if (e.target.files[0]) {
-    // Placeholder – actual XML parsing pending
+    // Placeholder – actual XML parsing pending schema details
     xmlClaimCount.textContent = `XML loaded. Waiting on schema for processing.`;
-    xmlData = true; // Simulate
+    xmlData = true; // Simulate XML data loaded
     tryEnableAnalyze();
   }
 });
@@ -93,18 +94,19 @@ analyzeBtn.addEventListener('click', () => {
   analysisResults.innerHTML = `<p>XML Analysis feature is currently disabled until schema is available.</p>`;
 });
 
-// Reusable table builder
+// Reusable table builder function with Valid/Invalid tag in the last column
 function buildDrugTable(drugs) {
   const headers = [
     "Drug Code", "Package Name", "Dosage Form", "Package Size",
     "Unit Price to Public", "Status", "UPP Scope",
-    "Included in Thiqa/ABM Formulary", "Included in Basic Formulary",
+    "Included in Thiqa/ABM - other than 1&7- Drug Formulary",
+    "Included In Basic Drug Formulary",
     "UPP Effective Date", "UPP Updated Date"
   ];
 
   const displayNames = [
     "Code", "Package", "Form", "Size", "Unit Price", "Status", "Scope",
-    "Thiqa Included", "Basic Included", "Effective Date", "Updated Date"
+    "Thiqa/ABM", "Basic Formulary", "Effective Date", "Updated Date", "Validity"
   ];
 
   let table = `<table><thead><tr>`;
@@ -112,11 +114,12 @@ function buildDrugTable(drugs) {
   table += `</tr></thead><tbody>`;
 
   drugs.forEach(row => {
+    // Check the Status column (case-insensitive)
     const status = (row["Status"] || "").toLowerCase();
     const isValid = status === "active";
     const validityTag = isValid
-      ? `<span style="color: green; font-weight: bold;">Valid</span>`
-      : `<span style="color: red; font-weight: bold;">Invalid</span>`;
+      ? `<span class="valid" style="font-weight: bold;">Valid</span>`
+      : `<span class="invalid" style="font-weight: bold;">Invalid</span>`;
 
     table += `<tr>`;
     headers.forEach(col => {
