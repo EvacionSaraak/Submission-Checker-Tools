@@ -62,6 +62,11 @@ th {
   background-color: #ffe4e1;
 }
 
+/* Unknown row background color (yellow) */
+.unknown {
+  background-color: #fff9c4; /* Light yellow */
+}
+
 /* Nowrap/Wrap helpers for specific columns */
 .nowrap-col { white-space: nowrap; }
 .wrap-col   { white-space: normal; }
