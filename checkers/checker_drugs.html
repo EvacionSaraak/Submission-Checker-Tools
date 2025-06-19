@@ -40,11 +40,21 @@
   </div>
   
   <!-- Lookup Panel -->
-  <div id="lookup-panel" class="section">
-    <label>Enter Drug Code:</label>
-    <input type="text" id="drug-code-input" disabled />
-    <button id="search-drug-btn" disabled>Search</button>
-    <div id="lookup-results" class="results"></div>
+  <!-- Lookup Panel -->
+  <div id="lookup-panel">
+    <div style="margin-bottom: 20px;">
+      <label><strong>Upload Drug XLSX:</strong></label>
+      <input type="file" id="xlsx-upload" accept=".xlsx" />
+      <div id="drug-count" class="loaded-count"></div>
+    </div>
+  
+    <div style="margin-bottom: 20px;">
+      <label><strong>Enter Drug Code:</strong></label><br />
+      <input type="text" id="drug-code-input" disabled />
+      <button id="search-drug-btn" disabled>Search</button>
+    </div>
+  
+    <div id="lookup-results"></div>
   </div>
   
   <!-- Analysis Panel -->
