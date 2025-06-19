@@ -1,6 +1,25 @@
 let drugData = [];
 let xmlData = null;
 
+const DISPLAY_COLUMNS = [
+  "Drug Code",
+  "Package Name",
+  "Dosage Form",
+  "Package Size",
+  "Unit Price to Public",
+  "Status",
+  "UPP Scope",
+  "Included in Thiqa/ABM - other than 1&7- Drug Formulary",
+  "Included In Basic Drug Formulary",
+  "UPP Effective Date",
+  "UPP Updated Date"
+];
+
+const DISPLAY_HEADERS = [
+  "Code", "Package", "Form", "Size", "Unit Price", "Status", "Scope",
+  "Included in Thiqa", "Included in Basic", "Effective Date", "Updated Date", "Validity"
+];
+
 const modeRadios = document.querySelectorAll('input[name="mode"]');
 const lookupPanel = document.getElementById('lookup-panel');
 const analysisPanel = document.getElementById('analysis-panel');
@@ -101,32 +120,24 @@ analyzeBtn.addEventListener('click', () => {
 
 // Build Table function (unchanged from your original, with validity and classes)
 function buildDrugTable(drugs) {
-  const headers = [
-    "Drug Code", "Package Name", "Dosage Form", "Package Size",
-    "Unit Price to Public", "Status", "UPP Scope",
-    "Included in Thiqa/ABM - other than 1&7- Drug Formulary",
-    "Included In Basic Drug Formulary",
-    "UPP Effective Date", "UPP Updated Date"
-  ];
-
-  const displayNames = [
-    "Code", "Package", "Form", "Size", "Unit Price", "Status", "Scope",
-    "Included in Thiqa", "Included in Basic", "Effective Date", "Updated Date", "Validity"
-  ];
-
   let table = `<table><thead><tr>`;
-  displayNames.forEach(name => table += `<th>${name}</th>`);
+  DISPLAY_HEADERS.forEach(name => {
+    table += `<th>${name}</th>`;
+  });
   table += `</tr></thead><tbody>`;
 
   drugs.forEach(row => {
     const statusRaw = (row["Status"] || "").toLowerCase();
     const statusActive = statusRaw === "active";
 
-    const hasNoInRequired = ["UPP Scope", "Included in Thiqa/ABM - other than 1&7- Drug Formulary", "Included In Basic Drug Formulary"]
-      .some(col => {
-        const val = (row[col] || "").toString().trim().toLowerCase();
-        return val === "no";
-      });
+    const hasNoInRequired = [
+      "UPP Scope",
+      "Included in Thiqa/ABM - other than 1&7- Drug Formulary",
+      "Included In Basic Drug Formulary"
+    ].some(col => {
+      const val = (row[col] || "").toString().trim().toLowerCase();
+      return val === "no";
+    });
 
     let rowClass = "invalid";
     let validityTag = `<span class="invalid" style="font-weight: bold;">Invalid</span>`;
@@ -142,10 +153,12 @@ function buildDrugTable(drugs) {
     }
 
     table += `<tr class="${rowClass}">`;
-    headers.forEach(col => {
+
+    DISPLAY_COLUMNS.forEach(col => {
       const cell = row[col] !== undefined && row[col] !== null ? row[col] : "";
       table += `<td>${cell}</td>`;
     });
+
     table += `<td>${validityTag}</td>`;
     table += `</tr>`;
   });
