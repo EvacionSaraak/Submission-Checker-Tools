@@ -60,6 +60,8 @@ toggleModePanels();
 xlsxUpload.addEventListener('change', e => {
   if (!e.target.files[0]) return;
 
+  drugCount.textContent = "Loading drug list..."; // ✅ Show loading message immediately
+
   const reader = new FileReader();
 
   reader.onload = ev => {
@@ -74,11 +76,10 @@ xlsxUpload.addEventListener('change', e => {
         const cleanKey = key.trim();
         const rawValue = row[key];
 
-        // Normalize booleans and trim all strings
         if (typeof rawValue === "boolean") {
           normalizedRow[cleanKey] = rawValue ? "Yes" : "No";
         } else if (rawValue === null || rawValue === undefined || rawValue === "") {
-          normalizedRow[cleanKey] = ""; // blank
+          normalizedRow[cleanKey] = "";
         } else {
           normalizedRow[cleanKey] = rawValue.toString().trim();
         }
@@ -86,12 +87,13 @@ xlsxUpload.addEventListener('change', e => {
       return normalizedRow;
     }).filter(row => row["Drug Code"]);
 
-    drugCount.textContent = `Loaded ${drugData.length} drug entries.`;
+    drugCount.textContent = `Loaded ${drugData.length} drug entries.`; // ✅ Replace with total count
     toggleModePanels();
   };
 
-  reader.readAsBinaryString(e.target.files[0]); // ← ✅ THIS LINE was missing
+  reader.readAsBinaryString(e.target.files[0]);
 });
+
 
 // Lookup search button
 searchDrugBtn.addEventListener('click', () => {
