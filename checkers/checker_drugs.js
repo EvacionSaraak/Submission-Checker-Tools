@@ -80,7 +80,7 @@ analyzeBtn.addEventListener('click', () => {
   analysisResults.innerHTML = `<div class="error-box">XML Analysis is disabled until schema is available.</div>`;
 });
 
-// --- Table Builder ---
+// Build Table
 function buildDrugTable(drugs) {
   const headers = [
     "Drug Code", "Package Name", "Dosage Form", "Package Size",
@@ -92,10 +92,9 @@ function buildDrugTable(drugs) {
 
   const displayNames = [
     "Code", "Package", "Form", "Size", "Unit Price", "Status", "Scope",
-    "Thiqa Included", "Basic Included", "Effective Date", "Updated Date", "Validity"
+    "Included in Thiqa", "Included in Basic", "Effective Date", "Updated Date", "Validity"
   ];
 
-  // Helper to normalize Yes/No for Thiqa and Basic Formulary columns
   function yesNo(value) {
     if (!value) return "No";
     const val = String(value).trim().toLowerCase();
@@ -108,22 +107,41 @@ function buildDrugTable(drugs) {
   table += `</tr></thead><tbody>`;
 
   drugs.forEach(row => {
-    const status = (row["Status"] || "").toLowerCase();
-    const isValid = status === "active";
-    const validityTag = isValid
-      ? `<span class="valid" style="font-weight: bold;">Valid</span>`
-      : `<span class="invalid" style="font-weight: bold;">Invalid</span>`;
+    const statusRaw = (row["Status"] || "").toLowerCase();
+    const statusActive = statusRaw === "active";
 
-    table += `<tr class="${isValid ? 'valid' : 'invalid'}">`;
+    // Normalize Yes/No for these columns
+    const uppScope = yesNo(row["UPP Scope"]);
+    const thiqa = yesNo(row["Included in Thiqa/ABM - other than 1&7- Drug Formulary"]);
+    const basic = yesNo(row["Included In Basic Drug Formulary"]);
+
+    // Determine row class & validity tag
+    let rowClass = "invalid";
+    let validityTag = `<span class="invalid" style="font-weight: bold;">Invalid</span>`;
+
+    if (statusActive) {
+      if (uppScope === "Yes" && thiqa === "Yes" && basic === "Yes") {
+        rowClass = "valid";
+        validityTag = `<span class="valid" style="font-weight: bold;">Valid</span>`;
+      } else {
+        rowClass = "unknown";
+        validityTag = `<span class="unknown" style="font-weight: bold;">Unknown</span>`;
+      }
+    }
+
+    table += `<tr class="${rowClass}">`;
     headers.forEach(col => {
       let cell = row[col] || "";
-      
-      // Customize Thiqa and Basic Formulary columns
+
+      // Convert Thiqa and Basic columns to Yes/No
       if (col === "Included in Thiqa/ABM - other than 1&7- Drug Formulary") {
-        cell = yesNo(cell);
+        cell = thiqa;
       }
       if (col === "Included In Basic Drug Formulary") {
-        cell = yesNo(cell);
+        cell = basic;
+      }
+      if (col === "UPP Scope") {
+        cell = uppScope;
       }
 
       table += `<td>${cell}</td>`;
@@ -135,4 +153,3 @@ function buildDrugTable(drugs) {
   table += `</tbody></table>`;
   return table;
 }
-
