@@ -1,1 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Drug Lookup & XML Analysis</title>
+  <link rel="stylesheet" href="tables.css">
+  <style>
+    body { font-family: sans-serif; margin: 20px; }
+    .hidden { display: none; }
+    .section { margin-bottom: 20px; }
+    label { font-weight: bold; }
+    input[type="file"] { margin-top: 5px; }
+    table { margin-top: 20px; }
+  </style>
+</head>
+<body>
 
+  <h1>Drug Lookup System</h1>
+
+  <div class="section">
+    <label><input type="radio" name="mode" value="lookup" checked> Drug Lookup</label>
+    <label><input type="radio" name="mode" value="analysis"> XML Analysis</label>
+  </div>
+
+  <!-- Drug Lookup Panel -->
+  <div id="lookup-panel" class="section">
+    <label>Upload Drugs XLSX:</label>
+    <input type="file" id="xlsx-lookup" accept=".xlsx" />
+    <div id="lookup-drug-count"></div>
+
+    <label>Enter Drug Code:</label>
+    <input type="text" id="drug-code-input" disabled />
+    <button id="search-drug-btn" disabled>Search</button>
+
+    <div id="lookup-results"></div>
+  </div>
+
+  <!-- XML Analysis Panel -->
+  <div id="analysis-panel" class="section hidden">
+    <label>Upload Drugs XLSX:</label>
+    <input type="file" id="xlsx-analysis" accept=".xlsx" />
+    <div id="analysis-drug-count"></div>
+
+    <label>Upload XML Claims File:</label>
+    <input type="file" id="xml-upload" accept=".xml" />
+    <div id="xml-claim-count"></div>
+
+    <button id="analyze-btn" disabled>Analyze</button>
+
+    <div id="analysis-results"></div>
+  </div>
+
+  <script src="https://cdn.sheetjs.com/xlsx-latest/package/xlsx.mini.min.js"></script>
+  <script src="checker_drugs.js"></script>
+</body>
+</html>
