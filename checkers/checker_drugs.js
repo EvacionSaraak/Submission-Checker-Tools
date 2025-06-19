@@ -85,15 +85,23 @@ function buildDrugTable(drugs) {
   const headers = [
     "Drug Code", "Package Name", "Dosage Form", "Package Size",
     "Unit Price to Public", "Status", "UPP Scope",
-    "Included in Thiqa/ ABM - other than 1&7- Drug Formulary",
+    "Included in Thiqa/ABM - other than 1&7- Drug Formulary",
     "Included In Basic Drug Formulary",
     "UPP Effective Date", "UPP Updated Date"
   ];
 
   const displayNames = [
     "Code", "Package", "Form", "Size", "Unit Price", "Status", "Scope",
-    "Thiqa Included", "Basic Included", "Effective Date", "Last Updated Date", "Validity"
+    "Thiqa Included", "Basic Included", "Effective Date", "Updated Date", "Validity"
   ];
+
+  // Helper to normalize Yes/No for Thiqa and Basic Formulary columns
+  function yesNo(value) {
+    if (!value) return "No";
+    const val = String(value).trim().toLowerCase();
+    if (["yes","y","true","1"].includes(val)) return "Yes";
+    return "No";
+  }
 
   let table = `<table><thead><tr>`;
   displayNames.forEach(name => table += `<th>${name}</th>`);
@@ -108,7 +116,17 @@ function buildDrugTable(drugs) {
 
     table += `<tr class="${isValid ? 'valid' : 'invalid'}">`;
     headers.forEach(col => {
-      table += `<td>${row[col] || ''}</td>`;
+      let cell = row[col] || "";
+      
+      // Customize Thiqa and Basic Formulary columns
+      if (col === "Included in Thiqa/ABM - other than 1&7- Drug Formulary") {
+        cell = yesNo(cell);
+      }
+      if (col === "Included In Basic Drug Formulary") {
+        cell = yesNo(cell);
+      }
+
+      table += `<td>${cell}</td>`;
     });
     table += `<td>${validityTag}</td>`;
     table += `</tr>`;
@@ -117,3 +135,4 @@ function buildDrugTable(drugs) {
   table += `</tbody></table>`;
   return table;
 }
+
