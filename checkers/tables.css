@@ -1,48 +1,80 @@
 /* tables.css */
 
-/* General body and font styles */
+/* === BASE AND LAYOUT === */
 body {
   font-family: Arial, sans-serif;
   padding: 20px;
   margin: auto;
 }
 
-/* Add spacing below mode selector */
+.hidden {
+  display: none;
+}
+
+/* === MODE & PANEL SPACING === */
 #mode-selector {
   margin-bottom: 30px;
 }
 
-/* Add vertical spacing between grouped sections in panels */
 #lookup-panel .section,
 #analysis-panel .section {
   margin-bottom: 24px;
 }
 
-/* Horizontal space between input and button */
-#lookup-panel input[type="text"],
-#analysis-panel input[type="text"] {
-  margin-right: 10px;
-}
-
-/* Scroll container for results if needed */
 #results {
   margin-top: 20px;
   overflow-x: auto;
 }
 
-/* Table styling */
+/* === FORM ELEMENTS (INPUTS + BUTTONS) === */
+.form-row {
+  margin-bottom: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+input[type="text"],
+input[type="number"],
+input[type="file"] {
+  padding: 6px 8px;
+  font-size: 14px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+button {
+  padding: 6px 12px;
+  font-size: 14px;
+  border-radius: 4px;
+  background-color: #f0f0f0;
+  border: 1px solid #ccc;
+  cursor: pointer;
+}
+
+button:disabled {
+  background-color: #eee;
+  cursor: not-allowed;
+}
+
+.calc-output {
+  font-weight: bold;
+  margin-left: 12px;
+}
+
+/* === TABLE STYLING === */
 table {
   width: 100%;
   min-width: 900px;
   border-collapse: collapse;
   font-size: 14px;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
   background: #fff;
-  table-layout: auto;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
   margin-bottom: 12px;
+  table-layout: auto;
 }
 
-/* Table cell styling */
 th, td {
   padding: 8px 10px;
   border: 1px solid #ccc;
@@ -54,7 +86,11 @@ th, td {
   max-width: 300px;
 }
 
-/* Allow wrapping in long text columns */
+th {
+  background-color: #f4f4f4;
+  font-weight: bold;
+}
+
 th.description-col,
 td.description-col {
   white-space: normal;
@@ -64,51 +100,34 @@ td.description-col {
   max-width: 600px;
 }
 
-/* Flash effect when copied */
 td.copied {
   background-color: #dff0ff !important;
   transition: background-color 0.3s;
 }
 
-/* Table header style */
-th {
-  background-color: #f4f4f4;
-  font-weight: bold;
-}
-
-/* Validity row classes */
+/* === VALIDITY ROW COLORS === */
 .valid {
   background-color: #e0f7e9;
 }
+
 .invalid {
   background-color: #ffe4e1;
 }
+
 .unknown {
   background-color: #fffacc;
 }
 
-/* Details button */
-.details-btn {
-  padding: 2px 10px;
-  font-size: 13px;
-  border-radius: 4px;
-  border: 1px solid #bbb;
-  background: #f6f8fa;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-.details-btn:hover {
-  background: #eaeaea;
-}
-
-/* Count and messages */
+/* === UTILITY TEXT STYLES === */
 .loaded-count {
   margin-bottom: 10px;
   font-weight: bold;
 }
+
 .source-note {
   color: #888;
 }
+
 #error-box,
 .error-box {
   background-color: #ffdddd;
@@ -118,27 +137,28 @@ th {
   color: #a30000;
   border-radius: 4px;
 }
+
 #messageBox {
   color: red;
   font-weight: bold;
   margin-top: 10px;
 }
 
-/* Explanation box */
+/* === EXPLANATION BOX === */
 #explanationBox {
   background-color: #f0f8ff;
   border: 1px solid #99c;
   padding: 15px;
   margin-bottom: 20px;
   border-radius: 5px;
-  font-family: Arial, sans-serif;
   color: #333;
+  font-family: Arial, sans-serif;
   max-width: 900px;
   margin-left: auto;
   margin-right: auto;
 }
 
-/* Modal styles */
+/* === MODAL COMPONENTS === */
 .modal {
   display: none;
   position: fixed;
@@ -147,8 +167,9 @@ th {
   top: 0;
   width: 100vw;
   height: 100vh;
-  background: rgba(0,0,0,0.5);
+  background: rgba(0, 0, 0, 0.5);
 }
+
 .modal-content {
   background: #fff;
   margin: 10% auto;
@@ -157,9 +178,15 @@ th {
   width: 90%;
   max-width: max-content;
   position: relative;
-  box-shadow: 0 4px 24px rgba(0,0,0,0.2);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
   overflow-y: auto;
 }
+
+.modal-content.draggable {
+  cursor: move;
+  user-select: none;
+}
+
 .close {
   position: absolute;
   right: 12px;
@@ -169,9 +196,11 @@ th {
   color: #888;
   transition: color 0.2s;
 }
+
 .close:hover {
   color: #333;
 }
+
 #licenseHistoryText {
   font-family: monospace;
   background: #f6f8fa;
@@ -185,21 +214,36 @@ th {
   resize: both;
   box-sizing: border-box;
 }
-.modal-content.draggable {
-  cursor: move;
-  user-select: none;
-}
+
 .modal-license-table {
   width: 100%;
   border-collapse: collapse;
   margin-top: 1em;
 }
-.modal-license-table th, .modal-license-table td {
+
+.modal-license-table th,
+.modal-license-table td {
   border: 1px solid #eee;
   padding: 0.5em 1em;
   text-align: left;
 }
+
 .modal-license-table th {
   background: #f6f8fa;
   font-weight: bold;
+}
+
+/* === ACTION BUTTONS === */
+.details-btn {
+  padding: 2px 10px;
+  font-size: 13px;
+  border-radius: 4px;
+  border: 1px solid #bbb;
+  background: #f6f8fa;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.details-btn:hover {
+  background: #eaeaea;
 }
