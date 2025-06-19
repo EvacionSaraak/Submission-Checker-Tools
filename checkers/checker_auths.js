@@ -688,3 +688,23 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   });
 });
+
+// Clipboard copy on table cell click (excluding buttons/inputs)
+document.addEventListener('click', e => {
+  const cell = e.target;
+  if (
+    cell.tagName === 'TD' &&
+    !cell.closest('button') &&
+    !cell.querySelector('button') &&
+    !cell.closest('input') &&
+    !cell.querySelector('input')
+  ) {
+    const text = cell.textContent.trim();
+    if (text) {
+      navigator.clipboard.writeText(text).then(() => {
+        cell.classList.add('copied');
+        setTimeout(() => cell.classList.remove('copied'), 800);
+      });
+    }
+  }
+});
