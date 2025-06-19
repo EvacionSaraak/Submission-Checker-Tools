@@ -62,25 +62,32 @@ xlsxUpload.addEventListener('change', e => {
   const reader = new FileReader();
   reader.onload = ev => {
     const workbook = XLSX.read(ev.target.result, { type: 'binary' });
-    const sheet = workbook.Sheets[workbook.SheetNames[1]]; // 2nd sheet
+    const sheet = workbook.Sheets[workbook.SheetNames[1]]; // second sheet
     const json = XLSX.utils.sheet_to_json(sheet);
 
-    // Normalize keys by trimming whitespace
+    // Normalize keys and values
     drugData = json.map(row => {
-      const newRow = {};
-      Object.keys(row).forEach(k => {
-        newRow[k.trim()] = row[k];
+      const normalizedRow = {};
+      Object.keys(row).forEach(key => {
+        const cleanKey = key.trim();
+        const rawValue = row[key];
+
+        // Normalize booleans and trim all strings
+        if (typeof rawValue === "boolean") {
+          normalizedRow[cleanKey] = rawValue ? "Yes" : "No";
+        } else if (rawValue === null || rawValue === undefined || rawValue === "") {
+          normalizedRow[cleanKey] = ""; // blank
+        } else {
+          normalizedRow[cleanKey] = rawValue.toString().trim();
+        }
       });
-      return newRow;
+      return normalizedRow;
     }).filter(row => row["Drug Code"]);
 
     drugCount.textContent = `Loaded ${drugData.length} drug entries.`;
-
-    // Update input/button states based on current mode
     toggleModePanels();
   };
-  reader.readAsBinaryString(e.target.files[0]);
-});
+
 
 // Lookup search button
 searchDrugBtn.addEventListener('click', () => {
