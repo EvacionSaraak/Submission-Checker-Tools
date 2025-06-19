@@ -26,6 +26,27 @@ const DISPLAY_HEADERS = [
 
 const MONTHS = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
 
+function isBooleanLike(value) {
+  if (typeof value === "boolean") return true;
+  if (typeof value === "number") return value === 0 || value === 1;
+  if (typeof value === "string") {
+    const v = value.trim().toLowerCase();
+    return ["true","false","yes","no","1","0"].includes(v);
+  }
+  return false;
+}
+
+function toYesNo(value) {
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (typeof value === "number") return value === 1 ? "Yes" : "No";
+  if (typeof value === "string") {
+    const v = value.trim().toLowerCase();
+    if (["true","yes","1"].includes(v)) return "Yes";
+    if (["false","no","0"].includes(v)) return "No";
+  }
+  return value;
+}
+
 function toggleModePanels() {
   const selected = document.querySelector('input[name="mode"]:checked').value;
   lookupPanel.style.display = selected === 'lookup' ? 'block' : 'none';
@@ -50,13 +71,16 @@ xlsxUpload.addEventListener('change', e => {
     const wb = XLSX.read(ev.target.result, { type: 'binary' });
     const sheet = wb.Sheets[wb.SheetNames[1]];
     const json = XLSX.utils.sheet_to_json(sheet);
+
     drugData = json.map(row => {
       const norm = {};
       Object.keys(row).forEach(k => {
-        const key = k.trim(), val = row[k];
+        const key = k.trim();
+        const val = row[k];
         const isDate = key === "UPP Effective Date" || key === "UPP Updated Date";
-        if (typeof val === "boolean") {
-          norm[key] = val ? "Yes" : "No";
+
+        if (isBooleanLike(val)) {
+          norm[key] = toYesNo(val);
         } else if (val === null || val === undefined || val.toString().trim() === "") {
           norm[key] = isDate ? "NO DATE" : "";
         } else if (isDate && typeof val === "number") {
@@ -71,6 +95,7 @@ xlsxUpload.addEventListener('change', e => {
       });
       return norm;
     }).filter(r => r["Drug Code"]);
+
     drugCount.textContent = `Loaded ${drugData.length} drug entries.`;
     toggleModePanels();
   };
@@ -107,14 +132,17 @@ function buildDrugTable(drugs) {
     table += `<tr class="${rowClass}">`;
     DRUG_COLUMNS.forEach(col => {
       let cell = row[col];
-      if (cell === null || cell === undefined || cell.toString().trim() === "") { cell = (col === "UPP Effective Date" || col === "UPP Updated Date") ? "NO DATE" : ""; } 
-      else if (typeof cell === "boolean") { cell = cell ? "Yes" : "No"; } 
-      else { cell = cell.toString().trim(); }
+      if (cell === null || cell === undefined || cell.toString().trim() === "") {
+        cell = (col === "UPP Effective Date" || col === "UPP Updated Date") ? "NO DATE" : "";
+      } else if (typeof cell === "boolean") {
+        cell = cell ? "Yes" : "No";
+      } else {
+        cell = cell.toString().trim();
+      }
       table += `<td>${cell}</td>`;
     });
     table += `</tr>`;
   });
-
   table += `</tbody></table>`;
   return table;
 }
