@@ -15,7 +15,7 @@ const analysisResults = document.getElementById('analysis-results');
 
 const DRUG_COLUMNS = [
   "Drug Code", "Package Name", "Dosage Form", "Package Size", "Unit Price to Public",
-  "Status", "UPP Scope", "Included in Thiqa/ABM - other than 1&7- Drug Formulary",
+  "Status", "UPP Scope", "Included in Thiqa/ ABM - other than 1&7- Drug Formulary",
   "Included In Basic Drug Formulary", "UPP Effective Date", "UPP Updated Date"
 ];
 
