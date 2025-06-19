@@ -15,12 +15,12 @@ const analysisResults = document.getElementById('analysis-results');
 
 const DRUG_COLUMNS = [
   "Drug Code", "Package Name", "Dosage Form", "Package Size", "Unit Price to Public",
-  "Status", "UPP Scope", "Included in Thiqa/ ABM - other than 1&7- Drug Formulary",
+  "Status", "Delete Effective Date", "UPP Scope", "Included in Thiqa/ ABM - other than 1&7- Drug Formulary",
   "Included In Basic Drug Formulary", "UPP Effective Date", "UPP Updated Date"
 ];
 
 const DISPLAY_HEADERS = [
-  "Drug Code", "Package Name", "Dosage Form", "Size", "Unit Price (AED)", "Status", "Scope",
+  "Drug Code", "Package Name", "Dosage Form", "Size", "Unit Price", "Status", "Scope",
   "Included in Thiqa", "Included in Daman Basic", "Effective Date", "Updated Date"
 ];
 
@@ -121,36 +121,43 @@ analyzeBtn.addEventListener('click', () => {
 });
 
 function buildDrugTable(drugs) {
-  console.log("Entries to display:", drugs);
-  drugs.forEach((row, i) => {
-    console.log(`Entry #${i} - Included in Thiqa:`, row["Included in Thiqa/ABM - other than 1&7- Drug Formulary"]);
-  });
-
   let table = `<table><thead><tr>`;
   DISPLAY_HEADERS.forEach(h => table += `<th>${h}</th>`);
   table += `</tr></thead><tbody>`;
-  
+
   drugs.forEach(row => {
-    const statusActive = (row["Status"] || "").toLowerCase() === "active";
-    const hasNo = ["UPP Scope", "Included in Thiqa/ABM - other than 1&7- Drug Formulary", "Included In Basic Drug Formulary"]
+    const status = (row["Status"] || "").toLowerCase();
+    const statusActive = status === "active";
+    const hasNo = ["UPP Scope", "Included in Thiqa/ ABM - other than 1&7- Drug Formulary", "Included In Basic Drug Formulary"]
       .some(col => (row[col] || "").toLowerCase() === "no");
     const rowClass = statusActive ? (hasNo ? "unknown" : "valid") : "invalid";
 
     table += `<tr class="${rowClass}">`;
-    DRUG_COLUMNS.forEach(col => {
-      let cell = row[col];
-      if (cell === null || cell === undefined || cell.toString().trim() === "") {
-        cell = (col === "UPP Effective Date" || col === "UPP Updated Date") ? "NO DATE" : "";
-      } else if (typeof cell === "boolean") {
-        cell = cell ? "Yes" : "No";
-      } else {
-        cell = cell.toString().trim();
+
+    // Output each column with inserted "Delete Effective Date" at correct spot
+    DRUG_COLUMNS.forEach((col, idx) => {
+      if (col === "Status") {
+        // Add Status column
+        const cell = row[col] || "";
+        table += `<td>${cell}</td>`;
+
+        // Add Delete Effective Date immediately after
+        const expiry = row["UPP Expiry Date"] || "";
+        table += `<td>${!statusActive ? (expiry || "NO DATE") : ""}</td>`;
+      } else if (col !== "UPP Expiry Date") {
+        // Normal columns, excluding UPP Expiry Date (already used)
+        let cell = row[col];
+        if ((col === "UPP Effective Date" || col === "UPP Updated Date") && (!cell || cell === "")) {
+          cell = "NO DATE";
+        }
+        table += `<td>${cell || ""}</td>`;
       }
-      table += `<td>${cell}</td>`;
     });
+
     table += `</tr>`;
   });
 
   table += `</tbody></table>`;
   return table;
 }
+
