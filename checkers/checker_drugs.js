@@ -17,7 +17,7 @@ const DISPLAY_COLUMNS = [
 
 const DISPLAY_HEADERS = [
   "Code", "Package", "Form", "Size", "Unit Price", "Status", "Scope",
-  "Included in Thiqa", "Included in Basic", "Effective Date", "Updated Date", "Validity"
+  "Included in Thiqa", "Included in Basic", "Effective Date", "Updated Date"
 ];
 
 const modeRadios = document.querySelectorAll('input[name="mode"]');
@@ -142,15 +142,11 @@ function buildDrugTable(drugs) {
   drugs.forEach(row => {
     const statusRaw = (row["Status"] || "").toLowerCase();
     const statusActive = statusRaw === "active";
-
-    const hasNoInRequired = [
-      "UPP Scope",
-      "Included in Thiqa/ABM - other than 1&7- Drug Formulary",
-      "Included In Basic Drug Formulary"
-    ].some(col => {
-      const val = (row[col] || "").toString().trim().toLowerCase();
-      return val === "no";
-    });
+    const hasNoInRequired = ["UPP Scope", "Included in Thiqa/ABM - other than 1&7- Drug Formulary", "Included In Basic Drug Formulary" ]
+      .some(col => {
+        const val = (row[col] || "").toString().trim().toLowerCase();
+        return val === "no";
+      });
 
     let rowClass = "invalid";
     let validityTag = `<span class="invalid" style="font-weight: bold;">Invalid</span>`;
@@ -164,27 +160,20 @@ function buildDrugTable(drugs) {
         validityTag = `<span class="valid" style="font-weight: bold;">Valid</span>`;
       }
     }
-
     table += `<tr class="${rowClass}">`;
 
     DISPLAY_COLUMNS.forEach(col => {
       let cell = row[col];
-    
-      if (cell === null || cell === undefined) {
-        cell = "";
-      } else if (typeof cell === "boolean") {
-        cell = cell ? "Yes" : "No";
-      } else {
-        cell = cell.toString().trim();
-      }
-    
+      if (cell === null || cell === undefined || cell.toString().trim() === "") {
+        if (col === "UPP Effective Date" || col === "UPP Updated Date") { cell = "NO DATE"; } 
+        else { cell = ""; }
+      } 
+      else if (typeof cell === "boolean") { cell = cell ? "Yes" : "No"; } 
+      else { cell = cell.toString().trim(); }
       table += `<td>${cell}</td>`;
     });
-
-    table += `<td>${validityTag}</td>`;
     table += `</tr>`;
   });
-
   table += `</tbody></table>`;
   return table;
 }
