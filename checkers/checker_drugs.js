@@ -95,13 +95,6 @@ function buildDrugTable(drugs) {
     "Included in Thiqa", "Included in Basic", "Effective Date", "Updated Date", "Validity"
   ];
 
-  function yesNo(value) {
-    if (!value) return "No";
-    const val = String(value).trim().toLowerCase();
-    if (["yes","y","true","1"].includes(val)) return "Yes";
-    return "No";
-  }
-
   let table = `<table><thead><tr>`;
   displayNames.forEach(name => table += `<th>${name}</th>`);
   table += `</tr></thead><tbody>`;
@@ -110,40 +103,31 @@ function buildDrugTable(drugs) {
     const statusRaw = (row["Status"] || "").toLowerCase();
     const statusActive = statusRaw === "active";
 
-    // Normalize Yes/No for these columns
-    const uppScope = yesNo(row["UPP Scope"]);
-    const thiqa = yesNo(row["Included in Thiqa/ABM - other than 1&7- Drug Formulary"]);
-    const basic = yesNo(row["Included In Basic Drug Formulary"]);
+    // Check for any "No" in scope, thiqa or basic columns (case-insensitive)
+    const hasNoInRequired = ["UPP Scope", "Included in Thiqa/ABM - other than 1&7- Drug Formulary", "Included In Basic Drug Formulary"]
+      .some(col => {
+        const val = (row[col] || "").toString().trim().toLowerCase();
+        return val === "no";
+      });
 
-    // Determine row class & validity tag
+    // Determine validity class & tag
     let rowClass = "invalid";
     let validityTag = `<span class="invalid" style="font-weight: bold;">Invalid</span>`;
 
     if (statusActive) {
-      if (uppScope === "Yes" && thiqa === "Yes" && basic === "Yes") {
-        rowClass = "valid";
-        validityTag = `<span class="valid" style="font-weight: bold;">Valid</span>`;
-      } else {
+      if (hasNoInRequired) {
         rowClass = "unknown";
         validityTag = `<span class="unknown" style="font-weight: bold;">Unknown</span>`;
+      } else {
+        rowClass = "valid";
+        validityTag = `<span class="valid" style="font-weight: bold;">Valid</span>`;
       }
     }
 
     table += `<tr class="${rowClass}">`;
     headers.forEach(col => {
-      let cell = row[col] || "";
-
-      // Convert Thiqa and Basic columns to Yes/No
-      if (col === "Included in Thiqa/ABM - other than 1&7- Drug Formulary") {
-        cell = thiqa;
-      }
-      if (col === "Included In Basic Drug Formulary") {
-        cell = basic;
-      }
-      if (col === "UPP Scope") {
-        cell = uppScope;
-      }
-
+      // Output raw cell content or empty string
+      const cell = row[col] !== undefined && row[col] !== null ? row[col] : "";
       table += `<td>${cell}</td>`;
     });
     table += `<td>${validityTag}</td>`;
