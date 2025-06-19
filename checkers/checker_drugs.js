@@ -32,7 +32,7 @@ xlsxUpload.addEventListener('change', e => {
   const reader = new FileReader();
   reader.onload = ev => {
     const workbook = XLSX.read(ev.target.result, { type: 'binary' });
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const sheet = workbook.Sheets[workbook.SheetNames[1]];
     const json = XLSX.utils.sheet_to_json(sheet);
     drugData = json.filter(row => row["Drug Code"]);
 
