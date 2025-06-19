@@ -9,7 +9,7 @@ const DISPLAY_COLUMNS = [
   "Unit Price to Public",
   "Status",
   "UPP Scope",
-  "Included in Thiqa/ABM - other than 1&7- Drug Formulary",
+  "Included in Thiqa/ ABM - other than 1&7- Drug Formulary",
   "Included In Basic Drug Formulary",
   "UPP Effective Date",
   "UPP Updated Date"
@@ -168,7 +168,16 @@ function buildDrugTable(drugs) {
     table += `<tr class="${rowClass}">`;
 
     DISPLAY_COLUMNS.forEach(col => {
-      const cell = row[col] !== undefined && row[col] !== null ? row[col] : "";
+      let cell = row[col];
+    
+      if (cell === null || cell === undefined) {
+        cell = "";
+      } else if (typeof cell === "boolean") {
+        cell = cell ? "Yes" : "No";
+      } else {
+        cell = cell.toString().trim();
+      }
+    
       table += `<td>${cell}</td>`;
     });
 
