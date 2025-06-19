@@ -374,23 +374,3 @@ function exportToXLSX(data, schemaType) {
   XLSX.utils.book_append_sheet(wb, ws, "Validation Results");
   XLSX.writeFile(wb, (schemaType === "person" ? "person" : "claim") + "_schema_validation.xlsx");
 }
-
-// Clipboard copy on table cell click (excluding buttons/inputs)
-document.addEventListener('click', e => {
-  const cell = e.target;
-  if (
-    cell.tagName === 'TD' &&
-    !cell.closest('button') &&
-    !cell.querySelector('button') &&
-    !cell.closest('input') &&
-    !cell.querySelector('input')
-  ) {
-    const text = cell.textContent.trim();
-    if (text) {
-      navigator.clipboard.writeText(text).then(() => {
-        cell.classList.add('copied');
-        setTimeout(() => cell.classList.remove('copied'), 800);
-      });
-    }
-  }
-});
