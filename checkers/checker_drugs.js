@@ -22,32 +22,43 @@ function toggleModePanels() {
   const selected = document.querySelector('input[name="mode"]:checked').value;
   lookupPanel.style.display = selected === 'lookup' ? 'block' : 'none';
   analysisPanel.style.display = selected === 'analysis' ? 'block' : 'none';
+
+  // Enable/disable inputs/buttons based on mode and data loaded
+  if (selected === 'lookup') {
+    drugInput.disabled = drugData.length === 0;
+    searchDrugBtn.disabled = drugData.length === 0;
+    analyzeBtn.disabled = true;
+  } else if (selected === 'analysis') {
+    analyzeBtn.disabled = !(drugData.length > 0 && xmlData !== null);
+    drugInput.disabled = true;
+    searchDrugBtn.disabled = true;
+  }
 }
 modeRadios.forEach(radio => radio.addEventListener('change', toggleModePanels));
 toggleModePanels();
 
-// Load shared XLSX drugs
+// Shared XLSX upload for both modes
 xlsxUpload.addEventListener('change', e => {
   if (!e.target.files[0]) return;
   const reader = new FileReader();
   reader.onload = ev => {
     const workbook = XLSX.read(ev.target.result, { type: 'binary' });
-    const sheet = workbook.Sheets[workbook.SheetNames[1]];
+    const sheet = workbook.Sheets[workbook.SheetNames[1]]; // 2nd sheet
     const json = XLSX.utils.sheet_to_json(sheet);
-    drugData = json.filter(row => row["Drug Code"]);
+
+    // Normalize keys by trimming whitespace
+    drugData = json.map(row => {
+      const newRow = {};
+      Object.keys(row).forEach(k => {
+        newRow[k.trim()] = row[k];
+      });
+      return newRow;
+    }).filter(row => row["Drug Code"]);
 
     drugCount.textContent = `Loaded ${drugData.length} drug entries.`;
 
-    // Enable lookup input and search if lookup panel active
-    if (document.querySelector('input[name="mode"]:checked').value === 'lookup') {
-      drugInput.disabled = false;
-      searchDrugBtn.disabled = false;
-    }
-
-    // Enable analyze if XML is loaded and mode is analysis
-    if (xmlData && document.querySelector('input[name="mode"]:checked').value === 'analysis') {
-      analyzeBtn.disabled = false;
-    }
+    // Update input/button states based on current mode
+    toggleModePanels();
   };
   reader.readAsBinaryString(e.target.files[0]);
 });
@@ -55,24 +66,32 @@ xlsxUpload.addEventListener('change', e => {
 // Lookup search button
 searchDrugBtn.addEventListener('click', () => {
   const code = drugInput.value.trim();
-  if (!code) return;
-  const matches = drugData.filter(row => row["Drug Code"] == code);
-  lookupResults.innerHTML = matches.length
-    ? buildDrugTable(matches)
-    : `<p>No match found for drug code: <strong>${code}</strong></p>`;
+  if (!code) return alert("Please enter a drug code");
+
+  // Case-insensitive exact match
+  const matches = drugData.filter(row => (row["Drug Code"] || "").toLowerCase() === code.toLowerCase());
+
+  if (matches.length === 0) {
+    lookupResults.innerHTML = `<p>No match found for drug code: <strong>${code}</strong></p>`;
+    return;
+  }
+
+  // Log matched drug rows for debugging
+  matches.forEach((drug, i) => console.log(`Matched Drug ${i + 1}:`, drug));
+
+  lookupResults.innerHTML = buildDrugTable(matches);
 });
 
 // XML upload for analysis panel
 xmlUpload.addEventListener('change', e => {
   if (!e.target.files[0]) return;
-  // For now, simulate XML load as true
+
+  // Placeholder for XML parsing (disabled for now)
   xmlClaimCount.textContent = `XML loaded. Waiting on schema for processing.`;
   xmlData = true;
 
-  // Enable analyze button only if drug data already loaded
-  if (drugData.length > 0) {
-    analyzeBtn.disabled = false;
-  }
+  // Enable analyze button only if drugs loaded
+  toggleModePanels();
 });
 
 // Analyze button stub
@@ -80,7 +99,7 @@ analyzeBtn.addEventListener('click', () => {
   analysisResults.innerHTML = `<div class="error-box">XML Analysis is disabled until schema is available.</div>`;
 });
 
-// Build Table
+// Build Table function (unchanged from your original, with validity and classes)
 function buildDrugTable(drugs) {
   const headers = [
     "Drug Code", "Package Name", "Dosage Form", "Package Size",
@@ -103,14 +122,12 @@ function buildDrugTable(drugs) {
     const statusRaw = (row["Status"] || "").toLowerCase();
     const statusActive = statusRaw === "active";
 
-    // Check for any "No" in scope, thiqa or basic columns (case-insensitive)
     const hasNoInRequired = ["UPP Scope", "Included in Thiqa/ABM - other than 1&7- Drug Formulary", "Included In Basic Drug Formulary"]
       .some(col => {
         const val = (row[col] || "").toString().trim().toLowerCase();
         return val === "no";
       });
 
-    // Determine validity class & tag
     let rowClass = "invalid";
     let validityTag = `<span class="invalid" style="font-weight: bold;">Invalid</span>`;
 
@@ -126,7 +143,6 @@ function buildDrugTable(drugs) {
 
     table += `<tr class="${rowClass}">`;
     headers.forEach(col => {
-      // Output raw cell content or empty string
       const cell = row[col] !== undefined && row[col] !== null ? row[col] : "";
       table += `<td>${cell}</td>`;
     });
