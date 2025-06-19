@@ -21,7 +21,7 @@ const DRUG_COLUMNS = [
 
 const DISPLAY_HEADERS = [
   "Drug Code", "Package Name", "Dosage Form", "Size", "Unit Price (AED)", "Status", "Scope",
-  "Included in Thiqa", "Included in Basic", "Effective Date", "Updated Date"
+  "Included in Thiqa", "Included in Daman Basic", "Effective Date", "Updated Date"
 ];
 
 const MONTHS = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
