@@ -59,7 +59,9 @@ toggleModePanels();
 // Shared XLSX upload for both modes
 xlsxUpload.addEventListener('change', e => {
   if (!e.target.files[0]) return;
+
   const reader = new FileReader();
+
   reader.onload = ev => {
     const workbook = XLSX.read(ev.target.result, { type: 'binary' });
     const sheet = workbook.Sheets[workbook.SheetNames[1]]; // second sheet
@@ -88,6 +90,8 @@ xlsxUpload.addEventListener('change', e => {
     toggleModePanels();
   };
 
+  reader.readAsBinaryString(e.target.files[0]); // ← ✅ THIS LINE was missing
+});
 
 // Lookup search button
 searchDrugBtn.addEventListener('click', () => {
