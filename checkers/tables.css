@@ -13,6 +13,10 @@ body {
   overflow-x: auto;
 }
 
+#lookup-panel > div {
+  margin-bottom: 20px;
+}
+
 /* Table styling */
 table {
   width: 100%;
