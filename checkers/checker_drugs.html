@@ -9,9 +9,25 @@
   <!-- Mode Selection -->
   <h1>Drug Lookup System</h1>
   
+  <!-- Explanation -->
+  <div id="explanationBox">
+    <p>
+      This tool allows you to lookup drug information by uploading a Shafafiyah drugs XLSX file. 
+      Use the <strong>Drug Lookup</strong> tab to search for individual drug codes. 
+      Use the <strong>XML Analysis</strong> tab to validate drug codes within XML claims files.
+    </p>
+    <p>
+      <strong>Instructions:</strong><br>
+      1. Upload the drugs XLSX file (the second sheet will be used).<br>
+      2. Select a mode: Drug Lookup or XML Analysis.<br>
+      3. For Drug Lookup: enter a drug code and click search.<br>
+      4. For XML Analysis: upload an XML file and click analyze (feature pending).<br>
+    </p>
+  </div>
+  
   <!-- Shared XLSX Upload -->
   <div class="section">
-    <label>Upload Drugs XLSX (Shared):</label>
+    <label>Upload Drugs XLSX from Shafafiyah:</label>
     <input type="file" id="xlsx-upload" accept=".xlsx" />
     <div id="drug-count" class="loaded-count"></div>
   </div>
