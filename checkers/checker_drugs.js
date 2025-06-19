@@ -20,7 +20,7 @@ const DRUG_COLUMNS = [
 ];
 
 const DISPLAY_HEADERS = [
-  "Code", "Package", "Form", "Size", "Unit Price", "Status", "Scope",
+  "Drug Code", "Package Name", "Dosage Form", "Size", "Unit Price (AED)", "Status", "Scope",
   "Included in Thiqa", "Included in Basic", "Effective Date", "Updated Date"
 ];
 
