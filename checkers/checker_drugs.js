@@ -121,14 +121,21 @@ analyzeBtn.addEventListener('click', () => {
 });
 
 function buildDrugTable(drugs) {
+  console.log("Entries to display:", drugs);
+  drugs.forEach((row, i) => {
+    console.log(`Entry #${i} - Included in Thiqa:`, row["Included in Thiqa/ABM - other than 1&7- Drug Formulary"]);
+  });
+
   let table = `<table><thead><tr>`;
   DISPLAY_HEADERS.forEach(h => table += `<th>${h}</th>`);
   table += `</tr></thead><tbody>`;
+  
   drugs.forEach(row => {
     const statusActive = (row["Status"] || "").toLowerCase() === "active";
     const hasNo = ["UPP Scope", "Included in Thiqa/ABM - other than 1&7- Drug Formulary", "Included In Basic Drug Formulary"]
       .some(col => (row[col] || "").toLowerCase() === "no");
     const rowClass = statusActive ? (hasNo ? "unknown" : "valid") : "invalid";
+
     table += `<tr class="${rowClass}">`;
     DRUG_COLUMNS.forEach(col => {
       let cell = row[col];
@@ -143,6 +150,7 @@ function buildDrugTable(drugs) {
     });
     table += `</tr>`;
   });
+
   table += `</tbody></table>`;
   return table;
 }
