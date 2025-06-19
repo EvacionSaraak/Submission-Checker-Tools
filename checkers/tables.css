@@ -1,20 +1,33 @@
 /* tables.css */
 
-/* General body and font styles (optional, can be overridden by page-specific CSS) */
+/* General body and font styles */
 body {
   font-family: Arial, sans-serif;
   padding: 20px;
   margin: auto;
 }
 
-/* Make #results scrollable horizontally if table overflows */
+/* Add spacing below mode selector */
+#mode-selector {
+  margin-bottom: 30px;
+}
+
+/* Add vertical spacing between grouped sections in panels */
+#lookup-panel .section,
+#analysis-panel .section {
+  margin-bottom: 24px;
+}
+
+/* Horizontal space between input and button */
+#lookup-panel input[type="text"],
+#analysis-panel input[type="text"] {
+  margin-right: 10px;
+}
+
+/* Scroll container for results if needed */
 #results {
   margin-top: 20px;
   overflow-x: auto;
-}
-
-#lookup-panel > div {
-  margin-bottom: 20px;
 }
 
 /* Table styling */
@@ -29,7 +42,7 @@ table {
   margin-bottom: 12px;
 }
 
-/* Universal table cell styles: force single line, ellipsis if overflow */
+/* Table cell styling */
 th, td {
   padding: 8px 10px;
   border: 1px solid #ccc;
@@ -41,7 +54,7 @@ th, td {
   max-width: 300px;
 }
 
-/* Allow only the description column to wrap and grow */
+/* Allow wrapping in long text columns */
 th.description-col,
 td.description-col {
   white-space: normal;
@@ -51,31 +64,24 @@ td.description-col {
   max-width: 600px;
 }
 
-/* Table header background */
+/* Table header style */
 th {
   background-color: #f4f4f4;
   font-weight: bold;
 }
 
-/* Valid / Invalid row background colors */
+/* Validity row classes */
 .valid {
   background-color: #e0f7e9;
 }
-
 .invalid {
   background-color: #ffe4e1;
 }
-
-/* Unknown row background color (yellow) */
 .unknown {
-  background-color: #fff9c4; /* Light yellow */
+  background-color: #fffacc;
 }
 
-/* Nowrap/Wrap helpers for specific columns */
-.nowrap-col { white-space: nowrap; }
-.wrap-col   { white-space: normal; }
-
-/* Details button styling */
+/* Details button */
 .details-btn {
   padding: 2px 10px;
   font-size: 13px;
@@ -89,18 +95,15 @@ th {
   background: #eaeaea;
 }
 
-/* "X loaded" message styling */
+/* Count and messages */
 .loaded-count {
   margin-bottom: 10px;
   font-weight: bold;
 }
-
-/* Faded source label (for (xml) or (xlsx) hints) */
 .source-note {
   color: #888;
 }
-
-/* Error message box */
+#error-box,
 .error-box {
   background-color: #ffdddd;
   border: 1px solid #ff5c5c;
@@ -109,14 +112,13 @@ th {
   color: #a30000;
   border-radius: 4px;
 }
-
-/* Message styling */
 #messageBox {
   color: red;
   font-weight: bold;
   margin-top: 10px;
 }
 
+/* Explanation box */
 #explanationBox {
   background-color: #f0f8ff;
   border: 1px solid #99c;
@@ -130,7 +132,7 @@ th {
   margin-right: auto;
 }
 
-/* Modal styles for Full License History */
+/* Modal styles */
 .modal {
   display: none;
   position: fixed;
@@ -141,7 +143,6 @@ th {
   height: 100vh;
   background: rgba(0,0,0,0.5);
 }
-
 .modal-content {
   background: #fff;
   margin: 10% auto;
@@ -151,8 +152,8 @@ th {
   max-width: max-content;
   position: relative;
   box-shadow: 0 4px 24px rgba(0,0,0,0.2);
+  overflow-y: auto;
 }
-
 .close {
   position: absolute;
   right: 12px;
@@ -162,11 +163,9 @@ th {
   color: #888;
   transition: color 0.2s;
 }
-
 .close:hover {
   color: #333;
 }
-
 #licenseHistoryText {
   font-family: monospace;
   background: #f6f8fa;
@@ -180,16 +179,10 @@ th {
   resize: both;
   box-sizing: border-box;
 }
-
-.modal-content {
-  overflow-y: auto;
-}
-
 .modal-content.draggable {
   cursor: move;
   user-select: none;
 }
-
 .modal-license-table {
   width: 100%;
   border-collapse: collapse;
