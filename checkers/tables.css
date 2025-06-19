@@ -64,6 +64,12 @@ td.description-col {
   max-width: 600px;
 }
 
+/* Flash effect when copied */
+td.copied {
+  background-color: #dff0ff !important;
+  transition: background-color 0.3s;
+}
+
 /* Table header style */
 th {
   background-color: #f4f4f4;
