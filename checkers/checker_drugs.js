@@ -77,7 +77,7 @@ xlsxUpload.addEventListener('change', e => {
       Object.keys(row).forEach(k => {
         const key = k.trim();
         const val = row[k];
-        const isDate = key === "UPP Effective Date" || key === "UPP Updated Date";
+        const isDate = key === "UPP Effective Date" || key === "UPP Updated Date" || key === "Delete Effective Date";
 
         if (isBooleanLike(val)) {
           norm[key] = toYesNo(val);
