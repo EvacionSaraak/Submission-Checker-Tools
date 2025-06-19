@@ -146,7 +146,7 @@ function buildDrugTable(drugs) {
 
     // Status and Delete Effective Date
     table += `<td>${row["Status"] || "N/A"}</td>`;
-    table += `<td>${!statusActive ? (row["Delete Effective Date"] || "NO DATE") : ""}</td>`;
+    table += `<td>${row["Delete Effective Date"] || "NO DATE"}</td>`;
 
     table += `<td>${row["UPP Scope"] || "N/A"}</td>`;
     table += `<td>${row["Included in Thiqa/ ABM - other than 1&7- Drug Formulary"] || "N/A"}</td>`;
