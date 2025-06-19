@@ -24,6 +24,8 @@ const DISPLAY_HEADERS = [
   "Included in Thiqa", "Included in Basic", "Effective Date", "Updated Date"
 ];
 
+const MONTHS = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
+
 function toggleModePanels() {
   const selected = document.querySelector('input[name="mode"]:checked').value;
   lookupPanel.style.display = selected === 'lookup' ? 'block' : 'none';
@@ -53,13 +55,19 @@ xlsxUpload.addEventListener('change', e => {
       Object.keys(row).forEach(k => {
         const key = k.trim(), val = row[k];
         const isDate = key === "UPP Effective Date" || key === "UPP Updated Date";
-        if (typeof val === "boolean") norm[key] = val ? "Yes" : "No";
-        else if (val === null || val === undefined || val.toString().trim() === "")
+        if (typeof val === "boolean") {
+          norm[key] = val ? "Yes" : "No";
+        } else if (val === null || val === undefined || val.toString().trim() === "") {
           norm[key] = isDate ? "NO DATE" : "";
-        else if (isDate && typeof val === "number") {
+        } else if (isDate && typeof val === "number") {
           const d = XLSX.SSF.parse_date_code(val);
-          norm[key] = `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`;
-        } else norm[key] = val.toString().trim();
+          const dd = String(d.d).padStart(2, '0');
+          const mmm = MONTHS[d.m - 1];
+          const yyyy = d.y;
+          norm[key] = `${dd}-${mmm}-${yyyy}`;
+        } else {
+          norm[key] = val.toString().trim();
+        }
       });
       return norm;
     }).filter(r => r["Drug Code"]);
