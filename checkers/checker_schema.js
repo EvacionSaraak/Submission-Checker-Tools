@@ -199,11 +199,15 @@ function validatePersonSchema(xmlDoc) {
     let invalidFields = [];
     let remarks = [];
 
-    function present(tag, parent = person) { return parent.getElementsByTagName(tag).length > 0; }
+    function present(tag, parent = person) {
+      return parent.getElementsByTagName(tag).length > 0;
+    }
+
     function text(tag, parent = person) {
       const el = parent.getElementsByTagName(tag)[0];
       return el && el.textContent ? el.textContent.trim() : "";
     }
+
     function invalidIfNull(tag, parent = person, prefix = "") {
       const val = text(tag, parent);
       if (!val) invalidFields.push(prefix + tag + " (null/empty)");
@@ -214,12 +218,13 @@ function validatePersonSchema(xmlDoc) {
       "BirthDate", "Gender", "Nationality", "City", "CountryOfResidence", "EmirateOfResidence", "EmiratesIDNumber"
     ].forEach(tag => invalidIfNull(tag, person));
 
-    // EmiratesIDNumber format and Medical Tourism/National without EID detection
+    // EmiratesIDNumber checks
     if (present("EmiratesIDNumber")) {
       const eid = text("EmiratesIDNumber");
       const p = eid.split("-");
-      if (p.length !== 4 || p[0] !== "784" || !/^\d{4}$/.test(p[1]) || !/^\d{7}$/.test(p[2]) || !/^\d{1}$/.test(p[3]))
+      if (p.length !== 4 || p[0] !== "784" || !/^\d{4}$/.test(p[1]) || !/^\d{7}$/.test(p[2]) || !/^\d{1}$/.test(p[3])) {
         invalidFields.push("EmiratesIDNumber (invalid format)");
+      }
       const eidDigits = eid.replace(/-/g, "");
       if (/^[129]+$/.test(eidDigits)) {
         remarks.push("EmiratesIDNumber (Medical Tourism: all digits 1/2/9)");
@@ -228,17 +233,17 @@ function validatePersonSchema(xmlDoc) {
       }
     }
 
-    // Member/ID required
+    // Member.ID check
     const member = person.getElementsByTagName("Member")[0];
-    if (!member || !text("ID", member))
-      invalidFields.push("Member.ID (null/empty)");
+    const memberID = member ? text("ID", member) : "Unknown";
+    if (!member || !memberID) invalidFields.push("Member.ID (null/empty)");
 
     if (missingFields.length) remarks.push("Missing: " + missingFields.join(", "));
     if (invalidFields.length) remarks.push("Invalid: " + invalidFields.join(", "));
     if (!remarks.length) remarks.push("OK");
 
     results.push({
-      ClaimID: text("UnifiedNumber") || text("EmiratesIDNumber") || "Unknown",
+      ClaimID: memberID,
       Valid: !missingFields.length && !invalidFields.length,
       Remark: remarks.join("; "),
       ClaimXML: person.outerHTML,
@@ -247,6 +252,7 @@ function validatePersonSchema(xmlDoc) {
   }
   return results;
 }
+
 
 // Insert a modal dialog (if not already present)
 function ensureModal() {
@@ -317,7 +323,7 @@ function renderResults(results, container, schemaType) {
   const thead = document.createElement("thead");
   const headerRow = document.createElement("tr");
   [
-    schemaType === "person" ? "Unified Number" : "Claim ID",
+    schemaType === "person" ? "Member ID" : "Claim ID",
     "Remark", "Valid", "View Full Entry"
   ].forEach(text => {
     const th = document.createElement("th");
@@ -362,6 +368,7 @@ function renderResults(results, container, schemaType) {
   exportBtn.onclick = () => exportToXLSX(results, schemaType);
   container.appendChild(exportBtn);
 }
+
 
 function exportToXLSX(data, schemaType) {
   const exportData = data.map(row => ({
