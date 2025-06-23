@@ -100,9 +100,16 @@ td.description-col {
   max-width: 600px;
 }
 
+/* Temporary flash effect */
 td.copied {
-  background-color: #dff0ff !important;
-  transition: background-color 0.3s;
+  background-color: #c5f6c7;
+  transition: background-color 0.3s ease;
+}
+
+/* Permanent highlight for last copied */
+td.last-copied {
+  outline: 2px solid #4caf50;
+  outline-offset: -2px;
 }
 
 /* === VALIDITY ROW COLORS === */
