@@ -277,46 +277,48 @@ function validateKnownCode({
     if (obsCodes.length === 0) {
       remarks.push(`Invalid: Code "${code}" requires at least one observation code, but none were provided.`);
     } else {
-      // Consider obsCodes that are not "PDF" for tooth code check
       const nonPDFObs = obsCodes.filter(oc => oc !== 'PDF');
       const toothCodesUsed = nonPDFObs.filter(oc => ALL_TEETH.has(oc));
       if (toothCodesUsed.length > 0) {
         remarks.push(`Invalid: Code "${code}" cannot be used with tooth codes: ${toothCodesUsed.join(", ")}`);
       }
     }
+
     return buildActivityRow({
       claimId,
       activityId,
       code,
       description: meta.description,
-      details: obsCodes.length ? obsCodes.join('<br>') : 'None provided',
+      details: obsCodes.length ? obsCodes.map(oc => (
+        oc === 'PDF' ? 'PDF (valid - no validation)' : oc
+      )).join('<br>') : 'None provided',
       remarks
     });
-  }
-
-  if (obsCodes.length === 0) {
-    remarks.push(`No tooth number provided for code "${code}".`);
   }
 
   const details = obsCodes.length === 0
     ? 'None provided'
     : obsCodes.map(obsCode => {
       if (obsCode === 'PDF') {
-        return 'PDF (no validation)';
+        return 'PDF (valid - no validation)';
       }
+
       let thisRemark = '';
       if (!meta.teethSet.has(obsCode)) {
         thisRemark = `Tooth "${obsCode}" not allowed for code "${code}" (expected: ${meta.description.match(/anterior|posterior|bicuspid|all/i)?.[0] || 'see code description'})`;
         remarks.push(thisRemark);
       }
+
       if (regionType === 'sextant') {
         regionKey = getSextant(obsCode);
       } else if (regionType === 'quadrant') {
         regionKey = getQuadrant(obsCode);
       }
+
       return `${obsCode} - ${getRegionName(obsCode)}${thisRemark ? ' | ' + thisRemark : ''}`;
     }).join('<br>');
 
+  // Region duplication check (only for non-PDF and non-invalid)
   if (regionType && regionKey && regionKey !== 'Unknown') {
     const tracker = claimRegionTrack[regionType];
     const dupRemarks = checkRegionDuplication(tracker, code, regionType, regionKey, codeLastDigit);
@@ -324,7 +326,9 @@ function validateKnownCode({
       remarks.push(...dupRemarks);
     }
   }
-  console.log(`[validateKnownCode] Activity ${activityId}:`, {code, obsCodes, remarks, details});
+
+  console.log(`[validateKnownCode] Activity ${activityId}:`, { code, obsCodes, remarks, details });
+
   return buildActivityRow({
     claimId,
     activityId,
