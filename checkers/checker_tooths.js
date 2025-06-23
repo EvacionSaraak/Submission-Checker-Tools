@@ -219,6 +219,7 @@ function validateUnknownCode({
   let details = '';
   const isRegion = description.toLowerCase().includes('sextant') || description.toLowerCase().includes('quadrant');
   let regionType = null;
+
   if (isRegion) {
     regionType = description.toLowerCase().includes('sextant') ? 'sextant' : 'quadrant';
   }
@@ -227,12 +228,15 @@ function validateUnknownCode({
 
   if (isRegion && obsCodes.length > 0) {
     details = obsCodes.map(obsCode => {
+      if (obsCode === 'PDF') return 'PDF (valid - no validation)';
+
       let regionRemark = '';
       if (regionType === 'sextant') {
         regionKey = getSextant(obsCode);
       } else if (regionType === 'quadrant') {
         regionKey = getQuadrant(obsCode);
       }
+
       if (regionType && regionKey && regionKey !== 'Unknown') {
         const tracker = claimRegionTrack[regionType];
         const dupRemarks = checkRegionDuplication(tracker, code, regionType, regionKey, codeLastDigit);
@@ -245,21 +249,36 @@ function validateUnknownCode({
       } else {
         regionRemark = `Valid - ${obsCode}`;
       }
+
       return `${obsCode} - ${regionRemark}`;
     }).join('<br>');
   } else if (obsCodes.length > 0) {
-    remarks.push(`Unknown code in repo; obsCodes present: ${obsCodes.join(', ')}`);
-    details = obsCodes.join('<br>');
+    details = obsCodes.map(obsCode => (
+      obsCode === 'PDF' ? 'PDF (valid - no validation)' : obsCode
+    )).join('<br>');
+
+    const nonPDFObs = obsCodes.filter(o => o !== 'PDF');
+    if (nonPDFObs.length > 0) {
+      remarks.push(`Unknown code in repo; obsCodes present: ${nonPDFObs.join(', ')}`);
+    }
   } else {
     details = 'N/A';
   }
 
   if (obsCodes.length === 0 && isRegion) {
-    // Only flag as invalid if description implies region
     remarks.push(`Invalid - No tooth (Observation) specified for unknown code "${code}" (region type: ${regionType}).`);
   }
-  console.log(`[validateUnknownCode] Activity ${activityId}:`, {code, obsCodes, remarks, details});
-  return buildActivityRow({claimId, activityId, code, description, details, remarks});
+
+  console.log(`[validateUnknownCode] Activity ${activityId}:`, { code, obsCodes, remarks, details });
+
+  return buildActivityRow({
+    claimId,
+    activityId,
+    code,
+    description,
+    details,
+    remarks
+  });
 }
 
 function validateKnownCode({
