@@ -1,6 +1,3 @@
-// table_clipboard.js — global clipboard handler for all table cells using tables.css
-// Add this to borrom: <script src="clipboard.js"></script>
-
 document.addEventListener('click', e => {
   const cell = e.target;
 
@@ -15,6 +12,13 @@ document.addEventListener('click', e => {
     const text = cell.textContent.trim();
     if (text) {
       navigator.clipboard.writeText(text).then(() => {
+        // Remove previous permanent highlight
+        document.querySelectorAll('td.last-copied').forEach(td => td.classList.remove('last-copied'));
+
+        // Add permanent highlight to this cell
+        cell.classList.add('last-copied');
+
+        // Add temporary copied flash effect
         cell.classList.add('copied');
         setTimeout(() => cell.classList.remove('copied'), 800);
       }).catch(err => {
