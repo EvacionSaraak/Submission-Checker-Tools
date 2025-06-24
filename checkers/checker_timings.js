@@ -134,19 +134,26 @@ function extractClaims(xmlDoc, requiredType = "6") {
     const encounterEnd   = parseDateTime(encounterEndStr);
     if (!encounterStart || !encounterEnd) return;
 
-    // Compute encounter duration in minutes
-    const encMs  = encounterEnd  - encounterStart;
+    const encMs  = encounterEnd - encounterStart;
     const encMin = Math.floor(encMs / 60000);
+
+    // Check if encounter end is before start
+    let baseRemarks = [];
+    let baseValid = true;
+    if (encMin < 0) {
+      baseValid = false;
+      baseRemarks.push('Encounter end is before encounter start.');
+    }
 
     const activityElements = claim.querySelectorAll('Activity');
     activityElements.forEach(activity => {
-      const activityId      = activity.querySelector('ID')?.textContent || 'Unknown';
+      const activityId       = activity.querySelector('ID')?.textContent || 'Unknown';
       const activityStartStr = activity.querySelector('Start')?.textContent;
       const typeValue        = activity.querySelector('Type')?.textContent?.trim() || '';
 
-      // Use requiredType for validation
-      let isValid = true;
-      const remarks = [];
+      let isValid = baseValid;
+      const remarks = [...baseRemarks];
+
       if (typeValue !== requiredType) {
         isValid = false;
         remarks.push(`Invalid Type: expected ${requiredType} but found ${typeValue || '(missing)'}.`);
@@ -174,14 +181,12 @@ function extractClaims(xmlDoc, requiredType = "6") {
         remarks.push('Invalid Activity Start format');
       }
 
-      // Only compute “excess” if we got a valid Date object:
       let excessMin = NaN;
       if (activityStart instanceof Date && !isNaN(activityStart)) {
-        const excessMs  = encounterEnd - activityStart;
+        const excessMs = encounterEnd - activityStart;
         excessMin = Math.floor(excessMs / 60000);
       }
 
-      // Always check all timing errors, regardless of Type validity
       if (activityStart && encounterStart && activityStart < encounterStart) {
         isValid = false;
         remarks.push('Activity start is before encounter start.');
@@ -190,7 +195,7 @@ function extractClaims(xmlDoc, requiredType = "6") {
         isValid = false;
         remarks.push('Activity start is after encounter end.');
       }
-      if (encMin < 10) {
+      if (encMin >= 0 && encMin < 10) {
         isValid = false;
         remarks.push(`Encounter duration too short (${encMin} min).`);
       } else if (encMin > 240) {
@@ -214,7 +219,6 @@ function extractClaims(xmlDoc, requiredType = "6") {
 
   return results;
 }
-
 
 /**
  * Extracts encounter details from a claim element.
