@@ -158,17 +158,17 @@ function buildDrugTable(drugs) {
     const rowClass = statusActive ? (hasNo ? "unknown" : "valid") : "invalid";
 
     table += `<tr class="${rowClass}">`;
-    table += `<td>${row["Drug Code"] || ""}</td>`;
-    table += `<td>${row["Package Name"] || ""}</td>`;
-    table += `<td>${row["Dosage Form"] || ""}</td>`;
-    table += `<td>${row["Package Size"] || ""}</td>`;
-    table += `<td>${row["Package Price to Public"] || ""}</td>`;
-    table += `<td>${row["Unit Price to Public"] || ""}</td>`;
-    table += `<td>${row["Status"] || ""}</td>`;
-    table += `<td>${!statusActive ? (row["Delete Effective Date"] || "NO DATE") : ""}</td>`;
-    table += `<td>${row["UPP Scope"] || ""}</td>`;
-    table += `<td>${row["Included in Thiqa/ ABM - other than 1&7- Drug Formulary"] || ""}</td>`;
-    table += `<td>${row["Included In Basic Drug Formulary"] || ""}</td>`;
+    table += `<td>${row["Drug Code"] || "N/A"}</td>`;
+    table += `<td>${row["Package Name"] || "N/A"}</td>`;
+    table += `<td>${row["Dosage Form"] || "N/A"}</td>`;
+    table += `<td>${row["Package Size"] || "N/A"}</td>`;
+    table += `<td>${row["Package Price to Public"] || "N/A"}</td>`;
+    table += `<td>${row["Unit Price to Public"] || "N/A"}</td>`;
+    table += `<td>${row["Status"] || "N/A"}</td>`;
+    table += `<td>${!statusActive ? (row["Delete Effective Date"] || "NO DATE") : "N/A"}</td>`;
+    table += `<td>${row["UPP Scope"] || "Unknown"}</td>`;
+    table += `<td>${row["Included in Thiqa/ ABM - other than 1&7- Drug Formulary"] || "Unknown"}</td>`;
+    table += `<td>${row["Included In Basic Drug Formulary"] || "Unknown"}</td>`;
     table += `<td>${row["UPP Effective Date"] || "NO DATE"}</td>`;
     table += `<td>${row["UPP Updated Date"] || "NO DATE"}</td>`;
     table += `</tr>`;
