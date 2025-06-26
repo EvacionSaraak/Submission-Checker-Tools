@@ -41,13 +41,21 @@
     <label><input type="radio" name="mode" value="analysis"> XML Analysis</label>
   </div>
 
-  <!-- Lookup Panel -->
+ <!-- Lookup Panel -->
   <div id="lookup-panel">
-    <div class="form-row">
+    <div class="form-row" id="search-bar">
       <label for="drug-code-input"><strong>Drug Code or Package Name:</strong></label>
       <input type="text" id="drug-code-input" disabled />
+      
+      <!-- Exact‐Match Toggle -->
+      <label for="exact-search-toggle" style="margin: 0 0.5em; cursor: pointer; display: inline-flex; align-items: center;">
+        <input type="checkbox" id="exact-search-toggle" disabled style="margin-right: 0.25em;" />
+        <span>Exact Match</span>
+      </label>
+  
       <button id="search-drug-btn" disabled>Search</button>
     </div>
+  
     <div id="quantity-section" class="form-row" style="display: none;">
       <label for="quantity-input"><strong>Quantity:</strong></label>
       <input type="number" id="quantity-input" step="0.01" min="0">
@@ -55,6 +63,7 @@
       <span id="calc-output" class="calc-output"></span>
       <div><em>Selected Drug Code:</em> <strong id="selected-drug-code">None</strong></div>
     </div>
+  
     <div id="lookup-results"></div>
   </div>
 
