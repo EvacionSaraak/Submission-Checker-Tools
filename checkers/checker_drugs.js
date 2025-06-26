@@ -18,14 +18,14 @@ const calculateBtn = document.getElementById('calculate-btn');
 const calcOutput = document.getElementById('calc-output');
 
 const DRUG_COLUMNS = [
-  "Drug Code", "Package Name", "Dosage Form", "Package Size",
+  "Drug Code", "Package Name", "Dosage Form", "Package Size", "Package Price to Public",
   "Unit Price to Public", "Status", "Delete Effective Date",
   "UPP Scope", "Included in Thiqa/ ABM - other than 1&7- Drug Formulary",
   "Included In Basic Drug Formulary", "UPP Effective Date", "UPP Updated Date"
 ];
 
 const DISPLAY_HEADERS = [
-  "Code", "Package", "Form", "Size", "Unit Price",
+  "Code", "Package", "Form", "Size", "Unit Price", "Package Price",
   "Status", "Delete Effective Date", "Scope", "Included in Thiqa",
   "Included in Basic", "Effective Date", "Updated Date"
 ];
