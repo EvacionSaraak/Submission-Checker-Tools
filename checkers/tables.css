@@ -34,6 +34,10 @@ body {
   gap: 8px;
   align-items: center;
 }
+.selected-row {
+  background-color: #d0ebff !important;
+  font-weight: bold;
+}
 
 input[type="text"],
 input[type="number"],
