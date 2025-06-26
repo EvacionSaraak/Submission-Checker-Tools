@@ -102,7 +102,7 @@ searchDrugBtn.addEventListener('click', () => {
     (r["Package Name"] && r["Package Name"].toLowerCase().includes(lowerQuery))
   );
 
-  // Reset everything
+  // Reset UI and states
   lookupResults.innerHTML = "";
   selectedDrug = null;
   quantityInput.value = "";
@@ -111,40 +111,16 @@ searchDrugBtn.addEventListener('click', () => {
   calculateBtn.disabled = true;
 
   if (matches.length) {
-    const tableHTML = buildDrugTable(matches);
-    lookupResults.innerHTML = tableHTML;
-
-    // Append the quantity section back
+    // Get the DOM element table with listeners attached
+    const tableElement = buildDrugTable(matches);
+    // Insert the table element
+    lookupResults.appendChild(tableElement);
+    // Append quantity section after the table
     lookupResults.appendChild(quantitySection);
-
-    const rows = lookupResults.querySelectorAll("tbody tr");
-    rows.forEach((row, i) => {
-      row.addEventListener("click", () => {
-        // Remove highlight from others
-        rows.forEach(r => r.classList.remove("selected-row"));
-        row.classList.add("selected-row");
-
-        // Set selected drug
-        selectedDrug = matches[i];
-
-        // Unhide and reset inputs
-        quantitySection.classList.remove("hidden");
-        calculateBtn.disabled = false;
-        quantityInput.value = "";
-        calcOutput.textContent = "";
-
-        // Show selected drug code
-        const codeDisplay = document.getElementById("selected-drug-code");
-        if (codeDisplay) {
-          codeDisplay.textContent = selectedDrug["Drug Code"] || "N/A";
-        }
-      });
-    });
   } else {
     lookupResults.innerHTML = `<p>No match found for: <strong>${query}</strong></p>`;
   }
 });
-
 
 calculateBtn.addEventListener('click', () => {
   const qty = parseFloat(quantityInput.value);
@@ -179,12 +155,11 @@ analyzeBtn.addEventListener('click', () => {
   analysisResults.innerHTML = `<div class="error-box">XML Analysis is disabled until schema is available.</div>`;
 });
 
-
-
 function buildDrugTable(drugs) {
-  let table = `<table><thead><tr>`;
-  DISPLAY_HEADERS.forEach(h => table += `<th>${h}</th>`);
-  table += `</tr></thead><tbody>`;
+  // Build table HTML as string
+  let tableHTML = `<table><thead><tr>`;
+  DISPLAY_HEADERS.forEach(h => tableHTML += `<th>${h}</th>`);
+  tableHTML += `</tr></thead><tbody>`;
 
   drugs.forEach(row => {
     const status = (row["Status"] || "").toLowerCase();
@@ -196,41 +171,54 @@ function buildDrugTable(drugs) {
     ].some(col => (row[col] || "").toLowerCase() === "no");
     const rowClass = statusActive ? (hasNo ? "unknown" : "valid") : "invalid";
 
-    table += `<tr class="${rowClass}">`;
-    table += `<td>${row["Drug Code"] || "N/A"}</td>`;
-    table += `<td>${row["Package Name"] || "N/A"}</td>`;
-    table += `<td>${row["Dosage Form"] || "N/A"}</td>`;
-    table += `<td>${row["Package Size"] || "N/A"}</td>`;
-    table += `<td>${row["Package Price to Public"] || "N/A"}</td>`;
-    table += `<td>${row["Unit Price to Public"] || "N/A"}</td>`;
-    table += `<td>${row["Status"] || "N/A"}</td>`;
-    table += `<td>${!statusActive ? (row["Delete Effective Date"] || "NO DATE") : "N/A"}</td>`;
-    table += `<td>${row["UPP Scope"] || "Unknown"}</td>`;
-    table += `<td>${row["Included in Thiqa/ ABM - other than 1&7- Drug Formulary"] || "Unknown"}</td>`;
-    table += `<td>${row["Included In Basic Drug Formulary"] || "Unknown"}</td>`;
-    table += `<td>${row["UPP Effective Date"] || "NO DATE"}</td>`;
-    table += `<td>${row["UPP Updated Date"] || "NO DATE"}</td>`;
-    table += `</tr>`;
+    tableHTML += `<tr class="${rowClass}">`;
+    tableHTML += `<td>${row["Drug Code"] || "N/A"}</td>`;
+    tableHTML += `<td>${row["Package Name"] || "N/A"}</td>`;
+    tableHTML += `<td>${row["Dosage Form"] || "N/A"}</td>`;
+    tableHTML += `<td>${row["Package Size"] || "N/A"}</td>`;
+    tableHTML += `<td>${row["Package Price to Public"] || "N/A"}</td>`;
+    tableHTML += `<td>${row["Unit Price to Public"] || "N/A"}</td>`;
+    tableHTML += `<td>${row["Status"] || "N/A"}</td>`;
+    tableHTML += `<td>${!statusActive ? (row["Delete Effective Date"] || "NO DATE") : "N/A"}</td>`;
+    tableHTML += `<td>${row["UPP Scope"] || "Unknown"}</td>`;
+    tableHTML += `<td>${row["Included in Thiqa/ ABM - other than 1&7- Drug Formulary"] || "Unknown"}</td>`;
+    tableHTML += `<td>${row["Included In Basic Drug Formulary"] || "Unknown"}</td>`;
+    tableHTML += `<td>${row["UPP Effective Date"] || "NO DATE"}</td>`;
+    tableHTML += `<td>${row["UPP Updated Date"] || "NO DATE"}</td>`;
+    tableHTML += `</tr>`;
   });
 
-  table += `</tbody></table>`;
+  tableHTML += `</tbody></table>`;
+
+  // Create a container div and insert the table HTML
   const container = document.createElement('div');
-  container.innerHTML = table;
+  container.innerHTML = tableHTML;
 
-  setTimeout(() => {
-    const rows = container.querySelectorAll('tbody tr');
-    rows.forEach((row, i) => {
-      row.addEventListener('click', () => {
-        rows.forEach(r => r.classList.remove('selected-row'));
-        row.classList.add('selected-row');
-        selectedDrug = drugs[i];
-        quantitySection.style.display = "block";
-        calculateBtn.disabled = false;
-        quantityInput.value = "";
-        calcOutput.textContent = "";
-      });
+  // Attach event listeners to rows now that elements exist in DOM tree
+  const rows = container.querySelectorAll('tbody tr');
+  rows.forEach((row, i) => {
+    row.addEventListener('click', () => {
+      // Remove selected class from all
+      rows.forEach(r => r.classList.remove('selected-row'));
+      // Highlight this row
+      row.classList.add('selected-row');
+
+      // Set global selectedDrug
+      selectedDrug = drugs[i];
+
+      // Show quantity section and enable calculate button
+      quantitySection.classList.remove('hidden');
+      calculateBtn.disabled = false;
+      quantityInput.value = "";
+      calcOutput.textContent = "";
+
+      // Update displayed selected drug code
+      const codeDisplay = document.getElementById("selected-drug-code");
+      if (codeDisplay) {
+        codeDisplay.textContent = selectedDrug["Drug Code"] || "N/A";
+      }
     });
-  }, 0);
+  });
 
-  return container.innerHTML;
+  return container;
 }
