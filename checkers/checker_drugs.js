@@ -95,27 +95,32 @@ xlsxUpload.addEventListener('change', e => {
 searchDrugBtn.addEventListener('click', () => {
   const query = drugInput.value.trim();
   if (!query) return;
+
   const lowerQuery = query.toLowerCase();
   const matches = drugData.filter(r =>
     r["Drug Code"] === query ||
     (r["Package Name"] && r["Package Name"].toLowerCase().includes(lowerQuery))
   );
 
-  // Reset UI and states
+  // Reset UI/state
   lookupResults.innerHTML = '';
   selectedDrug = null;
   quantityInput.value = '';
   calcOutput.textContent = '';
+
+  // Hide quantity section and disable calculate
   quantitySection.style.display = 'none';
   calculateBtn.disabled = true;
 
   if (matches.length) {
+    // Build & append the table (returns a DOM node)
     const tableEl = buildDrugTable(matches);
     lookupResults.appendChild(tableEl);
   } else {
     lookupResults.innerHTML = `<p>No match found for: <strong>${query}</strong></p>`;
   }
 });
+
 
 calculateBtn.addEventListener('click', () => {
   const qty = parseFloat(quantityInput.value);
@@ -179,10 +184,10 @@ function buildDrugTable(drugs) {
     `</tr>`;
   });
   tableHTML += `</tbody></table>`;
-
+  
   const container = document.createElement('div');
   container.innerHTML = tableHTML;
-
+  
   const rows = container.querySelectorAll('tbody tr');
   rows.forEach((row, i) => {
     row.addEventListener('click', () => {
