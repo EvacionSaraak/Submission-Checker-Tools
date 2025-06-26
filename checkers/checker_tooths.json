@@ -1125,7 +1125,7 @@
         ],
         "description": "RESTORATIONS, TOOTH COLOURED/PLASTIC WITH/WITHOUT SILVER FILINGS, PERMANENT\nPOSTERIORS NON BONDED Permanent Bicuspids Three surfaces",
         "dentition_type": "permanent",
-        "affiliated_teeth": "bicuspids"
+        "affiliated_teeth": "bicuspids/posteriors"
     },
     {
         "code": [
