@@ -162,6 +162,7 @@ function buildDrugTable(drugs) {
     table += `<td>${row["Package Name"] || ""}</td>`;
     table += `<td>${row["Dosage Form"] || ""}</td>`;
     table += `<td>${row["Package Size"] || ""}</td>`;
+    table += `<td>${row["Package Price to Public"] || ""}</td>`;
     table += `<td>${row["Unit Price to Public"] || ""}</td>`;
     table += `<td>${row["Status"] || ""}</td>`;
     table += `<td>${!statusActive ? (row["Delete Effective Date"] || "NO DATE") : ""}</td>`;
