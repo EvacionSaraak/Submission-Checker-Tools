@@ -25,7 +25,7 @@ const DRUG_COLUMNS = [
 ];
 
 const DISPLAY_HEADERS = [
-  "Code", "Package", "Form", "Size", "Unit Price", "Package Price",
+  "Code", "Package", "Form", "Package Size", "Package Price", "Unit Price", 
   "Status", "Delete Effective Date", "Scope", "Included in Thiqa",
   "Included in Basic", "Effective Date", "Updated Date"
 ];
