@@ -97,18 +97,42 @@ searchDrugBtn.addEventListener('click', () => {
   if (!query) return;
 
   const lowerQuery = query.toLowerCase();
-  const matches = drugData.filter(r => 
-    r["Drug Code"] === query || 
+  const matches = drugData.filter(r =>
+    r["Drug Code"] === query ||
     (r["Package Name"] && r["Package Name"].toLowerCase().includes(lowerQuery))
   );
 
-  lookupResults.innerHTML = matches.length
-    ? buildDrugTable(matches)
-    : `<p>No match found for: <strong>${query}</strong></p>`;
-
-  quantitySection.style.display = 'none';
-  calcOutput.textContent = '';
+  lookupResults.innerHTML = "";
   selectedDrug = null;
+  quantityInput.value = "";
+  calcOutput.textContent = "";
+  quantitySection.classList.add("hidden"); // hide by default
+
+  if (matches.length) {
+    const tableHTML = buildDrugTable(matches);
+    lookupResults.innerHTML = tableHTML;
+    lookupResults.appendChild(quantitySection);
+
+    const rows = lookupResults.querySelectorAll("tbody tr");
+    rows.forEach((row, i) => {
+      row.addEventListener("click", () => {
+        rows.forEach(r => r.classList.remove("selected-row"));
+        row.classList.add("selected-row");
+
+        selectedDrug = matches[i];
+        quantitySection.classList.remove("hidden");
+        quantityInput.value = "";
+        calcOutput.textContent = "";
+
+        const codeDisplay = document.getElementById("selected-drug-code");
+        if (codeDisplay) {
+          codeDisplay.textContent = selectedDrug["Drug Code"] || "N/A";
+        }
+      });
+    });
+  } else {
+    lookupResults.innerHTML = `<p>No match found for: <strong>${query}</strong></p>`;
+  }
 });
 
 calculateBtn.addEventListener('click', () => {
@@ -143,6 +167,8 @@ xmlUpload.addEventListener('change', e => {
 analyzeBtn.addEventListener('click', () => {
   analysisResults.innerHTML = `<div class="error-box">XML Analysis is disabled until schema is available.</div>`;
 });
+
+
 
 function buildDrugTable(drugs) {
   let table = `<table><thead><tr>`;
