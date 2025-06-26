@@ -6,7 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
     { label: "Timings", file: "checkers/checker_timings.html" },
     { label: "Tooths", file: "checkers/checker_tooths.html" },
     { label: "Schema", file: "checkers/checker_schema.html" },
-    { label: "Drugs", file: "checkers/checker_drugs.html" }
+    { label: "Drugs (WIP)", file: "checkers/checker_drugs.html" }
   ];
 
   const navLeft = document.getElementById("navLeft");
