@@ -107,15 +107,14 @@ searchDrugBtn.addEventListener('click', () => {
   selectedDrug = null;
   quantityInput.value = "";
   calcOutput.textContent = "";
+
+  // Hide quantity section on new search
   quantitySection.classList.add("hidden");
   calculateBtn.disabled = true;
 
   if (matches.length) {
-    // Get the DOM element table with listeners attached
     const tableElement = buildDrugTable(matches);
-    // Insert the table element
     lookupResults.appendChild(tableElement);
-    // Append quantity section after the table
     lookupResults.appendChild(quantitySection);
   } else {
     lookupResults.innerHTML = `<p>No match found for: <strong>${query}</strong></p>`;
@@ -156,7 +155,6 @@ analyzeBtn.addEventListener('click', () => {
 });
 
 function buildDrugTable(drugs) {
-  // Build table HTML as string
   let tableHTML = `<table><thead><tr>`;
   DISPLAY_HEADERS.forEach(h => tableHTML += `<th>${h}</th>`);
   tableHTML += `</tr></thead><tbody>`;
@@ -190,29 +188,28 @@ function buildDrugTable(drugs) {
 
   tableHTML += `</tbody></table>`;
 
-  // Create a container div and insert the table HTML
   const container = document.createElement('div');
   container.innerHTML = tableHTML;
 
-  // Attach event listeners to rows now that elements exist in DOM tree
   const rows = container.querySelectorAll('tbody tr');
   rows.forEach((row, i) => {
     row.addEventListener('click', () => {
-      // Remove selected class from all
       rows.forEach(r => r.classList.remove('selected-row'));
-      // Highlight this row
       row.classList.add('selected-row');
 
-      // Set global selectedDrug
       selectedDrug = drugs[i];
 
-      // Show quantity section and enable calculate button
+      // Show quantity section by removing the hidden class
       quantitySection.classList.remove('hidden');
+
+      // Enable calculate button
       calculateBtn.disabled = false;
+
+      // Reset inputs and output
       quantityInput.value = "";
       calcOutput.textContent = "";
 
-      // Update displayed selected drug code
+      // Update selected drug code display
       const codeDisplay = document.getElementById("selected-drug-code");
       if (codeDisplay) {
         codeDisplay.textContent = selectedDrug["Drug Code"] || "N/A";
