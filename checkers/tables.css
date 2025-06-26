@@ -8,7 +8,7 @@ body {
 }
 
 .hidden {
-  display: none;
+  display: none !important;
 }
 
 /* === MODE & PANEL SPACING === */
