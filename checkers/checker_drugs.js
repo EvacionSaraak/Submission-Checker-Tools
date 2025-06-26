@@ -102,28 +102,38 @@ searchDrugBtn.addEventListener('click', () => {
     (r["Package Name"] && r["Package Name"].toLowerCase().includes(lowerQuery))
   );
 
+  // Reset everything
   lookupResults.innerHTML = "";
   selectedDrug = null;
   quantityInput.value = "";
   calcOutput.textContent = "";
-  quantitySection.classList.add("hidden"); // hide by default
+  quantitySection.classList.add("hidden");
+  calculateBtn.disabled = true;
 
   if (matches.length) {
     const tableHTML = buildDrugTable(matches);
     lookupResults.innerHTML = tableHTML;
+
+    // Append the quantity section back
     lookupResults.appendChild(quantitySection);
 
     const rows = lookupResults.querySelectorAll("tbody tr");
     rows.forEach((row, i) => {
       row.addEventListener("click", () => {
+        // Remove highlight from others
         rows.forEach(r => r.classList.remove("selected-row"));
         row.classList.add("selected-row");
 
+        // Set selected drug
         selectedDrug = matches[i];
+
+        // Unhide and reset inputs
         quantitySection.classList.remove("hidden");
+        calculateBtn.disabled = false;
         quantityInput.value = "";
         calcOutput.textContent = "";
 
+        // Show selected drug code
         const codeDisplay = document.getElementById("selected-drug-code");
         if (codeDisplay) {
           codeDisplay.textContent = selectedDrug["Drug Code"] || "N/A";
@@ -134,6 +144,7 @@ searchDrugBtn.addEventListener('click', () => {
     lookupResults.innerHTML = `<p>No match found for: <strong>${query}</strong></p>`;
   }
 });
+
 
 calculateBtn.addEventListener('click', () => {
   const qty = parseFloat(quantityInput.value);
