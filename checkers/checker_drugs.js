@@ -95,7 +95,6 @@ xlsxUpload.addEventListener('change', e => {
 searchDrugBtn.addEventListener('click', () => {
   const query = drugInput.value.trim();
   if (!query) return;
-
   const lowerQuery = query.toLowerCase();
   const matches = drugData.filter(r =>
     r["Drug Code"] === query ||
@@ -103,19 +102,16 @@ searchDrugBtn.addEventListener('click', () => {
   );
 
   // Reset UI and states
-  lookupResults.innerHTML = "";
+  lookupResults.innerHTML = '';
   selectedDrug = null;
-  quantityInput.value = "";
-  calcOutput.textContent = "";
-
-  // Hide quantity section on new search
-  quantitySection.classList.add("hidden");
+  quantityInput.value = '';
+  calcOutput.textContent = '';
+  quantitySection.style.display = 'none';
   calculateBtn.disabled = true;
 
   if (matches.length) {
-    const tableElement = buildDrugTable(matches);
-    lookupResults.appendChild(tableElement);
-    lookupResults.appendChild(quantitySection);
+    const tableEl = buildDrugTable(matches);
+    lookupResults.appendChild(tableEl);
   } else {
     lookupResults.innerHTML = `<p>No match found for: <strong>${query}</strong></p>`;
   }
@@ -127,18 +123,15 @@ calculateBtn.addEventListener('click', () => {
     calcOutput.textContent = "Invalid quantity.";
     return;
   }
-
   if (!selectedDrug) {
     calcOutput.textContent = "No drug selected.";
     return;
   }
-
   const unitPrice = parseFloat(selectedDrug["Unit Price to Public"]);
   if (isNaN(unitPrice)) {
     calcOutput.textContent = "Invalid unit price.";
     return;
   }
-
   const total = qty * unitPrice;
   calcOutput.textContent = `Total: AED ${total.toFixed(2)}`;
 });
@@ -160,32 +153,31 @@ function buildDrugTable(drugs) {
   tableHTML += `</tr></thead><tbody>`;
 
   drugs.forEach(row => {
-    const status = (row["Status"] || "").toLowerCase();
+    const status = (row["Status"]||"").toLowerCase();
     const statusActive = status === "active";
     const hasNo = [
       "UPP Scope",
       "Included in Thiqa/ ABM - other than 1&7- Drug Formulary",
       "Included In Basic Drug Formulary"
-    ].some(col => (row[col] || "").toLowerCase() === "no");
+    ].some(col => (row[col]||"").toLowerCase()==="no");
     const rowClass = statusActive ? (hasNo ? "unknown" : "valid") : "invalid";
 
-    tableHTML += `<tr class="${rowClass}">`;
-    tableHTML += `<td>${row["Drug Code"] || "N/A"}</td>`;
-    tableHTML += `<td>${row["Package Name"] || "N/A"}</td>`;
-    tableHTML += `<td>${row["Dosage Form"] || "N/A"}</td>`;
-    tableHTML += `<td>${row["Package Size"] || "N/A"}</td>`;
-    tableHTML += `<td>${row["Package Price to Public"] || "N/A"}</td>`;
-    tableHTML += `<td>${row["Unit Price to Public"] || "N/A"}</td>`;
-    tableHTML += `<td>${row["Status"] || "N/A"}</td>`;
-    tableHTML += `<td>${!statusActive ? (row["Delete Effective Date"] || "NO DATE") : "N/A"}</td>`;
-    tableHTML += `<td>${row["UPP Scope"] || "Unknown"}</td>`;
-    tableHTML += `<td>${row["Included in Thiqa/ ABM - other than 1&7- Drug Formulary"] || "Unknown"}</td>`;
-    tableHTML += `<td>${row["Included In Basic Drug Formulary"] || "Unknown"}</td>`;
-    tableHTML += `<td>${row["UPP Effective Date"] || "NO DATE"}</td>`;
-    tableHTML += `<td>${row["UPP Updated Date"] || "NO DATE"}</td>`;
-    tableHTML += `</tr>`;
+    tableHTML += `<tr class="${rowClass}">` +
+      `<td>${row["Drug Code"]||"N/A"}</td>` +
+      `<td>${row["Package Name"]||"N/A"}</td>` +
+      `<td>${row["Dosage Form"]||"N/A"}</td>` +
+      `<td>${row["Package Size"]||"N/A"}</td>` +
+      `<td>${row["Package Price to Public"]||"N/A"}</td>` +
+      `<td>${row["Unit Price to Public"]||"N/A"}</td>` +
+      `<td>${row["Status"]||"N/A"}</td>` +
+      `<td>${!statusActive ? (row["Delete Effective Date"]||"NO DATE") : "N/A"}</td>` +
+      `<td>${row["UPP Scope"]||"Unknown"}</td>` +
+      `<td>${row["Included in Thiqa/ ABM - other than 1&7- Drug Formulary"]||"Unknown"}</td>` +
+      `<td>${row["Included In Basic Drug Formulary"]||"Unknown"}</td>` +
+      `<td>${row["UPP Effective Date"]||"NO DATE"}</td>` +
+      `<td>${row["UPP Updated Date"]||"NO DATE"}</td>` +
+    `</tr>`;
   });
-
   tableHTML += `</tbody></table>`;
 
   const container = document.createElement('div');
@@ -196,26 +188,14 @@ function buildDrugTable(drugs) {
     row.addEventListener('click', () => {
       rows.forEach(r => r.classList.remove('selected-row'));
       row.classList.add('selected-row');
-
       selectedDrug = drugs[i];
-
-      // Show quantity section by removing the hidden class
-      quantitySection.classList.remove('hidden');
-
-      // Enable calculate button
+      quantitySection.style.display = 'block';
       calculateBtn.disabled = false;
-
-      // Reset inputs and output
-      quantityInput.value = "";
-      calcOutput.textContent = "";
-
-      // Update selected drug code display
-      const codeDisplay = document.getElementById("selected-drug-code");
-      if (codeDisplay) {
-        codeDisplay.textContent = selectedDrug["Drug Code"] || "N/A";
-      }
+      quantityInput.value = '';
+      calcOutput.textContent = '';
+      document.getElementById('selected-drug-code').textContent =
+        selectedDrug["Drug Code"] || 'N/A';
     });
   });
-
   return container;
 }
