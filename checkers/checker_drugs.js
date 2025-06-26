@@ -16,7 +16,7 @@ const quantitySection = document.getElementById('quantity-section');
 const quantityInput = document.getElementById('quantity-input');
 const calculateBtn = document.getElementById('calculate-btn');
 const calcOutput = document.getElementById('calc-output');
-const exactToggle   = document.getElementById('exact-search-toggle');
+const exactToggle = document.getElementById('exact-search-toggle');
 
 const DRUG_COLUMNS = [
   "Drug Code", "Package Name", "Dosage Form", "Package Size", "Package Price to Public",
@@ -33,64 +33,76 @@ const DISPLAY_HEADERS = [
 
 const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
 
+// 2) Update toggleModePanels() to include exactToggle
 function toggleModePanels() {
   const selected = document.querySelector('input[name="mode"]:checked').value;
-  lookupPanel.style.display = selected === 'lookup' ? 'block' : 'none';
+  lookupPanel.style.display   = selected === 'lookup'   ? 'block' : 'none';
   analysisPanel.style.display = selected === 'analysis' ? 'block' : 'none';
 
   const hasDrugs = drugData.length > 0, hasXML = !!xmlData;
+
   drugInput.disabled = !hasDrugs || selected !== 'lookup';
   searchDrugBtn.disabled = !hasDrugs || selected !== 'lookup';
   analyzeBtn.disabled = !(hasDrugs && hasXML && selected === 'analysis');
 
+  exactToggle.disabled = !hasDrugs || selected !== 'lookup';
+
   lookupResults.innerHTML = "";
   analysisResults.innerHTML = "";
-  quantitySection.style.display = 'none';
+  quantitySection.style.display= 'none';
   calcOutput.textContent = "";
   selectedDrug = null;
 }
+
 modeRadios.forEach(r => r.addEventListener('change', toggleModePanels));
 toggleModePanels();
 
-xlsxUpload.addEventListener('change', e => {
-  if (!e.target.files[0]) return;
-  drugCount.textContent = "Loading drug list...";
+xlsxUpload.addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  drugCount.textContent = 'Loading drug list...';
   const reader = new FileReader();
-  reader.onload = ev => {
+  reader.onload = (ev) => {
     const wb = XLSX.read(ev.target.result, { type: 'binary' });
     const sheet = wb.Sheets[wb.SheetNames[1]];
     const json = XLSX.utils.sheet_to_json(sheet);
-    drugData = json.map(row => {
-      const norm = {};
-      Object.keys(row).forEach(k => {
-        const key = k.trim();
-        const val = row[k];
-        const isDate = [
-          "UPP Effective Date",
-          "UPP Updated Date",
-          "Delete Effective Date"
-        ].includes(key);
+    drugData = json
+      .map((row) => {
+        const norm = {};
+        Object.keys(row).forEach((k) => {
+          const key = k.trim();
+          const val = row[k];
+          const isDate = [
+            'UPP Effective Date',
+            'UPP Updated Date',
+            'Delete Effective Date',
+          ].includes(key);
 
-        if (typeof val === "boolean") {
-          norm[key] = val ? "Yes" : "No";
-        } else if (val === null || val === undefined || val.toString().trim() === "") {
-          norm[key] = isDate ? "NO DATE" : "";
-        } else if (isDate && typeof val === "number") {
-          const d = XLSX.SSF.parse_date_code(val);
-          const dd = String(d.d).padStart(2, '0');
-          const mmm = MONTHS[d.m - 1];
-          const yyyy = d.y;
-          norm[key] = `${dd}-${mmm}-${yyyy}`;
-        } else {
-          norm[key] = val.toString().trim();
-        }
-      });
-      return norm;
-    }).filter(r => r["Drug Code"]);
+          if (typeof val === 'boolean') {
+            norm[key] = val ? 'Yes' : 'No';
+          } else if (
+            val === null ||
+            val === undefined ||
+            val.toString().trim() === ''
+          ) {
+            norm[key] = isDate ? 'NO DATE' : '';
+          } else if (isDate && typeof val === 'number') {
+            const d = XLSX.SSF.parse_date_code(val);
+            const dd = String(d.d).padStart(2, '0');
+            const mmm = MONTHS[d.m - 1];
+            const yyyy = d.y;
+            norm[key] = `${dd}-${mmm}-${yyyy}`;
+          } else {
+            norm[key] = val.toString().trim();
+          }
+        });
+        return norm;
+      })
+      .filter((r) => r['Drug Code']);
     drugCount.textContent = `Loaded ${drugData.length} drug entries.`;
     toggleModePanels();
   };
-  reader.readAsBinaryString(e.target.files[0]);
+  reader.readAsBinaryString(file);
 });
 
 searchDrugBtn.addEventListener('click', () => {
