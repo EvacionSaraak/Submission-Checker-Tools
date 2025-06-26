@@ -92,10 +92,18 @@ xlsxUpload.addEventListener('change', e => {
 });
 
 searchDrugBtn.addEventListener('click', () => {
-  const code = drugInput.value.trim();
-  if (!code) return;
-  const matches = drugData.filter(r => r["Drug Code"] === code);
-  lookupResults.innerHTML = matches.length ? buildDrugTable(matches) : `<p>No match found for drug code: <strong>${code}</strong></p>`;
+  const query = drugInput.value.trim();
+  if (!query) return;
+
+  const lowerQuery = query.toLowerCase();
+  const matches = drugData.filter(r => 
+    r["Drug Code"] === query || 
+    (r["Package Name"] && r["Package Name"].toLowerCase().includes(lowerQuery))
+  );
+
+  lookupResults.innerHTML = matches.length
+    ? buildDrugTable(matches)
+    : `<p>No match found for: <strong>${query}</strong></p>`;
 
   if (matches.length) {
     quantitySection.style.display = "block";
