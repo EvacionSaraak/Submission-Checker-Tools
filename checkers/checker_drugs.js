@@ -1,4 +1,4 @@
-let drugData = [], xmlData = null;
+let drugData = [], xmlData = null, selectedDrug = null;
 
 const modeRadios = document.querySelectorAll('input[name="mode"]');
 const lookupPanel = document.getElementById('lookup-panel');
@@ -46,6 +46,7 @@ function toggleModePanels() {
   analysisResults.innerHTML = "";
   quantitySection.style.display = 'none';
   calcOutput.textContent = "";
+  selectedDrug = null;
 }
 modeRadios.forEach(r => r.addEventListener('change', toggleModePanels));
 toggleModePanels();
@@ -105,14 +106,9 @@ searchDrugBtn.addEventListener('click', () => {
     ? buildDrugTable(matches)
     : `<p>No match found for: <strong>${query}</strong></p>`;
 
-  if (matches.length) {
-    quantitySection.style.display = "block";
-    calculateBtn.disabled = false;
-    quantityInput.value = "";
-    calcOutput.textContent = "";
-  } else {
-    quantitySection.style.display = "none";
-  }
+  quantitySection.style.display = 'none';
+  calcOutput.textContent = '';
+  selectedDrug = null;
 });
 
 calculateBtn.addEventListener('click', () => {
@@ -122,14 +118,12 @@ calculateBtn.addEventListener('click', () => {
     return;
   }
 
-  const code = drugInput.value.trim();
-  const drug = drugData.find(r => r["Drug Code"] === code);
-  if (!drug) {
-    calcOutput.textContent = "Drug not found.";
+  if (!selectedDrug) {
+    calcOutput.textContent = "No drug selected.";
     return;
   }
 
-  const unitPrice = parseFloat(drug["Unit Price to Public"]);
+  const unitPrice = parseFloat(selectedDrug["Unit Price to Public"]);
   if (isNaN(unitPrice)) {
     calcOutput.textContent = "Invalid unit price.";
     return;
@@ -183,5 +177,23 @@ function buildDrugTable(drugs) {
   });
 
   table += `</tbody></table>`;
-  return table;
+  const container = document.createElement('div');
+  container.innerHTML = table;
+
+  setTimeout(() => {
+    const rows = container.querySelectorAll('tbody tr');
+    rows.forEach((row, i) => {
+      row.addEventListener('click', () => {
+        rows.forEach(r => r.classList.remove('selected-row'));
+        row.classList.add('selected-row');
+        selectedDrug = drugs[i];
+        quantitySection.style.display = "block";
+        calculateBtn.disabled = false;
+        quantityInput.value = "";
+        calcOutput.textContent = "";
+      });
+    });
+  }, 0);
+
+  return container.innerHTML;
 }
