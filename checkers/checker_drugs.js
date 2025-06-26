@@ -16,6 +16,7 @@ const quantitySection = document.getElementById('quantity-section');
 const quantityInput = document.getElementById('quantity-input');
 const calculateBtn = document.getElementById('calculate-btn');
 const calcOutput = document.getElementById('calc-output');
+const exactToggle   = document.getElementById('exact-search-toggle');
 
 const DRUG_COLUMNS = [
   "Drug Code", "Package Name", "Dosage Form", "Package Size", "Package Price to Public",
@@ -97,30 +98,33 @@ searchDrugBtn.addEventListener('click', () => {
   if (!query) return;
 
   const lowerQuery = query.toLowerCase();
-  const matches = drugData.filter(r =>
-    r["Drug Code"] === query ||
-    (r["Package Name"] && r["Package Name"].toLowerCase().includes(lowerQuery))
-  );
+  const exact = exactToggle.checked;  // <-- read the checkbox
 
-  // Reset UI/state
+  // Reset UI & state
   lookupResults.innerHTML = '';
   selectedDrug = null;
   quantityInput.value = '';
   calcOutput.textContent = '';
-
-  // Hide quantity section and disable calculate
   quantitySection.style.display = 'none';
   calculateBtn.disabled = true;
 
+  // Filter using exact vs partial on Package Name
+  const matches = drugData.filter(r => {
+    const codeMatch = r["Drug Code"] === query;
+    const pkg = (r["Package Name"] || '').toLowerCase();
+    const nameMatch = exact
+      ? pkg === lowerQuery      // exact on name
+      : pkg.includes(lowerQuery); // partial on name
+    return codeMatch || nameMatch;
+  });
+
   if (matches.length) {
-    // Build & append the table (returns a DOM node)
     const tableEl = buildDrugTable(matches);
     lookupResults.appendChild(tableEl);
   } else {
     lookupResults.innerHTML = `<p>No match found for: <strong>${query}</strong></p>`;
   }
 });
-
 
 calculateBtn.addEventListener('click', () => {
   const qty = parseFloat(quantityInput.value);
