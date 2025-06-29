@@ -72,7 +72,8 @@ window.addEventListener('DOMContentLoaded', () => {
           claimID,
           memberID,
           payerID,
-          encounterStart: enc.querySelector('Start')?.textContent.trim() || ''
+          encounterStart: enc.querySelector('Start')?.textContent.trim() || '',
+          clinician: enc.querySelector('Clinician')?.textContent.trim() || '' // CHANGE: extract clinician from XML
         }));
         return { claimID, memberID, payerID, encounters };
       });
@@ -106,8 +107,13 @@ window.addEventListener('DOMContentLoaded', () => {
   // Validates encounters against eligibility data (ignoring date, returns all matches)
   function validateEncounters(xmlPayload, eligRows, insuranceLicenses) {
     const { encounters } = xmlPayload;
+    const usedEligibilityIndices = new Set(); // CHANGE: track used eligibility rows
+
     return encounters.map(encounter => {
-      const matches = findEligibilityMatchesByCard(encounter.memberID, eligRows);
+      // Only consider eligibility rows that have not been matched yet
+      const matches = findEligibilityMatchesByCard(encounter.memberID, eligRows)
+        .filter(match => !usedEligibilityIndices.has(eligRows.indexOf(match)));
+
       const remarks = [];
       let status = '';
       let match = null;
@@ -116,16 +122,27 @@ window.addEventListener('DOMContentLoaded', () => {
       // --- MemberID error checks ---
       const memberIdRaw = encounter.memberID || '';
       if (/^\s+|\s+$/.test(memberIdRaw)) { remarks.push('MemberID has leading or trailing whitespace'); }
-      if (/^0\d+/.test(memberIdRaw)) { remarks.push('MemberID has leading zeroes'); } 
-      if (matches.length === 0) { remarks.push('No eligibility rows found for card number'); } 
-      else {
+      if (/^0\d+/.test(memberIdRaw)) { remarks.push('MemberID has leading zeroes'); }
+      if (matches.length === 0) {
+        remarks.push('No eligibility rows found for card number');
+      } else {
         // Pick the first match for main display (could be improved later)
         match = matches[0];
+        // Mark this eligibility row as used so it can't be used again
+        usedEligibilityIndices.add(eligRows.indexOf(match)); // CHANGE
+
         status = match['Status'] || '';
         if ((status || '').toLowerCase() !== 'eligible') remarks.push(`Status not eligible (${status})`);
         const excelCard = (match['Card Number / DHA Member ID'] || '').replace(/-/g, '').trim();
         if (excelCard && encounter.memberID.replace(/-/g, '').trim() !== excelCard) {
           remarks.push('Card Number mismatch between XML and Excel');
+        }
+
+        // --- Clinician match check ---
+        const encounterClinician = (encounter.clinician || '').trim();
+        const eligClinician = (match['Clinician'] || match['Clinician Name'] || '').trim();
+        if (encounterClinician && eligClinician && encounterClinician !== eligClinician) {
+          remarks.push(`Clinician mismatch (XML: "${encounterClinician}", Excel: "${eligClinician}")`);
         }
       }
 
