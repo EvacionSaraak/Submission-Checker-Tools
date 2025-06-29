@@ -147,19 +147,20 @@ function validateApprovalRequirement(code, authID) {
   return remarks;
 }
 
+// MODIFIED: returns clinicianMismatch flag instead of pushing to remarks
 function validateXLSXMatch(row, { memberId, code, netTotal, ordering, authID }) {
   const remarks = [];
+  let clinicianMismatch = false;
   if ((row["Card Number / DHA Member ID"] || "").trim() !== memberId.trim())
     remarks.push(`MemberID mismatch: XLSX=${row["Card Number / DHA Member ID"]}`);
   if ((row["Item Code"] || "").trim() !== code.trim())
     remarks.push(`Item Code mismatch: XLSX=${row["Item Code"]}`);
-  // (REMOVED: Net/Payer Mismatch check)
   const xOrdering = (row["Ordering Clinician"] || "").trim().toUpperCase();
   if (xOrdering !== (ordering || "").trim().toUpperCase())
-    remarks.push(`Ordering Clinician mismatch: XLSX=${row["Ordering Clinician"]}`);
+    clinicianMismatch = true; // now only set flag, do not add to remarks
   if ((row.AuthorizationID || "").trim() !== authID.trim())
     remarks.push(`AuthorizationID mismatch: XLSX=${row.AuthorizationID}`);
-  return remarks;
+  return { remarks, clinicianMismatch };
 }
 
 function validateDateAndStatus(row, start) {
@@ -214,7 +215,8 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId) {
       xlsRow: {},
       denialCode: "",
       denialReason: "",
-      remarks: []
+      remarks: [],
+      unknown: false
     };
   }
 
@@ -233,7 +235,8 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId) {
       xlsRow: {},
       denialCode: "",
       denialReason: "",
-      remarks: []
+      remarks: [],
+      unknown: false
     };
   }
 
@@ -263,18 +266,34 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId) {
     });
 
     const context = { memberId, code, qty, netTotal, ordering, authID };
-    remarks.push(...validateXLSXMatch(matchedRow, context));
+    const matchResult = validateXLSXMatch(matchedRow, context);
+    remarks.push(...matchResult.remarks);
+    let unknown = false;
+    if (matchResult.clinicianMismatch) unknown = true;
     remarks.push(...validateDateAndStatus(matchedRow, start));
+
+    // Return the results object with unknown flag
+    return {
+      claimId,
+      memberId,
+      id,
+      code,
+      description: rule.description || "",
+      netTotal,
+      qty,
+      ordering,
+      authID,
+      start,
+      xlsRow: matchedRow,
+      denialCode,
+      denialReason,
+      remarks,
+      unknown
+    };
   }
 
-  if (remarks.length) {
-    console.group(`Errors for AuthID=${authID}, Code=${code}`);
-    console.log("Activity:", { claimId, memberId, id, code, netTotal, qty, ordering, authID, start });
-    console.log("XLSX row:", matchedRow);
-    console.log("Remarks:", remarks);
-    console.groupEnd();
-  }
-
+  // If there was no matchedRow.AuthorizationID,
+  // return with unknown: false
   return {
     claimId,
     memberId,
@@ -289,7 +308,8 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId) {
     xlsRow: matchedRow,
     denialCode,
     denialReason,
-    remarks
+    remarks,
+    unknown: false
   };
 }
 
@@ -360,9 +380,10 @@ function renderResults(results) {
   setupDetailsModal(results, claimCodeSums);
 }
 
+// MODIFIED: set class to unknown if r.unknown
 function renderRow(r, lastClaimId, idx, codeGroup) {
   const tr = document.createElement("tr");
-  tr.className = r.remarks.length ? 'invalid' : 'valid';
+  tr.className = r.unknown ? 'unknown' : (r.remarks.length ? 'invalid' : 'valid');
 
   const xls = r.xlsRow || {};
 
@@ -412,7 +433,9 @@ function renderRow(r, lastClaimId, idx, codeGroup) {
 
   // Remarks (summary only)
   const remarksTd = document.createElement("td");
-  if (r.remarks && r.remarks.length) {
+  if (r.unknown) {
+    remarksTd.textContent = "Unknown: Clinician Mismatch";
+  } else if (r.remarks && r.remarks.length) {
     remarksTd.innerHTML = `<div>${r.remarks[0]}${r.remarks.length > 1 ? " (+)" : ""}</div>`;
     remarksTd.title = r.remarks.join('\n');
   } else {
@@ -545,7 +568,7 @@ function setupDetailsModal(results, claimCodeSums) {
           <tr><th>Ordered On</th><td>${(xls["Ordered On"] || "").split(' ')[0]} <span class="source-note">(xlsx)</span></td></tr>
           <tr><th>Denial Code</th><td>${r.denialCode || ""}</td></tr>
           <tr><th>Denial Reason</th><td>${r.denialReason || ""}</td></tr>
-          <tr><th>All Remarks</th><td>${(r.remarks || []).map(m => `<div>${m}</div>`).join("") || ""}</td></tr>
+          <tr><th>All Remarks</th><td>${(r.unknown ? "<div>Unknown: Clinician Mismatch</div>" : (r.remarks || []).map(m => `<div>${m}</div>`).join("") || "")}</td></tr>
         </table>
         ${codeGroup && codeGroup.activities.length > 1 ? `
           <h4 style="margin-top:2em;">Grouped Calculation for Code <b>${codeGroup.activities[0].code}</b> (this claim)</h4>
@@ -591,7 +614,7 @@ function postProcessResults(results) {
   container.innerHTML = "";
 
   const total = results.length;
-  const invalidEntries = results.filter(r => r.remarks.length > 0);
+  const invalidEntries = results.filter(r => !r.unknown && r.remarks.length > 0);
   const invalidCount = invalidEntries.length;
   const validCount   = total - invalidCount;
   const pctValid     = total ? ((validCount / total) * 100).toFixed(1) : "0.0";
