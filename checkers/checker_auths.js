@@ -121,7 +121,6 @@ function mapXLSXData(rows) {
 }
 
 // --- GROUPING LOGIC ---
-// Preprocess results to get grouped Net and Payer Share by code within each claim.
 function preprocessClaimCodeSums(results) {
   const claimCodeSums = {};
   results.forEach(r => {
@@ -134,7 +133,7 @@ function preprocessClaimCodeSums(results) {
   return claimCodeSums;
 }
 
-// --- VALIDATIONS (unchanged, but qty is not checked for totals anymore) ---
+// --- VALIDATIONS ---
 function validateApprovalRequirement(code, authID) {
   const remarks = [];
   const rule = authRules[code] || {};
@@ -147,20 +146,22 @@ function validateApprovalRequirement(code, authID) {
   return remarks;
 }
 
-// MODIFIED: returns clinicianMismatch flag instead of pushing to remarks
+// MODIFIED: returns clinicianMismatch flag and both clinician values
 function validateXLSXMatch(row, { memberId, code, netTotal, ordering, authID }) {
   const remarks = [];
   let clinicianMismatch = false;
+  let xmlClinician = ordering || "";
+  let xlsClinician = (row["Ordering Clinician"] || "");
   if ((row["Card Number / DHA Member ID"] || "").trim() !== memberId.trim())
     remarks.push(`MemberID mismatch: XLSX=${row["Card Number / DHA Member ID"]}`);
   if ((row["Item Code"] || "").trim() !== code.trim())
     remarks.push(`Item Code mismatch: XLSX=${row["Item Code"]}`);
-  const xOrdering = (row["Ordering Clinician"] || "").trim().toUpperCase();
-  if (xOrdering !== (ordering || "").trim().toUpperCase())
-    clinicianMismatch = true; // now only set flag, do not add to remarks
+  const xOrdering = xlsClinician.trim().toUpperCase();
+  if (xOrdering !== (xmlClinician || "").trim().toUpperCase())
+    clinicianMismatch = true;
   if ((row.AuthorizationID || "").trim() !== authID.trim())
     remarks.push(`AuthorizationID mismatch: XLSX=${row.AuthorizationID}`);
-  return { remarks, clinicianMismatch };
+  return { remarks, clinicianMismatch, xmlClinician, xlsClinician };
 }
 
 function validateDateAndStatus(row, start) {
@@ -255,6 +256,9 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId) {
     remarks.push("Has authID but status is rejected");
   }
 
+  let unknown = false;
+  let clinicianMismatchMsg = "";
+
   if (!matchedRow.AuthorizationID) {
     remarks.push("No matching authorization row found in XLSX.");
   } else {
@@ -268,11 +272,13 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId) {
     const context = { memberId, code, qty, netTotal, ordering, authID };
     const matchResult = validateXLSXMatch(matchedRow, context);
     remarks.push(...matchResult.remarks);
-    let unknown = false;
-    if (matchResult.clinicianMismatch) unknown = true;
+    if (matchResult.clinicianMismatch) {
+      unknown = true;
+      clinicianMismatchMsg = `Clinician mismatch: XML=[${matchResult.xmlClinician}], XLSX=[${matchResult.xlsClinician}]`;
+      remarks.unshift(clinicianMismatchMsg);
+    }
     remarks.push(...validateDateAndStatus(matchedRow, start));
 
-    // Return the results object with unknown flag
     return {
       claimId,
       memberId,
@@ -292,8 +298,6 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId) {
     };
   }
 
-  // If there was no matchedRow.AuthorizationID,
-  // return with unknown: false
   return {
     claimId,
     memberId,
@@ -433,8 +437,8 @@ function renderRow(r, lastClaimId, idx, codeGroup) {
 
   // Remarks (summary only)
   const remarksTd = document.createElement("td");
-  if (r.unknown) {
-    remarksTd.textContent = "Unknown: Clinician Mismatch";
+  if (r.unknown && r.remarks && r.remarks.length) {
+    remarksTd.textContent = r.remarks[0];
   } else if (r.remarks && r.remarks.length) {
     remarksTd.innerHTML = `<div>${r.remarks[0]}${r.remarks.length > 1 ? " (+)" : ""}</div>`;
     remarksTd.title = r.remarks.join('\n');
@@ -568,7 +572,7 @@ function setupDetailsModal(results, claimCodeSums) {
           <tr><th>Ordered On</th><td>${(xls["Ordered On"] || "").split(' ')[0]} <span class="source-note">(xlsx)</span></td></tr>
           <tr><th>Denial Code</th><td>${r.denialCode || ""}</td></tr>
           <tr><th>Denial Reason</th><td>${r.denialReason || ""}</td></tr>
-          <tr><th>All Remarks</th><td>${(r.unknown ? "<div>Unknown: Clinician Mismatch</div>" : (r.remarks || []).map(m => `<div>${m}</div>`).join("") || "")}</td></tr>
+          <tr><th>All Remarks</th><td>${(r.remarks || []).map(m => `<div>${m}</div>`).join("") || ""}</td></tr>
         </table>
         ${codeGroup && codeGroup.activities.length > 1 ? `
           <h4 style="margin-top:2em;">Grouped Calculation for Code <b>${codeGroup.activities[0].code}</b> (this claim)</h4>
