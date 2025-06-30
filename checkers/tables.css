@@ -116,18 +116,12 @@ td.last-copied {
   outline-offset: -2px;
 }
 
-/* === VALIDITY ROW COLORS === */
-.valid {
-  background-color: #e0f7e9;
-}
-
-.invalid {
-  background-color: #ffe4e1;
-}
-
-.unknown {
-  background-color: #fffacc;
-}
+/* === VALIDITY ROW COLORS (MODIFIED) === */
+.valid         { background: #d5ffd9; }    /* Both YES => green */
+.thiqa-only    { background: #e1e9ff; }    /* Only Thiqa => blue */
+.daman-only    { background: #f3e1ff; }    /* Only Daman => purple */
+.unknown       { background: #ffffbf; }
+.invalid       { background: #ffd6d6; }
 
 /* === UTILITY TEXT STYLES === */
 .loaded-count {
@@ -183,17 +177,15 @@ td.last-copied {
 
 .modal-content {
   background: #fff;
-  margin: 5% auto;
+  margin: 2vh auto;
   padding: 20px;
   border-radius: 8px;
-  /* Remove or relax these: */
-  /* max-width: max-content; */
-  /* max-height: 80vh; */
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
-  overflow: auto;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.2);
   width: fit-content;
-  height: fit-content;
-  min-width: 320px; /* Optional minimum */
+  max-height: 90vh;
+  overflow-y: auto;
+  min-width: 320px;
+  position: relative;
 }
 
 .modal-content.draggable {
@@ -261,6 +253,7 @@ td.last-copied {
 .details-btn:hover {
   background: #eaeaea;
 }
+
 /* General table responsive tweaks */
 .analysis-results table {
   width: 98vw;
@@ -284,8 +277,6 @@ td.last-copied {
 .analysis-results td.unit-price            { width: 62px; min-width: 48px; }
 .analysis-results th.delete-effective-date,
 .analysis-results td.delete-effective-date { width: 82px; min-width: 64px; }
-.analysis-results th.upp-scope,
-.analysis-results td.upp-scope             { width: 70px; min-width: 52px; }
 .analysis-results th.included-thiqa,
 .analysis-results td.included-thiqa        { width: 54px; min-width: 44px; }
 .analysis-results th.included-basic,
