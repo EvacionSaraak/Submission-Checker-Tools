@@ -56,7 +56,7 @@
       <button id="search-drug-btn" disabled>Search</button>
     </div>
   
-    <div id="quantity-section" class="form-row" style="display: none;">
+    <div id="quantity-section" style="display: none;">
       <label for="quantity-input"><strong>Quantity:</strong></label>
       <input type="number" id="quantity-input" step="0.01" min="0">
       <button id="calculate-btn" disabled>Calculate Total</button>
@@ -68,12 +68,17 @@
   </div>
 
   <!-- Analysis Panel -->
-  <div id="analysis-panel" class="section hidden">
-    <label for="xml-upload"><strong>Upload XML Claims File:</strong></label>
-    <input type="file" id="xml-upload" accept=".xml" />
-    <div id="xml-claim-count" class="loaded-count"></div>
-    <button id="analyze-btn" disabled>Analyze</button>
-    <div id="analysis-results" class="results"></div>
+  <div id="analysis-panel" style="display: none;">
+    <div>
+      <label for="xml-upload">Upload XML Claim File:</label>
+      <input type="file" id="xml-upload" accept=".xml" />
+      <span id="xml-claim-count"></span>
+    </div>
+    <div>
+      <button id="analyze-btn" disabled>Analyze</button>
+    </div>
+    
+    <div id="analysis-results" style="margin-top: 20px;"></div>
   </div>
 
   <!-- Scripts -->
