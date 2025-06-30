@@ -241,16 +241,38 @@ function renderClaimTableWithModals(xmlRows) {
   // Main table with one row per claim
   let tableHTML = '<table><thead><tr><th>Claim ID</th><th>Number of Activities</th><th>Actions</th></tr></thead><tbody>';
   Object.keys(claimsMap).forEach((claimId, idx) => {
-    tableHTML += `<tr>
+    const activities = claimsMap[claimId];
+
+    // Determine claim row class based on activities
+    let claimClass = "valid"; // default
+    for (const activity of activities) {
+      const drugRow = activity.drug;
+      const status = (drugRow["Status"]||"").toLowerCase();
+      const statusActive = status === "active";
+      const hasNo = [
+        "UPP Scope",
+        "Included in Thiqa/ ABM - other than 1&7- Drug Formulary",
+        "Included In Basic Drug Formulary"
+      ].some(col => (drugRow[col]||"").toLowerCase()==="no");
+
+      if (!statusActive) {
+        claimClass = "invalid";
+        break; // invalid takes precedence
+      } else if (claimClass === "valid" && hasNo) {
+        claimClass = "unknown"; // only set if not already invalid
+      }
+    }
+
+    tableHTML += `<tr class="${claimClass}"> 
       <td>${claimId}</td>
-      <td>${claimsMap[claimId].length}</td>
+      <td>${activities.length}</td>
       <td>
         <button class="details-btn" data-modal="modal-claim-${idx}">Show Activities</button>
         <div id="modal-claim-${idx}" class="modal">
           <div class="modal-content">
             <span class="close" data-modal-close="modal-claim-${idx}">&times;</span>
             <h4>Activities for Claim ${claimId}</h4>
-            ${renderActivitiesTable(claimsMap[claimId])}
+            ${renderActivitiesTable(activities)}
           </div>
         </div>
       </td>
@@ -264,7 +286,6 @@ function renderClaimTableWithModals(xmlRows) {
   setTimeout(() => setupModalListeners(container), 0); // Ensure elements exist when listeners are attached
   return container;
 }
-
 function renderActivitiesTable(activities) {
   // Only the activity table, for the modal
   let html = `<table><thead><tr>
