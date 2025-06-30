@@ -1,4 +1,6 @@
 let drugData = [], xmlData = null, selectedDrug = null;
+let currentModalIdx = null;
+let claimsMapGlobal = {};
 
 const modeRadios = document.querySelectorAll('input[name="mode"]');
 const lookupPanel = document.getElementById('lookup-panel');
@@ -227,6 +229,18 @@ analyzeBtn.addEventListener('click', () => {
   analysisResults.appendChild(renderClaimTableWithModals(xmlRows));
 });
 
+// Add radio for plan selection
+if (!document.getElementById('inclusion-selector')) {
+  const selector = document.createElement('div');
+  selector.id = "inclusion-selector";
+  selector.style.marginBottom = "18px";
+  selector.innerHTML = `
+    <label><input type="radio" name="inclusion" value="THIQA" checked> THIQA</label>
+    <label><input type="radio" name="inclusion" value="DAMAN"> DAMAN</label>
+  `;
+  analysisPanel.insertBefore(selector, analysisPanel.firstChild);
+}
+
 // Modal per claim implementation
 function renderClaimTableWithModals(xmlRows) {
   // Group activities by claimId
@@ -235,44 +249,24 @@ function renderClaimTableWithModals(xmlRows) {
     if (!claimsMap[row.claimId]) claimsMap[row.claimId] = [];
     claimsMap[row.claimId].push(row);
   });
+  claimsMapGlobal = claimsMap; // for modal refresh
 
   // Main table with one row per claim
   let tableHTML = '<table><thead><tr><th>Claim ID</th><th>Number of Activities</th><th>Actions</th></tr></thead><tbody>';
   Object.keys(claimsMap).forEach((claimId, idx) => {
     const activities = claimsMap[claimId];
-
-    // Determine claim row class
-    // Priority: invalid > valid > thiqa-only > daman-only > unknown
-    let claimClass = "unknown";
-    for (const activity of activities) {
-      const drugRow = activity.drug;
-      let status = (drugRow["Status"]||"").toLowerCase();
-      if (status === "grace") status = "active";
-      const statusActive = status === "active";
-      const includedThiqa = (drugRow["Included in Thiqa/ ABM - other than 1&7- Drug Formulary"]||"").toLowerCase() === "yes";
-      const includedDaman = (drugRow["Included In Basic Drug Formulary"]||"").toLowerCase() === "yes";
-
-      if (!statusActive) {
-        claimClass = "invalid"; break;
-      } else if (includedThiqa && includedDaman) {
-        claimClass = "valid";
-      } else if (includedThiqa && claimClass !== "valid") {
-        claimClass = "thiqa-only";
-      } else if (includedDaman && claimClass !== "valid" && claimClass !== "thiqa-only") {
-        claimClass = "daman-only";
-      }
-    }
-
-    tableHTML += `<tr class="${claimClass}"> 
+    tableHTML += `<tr>
       <td>${claimId}</td>
       <td>${activities.length}</td>
       <td>
-        <button class="details-btn" data-modal="modal-claim-${idx}">Show Activities</button>
+        <button class="details-btn" data-modal="modal-claim-${idx}" data-idx="${idx}">Show Activities</button>
         <div id="modal-claim-${idx}" class="modal">
           <div class="modal-content">
             <span class="close" data-modal-close="modal-claim-${idx}">&times;</span>
             <h4>Activities for Claim ${claimId}</h4>
-            ${renderActivitiesTable(activities)}
+            <div class="modal-table-container">
+              ${renderActivitiesTable(activities, getCurrentInclusion())}
+            </div>
           </div>
         </div>
       </td>
@@ -287,7 +281,7 @@ function renderClaimTableWithModals(xmlRows) {
   return container;
 }
 
-function renderActivitiesTable(activities) {
+function renderActivitiesTable(activities, inclusionType) {
   let html = `<table class="analysis-results"><thead><tr>
     <th>Activity ID</th>
     <th>Code</th>
@@ -308,22 +302,15 @@ function renderActivitiesTable(activities) {
     let status = (drugRow["Status"]||"").toLowerCase();
     if (status === "grace") status = "active";
     const statusActive = status === "active";
-    const includedThiqa = (drugRow["Included in Thiqa/ ABM - other than 1&7- Drug Formulary"]||"").toLowerCase() === "yes";
-    const includedDaman = (drugRow["Included In Basic Drug Formulary"]||"").toLowerCase() === "yes";
 
-    // Row class logic
-    let rowClass;
-    if (!statusActive) {
-      rowClass = "invalid";
-    } else if (includedThiqa && includedDaman) {
-      rowClass = "valid";
-    } else if (includedThiqa) {
-      rowClass = "thiqa-only";
-    } else if (includedDaman) {
-      rowClass = "daman-only";
-    } else {
-      rowClass = "unknown";
+    let isValid = true;
+    if (inclusionType === "THIQA") {
+      isValid = (drugRow["Included in Thiqa/ ABM - other than 1&7- Drug Formulary"]||"").toLowerCase() === "yes";
+    } else if (inclusionType === "DAMAN") {
+      isValid = (drugRow["Included In Basic Drug Formulary"]||"").toLowerCase() === "yes";
     }
+
+    const rowClass = (statusActive && isValid) ? "valid" : "invalid";
 
     html += `<tr class="${rowClass}">` +
       `<td>${row.activityId}</td>` +
@@ -345,14 +332,20 @@ function renderActivitiesTable(activities) {
   return html;
 }
 
+function getCurrentInclusion() {
+  return document.querySelector('input[name="inclusion"]:checked').value;
+}
+
 function setupModalListeners(container) {
-  // Open modal and auto-size to table
   container.querySelectorAll('.details-btn').forEach(btn => {
     btn.addEventListener('click', function() {
       const modalId = btn.getAttribute('data-modal');
+      const idx = btn.getAttribute('data-idx');
       const modal = container.querySelector(`#${modalId}`);
       if (modal) {
         modal.style.display = 'block';
+        currentModalIdx = idx;
+        refreshModalActivities(modal, idx);
       }
     });
   });
@@ -362,6 +355,7 @@ function setupModalListeners(container) {
       const modalId = btn.getAttribute('data-modal-close');
       const modal = container.querySelector(`#${modalId}`);
       if (modal) modal.style.display = 'none';
+      currentModalIdx = null;
     });
   });
   // Close when clicking outside modal-content
@@ -369,7 +363,38 @@ function setupModalListeners(container) {
     modal.addEventListener('click', function(event) {
       if (event.target === modal) {
         modal.style.display = 'none';
+        currentModalIdx = null;
       }
     });
   });
+}
+
+// Redraw activities table in modal on inclusion radio change
+document.querySelectorAll('input[name="inclusion"]').forEach(radio => {
+  radio.addEventListener('change', () => {
+    if (currentModalIdx !== null) {
+      const modal = document.getElementById(`modal-claim-${currentModalIdx}`);
+      if (modal && modal.style.display === 'block') {
+        refreshModalActivities(modal, currentModalIdx);
+      }
+    }
+  });
+});
+
+function refreshModalActivities(modal, idx) {
+  const inclusionType = getCurrentInclusion();
+  // Find claimId from the modal structure
+  let claimId = null;
+  // Find the <h4> in modal-content to get claimId
+  const h4 = modal.querySelector('h4');
+  if (h4) {
+    const m = h4.textContent.match(/Claim (.+)$/);
+    if (m) claimId = m[1];
+  }
+  if (!claimId || !claimsMapGlobal[claimId]) return;
+  const activities = claimsMapGlobal[claimId];
+  const modalTableContainer = modal.querySelector('.modal-table-container');
+  if (modalTableContainer) {
+    modalTableContainer.innerHTML = renderActivitiesTable(activities, inclusionType);
+  }
 }
