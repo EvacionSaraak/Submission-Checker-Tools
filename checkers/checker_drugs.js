@@ -29,8 +29,6 @@ const DRUG_COLUMNS = [
   "UPP Scope", "Included in Thiqa/ ABM - other than 1&7- Drug Formulary",
   "Included In Basic Drug Formulary", "UPP Effective Date", "UPP Updated Date"
 ];
-const XML_HEADERS = ["Claim ID", "Activity ID"].concat(DISPLAY_HEADERS);
-
 const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
 
 function toggleModePanels() {
@@ -88,7 +86,7 @@ xlsxUpload.addEventListener('change', (e) => {
 });
 
 // Lookup Drug Search
-searchDrugBtn.addEventListener('click', () => {
+searchDrugBtn && searchDrugBtn.addEventListener('click', () => {
   const query = drugInput.value.trim();
   if (!query) return;
   const lowerQuery = query.toLowerCase();
@@ -111,74 +109,52 @@ searchDrugBtn.addEventListener('click', () => {
   });
 
   if (matches.length) {
-    lookupResults.appendChild(renderDrugTable(matches, "lookup"));
+    lookupResults.appendChild(renderDrugTable(matches));
   } else {
     lookupResults.innerHTML = `<p>No match found for: <strong>${query}</strong></p>`;
   }
 });
 
-// Table rendering for both lookup and analysis
-function renderDrugTable(rows, mode) {
-  const HEADERS = (mode === "analysis") ? XML_HEADERS : DISPLAY_HEADERS;
-  let tableHTML = '<table><thead><tr>';
-  HEADERS.forEach(h => tableHTML += `<th>${h}</th>`);
-  tableHTML += '</tr></thead><tbody>';
+// Lookup Table Builder
+function renderDrugTable(drugs) {
+  let tableHTML = `<table><thead><tr>`;
+  DISPLAY_HEADERS.forEach(h => tableHTML += `<th>${h}</th>`);
+  tableHTML += `</tr></thead><tbody>`;
 
-  let lastClaimId = null;
-  rows.forEach(row => {
-    // For analysis mode, extract drug row and ID cells
-    let drugRow, claimIdCell = '', activityIdCell = '';
-    if (mode === "analysis") {
-      drugRow = row.drug;
-      if (row.claimId !== lastClaimId) {
-        claimIdCell = `<td>${row.claimId}</td>`;
-        lastClaimId = row.claimId;
-      } else {
-        claimIdCell = `<td class="blank-claim"></td>`;
-      }
-      activityIdCell = `<td>${row.activityId}</td>`;
-    } else {
-      drugRow = row;
-    }
-
-    // Row class for coloring
-    const status = (drugRow["Status"]||"").toLowerCase();
+  drugs.forEach(row => {
+    const status = (row["Status"]||"").toLowerCase();
     const statusActive = status === "active";
     const hasNo = [
       "UPP Scope",
       "Included in Thiqa/ ABM - other than 1&7- Drug Formulary",
       "Included In Basic Drug Formulary"
-    ].some(col => (drugRow[col]||"").toLowerCase()==="no");
+    ].some(col => (row[col]||"").toLowerCase()==="no");
     const rowClass = statusActive ? (hasNo ? "unknown" : "valid") : "invalid";
 
-    tableHTML += `<tr class="${rowClass}">`;
-    if (mode === "analysis") {
-      tableHTML += claimIdCell + activityIdCell;
-    }
-    tableHTML +=
-      `<td>${drugRow["Drug Code"]||"N/A"}</td>` +
-      `<td>${drugRow["Package Name"]||"N/A"}</td>` +
-      `<td>${drugRow["Dosage Form"]||"N/A"}</td>` +
-      `<td>${drugRow["Package Size"]||"N/A"}</td>` +
-      `<td>${drugRow["Package Price to Public"]||"N/A"}</td>` +
-      `<td>${drugRow["Unit Price to Public"]||"N/A"}</td>` +
-      `<td>${drugRow["Status"]||"N/A"}</td>` +
-      `<td>${!statusActive ? (drugRow["Delete Effective Date"]||"NO DATE") : "N/A"}</td>` +
-      `<td>${drugRow["UPP Scope"]||"Unknown"}</td>` +
-      `<td>${drugRow["Included in Thiqa/ ABM - other than 1&7- Drug Formulary"]||"Unknown"}</td>` +
-      `<td>${drugRow["Included In Basic Drug Formulary"]||"Unknown"}</td>` +
-      `<td>${drugRow["UPP Effective Date"]||"NO DATE"}</td>` +
-      `<td>${drugRow["UPP Updated Date"]||"NO DATE"}</td>` +
-      `</tr>`;
+    tableHTML += `<tr class="${rowClass}">` +
+      `<td>${row["Drug Code"]||"N/A"}</td>` +
+      `<td>${row["Package Name"]||"N/A"}</td>` +
+      `<td>${row["Dosage Form"]||"N/A"}</td>` +
+      `<td>${row["Package Size"]||"N/A"}</td>` +
+      `<td>${row["Package Price to Public"]||"N/A"}</td>` +
+      `<td>${row["Unit Price to Public"]||"N/A"}</td>` +
+      `<td>${row["Status"]||"N/A"}</td>` +
+      `<td>${!statusActive ? (row["Delete Effective Date"]||"NO DATE") : "N/A"}</td>` +
+      `<td>${row["UPP Scope"]||"Unknown"}</td>` +
+      `<td>${row["Included in Thiqa/ ABM - other than 1&7- Drug Formulary"]||"Unknown"}</td>` +
+      `<td>${row["Included In Basic Drug Formulary"]||"Unknown"}</td>` +
+      `<td>${row["UPP Effective Date"]||"NO DATE"}</td>` +
+      `<td>${row["UPP Updated Date"]||"NO DATE"}</td>` +
+    `</tr>`;
   });
-  tableHTML += '</tbody></table>';
+  tableHTML += `</tbody></table>`;
   const container = document.createElement('div');
   container.innerHTML = tableHTML;
   return container;
 }
 
 // Quantity calculator
-calculateBtn.addEventListener('click', () => {
+calculateBtn && calculateBtn.addEventListener('click', () => {
   const qty = parseFloat(quantityInput.value);
   if (isNaN(qty) || qty <= 0) {
     calcOutput.textContent = "Invalid quantity.";
@@ -250,5 +226,118 @@ analyzeBtn.addEventListener('click', () => {
     return;
   }
   analysisResults.innerHTML = '';
-  analysisResults.appendChild(renderDrugTable(xmlRows, "analysis"));
+  analysisResults.appendChild(renderClaimTableWithModals(xmlRows));
 });
+
+// Modal per claim implementation
+function renderClaimTableWithModals(xmlRows) {
+  // Group activities by claimId
+  const claimsMap = {};
+  xmlRows.forEach(row => {
+    if (!claimsMap[row.claimId]) claimsMap[row.claimId] = [];
+    claimsMap[row.claimId].push(row);
+  });
+
+  // Main table with one row per claim
+  let tableHTML = '<table><thead><tr><th>Claim ID</th><th>Number of Activities</th><th>Actions</th></tr></thead><tbody>';
+  Object.keys(claimsMap).forEach((claimId, idx) => {
+    tableHTML += `<tr>
+      <td>${claimId}</td>
+      <td>${claimsMap[claimId].length}</td>
+      <td>
+        <button class="details-btn" data-modal="modal-claim-${idx}">Show Activities</button>
+        <div id="modal-claim-${idx}" class="modal">
+          <div class="modal-content">
+            <span class="close" data-modal-close="modal-claim-${idx}">&times;</span>
+            <h4>Activities for Claim ${claimId}</h4>
+            ${renderActivitiesTable(claimsMap[claimId])}
+          </div>
+        </div>
+      </td>
+    </tr>`;
+  });
+  tableHTML += '</tbody></table>';
+
+  // Attach to DOM and setup modal listeners
+  const container = document.createElement('div');
+  container.innerHTML = tableHTML;
+  setTimeout(() => setupModalListeners(container), 0); // Ensure elements exist when listeners are attached
+  return container;
+}
+
+function renderActivitiesTable(activities) {
+  // Only the activity table, for the modal
+  let html = `<table><thead><tr>
+    <th>Activity ID</th>
+    <th>Code</th>
+    <th>Package</th>
+    <th>Form</th>
+    <th>Package Size</th>
+    <th>Package Price</th>
+    <th>Unit Price</th>
+    <th>Status</th>
+    <th>Delete Effective Date</th>
+    <th>UPP Scope</th>
+    <th>Included in Thiqa</th>
+    <th>Included in DAMAN Basic</th>
+    <th>Effective Date</th>
+    <th>Updated Date</th>
+  </tr></thead><tbody>`;
+  activities.forEach(row => {
+    const drugRow = row.drug;
+    const status = (drugRow["Status"]||"").toLowerCase();
+    const statusActive = status === "active";
+    const hasNo = [
+      "UPP Scope",
+      "Included in Thiqa/ ABM - other than 1&7- Drug Formulary",
+      "Included In Basic Drug Formulary"
+    ].some(col => (drugRow[col]||"").toLowerCase()==="no");
+    const rowClass = statusActive ? (hasNo ? "unknown" : "valid") : "invalid";
+
+    html += `<tr class="${rowClass}">` +
+      `<td>${row.activityId}</td>` +
+      `<td>${drugRow["Drug Code"]||"N/A"}</td>` +
+      `<td>${drugRow["Package Name"]||"N/A"}</td>` +
+      `<td>${drugRow["Dosage Form"]||"N/A"}</td>` +
+      `<td>${drugRow["Package Size"]||"N/A"}</td>` +
+      `<td>${drugRow["Package Price to Public"]||"N/A"}</td>` +
+      `<td>${drugRow["Unit Price to Public"]||"N/A"}</td>` +
+      `<td>${drugRow["Status"]||"N/A"}</td>` +
+      `<td>${!statusActive ? (drugRow["Delete Effective Date"]||"NO DATE") : "N/A"}</td>` +
+      `<td>${drugRow["UPP Scope"]||"Unknown"}</td>` +
+      `<td>${drugRow["Included in Thiqa/ ABM - other than 1&7- Drug Formulary"]||"Unknown"}</td>` +
+      `<td>${drugRow["Included In Basic Drug Formulary"]||"Unknown"}</td>` +
+      `<td>${drugRow["UPP Effective Date"]||"NO DATE"}</td>` +
+      `<td>${drugRow["UPP Updated Date"]||"NO DATE"}</td>` +
+    `</tr>`;
+  });
+  html += '</tbody></table>';
+  return html;
+}
+
+function setupModalListeners(container) {
+  // Open modal
+  container.querySelectorAll('.details-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+      const modalId = btn.getAttribute('data-modal');
+      const modal = container.querySelector(`#${modalId}`);
+      if (modal) modal.style.display = 'block';
+    });
+  });
+  // Close modal
+  container.querySelectorAll('.close').forEach(btn => {
+    btn.addEventListener('click', function() {
+      const modalId = btn.getAttribute('data-modal-close');
+      const modal = container.querySelector(`#${modalId}`);
+      if (modal) modal.style.display = 'none';
+    });
+  });
+  // Close when clicking outside modal-content
+  container.querySelectorAll('.modal').forEach(modal => {
+    modal.addEventListener('click', function(event) {
+      if (event.target === modal) {
+        modal.style.display = 'none';
+      }
+    });
+  });
+}
