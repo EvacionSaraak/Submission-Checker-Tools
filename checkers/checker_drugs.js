@@ -1,6 +1,7 @@
 let drugData = [], xmlData = null, selectedDrug = null;
 let currentModalIdx = null;
 let claimsMapGlobal = {};
+let lastXmlRows = [];
 
 const modeRadios = document.querySelectorAll('input[name="mode"]');
 const lookupPanel = document.getElementById('lookup-panel');
@@ -225,11 +226,12 @@ analyzeBtn.addEventListener('click', () => {
     analysisResults.innerHTML = `<div class="error-box">No activities matched any codes from the uploaded drug list.</div>`;
     return;
   }
+  lastXmlRows = xmlRows; // cache for re-render
   analysisResults.innerHTML = '';
   analysisResults.appendChild(renderClaimTableWithModals(xmlRows));
 });
 
-// Add radio for plan selection
+// Add radio for plan selection if not present
 if (!document.getElementById('inclusion-selector')) {
   const selector = document.createElement('div');
   selector.id = "inclusion-selector";
@@ -239,6 +241,19 @@ if (!document.getElementById('inclusion-selector')) {
     <label><input type="radio" name="inclusion" value="DAMAN"> DAMAN</label>
   `;
   analysisPanel.insertBefore(selector, analysisPanel.firstChild);
+}
+
+function isActivityValid(drugRow, inclusionType) {
+  let status = (drugRow["Status"]||"").toLowerCase();
+  if (status === "grace") status = "active";
+  const statusActive = status === "active";
+  let included = true;
+  if (inclusionType === "THIQA") {
+    included = (drugRow["Included in Thiqa/ ABM - other than 1&7- Drug Formulary"]||"").toLowerCase() === "yes";
+  } else if (inclusionType === "DAMAN") {
+    included = (drugRow["Included In Basic Drug Formulary"]||"").toLowerCase() === "yes";
+  }
+  return statusActive && included;
 }
 
 // Modal per claim implementation
@@ -251,11 +266,23 @@ function renderClaimTableWithModals(xmlRows) {
   });
   claimsMapGlobal = claimsMap; // for modal refresh
 
+  const inclusionType = getCurrentInclusion();
+
   // Main table with one row per claim
   let tableHTML = '<table><thead><tr><th>Claim ID</th><th>Number of Activities</th><th>Actions</th></tr></thead><tbody>';
   Object.keys(claimsMap).forEach((claimId, idx) => {
     const activities = claimsMap[claimId];
-    tableHTML += `<tr>
+
+    // Set claim row to invalid if any activity is invalid
+    let claimClass = "valid";
+    for (const activity of activities) {
+      if (!isActivityValid(activity.drug, inclusionType)) {
+        claimClass = "invalid";
+        break;
+      }
+    }
+
+    tableHTML += `<tr class="${claimClass}">
       <td>${claimId}</td>
       <td>${activities.length}</td>
       <td>
@@ -265,7 +292,7 @@ function renderClaimTableWithModals(xmlRows) {
             <span class="close" data-modal-close="modal-claim-${idx}">&times;</span>
             <h4>Activities for Claim ${claimId}</h4>
             <div class="modal-table-container">
-              ${renderActivitiesTable(activities, getCurrentInclusion())}
+              ${renderActivitiesTable(activities, inclusionType)}
             </div>
           </div>
         </div>
@@ -369,9 +396,15 @@ function setupModalListeners(container) {
   });
 }
 
-// Redraw activities table in modal on inclusion radio change
+// Redraw claim table and modal activities on inclusion radio change
 document.querySelectorAll('input[name="inclusion"]').forEach(radio => {
   radio.addEventListener('change', () => {
+    // re-render the claims table
+    if (lastXmlRows.length > 0) {
+      analysisResults.innerHTML = '';
+      analysisResults.appendChild(renderClaimTableWithModals(lastXmlRows));
+    }
+    // re-render the modal if open
     if (currentModalIdx !== null) {
       const modal = document.getElementById(`modal-claim-${currentModalIdx}`);
       if (modal && modal.style.display === 'block') {
