@@ -307,9 +307,29 @@ function exportInvalidsXLSX(invalids, fileNameBase) {
     return;
   }
   const ws = XLSX.utils.json_to_sheet(invalids);
+
+  // Freeze the top row
+  ws['!freeze'] = { xSplit: 0, ySplit: 1 };
+
+  // Auto-fit column widths
+  fitToContents(ws, invalids);
+
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Invalids");
   XLSX.writeFile(wb, `${fileNameBase}_INVALIDS.xlsx`);
+}
+
+// Helper: auto-fit columns to content
+function fitToContents(ws, data) {
+  if (!data || !data.length) return;
+  const headers = Object.keys(data[0]);
+  ws['!cols'] = headers.map(h => {
+    const maxLen = Math.max(
+      h.length,
+      ...data.map(row => (row[h] ? row[h].toString().length : 0))
+    );
+    return { wch: maxLen + 2 }; // +2 for padding
+  });
 }
 
 document.getElementById('export-invalids-btn').addEventListener('click', function() {
