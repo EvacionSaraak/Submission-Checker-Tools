@@ -317,6 +317,23 @@ function exportInvalidsXLSX(invalids, fileNameBase) {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Invalids");
   XLSX.writeFile(wb, `${fileNameBase}_INVALIDS.xlsx`);
+}function exportInvalidsXLSX(invalids, fileNameBase) {
+  if (invalids.length === 0) {
+    alert('No invalids to export!');
+    return;
+  }
+  const ws = XLSX.utils.json_to_sheet(invalids);
+
+  // Freeze the top row (SheetJS v0.20+ and legacy panes)
+  ws['!freeze'] = { xSplit: 0, ySplit: 1 };
+  ws['!panes'] = [{ ySplit: 1, topLeftCell: 'A2', activePane: 'bottomLeft', state: 'frozen' }];
+
+  // Auto-fit column widths
+  fitToContents(ws, invalids);
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Invalids");
+  XLSX.writeFile(wb, `${fileNameBase}_INVALIDS.xlsx`);
 }
 
 // Helper: auto-fit columns to content
