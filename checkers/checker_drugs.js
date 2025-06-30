@@ -31,9 +31,13 @@ const DISPLAY_HEADERS = [
   "Included in DAMAN Basic", "Effective Date", "Updated Date"
 ];
 
+// For XML Analysis (add Claim ID and Activity ID columns)
+const XML_ACTIVITY_HEADERS = [
+  "Claim ID", "Activity ID", "Activity Code", "Activity Net", "Activity Start", "Clinician"
+];
+
 const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
 
-// 2) Update toggleModePanels() to include exactToggle
 function toggleModePanels() {
   const selected = document.querySelector('input[name="mode"]:checked').value;
   lookupPanel.style.display   = selected === 'lookup'   ? 'block' : 'none';
@@ -44,7 +48,6 @@ function toggleModePanels() {
   drugInput.disabled = !hasDrugs || selected !== 'lookup';
   searchDrugBtn.disabled = !hasDrugs || selected !== 'lookup';
   analyzeBtn.disabled = !(hasDrugs && hasXML && selected === 'analysis');
-
   exactToggle.disabled = !hasDrugs || selected !== 'lookup';
 
   lookupResults.innerHTML = "";
@@ -157,15 +160,80 @@ calculateBtn.addEventListener('click', () => {
   calcOutput.textContent = `Total: AED ${total.toFixed(2)}`;
 });
 
+// --- XML UPLOAD & ANALYSIS ---
+
 xmlUpload.addEventListener('change', e => {
   if (!e.target.files[0]) return;
-  xmlClaimCount.textContent = "XML loaded. Waiting on schema for processing.";
-  xmlData = true;
-  if (drugData.length) analyzeBtn.disabled = false;
+  const file = e.target.files[0];
+  const reader = new FileReader();
+  reader.onload = function(ev) {
+    try {
+      const parser = new DOMParser();
+      const xmlDoc = parser.parseFromString(ev.target.result, "application/xml");
+      if (xmlDoc.getElementsByTagName("parsererror").length) throw new Error("Invalid XML");
+      xmlData = xmlDoc;
+      const claimCount = xmlDoc.querySelectorAll('Claim').length;
+      xmlClaimCount.textContent = `Loaded XML with ${claimCount} claims.`;
+      if (drugData.length) analyzeBtn.disabled = false;
+    } catch (err) {
+      xmlData = null;
+      xmlClaimCount.textContent = "Failed to parse XML.";
+      analyzeBtn.disabled = true;
+    }
+    toggleModePanels();
+  };
+  reader.readAsText(file);
 });
 
 analyzeBtn.addEventListener('click', () => {
-  analysisResults.innerHTML = `<div class="error-box">XML Analysis is disabled until schema is available.</div>`;
+  if (!xmlData || !drugData.length) {
+    analysisResults.innerHTML = `<div class="error-box">Please upload both a valid XML and XLSX before analysis.</div>`;
+    return;
+  }
+  // Build a Set of all valid drug codes
+  const validCodes = new Set(drugData.map(d => d["Drug Code"]));
+
+  // Find all Claims
+  const claims = Array.from(xmlData.getElementsByTagName('Claim'));
+  let xmlRows = [];
+  claims.forEach(claim => {
+    const claimID = (claim.getElementsByTagName('ID')[0] || {}).textContent || 'N/A';
+    const activities = Array.from(claim.getElementsByTagName('Activity'));
+    activities.forEach(activity => {
+      const code = (activity.getElementsByTagName('Code')[0] || {}).textContent || '';
+      if (!validCodes.has(code)) return;
+      xmlRows.push({
+        claimId: claimID,
+        activityId: (activity.getElementsByTagName('ID')[0] || {}).textContent || '',
+        code,
+        net: (activity.getElementsByTagName('Net')[0] || {}).textContent || '',
+        start: (activity.getElementsByTagName('Start')[0] || {}).textContent || '',
+        clinician: (activity.getElementsByTagName('Clinician')[0] || {}).textContent || ''
+      });
+    });
+  });
+
+  if (!xmlRows.length) {
+    analysisResults.innerHTML = `<div class="error-box">No activities matched any codes from the uploaded drug list.</div>`;
+    return;
+  }
+
+  // Build table
+  let tableHTML = `<table><thead><tr>`;
+  XML_ACTIVITY_HEADERS.forEach(h => tableHTML += `<th>${h}</th>`);
+  tableHTML += `</tr></thead><tbody>`;
+  xmlRows.forEach(row => {
+    tableHTML += `<tr>` +
+      `<td>${row.claimId}</td>` +
+      `<td>${row.activityId}</td>` +
+      `<td>${row.code}</td>` +
+      `<td>${row.net}</td>` +
+      `<td>${row.start}</td>` +
+      `<td>${row.clinician}</td>` +
+    `</tr>`;
+  });
+  tableHTML += `</tbody></table>`;
+  analysisResults.innerHTML = tableHTML;
 });
 
 function buildDrugTable(drugs) {
