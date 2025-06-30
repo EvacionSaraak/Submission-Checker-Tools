@@ -337,12 +337,27 @@ function renderActivitiesTable(activities) {
 }
 
 function setupModalListeners(container) {
-  // Open modal
+  // Open modal and auto-size to table
   container.querySelectorAll('.details-btn').forEach(btn => {
     btn.addEventListener('click', function() {
       const modalId = btn.getAttribute('data-modal');
       const modal = container.querySelector(`#${modalId}`);
-      if (modal) modal.style.display = 'block';
+      if (modal) {
+        modal.style.display = 'block';
+        // Auto-size modal-content to fit table
+        const modalContent = modal.querySelector('.modal-content');
+        const innerTable = modalContent.querySelector('table');
+        if (innerTable) {
+          // Reset width/height first
+          modalContent.style.width = '';
+          modalContent.style.height = '';
+          // Get real table size
+          const tableRect = innerTable.getBoundingClientRect();
+          // Add padding for modal-content
+          modalContent.style.width = (tableRect.width + 40) + 'px';
+          modalContent.style.height = (tableRect.height + 60) + 'px';
+        }
+      }
     });
   });
   // Close modal
