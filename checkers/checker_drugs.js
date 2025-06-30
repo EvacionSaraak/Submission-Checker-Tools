@@ -20,13 +20,13 @@ const exactToggle = document.getElementById('exact-search-toggle');
 
 const DISPLAY_HEADERS = [
   "Code", "Package", "Form", "Package Size", "Package Price", "Unit Price",
-  "Status", "Delete Effective Date", "UPP Scope", "Included in Thiqa",
+  "Status", "Delete Effective Date", "Included in Thiqa",
   "Included in DAMAN Basic", "Effective Date", "Updated Date"
 ];
 const DRUG_COLUMNS = [
   "Drug Code", "Package Name", "Dosage Form", "Package Size", "Package Price to Public",
   "Unit Price to Public", "Status", "Delete Effective Date",
-  "UPP Scope", "Included in Thiqa/ ABM - other than 1&7- Drug Formulary",
+  "Included in Thiqa/ ABM - other than 1&7- Drug Formulary",
   "Included In Basic Drug Formulary", "UPP Effective Date", "UPP Updated Date"
 ];
 const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
@@ -123,9 +123,8 @@ function renderDrugTable(drugs) {
 
   drugs.forEach(row => {
     const status = (row["Status"]||"").toLowerCase();
-    const statusActive = status === "active";
+    const statusActive = (status === "active" || status === "grace");
     const hasNo = [
-      "UPP Scope",
       "Included in Thiqa/ ABM - other than 1&7- Drug Formulary",
       "Included In Basic Drug Formulary"
     ].some(col => (row[col]||"").toLowerCase()==="no");
@@ -136,13 +135,12 @@ function renderDrugTable(drugs) {
       `<td>${row["Package Name"]||"N/A"}</td>` +
       `<td>${row["Dosage Form"]||"N/A"}</td>` +
       `<td>${row["Package Size"]||"N/A"}</td>` +
-      `<td>${row["Package Price to Public"]||"N/A"}</td>` +
-      `<td>${row["Unit Price to Public"]||"N/A"}</td>` +
+      `<td class="package-price">${row["Package Price to Public"]||"N/A"}</td>` +
+      `<td class="unit-price">${row["Unit Price to Public"]||"N/A"}</td>` +
       `<td>${row["Status"]||"N/A"}</td>` +
-      `<td>${!statusActive ? (row["Delete Effective Date"]||"NO DATE") : "N/A"}</td>` +
-      `<td>${row["UPP Scope"]||"Unknown"}</td>` +
-      `<td>${row["Included in Thiqa/ ABM - other than 1&7- Drug Formulary"]||"Unknown"}</td>` +
-      `<td>${row["Included In Basic Drug Formulary"]||"Unknown"}</td>` +
+      `<td class="delete-effective-date">${!statusActive ? (row["Delete Effective Date"]||"NO DATE") : "N/A"}</td>` +
+      `<td class="included-thiqa">${row["Included in Thiqa/ ABM - other than 1&7- Drug Formulary"]||"Unknown"}</td>` +
+      `<td class="included-basic">${row["Included In Basic Drug Formulary"]||"Unknown"}</td>` +
       `<td>${row["UPP Effective Date"]||"NO DATE"}</td>` +
       `<td>${row["UPP Updated Date"]||"NO DATE"}</td>` +
     `</tr>`;
@@ -243,23 +241,25 @@ function renderClaimTableWithModals(xmlRows) {
   Object.keys(claimsMap).forEach((claimId, idx) => {
     const activities = claimsMap[claimId];
 
-    // Determine claim row class based on activities
-    let claimClass = "valid"; // default
+    // Determine claim row class
+    // Priority: invalid > valid > thiqa-only > daman-only > unknown
+    let claimClass = "unknown";
     for (const activity of activities) {
       const drugRow = activity.drug;
-      const status = (drugRow["Status"]||"").toLowerCase();
+      let status = (drugRow["Status"]||"").toLowerCase();
+      if (status === "grace") status = "active";
       const statusActive = status === "active";
-      const hasNo = [
-        "UPP Scope",
-        "Included in Thiqa/ ABM - other than 1&7- Drug Formulary",
-        "Included In Basic Drug Formulary"
-      ].some(col => (drugRow[col]||"").toLowerCase()==="no");
+      const includedThiqa = (drugRow["Included in Thiqa/ ABM - other than 1&7- Drug Formulary"]||"").toLowerCase() === "yes";
+      const includedDaman = (drugRow["Included In Basic Drug Formulary"]||"").toLowerCase() === "yes";
 
       if (!statusActive) {
-        claimClass = "invalid";
-        break; // invalid takes precedence
-      } else if (claimClass === "valid" && hasNo) {
-        claimClass = "unknown"; // only set if not already invalid
+        claimClass = "invalid"; break;
+      } else if (includedThiqa && includedDaman) {
+        claimClass = "valid";
+      } else if (includedThiqa && claimClass !== "valid") {
+        claimClass = "thiqa-only";
+      } else if (includedDaman && claimClass !== "valid" && claimClass !== "thiqa-only") {
+        claimClass = "daman-only";
       }
     }
 
@@ -283,7 +283,7 @@ function renderClaimTableWithModals(xmlRows) {
   // Attach to DOM and setup modal listeners
   const container = document.createElement('div');
   container.innerHTML = tableHTML;
-  setTimeout(() => setupModalListeners(container), 0); // Ensure elements exist when listeners are attached
+  setTimeout(() => setupModalListeners(container), 0);
   return container;
 }
 
@@ -298,7 +298,6 @@ function renderActivitiesTable(activities) {
     <th class="unit-price">Unit Price</th>
     <th>Status</th>
     <th class="delete-effective-date">Delete Effective Date</th>
-    <th class="upp-scope">UPP Scope</th>
     <th class="included-thiqa">Included in Thiqa</th>
     <th class="included-basic">Included in DAMAN Basic</th>
     <th>Effective Date</th>
@@ -306,14 +305,25 @@ function renderActivitiesTable(activities) {
   </tr></thead><tbody>`;
   activities.forEach(row => {
     const drugRow = row.drug;
-    const status = (drugRow["Status"]||"").toLowerCase();
+    let status = (drugRow["Status"]||"").toLowerCase();
+    if (status === "grace") status = "active";
     const statusActive = status === "active";
-    const hasNo = [
-      "UPP Scope",
-      "Included in Thiqa/ ABM - other than 1&7- Drug Formulary",
-      "Included In Basic Drug Formulary"
-    ].some(col => (drugRow[col]||"").toLowerCase()==="no");
-    const rowClass = statusActive ? (hasNo ? "unknown" : "valid") : "invalid";
+    const includedThiqa = (drugRow["Included in Thiqa/ ABM - other than 1&7- Drug Formulary"]||"").toLowerCase() === "yes";
+    const includedDaman = (drugRow["Included In Basic Drug Formulary"]||"").toLowerCase() === "yes";
+
+    // Row class logic
+    let rowClass;
+    if (!statusActive) {
+      rowClass = "invalid";
+    } else if (includedThiqa && includedDaman) {
+      rowClass = "valid";
+    } else if (includedThiqa) {
+      rowClass = "thiqa-only";
+    } else if (includedDaman) {
+      rowClass = "daman-only";
+    } else {
+      rowClass = "unknown";
+    }
 
     html += `<tr class="${rowClass}">` +
       `<td>${row.activityId}</td>` +
@@ -325,7 +335,6 @@ function renderActivitiesTable(activities) {
       `<td class="unit-price">${drugRow["Unit Price to Public"]||"N/A"}</td>` +
       `<td>${drugRow["Status"]||"N/A"}</td>` +
       `<td class="delete-effective-date">${!statusActive ? (drugRow["Delete Effective Date"]||"NO DATE") : "N/A"}</td>` +
-      `<td class="upp-scope">${drugRow["UPP Scope"]||"Unknown"}</td>` +
       `<td class="included-thiqa">${drugRow["Included in Thiqa/ ABM - other than 1&7- Drug Formulary"]||"Unknown"}</td>` +
       `<td class="included-basic">${drugRow["Included In Basic Drug Formulary"]||"Unknown"}</td>` +
       `<td>${drugRow["UPP Effective Date"]||"NO DATE"}</td>` +
@@ -344,19 +353,6 @@ function setupModalListeners(container) {
       const modal = container.querySelector(`#${modalId}`);
       if (modal) {
         modal.style.display = 'block';
-        // Auto-size modal-content to fit table
-        const modalContent = modal.querySelector('.modal-content');
-        const innerTable = modalContent.querySelector('table');
-        if (innerTable) {
-          // Reset width/height first
-          modalContent.style.width = '';
-          modalContent.style.height = '';
-          // Get real table size
-          const tableRect = innerTable.getBoundingClientRect();
-          // Add padding for modal-content
-          modalContent.style.width = (tableRect.width + 40) + 'px';
-          modalContent.style.height = (tableRect.height + 60) + 'px';
-        }
       }
     });
   });
