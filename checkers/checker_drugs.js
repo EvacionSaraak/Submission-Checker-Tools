@@ -286,21 +286,21 @@ function renderClaimTableWithModals(xmlRows) {
   setTimeout(() => setupModalListeners(container), 0); // Ensure elements exist when listeners are attached
   return container;
 }
+
 function renderActivitiesTable(activities) {
-  // Only the activity table, for the modal
-  let html = `<table><thead><tr>
+  let html = `<table class="analysis-results"><thead><tr>
     <th>Activity ID</th>
     <th>Code</th>
     <th>Package</th>
     <th>Form</th>
     <th>Package Size</th>
-    <th>Package Price</th>
-    <th>Unit Price</th>
+    <th class="package-price">Package Price</th>
+    <th class="unit-price">Unit Price</th>
     <th>Status</th>
-    <th>Delete Effective Date</th>
-    <th>UPP Scope</th>
-    <th>Included in Thiqa</th>
-    <th>Included in DAMAN Basic</th>
+    <th class="delete-effective-date">Delete Effective Date</th>
+    <th class="upp-scope">UPP Scope</th>
+    <th class="included-thiqa">Included in Thiqa</th>
+    <th class="included-basic">Included in DAMAN Basic</th>
     <th>Effective Date</th>
     <th>Updated Date</th>
   </tr></thead><tbody>`;
@@ -321,13 +321,13 @@ function renderActivitiesTable(activities) {
       `<td>${drugRow["Package Name"]||"N/A"}</td>` +
       `<td>${drugRow["Dosage Form"]||"N/A"}</td>` +
       `<td>${drugRow["Package Size"]||"N/A"}</td>` +
-      `<td>${drugRow["Package Price to Public"]||"N/A"}</td>` +
-      `<td>${drugRow["Unit Price to Public"]||"N/A"}</td>` +
+      `<td class="package-price">${drugRow["Package Price to Public"]||"N/A"}</td>` +
+      `<td class="unit-price">${drugRow["Unit Price to Public"]||"N/A"}</td>` +
       `<td>${drugRow["Status"]||"N/A"}</td>` +
-      `<td>${!statusActive ? (drugRow["Delete Effective Date"]||"NO DATE") : "N/A"}</td>` +
-      `<td>${drugRow["UPP Scope"]||"Unknown"}</td>` +
-      `<td>${drugRow["Included in Thiqa/ ABM - other than 1&7- Drug Formulary"]||"Unknown"}</td>` +
-      `<td>${drugRow["Included In Basic Drug Formulary"]||"Unknown"}</td>` +
+      `<td class="delete-effective-date">${!statusActive ? (drugRow["Delete Effective Date"]||"NO DATE") : "N/A"}</td>` +
+      `<td class="upp-scope">${drugRow["UPP Scope"]||"Unknown"}</td>` +
+      `<td class="included-thiqa">${drugRow["Included in Thiqa/ ABM - other than 1&7- Drug Formulary"]||"Unknown"}</td>` +
+      `<td class="included-basic">${drugRow["Included In Basic Drug Formulary"]||"Unknown"}</td>` +
       `<td>${drugRow["UPP Effective Date"]||"NO DATE"}</td>` +
       `<td>${drugRow["UPP Updated Date"]||"NO DATE"}</td>` +
     `</tr>`;
