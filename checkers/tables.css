@@ -261,3 +261,32 @@ td.last-copied {
 .details-btn:hover {
   background: #eaeaea;
 }
+/* General table responsive tweaks */
+.analysis-results table {
+  width: 98vw;
+  max-width: 1400px;
+  table-layout: fixed;
+  margin: 0 auto;
+}
+
+.analysis-results th, .analysis-results td {
+  padding: 4px 6px;
+  font-size: 0.95em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Shrink these columns first, in order of priority */
+.analysis-results th.package-price,
+.analysis-results td.package-price         { width: 72px; min-width: 56px; }
+.analysis-results th.unit-price,
+.analysis-results td.unit-price            { width: 62px; min-width: 48px; }
+.analysis-results th.delete-effective-date,
+.analysis-results td.delete-effective-date { width: 82px; min-width: 64px; }
+.analysis-results th.upp-scope,
+.analysis-results td.upp-scope             { width: 70px; min-width: 52px; }
+.analysis-results th.included-thiqa,
+.analysis-results td.included-thiqa        { width: 54px; min-width: 44px; }
+.analysis-results th.included-basic,
+.analysis-results td.included-basic        { width: 54px; min-width: 44px; }
