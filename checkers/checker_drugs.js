@@ -136,7 +136,7 @@ searchDrugBtn && searchDrugBtn.addEventListener('click', () => {
   if (matches.length) {
     lookupResults.appendChild(renderDrugTable(matches));
 
-    // --- ADDED: Row click handler for quantity calculation ---
+    // --- Row click handler for quantity calculation ---
     const tableRows = lookupResults.querySelectorAll('table tbody tr');
     tableRows.forEach((tr, idx) => {
       tr.addEventListener('click', () => {
@@ -145,9 +145,14 @@ searchDrugBtn && searchDrugBtn.addEventListener('click', () => {
         calculateBtn.disabled = false;
         calcOutput.textContent = '';
         quantityInput.value = '';
-        // Optional: highlight selected row
+        // Highlight selected row
         tableRows.forEach(row => row.classList.remove('selected'));
         tr.classList.add('selected');
+        // Update selected drug code display (insert this if you want live update)
+        // const selectedDrugCodeDiv = document.getElementById('selected-drug-code');
+        // if (selectedDrugCodeDiv) {
+        //   selectedDrugCodeDiv.textContent = selectedDrug["Drug Code"] || "N/A";
+        // }
       });
     });
     // --------------------------------------------------------
