@@ -135,6 +135,22 @@ searchDrugBtn && searchDrugBtn.addEventListener('click', () => {
 
   if (matches.length) {
     lookupResults.appendChild(renderDrugTable(matches));
+
+    // --- ADDED: Row click handler for quantity calculation ---
+    const tableRows = lookupResults.querySelectorAll('table tbody tr');
+    tableRows.forEach((tr, idx) => {
+      tr.addEventListener('click', () => {
+        selectedDrug = matches[idx];
+        quantitySection.style.display = 'block';
+        calculateBtn.disabled = false;
+        calcOutput.textContent = '';
+        quantityInput.value = '';
+        // Optional: highlight selected row
+        tableRows.forEach(row => row.classList.remove('selected'));
+        tr.classList.add('selected');
+      });
+    });
+    // --------------------------------------------------------
   } else {
     lookupResults.innerHTML = `<p>No match found for: <strong>${query}</strong></p>`;
   }
