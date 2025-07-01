@@ -34,10 +34,6 @@ body {
   gap: 8px;
   align-items: center;
 }
-.selected-row {
-  background-color: #d0ebff !important;
-  font-weight: bold;
-}
 
 input[type="text"],
 input[type="number"],
@@ -88,6 +84,11 @@ th, td {
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 300px;
+}
+
+tr.selected {
+  background-color: #d0ebff !important;
+  font-weight: bold;
 }
 
 th {
