@@ -212,6 +212,13 @@ calculateBtn && calculateBtn.addEventListener('click', () => {
   calcOutput.textContent = `Total: AED ${total.toFixed(2)}`;
 });
 
+// Allow Enter to trigger calculation
+quantityInput && quantityInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    calculateBtn.click();
+  }
+});
+
 // XML UPLOAD & ANALYSIS
 xmlUpload.addEventListener('change', e => {
   if (!e.target.files[0]) return;
