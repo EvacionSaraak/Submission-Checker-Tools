@@ -67,15 +67,17 @@ window.addEventListener('DOMContentLoaded', () => {
         const claimID = claim.querySelector('ID')?.textContent.trim() || '';
         const memberID = claim.querySelector('MemberID')?.textContent.trim() || '';
         const payerID = claim.querySelector('PayerID')?.textContent.trim() || '';
+        const providerID = claim.querySelector('ProviderID')?.textContent.trim() || ''; // ADDED: Extract ProviderID
         const encounterNodes = claim.querySelectorAll('Encounter');
         const encounters = Array.from(encounterNodes).map(enc => ({
           claimID,
           memberID,
           payerID,
+          providerID, // ADDED: Attach ProviderID to every encounter
           encounterStart: enc.querySelector('Start')?.textContent.trim() || '',
-          clinician: enc.querySelector('Clinician')?.textContent.trim() || '' // CHANGE: extract clinician from XML
+          clinician: enc.querySelector('Clinician')?.textContent.trim() || ''
         }));
-        return { claimID, memberID, payerID, encounters };
+        return { claimID, memberID, payerID, providerID, encounters };
       });
       const allEncounters = claims.flatMap(c => c.encounters);
       return { claimsCount: claims.length, encounters: allEncounters };
@@ -107,10 +109,9 @@ window.addEventListener('DOMContentLoaded', () => {
   // Validates encounters against eligibility data (ignoring date, returns all matches)
   function validateEncounters(xmlPayload, eligRows, insuranceLicenses) {
     const { encounters } = xmlPayload;
-    const usedEligibilityIndices = new Set(); // CHANGE: track used eligibility rows
+    const usedEligibilityIndices = new Set();
 
     return encounters.map(encounter => {
-      // Only consider eligibility rows that have not been matched yet
       const matches = findEligibilityMatchesByCard(encounter.memberID, eligRows)
         .filter(match => !usedEligibilityIndices.has(eligRows.indexOf(match)));
 
@@ -126,10 +127,8 @@ window.addEventListener('DOMContentLoaded', () => {
       if (matches.length === 0) {
         remarks.push('No eligibility rows found for card number');
       } else {
-        // Pick the first match for main display (could be improved later)
         match = matches[0];
-        // Mark this eligibility row as used so it can't be used again
-        usedEligibilityIndices.add(eligRows.indexOf(match)); // CHANGE
+        usedEligibilityIndices.add(eligRows.indexOf(match));
 
         status = match['Status'] || '';
         if ((status || '').toLowerCase() !== 'eligible') remarks.push(`Status not eligible (${status})`);
@@ -143,6 +142,13 @@ window.addEventListener('DOMContentLoaded', () => {
         const eligClinician = (match['Clinician'] || match['Clinician Name'] || '').trim();
         if (encounterClinician && eligClinician && encounterClinician !== eligClinician) {
           remarks.push(`Clinician mismatch (XML: "${encounterClinician}", Excel: "${eligClinician}")`);
+        }
+
+        // --- ProviderID match check (NEW) ---
+        const excelProviderLicense = (match['Provider License'] || '').trim();
+        const claimProviderID = (encounter.providerID || '').trim();
+        if (claimProviderID && excelProviderLicense && claimProviderID !== excelProviderLicense) {
+          remarks.push(`ProviderID does not match Provider License in eligibility (XML: "${claimProviderID}", Excel: "${excelProviderLicense}")`);
         }
       }
 
@@ -181,7 +187,7 @@ window.addEventListener('DOMContentLoaded', () => {
         status,
         remarks,
         match,
-        matches // all matches for this card number
+        matches
       });
       return {
         claimID: encounter.claimID,
@@ -194,7 +200,7 @@ window.addEventListener('DOMContentLoaded', () => {
         status,
         remarks,
         match,
-        matches // array of all matching eligibility rows for later filtering
+        matches
       };
     });
   }
