@@ -22,6 +22,23 @@ const calculateBtn = document.getElementById('calculate-btn');
 const calcOutput = document.getElementById('calc-output');
 const exactToggle = document.getElementById('exact-search-toggle');
 
+// Updated headers and columns
+const DISPLAY_HEADERS = [
+  "Code", "Package", "Form", "Package Size", 
+  "Package Price", "Package Markup", 
+  "Unit Markup", "Unit Price",
+  "Status", "Delete Effective Date", "Included in Thiqa",
+  "Included in DAMAN Basic", "Effective Date", "Updated Date"
+];
+const DRUG_COLUMNS = [
+  "Drug Code", "Package Name", "Dosage Form", "Package Size", 
+  "Package Price to Public", "Package Markup", 
+  "Unit Markup", "Unit Price to Public", "Unit Price",
+  "Status", "Delete Effective Date",
+  "Included in Thiqa/ ABM - other than 1&7- Drug Formulary",
+  "Included In Basic Drug Formulary", "UPP Effective Date", "UPP Updated Date"
+];
+
 // Add plan selector and export button if not present
 if (!document.getElementById('inclusion-selector')) {
   const selector = document.createElement('div');
@@ -42,17 +59,6 @@ if (!document.getElementById('export-invalids-btn')) {
   analysisPanel.insertBefore(btn, analysisPanel.children[1]);
 }
 
-const DISPLAY_HEADERS = [
-  "Code", "Package", "Form", "Package Size", "Package Price", "Unit Price",
-  "Status", "Delete Effective Date", "Included in Thiqa",
-  "Included in DAMAN Basic", "Effective Date", "Updated Date"
-];
-const DRUG_COLUMNS = [
-  "Drug Code", "Package Name", "Dosage Form", "Package Size", "Package Price to Public",
-  "Unit Price to Public", "Status", "Delete Effective Date",
-  "Included in Thiqa/ ABM - other than 1&7- Drug Formulary",
-  "Included In Basic Drug Formulary", "UPP Effective Date", "UPP Updated Date"
-];
 const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
 
 function toggleModePanels() {
@@ -136,7 +142,7 @@ searchDrugBtn && searchDrugBtn.addEventListener('click', () => {
   if (matches.length) {
     lookupResults.appendChild(renderDrugTable(matches));
 
-    // --- Row click handler for quantity calculation ---
+    // Row click handler for quantity calculation
     const tableRows = lookupResults.querySelectorAll('table tbody tr');
     tableRows.forEach((tr, idx) => {
       tr.addEventListener('click', () => {
@@ -148,20 +154,17 @@ searchDrugBtn && searchDrugBtn.addEventListener('click', () => {
         // Highlight selected row
         tableRows.forEach(row => row.classList.remove('selected'));
         tr.classList.add('selected');
-        // Update selected drug code display (insert this if you want live update)
+        // Update selected drug code display if needed
         // const selectedDrugCodeDiv = document.getElementById('selected-drug-code');
-        // if (selectedDrugCodeDiv) {
-        //   selectedDrugCodeDiv.textContent = selectedDrug["Drug Code"] || "N/A";
-        // }
+        // if (selectedDrugCodeDiv) selectedDrugCodeDiv.textContent = selectedDrug["Drug Code"] || "N/A";
       });
     });
-    // --------------------------------------------------------
   } else {
     lookupResults.innerHTML = `<p>No match found for: <strong>${query}</strong></p>`;
   }
 });
 
-// Lookup Table Builder
+// Table builder for lookup
 function renderDrugTable(drugs) {
   let tableHTML = `<table><thead><tr>`;
   DISPLAY_HEADERS.forEach(h => tableHTML += `<th>${h}</th>`);
@@ -182,7 +185,10 @@ function renderDrugTable(drugs) {
       `<td>${row["Dosage Form"]||"N/A"}</td>` +
       `<td>${row["Package Size"]||"N/A"}</td>` +
       `<td class="package-price">${row["Package Price to Public"]||"N/A"}</td>` +
+      `<td>${row["Package Markup"]||"N/A"}</td>` +
+      `<td>${row["Unit Markup"]||"N/A"}</td>` +
       `<td class="unit-price">${row["Unit Price to Public"]||"N/A"}</td>` +
+      `<td>${row["Unit Price"]||"N/A"}</td>` +
       `<td>${row["Status"]||"N/A"}</td>` +
       `<td class="delete-effective-date">${!statusActive ? (row["Delete Effective Date"]||"NO DATE") : "N/A"}</td>` +
       `<td class="included-thiqa">${row["Included in Thiqa/ ABM - other than 1&7- Drug Formulary"]||"Unknown"}</td>` +
@@ -228,7 +234,6 @@ quantityInput && quantityInput.addEventListener('keydown', (e) => {
 xmlUpload.addEventListener('change', e => {
   if (!e.target.files[0]) return;
   const file = e.target.files[0];
-  // Extract base name (without extension) for export file
   lastXMLFileNameBase = file.name.replace(/\.[^/.]+$/, "");
   const reader = new FileReader();
   reader.onload = function(ev) {
@@ -299,6 +304,7 @@ function isActivityValid(drugRow, inclusionType) {
   return statusActive && included;
 }
 
+// --- EXPORT LOGIC WITH ORDERING ---
 function gatherInvalidsForExport() {
   const inclusionType = getCurrentInclusion();
   let invalids = [];
@@ -309,18 +315,21 @@ function gatherInvalidsForExport() {
         invalids.push({
           ClaimID: claimId,
           ActivityID: activity.activityId,
-          DrugCode: drugRow["Drug Code"]||"",
-          Package: drugRow["Package Name"]||"",
-          Form: drugRow["Dosage Form"]||"",
-          PackageSize: drugRow["Package Size"]||"",
-          PackagePrice: drugRow["Package Price to Public"]||"",
-          UnitPrice: drugRow["Unit Price to Public"]||"",
-          Status: drugRow["Status"]||"",
-          DeleteEffectiveDate: drugRow["Delete Effective Date"]||"",
-          IncludedThiqa: drugRow["Included in Thiqa/ ABM - other than 1&7- Drug Formulary"]||"",
-          IncludedDaman: drugRow["Included In Basic Drug Formulary"]||"",
-          EffectiveDate: drugRow["UPP Effective Date"]||"",
-          UpdatedDate: drugRow["UPP Updated Date"]||"",
+          DrugCode: drugRow["Drug Code"] || "",
+          Package: drugRow["Package Name"] || "",
+          Form: drugRow["Dosage Form"] || "",
+          PackageSize: drugRow["Package Size"] || "",
+          PackagePrice: drugRow["Package Price to Public"] || "",
+          PackageMarkup: drugRow["Package Markup"] || "",
+          UnitMarkup: drugRow["Unit Markup"] || "",
+          UnitPricePublic: drugRow["Unit Price to Public"] || "",
+          UnitPrice: drugRow["Unit Price"] || "",
+          Status: drugRow["Status"] || "",
+          DeleteEffectiveDate: drugRow["Delete Effective Date"] || "",
+          IncludedThiqa: drugRow["Included in Thiqa/ ABM - other than 1&7- Drug Formulary"] || "",
+          IncludedDaman: drugRow["Included In Basic Drug Formulary"] || "",
+          EffectiveDate: drugRow["UPP Effective Date"] || "",
+          UpdatedDate: drugRow["UPP Updated Date"] || "",
           InvalidFor: inclusionType
         });
       }
@@ -329,34 +338,21 @@ function gatherInvalidsForExport() {
   return invalids;
 }
 
+const exportHeaders = [
+  "ClaimID", "ActivityID", "DrugCode", "Package", "Form", "PackageSize",
+  "PackagePrice", "PackageMarkup", "UnitMarkup", "UnitPricePublic", "UnitPrice",
+  "Status", "DeleteEffectiveDate", "IncludedThiqa", "IncludedDaman",
+  "EffectiveDate", "UpdatedDate", "InvalidFor"
+];
+
 function exportInvalidsXLSX(invalids, fileNameBase) {
   if (invalids.length === 0) {
     alert('No invalids to export!');
     return;
   }
-  const ws = XLSX.utils.json_to_sheet(invalids);
-
-  // Freeze the top row
-  ws['!freeze'] = { xSplit: 0, ySplit: 1 };
-
-  // Auto-fit column widths
-  fitToContents(ws, invalids);
-
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Invalids");
-  XLSX.writeFile(wb, `${fileNameBase}_INVALIDS.xlsx`);
-}function exportInvalidsXLSX(invalids, fileNameBase) {
-  if (invalids.length === 0) {
-    alert('No invalids to export!');
-    return;
-  }
-  const ws = XLSX.utils.json_to_sheet(invalids);
-
-  // Freeze the top row (SheetJS v0.20+ and legacy panes)
+  const ws = XLSX.utils.json_to_sheet(invalids, { header: exportHeaders });
   ws['!freeze'] = { xSplit: 0, ySplit: 1 };
   ws['!panes'] = [{ ySplit: 1, topLeftCell: 'A2', activePane: 'bottomLeft', state: 'frozen' }];
-
-  // Auto-fit column widths
   fitToContents(ws, invalids);
 
   const wb = XLSX.utils.book_new();
@@ -364,7 +360,6 @@ function exportInvalidsXLSX(invalids, fileNameBase) {
   XLSX.writeFile(wb, `${fileNameBase}_INVALIDS.xlsx`);
 }
 
-// Helper: auto-fit columns to content
 function fitToContents(ws, data) {
   if (!data || !data.length) return;
   const headers = Object.keys(data[0]);
@@ -436,6 +431,7 @@ function renderClaimTableWithModals(xmlRows) {
   return container;
 }
 
+// Updated activities table for modal
 function renderActivitiesTable(activities, inclusionType) {
   let html = `<table class="analysis-results"><thead><tr>
     <th>Activity ID</th>
@@ -444,6 +440,8 @@ function renderActivitiesTable(activities, inclusionType) {
     <th>Form</th>
     <th>Package Size</th>
     <th class="package-price">Package Price</th>
+    <th>Package Markup</th>
+    <th>Unit Markup</th>
     <th class="unit-price">Unit Price</th>
     <th>Status</th>
     <th class="delete-effective-date">Delete Effective Date</th>
@@ -452,37 +450,42 @@ function renderActivitiesTable(activities, inclusionType) {
     <th>Effective Date</th>
     <th>Updated Date</th>
   </tr></thead><tbody>`;
+
   activities.forEach(row => {
     const drugRow = row.drug;
-    let status = (drugRow["Status"]||"").toLowerCase();
+    let status = (drugRow["Status"] || "").toLowerCase();
     if (status === "grace") status = "active";
     const statusActive = status === "active";
 
     let isValid = true;
     if (inclusionType === "THIQA") {
-      isValid = (drugRow["Included in Thiqa/ ABM - other than 1&7- Drug Formulary"]||"").toLowerCase() === "yes";
+      isValid = (drugRow["Included in Thiqa/ ABM - other than 1&7- Drug Formulary"] || "").toLowerCase() === "yes";
     } else if (inclusionType === "DAMAN") {
-      isValid = (drugRow["Included In Basic Drug Formulary"]||"").toLowerCase() === "yes";
+      isValid = (drugRow["Included In Basic Drug Formulary"] || "").toLowerCase() === "yes";
     }
 
     const rowClass = (statusActive && isValid) ? "valid" : "invalid";
 
     html += `<tr class="${rowClass}">` +
       `<td>${row.activityId}</td>` +
-      `<td>${drugRow["Drug Code"]||"N/A"}</td>` +
-      `<td>${drugRow["Package Name"]||"N/A"}</td>` +
-      `<td>${drugRow["Dosage Form"]||"N/A"}</td>` +
-      `<td>${drugRow["Package Size"]||"N/A"}</td>` +
-      `<td class="package-price">${drugRow["Package Price to Public"]||"N/A"}</td>` +
-      `<td class="unit-price">${drugRow["Unit Price to Public"]||"N/A"}</td>` +
-      `<td>${drugRow["Status"]||"N/A"}</td>` +
-      `<td class="delete-effective-date">${!statusActive ? (drugRow["Delete Effective Date"]||"NO DATE") : "N/A"}</td>` +
-      `<td class="included-thiqa">${drugRow["Included in Thiqa/ ABM - other than 1&7- Drug Formulary"]||"Unknown"}</td>` +
-      `<td class="included-basic">${drugRow["Included In Basic Drug Formulary"]||"Unknown"}</td>` +
-      `<td>${drugRow["UPP Effective Date"]||"NO DATE"}</td>` +
-      `<td>${drugRow["UPP Updated Date"]||"NO DATE"}</td>` +
+      `<td>${drugRow["Drug Code"] || "N/A"}</td>` +
+      `<td>${drugRow["Package Name"] || "N/A"}</td>` +
+      `<td>${drugRow["Dosage Form"] || "N/A"}</td>` +
+      `<td>${drugRow["Package Size"] || "N/A"}</td>` +
+      `<td class="package-price">${drugRow["Package Price to Public"] || "N/A"}</td>` +
+      `<td>${drugRow["Package Markup"] || "N/A"}</td>` +
+      `<td>${drugRow["Unit Markup"] || "N/A"}</td>` +
+      `<td class="unit-price">${drugRow["Unit Price to Public"] || "N/A"}</td>` +
+      `<td>${drugRow["Unit Price"] || "N/A"}</td>` +
+      `<td>${drugRow["Status"] || "N/A"}</td>` +
+      `<td class="delete-effective-date">${!statusActive ? (drugRow["Delete Effective Date"] || "NO DATE") : "N/A"}</td>` +
+      `<td class="included-thiqa">${drugRow["Included in Thiqa/ ABM - other than 1&7- Drug Formulary"] || "Unknown"}</td>` +
+      `<td class="included-basic">${drugRow["Included In Basic Drug Formulary"] || "Unknown"}</td>` +
+      `<td>${drugRow["UPP Effective Date"] || "NO DATE"}</td>` +
+      `<td>${drugRow["UPP Updated Date"] || "NO DATE"}</td>` +
     `</tr>`;
   });
+
   html += '</tbody></table>';
   return html;
 }
