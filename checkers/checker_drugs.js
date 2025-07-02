@@ -22,18 +22,16 @@ const calculateBtn = document.getElementById('calculate-btn');
 const calcOutput = document.getElementById('calc-output');
 const exactToggle = document.getElementById('exact-search-toggle');
 
-// Updated headers and columns
+// Updated headers and columns with Unit Price before Unit Markup
 const DISPLAY_HEADERS = [
   "Code", "Package", "Form", "Package Size", 
-  "Package Price", "Package Markup", 
-  "Unit Markup", "Unit Price",
+  "Package Price", "Package Markup", "Unit Price", "Unit Markup", 
   "Status", "Delete Effective Date", "Included in Thiqa",
   "Included in DAMAN Basic", "Effective Date", "Updated Date"
 ];
 const DRUG_COLUMNS = [
   "Drug Code", "Package Name", "Dosage Form", "Package Size", 
-  "Package Price to Public", "Package Markup", 
-  "Unit Markup", "Unit Price to Public", "Unit Price",
+  "Package Price to Public", "Package Markup", "Unit Price to Public", "Unit Markup",
   "Status", "Delete Effective Date",
   "Included in Thiqa/ ABM - other than 1&7- Drug Formulary",
   "Included In Basic Drug Formulary", "UPP Effective Date", "UPP Updated Date"
@@ -186,9 +184,8 @@ function renderDrugTable(drugs) {
       `<td>${row["Package Size"]||"N/A"}</td>` +
       `<td class="package-price">${row["Package Price to Public"]||"N/A"}</td>` +
       `<td>${row["Package Markup"]||"N/A"}</td>` +
-      `<td>${row["Unit Markup"]||"N/A"}</td>` +
       `<td class="unit-price">${row["Unit Price to Public"]||"N/A"}</td>` +
-      `<td>${row["Unit Price"]||"N/A"}</td>` +
+      `<td>${row["Unit Markup"]||"N/A"}</td>` +
       `<td>${row["Status"]||"N/A"}</td>` +
       `<td class="delete-effective-date">${!statusActive ? (row["Delete Effective Date"]||"NO DATE") : "N/A"}</td>` +
       `<td class="included-thiqa">${row["Included in Thiqa/ ABM - other than 1&7- Drug Formulary"]||"Unknown"}</td>` +
@@ -321,9 +318,8 @@ function gatherInvalidsForExport() {
           PackageSize: drugRow["Package Size"] || "",
           PackagePrice: drugRow["Package Price to Public"] || "",
           PackageMarkup: drugRow["Package Markup"] || "",
-          UnitMarkup: drugRow["Unit Markup"] || "",
           UnitPricePublic: drugRow["Unit Price to Public"] || "",
-          UnitPrice: drugRow["Unit Price"] || "",
+          UnitMarkup: drugRow["Unit Markup"] || "",
           Status: drugRow["Status"] || "",
           DeleteEffectiveDate: drugRow["Delete Effective Date"] || "",
           IncludedThiqa: drugRow["Included in Thiqa/ ABM - other than 1&7- Drug Formulary"] || "",
@@ -340,7 +336,7 @@ function gatherInvalidsForExport() {
 
 const exportHeaders = [
   "ClaimID", "ActivityID", "DrugCode", "Package", "Form", "PackageSize",
-  "PackagePrice", "PackageMarkup", "UnitMarkup", "UnitPricePublic", "UnitPrice",
+  "PackagePrice", "PackageMarkup", "UnitPricePublic", "UnitMarkup",
   "Status", "DeleteEffectiveDate", "IncludedThiqa", "IncludedDaman",
   "EffectiveDate", "UpdatedDate", "InvalidFor"
 ];
@@ -441,8 +437,8 @@ function renderActivitiesTable(activities, inclusionType) {
     <th>Package Size</th>
     <th class="package-price">Package Price</th>
     <th>Package Markup</th>
-    <th>Unit Markup</th>
     <th class="unit-price">Unit Price</th>
+    <th>Unit Markup</th>
     <th>Status</th>
     <th class="delete-effective-date">Delete Effective Date</th>
     <th class="included-thiqa">Included in Thiqa</th>
@@ -474,9 +470,8 @@ function renderActivitiesTable(activities, inclusionType) {
       `<td>${drugRow["Package Size"] || "N/A"}</td>` +
       `<td class="package-price">${drugRow["Package Price to Public"] || "N/A"}</td>` +
       `<td>${drugRow["Package Markup"] || "N/A"}</td>` +
-      `<td>${drugRow["Unit Markup"] || "N/A"}</td>` +
       `<td class="unit-price">${drugRow["Unit Price to Public"] || "N/A"}</td>` +
-      `<td>${drugRow["Unit Price"] || "N/A"}</td>` +
+      `<td>${drugRow["Unit Markup"] || "N/A"}</td>` +
       `<td>${drugRow["Status"] || "N/A"}</td>` +
       `<td class="delete-effective-date">${!statusActive ? (drugRow["Delete Effective Date"] || "NO DATE") : "N/A"}</td>` +
       `<td class="included-thiqa">${drugRow["Included in Thiqa/ ABM - other than 1&7- Drug Formulary"] || "Unknown"}</td>` +
