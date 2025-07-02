@@ -315,12 +315,10 @@ function validateKnownCode({
     });
   }
 
-  // --- CHANGE BELOW ---
-  // Add this block to consider empty obsCodes as invalid for all codes
+  // Mark as invalid if no observations
   if (obsCodes.length === 0) {
     remarks.push(`Invalid: Code "${code}" requires at least one observation, but none were provided.`);
   }
-  // --- END CHANGE ---
 
   const details = obsCodes.length === 0
     ? 'None provided'
@@ -344,50 +342,7 @@ function validateKnownCode({
       return `${obsCode} - ${getRegionName(obsCode)}${thisRemark ? ' | ' + thisRemark : ''}`;
     }).join('<br>');
 
-  // Region duplication check (only for non-PDF and non-invalid)
-  if (regionType && regionKey && regionKey !== 'Unknown') {
-    const tracker = claimRegionTrack[regionType];
-    const dupRemarks = checkRegionDuplication(tracker, code, regionType, regionKey, codeLastDigit);
-    if (dupRemarks.length) {
-      remarks.push(...dupRemarks);
-    }
-  }
-
-  console.log(`[validateKnownCode] Activity ${activityId}:`, { code, obsCodes, remarks, details });
-
-  return buildActivityRow({
-    claimId,
-    activityId,
-    code,
-    description: meta.description,
-    details,
-    remarks
-  });
-}
-
-  const details = obsCodes.length === 0
-    ? 'None provided'
-    : obsCodes.map(obsCode => {
-      if (obsCode === 'PDF') {
-        return 'PDF (valid - no validation)';
-      }
-
-      let thisRemark = '';
-      if (!meta.teethSet.has(obsCode)) {
-        thisRemark = `Tooth "${obsCode}" not allowed for code "${code}" (expected: ${meta.description.match(/anterior|posterior|bicuspid|all/i)?.[0] || 'see code description'})`;
-        remarks.push(thisRemark);
-      }
-
-      if (regionType === 'sextant') {
-        regionKey = getSextant(obsCode);
-      } else if (regionType === 'quadrant') {
-        regionKey = getQuadrant(obsCode);
-      }
-
-      return `${obsCode} - ${getRegionName(obsCode)}${thisRemark ? ' | ' + thisRemark : ''}`;
-    }).join('<br>');
-
-  // Region duplication check (only for non-PDF and non-invalid)
+  // Region duplication check
   if (regionType && regionKey && regionKey !== 'Unknown') {
     const tracker = claimRegionTrack[regionType];
     const dupRemarks = checkRegionDuplication(tracker, code, regionType, regionKey, codeLastDigit);
