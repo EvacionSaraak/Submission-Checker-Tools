@@ -259,7 +259,7 @@ function validateUnknownCode({
 
     const nonPDFObs = obsCodes.filter(o => o !== 'PDF');
     if (nonPDFObs.length > 0) {
-      remarks.push(`Unknown code but obervation is present (${nonPDFObs.join(', ')}`));
+      remarks.push(`Unknown code but obervation is present (${nonPDFObs.join(', ')}).`);
     }
   } else {
     details = 'N/A';
