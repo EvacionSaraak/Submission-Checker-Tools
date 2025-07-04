@@ -329,7 +329,7 @@ function validateKnownCode({
 
       let thisRemark = '';
       if (!meta.teethSet.has(obsCode)) {
-        thisRemark = `${meta.description.match(/anterior|posterior|bicuspid|all/i)?.[0] || 'see code description'} ${obsCode} not allowed for code ${code}.`;
+        thisRemark = `${obsCode} not allowed for ${meta.description.match(/anterior|posterior|bicuspid|all/i)?.[0] || 'see code description'} code ${code}.`;
         remarks.push(thisRemark);
       }
 
