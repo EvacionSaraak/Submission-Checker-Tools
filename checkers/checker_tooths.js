@@ -259,14 +259,14 @@ function validateUnknownCode({
 
     const nonPDFObs = obsCodes.filter(o => o !== 'PDF');
     if (nonPDFObs.length > 0) {
-      remarks.push(`Unknown code in repo; obsCodes present: ${nonPDFObs.join(', ')}`);
+      remarks.push(`Unknown code but obervation is present (${nonPDFObs.join(', ')}`));
     }
   } else {
     details = 'N/A';
   }
 
   if (obsCodes.length === 0 && isRegion) {
-    remarks.push(`Invalid - No tooth (Observation) specified for unknown code "${code}" (region type: ${regionType}).`);
+    remarks.push(`No tooth (Observation) specified for unknown code "${code}" (region type: ${regionType}).`);
   }
 
   console.log(`[validateUnknownCode] Activity ${activityId}:`, { code, obsCodes, remarks, details });
@@ -294,12 +294,12 @@ function validateKnownCode({
   // Special handling for codes 17999 and 0232T
   if (code === "17999" || code === "0232T") {
     if (obsCodes.length === 0) {
-      remarks.push(`Invalid: Code "${code}" requires at least one observation code, but none were provided.`);
+      remarks.push(`${code} requires at least one observation code, but none were provided.`);
     } else {
       const nonPDFObs = obsCodes.filter(oc => oc !== 'PDF');
       const toothCodesUsed = nonPDFObs.filter(oc => ALL_TEETH.has(oc));
       if (toothCodesUsed.length > 0) {
-        remarks.push(`Invalid: Code "${code}" cannot be used with tooth codes: ${toothCodesUsed.join(", ")}`);
+        remarks.push(`${code} cannot be used with tooth codes: ${toothCodesUsed.join(", ")}`);
       }
     }
 
@@ -317,7 +317,7 @@ function validateKnownCode({
 
   // Mark as invalid if no observations
   if (obsCodes.length === 0) {
-    remarks.push(`Invalid: Code "${code}" requires at least one observation, but none were provided.`);
+    remarks.push(`${code} requires at least one observation, but none were provided.`);
   }
 
   const details = obsCodes.length === 0
@@ -329,7 +329,7 @@ function validateKnownCode({
 
       let thisRemark = '';
       if (!meta.teethSet.has(obsCode)) {
-        thisRemark = `Tooth "${obsCode}" not allowed for code "${code}" (expected: ${meta.description.match(/anterior|posterior|bicuspid|all/i)?.[0] || 'see code description'})`;
+        thisRemark = `${meta.description.match(/anterior|posterior|bicuspid|all/i)?.[0] || 'see code description'} ${obsCode} not allowed for code ${code}.`;
         remarks.push(thisRemark);
       }
 
