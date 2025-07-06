@@ -197,10 +197,20 @@ function extractClaims(xmlDoc, requiredType = "6") {
       }
       if (encMin >= 0 && encMin < 10) {
         isValid = false;
-        remarks.push(`Encounter duration too short (${encMin} min).`);
+        remarks.push(`Encounter duration too short (${encMin} min). Should be 10 minutes minimum.`);
       } else if (encMin > 240) {
         isValid = false;
-        remarks.push(`Encounter duration too long (${(encMin / 60).toFixed(1)} hrs).`);
+        if (encMin >= 1440) {
+          // 24 hours or more: show explicit dates
+          const startDate = encounterStartStr.split(' ')[0];
+          const endDate = encounterEndStr.split(' ')[0];
+          remarks.push(`Encounter crosses days: ${startDate} → ${endDate}`);
+        } else {
+          // Over 4 hours but less than 24 hours: show exact hours and minutes
+          const hours = Math.floor(encMin / 60);
+          const minutes = encMin % 60;
+          remarks.push(`Encounter duration too long (${hours}h ${minutes}m). Should be 4 hours maximum.`);
+        }
       }
 
       results.push({
