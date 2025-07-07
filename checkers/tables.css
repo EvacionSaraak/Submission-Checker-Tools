@@ -307,7 +307,7 @@ table, tbody, tr, td {
   padding: 4px 8px;
   position: absolute;
   z-index: 10;
-  top: 125%;
+  bottom: 125%;
   left: 50%;
   transform: translateX(-50%);
   opacity: 0;
