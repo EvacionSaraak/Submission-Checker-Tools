@@ -79,7 +79,7 @@ th, td {
   padding: 8px 10px;
   border: 1px solid #ccc;
   text-align: left;
-  vertical-align: top;
+  vertical-align: middle;    /* changed from top */
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -291,10 +291,11 @@ table, tbody, tr, td {
 }
 
 .tooltip-parent {
+  display: inline-flex;       /* changed to inline-flex */
+  align-items: center;        /* vertical center */
   position: relative;
   z-index: 1;
   cursor: pointer;
-  display: inline-block;
 }
 
 .tooltip-parent .tooltip-text {
@@ -304,16 +305,16 @@ table, tbody, tr, td {
   color: #fff;
   text-align: center;
   border-radius: 4px;
-  padding: 4px 8px;
+  padding: 2px 6px;           /* slightly reduced padding */
   position: absolute;
   z-index: 10;
-  bottom: 125%;
+  bottom: 125%;               /* show above badge */
   left: 50%;
   transform: translateX(-50%);
   opacity: 0;
   transition: opacity 0.2s ease;
   pointer-events: none;
-  font-size: 0.95em;
+  font-size: 0.9em;           /* slightly smaller font */
   white-space: nowrap;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
 }
