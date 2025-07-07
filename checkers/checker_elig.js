@@ -20,6 +20,7 @@ window.addEventListener('DOMContentLoaded', () => {
   let xlsData = null;
   let eligData = null;
   let insuranceLicenses = null;
+  let filteredXlsData = null; // new cache variable
 
   // Excel date number to DD/MM/YYYY string
   function excelDateToDDMMYYYY(excelDate) {
@@ -141,24 +142,19 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // --- XLS Validator ---
+
+  // Modified validateXlsWithEligibility with caching
   function validateXlsWithEligibility(reportRows, eligRows) {
-    if (reportRows.length > 0) {
-      console.log("Parsed headers (xls):", Object.keys(reportRows[0]));
-      console.log("First parsed row (xls):", reportRows[0]);
-    } else {
-      console.log("No rows to parse in XLS.");
+    if (!filteredXlsData) {
+      filteredXlsData = reportRows.filter(row => {
+        const clinic = (row["Clinic"] || "").toUpperCase().replace(/\s+/g, '');
+        const insurance = (row["Insurance Company"] || "").toUpperCase().replace(/\s+/g, '');
+        return clinic.includes("DENTAL") && (insurance.includes("THIQA") || insurance.includes("DAMAN"));
+      });
+      console.log(`Filtered to ${filteredXlsData.length} dental/THIQA/DAMAN rows`);
     }
-
-    const filtered = reportRows.filter(row => {
-      const clinic = (row["Clinic"] || "").toUpperCase().replace(/\s+/g, '');
-      const insurance = (row["Insurance Company"] || "").toUpperCase().replace(/\s+/g, '');
-      return clinic.includes("DENTAL") && (insurance.includes("THIQA") || insurance.includes("DAMAN"));
-    });
-
-    console.log(`Filtered to ${filtered.length} dental/THIQA/DAMAN rows`);
-
-    return filtered.map(row => {
+  
+    return filteredXlsData.map(row => {
       const remarks = [];
       let match = null;
       let status = '';
@@ -166,22 +162,21 @@ window.addEventListener('DOMContentLoaded', () => {
       let clinicianMismatch = false;
       let clinicianMismatchMsg = "";
       let memberID = (row["PatientCardID"] || '').toString().trim();
-
-      // If memberID starts with zero, it's invalid
+  
       if (memberID.startsWith('0')) {
         remarks.push("Member ID starts with 0 (invalid)");
       }
-
+  
       const matches = eligRows.filter(erow => {
         let xlsCard = (erow['Card Number / DHA Member ID'] || '').replace(/[-\s]/g, '').trim();
         if (xlsCard.startsWith('0')) xlsCard = xlsCard.substring(1);
         return xlsCard && xlsCard === stripLeadingZero(memberID);
       });
-
+  
       if (!row["ClaimID"]) remarks.push("Missing ClaimID");
       if (!row["PatientCardID"]) remarks.push("Missing PatientCardID");
       if (!row["Clinician License"]) remarks.push("Missing Clinician License");
-
+  
       if (matches.length === 0) {
         remarks.push('No eligibility rows found for card number');
       } else {
@@ -192,11 +187,10 @@ window.addEventListener('DOMContentLoaded', () => {
         if (excelCard && stripLeadingZero(row["PatientCardID"] || '') !== stripLeadingZero(excelCard)) {
           remarks.push('Card Number mismatch between XLS and Eligibility');
         }
-
-        // --- Clinician‑license mismatch check ----
+  
         const reportLic = (row["Clinician License"] || '').trim();
         const eligLic = (match["Clinician"] || '').trim();
-        const reportName = (row["OrderDoctor"] || '').trim();  // adjust if another field holds NAME
+        const reportName = (row["OrderDoctor"] || '').trim();
         const eligName = (match["Clinician Name"] || '').trim();
   
         if (reportLic && eligLic && reportLic !== eligLic) {
@@ -211,9 +205,9 @@ window.addEventListener('DOMContentLoaded', () => {
           );
         }
       }
-
+  
       const formattedDate = excelDateToDDMMYYYY(row["ClaimDate"]);
-
+  
       return {
         claimID: row["ClaimID"],
         memberID: row["PatientCardID"],
@@ -308,18 +302,6 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  /**
-   * Returns HTML for a clinician‑license mismatch message.
-   * – badge text = the license number
-   * – tooltip text = "{Source}: {Clinician Name}"
-   *
-   * @param {string} reportLicense      – the license string from the report
-   * @param {string} eligLicense        – the license string from the eligibility file
-   * @param {string} reportClinician    – the clinician NAME from the report
-   * @param {string} eligClinician      – the clinician NAME from the eligibility file
-   * @param {string} reportSourceLabel  – 'XML' or 'XLSX'
-   * @param {string} eligSourceLabel    – 'Eligibility'
-   */
   function buildClinicianMismatchMsg(
     reportLicense,
     eligLicense,
@@ -496,6 +478,7 @@ window.addEventListener('DOMContentLoaded', () => {
     return row;
   }
 
+  // Modified updateStatus function to show filtered count for XLS report rows
   function updateStatus() {
     const usingXml = xmlRadio.checked;
     const xmlLoaded = !!xmlData;
@@ -508,7 +491,8 @@ window.addEventListener('DOMContentLoaded', () => {
       msgs.push(`${count} Claim${count !== 1 ? 's' : ''} loaded`);
     }
     if (!usingXml && xlsLoaded) {
-      const count = xlsData.length || 0;
+      // Use filteredXlsData length if available, else fallback to xlsData length
+      const count = filteredXlsData ? filteredXlsData.length : (xlsData.length || 0);
       msgs.push(`${count} XLS Report row${count !== 1 ? 's' : ''} loaded`);
     }
     if (eligLoaded) {
@@ -519,7 +503,7 @@ window.addEventListener('DOMContentLoaded', () => {
     status.textContent = msgs.join(', ');
     processBtn.disabled = !((usingXml && xmlLoaded && eligLoaded) || (!usingXml && xlsLoaded && eligLoaded));
   }
-
+  
   xmlInput.addEventListener('change', async (e) => {
     status.textContent = 'Loading XML…';
     processBtn.disabled = true;
