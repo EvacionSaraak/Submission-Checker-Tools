@@ -285,6 +285,7 @@ td.last-copied {
 
 .tooltip-parent {
   position: relative;
+  z-index: 1000;
   cursor: pointer;
   display: inline-block;
 }
@@ -297,7 +298,7 @@ td.last-copied {
   border-radius: 4px;
   padding: 2px 8px;
   position: absolute;
-  z-index: 10;
+  z-index: 9999;
   bottom: 120%;
   left: 50%;
   transform: translateX(-50%);
@@ -305,11 +306,13 @@ td.last-copied {
   transition: opacity 0.2s;
   pointer-events: none;
   font-size: 0.95em;
+  white-space: nowrap;
 }
 .tooltip-parent:hover .tooltip-text,
 .tooltip-parent:focus .tooltip-text {
   visibility: visible;
   opacity: 1;
+  pointer-events: auto;
 }
 .license-badge {
   display: inline-block;
