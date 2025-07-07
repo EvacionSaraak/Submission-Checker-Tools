@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <title>Eligibility Checker</title>
-  <link rel="stylesheet" href="tables.css">
+  <link rel="stylesheet" href="../tables.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
@@ -12,35 +12,32 @@
   <div id="explanation" style="border:1px solid #ccc; border-radius:6px; padding:16px; background:#f8f8fa; margin-bottom:20px;">
     <strong>How it works:</strong>
     <ul style="margin: 8px 0 0 22px;">
-      <li>Upload your <b>XML file</b> containing claim results.</li>
-      <li>Select whether you want to compare with the standard <b>Openjet XLSX</b> or a different <b>Report XLSX</b> by using the radio buttons.</li>
-      <li>Upload the relevant XLSX file depending on your selection.</li>
-      <li>Click <b>Process</b> to validate the XML claims against the selected XLSX data.</li>
+      <li>Select the input format: <b>XML Report</b> or <b>XLSX Report</b> using the radio buttons below.</li>
+      <li>Upload your <b>XML</b> or <b>XLSX</b> report file depending on the selected mode.</li>
+      <li>Click <b>Process</b> to validate the report according to the rules.</li>
       <li>The results will show if any information mismatches or errors are found for each claim/encounter.</li>
     </ul>
-    <p style="margin: 8px 0 0 0;">The tool checks IDs, clinician, provider license, payer plan, and more. Upload <b>insurance_licenses.json</b> in the same folder for license verification.</p>
+    <p style="margin: 8px 0 0 0;">The tool checks IDs, clinician, provider license, payer plan, and more. Upload <b>insurance_licenses.json</b> in the same folder for license verification if required.</p>
   </div>
+
   <div>
-    <label for="xmlFileInput">Upload XML Results:</label>
+    <label>
+      <input type="radio" name="reportSource" value="xml" checked>
+      Upload XML Report
+    </label>
+    <label>
+      <input type="radio" name="reportSource" value="xlsx">
+      Upload XLSX Report
+    </label>
+  </div>
+
+  <div id="xmlReportInputGroup">
+    <label for="xmlFileInput">Upload XML Report:</label>
     <input type="file" id="xmlFileInput" accept=".xml"/>
   </div>
-  <div>
-    <label>
-      <input type="radio" name="eligSource" value="openjet" checked>
-      Compare with Openjet XLSX
-    </label>
-    <label>
-      <input type="radio" name="eligSource" value="report">
-      Compare with Report XLSX
-    </label>
-  </div>
-  <div id="openjetXLSXInputGroup">
-    <label for="eligibilityFileInput">Upload Openjet XLSX:</label>
-    <input type="file" id="eligibilityFileInput" accept=".xlsx"/>
-  </div>
-  <div id="reportXLSXInputGroup" style="display:none;">
-    <label for="reportFileInput">Upload Report XLSX:</label>
-    <input type="file" id="reportFileInput" accept=".xlsx"/>
+  <div id="xlsxReportInputGroup" style="display:none;">
+    <label for="xlsxFileInput">Upload XLSX Report:</label>
+    <input type="file" id="xlsxFileInput" accept=".xlsx"/>
   </div>
   <div>
     <button id="processBtn" disabled>Process</button>
