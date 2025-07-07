@@ -1,48 +1,57 @@
+// checker_elig.js
+
 window.addEventListener('DOMContentLoaded', () => {
   // Input/group selectors
   const xmlInput = document.getElementById('xmlFileInput');
-  const xlsxInput = document.getElementById('xlsxFileInput');
+  const xlsInput = document.getElementById('xlsxFileInput');
   const eligInput = document.getElementById('eligibilityFileInput');
   const xmlGroup = document.getElementById('xmlReportInputGroup');
-  const xlsxGroup = document.getElementById('xlsxReportInputGroup');
+  const xlsGroup = document.getElementById('xlsxReportInputGroup');
   const eligGroup = document.getElementById('eligibilityInputGroup');
   const processBtn = document.getElementById('processBtn');
   const status = document.getElementById('uploadStatus');
 
   // Radio selectors
   const xmlRadio = document.querySelector('input[name="reportSource"][value="xml"]');
-  const xlsxRadio = document.querySelector('input[name="reportSource"][value="xlsx"]');
+  const xlsRadio = document.querySelector('input[name="reportSource"][value="xlsx"]');
 
   // Data holders
   let xmlData = null;
-  let xlsxData = null;
+  let xlsData = null;
   let eligData = null;
   let insuranceLicenses = null;
 
-  const REPORT_RELEVANT_COLUMNS = [
-    "ClaimID","ClaimDate","OrderDoctor","Clinic","Insurance Company",
-    "PatientCardID","FileNo","Clinician License","Opened by/Registration Staff name"
-  ];
-
-  function filterReportRow(row) {
-    const filtered = {};
-    REPORT_RELEVANT_COLUMNS.forEach(col => filtered[col] = row[col] || "");
-    return filtered;
+  // Utility: Normalize row keys for robust XLS/XLSX compatibility
+  function normalizeRow(row) {
+    const normalized = {};
+    Object.keys(row).forEach(k => {
+      normalized[k.replace(/\s+/g, ' ').trim().toUpperCase()] = row[k];
+    });
+    return normalized;
   }
+
+  // These are the normalized header names (all uppercase, spaces normalized)
+  const CLINIC_KEY = "CLINIC";
+  const INSCO_KEY = "INSURANCE COMPANY";
+  const PATIENTCARD_KEY = "PATIENTCARDID";
+  const CLAIMID_KEY = "CLAIMID";
+  const CLINICIAN_KEY = "CLINICIAN LICENSE";
+  const CLAIMDATE_KEY = "CLAIMDATE";
+  const FILENO_KEY = "FILENO";
 
   // Swap input groups based on report radio
   function swapInputGroups() {
     if (xmlRadio.checked) {
       xmlGroup.style.display = '';
-      xlsxGroup.style.display = 'none';
+      xlsGroup.style.display = 'none';
     } else {
       xmlGroup.style.display = 'none';
-      xlsxGroup.style.display = '';
+      xlsGroup.style.display = '';
     }
     updateStatus();
   }
   xmlRadio.addEventListener('change', swapInputGroups);
-  xlsxRadio.addEventListener('change', swapInputGroups);
+  xlsRadio.addEventListener('change', swapInputGroups);
 
   // Always show eligibility group (never swaps)
   eligGroup.style.display = '';
@@ -58,7 +67,7 @@ window.addEventListener('DOMContentLoaded', () => {
       insuranceLicenses = null;
     });
 
-  // XLSX parsing
+  // XLS/XLSX parsing (SheetJS supports both)
   async function parseExcel(file) {
     const reader = new FileReader();
     return new Promise((resolve, reject) => {
@@ -107,12 +116,12 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Find in eligibility by card number (ignoring date)
+  // Find in eligibility by card number (ignoring date, whitespace, dashes)
   function findEligibilityMatchesByCard(memberID, eligRows) {
     const cardCol = 'Card Number / DHA Member ID';
     return eligRows.filter(row => {
-      const xlsCard = (row[cardCol] || '').replace(/-/g, '').trim();
-      return xlsCard === memberID.replace(/-/g, '').trim();
+      const xlsCard = (row[cardCol] || '').replace(/[-\s]/g, '').trim();
+      return xlsCard && xlsCard === (memberID || '').replace(/[-\s]/g, '').trim();
     });
   }
 
@@ -132,9 +141,9 @@ window.addEventListener('DOMContentLoaded', () => {
         match = matches[0];
         status = match['Status'] || '';
         if ((status || '').toLowerCase() !== 'eligible') remarks.push(`Status not eligible (${status})`);
-        const excelCard = (match['Card Number / DHA Member ID'] || '').replace(/-/g, '').trim();
-        if (excelCard && encounter.memberID.replace(/-/g, '').trim() !== excelCard) {
-          remarks.push('Card Number mismatch between XML and Excel');
+        const excelCard = (match['Card Number / DHA Member ID'] || '').replace(/[-\s]/g, '').trim();
+        if (excelCard && (encounter.memberID || '').replace(/[-\s]/g, '').trim() !== excelCard) {
+          remarks.push('Card Number mismatch between XML and Eligibility');
         }
         const encounterClinician = (encounter.clinician || '').trim();
         const eligClinician = (match['Clinician'] || match['Clinician Name'] || '').trim();
@@ -165,25 +174,28 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Validation for XLSX mode
-  function validateXlsxWithEligibility(reportRows, eligRows) {
-    // Only dental and insurance relevant rows
-    const filtered = reportRows.filter(row => {
-      const clinic = (row["Clinic"] || "").toUpperCase();
-      const insurance = (row["Insurance Company"] || "").toUpperCase();
+  // Validation for XLS (XLSX) mode
+  function validateXlsWithEligibility(reportRows, eligRows) {
+    // Normalize all rows for robust header matching
+    const normalizedRows = reportRows.map(normalizeRow);
+
+    // Filter only dental and insurance relevant rows, robust to whitespace/casing
+    const filtered = normalizedRows.filter(row => {
+      const clinic = (row[CLINIC_KEY] || "").toUpperCase().replace(/\s+/g, '');
+      const insurance = (row[INSCO_KEY] || "").toUpperCase().replace(/\s+/g, '');
       return clinic.includes("DENTAL") && (insurance.includes("THIQA") || insurance.includes("DAMAN"));
     });
 
     return filtered.map(row => {
-      const matches = findEligibilityMatchesByCard(row.PatientCardID, eligRows);
+      const matches = findEligibilityMatchesByCard(row[PATIENTCARD_KEY], eligRows);
       const remarks = [];
       let match = null;
       let status = '';
       let affiliatedPlan = '';
 
-      if (!row.ClaimID) remarks.push("Missing ClaimID");
-      if (!row.PatientCardID) remarks.push("Missing PatientCardID");
-      if (!row["Clinician License"]) remarks.push("Missing Clinician License");
+      if (!row[CLAIMID_KEY]) remarks.push("Missing ClaimID");
+      if (!row[PATIENTCARD_KEY]) remarks.push("Missing PatientCardID");
+      if (!row[CLINICIAN_KEY]) remarks.push("Missing Clinician License");
 
       if (matches.length === 0) {
         remarks.push('No eligibility rows found for card number');
@@ -191,25 +203,25 @@ window.addEventListener('DOMContentLoaded', () => {
         match = matches[0];
         status = match['Status'] || '';
         if ((status || '').toLowerCase() !== 'eligible') remarks.push(`Status not eligible (${status})`);
-        const excelCard = (match['Card Number / DHA Member ID'] || '').replace(/-/g, '').trim();
-        if (excelCard && row.PatientCardID.replace(/-/g, '').trim() !== excelCard) {
-          remarks.push('Card Number mismatch between XLSX and Eligibility');
+        const excelCard = (match['Card Number / DHA Member ID'] || '').replace(/[-\s]/g, '').trim();
+        if (excelCard && (row[PATIENTCARD_KEY] || '').replace(/[-\s]/g, '').trim() !== excelCard) {
+          remarks.push('Card Number mismatch between XLS and Eligibility');
         }
-        const reportClinician = (row["Clinician License"] || '').trim();
+        const reportClinician = (row[CLINICIAN_KEY] || '').trim();
         const eligClinician = (match['Clinician'] || match['Clinician Name'] || '').trim();
         if (reportClinician && eligClinician && reportClinician !== eligClinician) {
-          remarks.push(`Clinician mismatch (XLSX: "${reportClinician}", Eligibility: "${eligClinician}")`);
+          remarks.push(`Clinician mismatch (XLS: "${reportClinician}", Eligibility: "${eligClinician}")`);
         }
       }
 
       return {
-        claimID: row.ClaimID,
-        memberID: row.PatientCardID,
-        payerID: row["Insurance Company"],
+        claimID: row[CLAIMID_KEY],
+        memberID: row[PATIENTCARD_KEY],
+        payerID: row[INSCO_KEY],
         affiliatedPlan,
-        encounterStart: row.ClaimDate,
+        encounterStart: row[CLAIMDATE_KEY],
         details: match ? formatEligibilityDetailsModal(match) : formatReportDetailsModal(row),
-        eligibilityRequestNumber: match?.['Eligibility Request Number'] || row.FileNo || null,
+        eligibilityRequestNumber: match?.['Eligibility Request Number'] || row[FILENO_KEY] || null,
         status,
         remarks,
         match,
@@ -245,15 +257,15 @@ window.addEventListener('DOMContentLoaded', () => {
 
   function formatReportDetailsModal(row) {
     const fields = [
-      { label: "ClaimID", value: row.ClaimID },
-      { label: "ClaimDate", value: row.ClaimDate },
-      { label: "OrderDoctor", value: row.OrderDoctor },
-      { label: "Clinic", value: row.Clinic },
-      { label: "Insurance Company", value: row["Insurance Company"] },
-      { label: "PatientCardID", value: row.PatientCardID },
-      { label: "FileNo", value: row.FileNo },
-      { label: "Clinician License", value: row["Clinician License"] },
-      { label: "Opened by/Registration Staff name", value: row["Opened by/Registration Staff name"] }
+      { label: "ClaimID", value: row[CLAIMID_KEY] },
+      { label: "ClaimDate", value: row[CLAIMDATE_KEY] },
+      { label: "OrderDoctor", value: row["ORDERDOCTOR"] },
+      { label: "Clinic", value: row[CLINIC_KEY] },
+      { label: "Insurance Company", value: row[INSCO_KEY] },
+      { label: "PatientCardID", value: row[PATIENTCARD_KEY] },
+      { label: "FileNo", value: row[FILENO_KEY] },
+      { label: "Clinician License", value: row[CLINICIAN_KEY] },
+      { label: "Opened by/Registration Staff name", value: row["OPENED BY/REGISTRATION STAFF NAME"] }
     ];
     let table = '<table class="shared-table details-table"><tbody>';
     fields.forEach(f => { table += `<tr><th>${f.label}</th><td>${f.value}</td></tr>`; });
@@ -307,7 +319,7 @@ window.addEventListener('DOMContentLoaded', () => {
     row.classList.add(r.remarks.length ? 'invalid' : 'valid');
     const btn = document.createElement('button');
     btn.textContent = r.eligibilityRequestNumber || 'No Request';
-    btn.disabled = !r.eligibilityRequestNumber;
+    btn.disabled = !r.eligibilityRequestNumber && !r.details;
     btn.className = 'details-btn';
     btn.addEventListener('click', () => {
       if (!r.details) return;
@@ -327,7 +339,7 @@ window.addEventListener('DOMContentLoaded', () => {
       <td class="wrap-col">${r.claimID}</td>
       <td class="wrap-col">${r.memberID}</td>
       <td class="wrap-col">${payerIDPlan}</td>
-      <td>${r.encounterStart}</td>
+      <td>${r.encounterStart || ''}</td>
       <td></td>
       <td>${r.status || ''}</td>
       <td style="white-space: pre-line;">${r.remarks.join('\n')}</td>
@@ -348,7 +360,7 @@ window.addEventListener('DOMContentLoaded', () => {
   function updateStatus() {
     const usingXml = xmlRadio.checked;
     const xmlLoaded = !!xmlData;
-    const xlsxLoaded = !!xlsxData;
+    const xlsLoaded = !!xlsData;
     const eligLoaded = !!eligData;
     const licensesLoaded = !!insuranceLicenses;
     const msgs = [];
@@ -356,9 +368,9 @@ window.addEventListener('DOMContentLoaded', () => {
       const count = xmlData.encounters ? xmlData.encounters.length : 0;
       msgs.push(`${count} Claim${count !== 1 ? 's' : ''} loaded`);
     }
-    if (!usingXml && xlsxLoaded) {
-      const count = xlsxData.length || 0;
-      msgs.push(`${count} XLSX Report row${count !== 1 ? 's' : ''} loaded`);
+    if (!usingXml && xlsLoaded) {
+      const count = xlsData.length || 0;
+      msgs.push(`${count} XLS Report row${count !== 1 ? 's' : ''} loaded`);
     }
     if (eligLoaded) {
       const count = eligData.length || 0;
@@ -366,7 +378,7 @@ window.addEventListener('DOMContentLoaded', () => {
     }
     if (licensesLoaded) msgs.push('Insurance Licenses loaded');
     status.textContent = msgs.join(', ');
-    processBtn.disabled = !((usingXml && xmlLoaded && eligLoaded) || (!usingXml && xlsxLoaded && eligLoaded));
+    processBtn.disabled = !((usingXml && xmlLoaded && eligLoaded) || (!usingXml && xlsLoaded && eligLoaded));
   }
 
   // File input handlers
@@ -382,15 +394,15 @@ window.addEventListener('DOMContentLoaded', () => {
     updateStatus();
   });
 
-  xlsxInput.addEventListener('change', async (e) => {
-    status.textContent = 'Loading XLSX…';
+  xlsInput.addEventListener('change', async (e) => {
+    status.textContent = 'Loading XLS…';
     processBtn.disabled = true;
     try {
       let raw = await parseExcel(e.target.files[0]);
-      xlsxData = raw.map(filterReportRow);
+      xlsData = raw;
     } catch (err) {
-      status.textContent = `XLSX Error: ${err.message}`;
-      xlsxData = null;
+      status.textContent = `XLS Error: ${err.message}`;
+      xlsData = null;
     }
     updateStatus();
   });
@@ -428,14 +440,14 @@ window.addEventListener('DOMContentLoaded', () => {
       }
       processBtn.disabled = false;
     } else {
-      if (!xlsxData || !eligData) {
-        alert('Please upload both XLSX report and Eligibility XLSX.');
+      if (!xlsData || !eligData) {
+        alert('Please upload both XLS report and Eligibility XLSX.');
         return;
       }
       processBtn.disabled = true;
       status.textContent = 'Validating…';
       try {
-        const results = validateXlsxWithEligibility(xlsxData, eligData);
+        const results = validateXlsWithEligibility(xlsData, eligData);
         renderResults(results);
         const validCount = results.filter(r => r.remarks.length === 0).length;
         const totalCount = results.length;
