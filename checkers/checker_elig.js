@@ -127,7 +127,6 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // For matching, ignore leading zero in both memberID and eligibility card number
   function stripLeadingZero(x) {
     x = (x || '').replace(/[-\s]/g, '').trim();
     return x.startsWith('0') ? x.substring(1) : x;
@@ -209,7 +208,7 @@ window.addEventListener('DOMContentLoaded', () => {
         payerID: row["Insurance Company"],
         affiliatedPlan,
         encounterStart: formattedDate,
-        details: match ? formatEligibilityDetailsModal(match) : formatReportDetailsModal(row, formattedDate),
+        details: match ? formatEligibilityDetailsModal(match, row["PatientCardID"]) : formatReportDetailsModal(row, formattedDate),
         eligibilityRequestNumber: match?.['Eligibility Request Number'] || row["FileNo"] || null,
         status,
         remarks,
@@ -272,7 +271,7 @@ window.addEventListener('DOMContentLoaded', () => {
         payerID: encounter.payerID,
         affiliatedPlan,
         encounterStart: encounter.encounterStart,
-        details: match ? formatEligibilityDetailsModal(match) : '',
+        details: match ? formatEligibilityDetailsModal(match, encounter.memberID) : '',
         eligibilityRequestNumber: match?.['Eligibility Request Number'] || null,
         status,
         remarks,
@@ -291,8 +290,6 @@ window.addEventListener('DOMContentLoaded', () => {
    * @param {object} match
    */
   function buildClinicianMismatchMsg(reportClinicianLicense, eligClinicianLicense, match) {
-    // For report row, we do not have the name, so just display license
-    // For elig row, check 'Clinician Name' or 'Clinician'
     const eligClinicianName = (match['Clinician Name'] || match['Clinician'] || '');
     let html = `Clinician mismatch: `
       + `<span class="tooltip-parent"><span class="license-badge">${reportClinicianLicense}</span>`
@@ -303,8 +300,9 @@ window.addEventListener('DOMContentLoaded', () => {
     return html;
   }
 
-  function formatEligibilityDetailsModal(match) {
+  function formatEligibilityDetailsModal(match, memberID) {
     const fields = [
+      { label: 'Member ID', value: memberID || '' },
       { label: 'Eligibility Request Number', value: match['Eligibility Request Number'] || '' },
       { label: 'Payer Name', value: match['Payer Name'] || '' },
       { label: 'Service Category', value: match['Service Category'] || '' },
@@ -425,12 +423,10 @@ window.addEventListener('DOMContentLoaded', () => {
       payerIDPlan += ` (${r.affiliatedPlan})`;
     }
 
-    // If unknown/clinician mismatch, show the tooltip HTML
     let remarksCellHtml;
     if (r.unknown && r.clinicianMismatchMsg) {
       remarksCellHtml = r.clinicianMismatchMsg + '<br><span style="font-size:90%;color:#888;">(treated as unknown, marked valid)</span>';
     } else if (r.clinicianMismatchMsg) {
-      // If there are other remarks, add the tooltip also
       remarksCellHtml = r.remarks.join('\n') + '<br>' + r.clinicianMismatchMsg;
     } else {
       remarksCellHtml = r.unknown
@@ -533,9 +529,8 @@ window.addEventListener('DOMContentLoaded', () => {
       try {
         const results = validateXmlWithEligibility(xmlData, eligData, insuranceLicenses);
         renderResults(results);
-        // Mark as valid if only clinician mismatch (unknown) or no remarks
         const validCount = results.filter(r => r.unknown || r.remarks.length === 0).length;
-        const totalCount = results.length; // Only the filtered/validated results
+        const totalCount = results.length;
         const percent = totalCount > 0 ? Math.round((validCount / totalCount) * 100) : 0;
         status.textContent = `Valid: ${validCount} / ${totalCount} (${percent}%)`;
         console.log(`Results: ${validCount} valid out of ${totalCount}`);
@@ -554,9 +549,8 @@ window.addEventListener('DOMContentLoaded', () => {
       try {
         const results = validateXlsWithEligibility(xlsData, eligData);
         renderResults(results);
-        // Mark as valid if only clinician mismatch (unknown) or no remarks
         const validCount = results.filter(r => r.unknown || r.remarks.length === 0).length;
-        const totalCount = results.length; // Only the filtered/validated results
+        const totalCount = results.length;
         const percent = totalCount > 0 ? Math.round((validCount / totalCount) * 100) : 0;
         status.textContent = `Valid: ${validCount} / ${totalCount} (${percent}%)`;
         console.log(`Results: ${validCount} valid out of ${totalCount}`);
