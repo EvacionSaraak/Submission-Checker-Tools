@@ -282,3 +282,42 @@ td.last-copied {
 .analysis-results td.included-thiqa        { width: 54px; min-width: 44px; }
 .analysis-results th.included-basic,
 .analysis-results td.included-basic        { width: 54px; min-width: 44px; }
+
+.tooltip-parent {
+  position: relative;
+  cursor: pointer;
+  display: inline-block;
+}
+.tooltip-parent .tooltip-text {
+  visibility: hidden;
+  width: max-content;
+  background-color: #222;
+  color: #fff;
+  text-align: center;
+  border-radius: 4px;
+  padding: 2px 8px;
+  position: absolute;
+  z-index: 10;
+  bottom: 120%;
+  left: 50%;
+  transform: translateX(-50%);
+  opacity: 0;
+  transition: opacity 0.2s;
+  pointer-events: none;
+  font-size: 0.95em;
+}
+.tooltip-parent:hover .tooltip-text,
+.tooltip-parent:focus .tooltip-text {
+  visibility: visible;
+  opacity: 1;
+}
+.license-badge {
+  display: inline-block;
+  background: #ddeeff;
+  color: #1d3b69;
+  border-radius: 3px;
+  padding: 1px 6px;
+  font-size: 1em;
+  margin: 0 2px;
+  border: 1px solid #b2c6df;
+}
