@@ -195,7 +195,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
         // --- Clinician‑license mismatch check ----
         const reportLic = (row["Clinician License"] || '').trim();
-        const eligLic = (match["Provider License"] || '').trim();
+        const eligLic = (match["Clinician"] || '').trim();
         const reportName = (row["OrderDoctor"] || '').trim();  // adjust if another field holds NAME
         const eligName = (match["Clinician Name"] || '').trim();
   
@@ -267,8 +267,8 @@ window.addEventListener('DOMContentLoaded', () => {
 
         // --- Clinician‑license mismatch check ----
         const reportLic = (encounter.clinician || '').trim();  // XML <Clinician>
-        const eligLic = (match["Provider License"] || '').trim();
-        const reportName = '';                                        // XML has no separate name node
+        const eligLic = (match["Clinician"] || '').trim();
+        const reportName = '';                                 // XML has no separate name node
         const eligName = (match["Clinician Name"] || '').trim();
   
         if (reportLic && eligLic && reportLic !== eligLic) {
