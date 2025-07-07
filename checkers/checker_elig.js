@@ -193,14 +193,19 @@ window.addEventListener('DOMContentLoaded', () => {
           remarks.push('Card Number mismatch between XLS and Eligibility');
         }
 
-        // Clinician name mismatch
-        const reportClinicianName = (row["OrderDoctor"] || '').trim();
-        const eligClinicianName = (match['Clinician Name'] || match['Clinician'] || '').trim();
-        if (reportClinicianName && eligClinicianName && reportClinicianName !== eligClinicianName) {
-          clinicianMismatch = true;
+        // --- Clinician‑license mismatch check ----
+        const reportLic = (row["Clinician License"] || '').trim();
+        const eligLic = (match["Provider License"] || '').trim();
+        const reportName = (row["OrderDoctor"] || '').trim();  // adjust if another field holds NAME
+        const eligName = (match["Clinician Name"] || '').trim();
+  
+        if (reportLic && eligLic && reportLic !== eligLic) {
+          clinicianMismatch    = true;
           clinicianMismatchMsg = buildClinicianMismatchMsg(
-            reportClinicianName,
-            eligClinicianName,
+            reportLic,
+            eligLic,
+            reportName,
+            eligName,
             'XLSX',
             'Eligibility'
           );
@@ -260,14 +265,19 @@ window.addEventListener('DOMContentLoaded', () => {
           remarks.push('Card Number mismatch between XML and Eligibility');
         }
 
-        // Clinician name mismatch
-        const reportClinicianName = (encounter.clinician || '').trim();
-        const eligClinicianName = (match['Clinician Name'] || match['Clinician'] || '').trim();
-        if (reportClinicianName && eligClinicianName && reportClinicianName !== eligClinicianName) {
-          clinicianMismatch = true;
+        // --- Clinician‑license mismatch check ----
+        const reportLic = (encounter.clinician || '').trim();  // XML <Clinician>
+        const eligLic = (match["Provider License"] || '').trim();
+        const reportName = '';                                        // XML has no separate name node
+        const eligName = (match["Clinician Name"] || '').trim();
+  
+        if (reportLic && eligLic && reportLic !== eligLic) {
+          clinicianMismatch    = true;
           clinicianMismatchMsg = buildClinicianMismatchMsg(
-            reportClinicianName,
-            eligClinicianName,
+            reportLic,
+            eligLic,
+            reportName,
+            eligName,
             'XML',
             'Eligibility'
           );
@@ -299,40 +309,43 @@ window.addEventListener('DOMContentLoaded', () => {
   }
 
   /**
-   * Returns HTML for a clinician‐mismatch message showing two name badges
-   * with tooltips that indicate their origin.
+   * Returns HTML for a clinician‑license mismatch message.
+   * – badge text = the license number
+   * – tooltip text = "{Source}: {Clinician Name}"
    *
-   * @param {string} reportClinicianName  – the clinician name from the report (XML or XLSX)
-   * @param {string} eligClinicianName    – the clinician name from the eligibility file
-   * @param {string} reportSourceLabel    – e.g. 'XML' or 'XLSX'
-   * @param {string} eligSourceLabel      – e.g. 'Eligibility'
+   * @param {string} reportLicense      – the license string from the report
+   * @param {string} eligLicense        – the license string from the eligibility file
+   * @param {string} reportClinician    – the clinician NAME from the report
+   * @param {string} eligClinician      – the clinician NAME from the eligibility file
+   * @param {string} reportSourceLabel  – 'XML' or 'XLSX'
+   * @param {string} eligSourceLabel    – 'Eligibility'
    */
   function buildClinicianMismatchMsg(
-    reportClinicianName,
-    eligClinicianName,
+    reportLicense,
+    eligLicense,
+    reportClinician,
+    eligClinician,
     reportSourceLabel,
     eligSourceLabel
   ) {
-    const sanitize = str => str || 'Unknown';
-
-    const rName = sanitize(reportClinicianName);
-    const eName = sanitize(eligClinicianName);
-
-    const reportBadge = `
+    const safeText = str => str || 'Unknown';
+  
+    const rLic  = safeText(reportLicense),
+          eLic  = safeText(eligLicense),
+          rName = safeText(reportClinician),
+          eName = safeText(eligClinician);
+  
+    const makeBadge = (lic, label, name) => `
       <span class="tooltip-parent">
-        <span class="license-badge">${rName}</span>
-        <span class="tooltip-text">${reportSourceLabel}: ${rName}</span>
+        <span class="license-badge">${lic}</span>
+        <span class="tooltip-text">${label}: ${name}</span>
       </span>
     `.trim();
-
-    const eligBadge = `
-      <span class="tooltip-parent">
-        <span class="license-badge">${eName}</span>
-        <span class="tooltip-text">${eligSourceLabel}: ${eName}</span>
-      </span>
-    `.trim();
-
-    return `Clinician mismatch: ${reportBadge} vs. ${eligBadge}`;
+  
+    const reportBadge = makeBadge(rLic, reportSourceLabel, rName);
+    const eligBadge   = makeBadge(eLic,   eligSourceLabel,   eName);
+  
+    return `Clinician license mismatch: ${reportBadge} vs. ${eligBadge}`;
   }
 
   function formatEligibilityDetailsModal(match, memberID) {
