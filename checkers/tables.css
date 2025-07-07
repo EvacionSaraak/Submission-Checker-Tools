@@ -299,7 +299,7 @@ td.last-copied {
   padding: 2px 8px;
   position: absolute;
   z-index: 9999;
-  bottom: 120%;
+  top: 120%;
   left: 50%;
   transform: translateX(-50%);
   opacity: 0;
