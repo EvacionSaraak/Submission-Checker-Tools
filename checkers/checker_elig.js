@@ -1,14 +1,22 @@
-// checker_eligibilities.js
+// checker_elig.js
 
 window.addEventListener('DOMContentLoaded', () => {
   const xmlInput = document.getElementById('xmlFileInput');
-  const excelInput = document.getElementById('eligibilityFileInput');
+  const openjetInput = document.getElementById('eligibilityFileInput');
+  const reportInput = document.getElementById('reportFileInput');
   const processBtn = document.getElementById('processBtn');
   const resultContainer = document.getElementById('results');
   const status = document.getElementById('uploadStatus');
 
+  // Radio buttons and file input groups
+  const eligRadio = document.querySelector('input[name="eligSource"][value="openjet"]');
+  const reportRadio = document.querySelector('input[name="eligSource"][value="report"]');
+  const openjetGroup = document.getElementById('openjetXLSXInputGroup');
+  const reportGroup = document.getElementById('reportXLSXInputGroup');
+
   let xmlData = null;
-  let eligData = null;
+  let eligData = null;    // Openjet XLSX
+  let reportData = null;  // Report XLSX
   let insuranceLicenses = null;
 
   // Load insurance_licenses.json from the same folder
@@ -16,7 +24,6 @@ window.addEventListener('DOMContentLoaded', () => {
     .then(r => r.json())
     .then(json => {
       insuranceLicenses = json;
-      console.log('Loaded insurance licenses:', insuranceLicenses);
       updateStatus();
     })
     .catch(err => {
@@ -32,21 +39,11 @@ window.addEventListener('DOMContentLoaded', () => {
         try {
           const data = new Uint8Array(e.target.result);
           const workbook = XLSX.read(data, { type: 'array' });
-          console.log('SheetNames:', workbook.SheetNames);
-
           const worksheet = workbook.Sheets['Eligibility'];
           if (!worksheet) {
             throw new Error('No worksheet named "Eligibility" found in uploaded file.');
           }
           const json = XLSX.utils.sheet_to_json(worksheet, { defval: '', range: 1 });
-
-          if (json.length > 0) {
-            console.log('Eligibility headers:', Object.keys(json[0]));
-            console.log('First eligibility row:', json[0]);
-          } else {
-            console.log('Eligibility headers: [No data rows parsed]');
-          }
-
           resolve(json);
         } catch (err) {
           reject(err);
@@ -67,13 +64,13 @@ window.addEventListener('DOMContentLoaded', () => {
         const claimID = claim.querySelector('ID')?.textContent.trim() || '';
         const memberID = claim.querySelector('MemberID')?.textContent.trim() || '';
         const payerID = claim.querySelector('PayerID')?.textContent.trim() || '';
-        const providerID = claim.querySelector('ProviderID')?.textContent.trim() || ''; // ADDED: Extract ProviderID
+        const providerID = claim.querySelector('ProviderID')?.textContent.trim() || '';
         const encounterNodes = claim.querySelectorAll('Encounter');
         const encounters = Array.from(encounterNodes).map(enc => ({
           claimID,
           memberID,
           payerID,
-          providerID, // ADDED: Attach ProviderID to every encounter
+          providerID,
           encounterStart: enc.querySelector('Start')?.textContent.trim() || '',
           clinician: enc.querySelector('Clinician')?.textContent.trim() || ''
         }));
@@ -87,11 +84,10 @@ window.addEventListener('DOMContentLoaded', () => {
   // Returns all eligibility rows matching the card number (ignores date)
   function findEligibilityMatchesByCard(memberID, eligRows) {
     const cardCol = 'Card Number / DHA Member ID';
-    const matches = eligRows.filter(row => {
+    return eligRows.filter(row => {
       const xlsCard = (row[cardCol] || '').replace(/-/g, '').trim();
       return xlsCard === memberID.replace(/-/g, '').trim();
     });
-    return matches;
   }
 
   // Finds the affiliated Plan for a given payerID and Payer Name using insuranceLicenses
@@ -144,7 +140,7 @@ window.addEventListener('DOMContentLoaded', () => {
           remarks.push(`Clinician mismatch (XML: "${encounterClinician}", Excel: "${eligClinician}")`);
         }
 
-        // --- ProviderID match check (NEW) ---
+        // --- ProviderID match check ---
         const excelProviderLicense = (match['Provider License'] || '').trim();
         const claimProviderID = (encounter.providerID || '').trim();
         if (claimProviderID && excelProviderLicense && claimProviderID !== excelProviderLicense) {
@@ -152,7 +148,7 @@ window.addEventListener('DOMContentLoaded', () => {
         }
       }
 
-      // Insurance license validation (iterate for all plans for this PayerID)
+      // Insurance license validation
       let foundLicense = null;
       if (insuranceLicenses && match) {
         const payerID = encounter.payerID || '';
@@ -175,20 +171,6 @@ window.addEventListener('DOMContentLoaded', () => {
       }
 
       const details = match ? formatEligibilityDetailsModal(match) : '';
-      console.log('All Excel matches for card:', encounter.memberID, matches);
-      console.log('Row data about to be rendered:', {
-        claimID: encounter.claimID,
-        memberID: encounter.memberID,
-        payerID: encounter.payerID,
-        affiliatedPlan,
-        encounterStart: encounter.encounterStart,
-        details,
-        eligibilityRequestNumber: match?.['Eligibility Request Number'] || null,
-        status,
-        remarks,
-        match,
-        matches
-      });
       return {
         claimID: encounter.claimID,
         memberID: encounter.memberID,
@@ -317,62 +299,98 @@ window.addEventListener('DOMContentLoaded', () => {
 
   function updateStatus() {
     const claimsCount = xmlData?.claimsCount || 0;
-    const eligCount = eligData?.length || 0;
-    const licensesLoaded = insuranceLicenses ? true : false;
+    const openjetCount = eligData?.length || 0;
+    const reportCount = reportData?.length || 0;
+    const licensesLoaded = !!insuranceLicenses;
+    const usingReport = reportRadio.checked;
+
     const msgs = [];
     if (claimsCount) msgs.push(`${claimsCount} Claim${claimsCount !== 1 ? 's' : ''} loaded`);
-    if (eligCount) msgs.push(`${eligCount} Eligibilit${eligCount !== 1 ? 'ies' : 'y'} loaded`);
+    if (usingReport) {
+      if (reportCount) msgs.push(`${reportCount} Report row${reportCount !== 1 ? 's' : ''} loaded`);
+    } else {
+      if (openjetCount) msgs.push(`${openjetCount} Eligibilit${openjetCount !== 1 ? 'ies' : 'y'} loaded`);
+    }
     if (licensesLoaded) msgs.push('Insurance Licenses loaded');
-    status.textContent = msgs.join(', ');
-    processBtn.disabled = !(claimsCount && eligCount && licensesLoaded);
 
-    console.log(`updateStatus: ${claimsCount} claims loaded, ${eligCount} eligibilities loaded, licenses loaded: ${licensesLoaded}`);
-    if (xmlData) console.log('Claims data:', xmlData);
-    if (eligData) console.log('Eligibility data:', eligData);
-    if (insuranceLicenses) console.log('Insurance licenses:', insuranceLicenses);
+    status.textContent = msgs.join(', ');
+
+    processBtn.disabled = !(
+      claimsCount &&
+      ((usingReport && reportCount) || (!usingReport && openjetCount)) &&
+      licensesLoaded
+    );
   }
 
+  // File input change handlers
   xmlInput.addEventListener('change', async (e) => {
     status.textContent = 'Loading Claims…';
     processBtn.disabled = true;
     try {
       xmlData = await parseXML(e.target.files[0]);
-      console.log(`XML parsed: ${xmlData.claimsCount} claims, ${xmlData.encounters.length} encounters`);
-      console.log('Parsed claims:', xmlData);
     } catch (err) {
       status.textContent = `XML Error: ${err.message}`;
-      console.error("XML load error:", err);
       xmlData = null;
     }
     updateStatus();
   });
 
-  excelInput.addEventListener('change', async (e) => {
+  openjetInput.addEventListener('change', async (e) => {
     status.textContent = 'Loading Eligibilities…';
     processBtn.disabled = true;
     try {
       eligData = await parseExcel(e.target.files[0]);
-      console.log(`Excel parsed: ${eligData.length} eligibilities`);
-      console.log('Parsed eligibilities:', eligData);
     } catch (err) {
       status.textContent = `XLSX Error: ${err.message}`;
-      console.error("Excel load error:", err);
       eligData = null;
     }
     updateStatus();
   });
 
+  reportInput.addEventListener('change', async (e) => {
+    status.textContent = 'Loading Report XLSX…';
+    processBtn.disabled = true;
+    try {
+      reportData = await parseExcel(e.target.files[0]);
+    } catch (err) {
+      status.textContent = `XLSX Error: ${err.message}`;
+      reportData = null;
+    }
+    updateStatus();
+  });
+
+  // Radio swap: show/hide file input groups
+  document.querySelectorAll('input[name="eligSource"]').forEach(radio => {
+    radio.addEventListener('change', () => {
+      if (reportRadio.checked) {
+        reportGroup.style.display = '';
+        openjetGroup.style.display = 'none';
+      } else {
+        reportGroup.style.display = 'none';
+        openjetGroup.style.display = '';
+      }
+      updateStatus();
+    });
+  });
+
   processBtn.addEventListener('click', async () => {
-    if (!xmlData || !eligData || !insuranceLicenses) {
-      alert('Please upload both XML Claims, Eligibility XLSX files, and ensure insurance_licenses.json is present');
+    if (!xmlData || !insuranceLicenses) {
+      alert('Please upload XML Claims and ensure insurance_licenses.json is present');
       return;
     }
+
+    // Determine which XLSX to use based on radio selection
+    let selectedXLSX = eligRadio.checked ? eligData : reportData;
+
+    if (!selectedXLSX) {
+      alert('Please upload the required XLSX file.');
+      return;
+    }
+
     processBtn.disabled = true;
     status.textContent = 'Validating…';
     try {
-      const results = validateEncounters(xmlData, eligData, insuranceLicenses);
-      console.log(`Validation completed: ${results.length} encounters processed`);
-      console.log('Validation results:', results);
+      const results = validateEncounters(xmlData, selectedXLSX, insuranceLicenses);
       renderResults(results);
 
       // Validity summary
@@ -380,10 +398,8 @@ window.addEventListener('DOMContentLoaded', () => {
       const totalCount = results.length;
       const percent = totalCount > 0 ? Math.round((validCount / totalCount) * 100) : 0;
       status.textContent = `Valid: ${validCount} / ${totalCount} (${percent}%)`;
-
     } catch (err) {
       status.textContent = `Validation error: ${err.message}`;
-      console.error("Validation error:", err);
     }
     processBtn.disabled = false;
   });
