@@ -179,12 +179,22 @@ window.addEventListener('DOMContentLoaded', () => {
     // Normalize all rows for robust header matching
     const normalizedRows = reportRows.map(normalizeRow);
 
+    // Debug: print normalized headers and first row
+    if (normalizedRows.length > 0) {
+      console.log("Normalized headers:", Object.keys(normalizedRows[0]));
+      console.log("Sample normalized row:", normalizedRows[0]);
+    } else {
+      console.log("No rows to normalize.");
+    }
+
     // Filter only dental and insurance relevant rows, robust to whitespace/casing
     const filtered = normalizedRows.filter(row => {
       const clinic = (row[CLINIC_KEY] || "").toUpperCase().replace(/\s+/g, '');
       const insurance = (row[INSCO_KEY] || "").toUpperCase().replace(/\s+/g, '');
       return clinic.includes("DENTAL") && (insurance.includes("THIQA") || insurance.includes("DAMAN"));
     });
+
+    console.log(`Filtered to ${filtered.length} dental/THIQA/DAMAN rows`);
 
     return filtered.map(row => {
       const matches = findEligibilityMatchesByCard(row[PATIENTCARD_KEY], eligRows);
@@ -314,6 +324,19 @@ window.addEventListener('DOMContentLoaded', () => {
     return { modal, modalContent };
   }
 
+  function renderResults(results, containerId = 'results') {
+    const tbody = buildTableContainer(containerId);
+    const modalElements = setupModal(containerId);
+    if (results.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:#888;">No matching rows found.</td></tr>`;
+      return;
+    }
+    results.forEach((r, i) => {
+      const row = createRow(r, i, modalElements);
+      tbody.appendChild(row);
+    });
+  }
+
   function createRow(r, index, { modal, modalContent }) {
     const row = document.createElement('tr');
     row.classList.add(r.remarks.length ? 'invalid' : 'valid');
@@ -346,15 +369,6 @@ window.addEventListener('DOMContentLoaded', () => {
     `;
     row.querySelector('td:nth-child(6)').replaceWith(tdBtn);
     return row;
-  }
-
-  function renderResults(results, containerId = 'results') {
-    const tbody = buildTableContainer(containerId);
-    const modalElements = setupModal(containerId);
-    results.forEach((r, i) => {
-      const row = createRow(r, i, modalElements);
-      tbody.appendChild(row);
-    });
   }
 
   function updateStatus() {
@@ -400,6 +414,14 @@ window.addEventListener('DOMContentLoaded', () => {
     try {
       let raw = await parseExcel(e.target.files[0]);
       xlsData = raw;
+
+      // Debug: Show headers and sample data
+      if (raw.length > 0) {
+        console.log("Detected headers:", Object.keys(raw[0]));
+        console.log("First row:", raw[0]);
+      } else {
+        console.log("No rows detected in XLS upload.");
+      }
     } catch (err) {
       status.textContent = `XLS Error: ${err.message}`;
       xlsData = null;
@@ -412,6 +434,10 @@ window.addEventListener('DOMContentLoaded', () => {
     processBtn.disabled = true;
     try {
       eligData = await parseExcel(e.target.files[0]);
+      if (eligData && eligData.length > 0) {
+        console.log("Eligibility: Detected headers:", Object.keys(eligData[0]));
+        console.log("Eligibility: First row:", eligData[0]);
+      }
     } catch (err) {
       status.textContent = `Eligibility XLSX Error: ${err.message}`;
       eligData = null;
@@ -435,8 +461,10 @@ window.addEventListener('DOMContentLoaded', () => {
         const totalCount = results.length;
         const percent = totalCount > 0 ? Math.round((validCount / totalCount) * 100) : 0;
         status.textContent = `Valid: ${validCount} / ${totalCount} (${percent}%)`;
+        console.log(`Results: ${validCount} valid out of ${totalCount}`);
       } catch (err) {
         status.textContent = `Validation error: ${err.message}`;
+        console.error(err);
       }
       processBtn.disabled = false;
     } else {
@@ -453,8 +481,10 @@ window.addEventListener('DOMContentLoaded', () => {
         const totalCount = results.length;
         const percent = totalCount > 0 ? Math.round((validCount / totalCount) * 100) : 0;
         status.textContent = `Valid: ${validCount} / ${totalCount} (${percent}%)`;
+        console.log(`Results: ${validCount} valid out of ${totalCount}`);
       } catch (err) {
         status.textContent = `Validation error: ${err.message}`;
+        console.error(err);
       }
       processBtn.disabled = false;
     }
