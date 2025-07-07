@@ -19,6 +19,25 @@ window.addEventListener('DOMContentLoaded', () => {
   let reportData = null;  // Report XLSX
   let insuranceLicenses = null;
 
+  // Only these columns from the report upload are relevant
+  const REPORT_RELEVANT_COLUMNS = [
+    "ClaimID",
+    "ClaimDate",
+    "OrderDoctor",
+    "Clinic",
+    "Insurance Company",
+    "PatientCardID",
+    "FileNo",
+    "Clinician License",
+    "Opened by/Registration Staff name"
+  ];
+
+  function filterReportRow(row) {
+    const filtered = {};
+    REPORT_RELEVANT_COLUMNS.forEach(col => filtered[col] = row[col] || "");
+    return filtered;
+  }
+
   // Load insurance_licenses.json from the same folder
   fetch('insurance_licenses.json')
     .then(r => r.json())
@@ -39,9 +58,11 @@ window.addEventListener('DOMContentLoaded', () => {
         try {
           const data = new Uint8Array(e.target.result);
           const workbook = XLSX.read(data, { type: 'array' });
-          const worksheet = workbook.Sheets['Eligibility'];
+          // For report we don't care about sheet name, just get the first
+          const sheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[sheetName];
           if (!worksheet) {
-            throw new Error('No worksheet named "Eligibility" found in uploaded file.');
+            throw new Error('No worksheet found in uploaded file.');
           }
           const json = XLSX.utils.sheet_to_json(worksheet, { defval: '', range: 1 });
           resolve(json);
@@ -187,6 +208,44 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // -- Report Mode: Compare Report XLSX to itself (row validation) --
+  // Here we apply: filter to Dental clinic and THIQA/DAMAN insurance, then same result format.
+  function validateReportRows(reportRows) {
+    // Filter only dental and insurance relevant rows
+    const filtered = reportRows.filter(row => {
+      const clinic = (row["Clinic"] || "").toUpperCase();
+      const insurance = (row["Insurance Company"] || "").toUpperCase();
+      return clinic.includes("DENTAL") && (insurance.includes("THIQA") || insurance.includes("DAMAN"));
+    });
+
+    return filtered.map((row, idx) => {
+      const remarks = [];
+      // Example checks: (add more as needed)
+      if (!row.ClaimID) remarks.push("Missing ClaimID");
+      if (!row.PatientCardID) remarks.push("Missing PatientCardID");
+      if (!row.Clinician License) remarks.push("Missing Clinician License");
+      // ... add other validation as needed
+
+      // Compose details table as for eligibility
+      const details = formatReportDetailsModal(row);
+
+      // Try to mimic the XML result format
+      return {
+        claimID: row.ClaimID,
+        memberID: row.PatientCardID,
+        payerID: row["Insurance Company"],
+        affiliatedPlan: "", // not available in report
+        encounterStart: row.ClaimDate,
+        details,
+        eligibilityRequestNumber: row.FileNo || null,
+        status: "", // not available in report
+        remarks,
+        match: row,
+        matches: [row] // retain structure
+      };
+    });
+  }
+
   function formatEligibilityDetailsModal(match) {
     const fields = [
       { label: 'Eligibility Request Number', value: match['Eligibility Request Number'] || '' },
@@ -204,6 +263,26 @@ window.addEventListener('DOMContentLoaded', () => {
       { label: 'ExpiryDate', value: match['ExpiryDate'] || match['Expiry Date'] || '' },
       { label: 'Package Name', value: match['Package Name'] || '' },
       { label: 'Network Billing Reference', value: match['Network Billing Reference'] || '' }
+    ];
+    let table = '<table class="shared-table details-table"><tbody>';
+    fields.forEach(f => {
+      table += `<tr><th>${f.label}</th><td>${f.value}</td></tr>`;
+    });
+    table += '</tbody></table>';
+    return table;
+  }
+
+  function formatReportDetailsModal(row) {
+    const fields = [
+      { label: "ClaimID", value: row.ClaimID },
+      { label: "ClaimDate", value: row.ClaimDate },
+      { label: "OrderDoctor", value: row.OrderDoctor },
+      { label: "Clinic", value: row.Clinic },
+      { label: "Insurance Company", value: row["Insurance Company"] },
+      { label: "PatientCardID", value: row.PatientCardID },
+      { label: "FileNo", value: row.FileNo },
+      { label: "Clinician License", value: row["Clinician License"] },
+      { label: "Opened by/Registration Staff name", value: row["Opened by/Registration Staff name"] }
     ];
     let table = '<table class="shared-table details-table"><tbody>';
     fields.forEach(f => {
@@ -316,9 +395,8 @@ window.addEventListener('DOMContentLoaded', () => {
     status.textContent = msgs.join(', ');
 
     processBtn.disabled = !(
-      claimsCount &&
-      ((usingReport && reportCount) || (!usingReport && openjetCount)) &&
-      licensesLoaded
+      (usingReport ? reportCount : claimsCount && openjetCount)
+      && licensesLoaded
     );
   }
 
@@ -351,7 +429,9 @@ window.addEventListener('DOMContentLoaded', () => {
     status.textContent = 'Loading Report XLSX…';
     processBtn.disabled = true;
     try {
-      reportData = await parseExcel(e.target.files[0]);
+      let raw = await parseExcel(e.target.files[0]);
+      // Only keep the relevant columns
+      reportData = raw.map(filterReportRow);
     } catch (err) {
       status.textContent = `XLSX Error: ${err.message}`;
       reportData = null;
@@ -374,33 +454,48 @@ window.addEventListener('DOMContentLoaded', () => {
   });
 
   processBtn.addEventListener('click', async () => {
-    if (!xmlData || !insuranceLicenses) {
-      alert('Please upload XML Claims and ensure insurance_licenses.json is present');
-      return;
+    if (reportRadio.checked) {
+      // Only need reportData
+      if (!reportData) {
+        alert('Please upload the required Report XLSX file.');
+        return;
+      }
+      processBtn.disabled = true;
+      status.textContent = 'Validating…';
+      try {
+        const results = validateReportRows(reportData);
+        renderResults(results);
+
+        // Validity summary
+        const validCount = results.filter(r => r.remarks.length === 0).length;
+        const totalCount = results.length;
+        const percent = totalCount > 0 ? Math.round((validCount / totalCount) * 100) : 0;
+        status.textContent = `Valid: ${validCount} / ${totalCount} (${percent}%)`;
+      } catch (err) {
+        status.textContent = `Validation error: ${err.message}`;
+      }
+      processBtn.disabled = false;
+    } else {
+      // XML + Openjet mode
+      if (!xmlData || !eligData || !insuranceLicenses) {
+        alert('Please upload both XML Claims, Eligibility XLSX files, and ensure insurance_licenses.json is present');
+        return;
+      }
+      processBtn.disabled = true;
+      status.textContent = 'Validating…';
+      try {
+        const results = validateEncounters(xmlData, eligData, insuranceLicenses);
+        renderResults(results);
+
+        // Validity summary
+        const validCount = results.filter(r => r.remarks.length === 0).length;
+        const totalCount = results.length;
+        const percent = totalCount > 0 ? Math.round((validCount / totalCount) * 100) : 0;
+        status.textContent = `Valid: ${validCount} / ${totalCount} (${percent}%)`;
+      } catch (err) {
+        status.textContent = `Validation error: ${err.message}`;
+      }
+      processBtn.disabled = false;
     }
-
-    // Determine which XLSX to use based on radio selection
-    let selectedXLSX = eligRadio.checked ? eligData : reportData;
-
-    if (!selectedXLSX) {
-      alert('Please upload the required XLSX file.');
-      return;
-    }
-
-    processBtn.disabled = true;
-    status.textContent = 'Validating…';
-    try {
-      const results = validateEncounters(xmlData, selectedXLSX, insuranceLicenses);
-      renderResults(results);
-
-      // Validity summary
-      const validCount = results.filter(r => r.remarks.length === 0).length;
-      const totalCount = results.length;
-      const percent = totalCount > 0 ? Math.round((validCount / totalCount) * 100) : 0;
-      status.textContent = `Valid: ${validCount} / ${totalCount} (${percent}%)`;
-    } catch (err) {
-      status.textContent = `Validation error: ${err.message}`;
-    }
-    processBtn.disabled = false;
   });
 });
