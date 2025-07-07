@@ -127,24 +127,61 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // For matching, ignore leading zero in both memberID and eligibility card number
+  function stripLeadingZero(x) {
+    x = (x || '').replace(/[-\s]/g, '').trim();
+    return x.startsWith('0') ? x.substring(1) : x;
+  }
   function findEligibilityMatchesByCard(memberID, eligRows) {
     const cardCol = 'Card Number / DHA Member ID';
+    const checkID = stripLeadingZero(memberID);
     return eligRows.filter(row => {
-      const xlsCard = (row[cardCol] || '').replace(/[-\s]/g, '').trim();
-      return xlsCard && xlsCard === (memberID || '').replace(/[-\s]/g, '').trim();
+      let xlsCard = (row[cardCol] || '').replace(/[-\s]/g, '').trim();
+      if (xlsCard.startsWith('0')) xlsCard = xlsCard.substring(1);
+      return xlsCard && xlsCard === checkID;
     });
   }
 
-  function validateXmlWithEligibility(xmlPayload, eligRows, insuranceLicenses) {
-    const { encounters } = xmlPayload;
-    // No filtering needed for XML mode as per your logic.
-    return encounters.map(encounter => {
-      const matches = findEligibilityMatchesByCard(encounter.memberID, eligRows);
+  // --- XLS Validator ---
+  function validateXlsWithEligibility(reportRows, eligRows) {
+    if (reportRows.length > 0) {
+      console.log("Parsed headers (xls):", Object.keys(reportRows[0]));
+      console.log("First parsed row (xls):", reportRows[0]);
+    } else {
+      console.log("No rows to parse in XLS.");
+    }
+
+    const filtered = reportRows.filter(row => {
+      const clinic = (row["Clinic"] || "").toUpperCase().replace(/\s+/g, '');
+      const insurance = (row["Insurance Company"] || "").toUpperCase().replace(/\s+/g, '');
+      return clinic.includes("DENTAL") && (insurance.includes("THIQA") || insurance.includes("DAMAN"));
+    });
+
+    console.log(`Filtered to ${filtered.length} dental/THIQA/DAMAN rows`);
+
+    return filtered.map(row => {
       const remarks = [];
       let match = null;
       let status = '';
       let affiliatedPlan = '';
       let clinicianMismatch = false;
+      let clinicianMismatchMsg = "";
+      let memberID = (row["PatientCardID"] || '').toString().trim();
+
+      // If memberID starts with zero, it's invalid
+      if (memberID.startsWith('0')) {
+        remarks.push("Member ID starts with 0 (invalid)");
+      }
+
+      const matches = eligRows.filter(erow => {
+        let xlsCard = (erow['Card Number / DHA Member ID'] || '').replace(/[-\s]/g, '').trim();
+        if (xlsCard.startsWith('0')) xlsCard = xlsCard.substring(1);
+        return xlsCard && xlsCard === stripLeadingZero(memberID);
+      });
+
+      if (!row["ClaimID"]) remarks.push("Missing ClaimID");
+      if (!row["PatientCardID"]) remarks.push("Missing PatientCardID");
+      if (!row["Clinician License"]) remarks.push("Missing Clinician License");
 
       if (matches.length === 0) {
         remarks.push('No eligibility rows found for card number');
@@ -153,13 +190,74 @@ window.addEventListener('DOMContentLoaded', () => {
         status = match['Status'] || '';
         if ((status || '').toLowerCase() !== 'eligible') remarks.push(`Status not eligible (${status})`);
         const excelCard = (match['Card Number / DHA Member ID'] || '').replace(/[-\s]/g, '').trim();
-        if (excelCard && (encounter.memberID || '').replace(/[-\s]/g, '').trim() !== excelCard) {
+        if (excelCard && stripLeadingZero(row["PatientCardID"] || '') !== stripLeadingZero(excelCard)) {
+          remarks.push('Card Number mismatch between XLS and Eligibility');
+        }
+        const reportClinician = (row["Clinician License"] || '').trim();
+        const eligClinician = (match['Clinician'] || match['Clinician Name'] || '').trim();
+        if (reportClinician && eligClinician && reportClinician !== eligClinician) {
+          clinicianMismatch = true;
+          clinicianMismatchMsg = buildClinicianMismatchMsg(reportClinician, eligClinician, match);
+        }
+      }
+
+      const formattedDate = excelDateToDDMMYYYY(row["ClaimDate"]);
+
+      return {
+        claimID: row["ClaimID"],
+        memberID: row["PatientCardID"],
+        payerID: row["Insurance Company"],
+        affiliatedPlan,
+        encounterStart: formattedDate,
+        details: match ? formatEligibilityDetailsModal(match) : formatReportDetailsModal(row, formattedDate),
+        eligibilityRequestNumber: match?.['Eligibility Request Number'] || row["FileNo"] || null,
+        status,
+        remarks,
+        match,
+        matches,
+        unknown: clinicianMismatch && remarks.length === 0,
+        clinicianMismatchMsg: clinicianMismatchMsg
+      };
+    });
+  }
+
+  // --- XML Validator ---
+  function validateXmlWithEligibility(xmlPayload, eligRows, insuranceLicenses) {
+    const { encounters } = xmlPayload;
+    return encounters.map(encounter => {
+      const remarks = [];
+      let match = null;
+      let status = '';
+      let affiliatedPlan = '';
+      let clinicianMismatch = false;
+      let clinicianMismatchMsg = "";
+      let memberID = (encounter.memberID || '').toString().trim();
+
+      if (memberID.startsWith('0')) {
+        remarks.push("Member ID starts with 0 (invalid)");
+      }
+
+      const matches = eligRows.filter(erow => {
+        let xlsCard = (erow['Card Number / DHA Member ID'] || '').replace(/[-\s]/g, '').trim();
+        if (xlsCard.startsWith('0')) xlsCard = xlsCard.substring(1);
+        return xlsCard && xlsCard === stripLeadingZero(memberID);
+      });
+
+      if (matches.length === 0) {
+        remarks.push('No eligibility rows found for card number');
+      } else {
+        match = matches[0];
+        status = match['Status'] || '';
+        if ((status || '').toLowerCase() !== 'eligible') remarks.push(`Status not eligible (${status})`);
+        const excelCard = (match['Card Number / DHA Member ID'] || '').replace(/[-\s]/g, '').trim();
+        if (excelCard && stripLeadingZero(encounter.memberID || '') !== stripLeadingZero(excelCard)) {
           remarks.push('Card Number mismatch between XML and Eligibility');
         }
         const encounterClinician = (encounter.clinician || '').trim();
         const eligClinician = (match['Clinician'] || match['Clinician Name'] || '').trim();
         if (encounterClinician && eligClinician && encounterClinician !== eligClinician) {
           clinicianMismatch = true;
+          clinicianMismatchMsg = buildClinicianMismatchMsg(encounterClinician, eligClinician, match);
         }
         const excelProviderLicense = (match['Provider License'] || '').trim();
         const claimProviderID = (encounter.providerID || '').trim();
@@ -180,75 +278,29 @@ window.addEventListener('DOMContentLoaded', () => {
         remarks,
         match,
         matches,
-        unknown: clinicianMismatch && remarks.length === 0
+        unknown: clinicianMismatch && remarks.length === 0,
+        clinicianMismatchMsg: clinicianMismatchMsg
       };
     });
   }
 
-  function validateXlsWithEligibility(reportRows, eligRows) {
-    if (reportRows.length > 0) {
-      console.log("Parsed headers (xls):", Object.keys(reportRows[0]));
-      console.log("First parsed row (xls):", reportRows[0]);
-    } else {
-      console.log("No rows to parse in XLS.");
-    }
-
-    // Filter only dental and insurance relevant rows, robust to whitespace/casing
-    const filtered = reportRows.filter(row => {
-      const clinic = (row["Clinic"] || "").toUpperCase().replace(/\s+/g, '');
-      const insurance = (row["Insurance Company"] || "").toUpperCase().replace(/\s+/g, '');
-      return clinic.includes("DENTAL") && (insurance.includes("THIQA") || insurance.includes("DAMAN"));
-    });
-
-    console.log(`Filtered to ${filtered.length} dental/THIQA/DAMAN rows`);
-
-    return filtered.map(row => {
-      const matches = findEligibilityMatchesByCard(row["PatientCardID"], eligRows);
-      const remarks = [];
-      let match = null;
-      let status = '';
-      let affiliatedPlan = '';
-      let clinicianMismatch = false;
-
-      if (!row["ClaimID"]) remarks.push("Missing ClaimID");
-      if (!row["PatientCardID"]) remarks.push("Missing PatientCardID");
-      if (!row["Clinician License"]) remarks.push("Missing Clinician License");
-
-      if (matches.length === 0) {
-        // No eligibility found, but we will display these!
-        remarks.push('No eligibility rows found for card number');
-      } else {
-        match = matches[0];
-        status = match['Status'] || '';
-        if ((status || '').toLowerCase() !== 'eligible') remarks.push(`Status not eligible (${status})`);
-        const excelCard = (match['Card Number / DHA Member ID'] || '').replace(/[-\s]/g, '').trim();
-        if (excelCard && (row["PatientCardID"] || '').replace(/[-\s]/g, '').trim() !== excelCard) {
-          remarks.push('Card Number mismatch between XLS and Eligibility');
-        }
-        const reportClinician = (row["Clinician License"] || '').trim();
-        const eligClinician = (match['Clinician'] || match['Clinician Name'] || '').trim();
-        if (reportClinician && eligClinician && reportClinician !== eligClinician) {
-          clinicianMismatch = true;
-        }
-      }
-
-      const formattedDate = excelDateToDDMMYYYY(row["ClaimDate"]);
-
-      return {
-        claimID: row["ClaimID"],
-        memberID: row["PatientCardID"],
-        payerID: row["Insurance Company"],
-        affiliatedPlan,
-        encounterStart: formattedDate,
-        details: match ? formatEligibilityDetailsModal(match) : formatReportDetailsModal(row, formattedDate),
-        eligibilityRequestNumber: match?.['Eligibility Request Number'] || row["FileNo"] || null,
-        status,
-        remarks,
-        match,
-        matches,
-        unknown: clinicianMismatch && remarks.length === 0
-      };
-    });
+  /**
+   * Returns a string with both licenses as tooltips, showing respective clinician names.
+   * @param {string} reportClinicianLicense
+   * @param {string} eligClinicianLicense
+   * @param {object} match
+   */
+  function buildClinicianMismatchMsg(reportClinicianLicense, eligClinicianLicense, match) {
+    // For report row, we do not have the name, so just display license
+    // For elig row, check 'Clinician Name' or 'Clinician'
+    const eligClinicianName = (match['Clinician Name'] || match['Clinician'] || '');
+    let html = `Clinician mismatch: `
+      + `<span class="tooltip-parent"><span class="license-badge">${reportClinicianLicense}</span>`
+      + `<span class="tooltip-text">Report clinician license</span></span>`
+      + ` vs. `
+      + `<span class="tooltip-parent"><span class="license-badge">${eligClinicianLicense}</span>`
+      + `<span class="tooltip-text">${eligClinicianName ? 'Eligibility clinician: ' + eligClinicianName : 'Eligibility clinician license'}</span></span>`;
+    return html;
   }
 
   function formatEligibilityDetailsModal(match) {
@@ -373,6 +425,19 @@ window.addEventListener('DOMContentLoaded', () => {
       payerIDPlan += ` (${r.affiliatedPlan})`;
     }
 
+    // If unknown/clinician mismatch, show the tooltip HTML
+    let remarksCellHtml;
+    if (r.unknown && r.clinicianMismatchMsg) {
+      remarksCellHtml = r.clinicianMismatchMsg + '<br><span style="font-size:90%;color:#888;">(treated as unknown, marked valid)</span>';
+    } else if (r.clinicianMismatchMsg) {
+      // If there are other remarks, add the tooltip also
+      remarksCellHtml = r.remarks.join('\n') + '<br>' + r.clinicianMismatchMsg;
+    } else {
+      remarksCellHtml = r.unknown
+        ? 'Clinician mismatch (treated as unknown, marked valid)'
+        : r.remarks.join('\n');
+    }
+
     row.innerHTML = `
       <td>${index + 1}</td>
       <td class="wrap-col">${r.claimID}</td>
@@ -381,7 +446,7 @@ window.addEventListener('DOMContentLoaded', () => {
       <td>${r.encounterStart || ''}</td>
       <td></td>
       <td>${r.status || ''}</td>
-      <td style="white-space: pre-line;">${r.unknown ? 'Clinician mismatch (treated as unknown, marked valid)' : r.remarks.join('\n')}</td>
+      <td style="white-space: pre-line;">${remarksCellHtml}</td>
     `;
     row.querySelector('td:nth-child(6)').replaceWith(tdBtn);
     return row;
