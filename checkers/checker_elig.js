@@ -21,6 +21,41 @@ window.addEventListener('DOMContentLoaded', () => {
   let eligData = null;
   let insuranceLicenses = null;
 
+  // Excel date number to DD/MM/YYYY string
+  function excelDateToDDMMYYYY(excelDate) {
+    if (!excelDate) return '';
+    // If already a string, try to parse or return as is
+    if (typeof excelDate === 'string') {
+      // Try to convert as ISO or slash format
+      if (/^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(excelDate)) {
+        // Already looks like a date
+        return excelDate.replace(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/, (m, d, mth, y) => {
+          // Pad day/month, expand year if needed
+          const dd = d.padStart(2, '0');
+          const mm = mth.padStart(2, '0');
+          let yyyy = y.length === 2 ? ('20' + y) : y;
+          if (yyyy.length === 4 && yyyy[0] === '0') yyyy = yyyy.slice(1); // handle 025 for 2025
+          return `${dd}/${mm}/${yyyy}`;
+        });
+      }
+      // maybe ISO: 2025-07-07
+      if (/^\d{4}-\d{2}-\d{2}$/.test(excelDate)) {
+        const [yyyy, mm, dd] = excelDate.split('-');
+        return `${dd}/${mm}/${yyyy}`;
+      }
+      return excelDate;
+    }
+    // Excel serial number
+    const date = new Date(Math.round((excelDate - 25569) * 86400 * 1000));
+    // Correction for timezone offset
+    const userTimezoneOffset = date.getTimezoneOffset() * 60000;
+    const dateUTC = new Date(date.getTime() + userTimezoneOffset);
+    const dd = String(dateUTC.getDate()).padStart(2, '0');
+    const mm = String(dateUTC.getMonth() + 1).padStart(2, '0');
+    const yyyy = dateUTC.getFullYear();
+    return `${dd}/${mm}/${yyyy}`;
+  }
+
   // Swap input groups based on report radio
   function swapInputGroups() {
     if (xmlRadio.checked) {
@@ -49,8 +84,8 @@ window.addEventListener('DOMContentLoaded', () => {
       insuranceLicenses = null;
     });
 
-  // XLS/XLSX parsing (SheetJS supports both)
-  async function parseExcel(file) {
+  // SheetJS parse for flexible header row
+  async function parseExcel(file, range = 0) {
     const reader = new FileReader();
     return new Promise((resolve, reject) => {
       reader.onload = e => {
@@ -60,11 +95,10 @@ window.addEventListener('DOMContentLoaded', () => {
           const sheetName = workbook.SheetNames[0];
           const worksheet = workbook.Sheets[sheetName];
           if (!worksheet) throw new Error('No worksheet found in uploaded file.');
-          // Use the first row as headers (Excel row 1, 0-based)
-          const json = XLSX.utils.sheet_to_json(worksheet, { defval: '', range: 0 });
+          const json = XLSX.utils.sheet_to_json(worksheet, { defval: '', range });
           // Debug:
           if (json.length > 0) {
-            console.log("Parsed headers:", Object.keys(json[0]));
+            console.log(`Parsed (range: ${range}) headers:`, Object.keys(json[0]));
             console.log("First parsed row:", json[0]);
           } else {
             console.log("No data rows found in XLS/XLSX.");
@@ -211,13 +245,16 @@ window.addEventListener('DOMContentLoaded', () => {
         }
       }
 
+      // Excel date to DD/MM/YYYY
+      const formattedDate = excelDateToDDMMYYYY(row["ClaimDate"]);
+
       return {
         claimID: row["ClaimID"],
         memberID: row["PatientCardID"],
         payerID: row["Insurance Company"],
         affiliatedPlan,
-        encounterStart: row["ClaimDate"],
-        details: match ? formatEligibilityDetailsModal(match) : formatReportDetailsModal(row),
+        encounterStart: formattedDate,
+        details: match ? formatEligibilityDetailsModal(match) : formatReportDetailsModal(row, formattedDate),
         eligibilityRequestNumber: match?.['Eligibility Request Number'] || row["FileNo"] || null,
         status,
         remarks,
@@ -252,11 +289,11 @@ window.addEventListener('DOMContentLoaded', () => {
     return table;
   }
 
-  function formatReportDetailsModal(row) {
+  function formatReportDetailsModal(row, formattedDate) {
     const fields = [
       { label: "Institution", value: row["Institution"] },
       { label: "ClaimID", value: row["ClaimID"] },
-      { label: "ClaimDate", value: row["ClaimDate"] },
+      { label: "ClaimDate", value: formattedDate || row["ClaimDate"] },
       { label: "OrderDoctor", value: row["OrderDoctor"] },
       { label: "Clinic", value: row["Clinic"] },
       { label: "Insurance Company", value: row["Insurance Company"] },
@@ -396,16 +433,15 @@ window.addEventListener('DOMContentLoaded', () => {
     updateStatus();
   });
 
+  // XLS upload (headers row 1, range 0)
   xlsInput.addEventListener('change', async (e) => {
     status.textContent = 'Loading XLS…';
     processBtn.disabled = true;
     try {
-      let raw = await parseExcel(e.target.files[0]);
-      xlsData = raw;
-      // Debug: Show headers and sample data
-      if (raw.length > 0) {
-        console.log("Detected headers:", Object.keys(raw[0]));
-        console.log("First row:", raw[0]);
+      xlsData = await parseExcel(e.target.files[0], 0);
+      if (xlsData.length > 0) {
+        console.log("Detected headers:", Object.keys(xlsData[0]));
+        console.log("First row:", xlsData[0]);
       } else {
         console.log("No rows detected in XLS upload.");
       }
@@ -416,11 +452,12 @@ window.addEventListener('DOMContentLoaded', () => {
     updateStatus();
   });
 
+  // Eligibility XLSX upload (headers row 2, range 1)
   eligInput.addEventListener('change', async (e) => {
     status.textContent = 'Loading Eligibility XLSX…';
     processBtn.disabled = true;
     try {
-      eligData = await parseExcel(e.target.files[0]);
+      eligData = await parseExcel(e.target.files[0], 1);
       if (eligData && eligData.length > 0) {
         console.log("Eligibility: Detected headers:", Object.keys(eligData[0]));
         console.log("Eligibility: First row:", eligData[0]);
