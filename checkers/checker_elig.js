@@ -144,17 +144,24 @@ window.addEventListener('DOMContentLoaded', () => {
 
 
   // Modified validateXlsWithEligibility with caching
+  // Modified validateXlsWithEligibility to use findBestEligibilityMatch
   function validateXlsWithEligibility(reportRows, eligRows) {
-    if (!filteredXlsData) {
-      filteredXlsData = reportRows.filter(row => {
-        const clinic = (row["Clinic"] || "").toUpperCase().replace(/\s+/g, '');
-        const insurance = (row["Insurance Company"] || "").toUpperCase().replace(/\s+/g, '');
-        return clinic.includes("DENTAL") && (insurance.includes("THIQA") || insurance.includes("DAMAN"));
-      });
-      console.log(`Filtered to ${filteredXlsData.length} dental/THIQA/DAMAN rows`);
+    if (reportRows.length > 0) {
+      console.log("Parsed headers (xls):", Object.keys(reportRows[0]));
+      console.log("First parsed row (xls):", reportRows[0]);
+    } else {
+      console.log("No rows to parse in XLS.");
     }
   
-    return filteredXlsData.map(row => {
+    const filtered = reportRows.filter(row => {
+      const clinic = (row["Clinic"] || "").toUpperCase().replace(/\s+/g, '');
+      const insurance = (row["Insurance Company"] || "").toUpperCase().replace(/\s+/g, '');
+      return clinic.includes("DENTAL") && (insurance.includes("THIQA") || insurance.includes("DAMAN"));
+    });
+  
+    console.log(`Filtered to ${filtered.length} dental/THIQA/DAMAN rows`);
+  
+    return filtered.map(row => {
       const remarks = [];
       let match = null;
       let status = '';
@@ -167,20 +174,16 @@ window.addEventListener('DOMContentLoaded', () => {
         remarks.push("Member ID starts with 0 (invalid)");
       }
   
-      const matches = eligRows.filter(erow => {
-        let xlsCard = (erow['Card Number / DHA Member ID'] || '').replace(/[-\s]/g, '').trim();
-        if (xlsCard.startsWith('0')) xlsCard = xlsCard.substring(1);
-        return xlsCard && xlsCard === stripLeadingZero(memberID);
-      });
-  
-      if (!row["ClaimID"]) remarks.push("Missing ClaimID");
-      if (!row["PatientCardID"]) remarks.push("Missing PatientCardID");
-      if (!row["Clinician License"]) remarks.push("Missing Clinician License");
-  
-      if (matches.length === 0) {
+      // Use helper to find best match
+      const result = findBestEligibilityMatch(memberID, row["ClaimDate"] || '', (row["Clinician License"] || '').trim(), eligRows);
+      if (!result) {
         remarks.push('No eligibility rows found for card number');
       } else {
-        match = matches[0];
+        match = result.match;
+        if (result.unknown) {
+          remarks.push('Clinician mismatch - fallback eligibility used (marked unknown)');
+        }
+  
         status = match['Status'] || '';
         if ((status || '').toLowerCase() !== 'eligible') remarks.push(`Status not eligible (${status})`);
         const excelCard = (match['Card Number / DHA Member ID'] || '').replace(/[-\s]/g, '').trim();
@@ -188,13 +191,14 @@ window.addEventListener('DOMContentLoaded', () => {
           remarks.push('Card Number mismatch between XLS and Eligibility');
         }
   
+        // Clinician-license mismatch check
         const reportLic = (row["Clinician License"] || '').trim();
         const eligLic = (match["Clinician"] || '').trim();
         const reportName = (row["OrderDoctor"] || '').trim();
         const eligName = (match["Clinician Name"] || '').trim();
   
         if (reportLic && eligLic && reportLic !== eligLic) {
-          clinicianMismatch    = true;
+          clinicianMismatch = true;
           clinicianMismatchMsg = buildClinicianMismatchMsg(
             reportLic,
             eligLic,
@@ -219,7 +223,6 @@ window.addEventListener('DOMContentLoaded', () => {
         status,
         remarks,
         match,
-        matches,
         unknown: clinicianMismatch && remarks.length === 0,
         clinicianMismatchMsg: clinicianMismatchMsg
       };
@@ -227,6 +230,7 @@ window.addEventListener('DOMContentLoaded', () => {
   }
 
   // --- XML Validator ---
+  // Modified validateXmlWithEligibility to use findBestEligibilityMatch
   function validateXmlWithEligibility(xmlPayload, eligRows, insuranceLicenses) {
     const { encounters } = xmlPayload;
     return encounters.map(encounter => {
@@ -237,36 +241,36 @@ window.addEventListener('DOMContentLoaded', () => {
       let clinicianMismatch = false;
       let clinicianMismatchMsg = "";
       let memberID = (encounter.memberID || '').toString().trim();
-
+  
       if (memberID.startsWith('0')) {
         remarks.push("Member ID starts with 0 (invalid)");
       }
-
-      const matches = eligRows.filter(erow => {
-        let xlsCard = (erow['Card Number / DHA Member ID'] || '').replace(/[-\s]/g, '').trim();
-        if (xlsCard.startsWith('0')) xlsCard = xlsCard.substring(1);
-        return xlsCard && xlsCard === stripLeadingZero(memberID);
-      });
-
-      if (matches.length === 0) {
+  
+      // Use helper to find best match
+      const result = findBestEligibilityMatch(memberID, encounter.encounterStart || '', (encounter.clinician || '').trim(), eligRows);
+      if (!result) {
         remarks.push('No eligibility rows found for card number');
       } else {
-        match = matches[0];
+        match = result.match;
+        if (result.unknown) {
+          remarks.push('Clinician mismatch - fallback eligibility used (marked unknown)');
+        }
+  
         status = match['Status'] || '';
         if ((status || '').toLowerCase() !== 'eligible') remarks.push(`Status not eligible (${status})`);
         const excelCard = (match['Card Number / DHA Member ID'] || '').replace(/[-\s]/g, '').trim();
         if (excelCard && stripLeadingZero(encounter.memberID || '') !== stripLeadingZero(excelCard)) {
           remarks.push('Card Number mismatch between XML and Eligibility');
         }
-
-        // --- Clinician‑license mismatch check ----
-        const reportLic = (encounter.clinician || '').trim();  // XML <Clinician>
+  
+        // Clinician-license mismatch check
+        const reportLic = (encounter.clinician || '').trim();
         const eligLic = (match["Clinician"] || '').trim();
-        const reportName = '';                                 // XML has no separate name node
+        const reportName = '';
         const eligName = (match["Clinician Name"] || '').trim();
   
         if (reportLic && eligLic && reportLic !== eligLic) {
-          clinicianMismatch    = true;
+          clinicianMismatch = true;
           clinicianMismatchMsg = buildClinicianMismatchMsg(
             reportLic,
             eligLic,
@@ -276,14 +280,14 @@ window.addEventListener('DOMContentLoaded', () => {
             'Eligibility'
           );
         }
-
+  
         const excelProviderLicense = (match['Provider License'] || '').trim();
         const claimProviderID = (encounter.providerID || '').trim();
         if (claimProviderID && excelProviderLicense && claimProviderID !== excelProviderLicense) {
           remarks.push(`ProviderID does not match Provider License in eligibility (XML: "${claimProviderID}", Excel: "${excelProviderLicense}")`);
         }
       }
-
+  
       return {
         claimID: encounter.claimID,
         memberID: encounter.memberID,
@@ -295,7 +299,6 @@ window.addEventListener('DOMContentLoaded', () => {
         status,
         remarks,
         match,
-        matches,
         unknown: clinicianMismatch && remarks.length === 0,
         clinicianMismatchMsg: clinicianMismatchMsg
       };
@@ -478,6 +481,57 @@ window.addEventListener('DOMContentLoaded', () => {
     return row;
   }
 
+  // Helper to find best eligibility match based on memberID, date, and clinician
+  function findBestEligibilityMatch(memberID, claimDateStr, clinicianID, eligRows) {
+    // Convert dd/mm/yyyy to Date object
+    function parseDDMMYYYY(str) {
+      const parts = str.split('/');
+      if (parts.length !== 3) return null;
+      const [dd, mm, yyyy] = parts;
+      return new Date(`${yyyy}-${mm}-${dd}`); // ISO format for Date parsing
+    }
+    
+    const claimDate = parseDDMMYYYY(claimDateStr);
+    if (!claimDate) return null;
+  
+    // Normalize member ID for comparison
+    const memberIDNorm = stripLeadingZero(memberID);
+    const filteredElig = eligRows.filter(erow => {
+      let xlsCard = (erow['Card Number / DHA Member ID'] || '').replace(/[-\s]/g, '').trim();
+      if (xlsCard.startsWith('0')) xlsCard = xlsCard.substring(1);
+      return xlsCard === memberIDNorm;
+    });
+  
+    if (filteredElig.length === 0) return null;
+  
+    // Map elig rows to dates and date difference
+    const eligWithDate = filteredElig.map(erow => {
+      let eligDateStr = erow['Ordered On'] || erow['EffectiveDate'] || erow['Effective Date'] || '';
+      if (!eligDateStr) eligDateStr = erow['Answered On'] || '';
+      const eligDate = parseDDMMYYYY(eligDateStr) || new Date(0);
+      const diffDays = Math.abs((claimDate - eligDate) / (1000 * 60 * 60 * 24));
+      return { erow, eligDate, diffDays };
+    });
+  
+    // Sort by closest date first
+    eligWithDate.sort((a, b) => a.diffDays - b.diffDays);
+  
+    // Try to find exact clinician match first
+    for (const { erow } of eligWithDate) {
+      const eligClinID = (erow['Clinician'] || '').trim();
+      if (eligClinID && clinicianID && eligClinID === clinicianID) {
+        return { match: erow, unknown: false };
+      }
+    }
+  
+    // Fallback to closest date match with unknown flag
+    if (eligWithDate.length > 0) {
+      return { match: eligWithDate[0].erow, unknown: true };
+    }
+  
+    return null;
+  }
+  
   // Modified updateStatus function to show filtered count for XLS report rows
   function updateStatus() {
     const usingXml = xmlRadio.checked;
