@@ -24,30 +24,23 @@ window.addEventListener('DOMContentLoaded', () => {
   // Excel date number to DD/MM/YYYY string
   function excelDateToDDMMYYYY(excelDate) {
     if (!excelDate) return '';
-    // If already a string, try to parse or return as is
     if (typeof excelDate === 'string') {
-      // Try to convert as ISO or slash format
       if (/^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(excelDate)) {
-        // Already looks like a date
         return excelDate.replace(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/, (m, d, mth, y) => {
-          // Pad day/month, expand year if needed
           const dd = d.padStart(2, '0');
           const mm = mth.padStart(2, '0');
           let yyyy = y.length === 2 ? ('20' + y) : y;
-          if (yyyy.length === 4 && yyyy[0] === '0') yyyy = yyyy.slice(1); // handle 025 for 2025
+          if (yyyy.length === 4 && yyyy[0] === '0') yyyy = yyyy.slice(1);
           return `${dd}/${mm}/${yyyy}`;
         });
       }
-      // maybe ISO: 2025-07-07
       if (/^\d{4}-\d{2}-\d{2}$/.test(excelDate)) {
         const [yyyy, mm, dd] = excelDate.split('-');
         return `${dd}/${mm}/${yyyy}`;
       }
       return excelDate;
     }
-    // Excel serial number
     const date = new Date(Math.round((excelDate - 25569) * 86400 * 1000));
-    // Correction for timezone offset
     const userTimezoneOffset = date.getTimezoneOffset() * 60000;
     const dateUTC = new Date(date.getTime() + userTimezoneOffset);
     const dd = String(dateUTC.getDate()).padStart(2, '0');
@@ -56,7 +49,6 @@ window.addEventListener('DOMContentLoaded', () => {
     return `${dd}/${mm}/${yyyy}`;
   }
 
-  // Swap input groups based on report radio
   function swapInputGroups() {
     if (xmlRadio.checked) {
       xmlGroup.style.display = '';
@@ -70,10 +62,8 @@ window.addEventListener('DOMContentLoaded', () => {
   xmlRadio.addEventListener('change', swapInputGroups);
   xlsRadio.addEventListener('change', swapInputGroups);
 
-  // Always show eligibility group (never swaps)
   eligGroup.style.display = '';
 
-  // Load insurance_licenses.json (if present)
   fetch('insurance_licenses.json')
     .then(r => r.json())
     .then(json => {
@@ -84,7 +74,6 @@ window.addEventListener('DOMContentLoaded', () => {
       insuranceLicenses = null;
     });
 
-  // SheetJS parse for flexible header row
   async function parseExcel(file, range = 0) {
     const reader = new FileReader();
     return new Promise((resolve, reject) => {
@@ -96,7 +85,6 @@ window.addEventListener('DOMContentLoaded', () => {
           const worksheet = workbook.Sheets[sheetName];
           if (!worksheet) throw new Error('No worksheet found in uploaded file.');
           const json = XLSX.utils.sheet_to_json(worksheet, { defval: '', range });
-          // Debug:
           if (json.length > 0) {
             console.log(`Parsed (range: ${range}) headers:`, Object.keys(json[0]));
             console.log("First parsed row:", json[0]);
@@ -113,7 +101,6 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // XML parsing
   function parseXML(file) {
     return file.text().then(xmlText => {
       const parser = new DOMParser();
@@ -140,7 +127,6 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Find in eligibility by card number (ignoring date, whitespace, dashes)
   function findEligibilityMatchesByCard(memberID, eligRows) {
     const cardCol = 'Card Number / DHA Member ID';
     return eligRows.filter(row => {
@@ -149,15 +135,16 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Validation for XML mode
   function validateXmlWithEligibility(xmlPayload, eligRows, insuranceLicenses) {
     const { encounters } = xmlPayload;
+    // No filtering needed for XML mode as per your logic.
     return encounters.map(encounter => {
       const matches = findEligibilityMatchesByCard(encounter.memberID, eligRows);
       const remarks = [];
       let match = null;
       let status = '';
       let affiliatedPlan = '';
+      let clinicianMismatch = false;
 
       if (matches.length === 0) {
         remarks.push('No eligibility rows found for card number');
@@ -172,7 +159,7 @@ window.addEventListener('DOMContentLoaded', () => {
         const encounterClinician = (encounter.clinician || '').trim();
         const eligClinician = (match['Clinician'] || match['Clinician Name'] || '').trim();
         if (encounterClinician && eligClinician && encounterClinician !== eligClinician) {
-          remarks.push(`Clinician mismatch (XML: "${encounterClinician}", Excel: "${eligClinician}")`);
+          clinicianMismatch = true;
         }
         const excelProviderLicense = (match['Provider License'] || '').trim();
         const claimProviderID = (encounter.providerID || '').trim();
@@ -181,7 +168,6 @@ window.addEventListener('DOMContentLoaded', () => {
         }
       }
 
-      // Optionally, add insurance license validation
       return {
         claimID: encounter.claimID,
         memberID: encounter.memberID,
@@ -193,14 +179,13 @@ window.addEventListener('DOMContentLoaded', () => {
         status,
         remarks,
         match,
-        matches
+        matches,
+        unknown: clinicianMismatch && remarks.length === 0
       };
     });
   }
 
-  // Validation for XLS (XLSX) mode (using your column names directly)
   function validateXlsWithEligibility(reportRows, eligRows) {
-    // Debug: print headers and first row
     if (reportRows.length > 0) {
       console.log("Parsed headers (xls):", Object.keys(reportRows[0]));
       console.log("First parsed row (xls):", reportRows[0]);
@@ -223,12 +208,14 @@ window.addEventListener('DOMContentLoaded', () => {
       let match = null;
       let status = '';
       let affiliatedPlan = '';
+      let clinicianMismatch = false;
 
       if (!row["ClaimID"]) remarks.push("Missing ClaimID");
       if (!row["PatientCardID"]) remarks.push("Missing PatientCardID");
       if (!row["Clinician License"]) remarks.push("Missing Clinician License");
 
       if (matches.length === 0) {
+        // No eligibility found, but we will display these!
         remarks.push('No eligibility rows found for card number');
       } else {
         match = matches[0];
@@ -241,11 +228,10 @@ window.addEventListener('DOMContentLoaded', () => {
         const reportClinician = (row["Clinician License"] || '').trim();
         const eligClinician = (match['Clinician'] || match['Clinician Name'] || '').trim();
         if (reportClinician && eligClinician && reportClinician !== eligClinician) {
-          remarks.push(`Clinician mismatch (XLS: "${reportClinician}", Eligibility: "${eligClinician}")`);
+          clinicianMismatch = true;
         }
       }
 
-      // Excel date to DD/MM/YYYY
       const formattedDate = excelDateToDDMMYYYY(row["ClaimDate"]);
 
       return {
@@ -259,12 +245,12 @@ window.addEventListener('DOMContentLoaded', () => {
         status,
         remarks,
         match,
-        matches
+        matches,
+        unknown: clinicianMismatch && remarks.length === 0
       };
     });
   }
 
-  // Details modal formatting
   function formatEligibilityDetailsModal(match) {
     const fields = [
       { label: 'Eligibility Request Number', value: match['Eligibility Request Number'] || '' },
@@ -308,7 +294,6 @@ window.addEventListener('DOMContentLoaded', () => {
     return table;
   }
 
-  // Table/Modal rendering
   function buildTableContainer(containerId = 'results') {
     const c = document.getElementById(containerId);
     c.innerHTML = `<table class="shared-table">
@@ -364,7 +349,13 @@ window.addEventListener('DOMContentLoaded', () => {
 
   function createRow(r, index, { modal, modalContent }) {
     const row = document.createElement('tr');
-    row.classList.add(r.remarks.length ? 'invalid' : 'valid');
+    if (r.unknown) {
+      row.classList.add('unknown');
+    } else if (r.remarks.length) {
+      row.classList.add('invalid');
+    } else {
+      row.classList.add('valid');
+    }
     const btn = document.createElement('button');
     btn.textContent = r.eligibilityRequestNumber || 'No Request';
     btn.disabled = !r.eligibilityRequestNumber && !r.details;
@@ -390,7 +381,7 @@ window.addEventListener('DOMContentLoaded', () => {
       <td>${r.encounterStart || ''}</td>
       <td></td>
       <td>${r.status || ''}</td>
-      <td style="white-space: pre-line;">${r.remarks.join('\n')}</td>
+      <td style="white-space: pre-line;">${r.unknown ? 'Clinician mismatch (treated as unknown, marked valid)' : r.remarks.join('\n')}</td>
     `;
     row.querySelector('td:nth-child(6)').replaceWith(tdBtn);
     return row;
@@ -420,7 +411,6 @@ window.addEventListener('DOMContentLoaded', () => {
     processBtn.disabled = !((usingXml && xmlLoaded && eligLoaded) || (!usingXml && xlsLoaded && eligLoaded));
   }
 
-  // File input handlers
   xmlInput.addEventListener('change', async (e) => {
     status.textContent = 'Loading XML…';
     processBtn.disabled = true;
@@ -433,7 +423,6 @@ window.addEventListener('DOMContentLoaded', () => {
     updateStatus();
   });
 
-  // XLS upload (headers row 1, range 0)
   xlsInput.addEventListener('change', async (e) => {
     status.textContent = 'Loading XLS…';
     processBtn.disabled = true;
@@ -452,7 +441,6 @@ window.addEventListener('DOMContentLoaded', () => {
     updateStatus();
   });
 
-  // Eligibility XLSX upload (headers row 2, range 1)
   eligInput.addEventListener('change', async (e) => {
     status.textContent = 'Loading Eligibility XLSX…';
     processBtn.disabled = true;
@@ -469,7 +457,6 @@ window.addEventListener('DOMContentLoaded', () => {
     updateStatus();
   });
 
-  // Process
   processBtn.addEventListener('click', async () => {
     if (xmlRadio.checked) {
       if (!xmlData || !eligData) {
@@ -481,8 +468,9 @@ window.addEventListener('DOMContentLoaded', () => {
       try {
         const results = validateXmlWithEligibility(xmlData, eligData, insuranceLicenses);
         renderResults(results);
-        const validCount = results.filter(r => r.remarks.length === 0).length;
-        const totalCount = results.length;
+        // Mark as valid if only clinician mismatch (unknown) or no remarks
+        const validCount = results.filter(r => r.unknown || r.remarks.length === 0).length;
+        const totalCount = results.length; // Only the filtered/validated results
         const percent = totalCount > 0 ? Math.round((validCount / totalCount) * 100) : 0;
         status.textContent = `Valid: ${validCount} / ${totalCount} (${percent}%)`;
         console.log(`Results: ${validCount} valid out of ${totalCount}`);
@@ -501,8 +489,9 @@ window.addEventListener('DOMContentLoaded', () => {
       try {
         const results = validateXlsWithEligibility(xlsData, eligData);
         renderResults(results);
-        const validCount = results.filter(r => r.remarks.length === 0).length;
-        const totalCount = results.length;
+        // Mark as valid if only clinician mismatch (unknown) or no remarks
+        const validCount = results.filter(r => r.unknown || r.remarks.length === 0).length;
+        const totalCount = results.length; // Only the filtered/validated results
         const percent = totalCount > 0 ? Math.round((validCount / totalCount) * 100) : 0;
         status.textContent = `Valid: ${validCount} / ${totalCount} (${percent}%)`;
         console.log(`Results: ${validCount} valid out of ${totalCount}`);
@@ -514,6 +503,5 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Initial swap
   swapInputGroups();
 });
