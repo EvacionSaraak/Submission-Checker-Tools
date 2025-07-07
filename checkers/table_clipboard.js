@@ -11,6 +11,7 @@ document.addEventListener('click', e => {
   ) {
     const text = cell.textContent.trim();
     if (text) {
+      console.log(text);
       navigator.clipboard.writeText(text).then(() => {
         // Remove previous permanent highlight
         document.querySelectorAll('td.last-copied').forEach(td => td.classList.remove('last-copied'));
