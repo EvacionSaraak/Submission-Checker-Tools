@@ -260,7 +260,7 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId) {
   let clinicianMismatchMsg = "";
 
   if (!matchedRow.AuthorizationID) {
-    remarks.push(`${code} has no matching authorization for ${memberId}.`);
+    remarks.push(`${code} has no matching authorization.`);
   } else {
     ["Item Code", "Card Number / DHA Member ID", "Ordering Clinician", "Payer Share"].forEach(field => {
       const v = String(matchedRow[field] || "");
