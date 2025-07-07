@@ -21,24 +21,6 @@ window.addEventListener('DOMContentLoaded', () => {
   let eligData = null;
   let insuranceLicenses = null;
 
-  // Utility: Normalize row keys for robust XLS/XLSX compatibility
-  function normalizeRow(row) {
-    const normalized = {};
-    Object.keys(row).forEach(k => {
-      normalized[k.replace(/\s+/g, ' ').trim().toUpperCase()] = row[k];
-    });
-    return normalized;
-  }
-
-  // These are the normalized header names (all uppercase, spaces normalized)
-  const CLINIC_KEY = "CLINIC";
-  const INSCO_KEY = "INSURANCE COMPANY";
-  const PATIENTCARD_KEY = "PATIENTCARDID";
-  const CLAIMID_KEY = "CLAIMID";
-  const CLINICIAN_KEY = "CLINICIAN LICENSE";
-  const CLAIMDATE_KEY = "CLAIMDATE";
-  const FILENO_KEY = "FILENO";
-
   // Swap input groups based on report radio
   function swapInputGroups() {
     if (xmlRadio.checked) {
@@ -78,7 +60,15 @@ window.addEventListener('DOMContentLoaded', () => {
           const sheetName = workbook.SheetNames[0];
           const worksheet = workbook.Sheets[sheetName];
           if (!worksheet) throw new Error('No worksheet found in uploaded file.');
-          const json = XLSX.utils.sheet_to_json(worksheet, { defval: '', range: 1 });
+          // Use the first row as headers (Excel row 1, 0-based)
+          const json = XLSX.utils.sheet_to_json(worksheet, { defval: '', range: 0 });
+          // Debug:
+          if (json.length > 0) {
+            console.log("Parsed headers:", Object.keys(json[0]));
+            console.log("First parsed row:", json[0]);
+          } else {
+            console.log("No data rows found in XLS/XLSX.");
+          }
           resolve(json);
         } catch (err) {
           reject(err);
@@ -174,38 +164,35 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Validation for XLS (XLSX) mode
+  // Validation for XLS (XLSX) mode (using your column names directly)
   function validateXlsWithEligibility(reportRows, eligRows) {
-    // Normalize all rows for robust header matching
-    const normalizedRows = reportRows.map(normalizeRow);
-
-    // Debug: print normalized headers and first row
-    if (normalizedRows.length > 0) {
-      console.log("Normalized headers:", Object.keys(normalizedRows[0]));
-      console.log("Sample normalized row:", normalizedRows[0]);
+    // Debug: print headers and first row
+    if (reportRows.length > 0) {
+      console.log("Parsed headers (xls):", Object.keys(reportRows[0]));
+      console.log("First parsed row (xls):", reportRows[0]);
     } else {
-      console.log("No rows to normalize.");
+      console.log("No rows to parse in XLS.");
     }
 
     // Filter only dental and insurance relevant rows, robust to whitespace/casing
-    const filtered = normalizedRows.filter(row => {
-      const clinic = (row[CLINIC_KEY] || "").toUpperCase().replace(/\s+/g, '');
-      const insurance = (row[INSCO_KEY] || "").toUpperCase().replace(/\s+/g, '');
+    const filtered = reportRows.filter(row => {
+      const clinic = (row["Clinic"] || "").toUpperCase().replace(/\s+/g, '');
+      const insurance = (row["Insurance Company"] || "").toUpperCase().replace(/\s+/g, '');
       return clinic.includes("DENTAL") && (insurance.includes("THIQA") || insurance.includes("DAMAN"));
     });
 
     console.log(`Filtered to ${filtered.length} dental/THIQA/DAMAN rows`);
 
     return filtered.map(row => {
-      const matches = findEligibilityMatchesByCard(row[PATIENTCARD_KEY], eligRows);
+      const matches = findEligibilityMatchesByCard(row["PatientCardID"], eligRows);
       const remarks = [];
       let match = null;
       let status = '';
       let affiliatedPlan = '';
 
-      if (!row[CLAIMID_KEY]) remarks.push("Missing ClaimID");
-      if (!row[PATIENTCARD_KEY]) remarks.push("Missing PatientCardID");
-      if (!row[CLINICIAN_KEY]) remarks.push("Missing Clinician License");
+      if (!row["ClaimID"]) remarks.push("Missing ClaimID");
+      if (!row["PatientCardID"]) remarks.push("Missing PatientCardID");
+      if (!row["Clinician License"]) remarks.push("Missing Clinician License");
 
       if (matches.length === 0) {
         remarks.push('No eligibility rows found for card number');
@@ -214,10 +201,10 @@ window.addEventListener('DOMContentLoaded', () => {
         status = match['Status'] || '';
         if ((status || '').toLowerCase() !== 'eligible') remarks.push(`Status not eligible (${status})`);
         const excelCard = (match['Card Number / DHA Member ID'] || '').replace(/[-\s]/g, '').trim();
-        if (excelCard && (row[PATIENTCARD_KEY] || '').replace(/[-\s]/g, '').trim() !== excelCard) {
+        if (excelCard && (row["PatientCardID"] || '').replace(/[-\s]/g, '').trim() !== excelCard) {
           remarks.push('Card Number mismatch between XLS and Eligibility');
         }
-        const reportClinician = (row[CLINICIAN_KEY] || '').trim();
+        const reportClinician = (row["Clinician License"] || '').trim();
         const eligClinician = (match['Clinician'] || match['Clinician Name'] || '').trim();
         if (reportClinician && eligClinician && reportClinician !== eligClinician) {
           remarks.push(`Clinician mismatch (XLS: "${reportClinician}", Eligibility: "${eligClinician}")`);
@@ -225,13 +212,13 @@ window.addEventListener('DOMContentLoaded', () => {
       }
 
       return {
-        claimID: row[CLAIMID_KEY],
-        memberID: row[PATIENTCARD_KEY],
-        payerID: row[INSCO_KEY],
+        claimID: row["ClaimID"],
+        memberID: row["PatientCardID"],
+        payerID: row["Insurance Company"],
         affiliatedPlan,
-        encounterStart: row[CLAIMDATE_KEY],
+        encounterStart: row["ClaimDate"],
         details: match ? formatEligibilityDetailsModal(match) : formatReportDetailsModal(row),
-        eligibilityRequestNumber: match?.['Eligibility Request Number'] || row[FILENO_KEY] || null,
+        eligibilityRequestNumber: match?.['Eligibility Request Number'] || row["FileNo"] || null,
         status,
         remarks,
         match,
@@ -267,15 +254,16 @@ window.addEventListener('DOMContentLoaded', () => {
 
   function formatReportDetailsModal(row) {
     const fields = [
-      { label: "ClaimID", value: row[CLAIMID_KEY] },
-      { label: "ClaimDate", value: row[CLAIMDATE_KEY] },
-      { label: "OrderDoctor", value: row["ORDERDOCTOR"] },
-      { label: "Clinic", value: row[CLINIC_KEY] },
-      { label: "Insurance Company", value: row[INSCO_KEY] },
-      { label: "PatientCardID", value: row[PATIENTCARD_KEY] },
-      { label: "FileNo", value: row[FILENO_KEY] },
-      { label: "Clinician License", value: row[CLINICIAN_KEY] },
-      { label: "Opened by/Registration Staff name", value: row["OPENED BY/REGISTRATION STAFF NAME"] }
+      { label: "Institution", value: row["Institution"] },
+      { label: "ClaimID", value: row["ClaimID"] },
+      { label: "ClaimDate", value: row["ClaimDate"] },
+      { label: "OrderDoctor", value: row["OrderDoctor"] },
+      { label: "Clinic", value: row["Clinic"] },
+      { label: "Insurance Company", value: row["Insurance Company"] },
+      { label: "PatientCardID", value: row["PatientCardID"] },
+      { label: "FileNo", value: row["FileNo"] },
+      { label: "Clinician License", value: row["Clinician License"] },
+      { label: "Opened by/Registration Staff name", value: row["Opened by/Registration Staff name"] }
     ];
     let table = '<table class="shared-table details-table"><tbody>';
     fields.forEach(f => { table += `<tr><th>${f.label}</th><td>${f.value}</td></tr>`; });
@@ -414,7 +402,6 @@ window.addEventListener('DOMContentLoaded', () => {
     try {
       let raw = await parseExcel(e.target.files[0]);
       xlsData = raw;
-
       // Debug: Show headers and sample data
       if (raw.length > 0) {
         console.log("Detected headers:", Object.keys(raw[0]));
