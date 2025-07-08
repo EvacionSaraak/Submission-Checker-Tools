@@ -154,212 +154,192 @@ window.addEventListener('DOMContentLoaded', () => {
   
     console.log(`Processing ${reportRows.length} XLS report row(s)`);
   
-    return reportRows.map(row => {
-      const remarks = [];
-      let match = null;
-      let status = '';
-      let affiliatedPlan = '';
-      let clinicianMismatch = false;
-      let clinicianMismatchMsg = "";
-      let memberID = (row["PatientCardID"] || '').toString().trim();
+    const seenClaimIDs = new Set();
   
-      if (memberID.startsWith('0')) {
-        remarks.push("Member ID starts with 0 (invalid)");
-      }
-
-      if (/VVIP/i.test(memberID)) {
-        // Mark valid without eligibility
+    return reportRows
+      .map(row => {
+        const claimID = row["ClaimID"];
+        if (seenClaimIDs.has(claimID)) return null;
+        seenClaimIDs.add(claimID);
+  
+        const remarks = [];
+        let match = null;
+        let status = '';
+        let affiliatedPlan = '';
+        let clinicianMismatch = false;
+        let clinicianMismatchMsg = "";
+        let memberID = (row["PatientCardID"] || '').toString().trim();
+  
+        if (memberID.startsWith('0')) {
+          remarks.push("Member ID starts with 0 (invalid)");
+        }
+  
+        if (/VVIP/i.test(memberID)) {
+          status = 'VVIP';
+        } else {
+          const result = findBestEligibilityMatch(memberID, row["ClaimDate"] || '', (row["Clinician License"] || '').trim(), eligRows);
+          if (!result) {
+            remarks.push('No eligibility rows found for card number');
+          } else if (result.error) {
+            remarks.push(result.error);
+          } else {
+            match = result.match;
+            if (result.unknown) {
+              remarks.push('Clinician mismatch - fallback eligibility used (marked unknown)');
+            }
+  
+            status = match['Status'] || '';
+            if ((status || '').toLowerCase() !== 'eligible') remarks.push(`Status not eligible (${status})`);
+  
+            const serviceCategory = (match['Service Category'] || '').trim();
+            const consultationStatus = (match['Consultation Status'] || '').trim().toLowerCase();
+  
+            const validServices = [
+              { cat: 'Dental Services', group: 'Dental' },
+              { cat: 'Physiotherapy', group: 'Physiotherapy' },
+              { cat: 'Other OP Services', group: 'OtherOP' },
+              { cat: 'Consultation', group: 'Consultation', condition: () => consultationStatus === 'elective' }
+            ];
+  
+            const matchedGroup = validServices.find(entry =>
+              entry.cat === serviceCategory &&
+              (!entry.condition || entry.condition())
+            );
+  
+            if (!matchedGroup) {
+              remarks.push(`Invalid Service Category: "${serviceCategory}"`);
+            }
+  
+            const excelCard = (match['Card Number / DHA Member ID'] || '').replace(/[-\s]/g, '').trim();
+            if (excelCard && stripLeadingZero(row["PatientCardID"] || '') !== stripLeadingZero(excelCard)) {
+              remarks.push('Card Number mismatch between XLS and Eligibility');
+            }
+  
+            const reportLic = (row["Clinician License"] || '').trim();
+            const eligLic = (match["Clinician"] || '').trim();
+            const reportName = (row["OrderDoctor"] || '').trim();
+            const eligName = (match["Clinician Name"] || '').trim();
+  
+            if (reportLic && eligLic && reportLic !== eligLic) {
+              clinicianMismatch = true;
+              clinicianMismatchMsg = buildClinicianMismatchMsg(
+                reportLic,
+                eligLic,
+                reportName,
+                eligName,
+                'XLSX',
+                'Eligibility'
+              );
+            }
+          }
+        }
+  
+        const formattedDate = excelDateToDDMMYYYY(row["ClaimDate"]);
+  
         return {
           claimID: row["ClaimID"],
-          memberID,
+          memberID: row["PatientCardID"],
           payerID: row["Insurance Company"],
-          affiliatedPlan: '',
-          encounterStart: excelDateToDDMMYYYY(row["ClaimDate"]),
-          details: '', // no eligibility details
-          eligibilityRequestNumber: null,
-          status: 'Eligible (VVIP bypass)',
-          remarks: ['VVIP member, eligibility bypassed'],
-          match: null,
-          unknown: false,
-          clinicianMismatchMsg: '',
-          serviceCategory: ''
+          affiliatedPlan,
+          encounterStart: formattedDate,
+          clinic: row["Clinic"] || '',
+          details: match ? formatEligibilityDetailsModal(match, row["PatientCardID"]) : formatReportDetailsModal(row, formattedDate),
+          eligibilityRequestNumber: match?.['Eligibility Request Number'] || row["FileNo"] || null,
+          status,
+          remarks,
+          match,
+          unknown: clinicianMismatch && remarks.length === 0,
+          clinicianMismatchMsg,
+          serviceCategory: match?.['Service Category'] || ''
         };
-      }
-      
-      // Use helper to find best match
-      const result = findBestEligibilityMatch(memberID, row["ClaimDate"] || '', (row["Clinician License"] || '').trim(), eligRows);
-      if (!result) {
-        remarks.push('No eligibility rows found for card number');
-      } else if (result.error) {
-        remarks.push(result.error); // e.g., "No eligibility was taken on this date"
-      } else {
-        match = result.match;
-        if (result.unknown) {
-          remarks.push('Clinician mismatch - fallback eligibility used (marked unknown)');
-        }
-  
-        status = match['Status'] || '';
-        if ((status || '').toLowerCase() !== 'eligible') remarks.push(`Status not eligible (${status})`);
-  
-        // --- Service Category Validation ---
-        const serviceCategory = (match['Service Category'] || '').trim();
-        const consultationStatus = (match['Consultation Status'] || '').trim().toLowerCase();
-  
-        const validServices = [
-          { cat: 'Dental Services', group: 'Dental' },
-          { cat: 'Physiotherapy', group: 'Physiotherapy' },
-          { cat: 'Other OP Services', group: 'OtherOP' },
-          { cat: 'Consultation', group: 'Consultation', condition: () => consultationStatus === 'elective' }
-        ];
-  
-        const matchedGroup = validServices.find(entry =>
-          entry.cat === serviceCategory &&
-          (!entry.condition || entry.condition())
-        );
-  
-        if (!matchedGroup) {
-          remarks.push(`Invalid Service Category: "${serviceCategory}"`);
-        }
-        // -----------------------------------
-  
-        const excelCard = (match['Card Number / DHA Member ID'] || '').replace(/[-\s]/g, '').trim();
-        if (excelCard && stripLeadingZero(row["PatientCardID"] || '') !== stripLeadingZero(excelCard)) {
-          remarks.push('Card Number mismatch between XLS and Eligibility');
-        }
-  
-        // Clinician-license mismatch check
-        const reportLic = (row["Clinician License"] || '').trim();
-        const eligLic = (match["Clinician"] || '').trim();
-        const reportName = (row["OrderDoctor"] || '').trim();
-        const eligName = (match["Clinician Name"] || '').trim();
-  
-        if (reportLic && eligLic && reportLic !== eligLic) {
-          clinicianMismatch = true;
-          clinicianMismatchMsg = buildClinicianMismatchMsg(
-            reportLic,
-            eligLic,
-            reportName,
-            eligName,
-            'XLSX',
-            'Eligibility'
-          );
-        }
-      }
-  
-      const formattedDate = excelDateToDDMMYYYY(row["ClaimDate"]);
-  
-      return {
-        claimID: row["ClaimID"],
-        memberID: row["PatientCardID"],
-        payerID: row["Insurance Company"],
-        clinic: row["Clinic"] || '',
-        affiliatedPlan,
-        encounterStart: formattedDate,
-        details: match ? formatEligibilityDetailsModal(match, row["PatientCardID"]) : formatReportDetailsModal(row, formattedDate),
-        eligibilityRequestNumber: match?.['Eligibility Request Number'] || row["FileNo"] || null,
-        status,
-        remarks,
-        match,
-        unknown: clinicianMismatch && remarks.length === 0,
-        clinicianMismatchMsg: clinicianMismatchMsg,
-        serviceCategory: match?.['Service Category'] || ''
-      };
-    });
+      })
+      .filter(Boolean); // remove skipped duplicates
   }
 
   // --- XML Validator ---
-  // Modified validateXmlWithEligibility to use findBestEligibilityMatch
   function validateXmlWithEligibility(xmlPayload, eligRows, insuranceLicenses) {
     const { encounters } = xmlPayload;
-    return encounters.map(encounter => {
-      const remarks = [];
-      let match = null;
-      let status = '';
-      let affiliatedPlan = '';
-      let clinicianMismatch = false;
-      let clinicianMismatchMsg = "";
-      let memberID = (encounter.memberID || '').toString().trim();
+    const seenClaimIDs = new Set();
   
-      if (memberID.startsWith('0')) {
-        remarks.push("Member ID starts with 0 (invalid)");
-      }
-
-      if (/VVIP/i.test(memberID)) {
-        // Mark valid without eligibility
+    return encounters
+      .map(encounter => {
+        const claimID = encounter.claimID;
+        if (seenClaimIDs.has(claimID)) return null;
+        seenClaimIDs.add(claimID);
+  
+        const remarks = [];
+        let match = null;
+        let status = '';
+        let affiliatedPlan = '';
+        let clinicianMismatch = false;
+        let clinicianMismatchMsg = "";
+        let memberID = (encounter.memberID || '').toString().trim();
+  
+        if (memberID.startsWith('0')) {
+          remarks.push("Member ID starts with 0 (invalid)");
+        }
+  
+        if (/VVIP/i.test(memberID)) {
+          status = 'VVIP';
+        } else {
+          const result = findBestEligibilityMatch(memberID, encounter.encounterStart || '', (encounter.clinician || '').trim(), eligRows);
+          if (!result) {
+            remarks.push('No eligibility rows found for card number');
+          } else {
+            match = result.match;
+            if (result.unknown) {
+              remarks.push('Clinician mismatch - fallback eligibility used (marked unknown)');
+            }
+  
+            status = match['Status'] || '';
+            if ((status || '').toLowerCase() !== 'eligible') remarks.push(`Status not eligible (${status})`);
+  
+            const excelCard = (match['Card Number / DHA Member ID'] || '').replace(/[-\s]/g, '').trim();
+            if (excelCard && stripLeadingZero(encounter.memberID || '') !== stripLeadingZero(excelCard)) {
+              remarks.push('Card Number mismatch between XML and Eligibility');
+            }
+  
+            const reportLic = (encounter.clinician || '').trim();
+            const eligLic = (match["Clinician"] || '').trim();
+            const reportName = '';
+            const eligName = (match["Clinician Name"] || '').trim();
+  
+            if (reportLic && eligLic && reportLic !== eligLic) {
+              clinicianMismatch = true;
+              clinicianMismatchMsg = buildClinicianMismatchMsg(
+                reportLic,
+                eligLic,
+                reportName,
+                eligName,
+                'XML',
+                'Eligibility'
+              );
+            }
+  
+            const excelProviderLicense = (match['Provider License'] || '').trim();
+            const claimProviderID = (encounter.providerID || '').trim();
+            if (claimProviderID && excelProviderLicense && claimProviderID !== excelProviderLicense) {
+              remarks.push(`ProviderID does not match Provider License in eligibility (XML: "${claimProviderID}", Excel: "${excelProviderLicense}")`);
+            }
+          }
+        }
+  
         return {
           claimID: encounter.claimID,
-          memberID,
+          memberID: encounter.memberID,
           payerID: encounter.payerID,
-          affiliatedPlan: '',
+          affiliatedPlan,
           encounterStart: encounter.encounterStart,
-          details: '',
-          eligibilityRequestNumber: null,
-          status: 'Eligible (VVIP bypass)',
-          remarks: ['VVIP member, eligibility bypassed'],
-          match: null,
-          unknown: false,
-          clinicianMismatchMsg: ''
+          details: match ? formatEligibilityDetailsModal(match, encounter.memberID) : '',
+          eligibilityRequestNumber: match?.['Eligibility Request Number'] || null,
+          status,
+          remarks,
+          match,
+          unknown: clinicianMismatch && remarks.length === 0,
+          clinicianMismatchMsg
         };
-      }
-  
-      // Use helper to find best match
-      const result = findBestEligibilityMatch(memberID, encounter.encounterStart || '', (encounter.clinician || '').trim(), eligRows);
-      if (!result) {
-        remarks.push('No eligibility rows found for card number');
-      } else {
-        match = result.match;
-        if (result.unknown) {
-          remarks.push('Clinician mismatch - fallback eligibility used (marked unknown)');
-        }
-  
-        status = match['Status'] || '';
-        if ((status || '').toLowerCase() !== 'eligible') remarks.push(`Status not eligible (${status})`);
-        const excelCard = (match['Card Number / DHA Member ID'] || '').replace(/[-\s]/g, '').trim();
-        if (excelCard && stripLeadingZero(encounter.memberID || '') !== stripLeadingZero(excelCard)) {
-          remarks.push('Card Number mismatch between XML and Eligibility');
-        }
-  
-        // Clinician-license mismatch check
-        const reportLic = (encounter.clinician || '').trim();
-        const eligLic = (match["Clinician"] || '').trim();
-        const reportName = '';
-        const eligName = (match["Clinician Name"] || '').trim();
-  
-        if (reportLic && eligLic && reportLic !== eligLic) {
-          clinicianMismatch = true;
-          clinicianMismatchMsg = buildClinicianMismatchMsg(
-            reportLic,
-            eligLic,
-            reportName,
-            eligName,
-            'XML',
-            'Eligibility'
-          );
-        }
-  
-        const excelProviderLicense = (match['Provider License'] || '').trim();
-        const claimProviderID = (encounter.providerID || '').trim();
-        if (claimProviderID && excelProviderLicense && claimProviderID !== excelProviderLicense) {
-          remarks.push(`ProviderID does not match Provider License in eligibility (XML: "${claimProviderID}", Excel: "${excelProviderLicense}")`);
-        }
-      }
-  
-      return {
-        claimID: encounter.claimID,
-        memberID: encounter.memberID,
-        payerID: encounter.payerID,
-        clinic: '',
-        affiliatedPlan,
-        encounterStart: encounter.encounterStart,
-        details: match ? formatEligibilityDetailsModal(match, encounter.memberID) : '',
-        eligibilityRequestNumber: match?.['Eligibility Request Number'] || null,
-        status,
-        remarks,
-        match,
-        unknown: clinicianMismatch && remarks.length === 0,
-        clinicianMismatchMsg: clinicianMismatchMsg
-      };
-    });
+      })
+      .filter(Boolean); // remove skipped duplicates
   }
 
   function buildClinicianMismatchMsg(
@@ -644,20 +624,26 @@ window.addEventListener('DOMContentLoaded', () => {
     const eligLoaded = !!eligData;
     const licensesLoaded = !!insuranceLicenses;
     const msgs = [];
+  
     if (usingXml && xmlLoaded) {
-      const count = xmlData.encounters ? xmlData.encounters.length : 0;
-      msgs.push(`${count} Claim${count !== 1 ? 's' : ''} loaded`);
+      const claimIDs = new Set((xmlData.encounters || []).map(r => r.claimID));
+      const count = claimIDs.size;
+      msgs.push(`${count} unique Claim ID${count !== 1 ? 's' : ''} loaded`);
     }
+  
     if (!usingXml && xlsLoaded) {
-      // Use filteredXlsData length if available, else fallback to xlsData length
-      const count = filteredXlsData ? filteredXlsData.length : (xlsData.length || 0);
-      msgs.push(`${count} XLS Report row${count !== 1 ? 's' : ''} loaded`);
+      const claimIDs = new Set((xlsData || []).map(r => r["ClaimID"]));
+      const count = claimIDs.size;
+      msgs.push(`${count} unique XLS Claim ID${count !== 1 ? 's' : ''} loaded`);
     }
+  
     if (eligLoaded) {
       const count = eligData.length || 0;
       msgs.push(`${count} Eligibility row${count !== 1 ? 's' : ''} loaded`);
     }
-    if (licensesLoaded) msgs.push('Insurance Licenses loaded');
+  
+    if (licensesLoaded) { msgs.push('Insurance Licenses loaded'); }
+  
     status.textContent = msgs.join(', ');
     processBtn.disabled = !((usingXml && xmlLoaded && eligLoaded) || (!usingXml && xlsLoaded && eligLoaded));
   }
