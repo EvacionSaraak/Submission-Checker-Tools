@@ -166,7 +166,26 @@ window.addEventListener('DOMContentLoaded', () => {
       if (memberID.startsWith('0')) {
         remarks.push("Member ID starts with 0 (invalid)");
       }
-  
+
+      if (/VVIP/i.test(memberID)) {
+        // Mark valid without eligibility
+        return {
+          claimID: row["ClaimID"],
+          memberID,
+          payerID: row["Insurance Company"],
+          affiliatedPlan: '',
+          encounterStart: excelDateToDDMMYYYY(row["ClaimDate"]),
+          details: '', // no eligibility details
+          eligibilityRequestNumber: null,
+          status: 'Eligible (VVIP bypass)',
+          remarks: ['VVIP member, eligibility bypassed'],
+          match: null,
+          unknown: false,
+          clinicianMismatchMsg: '',
+          serviceCategory: ''
+        };
+      }
+      
       // Use helper to find best match
       const result = findBestEligibilityMatch(memberID, row["ClaimDate"] || '', (row["Clinician License"] || '').trim(), eligRows);
       if (!result) {
@@ -262,6 +281,24 @@ window.addEventListener('DOMContentLoaded', () => {
   
       if (memberID.startsWith('0')) {
         remarks.push("Member ID starts with 0 (invalid)");
+      }
+
+      if (/VVIP/i.test(memberID)) {
+        // Mark valid without eligibility
+        return {
+          claimID: encounter.claimID,
+          memberID,
+          payerID: encounter.payerID,
+          affiliatedPlan: '',
+          encounterStart: encounter.encounterStart,
+          details: '',
+          eligibilityRequestNumber: null,
+          status: 'Eligible (VVIP bypass)',
+          remarks: ['VVIP member, eligibility bypassed'],
+          match: null,
+          unknown: false,
+          clinicianMismatchMsg: ''
+        };
       }
   
       // Use helper to find best match
