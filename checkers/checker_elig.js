@@ -171,6 +171,8 @@ window.addEventListener('DOMContentLoaded', () => {
       const result = findBestEligibilityMatch(memberID, row["ClaimDate"] || '', (row["Clinician License"] || '').trim(), eligRows);
       if (!result) {
         remarks.push('No eligibility rows found for card number');
+      } else if (result.error) {
+        remarks.push(result.error); // e.g., "No eligibility was taken on this date"
       } else {
         match = result.match;
         if (result.unknown) {
@@ -504,19 +506,20 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // Helper to find best eligibility match based on memberID, date, and clinician
   function findBestEligibilityMatch(memberID, claimDateStr, clinicianID, eligRows) {
-    // Convert dd/mm/yyyy to Date object
     function parseDDMMYYYY(str) {
       const parts = str.split('/');
       if (parts.length !== 3) return null;
       const [dd, mm, yyyy] = parts;
-      return new Date(`${yyyy}-${mm}-${dd}`); // ISO format for Date parsing
+      return new Date(`${yyyy}-${mm}-${dd}`);
     }
-    
+  
     const claimDate = parseDDMMYYYY(claimDateStr);
     if (!claimDate) return null;
   
-    // Normalize member ID for comparison
+    const claimDateStrISO = claimDate.toISOString().split('T')[0]; // "YYYY-MM-DD"
+  
     const memberIDNorm = stripLeadingZero(memberID);
+  
     const filteredElig = eligRows.filter(erow => {
       let xlsCard = (erow['Card Number / DHA Member ID'] || '').replace(/[-\s]/g, '').trim();
       if (xlsCard.startsWith('0')) xlsCard = xlsCard.substring(1);
@@ -525,33 +528,28 @@ window.addEventListener('DOMContentLoaded', () => {
   
     if (filteredElig.length === 0) return null;
   
-    // Map elig rows to dates and date difference
-    const eligWithDate = filteredElig.map(erow => {
-      let eligDateStr = erow['Ordered On'] || erow['EffectiveDate'] || erow['Effective Date'] || '';
-      if (!eligDateStr) eligDateStr = erow['Answered On'] || '';
-      const eligDate = parseDDMMYYYY(eligDateStr) || new Date(0);
-      const diffDays = Math.abs((claimDate - eligDate) / (1000 * 60 * 60 * 24));
-      return { erow, eligDate, diffDays };
+    // Match only eligibility rows with same exact date
+    const sameDateMatches = filteredElig.filter(erow => {
+      let eligDateStr = erow['Ordered On'] || erow['EffectiveDate'] || erow['Effective Date'] || '' || erow['Answered On'];
+      const eligDate = parseDDMMYYYY(eligDateStr);
+      if (!eligDate) return false;
+      return eligDate.toISOString().split('T')[0] === claimDateStrISO;
     });
   
-    // Sort by closest date first
-    eligWithDate.sort((a, b) => a.diffDays - b.diffDays);
+    if (sameDateMatches.length === 0) return { error: "No eligibility was taken on this date" };
   
-    // Try to find exact clinician match first
-    for (const { erow } of eligWithDate) {
+    // Try exact clinician match
+    for (const erow of sameDateMatches) {
       const eligClinID = (erow['Clinician'] || '').trim();
       if (eligClinID && clinicianID && eligClinID === clinicianID) {
         return { match: erow, unknown: false };
       }
     }
   
-    // Fallback to closest date match with unknown flag
-    if (eligWithDate.length > 0) {
-      return { match: eligWithDate[0].erow, unknown: true };
-    }
-  
-    return null;
+    // Fallback: same date, unknown clinician
+    return { match: sameDateMatches[0], unknown: true };
   }
+
   
   // Modified updateStatus function to show filtered count for XLS report rows
   function updateStatus() {
