@@ -144,7 +144,6 @@ window.addEventListener('DOMContentLoaded', () => {
 
 
   // Modified validateXlsWithEligibility with caching
-  // Modified validateXlsWithEligibility to use findBestEligibilityMatch
   function validateXlsWithEligibility(reportRows, eligRows) {
     if (reportRows.length > 0) {
       console.log("Parsed headers (xls):", Object.keys(reportRows[0]));
@@ -153,15 +152,9 @@ window.addEventListener('DOMContentLoaded', () => {
       console.log("No rows to parse in XLS.");
     }
   
-    const filtered = reportRows.filter(row => {
-      const clinic = (row["Clinic"] || "").toUpperCase().replace(/\s+/g, '');
-      const insurance = (row["Insurance Company"] || "").toUpperCase().replace(/\s+/g, '');
-      return clinic.includes("DENTAL") && (insurance.includes("THIQA") || insurance.includes("DAMAN"));
-    });
+    console.log(`Processing ${reportRows.length} XLS report row(s)`);
   
-    console.log(`Filtered to ${filtered.length} dental/THIQA/DAMAN rows`);
-  
-    return filtered.map(row => {
+    return reportRows.map(row => {
       const remarks = [];
       let match = null;
       let status = '';
@@ -186,6 +179,28 @@ window.addEventListener('DOMContentLoaded', () => {
   
         status = match['Status'] || '';
         if ((status || '').toLowerCase() !== 'eligible') remarks.push(`Status not eligible (${status})`);
+  
+        // --- Service Category Validation ---
+        const serviceCategory = (match['Service Category'] || '').trim();
+        const consultationStatus = (match['Consultation Status'] || '').trim().toLowerCase();
+  
+        const validServices = [
+          { cat: 'Dental Services', group: 'Dental' },
+          { cat: 'Physiotherapy', group: 'Physiotherapy' },
+          { cat: 'Other OP Services', group: 'OtherOP' },
+          { cat: 'Consultation', group: 'Consultation', condition: () => consultationStatus === 'elective' }
+        ];
+  
+        const matchedGroup = validServices.find(entry =>
+          entry.cat === serviceCategory &&
+          (!entry.condition || entry.condition())
+        );
+  
+        if (!matchedGroup) {
+          remarks.push(`Invalid Service Category: "${serviceCategory}"`);
+        }
+        // -----------------------------------
+  
         const excelCard = (match['Card Number / DHA Member ID'] || '').replace(/[-\s]/g, '').trim();
         if (excelCard && stripLeadingZero(row["PatientCardID"] || '') !== stripLeadingZero(excelCard)) {
           remarks.push('Card Number mismatch between XLS and Eligibility');
@@ -224,7 +239,8 @@ window.addEventListener('DOMContentLoaded', () => {
         remarks,
         match,
         unknown: clinicianMismatch && remarks.length === 0,
-        clinicianMismatchMsg: clinicianMismatchMsg
+        clinicianMismatchMsg: clinicianMismatchMsg,
+        serviceCategory: match?.['Service Category'] || ''
       };
     });
   }
@@ -388,6 +404,7 @@ window.addEventListener('DOMContentLoaded', () => {
           <th>Encounter Start</th>
           <th>Eligibility Details</th>
           <th>Status</th>
+          <th>Service Category</th>
           <th>Remarks</th>
         </tr></thead>
         <tbody></tbody>
@@ -439,6 +456,7 @@ window.addEventListener('DOMContentLoaded', () => {
     } else {
       row.classList.add('valid');
     }
+  
     const btn = document.createElement('button');
     btn.textContent = r.eligibilityRequestNumber || 'No Request';
     btn.disabled = !r.eligibilityRequestNumber && !r.details;
@@ -448,14 +466,15 @@ window.addEventListener('DOMContentLoaded', () => {
       modalContent.innerHTML = r.details;
       modal.style.display = 'block';
     });
+  
     const tdBtn = document.createElement('td');
     tdBtn.appendChild(btn);
-
+  
     let payerIDPlan = r.payerID || '';
     if (r.affiliatedPlan) {
       payerIDPlan += ` (${r.affiliatedPlan})`;
     }
-
+  
     let remarksCellHtml;
     if (r.unknown && r.clinicianMismatchMsg) {
       remarksCellHtml = r.clinicianMismatchMsg + '<br><span style="font-size:90%;color:#888;">(treated as unknown, marked valid)</span>';
@@ -466,7 +485,7 @@ window.addEventListener('DOMContentLoaded', () => {
         ? 'Clinician mismatch (treated as unknown, marked valid)'
         : r.remarks.join('\n');
     }
-
+  
     row.innerHTML = `
       <td>${index + 1}</td>
       <td class="wrap-col">${r.claimID}</td>
@@ -475,8 +494,10 @@ window.addEventListener('DOMContentLoaded', () => {
       <td>${r.encounterStart || ''}</td>
       <td></td>
       <td>${r.status || ''}</td>
+      <td>${r.serviceCategory || ''}</td>
       <td style="white-space: pre-line;">${remarksCellHtml}</td>
     `;
+  
     row.querySelector('td:nth-child(6)').replaceWith(tdBtn);
     return row;
   }
