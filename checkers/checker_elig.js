@@ -504,34 +504,79 @@ window.addEventListener('DOMContentLoaded', () => {
     return row;
   }
 
-  // Helper to find best eligibility match based on memberID, date, and clinician
-  function findBestEligibilityMatch(memberID, claimDateStr, clinicianID, eligRows) {
-    function parseDDMMYYYY(str) {
-      const parts = str.split('/');
-      if (parts.length !== 3) return null;
-      const [dd, mm, yyyy] = parts;
-      return new Date(`${yyyy}-${mm}-${dd}`);
+  function parseDate(value) {
+    if (value === null || value === undefined) return null;
+  
+    // If it's already a Date, return it
+    if (value instanceof Date) return value;
+  
+    // If number, treat as Excel date number
+    if (typeof value === 'number') {
+      // Excel date starts 1900-01-01 as 1, but Excel wrongly treats 1900 as leap year; here just approximate:
+      // Excel date to JS Date conversion:
+      // Excel day 1 = 1899-12-31 in JS Date, so:
+      const jsDate = new Date(Math.round((value - 25569) * 86400 * 1000));
+      if (!isNaN(jsDate.getTime())) return jsDate;
+      return null;
     }
   
-    const claimDate = parseDDMMYYYY(claimDateStr);
+    if (typeof value !== 'string') return null;
+  
+    // Try DD/MM/YYYY format
+    let parts = value.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+    if (parts) {
+      const dd = parts[1].padStart(2, '0');
+      const mm = parts[2].padStart(2, '0');
+      let yyyy = parts[3];
+      if (yyyy.length === 2) yyyy = '20' + yyyy;
+      const d = new Date(`${yyyy}-${mm}-${dd}`);
+      if (!isNaN(d.getTime())) return d;
+    }
+  
+    // Try DD-MMM-YYYY with optional time e.g. 11-jan-1900 00:00:00
+    parts = value.match(/^(\d{1,2})-([a-zA-Z]{3})-(\d{4})(?:\s+(\d{2}):(\d{2}):(\d{2}))?$/);
+    if (parts) {
+      const dd = parts[1].padStart(2, '0');
+      const mmm = parts[2].toLowerCase();
+      const yyyy = parts[3];
+      const monthNames = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+      const mm = monthNames.indexOf(mmm) + 1;
+      if (mm === 0) return null;
+      const hh = parts[4] || '00';
+      const mi = parts[5] || '00';
+      const ss = parts[6] || '00';
+      const d = new Date(`${yyyy}-${String(mm).padStart(2, '0')}-${dd}T${hh}:${mi}:${ss}`);
+      if (!isNaN(d.getTime())) return d;
+    }
+  
+    // Try ISO format YYYY-MM-DD or with time
+    const isoDate = new Date(value);
+    if (!isNaN(isoDate.getTime())) return isoDate;
+  
+    // Fallback - invalid date
+    return null;
+  }
+
+  // Helper to find best eligibility match based on memberID, date, and clinician
+  function findBestEligibilityMatch(memberID, claimDateStr, clinicianID, eligRows) {
+    const claimDate = parseDate(claimDateStr);
     if (!claimDate) return null;
-  
     const claimDateStrISO = claimDate.toISOString().split('T')[0]; // "YYYY-MM-DD"
-  
+    
     const memberIDNorm = stripLeadingZero(memberID);
-  
     const filteredElig = eligRows.filter(erow => {
       let xlsCard = (erow['Card Number / DHA Member ID'] || '').replace(/[-\s]/g, '').trim();
       if (xlsCard.startsWith('0')) xlsCard = xlsCard.substring(1);
       return xlsCard === memberIDNorm;
     });
-  
+    
     if (filteredElig.length === 0) return null;
   
     // Match only eligibility rows with same exact date
     const sameDateMatches = filteredElig.filter(erow => {
-      let eligDateStr = erow['Ordered On'] || erow['EffectiveDate'] || erow['Effective Date'] || '' || erow['Answered On'];
-      const eligDate = parseDDMMYYYY(eligDateStr);
+      // Pick date from these possible fields
+      const eligDateStr = erow['Ordered On'] || erow['EffectiveDate'] || erow['Effective Date'] || erow['Answered On'] || '';
+      const eligDate = parseDate(eligDateStr);
       if (!eligDate) return false;
       return eligDate.toISOString().split('T')[0] === claimDateStrISO;
     });
@@ -549,7 +594,6 @@ window.addEventListener('DOMContentLoaded', () => {
     // Fallback: same date, unknown clinician
     return { match: sameDateMatches[0], unknown: true };
   }
-
   
   // Modified updateStatus function to show filtered count for XLS report rows
   function updateStatus() {
