@@ -252,6 +252,7 @@ window.addEventListener('DOMContentLoaded', () => {
         claimID: row["ClaimID"],
         memberID: row["PatientCardID"],
         payerID: row["Insurance Company"],
+        clinic: row["Clinic"] || '',
         affiliatedPlan,
         encounterStart: formattedDate,
         details: match ? formatEligibilityDetailsModal(match, row["PatientCardID"]) : formatReportDetailsModal(row, formattedDate),
@@ -347,6 +348,7 @@ window.addEventListener('DOMContentLoaded', () => {
         claimID: encounter.claimID,
         memberID: encounter.memberID,
         payerID: encounter.payerID,
+        clinic: '',
         affiliatedPlan,
         encounterStart: encounter.encounterStart,
         details: match ? formatEligibilityDetailsModal(match, encounter.memberID) : '',
@@ -444,6 +446,7 @@ window.addEventListener('DOMContentLoaded', () => {
           <th>Eligibility Details</th>
           <th>Status</th>
           <th>Service Category</th>
+          <th>Clinic</th>
           <th>Remarks</th>
         </tr></thead>
         <tbody></tbody>
@@ -534,6 +537,7 @@ window.addEventListener('DOMContentLoaded', () => {
       <td></td>
       <td>${r.status || ''}</td>
       <td>${r.serviceCategory || ''}</td>
+      <td>${r.clinic || ''}</td>
       <td style="white-space: pre-line;">${remarksCellHtml}</td>
     `;
   
