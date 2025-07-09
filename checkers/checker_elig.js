@@ -645,53 +645,61 @@ function validateXmlWithEligibility(xmlPayload, eligRows) {
 
 // ✅ Enhanced parseDate with ambiguity handling (X/Y/Z)
 // Parses a date string, number, or Date object to a JS Date or null if invalid
+// --- Enhanced parseDate to handle "DD/MM/YYYY HH:mm" and "DD-MM-YYYY HH:mm:ss" ---
 function parseDate(value) {
-  if (value === null || value === undefined) return null;
-
+  if (value == null) return null;
   if (value instanceof Date) return value;
-
   if (typeof value === 'number') {
-    // Excel serial date (days since 1899-12-31)
     const jsDate = new Date(Math.round((value - 25569) * 86400 * 1000));
-    return !isNaN(jsDate.getTime()) ? jsDate : null;
+    return isNaN(jsDate) ? null : jsDate;
   }
-
   if (typeof value !== 'string') return null;
 
-  // Try to parse dd/mm/yyyy or mm/dd/yyyy with - or /
+  // 1) Try "DD/MM/YYYY HH:mm" or "DD-MM-YYYY HH:mm:ss"
+  let m = value.match(
+    /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?$/
+  );
+  if (m) {
+    let [ , d, mth, y, h, mi, s ] = m.map((v, i) => i>0 ? parseInt(v,10) : v);
+    if (String(m[3]).length === 2) y += 2000;
+    const date = new Date(y, mth-1, d, h, mi, s||0);
+    if (!isNaN(date)) return date;
+  }
+
+  // 2) Existing handlers (ambiguous X/Y/Z etc.)...
   let parts = value.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
   if (parts) {
-    let [ , x, y, z ] = parts.map(v => parseInt(v, 10));
+    let [ , x, y, z ] = parts.map(v=>parseInt(v,10));
     let day, month;
-
-    if (x > 12 && y <= 12) { day = x; month = y; }
-    else if (y > 12 && x <= 12) { day = y; month = x; }
-    else { day = x; month = y; }
-
-    const year = z < 100 ? 2000 + z : z;
-    const d = new Date(`${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T00:00:00`);
-    if (!isNaN(d.getTime())) return d;
+    if (x>12 && y<=12) { day=x; month=y; }
+    else if (y>12 && x<=12) { day=y; month=x; }
+    else { day=x; month=y; }
+    if (month<1||month>12||day<1||day>31) return null;
+    const year = z<100?2000+z:z;
+    const d0 = new Date(year, month-1, day);
+    if (!isNaN(d0)) return d0;
   }
 
-  // Try dd-MMM-yyyy with optional time, e.g. 11-jan-1900 or 11-jan-1900 13:45:00
-  let namedMonth = value.match(/^(\d{1,2})-([a-zA-Z]{3})-(\d{4})(?:\s+(\d{2}):(\d{2}):(\d{2}))?$/);
-  if (namedMonth) {
-    const day = namedMonth[1].padStart(2, '0');
-    const mmm = namedMonth[2].toLowerCase();
-    const year = namedMonth[3];
+  // 3) DD‑MMM‑YYYY with optional time
+  let named = value.match(
+    /^(\d{1,2})-([A-Za-z]{3})-(\d{4})(?:\s+(\d{2}):(\d{2}):(\d{2}))?$/
+  );
+  if (named) {
+    const dd = String(named[1]).padStart(2,'0');
+    const mmm= named[2].toLowerCase();
+    const yyyy= named[3];
+    const hh = named[4]||'00', mi = named[5]||'00', ss = named[6]||'00';
     const months = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
-    const mm = months.indexOf(mmm) + 1;
-    if (mm === 0) return null;
-    const hh = namedMonth[4] || '00';
-    const mi = namedMonth[5] || '00';
-    const ss = namedMonth[6] || '00';
-    const d = new Date(`${year}-${String(mm).padStart(2, '0')}-${day}T${hh}:${mi}:${ss}`);
-    if (!isNaN(d.getTime())) return d;
+    const mm = months.indexOf(mmm);
+    if (mm>=0) {
+      const d1 = new Date(`${yyyy}-${String(mm+1).padStart(2,'0')}-${dd}T${hh}:${mi}:${ss}`);
+      if (!isNaN(d1)) return d1;
+    }
   }
 
-  // Try ISO date parsing fallback
+  // 4) Fallback ISO
   const iso = new Date(value);
-  return !isNaN(iso.getTime()) ? iso : null;
+  return isNaN(iso) ? null : iso;
 }
 
 // Normalize date to 00:00:00 time (strip time)
@@ -700,7 +708,6 @@ function normalizeDateOnly(date) {
   if (!(date instanceof Date)) return null;
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 }
-
 
 // Compare two dates ignoring time (returns true if same calendar day)
 // Returns true if two dates fall on the same calendar day
