@@ -27,35 +27,52 @@ window.addEventListener("DOMContentLoaded", () => {
   let filteredXlsData = null; // new cache variable
 
   // Excel date number to DD/MM/YYYY string
-  function excelDateToDDMMYYYY(excelDate) {
-    if (!excelDate) return "";
-    if (typeof excelDate === "string") {
-      if (/^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(excelDate)) {
-        return excelDate.replace(
-          /^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/,
-          (m, d, mth, y) => {
-            const dd = d.padStart(2, "0");
-            const mm = mth.padStart(2, "0");
-            let yyyy = y.length === 2 ? "20" + y : y;
-            if (yyyy.length === 4 && yyyy[0] === "0") yyyy = yyyy.slice(1);
-            return `${dd}/${mm}/${yyyy}`;
-          },
-        );
-      }
-      if (/^\d{4}-\d{2}-\d{2}$/.test(excelDate)) {
-        const [yyyy, mm, dd] = excelDate.split("-");
-        return `${dd}/${mm}/${yyyy}`;
-      }
-      return excelDate;
-    }
-    const date = new Date(Math.round((excelDate - 25569) * 86400 * 1000));
-    const userTimezoneOffset = date.getTimezoneOffset() * 60000;
-    const dateUTC = new Date(date.getTime() + userTimezoneOffset);
-    const dd = String(dateUTC.getDate()).padStart(2, "0");
-    const mm = String(dateUTC.getMonth() + 1).padStart(2, "0");
-    const yyyy = dateUTC.getFullYear();
+// Excel date (number), string, or Date → "DD/MM/YYYY"
+function excelDateToDDMMYYYY(excelDate) {
+  if (!excelDate) return "";
+
+  // 🆕 If it's already a JS Date, format it directly
+  if (excelDate instanceof Date) {
+    const dd = String(excelDate.getDate()).padStart(2, "0");
+    const mm = String(excelDate.getMonth() + 1).padStart(2, "0");
+    const yyyy = excelDate.getFullYear();
     return `${dd}/${mm}/${yyyy}`;
   }
+
+  // If it's a string (already in DD/MM/YYYY or ISO), leave or reformat
+  if (typeof excelDate === "string") {
+    if (/^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(excelDate)) {
+      // already DD/MM[/YYYY]
+      return excelDate.replace(
+        /^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/,
+        (_, d, mth, y) => {
+          const dd = d.padStart(2, "0");
+          const mm = mth.padStart(2, "0");
+          let yyyy = y.length === 2 ? "20" + y : y;
+          if (yyyy.length === 4 && yyyy[0] === "0") yyyy = yyyy.slice(1);
+          return `${dd}/${mm}/${yyyy}`;
+        }
+      );
+    }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(excelDate)) {
+      // ISO YYYY-MM-DD
+      const [yyyy, mm, dd] = excelDate.split("-");
+      return `${dd}/${mm}/${yyyy}`;
+    }
+    return excelDate;
+  }
+
+  // Otherwise, treat as an Excel serial number
+  const date = new Date(Math.round((excelDate - 25569) * 86400 * 1000));
+  if (isNaN(date.getTime())) return "";
+
+  const userTimezoneOffset = date.getTimezoneOffset() * 60000;
+  const dateUTC = new Date(date.getTime() + userTimezoneOffset);
+  const dd = String(dateUTC.getDate()).padStart(2, "0");
+  const mm = String(dateUTC.getMonth() + 1).padStart(2, "0");
+  const yyyy = dateUTC.getFullYear();
+  return `${dd}/${mm}/${yyyy}`;
+}
 
   function swapInputGroups() {
     if (xmlRadio.checked) {
