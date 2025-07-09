@@ -653,7 +653,7 @@ function parseDate(value) {
   if (typeof value !== 'string') return null;
 
   // Detect ambiguous X/Y/Z
-  const parts = value.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+  let parts = value.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
   if (parts) {
     let [ , x, y, z ] = parts.map(v => parseInt(v, 10));
     let day, month;
