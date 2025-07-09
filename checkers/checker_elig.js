@@ -777,6 +777,33 @@ function findBestEligibilityMatch(memberID, claimDateStr, clinicianID, eligRows)
   return { match: sameDateMatches[0], unknown: true };
 }
 
+
+// Validate specified date fields in data array.
+function validateDatesInData(data, dateFields, dataLabel = "") {
+  const invalidDates = [];
+
+  data.forEach((row, idx) => {
+    dateFields.forEach((field) => {
+      const val = row[field];
+      if (val) {
+        const parsed = parseDate(val);
+        if (!parsed) {
+          invalidDates.push({
+            dataLabel,
+            rowIndex: idx,
+            field,
+            value: val,
+          });
+        } else {
+          row[field] = parsed;
+        }
+      }
+    });
+  });
+
+  return invalidDates;
+}
+
   // Modified updateStatus function to show filtered count for XLS report rows
   function updateStatus() {
     const usingXml = xmlRadio.checked;
@@ -816,59 +843,58 @@ function findBestEligibilityMatch(memberID, claimDateStr, clinicianID, eligRows)
     );
   }
 
-  xmlInput.addEventListener("change", async (e) => {
-    status.textContent = "Loading XML…";
-    processBtn.disabled = true;
-    try {
-      xmlData = await parseXML(e.target.files[0]);
-    } catch (err) {
-      status.textContent = `XML Error: ${err.message}`;
-      xmlData = null;
+xmlInput.addEventListener("change", async (e) => {
+  status.textContent = "Loading XML…";
+  processBtn.disabled = true;
+  try {
+    xmlData = await parseXML(e.target.files[0]);
+    const invalids = validateDatesInData(xmlData.encounters, ["encounterStart"], "XML");
+    if (invalids.length) {
+      console.warn("Invalid encounterStart dates in XML:", invalids);
+      status.textContent = `Warning: ${invalids.length} invalid dates in XML file. Check console.`;
     }
-    updateStatus();
-  });
+  } catch (err) {
+    status.textContent = `XML Error: ${err.message}`;
+    xmlData = null;
+  }
+  updateStatus();
+});
 
-  xlsInput.addEventListener("change", async (e) => {
-    status.textContent = "Loading XLS…";
-    processBtn.disabled = true;
-    try {
-      xlsData = await parseExcel(e.target.files[0], 0);
-      if (xlsData.length > 0) {
-        console.log("Detected headers:", Object.keys(xlsData[0]));
-        console.log("First row:", xlsData[0]);
-      } else {
-        console.log("No rows detected in XLS upload.");
-      }
-    } catch (err) {
-      status.textContent = `XLS Error: ${err.message}`;
-      xlsData = null;
+xlsInput.addEventListener("change", async (e) => {
+  status.textContent = "Loading XLS…";
+  processBtn.disabled = true;
+  try {
+    xlsData = await parseExcel(e.target.files[0], 0);
+    const invalids = validateDatesInData(xlsData, ["ClaimDate"], "XLS");
+    if (invalids.length) {
+      console.warn("Invalid dates found in XLS report:", invalids);
+      status.textContent = `Warning: ${invalids.length} invalid date(s) in XLS report. Check console.`;
     }
-    updateStatus();
-  });
+  } catch (err) {
+    status.textContent = `XLS Error: ${err.message}`;
+    xlsData = null;
+  }
+  updateStatus();
+});
 
-  eligInput.addEventListener("change", async (e) => {
-    status.textContent = "Loading Eligibility XLSX…";
-    processBtn.disabled = true;
-    try {
-      eligData = await parseExcel(e.target.files[0], 1);
-      eligData.forEach(row => {
-        ["Ordered On", "EffectiveDate", "Effective Date", "Answered On"].forEach(key => {
-          if (row[key]) {
-            const parsed = parseDate(row[key]);
-            if (parsed) row[key] = parsed;
-          }
-        });
-      });
-      if (eligData && eligData.length > 0) {
-        console.log("Eligibility: Detected headers:", Object.keys(eligData[0]));
-        console.log("Eligibility: First row:", eligData[0]);
-      }
-    } catch (err) {
-      status.textContent = `Eligibility XLSX Error: ${err.message}`;
-      eligData = null;
+eligInput.addEventListener("change", async (e) => {
+  status.textContent = "Loading Eligibility XLSX…";
+  processBtn.disabled = true;
+  try {
+    eligData = await parseExcel(e.target.files[0], 1);
+    const dateFields = ["Ordered On", "EffectiveDate", "Effective Date", "Answered On"];
+    const invalids = validateDatesInData(eligData, dateFields, "Eligibility XLSX");
+    if (invalids.length) {
+      console.warn("Invalid dates found in Eligibility XLSX:", invalids);
+      status.textContent = `Warning: ${invalids.length} invalid date(s) in Eligibility XLSX. Check console.`;
     }
-    updateStatus();
-  });
+  } catch (err) {
+    status.textContent = `Eligibility XLSX Error: ${err.message}`;
+    eligData = null;
+  }
+  updateStatus();
+});
+
 
   processBtn.addEventListener("click", async () => {
     if (xmlRadio.checked) {
