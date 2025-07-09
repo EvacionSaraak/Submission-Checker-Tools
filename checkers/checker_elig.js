@@ -652,7 +652,7 @@ function parseDate(value) {
 
   if (typeof value !== 'string') return null;
 
-  // Detect ambiguous X/Y/Z
+  // Detect ambiguous X/Y/Z like 12/31/2023 or 31/12/2023
   let parts = value.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
   if (parts) {
     let [ , x, y, z ] = parts.map(v => parseInt(v, 10));
@@ -667,22 +667,7 @@ function parseDate(value) {
     return !isNaN(d.getTime()) ? d : null;
   }
 
-  // Try DD-MMM-YYYY
-  const namedMonth = value.match(/^(\d{1,2})-([a-zA-Z]{3})-(\d{4})/);
-  if (namedMonth) {
-    const day = namedMonth[1].padStart(2, '0');
-    const mmm = namedMonth[2].toLowerCase();
-    const year = namedMonth[3];
-    const months = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
-    const mm = months.indexOf(mmm) + 1;
-    if (mm) return new Date(`${year}-${String(mm).padStart(2, '0')}-${day}T00:00:00`);
-  }
-
-  const iso = new Date(value);
-  return !isNaN(iso.getTime()) ? iso : null;
-}
-
-  // Try DD-MMM-YYYY with optional time e.g. 11-jan-1900 00:00:00
+  // Try DD-MMM-YYYY with optional time e.g. 11-jan-1900 or 11-jan-1900 00:00:00
   parts = value.match(/^(\d{1,2})-([a-zA-Z]{3})-(\d{4})(?:\s+(\d{2}):(\d{2}):(\d{2}))?$/);
   if (parts) {
     const dd = parts[1].padStart(2, '0');
@@ -698,12 +683,9 @@ function parseDate(value) {
     if (!isNaN(d.getTime())) return d;
   }
 
-  // Try ISO format YYYY-MM-DD or with time
+  // Fallback: try ISO date string or similar
   const isoDate = new Date(value);
-  if (!isNaN(isoDate.getTime())) return isoDate;
-
-  // Fallback - invalid date
-  return null;
+  return !isNaN(isoDate.getTime()) ? isoDate : null;
 }
 
 // Helper: Check if two dates are the same day (ignoring time)
