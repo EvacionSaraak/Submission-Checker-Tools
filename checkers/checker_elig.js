@@ -646,13 +646,14 @@ function parseDate(value) {
   if (value instanceof Date) return value;
 
   if (typeof value === 'number') {
+    // Excel date number to JS Date
     const jsDate = new Date(Math.round((value - 25569) * 86400 * 1000));
     return !isNaN(jsDate.getTime()) ? jsDate : null;
   }
 
   if (typeof value !== 'string') return null;
 
-  // Detect ambiguous X/Y/Z like 12/31/2023 or 31/12/2023
+  // Try ambiguous X/Y/Z format (e.g., 31/12/2023 or 12-31-2023)
   let parts = value.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
   if (parts) {
     let [ , x, y, z ] = parts.map(v => parseInt(v, 10));
@@ -662,31 +663,58 @@ function parseDate(value) {
     else if (y > 12 && x <= 12) { day = y; month = x; }
     else { day = x; month = y; }
 
+    // Validate month/day range
+    if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+
     const year = z < 100 ? 2000 + z : z;
-    const d = new Date(`${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T00:00:00`);
+    const isoString = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T00:00:00`;
+    const d = new Date(isoString);
     return !isNaN(d.getTime()) ? d : null;
   }
 
-  // Try DD-MMM-YYYY with optional time e.g. 11-jan-1900 or 11-jan-1900 00:00:00
-  parts = value.match(/^(\d{1,2})-([a-zA-Z]{3})-(\d{4})(?:\s+(\d{2}):(\d{2}):(\d{2}))?$/);
+  // Try DD-MMM-YYYY (without time)
+  parts = value.match(/^(\d{1,2})-([a-zA-Z]{3})-(\d{4})$/);
   if (parts) {
-    const dd = parts[1].padStart(2, '0');
+    const day = String(parts[1]).padStart(2, '0');
     const mmm = parts[2].toLowerCase();
-    const yyyy = parts[3];
-    const monthNames = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
-    const mm = monthNames.indexOf(mmm) + 1;
-    if (mm === 0) return null;
-    const hh = parts[4] || '00';
-    const mi = parts[5] || '00';
-    const ss = parts[6] || '00';
-    const d = new Date(`${yyyy}-${String(mm).padStart(2, '0')}-${dd}T${hh}:${mi}:${ss}`);
+    const year = parts[3];
+    const months = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+    const mmIndex = months.indexOf(mmm);
+    if (mmIndex === -1) return null;
+    const month = String(mmIndex + 1).padStart(2, '0');
+    const isoString = `${year}-${month}-${day}T00:00:00`;
+    const d = new Date(isoString);
     if (!isNaN(d.getTime())) return d;
   }
 
-  // Fallback: try ISO date string or similar
+  // Try DD-MMM-YYYY with optional time e.g. 11-jan-1900 00:00:00
+  parts = value.match(/^(\d{1,2})-([a-zA-Z]{3})-(\d{4})(?:\s+(\d{2}):(\d{2}):(\d{2}))?$/);
+  if (parts) {
+    const dd = String(parts[1]).padStart(2, '0');
+    const mmm = parts[2].toLowerCase();
+    const yyyy = parts[3];
+    const monthNames = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+    const mmIndex = monthNames.indexOf(mmm);
+    if (mmIndex === -1) return null;
+    const mm = String(mmIndex + 1).padStart(2, '0');
+
+    const hh = parts[4] || '00';
+    const mi = parts[5] || '00';
+    const ss = parts[6] || '00';
+
+    const isoString = `${yyyy}-${mm}-${dd}T${hh}:${mi}:${ss}`;
+    const d = new Date(isoString);
+    if (!isNaN(d.getTime())) return d;
+  }
+
+  // Try ISO format YYYY-MM-DD or with time
   const isoDate = new Date(value);
-  return !isNaN(isoDate.getTime()) ? isoDate : null;
+  if (!isNaN(isoDate.getTime())) return isoDate;
+
+  // Fallback - invalid date
+  return null;
 }
+
 
 // Helper: Check if two dates are the same day (ignoring time)
 function isSameDay(d1, d2) {
