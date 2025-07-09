@@ -478,7 +478,7 @@ function validateXmlWithEligibility(xmlPayload, eligRows) {
         label: "Eligibility Request Number",
         value: match["Eligibility Request Number"] || "",
       },
-      { label: "Payer Name", value: match["Payer Name"] || "" },
+      { label: "Package Name", value: match["Package Name"] || "" },
       { label: "Service Category", value: match["Service Category"] || "" },
       {
         label: "Consultation Status",
