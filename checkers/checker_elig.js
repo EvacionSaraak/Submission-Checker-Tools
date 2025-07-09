@@ -399,29 +399,26 @@ window.addEventListener("DOMContentLoaded", () => {
             }
           }
         }
-
-        const final_output = {
-          claimID: encounter.claimID,
-          memberID: encounter.memberID,
-          payerID: encounter.payerID,
-          affiliatedPlan,
-          encounterStart: encounter.encounterStart,
-          clinic: encounter.clinic || '',            // <-- add clinic if available or empty string
-          details: match
-            ? formatEligibilityDetailsModal(match, encounter.memberID)
-            : "",
-          eligibilityRequestNumber:
-            match?.["Eligibility Request Number"] || null,
-          status,
-          remarks,
-          match,
-          unknown: clinicianMismatch && remarks.length === 0,
-          clinicianMismatchMsg,
-        };
-      })
-      .filter(Boolean); // remove skipped duplicates
-    console.log(final_output);
-    return final_output;
+        
+      return {
+        claimID: encounter.claimID,
+        memberID: encounter.memberID,
+        payerID: encounter.payerID,
+        affiliatedPlan,
+        encounterStart: encounter.encounterStart,
+        clinic: encounter.clinic || '',            // <-- add clinic if available or empty string
+        details: match
+          ? formatEligibilityDetailsModal(match, encounter.memberID)
+          : "",
+        eligibilityRequestNumber:
+          match?.["Eligibility Request Number"] || null,
+        status,
+        remarks,
+        match,
+        unknown: clinicianMismatch && remarks.length === 0,
+        clinicianMismatchMsg,
+      };
+    }).filter(Boolean); // remove skipped duplicates
   }
 
   function buildClinicianMismatchMsg(
