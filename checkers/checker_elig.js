@@ -400,12 +400,13 @@ window.addEventListener("DOMContentLoaded", () => {
           }
         }
 
-        return {
+        const final_output = {
           claimID: encounter.claimID,
           memberID: encounter.memberID,
           payerID: encounter.payerID,
           affiliatedPlan,
           encounterStart: encounter.encounterStart,
+          clinic: encounter.clinic || '',            // <-- add clinic if available or empty string
           details: match
             ? formatEligibilityDetailsModal(match, encounter.memberID)
             : "",
@@ -419,6 +420,8 @@ window.addEventListener("DOMContentLoaded", () => {
         };
       })
       .filter(Boolean); // remove skipped duplicates
+    console.log(final_output);
+    return final_output;
   }
 
   function buildClinicianMismatchMsg(
