@@ -640,20 +640,21 @@ function validateXmlWithEligibility(xmlPayload, eligRows, insuranceLicenses) {
   }
 
 // ✅ Enhanced parseDate with ambiguity handling (X/Y/Z)
+// Parses a date string, number, or Date object to a JS Date or null if invalid
 function parseDate(value) {
   if (value === null || value === undefined) return null;
 
   if (value instanceof Date) return value;
 
   if (typeof value === 'number') {
-    // Excel date number to JS Date
+    // Excel serial date (days since 1899-12-31)
     const jsDate = new Date(Math.round((value - 25569) * 86400 * 1000));
     return !isNaN(jsDate.getTime()) ? jsDate : null;
   }
 
   if (typeof value !== 'string') return null;
 
-  // Try ambiguous X/Y/Z format (e.g., 31/12/2023 or 12-31-2023)
+  // Try to parse dd/mm/yyyy or mm/dd/yyyy with - or /
   let parts = value.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
   if (parts) {
     let [ , x, y, z ] = parts.map(v => parseInt(v, 10));
@@ -663,130 +664,106 @@ function parseDate(value) {
     else if (y > 12 && x <= 12) { day = y; month = x; }
     else { day = x; month = y; }
 
-    // Validate month/day range
-    if (month < 1 || month > 12 || day < 1 || day > 31) return null;
-
     const year = z < 100 ? 2000 + z : z;
-    const isoString = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T00:00:00`;
-    const d = new Date(isoString);
-    return !isNaN(d.getTime()) ? d : null;
+    const d = new Date(`${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T00:00:00`);
+    if (!isNaN(d.getTime())) return d;
   }
 
-  // Try DD-MMM-YYYY (without time)
-  parts = value.match(/^(\d{1,2})-([a-zA-Z]{3})-(\d{4})$/);
-  if (parts) {
-    const day = String(parts[1]).padStart(2, '0');
-    const mmm = parts[2].toLowerCase();
-    const year = parts[3];
+  // Try dd-MMM-yyyy with optional time, e.g. 11-jan-1900 or 11-jan-1900 13:45:00
+  let namedMonth = value.match(/^(\d{1,2})-([a-zA-Z]{3})-(\d{4})(?:\s+(\d{2}):(\d{2}):(\d{2}))?$/);
+  if (namedMonth) {
+    const day = namedMonth[1].padStart(2, '0');
+    const mmm = namedMonth[2].toLowerCase();
+    const year = namedMonth[3];
     const months = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
-    const mmIndex = months.indexOf(mmm);
-    if (mmIndex === -1) return null;
-    const month = String(mmIndex + 1).padStart(2, '0');
-    const isoString = `${year}-${month}-${day}T00:00:00`;
-    const d = new Date(isoString);
+    const mm = months.indexOf(mmm) + 1;
+    if (mm === 0) return null;
+    const hh = namedMonth[4] || '00';
+    const mi = namedMonth[5] || '00';
+    const ss = namedMonth[6] || '00';
+    const d = new Date(`${year}-${String(mm).padStart(2, '0')}-${day}T${hh}:${mi}:${ss}`);
     if (!isNaN(d.getTime())) return d;
   }
 
-  // Try DD-MMM-YYYY with optional time e.g. 11-jan-1900 00:00:00
-  parts = value.match(/^(\d{1,2})-([a-zA-Z]{3})-(\d{4})(?:\s+(\d{2}):(\d{2}):(\d{2}))?$/);
-  if (parts) {
-    const dd = String(parts[1]).padStart(2, '0');
-    const mmm = parts[2].toLowerCase();
-    const yyyy = parts[3];
-    const monthNames = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
-    const mmIndex = monthNames.indexOf(mmm);
-    if (mmIndex === -1) return null;
-    const mm = String(mmIndex + 1).padStart(2, '0');
+  // Try ISO date parsing fallback
+  const iso = new Date(value);
+  return !isNaN(iso.getTime()) ? iso : null;
+}
 
-    const hh = parts[4] || '00';
-    const mi = parts[5] || '00';
-    const ss = parts[6] || '00';
-
-    const isoString = `${yyyy}-${mm}-${dd}T${hh}:${mi}:${ss}`;
-    const d = new Date(isoString);
-    if (!isNaN(d.getTime())) return d;
-  }
-
-  // Try ISO format YYYY-MM-DD or with time
-  const isoDate = new Date(value);
-  if (!isNaN(isoDate.getTime())) return isoDate;
-
-  // Fallback - invalid date
-  return null;
+// Normalize date to 00:00:00 time (strip time)
+// Normalize a Date to midnight (strip time)
+function normalizeDateOnly(date) {
+  if (!(date instanceof Date)) return null;
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 }
 
 
-// Helper: Check if two dates are the same day (ignoring time)
-function isSameDay(d1, d2) {
-  return d1.getFullYear() === d2.getFullYear() &&
-         d1.getMonth() === d2.getMonth() &&
-         d1.getDate() === d2.getDate();
+// Compare two dates ignoring time (returns true if same calendar day)
+// Returns true if two dates fall on the same calendar day
+function isSameDate(date1, date2) {
+  const d1 = normalizeDateOnly(date1);
+  const d2 = normalizeDateOnly(date2);
+  return d1 && d2 && d1.getTime() === d2.getTime();
 }
 
-// Helper: Check if date d1 is on or before date d2 (ignoring time)
-function isOnOrBefore(d1, d2) {
-  return d1.getFullYear() < d2.getFullYear() ||
-         (d1.getFullYear() === d2.getFullYear() && d1.getMonth() < d2.getMonth()) ||
-         (d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth() && d1.getDate() <= d2.getDate());
+// Returns true if date1 ≤ date2 (comparing only the calendar day)
+function isOnOrBefore(date1, date2) {
+  const d1 = normalizeDateOnly(date1);
+  const d2 = normalizeDateOnly(date2);
+  return d1 && d2 && d1.getTime() <= d2.getTime();
+}
+
+// Returns true if claimDate is within [eligibilityStart, eligibilityEnd]
+function isWithinEligibilityPeriod(claimDate, eligibilityStart, eligibilityEnd) {
+  const c = normalizeDateOnly(claimDate);
+  const start = normalizeDateOnly(eligibilityStart);
+  const end = normalizeDateOnly(eligibilityEnd);
+  return c && start && end && c.getTime() >= start.getTime() && c.getTime() <= end.getTime();
 }
 
 // Modified findBestEligibilityMatch with debug logs and relaxed date filtering
 function findBestEligibilityMatch(memberID, claimDateStr, clinicianID, eligRows) {
   const claimDate = parseDate(claimDateStr);
-  if (!claimDate) {
-    console.log("Invalid claimDate:", claimDateStr);
-    return null;
-  }
-  const memberIDNorm = stripLeadingZero(memberID);
+  if (!claimDate) return null;
 
+  const memberIDNorm = stripLeadingZero(memberID);
   const filteredElig = eligRows.filter(erow => {
     let xlsCard = (erow['Card Number / DHA Member ID'] || '').replace(/[-\s]/g, '').trim();
     if (xlsCard.startsWith('0')) xlsCard = xlsCard.substring(1);
     return xlsCard === memberIDNorm;
   });
+  if (!filteredElig.length) return null;
 
-  if (filteredElig.length === 0) {
-    console.log("No eligibility rows matching memberID:", memberIDNorm);
-    return null;
-  }
-
-  // Debug: print all eligibility rows for this member
-  console.log(`Found ${filteredElig.length} eligibility rows for memberID ${memberIDNorm}:`);
-  filteredElig.forEach((erow, i) => {
-    console.log(`  Row ${i+1}:`, erow);
-  });
-
+  // Match eligibility rows on or before the claim date
   const sameDateMatches = filteredElig.filter(erow => {
-    const eligDateStr = erow['Ordered On'] || erow['EffectiveDate'] || erow['Effective Date'] || erow['Answered On'] || '';
-    const eligDate = parseDate(eligDateStr);
-    console.log(`Elig date string: "${eligDateStr}", parsed:`, eligDate);
+    const eligDate = parseDate(
+      erow['EffectiveDate'] ||
+      erow['Effective Date'] ||
+      erow['Ordered On'] ||
+      erow['Answered On'] ||
+      ''
+    );
     if (!eligDate) return false;
-    console.log('Comparing claimDate:', claimDate, 'to eligDate:', eligDate);
-
-    // Relaxed matching: eligibility date on or before claim date
+    // Use date‐only comparison
     return isOnOrBefore(eligDate, claimDate);
-
-    // If you want strict same day, uncomment below and comment above:
-    // return isSameDay(eligDate, claimDate);
   });
 
-  if (sameDateMatches.length === 0) {
-    console.log("No eligibility rows with matching date for memberID:", memberIDNorm);
+  if (!sameDateMatches.length) {
     return { error: "No eligibility was taken on or before this date" };
   }
 
-  // Try exact clinician match first
-  for (const erow of sameDateMatches) {
-    const eligClinID = (erow['Clinician'] || '').trim();
-    if (eligClinID && clinicianID && eligClinID === clinicianID) {
+  const finalMatches = sameDateMatches;
+
+  // Try exact clinician match
+  for (const erow of finalMatches) {
+    if (erow['Clinician']?.trim() === clinicianID) {
       return { match: erow, unknown: false };
     }
   }
 
-  // Fallback: first matched row, unknown clinician
-  return { match: sameDateMatches[0], unknown: true };
+  // Fallback to first row (unknown clinician)
+  return { match: finalMatches[0], unknown: true };
 }
-
 
 // Validate specified date fields in data array.
 function validateDatesInData(data, dateFields, dataLabel = "") {
