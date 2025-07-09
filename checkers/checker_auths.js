@@ -139,7 +139,7 @@ function validateApprovalRequirement(code, authID) {
   const rule = authRules[code] || {};
   const needsAuth = !/NOT\s+REQUIRED/i.test(rule.approval_details || "");
   if (needsAuth) {
-    if (!authID) remarks.push("Missing required AuthorizationID");
+    if (!authID) remarks.push(`Missing required AuthorizationID for ${code}`);
   } else {
     if (authID) remarks.push("AuthorizationID provided but not required");
   }
