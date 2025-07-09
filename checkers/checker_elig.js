@@ -220,12 +220,6 @@ function parseXML(file) {
             if (!match) {
               remarks.push("Eligibility match is undefined.");
             } else {
-              if (result.unknown) {
-                remarks.push(
-                  "Clinician mismatch - fallback eligibility used (marked unknown)",
-                );
-              }
-
               status = match["Status"] || "";
               if ((status || "").toLowerCase() !== "eligible")
                 remarks.push(`Status not eligible (${status})`);
@@ -357,12 +351,6 @@ function validateXmlWithEligibility(xmlPayload, eligRows, insuranceLicenses) {
           if (!match) {
             remarks.push("Eligibility match is undefined.");
           } else {
-            if (result.unknown) {
-              remarks.push(
-                "Clinician mismatch - fallback eligibility used (marked unknown)",
-              );
-            }
-
             status = match["Status"] || "";
             if ((status || "").toLowerCase() !== "eligible")
               remarks.push(`Status not eligible (${status})`);
