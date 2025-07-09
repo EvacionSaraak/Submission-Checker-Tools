@@ -130,28 +130,43 @@ async function parseExcel(file, range = 0) {
   });
 }
 
-// ✅ Modified parseXML to use parseDate for encounterStart
+// ✅ Modified parseXML with per‑claim + per‑encounter logging
 function parseXML(file) {
   return file.text().then(xmlText => {
     const parser = new DOMParser();
     const xmlDoc = parser.parseFromString(xmlText, "application/xml");
     const claimNodes = xmlDoc.querySelectorAll('Claim');
-    const claims = Array.from(claimNodes).map(claim => {
-      const claimID = claim.querySelector('ID')?.textContent.trim() || '';
-      const memberID = claim.querySelector('MemberID')?.textContent.trim() || '';
-      const payerID = claim.querySelector('PayerID')?.textContent.trim() || '';
+
+    const claims = Array.from(claimNodes).map((claim, claimIndex) => {
+      const claimID = claim.querySelector('ID')?.textContent.trim() || '<no ID>';
+      console.log(`⦿ [Claim ${claimIndex}] ID = ${claimID}`);
+
+      const memberID   = claim.querySelector('MemberID')?.textContent.trim() || '';
+      const payerID    = claim.querySelector('PayerID')?.textContent.trim() || '';
       const providerID = claim.querySelector('ProviderID')?.textContent.trim() || '';
+
       const encounterNodes = claim.querySelectorAll('Encounter');
-      const encounters = Array.from(encounterNodes).map(enc => ({
-        claimID,
-        memberID,
-        payerID,
-        providerID,
-        encounterStart: parseDate(enc.querySelector('Start')?.textContent.trim() || ''),
-        clinician: enc.querySelector('Clinician')?.textContent.trim() || ''
-      }));
+      const encounters = Array.from(encounterNodes).map((enc, encIndex) => {
+        const rawStart   = enc.querySelector('Start')?.textContent.trim() || '';
+        const parsedStart = parseDate(rawStart);
+        console.log(`    └ Encounter ${encIndex}: raw Start="${rawStart}", parsed=`, parsedStart);
+
+        const clinician = enc.querySelector('Clinician')?.textContent.trim() || '';
+        console.log(`       Clinician: "${clinician}"`);
+
+        return {
+          claimID,
+          memberID,
+          payerID,
+          providerID,
+          encounterStart: parsedStart || rawStart,
+          clinician
+        };
+      });
+
       return { claimID, memberID, payerID, providerID, encounters };
     });
+
     const allEncounters = claims.flatMap(c => c.encounters);
     return { claimsCount: claims.length, encounters: allEncounters };
   });
@@ -161,6 +176,7 @@ function parseXML(file) {
     x = (x || "").replace(/[-\s]/g, "").trim();
     return x.startsWith("0") ? x.substring(1) : x;
   }
+  
   function findEligibilityMatchesByCard(memberID, eligRows) {
     const cardCol = "Card Number / DHA Member ID";
     const checkID = stripLeadingZero(memberID);
@@ -835,11 +851,24 @@ function validateDatesInData(data, dateFields, dataLabel = "") {
     );
   }
 
+// ✅ Modified xmlInput handler to show logs per claim when the file is loaded
 xmlInput.addEventListener("change", async (e) => {
   status.textContent = "Loading XML…";
   processBtn.disabled = true;
   try {
     xmlData = await parseXML(e.target.files[0]);
+
+    console.log(`✔ Loaded XML: ${xmlData.claimsCount} Claim(s), ${xmlData.encounters.length} Encounter(s) total.`);
+
+    // If you also want a summary per claim:
+    const byClaim = xmlData.encounters.reduce((acc, enc) => {
+      (acc[enc.claimID] = acc[enc.claimID] || []).push(enc);
+      return acc;
+    }, {});
+    Object.entries(byClaim).forEach(([cid, encs]) => {
+      console.log(`→ ClaimID ${cid} has ${encs.length} encounter(s).`);
+    });
+
     const invalids = validateDatesInData(xmlData.encounters, ["encounterStart"], "XML");
     if (invalids.length) {
       console.warn("Invalid encounterStart dates in XML:", invalids);
