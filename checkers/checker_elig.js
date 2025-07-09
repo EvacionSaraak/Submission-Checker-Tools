@@ -137,34 +137,41 @@ function parseXML(file) {
     const xmlDoc = parser.parseFromString(xmlText, "application/xml");
     const claimNodes = xmlDoc.querySelectorAll('Claim');
 
-    const claims = Array.from(claimNodes).map((claim, claimIndex) => {
-      const claimID = claim.querySelector('ID')?.textContent.trim() || '<no ID>';
-      console.log(`⦿ [Claim ${claimIndex}] ID = ${claimID}`);
+    const claims = Array.from(claimNodes).map((claim, ci) => {
+      const claimID = claim.querySelector('ID')?.textContent.trim() || '';
+      // Collect all clinicians from Activity nodes
+      const activityNodes = claim.querySelectorAll('Activity');
+      const clinicians = new Set();
+      activityNodes.forEach(act => {
+        const clin = act.querySelector('Clinician')?.textContent.trim();
+        if (clin) clinicians.add(clin);
+      });
 
-      const memberID   = claim.querySelector('MemberID')?.textContent.trim() || '';
-      const payerID    = claim.querySelector('PayerID')?.textContent.trim() || '';
-      const providerID = claim.querySelector('ProviderID')?.textContent.trim() || '';
+      const multipleClinicians = clinicians.size > 1;
+      const claimClinician = clinicians.size === 1
+        ? Array.from(clinicians)[0]
+        : null;
 
-      const encounterNodes = claim.querySelectorAll('Encounter');
-      const encounters = Array.from(encounterNodes).map((enc, encIndex) => {
-        const rawStart   = enc.querySelector('Start')?.textContent.trim() || '';
-        const parsedStart = parseDate(rawStart);
-        console.log(`    └ Encounter ${encIndex}: raw Start="${rawStart}", parsed=`, parsedStart);
+      console.log(
+        `⦿ Claim[${ci}] ID=${claimID} → clinicians=${Array.from(clinicians).join(', ')}`
+      );
+      if (multipleClinicians) {
+        console.warn(`⚠️ Claim ${claimID} has multiple clinicians:`, Array.from(clinicians));
+      }
 
-        const clinician = enc.querySelector('Clinician')?.textContent.trim() || '';
-        console.log(`       Clinician: "${clinician}"`);
-
+      // Parse Encounters, tagging each with the claimClinician & multiple flag
+      const encounters = Array.from(claim.querySelectorAll('Encounter')).map(enc => {
+        const rawStart = enc.querySelector('Start')?.textContent.trim() || '';
+        const startDate = parseDate(rawStart);
         return {
           claimID,
-          memberID,
-          payerID,
-          providerID,
-          encounterStart: parsedStart || rawStart,
-          clinician
+          encounterStart: startDate || rawStart,
+          claimClinician,
+          multipleClinicians
         };
       });
 
-      return { claimID, memberID, payerID, providerID, encounters };
+      return { claimID, encounters };
     });
 
     const allEncounters = claims.flatMap(c => c.encounters);
@@ -327,123 +334,84 @@ function parseXML(file) {
   }
 
 // --- Modified validateXmlWithEligibility ---
-function validateXmlWithEligibility(xmlPayload, eligRows, insuranceLicenses) {
+function validateXmlWithEligibility(xmlPayload, eligRows) {
   const { encounters } = xmlPayload;
   const seenClaimIDs = new Set();
 
   return encounters
-    .map((encounter) => {
-      const claimID = encounter.claimID;
+    .map(enc => {
+      const { claimID, encounterStart, claimClinician, multipleClinicians } = enc;
       if (seenClaimIDs.has(claimID)) return null;
       seenClaimIDs.add(claimID);
 
       const remarks = [];
       let match = null;
-      let status = "";
-      let affiliatedPlan = "";
+      let status = '';
       let clinicianMismatch = false;
-      let clinicianMismatchMsg = "";
-      let memberID = (encounter.memberID || "").toString().trim();
+      let clinicianMismatchMsg = '';
 
-      if (memberID.startsWith("0")) {
-        remarks.push("Member ID starts with 0 (invalid)");
+      // If multiple clinicians flagged, push invalid remark
+      if (multipleClinicians) {
+        remarks.push('Multiple clinicians in claim activities');
       }
 
-      if (/VVIP/i.test(memberID)) {
-        status = "VVIP";
+      // Now do the normal eligibility lookup using claimClinician
+      const result = findBestEligibilityMatch(
+        enc.memberID || '',           // ensure you pass memberID as you have it
+        encounterStart || '',
+        claimClinician || '',
+        eligRows
+      );
+      if (!result) {
+        remarks.push('No eligibility rows found for card number');
+      } else if (result.error) {
+        remarks.push(result.error);
       } else {
-        const result = findBestEligibilityMatch(
-          memberID,
-          encounter.encounterStart || "",
-          (encounter.clinician || "").trim(),
-          eligRows,
-        );
-        if (!result) {
-          remarks.push("No eligibility rows found for card number");
-        } else if (result.error) {
-          remarks.push(result.error);
-        } else {
-          match = result.match;
-          if (!match) {
-            remarks.push("Eligibility match is undefined.");
-          } else {
-            status = match["Status"] || "";
-            if ((status || "").toLowerCase() !== "eligible")
-              remarks.push(`Status not eligible (${status})`);
+        match = result.match;
 
-            const excelCard = (match["Card Number / DHA Member ID"] || "")
-              .replace(/[-\s]/g, "")
-              .trim();
-            if (
-              excelCard &&
-              stripLeadingZero(encounter.memberID || "") !==
-                stripLeadingZero(excelCard)
-            ) {
-              remarks.push(
-                "Card Number mismatch between XML and Eligibility",
-              );
-            }
+        status = match['Status'] || '';
+        if (status.toLowerCase() !== 'eligible') {
+          remarks.push(`Status not eligible (${status})`);
+        }
 
-            const reportLic = (encounter.clinician || "").trim();
-            const eligLic = (match["Clinician"] || "").trim();
-            const reportName = "";
-            const eligName = (match["Clinician Name"] || "").trim();
-
-            if (reportLic && eligLic && reportLic !== eligLic) {
-              clinicianMismatch = true;
-              clinicianMismatchMsg = buildClinicianMismatchMsg(
-                reportLic,
-                eligLic,
-                reportName,
-                eligName,
-                "XML",
-                "Eligibility",
-              );
-            }
-
-            const excelProviderLicense = (
-              match["Provider License"] || ""
-            ).trim();
-            const claimProviderID = (encounter.providerID || "").trim();
-            if (
-              claimProviderID &&
-              excelProviderLicense &&
-              claimProviderID !== excelProviderLicense
-            ) {
-              remarks.push(
-                `ProviderID does not match Provider License in eligibility (XML: "${claimProviderID}", Excel: "${excelProviderLicense}")`,
-              );
-            }
-          }
+        // Clinician mismatch between report and eligibility
+        const eligClin = (match['Clinician'] || '').trim();
+        if (claimClinician && eligClin && claimClinician !== eligClin) {
+          clinicianMismatch = true;
+          clinicianMismatchMsg = buildClinicianMismatchMsg(
+            claimClinician,
+            eligClin,
+            '',
+            match['Clinician Name'] || '',
+            'XML Activities',
+            'Eligibility'
+          );
         }
       }
 
-      // 🆕 Format encounterStart date for display
-      const formattedDate =
-        encounter.encounterStart instanceof Date
-          ? excelDateToDDMMYYYY(encounter.encounterStart)
-          : encounter.encounterStart;
+      // Unknown = any clinicianMismatch but no other remarks
+      const unknown = clinicianMismatch && remarks.length === 0;
+      if (unknown) {
+        remarks.push('Clinician mismatch (treated as unknown)');
+      }
+
+      // Build formattedDate for display
+      const formattedDate = encounterStart instanceof Date
+        ? excelDateToDDMMYYYY(encounterStart)
+        : encounterStart;
 
       return {
-        claimID: encounter.claimID,
-        memberID: encounter.memberID,
-        payerID: encounter.payerID,
-        affiliatedPlan,
+        claimID,
         encounterStart: formattedDate,
-        clinic: encounter.clinic || '',
-        details: match
-          ? formatEligibilityDetailsModal(match, encounter.memberID)
-          : "",
-        eligibilityRequestNumber:
-          match?.["Eligibility Request Number"] || null,
+        details: match ? formatEligibilityDetailsModal(match, enc.memberID) : '',
+        eligibilityRequestNumber: match?.['Eligibility Request Number'] || null,
         status,
         remarks,
-        match,
-        unknown: clinicianMismatch && remarks.length === 0,
-        clinicianMismatchMsg,
+        unknown,
+        clinicianMismatchMsg
       };
     })
-    .filter(Boolean); // remove skipped duplicates
+    .filter(Boolean);
 }
 
   function buildClinicianMismatchMsg(
