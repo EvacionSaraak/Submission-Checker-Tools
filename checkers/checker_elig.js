@@ -249,17 +249,13 @@ function parseXML(file) {
             }
   
             // --- NEW: Insurance Company vs Package Name ---
-            const eligPackage = (match["Package Name"] || "").trim();
-            if (reportInsurer && eligPackage) {
-              const r = reportInsurer.toLowerCase();
-              const e = eligPackage.toLowerCase();
-              if (!(e.includes(r) || r.includes(e))) {
-                remarks.push(
-                  `Insurance Company mismatch (XLS: "${reportInsurer}", Elig Package: "${eligPackage}")`
-                );
-              }
+            const eligPayer = (match["Payer Name"] || "").trim();
+            if (reportInsurer && eligPayer && reportInsurer !== eligPayer) {
+              remarks.push(
+                `Insurance Company mismatch (XLS: "${reportInsurer}", Elig: "${eligPayer}")`
+              );
             }
-  
+
             // Service Category check
             const serviceCategory = (match["Service Category"] || "").trim();
             const consultationStatus = (match["Consultation Status"] || "")
