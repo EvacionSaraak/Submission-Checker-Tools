@@ -138,33 +138,29 @@ function parseXML(file) {
     const claimNodes = xmlDoc.querySelectorAll('Claim');
 
     const claims = Array.from(claimNodes).map((claim, ci) => {
-      const claimID = claim.querySelector('ID')?.textContent.trim() || '';
-      // Collect all clinicians from Activity nodes
-      const activityNodes = claim.querySelectorAll('Activity');
+      const claimID   = claim.querySelector('ID')?.textContent.trim() || '';
+      const memberID  = claim.querySelector('MemberID')?.textContent.trim() || '';
+      const payerID   = claim.querySelector('PayerID')?.textContent.trim() || '';
+      const providerID= claim.querySelector('ProviderID')?.textContent.trim() || '';
+
+      // Collect clinicians from Activities
       const clinicians = new Set();
-      activityNodes.forEach(act => {
-        const clin = act.querySelector('Clinician')?.textContent.trim();
-        if (clin) clinicians.add(clin);
+      claim.querySelectorAll('Activity').forEach(act => {
+        const c = act.querySelector('Clinician')?.textContent.trim();
+        if (c) clinicians.add(c);
       });
-
       const multipleClinicians = clinicians.size > 1;
-      const claimClinician = clinicians.size === 1
-        ? Array.from(clinicians)[0]
-        : null;
+      const claimClinician    = clinicians.size === 1 ? [...clinicians][0] : null;
 
-      console.log(
-        `⦿ Claim[${ci}] ID=${claimID} → clinicians=${Array.from(clinicians).join(', ')}`
-      );
-      if (multipleClinicians) {
-        console.warn(`⚠️ Claim ${claimID} has multiple clinicians:`, Array.from(clinicians));
-      }
-
-      // Parse Encounters, tagging each with the claimClinician & multiple flag
+      // Parse Encounters
       const encounters = Array.from(claim.querySelectorAll('Encounter')).map(enc => {
         const rawStart = enc.querySelector('Start')?.textContent.trim() || '';
-        const startDate = parseDate(rawStart);
+        const startDate= parseDate(rawStart);
         return {
           claimID,
+          memberID,          // ← restore this
+          payerID,           // if you need it in validation
+          providerID,        // likewise
           encounterStart: startDate || rawStart,
           claimClinician,
           multipleClinicians
@@ -174,8 +170,10 @@ function parseXML(file) {
       return { claimID, encounters };
     });
 
-    const allEncounters = claims.flatMap(c => c.encounters);
-    return { claimsCount: claims.length, encounters: allEncounters };
+    return {
+      claimsCount: claims.length,
+      encounters: claims.flatMap(c => c.encounters)
+    };
   });
 }
 
