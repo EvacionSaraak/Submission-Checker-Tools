@@ -82,68 +82,63 @@ window.addEventListener("DOMContentLoaded", () => {
       insuranceLicenses = null;
     });
 
-  async function parseExcel(file, range = 0) {
-    const reader = new FileReader();
-    return new Promise((resolve, reject) => {
-      reader.onload = (e) => {
-        try {
-          const data = new Uint8Array(e.target.result);
-          const workbook = XLSX.read(data, { type: "array" });
-          const sheetName = workbook.SheetNames[0];
-          const worksheet = workbook.Sheets[sheetName];
-          if (!worksheet)
-            throw new Error("No worksheet found in uploaded file.");
-          const json = XLSX.utils.sheet_to_json(worksheet, {
-            defval: "",
-            range,
-          });
-          if (json.length > 0) {
-            console.log(
-              `Parsed (range: ${range}) headers:`,
-              Object.keys(json[0]),
-            );
-            console.log("First parsed row:", json[0]);
-          } else {
-            console.log("No data rows found in XLS/XLSX.");
-          }
-          resolve(json);
-        } catch (err) {
-          reject(err);
-        }
-      };
-      reader.onerror = () => reject(reader.error);
-      reader.readAsArrayBuffer(file);
-    });
-  }
+// ✅ Modified parseExcel to normalize ClaimDate for report rows
+async function parseExcel(file, range = 0) {
+  const reader = new FileReader();
+  return new Promise((resolve, reject) => {
+    reader.onload = e => {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        if (!worksheet) throw new Error('No worksheet found in uploaded file.');
+        const json = XLSX.utils.sheet_to_json(worksheet, { defval: '', range });
 
-  function parseXML(file) {
-    return file.text().then((xmlText) => {
-      const parser = new DOMParser();
-      const xmlDoc = parser.parseFromString(xmlText, "application/xml");
-      const claimNodes = xmlDoc.querySelectorAll("Claim");
-      const claims = Array.from(claimNodes).map((claim) => {
-        const claimID = claim.querySelector("ID")?.textContent.trim() || "";
-        const memberID =
-          claim.querySelector("MemberID")?.textContent.trim() || "";
-        const payerID =
-          claim.querySelector("PayerID")?.textContent.trim() || "";
-        const providerID =
-          claim.querySelector("ProviderID")?.textContent.trim() || "";
-        const encounterNodes = claim.querySelectorAll("Encounter");
-        const encounters = Array.from(encounterNodes).map((enc) => ({
-          claimID,
-          memberID,
-          payerID,
-          providerID,
-          encounterStart: enc.querySelector("Start")?.textContent.trim() || "",
-          clinician: enc.querySelector("Clinician")?.textContent.trim() || "",
-        }));
-        return { claimID, memberID, payerID, providerID, encounters };
-      });
-      const allEncounters = claims.flatMap((c) => c.encounters);
-      return { claimsCount: claims.length, encounters: allEncounters };
+        // Normalize ClaimDate field if present
+        json.forEach(row => {
+          if (row["ClaimDate"]) {
+            const parsed = parseDate(row["ClaimDate"]);
+            if (parsed) row["ClaimDate"] = parsed;
+          }
+        });
+
+        resolve(json);
+      } catch (err) {
+        reject(err);
+      }
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+// ✅ Modified parseXML to use parseDate for encounterStart
+function parseXML(file) {
+  return file.text().then(xmlText => {
+    const parser = new DOMParser();
+    const xmlDoc = parser.parseFromString(xmlText, "application/xml");
+    const claimNodes = xmlDoc.querySelectorAll('Claim');
+    const claims = Array.from(claimNodes).map(claim => {
+      const claimID = claim.querySelector('ID')?.textContent.trim() || '';
+      const memberID = claim.querySelector('MemberID')?.textContent.trim() || '';
+      const payerID = claim.querySelector('PayerID')?.textContent.trim() || '';
+      const providerID = claim.querySelector('ProviderID')?.textContent.trim() || '';
+      const encounterNodes = claim.querySelectorAll('Encounter');
+      const encounters = Array.from(encounterNodes).map(enc => ({
+        claimID,
+        memberID,
+        payerID,
+        providerID,
+        encounterStart: parseDate(enc.querySelector('Start')?.textContent.trim() || ''),
+        clinician: enc.querySelector('Clinician')?.textContent.trim() || ''
+      }));
+      return { claimID, memberID, payerID, providerID, encounters };
     });
-  }
+    const allEncounters = claims.flatMap(c => c.encounters);
+    return { claimsCount: claims.length, encounters: allEncounters };
+  });
+}
 
   function stripLeadingZero(x) {
     x = (x || "").replace(/[-\s]/g, "").trim();
@@ -277,8 +272,10 @@ window.addEventListener("DOMContentLoaded", () => {
           }
         }
 
-        const formattedDate = excelDateToDDMMYYYY(row["ClaimDate"]);
-
+        const formattedDate = (row["ClaimDate"] instanceof Date)
+          ? excelDateToDDMMYYYY(row["ClaimDate"])
+          : row["ClaimDate"];
+        
         return {
           claimID: row["ClaimID"],
           memberID: row["PatientCardID"],
@@ -302,111 +299,117 @@ window.addEventListener("DOMContentLoaded", () => {
       .filter(Boolean); // remove skipped duplicates
   }
 
-  // --- Modified validateXmlWithEligibility ---
-  function validateXmlWithEligibility(xmlPayload, eligRows, insuranceLicenses) {
-    const { encounters } = xmlPayload;
-    const seenClaimIDs = new Set();
+// --- Modified validateXmlWithEligibility ---
+function validateXmlWithEligibility(xmlPayload, eligRows, insuranceLicenses) {
+  const { encounters } = xmlPayload;
+  const seenClaimIDs = new Set();
 
-    return encounters
-      .map((encounter) => {
-        const claimID = encounter.claimID;
-        if (seenClaimIDs.has(claimID)) return null;
-        seenClaimIDs.add(claimID);
+  return encounters
+    .map((encounter) => {
+      const claimID = encounter.claimID;
+      if (seenClaimIDs.has(claimID)) return null;
+      seenClaimIDs.add(claimID);
 
-        const remarks = [];
-        let match = null;
-        let status = "";
-        let affiliatedPlan = "";
-        let clinicianMismatch = false;
-        let clinicianMismatchMsg = "";
-        let memberID = (encounter.memberID || "").toString().trim();
+      const remarks = [];
+      let match = null;
+      let status = "";
+      let affiliatedPlan = "";
+      let clinicianMismatch = false;
+      let clinicianMismatchMsg = "";
+      let memberID = (encounter.memberID || "").toString().trim();
 
-        if (memberID.startsWith("0")) {
-          remarks.push("Member ID starts with 0 (invalid)");
-        }
+      if (memberID.startsWith("0")) {
+        remarks.push("Member ID starts with 0 (invalid)");
+      }
 
-        if (/VVIP/i.test(memberID)) {
-          status = "VVIP";
+      if (/VVIP/i.test(memberID)) {
+        status = "VVIP";
+      } else {
+        const result = findBestEligibilityMatch(
+          memberID,
+          encounter.encounterStart || "",
+          (encounter.clinician || "").trim(),
+          eligRows,
+        );
+        if (!result) {
+          remarks.push("No eligibility rows found for card number");
+        } else if (result.error) {
+          remarks.push(result.error);
         } else {
-          const result = findBestEligibilityMatch(
-            memberID,
-            encounter.encounterStart || "",
-            (encounter.clinician || "").trim(),
-            eligRows,
-          );
-          if (!result) {
-            remarks.push("No eligibility rows found for card number");
-          } else if (result.error) {
-            remarks.push(result.error);
+          match = result.match;
+          if (!match) {
+            remarks.push("Eligibility match is undefined.");
           } else {
-            match = result.match;
-            if (!match) {
-              remarks.push("Eligibility match is undefined.");
-            } else {
-              if (result.unknown) {
-                remarks.push(
-                  "Clinician mismatch - fallback eligibility used (marked unknown)",
-                );
-              }
+            if (result.unknown) {
+              remarks.push(
+                "Clinician mismatch - fallback eligibility used (marked unknown)",
+              );
+            }
 
-              status = match["Status"] || "";
-              if ((status || "").toLowerCase() !== "eligible")
-                remarks.push(`Status not eligible (${status})`);
+            status = match["Status"] || "";
+            if ((status || "").toLowerCase() !== "eligible")
+              remarks.push(`Status not eligible (${status})`);
 
-              const excelCard = (match["Card Number / DHA Member ID"] || "")
-                .replace(/[-\s]/g, "")
-                .trim();
-              if (
-                excelCard &&
-                stripLeadingZero(encounter.memberID || "") !==
-                  stripLeadingZero(excelCard)
-              ) {
-                remarks.push(
-                  "Card Number mismatch between XML and Eligibility",
-                );
-              }
+            const excelCard = (match["Card Number / DHA Member ID"] || "")
+              .replace(/[-\s]/g, "")
+              .trim();
+            if (
+              excelCard &&
+              stripLeadingZero(encounter.memberID || "") !==
+                stripLeadingZero(excelCard)
+            ) {
+              remarks.push(
+                "Card Number mismatch between XML and Eligibility",
+              );
+            }
 
-              const reportLic = (encounter.clinician || "").trim();
-              const eligLic = (match["Clinician"] || "").trim();
-              const reportName = "";
-              const eligName = (match["Clinician Name"] || "").trim();
+            const reportLic = (encounter.clinician || "").trim();
+            const eligLic = (match["Clinician"] || "").trim();
+            const reportName = "";
+            const eligName = (match["Clinician Name"] || "").trim();
 
-              if (reportLic && eligLic && reportLic !== eligLic) {
-                clinicianMismatch = true;
-                clinicianMismatchMsg = buildClinicianMismatchMsg(
-                  reportLic,
-                  eligLic,
-                  reportName,
-                  eligName,
-                  "XML",
-                  "Eligibility",
-                );
-              }
+            if (reportLic && eligLic && reportLic !== eligLic) {
+              clinicianMismatch = true;
+              clinicianMismatchMsg = buildClinicianMismatchMsg(
+                reportLic,
+                eligLic,
+                reportName,
+                eligName,
+                "XML",
+                "Eligibility",
+              );
+            }
 
-              const excelProviderLicense = (
-                match["Provider License"] || ""
-              ).trim();
-              const claimProviderID = (encounter.providerID || "").trim();
-              if (
-                claimProviderID &&
-                excelProviderLicense &&
-                claimProviderID !== excelProviderLicense
-              ) {
-                remarks.push(
-                  `ProviderID does not match Provider License in eligibility (XML: "${claimProviderID}", Excel: "${excelProviderLicense}")`,
-                );
-              }
+            const excelProviderLicense = (
+              match["Provider License"] || ""
+            ).trim();
+            const claimProviderID = (encounter.providerID || "").trim();
+            if (
+              claimProviderID &&
+              excelProviderLicense &&
+              claimProviderID !== excelProviderLicense
+            ) {
+              remarks.push(
+                `ProviderID does not match Provider License in eligibility (XML: "${claimProviderID}", Excel: "${excelProviderLicense}")`,
+              );
             }
           }
         }
-        
+      }
+
+      // 🆕 Format encounterStart date for display
+      const formattedDate =
+        encounter.encounterStart instanceof Date
+          ? excelDateToDDMMYYYY(encounter.encounterStart)
+          : encounter.encounterStart;
+
       return {
         claimID: encounter.claimID,
         memberID: encounter.memberID,
         payerID: encounter.payerID,
         affiliatedPlan,
-        encounterStart: encounter.encounterStart,
-        clinic: encounter.clinic || '',            // <-- add clinic if available or empty string
+        encounterStart: formattedDate,
+        clinic: encounter.clinic || '',
         details: match
           ? formatEligibilityDetailsModal(match, encounter.memberID)
           : "",
@@ -418,8 +421,9 @@ window.addEventListener("DOMContentLoaded", () => {
         unknown: clinicianMismatch && remarks.length === 0,
         clinicianMismatchMsg,
       };
-    }).filter(Boolean); // remove skipped duplicates
-  }
+    })
+    .filter(Boolean); // remove skipped duplicates
+}
 
   function buildClinicianMismatchMsg(
     reportLicense,
@@ -635,32 +639,48 @@ window.addEventListener("DOMContentLoaded", () => {
     return row;
   }
 
+// ✅ Enhanced parseDate with ambiguity handling (X/Y/Z)
 function parseDate(value) {
   if (value === null || value === undefined) return null;
+
   if (value instanceof Date) return value;
+
   if (typeof value === 'number') {
     const jsDate = new Date(Math.round((value - 25569) * 86400 * 1000));
-    if (!isNaN(jsDate.getTime())) return jsDate;
-    return null;
+    return !isNaN(jsDate.getTime()) ? jsDate : null;
   }
 
   if (typeof value !== 'string') return null;
-  let parts = value.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
-  if (parts) {
-    const dd = parts[1].padStart(2, '0');
-    const mm = parts[2].padStart(2, '0');
-    let yyyy = parts[3];
-    if (yyyy.length === 2) yyyy = '20' + yyyy;
 
-    const d = new Date(Date.UTC(parseInt(yyyy), parseInt(mm) - 1, parseInt(dd)));
-    if (!isNaN(d.getTime())) {
-      // Optional: warn if format might be misunderstood
-      if (parseInt(mm) > 12) {
-        console.warn(`Suspicious date format detected: ${value} — check MM/DD vs DD/MM confusion.`);
-      }
-      return d;
-    }
+  // Detect ambiguous X/Y/Z
+  const parts = value.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+  if (parts) {
+    let [ , x, y, z ] = parts.map(v => parseInt(v, 10));
+    let day, month;
+
+    if (x > 12 && y <= 12) { day = x; month = y; }
+    else if (y > 12 && x <= 12) { day = y; month = x; }
+    else { day = x; month = y; }
+
+    const year = z < 100 ? 2000 + z : z;
+    const d = new Date(`${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T00:00:00`);
+    return !isNaN(d.getTime()) ? d : null;
   }
+
+  // Try DD-MMM-YYYY
+  const namedMonth = value.match(/^(\d{1,2})-([a-zA-Z]{3})-(\d{4})/);
+  if (namedMonth) {
+    const day = namedMonth[1].padStart(2, '0');
+    const mmm = namedMonth[2].toLowerCase();
+    const year = namedMonth[3];
+    const months = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+    const mm = months.indexOf(mmm) + 1;
+    if (mm) return new Date(`${year}-${String(mm).padStart(2, '0')}-${day}T00:00:00`);
+  }
+
+  const iso = new Date(value);
+  return !isNaN(iso.getTime()) ? iso : null;
+}
 
   // Try DD-MMM-YYYY with optional time e.g. 11-jan-1900 00:00:00
   parts = value.match(/^(\d{1,2})-([a-zA-Z]{3})-(\d{4})(?:\s+(\d{2}):(\d{2}):(\d{2}))?$/);
@@ -831,6 +851,14 @@ function findBestEligibilityMatch(memberID, claimDateStr, clinicianID, eligRows)
     processBtn.disabled = true;
     try {
       eligData = await parseExcel(e.target.files[0], 1);
+      eligData.forEach(row => {
+        ["Ordered On", "EffectiveDate", "Effective Date", "Answered On"].forEach(key => {
+          if (row[key]) {
+            const parsed = parseDate(row[key]);
+            if (parsed) row[key] = parsed;
+          }
+        });
+      });
       if (eligData && eligData.length > 0) {
         console.log("Eligibility: Detected headers:", Object.keys(eligData[0]));
         console.log("Eligibility: First row:", eligData[0]);
