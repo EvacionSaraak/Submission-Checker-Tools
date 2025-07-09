@@ -330,6 +330,7 @@ function parseXML(file) {
           affiliatedPlan: "",
           encounterStart: formattedDate,
           clinic: row["Clinic"] || "",
+          packageName: match?.["Package Name"] || "",
           details: match
             ? formatEligibilityDetailsModal(match, row["PatientCardID"])
             : formatReportDetailsModal(row, formattedDate),
@@ -478,6 +479,7 @@ function validateXmlWithEligibility(xmlPayload, eligRows) {
         label: "Eligibility Request Number",
         value: match["Eligibility Request Number"] || "",
       },
+      { label: "Payer Name", value: match["Payer Name"] || "" },
       { label: "Package Name", value: match["Package Name"] || "" },
       { label: "Service Category", value: match["Service Category"] || "" },
       {
@@ -549,6 +551,7 @@ function validateXmlWithEligibility(xmlPayload, eligRows) {
           <th>ID</th>
           <th>MemberID</th>
           <th>Insurance Company</th>
+          <th>Package Name</th>
           <th>Encounter Start</th>
           <th>Eligibility Details</th>
           <th>Status</th>
@@ -641,6 +644,8 @@ function validateXmlWithEligibility(xmlPayload, eligRows) {
       <td class="wrap-col">${r.claimID}</td>
       <td class="wrap-col">${r.memberID}</td>
       <td class="wrap-col">${r.insuranceCompany || ""}</td>
+      <td class="wrap-col">${r.packageName || ""}</td> <!-- 🆕 -->
+      <td>${r.encounterStart || ""}</td>
       <td>${r.encounterStart || ""}</td>
       <td></td>
       <td>${r.status || ""}</td>
