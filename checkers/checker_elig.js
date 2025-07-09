@@ -248,12 +248,16 @@ function parseXML(file) {
               remarks.push(`Status not eligible (${status})`);
             }
   
-            // --- NEW: Insurance Company vs Payer Name ---
-            const eligPayer = (match["Payer Name"] || "").trim();
-            if (reportInsurer && eligPayer && reportInsurer !== eligPayer) {
-              remarks.push(
-                `Insurance Company mismatch (XLS: "${reportInsurer}", Elig: "${eligPayer}")`
-              );
+            // --- NEW: Insurance Company vs Package Name ---
+            const eligPackage = (match["Package Name"] || "").trim();
+            if (reportInsurer && eligPackage) {
+              const r = reportInsurer.toLowerCase();
+              const e = eligPackage.toLowerCase();
+              if (!(e.includes(r) || r.includes(e))) {
+                remarks.push(
+                  `Insurance Company mismatch (XLS: "${reportInsurer}", Elig Package: "${eligPackage}")`
+                );
+              }
             }
   
             // Service Category check
