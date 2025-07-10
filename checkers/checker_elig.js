@@ -953,8 +953,8 @@ function isValidClaimID(id) {
   if (!id) return false;
   const trimmed = id.trim();
   if (trimmed === "") return false;
-  // Optionally, add regex check here if ClaimID has specific format
-  return true;
+  // Example regex: starts with letters, optional letters, then digits, no spaces
+  return /^[A-Z]+[A-Z]*\d+$/i.test(trimmed);
 }
 
 function updateStatus() {
