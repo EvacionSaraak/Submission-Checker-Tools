@@ -306,37 +306,39 @@ function validateInstaWithEligibility(instaRows, eligData) {
     const claimID = (row.ClaimID || '').toString().trim();
     if (!claimID || seenClaimIDs.has(claimID)) return; // Skip duplicates
     seenClaimIDs.add(claimID);
-
+  
     let memberID = (row.MemberID || '').toString().replace(/[-\s]/g, '').trim();
     if (memberID.startsWith('0')) memberID = memberID.slice(1);
-
+  
     const eligRows = eligByCard[memberID] || [];
     const remarks = [];
     let match = null, unknown = false;
-
+  
+    // Parse the claim date here:
+    const cDate = row.ClaimDate instanceof Date ? row.ClaimDate : parseDate(row.ClaimDate);
+  
     if (!eligRows.length) {
       remarks.push("No eligibility found for MemberID/Card Number");
     } else {
-      const cDate = row.ClaimDate instanceof Date ? row.ClaimDate : parseDate(row.ClaimDate);
       const best = findBestEligibilityMatch(memberID, cDate, row["Clinician License"], eligRows);
-
+  
       if (!best || best.error) {
         remarks.push(best?.error || "No matching eligibility on or before claim date");
       } else {
         match = best.match;
         unknown = best.unknown;
-
+  
         const st = (match['Status'] || "").toLowerCase();
         if (st !== "eligible") {
           remarks.push(`Status not eligible (${match['Status']})`);
         }
-
+  
         const start = match['EffectiveDate'] || match['Effective Date'] || match['Ordered On'];
         const end   = match['Answered On'];
         if (start && end && !isWithinEligibilityPeriod(cDate, parseDate(start), parseDate(end))) {
           remarks.push("Claim date outside eligibility period");
         }
-
+  
         const insCsv = normalizeInsurer(row["Insurance Company"]);
         const insElig = normalizeInsurer(match["Payer Name"]);
         if (insCsv && insElig && insCsv !== insElig) {
@@ -344,7 +346,7 @@ function validateInstaWithEligibility(instaRows, eligData) {
         }
       }
     }
-
+  
     results.push({
       claimID: row.ClaimID,
       memberID,
@@ -357,11 +359,10 @@ function validateInstaWithEligibility(instaRows, eligData) {
       remarks,
       unknown,
       eligibilityRequestNumber: match?.["Eligibility Request Number"] || "",
-      serviceCategory: (match?.["Service Category"] || match?.["Service Category"] || "").trim(),
+      serviceCategory: (match?.["Service Category"] || "").trim(),
       details: match ? formatEligibilityDetailsModal(match, memberID) : ""
     });
   });
-
   return results;
 }
 
