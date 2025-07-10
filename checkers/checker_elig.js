@@ -95,68 +95,62 @@ function excelDateToDDMMYYYY(excelDate) {
       insuranceLicenses = null;
     });
 
-async function parseCsv(file) {
-  const text = await file.text();
-  const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
+async function parseCsvAsXlsx(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      try {
+        const csvText = e.target.result;
 
-  console.log("CSV Debug — First 4 lines:");
-  lines.slice(0, 4).forEach((l, i) => console.log(`Line ${i + 1}:`, l));
+        // Convert to workbook
+        const workbook = XLSX.read(csvText, { type: 'string' });
 
-  if (lines.length < 4) return [];
+        // Use the first sheet
+        const sheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
 
-  const headerLine = lines[3].trim();
-  const headers = parseCsvLine(headerLine);
+        // Convert sheet to JSON
+        const allRows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
 
-  const rows = lines.slice(4).map(line => {
-    const values = parseCsvLine(line);
-    const obj = {};
-    headers.forEach((key, i) => {
-      obj[key] = values[i] || '';
-    });
-    return obj;
-  });
+        // Strip first 3 metadata lines
+        const dataRows = allRows.slice(3);
 
-  const mappedRows = rows.map(row => {
-    const parsedDate = parseDate(row["Encounter Date"]);
-    return {
-      "ClaimID": row["Pri. Claim No"]?.trim() || "",
-      "MemberID": row["Pri. Patient Insurance Card No"]?.trim() || "",
-      "ClaimDate": parsedDate || row["Encounter Date"] || "",
-      "Clinician License": row["Clinician License"] || "",
-      "Insurance Company": row["Pri. Payer Name"] || "",
-      "Clinic": row["Department"] || "",
-      "Status": row["Codification Status"] || "",
-      "Package Name": row["Pri. Plan Name"] || "",
+        if (dataRows.length === 0) return resolve([]);
+
+        const headers = dataRows[0];
+        const values = dataRows.slice(1);
+
+        const result = values.map(row => {
+          const obj = {};
+          headers.forEach((h, i) => {
+            obj[h] = row[i] != null ? String(row[i]).trim() : '';
+          });
+          return obj;
+        });
+
+        // Map to your format
+        const mapped = result.map(row => {
+          const parsedDate = parseDate(row["Encounter Date"]);
+          return {
+            "ClaimID": row["Pri. Claim No"] || "",
+            "MemberID": row["Pri. Patient Insurance Card No"] || "",
+            "ClaimDate": parsedDate || row["Encounter Date"] || "",
+            "Clinician License": row["Clinician License"] || "",
+            "Insurance Company": row["Pri. Payer Name"] || "",
+            "Clinic": row["Department"] || "",
+            "Status": row["Codification Status"] || "",
+            "Package Name": row["Pri. Plan Name"] || "",
+          };
+        });
+
+        resolve(mapped);
+      } catch (err) {
+        reject(err);
+      }
     };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsText(file);
   });
-
-  return mappedRows;
-}
-
-function parseCsvLine(line) {
-  const result = [];
-  let current = '';
-  let inQuotes = false;
-
-  for (let i = 0; i < line.length; i++) {
-    const char = line[i];
-    const nextChar = line[i + 1];
-
-    if (char === '"' && inQuotes && nextChar === '"') {
-      current += '"';
-      i++; // skip next quote
-    } else if (char === '"') {
-      inQuotes = !inQuotes;
-    } else if (char === ',' && !inQuotes) {
-      result.push(current.trim());
-      current = '';
-    } else {
-      current += char;
-    }
-  }
-
-  result.push(current.trim());
-  return result;
 }
 
 // ✅ Modified parseExcel to normalize ClaimDate for report rows
@@ -1038,28 +1032,21 @@ xmlInput.addEventListener("change", async (e) => {
 });
 
 reportInput.addEventListener("change", async (e) => {
-  status.textContent = "Loading report…";
-  processBtn.disabled = true;
   const file = e.target.files[0];
-  if (!file) return;
   const isCsv = file.name.toLowerCase().endsWith(".csv");
-  isCsvFile = isCsv;
+
+  status.textContent = isCsv ? "Loading CSV as XLSX…" : "Loading XLS…";
+  processBtn.disabled = true;
+
   try {
-    if (isCsv) {
-      xlsData = await parseCsv(file);
-    } else {
-      xlsData = await parseExcel(file, 0);
-    }
+    xlsData = isCsv
+      ? await parseCsvAsXlsx(file)
+      : await parseExcel(file, 0);
 
-    const invalids = validateDatesInData(
-      xlsData,
-      ["ClaimDate"],
-      isCsv ? "CSV" : "XLS"
-    );
-
+    const invalids = validateDatesInData(xlsData, ["ClaimDate"], isCsv ? "CSV" : "XLS");
     if (invalids.length) {
-      console.warn(`Invalid dates found in ${isCsv ? "CSV" : "XLS"} report:`, invalids);
-      status.textContent = `Warning: ${invalids.length} invalid date(s) in ${isCsv ? "CSV" : "XLS"} report. Check console.`;
+      console.warn("Invalid dates found:", invalids);
+      status.textContent = `Warning: ${invalids.length} invalid date(s). Check console.`;
     }
   } catch (err) {
     status.textContent = `${isCsv ? "CSV" : "XLS"} Error: ${err.message}`;
