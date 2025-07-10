@@ -721,6 +721,7 @@ function renderResults(results, containerId = "results") {
 }
 
 // Updated createRow with correct details button placement (7th cell)
+// createRow — add “description-col” class to Insurance Company, Package Name, and Encounter Start cells
 function createRow(r, index, { modal, modalContent }) {
   const row = document.createElement("tr");
   if (r.unknown) {
@@ -762,17 +763,17 @@ function createRow(r, index, { modal, modalContent }) {
     <td>${index + 1}</td>
     <td class="wrap-col">${r.claimID}</td>
     <td class="wrap-col">${r.memberID}</td>
-    <td class="wrap-col">${r.insuranceCompany || ""}</td>
-    <td class="wrap-col">${r.packageName || ""}</td>
-    <td>${r.encounterStart || ""}</td>
-    <td></td> <!-- placeholder for details button -->
+    <td class="wrap-col description-col">${r.insuranceCompany || ""}</td>  <!-- truncated -->
+    <td class="wrap-col description-col">${r.packageName || ""}</td>      <!-- truncated -->
+    <td class="wrap-col description-col">${r.encounterStart || ""}</td>            <!-- truncated -->
+    <td></td>
     <td>${r.status || ""}</td>
     <td>${r.serviceCategory || ""}</td>
     <td>${r.clinic || ""}</td>
     <td style="white-space: pre-line;">${remarksCellHtml}</td>
   `;
 
-  // Replace the 7th cell (placeholder) with our details button
+  // Replace the placeholder cell (7th) with our details button
   row.querySelector("td:nth-child(7)").replaceWith(tdBtn);
 
   return row;
