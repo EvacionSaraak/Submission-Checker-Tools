@@ -624,18 +624,26 @@ function validateXmlWithEligibility(xmlPayload, eligRows) {
 
 // --- Modified validateXmlWithEligibility ---
 function validateXmlWithEligibility(xmlPayload, eligRows) {
-  const { encounters } = xmlPayload;
+  const { encounters, claims } = xmlPayload;
   const seenClaimIDs = new Set();
+
+  // Build claims lookup for extra info
+  const claimsById = {};
+  if (claims && Array.isArray(claims)) {
+    claims.forEach(claim => {
+      if (claim.ID) claimsById[claim.ID] = claim;
+    });
+  }
 
   return encounters
     .map(enc => {
-      // Destructure memberID (and other fields) out of each encounter
       const {
         claimID,
         memberID,
         encounterStart,
         claimClinician,
-        multipleClinicians
+        multipleClinicians,
+        FacilityID // in case encounter has this directly
       } = enc;
 
       if (seenClaimIDs.has(claimID)) return null;
@@ -647,17 +655,14 @@ function validateXmlWithEligibility(xmlPayload, eligRows) {
       let clinicianMismatch = false;
       let clinicianMismatchMsg = "";
 
-      // Flag if the claim had multiple clinicians
       if (multipleClinicians) {
         remarks.push("Multiple clinicians in claim activities");
       }
 
-      // Use the parsed memberID here
       if (!memberID) {
         remarks.push("MemberID missing in XML");
       }
 
-      // Only attempt eligibility lookup if we have a memberID
       if (memberID) {
         const result = findBestEligibilityMatch(
           memberID,
@@ -673,6 +678,7 @@ function validateXmlWithEligibility(xmlPayload, eligRows) {
         } else {
           match = result.match;
           status = match["Status"] || "";
+
           if (status.toLowerCase() !== "eligible") {
             remarks.push(`Status not eligible (${status})`);
           }
@@ -683,7 +689,7 @@ function validateXmlWithEligibility(xmlPayload, eligRows) {
             clinicianMismatchMsg = buildClinicianMismatchMsg(
               claimClinician,
               eligClin,
-              "", // no encounter-level provider name
+              "",
               match["Clinician Name"] || "",
               "XML Activities",
               "Eligibility"
@@ -692,13 +698,22 @@ function validateXmlWithEligibility(xmlPayload, eligRows) {
         }
       }
 
-      // Treat clinician mismatch as unknown if no other remarks
       const unknown = clinicianMismatch && remarks.length === 0;
       if (unknown) {
         remarks.push("Clinician mismatch (treated as unknown)");
       }
 
-      const formattedDate = 
+      const claimData = claimsById[claimID] || {};
+
+      // Insurance Company from eligibility if matched, else fallback PayerID (you can build a map if needed)
+      const insuranceCompany = match?.["Payer Name"] || "";
+
+      const packageName = claimData.Contract?.PackageName || match?.["Package Name"] || "";
+
+      // Clinic from Encounter FacilityID or Claim ProviderID fallback
+      const clinic = FacilityID || claimData.ProviderID || "";
+
+      const formattedDate =
         encounterStart instanceof Date
           ? excelDateToDDMMYYYY(encounterStart)
           : encounterStart;
@@ -712,7 +727,11 @@ function validateXmlWithEligibility(xmlPayload, eligRows) {
         status,
         remarks,
         unknown,
-        clinicianMismatchMsg
+        clinicianMismatchMsg,
+        insuranceCompany,
+        packageName,
+        serviceCategory: match?.["Service Category"] || "",  // <-- from eligibility XLSX
+        clinic
       };
     })
     .filter(Boolean);
