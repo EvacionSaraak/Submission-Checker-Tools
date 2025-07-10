@@ -98,45 +98,70 @@ function excelDateToDDMMYYYY(excelDate) {
 async function parseCsv(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = e => {
       try {
         const text = e.target.result;
-        const lines = text.split(/\r?\n/).filter(line => line.trim() !== "");
 
-        // Debug: Show first 4 lines
-        console.log("CSV Debug - First 4 lines:");
-        lines.slice(0, 4).forEach((line, i) => {
-          console.log(`Line ${i + 1}:`, line);
-        });
+        // Split lines, skip first 3 lines (header is line 4)
+        const allLines = text.split(/\r?\n/);
+        if (allLines.length < 4) return resolve([]);
 
-        if (lines.length <= 3) return resolve([]);
+        // Header line (line 4)
+        const headerLine = allLines[3];
 
-        // Line 4 is the header row (index 3)
-        const headerLine = lines[3];
-        const headers = parseCsvLine(headerLine);
+        // Parse CSV line with quotes properly:
+        function parseCsvLine(line) {
+          const regex = /("([^"]|"")*"|[^,]*)(,|$)/g;
+          const fields = [];
+          let match;
+          while ((match = regex.exec(line)) !== null) {
+            let val = match[1];
+            // Remove surrounding quotes and unescape double quotes
+            if (val.startsWith('"') && val.endsWith('"')) {
+              val = val.slice(1, -1).replace(/""/g, '"');
+            }
+            fields.push(val);
+            if (match[3] === "") break; // end of line
+          }
+          return fields;
+        }
 
-        const dataRows = lines.slice(4).map(line => parseCsvLine(line));
+        const headers = parseCsvLine(headerLine).map(h => h.trim());
 
-        const rows = dataRows.map(values => {
-          const row = {};
-          headers.forEach((header, i) => {
-            row[header] = values[i] || "";
+        // Parse rows starting from line 5 (index 4)
+        const rows = [];
+        for (let i = 4; i < allLines.length; i++) {
+          const line = allLines[i];
+          if (!line.trim()) continue; // skip empty lines
+          const values = parseCsvLine(line);
+          if (values.length !== headers.length) {
+            // Skip or warn if columns count mismatch
+            console.warn(`Skipping line ${i+1} due to column count mismatch`);
+            continue;
+          }
+          const obj = {};
+          headers.forEach((h, idx) => {
+            obj[h] = values[idx] || "";
           });
-          return row;
+          rows.push(obj);
+        }
+
+        // Map to your app fields and parse date
+        const mappedRows = rows.map(row => {
+          const parsedDate = parseDate(row["Encounter Date"]);
+          return {
+            "ClaimID": row["Pri. Claim No"] || "",
+            "MemberID": row["Pri. Patient Insurance Card No"] || "",
+            "ClaimDate": parsedDate || row["Encounter Date"] || "",
+            "Clinician License": row["Clinician License"] || "",
+            "Insurance Company": row["Pri. Payer Name"] || "",
+            "Clinic": row["Department"] || "",
+            "Status": row["Codification Status"] || "",
+            "Package Name": row["Pri. Plan Name"] || "",
+          };
         });
 
-        const mapped = rows.map(row => ({
-          "ClaimID": row["Pri. Claim No"] || "",
-          "MemberID": row["Pri. Patient Insurance Card No"] || "",
-          "ClaimDate": parseDate(row["Encounter Date"]) || row["Encounter Date"] || "",
-          "Clinician License": row["Clinician License"] || "",
-          "Insurance Company": row["Pri. Payer Name"] || "",
-          "Clinic": row["Department"] || "",
-          "Status": row["Codification Status"] || "",
-          "Package Name": row["Pri. Plan Name"] || "",
-          raw: row
-        }));
-        resolve(mapped);
+        resolve(mappedRows);
       } catch (err) {
         reject(err);
       }
@@ -146,23 +171,6 @@ async function parseCsv(file) {
   });
 }
 
-// 🧠 Helper: Parses a single CSV line respecting quotes and commas
-function parseCsvLine(line) {
-  const result = [];
-  let current = "";
-  let inQuotes = false;
-
-  for (let i = 0; i < line.length; i++) {
-    const char = line[i];
-    const next = line[i + 1];
-    if (char === '"' && inQuotes && next === '"') { current += '"'; } 
-    else if (char === '"') { inQuotes = !inQuotes; } 
-    else if (char === ',' && !inQuotes) { result.push(current); current = ""; } 
-    else { current += char; }
-  }
-  result.push(current); // Push last value
-  return result.map(s => s.trim());
-}
 
 // ✅ Modified parseExcel to normalize ClaimDate for report rows
 async function parseExcel(file, range = 0) {
