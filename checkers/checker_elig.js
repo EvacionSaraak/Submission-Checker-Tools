@@ -324,6 +324,8 @@ function validateInstaWithEligibility(instaRows, eligData) {
       } else {
         match = best.match;
         unknown = best.unknown;
+        // Log the matched eligibility row here
+        console.log(`Matched eligibility for MemberID ${memberID}, ClaimID ${claimID}:`, match);
 
         const st = (match['Status'] || "").toLowerCase();
         if (st !== "eligible") {
@@ -344,19 +346,22 @@ function validateInstaWithEligibility(instaRows, eligData) {
       }
     }
 
+  const cDate = row.ClaimDate instanceof Date ? row.ClaimDate : parseDate(row.ClaimDate);
+  row.ClaimDate = cDate;
+  
   results.push({
     claimID: row.ClaimID,
     memberID,
     insuranceCompany: row["Insurance Company"],
     packageName: row["Package Name"],
-    encounterStart: row.ClaimDate,
+    encounterStart: cDate,
     clinicianID: row["Clinician License"],
     status: match?.['Status'] || "",
     clinic: row.Clinic,
     remarks,
     unknown,
     eligibilityRequestNumber: match?.["Eligibility Request Number"] || "",
-    serviceCategory: match?.["Service Category"] || "",  // ✅ ADDED
+    serviceCategory: (match?.["Service Category"] || match?.[" Service Category"] || "").trim(),
     details: match ? formatEligibilityDetailsModal(match, memberID) : ""
   });
 
