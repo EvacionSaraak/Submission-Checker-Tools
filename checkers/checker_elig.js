@@ -973,13 +973,14 @@ function updateStatus() {
 
   if (!usingXml) {
     if (xlsLoaded) {
-      const claimIDs = new Set((xlsData || []).map((r) => r["ClaimID"]));
+      const claimIDs = new Set((xlsData || []).map((r) => r["ClaimID"]).filter(id => id));
       const count = claimIDs.size;
       msgs.push(`${count} unique XLS Claim ID${count !== 1 ? "s" : ""} loaded`);
     } else if (csvLoaded) {
-      const claimIDs = new Set((csvData || []).map((r) => r["ClaimID"]));
-      const count = claimIDs.size;
-      msgs.push(`${count} unique CSV Claim ID${count !== 1 ? "s" : ""} loaded`);
+      const filteredCsvRows = (csvData || []).filter(r => r["ClaimID"] && r["ClaimID"].trim() !== "");
+      const uniqueClaimsCount = new Set(filteredCsvRows.map(r => r["ClaimID"])).size;
+      const totalRows = filteredCsvRows.length;
+      msgs.push(`${totalRows} CSV row${totalRows !== 1 ? "s" : ""} loaded (${uniqueClaimsCount} unique Claim ID${uniqueClaimsCount !== 1 ? "s" : ""})`);
     }
   }
 
