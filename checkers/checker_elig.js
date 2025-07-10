@@ -70,6 +70,13 @@ function excelDateToDDMMYYYY(excelDate) {
   return `${dd}/${mm}/${yyyy}`;
 }
 
+  // Helper function to check if eligibility status is valid (only "Eligible" allowed)
+function isEligibilityStatusValid(status) {
+  if (!status) return false;
+  const normalizedStatus = status.trim().toLowerCase();
+  return normalizedStatus === 'eligible';
+}
+
   function swapInputGroups() {
     if (xmlRadio.checked) {
       xmlGroup.style.display = "";
@@ -272,40 +279,30 @@ function validateInstaWithEligibility(instaRows, eligData) {
   });
 
   // Helper to normalize insurer names
-  // Extend normalizeInsurer to cover more variants like "DAMAN-National Insurance Co." and "Daman Enhanced"
-  // Updated normalizeInsurer to handle the new variant and others
   function normalizeInsurer(name) {
     if (!name) return '';
     const key = name.toLowerCase().replace(/[^a-z0-9]/g, '');
-  
+
     const aliases = {
       'thiqanationalhealthinsurancecompanydaman': 'thiqa',
-      'damanthiqá': 'thiqa',
       'damanthiqa': 'thiqa',
       'thiqa': 'thiqa',
-  
-      'daman-nationalhealthinsurancecodamanpjsc': 'daman',
+
       'daman-nationalhealthinsurancecodamanpjsc': 'daman',
       'damanenhanced': 'daman',
-      'daman-nationalhealthinsurancecodamanpjsc': 'daman',
       'damannationalinsuranceco': 'daman',
       'damannationalinsurancecodamanpjsc': 'daman',
-      'damannationalhealthinsurancecodamanpjsc': 'daman',
-  
-      // Added these:
-      'damannationalhealthinsurancecodamandamanpjsc': 'daman',
       'damannationalhealthinsurancecodamanpjsc': 'daman',
       'damannationalhealthinsuranceco': 'daman',
       'damannationalhealthinsurancecompany': 'daman',
     };
-  
-    // fallback: check if key contains 'daman' substring, map to 'daman'
+
+    // fallback: check if key contains 'daman' or 'thiqa' substring
     if (key.includes('daman')) return 'daman';
     if (key.includes('thiqa')) return 'thiqa';
-  
+
     return aliases[key] || key;
   }
-
 
   instaRows.forEach(row => {
     let memberID = (row.MemberID || '').toString().replace(/[-\s]/g, '').trim();
@@ -327,9 +324,8 @@ function validateInstaWithEligibility(instaRows, eligData) {
         match = best.match;
         unknown = best.unknown;
 
-        // Status check
-        const st = (match['Status'] || "").toLowerCase();
-        if (st !== "eligible") {
+        // Status check - only "eligible" is valid
+        if (!isEligibilityStatusValid(match['Status'])) {
           remarks.push(`Status not eligible (${match['Status']})`);
         }
 
@@ -368,6 +364,7 @@ function validateInstaWithEligibility(instaRows, eligData) {
 
   return results;
 }
+
 
   // --- Modified validateClinicProWithEligibility ---
   function validateClinicProWithEligibility(reportRows, eligRows) {
