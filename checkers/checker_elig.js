@@ -982,9 +982,11 @@ function updateStatus() {
     const claimIDs = new Set(allRows.map((r) => r["ClaimID"]));
     const count = claimIDs.size;
 
-    // Define isCsvFile here locally
-    const firstRow = allRows[0] || {};
-    const isCsvFile = Object.keys(firstRow).includes("Pri. Claim No") && Object.keys(firstRow).includes("Pri. Patient Insurance Card No");
+    // Define isCsvFile before using it!
+    const isCsvFile = allRows.length > 0 && (
+      Object.prototype.hasOwnProperty.call(allRows[0], "Pri. Claim No") &&
+      Object.prototype.hasOwnProperty.call(allRows[0], "Pri. Patient Insurance Card No")
+    );
 
     const label = isCsvFile ? "CSV" : "XLS";
     msgs.push(`${allRows.length} ${label} row${allRows.length !== 1 ? "s" : ""} loaded (${count} unique Claim ID${count !== 1 ? "s" : ""})`);
