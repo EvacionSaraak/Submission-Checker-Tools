@@ -12,12 +12,8 @@ window.addEventListener("DOMContentLoaded", () => {
   const status = document.getElementById("uploadStatus");
 
   // Radio selectors
-  const xmlRadio = document.querySelector(
-    'input[name="reportSource"][value="xml"]',
-  );
-  const xlsRadio = document.querySelector(
-    'input[name="reportSource"][value="xlsx"]',
-  );
+  const xmlRadio = document.querySelector('input[name="reportSource"][value="xml"]',);
+  const xlsRadio = document.querySelector('input[name="reportSource"][value="xls"]',);
 
   // Data holders
   let xmlData = null;
