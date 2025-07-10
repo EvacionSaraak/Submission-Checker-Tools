@@ -194,8 +194,8 @@ function parseXML(file) {
     });
   }
 
-  // --- Modified validateXlsWithEligibility ---
-  function validateXlsWithEligibility(reportRows, eligRows) {
+  // --- Modified validateClinicProWithEligibility ---
+  function validateClinicProWithEligibility(reportRows, eligRows) {
     if (reportRows.length > 0) {
       console.log("Parsed headers (xls):", Object.keys(reportRows[0]));
       console.log("First parsed row (xls):", reportRows[0]);
@@ -249,8 +249,9 @@ function parseXML(file) {
             }
   
             // --- NEW: Insurance Company vs Package Name ---
+            // ------- Checks if One value is within the other value and vice versa.
             const eligPayer = (match["Payer Name"] || "").trim();
-            if (reportInsurer && eligPayer && reportInsurer !== eligPayer) {
+            if (reportInsurer && eligPayer && !(eligPayer.toLowerCase().includes(reportInsurer.toLowerCase()) || reportInsurer.toLowerCase().includes(eligPayer.toLowerCase()))) {
               remarks.push(
                 `Insurance Company mismatch (XLS: "${reportInsurer}", Elig: "${eligPayer}")`
               );
@@ -955,7 +956,7 @@ eligInput.addEventListener("change", async (e) => {
       processBtn.disabled = true;
       status.textContent = "Validating…";
       try {
-        const results = validateXlsWithEligibility(xlsData, eligData);
+        const results = validateClinicProWithEligibility(xlsData, eligData);
         renderResults(results);
         const validCount = results.filter(
           (r) => r.unknown || r.remarks.length === 0,
