@@ -1139,6 +1139,7 @@ function updateStatus() {
 // ✅ Modified xmlInput handler to show logs per claim when the file is loaded
 xmlInput.addEventListener("change", async (e) => {
   status.textContent = "Loading XML…";
+  exportInvalidBtn.disabled = true;
   processBtn.disabled = true;
   try {
     xmlData = await parseXML(e.target.files[0]);
@@ -1169,6 +1170,7 @@ xmlInput.addEventListener("change", async (e) => {
 // 1) In your report input listener, detect .csv and call parseCsvAsXlsx
 reportInput.addEventListener("change", async (e) => {
   status.textContent = "Loading report…";
+  exportInvalidBtn.disabled = true;
   processBtn.disabled = true;
   const file = e.target.files[0];
   if (!file) return;
@@ -1200,6 +1202,7 @@ reportInput.addEventListener("change", async (e) => {
 
 eligInput.addEventListener("change", async (e) => {
   status.textContent = "Loading Eligibility XLSX…";
+  exportInvalidBtn.disabled = true;
   processBtn.disabled = true;
   try {
     eligData = await parseExcel(e.target.files[0], 1);
@@ -1229,8 +1232,7 @@ processBtn.addEventListener("click", async () => {
     processBtn.disabled = true;
 
     // detect CSV vs XLS by checking our parseCsvAsXlsx path
-    const isCsv = xlsData.length > 0 &&
-                  Object.prototype.hasOwnProperty.call(xlsData[0], "MemberID");
+    const isCsv = xlsData.length > 0 && Object.prototype.hasOwnProperty.call(xlsData[0], "MemberID");
 
     let results;
     if (isCsv) {
@@ -1245,8 +1247,57 @@ processBtn.addEventListener("click", async () => {
     status.textContent = `Valid: ${validCount} / ${totalCount} (${totalCount ? Math.round(validCount/totalCount*100) : 0}%)`;
 
     processBtn.disabled = false;
+    exportInvalidBtn.disabled = results.length === 0;
+
+    exportInvalidBtn.onclick = () => {
+      exportInvalidRowsXLSX({
+        results,
+        reportRows: xmlRadio.checked ? [] : xlsData,
+        eligRows: eligData,
+        mode: xmlRadio.checked ? "xml" : "insta"
+      });
+    };
   }
 });
 
+  function exportInvalidRowsXLSX({ results, reportRows = [], eligRows = [], mode = "insta" }) {
+    if (!Array.isArray(results) || results.length === 0) {
+      alert("No results to export.");
+      return;
+    }
+  
+    const invalids = results.filter(r => !r.unknown && r.remarks.length > 0);
+    if (invalids.length === 0) {
+      alert("No invalid rows to export.");
+      return;
+    }
+  
+    const eligByRequest = {};
+    eligRows.forEach(e => {
+      const key = e["Eligibility Request Number"];
+      if (key) eligByRequest[key] = e;
+    });
+  
+    const final = invalids.map(r => {
+      const base = (mode === "insta")
+        ? reportRows.find(s => s["ClaimID"] === r.claimID)
+        : { ClaimID: r.claimID, MemberID: r.memberID };
+  
+      const elig = r.eligibilityRequestNumber ? eligByRequest[r.eligibilityRequestNumber] : {};
+      return {
+        ...base,
+        ...elig,
+        Remarks: r.remarks.join(" | ")
+      };
+    });
+  
+    const ws = XLSX.utils.json_to_sheet(final);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Invalid Rows");
+    XLSX.writeFile(wb, "invalid_claims.xlsx");
+  }
+
+
+  
   swapInputGroups();
 });
