@@ -460,12 +460,12 @@ function validateXmlWithEligibility(xmlPayload, eligRows) {
         claimID,
         memberID,
         encounterStart: formattedDate,
-        details: match ? formatEligibilityDetailsModal(match, memberID) : "None",
+        details: match ? formatEligibilityDetailsModal(match, memberID) : "",
         eligibilityRequestNumber: match?.["Eligibility Request Number"] || null,
-        insuranceCompany: match?.["Payer Name"] || "None",
-        packageName: match?.["Package Name"] || "None",
-        serviceCategory: match?.["Service Category"] || "None",
-        clinic: enc?.clinic || "", // only if `clinic` exists in XML encounter
+        insuranceCompany: match?.["Payer Name"] || "", // ✅ FIXED
+        packageName: match?.["Package Name"] || "",    // ✅ FIXED
+        serviceCategory: match?.["Service Category"] || "", // ✅ FIXED
+        clinic: enc?.clinic || "",                     // ✅ Only if clinic is part of XML encounter
         status,
         remarks,
         unknown,
@@ -483,11 +483,8 @@ function validateXmlWithEligibility(xmlPayload, eligRows) {
     } else {
       console.log("No rows to parse in XLS.");
     }
-  
     console.log(`Processing ${reportRows.length} XLS report row(s)`);
-  
     const seenClaimIDs = new Set();
-  
     return reportRows
       .map((row) => {
         const claimID = row["ClaimID"];
