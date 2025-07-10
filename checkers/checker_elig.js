@@ -987,33 +987,21 @@ function updateStatus() {
   const usingXml = xmlRadio.checked;
   const xmlLoaded = !!xmlData;
   const xlsLoaded = !!xlsData;
-  const csvLoaded = !!csvData; // Your parsed CSV rows
   const eligLoaded = !!eligData;
   const licensesLoaded = !!insuranceLicenses;
   const msgs = [];
 
   if (usingXml && xmlLoaded) {
-    const claimIDs = new Set(
-      (xmlData.encounters || []).map((r) => r.claimID)
-    );
-    msgs.push(`${claimIDs.size} unique Claim ID${claimIDs.size !== 1 ? "s" : ""} loaded`);
+    const claimIDs = new Set((xmlData.encounters || []).map(r => r.claimID));
+    msgs.push(`${claimIDs.size} unique Claim ID${claimIDs.size !== 1 ? "s" : ""} loaded (from XML)`);
   }
 
-  if (!usingXml) {
-    if (xlsLoaded) {
-      // Filter out rows with invalid or empty ClaimID
-      const validRows = (xlsData || []).filter(r => isValidClaimID(r["ClaimID"]));
-      const uniqueClaimIDs = new Set(
-        validRows.map(r => r["ClaimID"].trim().toUpperCase())
-      );
-      msgs.push(`${validRows.length} XLS row${validRows.length !== 1 ? "s" : ""} loaded (${uniqueClaimIDs.size} unique Claim ID${uniqueClaimIDs.size !== 1 ? "s" : ""})`);
-    } else if (csvLoaded) {
-      const validRows = (csvData || []).filter(r => isValidClaimID(r["ClaimID"]));
-      const uniqueClaimIDs = new Set(
-        validRows.map(r => r["ClaimID"].trim().toUpperCase())
-      );
-      msgs.push(`${validRows.length} CSV row${validRows.length !== 1 ? "s" : ""} loaded (${uniqueClaimIDs.size} unique Claim ID${uniqueClaimIDs.size !== 1 ? "s" : ""})`);
-    }
+  if (!usingXml && xlsLoaded) {
+    // 🧼 Clean out truly empty rows
+    const cleanRows = xlsData.filter(r => r?.ClaimID?.trim());
+    const uniqueClaimIDs = new Set(cleanRows.map(r => r.ClaimID.trim()));
+
+    msgs.push(`${cleanRows.length} total rows loaded, ${uniqueClaimIDs.size} unique Claim ID${uniqueClaimIDs.size !== 1 ? "s" : ""} loaded (from ${xlsData.__source || "XLS/CSV"})`);
   }
 
   if (eligLoaded) {
@@ -1025,11 +1013,13 @@ function updateStatus() {
   }
 
   status.textContent = msgs.join(", ");
+
   processBtn.disabled = !(
     (usingXml && xmlLoaded && eligLoaded) ||
-    (!usingXml && (xlsLoaded || csvLoaded) && eligLoaded)
+    (!usingXml && xlsLoaded && eligLoaded)
   );
 }
+
 
 // ✅ Modified xmlInput handler to show logs per claim when the file is loaded
 xmlInput.addEventListener("change", async (e) => {
