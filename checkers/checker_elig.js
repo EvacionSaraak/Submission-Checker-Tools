@@ -97,6 +97,7 @@ function excelDateToDDMMYYYY(excelDate) {
 
 // 1) parseCsvAsXlsx — convert the CSV to an in-memory workbook and map Insta fields
 // Updated parseCsvAsXlsx — dynamically locate the “MemberID” column by header text
+// parseCsvAsXlsx — now maps all necessary columns including MemberID, Clinician License, Insurance Company, etc.
 async function parseCsvAsXlsx(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -106,41 +107,37 @@ async function parseCsvAsXlsx(file) {
         const workbook = XLSX.read(csvText, { type: 'string' });
         const sheet    = workbook.Sheets[workbook.SheetNames[0]];
         const allRows  = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
-        const dataRows = allRows.slice(3);
+        const dataRows = allRows.slice(3); // skip 3 metadata lines
 
-        if (dataRows.length < 2) {
-          console.warn("Not enough rows after skipping metadata:", dataRows.length);
-          return resolve([]);
-        }
+        if (dataRows.length < 2) return resolve([]);
 
         const [headers, ...values] = dataRows;
-
-        // 🔥 DEBUG: log headers and first raw row
-        console.log("DEBUG headers:", headers);
-        console.log("DEBUG first raw row values:", values[0]);
-
         // find indices
-        const idxClaimID = headers.findIndex(h => /Pri\. Claim No/i.test(h));
-        const idxMember  = headers.findIndex(h => /Patient Insurance Card No/i.test(h));
-        // 🔥 DEBUG: log found indices
-        console.log("DEBUG idxClaimID:", idxClaimID, "idxMember:", idxMember);
+        const indexOf = key => headers.findIndex(h => new RegExp(key, 'i').test(h));
+        const idx = {
+          ClaimID:             indexOf('Pri\\. Claim No'),
+          MemberID:            indexOf('Patient Insurance Card No'),
+          ClaimDate:           indexOf('Encounter Date'),
+          ClinicianLicense:    indexOf('Clinician License'),
+          InsuranceCompany:    indexOf('Pri\\. Payer Name'),
+          Clinic:              indexOf('Department'),
+          Status:              indexOf('Codification Status'),
+          PackageName:         indexOf('Pri\\. Plan Name'),
+        };
 
-        const mapped = values.map((row, rowIdx) => {
-          const obj = {};
-          headers.forEach((h,i) => obj[h] = row[i]);
+        const mapped = values.map((rowArr, i) => ({
+          ClaimID:            rowArr[idx.ClaimID]?.toString().trim() || "",
+          MemberID:           rowArr[idx.MemberID]?.toString().trim()  || "",
+          ClaimDate:          parseDate(rowArr[idx.ClaimDate])        || null,
+          "Clinician License": rowArr[idx.ClinicianLicense]?.toString().trim() || "",
+          "Insurance Company": rowArr[idx.InsuranceCompany]?.toString().trim() || "",
+          Clinic:             rowArr[idx.Clinic]?.toString().trim()   || "",
+          Status:             rowArr[idx.Status]?.toString().trim()   || "",
+          "Package Name":     rowArr[idx.PackageName]?.toString().trim() || "",
+        }));
 
-          const m = {
-            ClaimID:   (obj["Pri. Claim No"]                     || "").toString().trim(),
-            MemberID:  (obj["Pri. Patient Insurance Card No"]    || "").toString().trim(),
-            ClaimDate: parseDate(obj["Encounter Date"]) || null,
-            // …
-          };
-
-          // 🔥 DEBUG first mapped object
-          if (rowIdx === 0) console.log("DEBUG mapped first row:", m);
-
-          return m;
-        });
+        // 🔥 DEBUG: first mapped entry
+        console.log("DEBUG mapped first row:", mapped[0]);
 
         resolve(mapped);
       } catch (err) {
