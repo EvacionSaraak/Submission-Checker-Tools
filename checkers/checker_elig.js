@@ -1020,25 +1020,32 @@ xmlInput.addEventListener("change", async (e) => {
   updateStatus();
 });
 
+// 1) In your report input listener, detect .csv and call parseCsvAsXlsx
 reportInput.addEventListener("change", async (e) => {
-  const file = e.target.files[0];
-  const isCsv = file.name.toLowerCase().endsWith(".csv");  // <-- simple check here
-
-  status.textContent = isCsv ? "Loading CSV as XLSX…" : "Loading XLS…";
+  status.textContent = "Loading report…";
   processBtn.disabled = true;
-
+  const file = e.target.files[0];
+  if (!file) return;
+  const isCsv = file.name.toLowerCase().endsWith(".csv");
   try {
-    xlsData = isCsv
-      ? await parseCsvAsXlsx(file)
-      : await parseExcel(file, 0);
+    if (isCsv) {
+      // use the XLSX-based CSV parser
+      xlsData = await parseCsvAsXlsx(file);
+    } else {
+      xlsData = await parseExcel(file, 0);
+    }
 
-    const invalids = validateDatesInData(xlsData, ["ClaimDate"], isCsv ? "CSV" : "XLS");
+    const invalids = validateDatesInData(
+      xlsData,
+      ["ClaimDate"],
+      isCsv ? "CSV" : "XLS"
+    );
     if (invalids.length) {
-      console.warn("Invalid dates found:", invalids);
+      console.warn(`Invalid dates in ${isCsv ? "CSV" : "XLS"}:`, invalids);
       status.textContent = `Warning: ${invalids.length} invalid date(s). Check console.`;
     }
   } catch (err) {
-    status.textContent = `${isCsv ? "CSV" : "XLS"} Error: ${err.message}`;
+    status.textContent = `${isCsv ? "CSV" : "XLS"} load error: ${err.message}`;
     xlsData = null;
   }
 
@@ -1063,33 +1070,34 @@ eligInput.addEventListener("change", async (e) => {
   updateStatus();
 });
 
+// 2) In your process button handler, branch Insta vs ClinicPro
 processBtn.addEventListener("click", async () => {
   if (xmlRadio.checked) {
-    // existing XML path ...
+    // … existing XML logic …
   } else {
     if (!xlsData || !eligData) {
-      alert("Please upload both XLS/CSV report and Eligibility XLSX.");
+      alert("Please upload both report file and Eligibility XLSX.");
       return;
     }
-    processBtn.disabled = true;
     status.textContent = "Validating…";
-    try {
-      // Detect if xlsData came from CSV by checking first row keys or filename extension if stored
-      const isCsv = xlsData.length && Object.keys(xlsData[0]).some(k => k.includes("Pri. Claim No"));
-      const results = isCsv
-        ? validateInstaWithEligibility(xlsData, eligData)
-        : validateClinicProWithEligibility(xlsData, eligData);
+    processBtn.disabled = true;
 
-      renderResults(results);
-      const validCount = results.filter(r => r.unknown || r.remarks.length === 0).length;
-      const totalCount = results.length;
-      const percent = totalCount > 0 ? Math.round((validCount / totalCount) * 100) : 0;
-      status.textContent = `Valid: ${validCount} / ${totalCount} (${percent}%)`;
-      console.log(`Results: ${validCount} valid out of ${totalCount}`);
-    } catch (err) {
-      status.textContent = `Validation error: ${err.message}`;
-      console.error(err);
+    // detect CSV vs XLS by checking our parseCsvAsXlsx path
+    const isCsv = xlsData.length > 0 &&
+                  Object.prototype.hasOwnProperty.call(xlsData[0], "MemberID");
+
+    let results;
+    if (isCsv) {
+      results = validateInstaWithEligibility(xlsData, eligData);
+    } else {
+      results = validateClinicProWithEligibility(xlsData, eligData);
     }
+
+    renderResults(results);
+    const validCount = results.filter(r => r.unknown || r.remarks.length === 0).length;
+    const totalCount = results.length;
+    status.textContent = `Valid: ${validCount} / ${totalCount} (${totalCount ? Math.round(validCount/totalCount*100) : 0}%)`;
+
     processBtn.disabled = false;
   }
 });
