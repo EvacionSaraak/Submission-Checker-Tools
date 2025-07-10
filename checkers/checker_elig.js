@@ -26,7 +26,6 @@ window.addEventListener("DOMContentLoaded", () => {
   let insuranceLicenses = null;
   let filteredXlsData = null; // new cache variable
 
-  // Excel date number to DD/MM/YYYY string
 // Excel date (number), string, or Date → "DD/MM/YYYY"
 function excelDateToDDMMYYYY(excelDate) {
   if (!excelDate) return "";
@@ -102,40 +101,39 @@ function excelDateToDDMMYYYY(excelDate) {
 async function parseCsv(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = e => {
+
+    reader.onload = (e) => {
       try {
         const text = e.target.result;
-        const lines = text.split(/\r?\n/).filter(l => l.trim() !== '');
-        if (lines.length < 4) return resolve([]); // Must have at least 4 rows
+        const lines = text.split(/\r?\n/).filter((l) => l.trim() !== '');
 
-        // The headers are in line 3 (0-based index 3)
+        if (lines.length < 4) return resolve([]); // Not enough lines
+
         const headerLine = lines[3];
-        // Split by tab or comma (try to detect)
         const delimiter = headerLine.includes('\t') ? '\t' : ',';
-        const headers = headerLine.split(delimiter).map(h => h.trim());
+        const headers = headerLine.split(delimiter).map((h) => h.trim());
 
-        // Rows start from line 4 (index 4)
-        const rows = lines.slice(4).map(line => {
-          const values = line.split(delimiter).map(v => v.trim());
-          const obj = {};
+        const rows = lines.slice(4).map((line) => {
+          const values = line.split(delimiter).map((v) => v.trim());
+          const row = {};
           headers.forEach((h, i) => {
-            obj[h] = values[i] || '';
+            row[h] = values[i] || '';
           });
-          return obj;
+          return row;
         });
 
-        // Map to your app fields and parse date
-        const mappedRows = rows.map(row => {
+        const mappedRows = rows.map((row) => {
           const parsedDate = parseDate(row["Encounter Date"]);
           return {
-            "ClaimID": row["Pri. Claim No"] || "",
-            "MemberID": row["Pri. Patient Insurance Card No"] || "",
-            "ClaimDate": parsedDate || row["Encounter Date"] || "",
-            "Clinician License": row["Clinician License"] || "",
-            "Insurance Company": row["Pri. Payer Name"] || "",
-            "Clinic": row["Department"] || "",
-            "Status": row["Codification Status"] || "",
-            "Package Name": row["Pri. Plan Name"] || "",
+            claimID: row["Pri. Claim No"] || "",
+            memberID: row["Pri. Patient Insurance Card No"] || "",
+            claimDate: parsedDate || row["Encounter Date"] || "",
+            clinicianID: row["Clinician License"] || "",
+            insuranceCompany: row["Pri. Payer Name"] || "",
+            clinic: row["Department"] || "",
+            status: row["Codification Status"] || "",
+            packageName: row["Pri. Plan Name"] || "",
+            raw: row, // (optional) keep original row for debugging
           };
         });
 
@@ -144,6 +142,7 @@ async function parseCsv(file) {
         reject(err);
       }
     };
+
     reader.onerror = () => reject(reader.error);
     reader.readAsText(file);
   });
