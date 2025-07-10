@@ -953,19 +953,26 @@ function validateDatesInData(data, dateFields, dataLabel = "") {
   return invalidDates;
 }
 
-// Modified updateStatus function to show filtered count for XLS report rows
+function isValidClaimID(id) {
+  if (!id) return false;
+  id = id.trim();
+  if (id === "") return false;
+  // Add further checks if needed, e.g. regex pattern
+  return true;
+}
+
 function updateStatus() {
   const usingXml = xmlRadio.checked;
   const xmlLoaded = !!xmlData;
   const xlsLoaded = !!xlsData;
-  const csvLoaded = !!csvData;  // New for CSV
+  const csvLoaded = !!csvData; // Assuming you store parsed CSV rows here
   const eligLoaded = !!eligData;
   const licensesLoaded = !!insuranceLicenses;
   const msgs = [];
 
   if (usingXml && xmlLoaded) {
     const claimIDs = new Set(
-      (xmlData.encounters || []).map((r) => r.claimID),
+      (xmlData.encounters || []).map((r) => r.claimID)
     );
     const count = claimIDs.size;
     msgs.push(`${count} unique Claim ID${count !== 1 ? "s" : ""} loaded`);
@@ -973,14 +980,25 @@ function updateStatus() {
 
   if (!usingXml) {
     if (xlsLoaded) {
-      const claimIDs = new Set((xlsData || []).map((r) => r["ClaimID"]).filter(id => id));
-      const count = claimIDs.size;
-      msgs.push(`${count} unique XLS Claim ID${count !== 1 ? "s" : ""} loaded`);
+      // Filter XLS rows with valid ClaimID
+      const filteredXlsRows = (xlsData || []).filter(r => isValidClaimID(r["ClaimID"]));
+      const uniqueClaimIDs = new Set(filteredXlsRows.map(r => r["ClaimID"].trim().toUpperCase()));
+      const uniqueCount = uniqueClaimIDs.size;
+      const totalCount = filteredXlsRows.length;
+      msgs.push(`${totalCount} XLS row${totalCount !== 1 ? "s" : ""} loaded (${uniqueCount} unique Claim ID${uniqueCount !== 1 ? "s" : ""})`);
     } else if (csvLoaded) {
-      const filteredCsvRows = (csvData || []).filter(r => r["ClaimID"] && r["ClaimID"].trim() !== "");
-      const uniqueClaimsCount = new Set(filteredCsvRows.map(r => r["ClaimID"])).size;
-      const totalRows = filteredCsvRows.length;
-      msgs.push(`${totalRows} CSV row${totalRows !== 1 ? "s" : ""} loaded (${uniqueClaimsCount} unique Claim ID${uniqueClaimsCount !== 1 ? "s" : ""})`);
+      // Filter CSV rows with valid ClaimID
+      const filteredCsvRows = (csvData || []).filter(r => isValidClaimID(r["ClaimID"]));
+      const uniqueClaimIDs = new Set(filteredCsvRows.map(r => r["ClaimID"].trim().toUpperCase()));
+      const uniqueCount = uniqueClaimIDs.size;
+      const totalCount = filteredCsvRows.length;
+      msgs.push(`${totalCount} CSV row${totalCount !== 1 ? "s" : ""} loaded (${uniqueCount} unique Claim ID${uniqueCount !== 1 ? "s" : ""})`);
+
+      // Debug log invalid rows if any
+      const invalidRows = (csvData || []).filter(r => !isValidClaimID(r["ClaimID"]));
+      if (invalidRows.length > 0) {
+        console.warn("CSV rows with invalid ClaimID (excluded):", invalidRows);
+      }
     }
   }
 
@@ -994,7 +1012,6 @@ function updateStatus() {
   }
 
   status.textContent = msgs.join(", ");
-
   processBtn.disabled = !(
     (usingXml && xmlLoaded && eligLoaded) ||
     (!usingXml && (xlsLoaded || csvLoaded) && eligLoaded)
