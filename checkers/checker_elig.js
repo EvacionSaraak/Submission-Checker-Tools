@@ -256,6 +256,7 @@ function parseXML(file) {
 // The Insta validate function remains the same—now row.MemberID will be correctly populated
 // validateInstaWithEligibility — match eligibility by Card Number / DHA Member ID vs row.MemberID
 // validateInstaWithEligibility — now normalizes insurance names before comparing
+// In validateInstaWithEligibility, format encounterStart date
 function validateInstaWithEligibility(instaRows, eligData) {
   const results = [];
   const eligByCard = {};
@@ -270,14 +271,14 @@ function validateInstaWithEligibility(instaRows, eligData) {
   function normalizeInsurer(name) {
     if (!name) return '';
     const key = name.toLowerCase().replace(/[^a-z0-9]/g, '');
-
+  
     const aliases = {
       // THIQA variations
       'thiqanationalhealthinsurancecompanydaman': 'thiqa',
       'damanthiqá': 'thiqa',
       'damanthiqa': 'thiqa',
       'thiqa': 'thiqa',
-
+  
       // DAMAN variations
       'damanenhanced': 'daman',
       'daman-nationalhealthinsurancecodamanpjsc': 'daman',
@@ -288,16 +289,16 @@ function validateInstaWithEligibility(instaRows, eligData) {
       'damannationalhealthinsuranceco': 'daman',
       'damannationalhealthinsurancecodamandamanpjsc': 'daman',
       'damannationalhealthinsurancecompanydaman': 'daman',
-
+  
       // NAS variations
       'nasadministrationservicesllc': 'nas',
       'nasadministrationserviceslimited': 'nas',
     };
-
+  
     if (key.includes('daman')) return 'daman';
     if (key.includes('thiqa')) return 'thiqa';
     if (key.includes('nas')) return 'nas';
-
+  
     return aliases[key] || key;
   }
 
@@ -341,27 +342,6 @@ function validateInstaWithEligibility(instaRows, eligData) {
         if (insCsv && insElig && insCsv !== insElig) {
           remarks.push(`Insurance Company mismatch (CSV: "${row["Insurance Company"]}", Elig: "${match["Payer Name"]}")`);
         }
-
-        // === New Service Category + Consultation Status Validation ===
-        const serviceCategory = (match["Service Category"] || "").trim();
-        const consultationStatus = (match["Consultation Status"] || "").trim();
-
-        if (serviceCategory === "Consultation" && consultationStatus === "Elective") {
-          // Valid - no remark needed
-        } else if (serviceCategory === "Dental Services") {
-          remarks.push("Service category validation failed: Dental Services");
-        } else if (serviceCategory === "Physiotherapy") {
-          remarks.push("Service category validation failed: Physiotherapy");
-        } else if (serviceCategory === "Other OP Services") {
-          // For Other OP Services, check Consultation Status as subcategory
-          const validSubcategories = ["Physiotherapy", "Dietician", "Occupational Therapy", "Speech Therapy"];
-          if (!validSubcategories.includes(consultationStatus)) {
-            remarks.push(`Service category validation failed: Other OP Services with invalid subcategory "${consultationStatus}"`);
-          }
-        } else {
-          // If none of the above matched, add general remark or ignore as needed
-          remarks.push(`Service category validation failed: ${serviceCategory}`);
-        }
       }
     }
 
@@ -370,19 +350,110 @@ function validateInstaWithEligibility(instaRows, eligData) {
       memberID,
       insuranceCompany: row["Insurance Company"],
       packageName: row["Package Name"],
-      encounterStart: row.ClaimDate,
+      encounterStart: cDate ? excelDateToDDMMYYYY(cDate) : row.ClaimDate,
       clinicianID: row["Clinician License"],
       status: match?.['Status'] || "",
       clinic: row.Clinic,
       remarks,
       unknown,
       eligibilityRequestNumber: match?.["Eligibility Request Number"] || "",
-      serviceCategory: serviceCategory,
+      serviceCategory: (match?.["Service Category"] || match?.["Service Category"] || "").trim(),
       details: match ? formatEligibilityDetailsModal(match, memberID) : ""
     });
   });
 
   return results;
+}
+
+// Also in validateXmlWithEligibility, ensure encounterStart date formatting uses excelDateToDDMMYYYY
+function validateXmlWithEligibility(xmlPayload, eligRows) {
+  const { encounters } = xmlPayload;
+  const seenClaimIDs = new Set();
+
+  return encounters
+    .map(enc => {
+      const {
+        claimID,
+        memberID,
+        encounterStart,
+        claimClinician,
+        multipleClinicians
+      } = enc;
+
+      if (seenClaimIDs.has(claimID)) return null;
+      seenClaimIDs.add(claimID);
+
+      const remarks = [];
+      let match = null;
+      let status = "";
+      let clinicianMismatch = false;
+      let clinicianMismatchMsg = "";
+
+      if (multipleClinicians) {
+        remarks.push("Multiple clinicians in claim activities");
+      }
+
+      if (!memberID) {
+        remarks.push("MemberID missing in XML");
+      }
+
+      if (memberID) {
+        const result = findBestEligibilityMatch(
+          memberID,
+          encounterStart || "",
+          claimClinician || "",
+          eligRows
+        );
+
+        if (!result) {
+          remarks.push("No eligibility rows found for card number");
+        } else if (result.error) {
+          remarks.push(result.error);
+        } else {
+          match = result.match;
+          status = match["Status"] || "";
+          if (status.toLowerCase() !== "eligible") {
+            remarks.push(`Status not eligible (${status})`);
+          }
+
+          const eligClin = (match["Clinician"] || "").trim();
+          if (claimClinician && eligClin && claimClinician !== eligClin) {
+            clinicianMismatch = true;
+            clinicianMismatchMsg = buildClinicianMismatchMsg(
+              claimClinician,
+              eligClin,
+              "",
+              match["Clinician Name"] || "",
+              "XML Activities",
+              "Eligibility"
+            );
+          }
+        }
+      }
+
+      const unknown = clinicianMismatch && remarks.length === 0;
+      if (unknown) {
+        remarks.push("Clinician mismatch (treated as unknown)");
+      }
+
+      const formattedDate = 
+        encounterStart instanceof Date
+          ? excelDateToDDMMYYYY(encounterStart)
+          : encounterStart;
+
+      return {
+        claimID,
+        memberID,
+        encounterStart: formattedDate,
+        details: match ? formatEligibilityDetailsModal(match, memberID) : "",
+        eligibilityRequestNumber: match?.["Eligibility Request Number"] || null,
+        status,
+        remarks,
+        unknown,
+        clinicianMismatchMsg
+      };
+    })
+    .filter(Boolean);
 }
   
   // --- Modified validateClinicProWithEligibility ---
