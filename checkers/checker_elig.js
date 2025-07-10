@@ -251,18 +251,6 @@ function parseXML(file) {
     });
   }
 
-function normalizeInsuranceName(name) {
-  const aliases = {
-    "thiqanationalhealthinsurancecompanydaman": "thiqa",
-    "damanthiqa": "thiqa",
-    "damanbasic": "basic",
-    "damanenhanced": "enhanced",
-    "nationalhealthinsurancecompany": "daman",
-  };
-  const key = (name || "").toLowerCase().replace(/[^a-z0-9]/g, "");
-  return aliases[key] || key;
-}
-
 // 2) validateInstaWithEligibility — match each Insta row against eligData
 // validateInstaWithEligibility — ensure memberID is set from instaRows before matching
 // The Insta validate function remains the same—now row.MemberID will be correctly populated
@@ -272,7 +260,9 @@ function validateInstaWithEligibility(instaRows, eligData) {
   const results = [];
   const eligByCard = {};
   const usedEligIds = new Set();
+  const seenClaimIDs = new Set();
 
+  // Index eligibilities by cleaned card number
   eligData.forEach(e => {
     let card = (e['Card Number / DHA Member ID'] || '').toString().replace(/[-\s]/g, '').trim();
     if (card.startsWith('0')) card = card.slice(1);
@@ -295,12 +285,11 @@ function validateInstaWithEligibility(instaRows, eligData) {
       'damannationalhealthinsurancecodamanpjsc': 'daman',
       'damannationalhealthinsurancecompany': 'daman',
 
-      // Added aliases for NAS
+      // NAS variants
       'nasadministrationservicesllc': 'nas',
       'nasadministrationserviceslimited': 'nas',
     };
 
-    // fallback checks
     if (key.includes('daman')) return 'daman';
     if (key.includes('thiqa')) return 'thiqa';
     if (key.includes('nas')) return 'nas';
@@ -309,53 +298,50 @@ function validateInstaWithEligibility(instaRows, eligData) {
   }
 
   instaRows.forEach(row => {
+    const claimID = row.ClaimID;
+    if (!claimID || seenClaimIDs.has(claimID)) return; // Skip duplicate
+    seenClaimIDs.add(claimID);
+
     let memberID = (row.MemberID || '').toString().replace(/[-\s]/g, '').trim();
     if (memberID.startsWith('0')) memberID = memberID.slice(1);
 
     const remarks = [];
     let match = null, unknown = false;
 
-    // If no memberID, skip eligibility matching entirely
     if (!memberID) {
       remarks.push("No MemberID present - skipping eligibility match");
     } else {
       const eligRows = eligByCard[memberID] || [];
-      
+
       if (!eligRows.length) {
         remarks.push("No eligibility found for MemberID/Card Number");
       } else {
         const cDate = row.ClaimDate instanceof Date ? row.ClaimDate : parseDate(row.ClaimDate);
-        // Find best eligibility not yet used
         const best = findBestEligibilityMatch(memberID, cDate, row["Clinician License"], eligRows.filter(e => !usedEligIds.has(e['Eligibility Request Number'])));
-        
+
         if (!best || best.error) {
           remarks.push(best?.error || "No matching eligibility on or before claim date");
         } else {
           match = best.match;
           unknown = best.unknown;
 
-          // Mark this eligibility as used so it won't be reused
           if (match['Eligibility Request Number']) {
             usedEligIds.add(match['Eligibility Request Number']);
           }
 
-          // Check status validity with centralized function
           if (!isEligibilityStatusValid(match['Status'])) {
             remarks.push(`Status not eligible (${match['Status']})`);
           }
 
-          // Date range check
           const start = match['EffectiveDate'] || match['Effective Date'] || match['Ordered On'];
           const end   = match['Answered On'];
           if (start && end && !isWithinEligibilityPeriod(cDate, parseDate(start), parseDate(end))) {
             remarks.push("Claim date outside eligibility period");
           }
 
-          // Normalize and compare insurance companies
           const insCsv = normalizeInsurer(row["Insurance Company"]);
           const insElig = normalizeInsurer(match["Payer Name"]);
           if (insCsv && insElig && insCsv !== insElig) {
-            // Only warn if truly different after normalization
             remarks.push(`Insurance Company mismatch (CSV: "${row["Insurance Company"]}", Elig: "${match["Payer Name"]}")`);
           }
         }
@@ -363,7 +349,7 @@ function validateInstaWithEligibility(instaRows, eligData) {
     }
 
     results.push({
-      claimID: row.ClaimID,
+      claimID,
       memberID,
       insuranceCompany: row["Insurance Company"],
       packageName: row["Package Name"],
