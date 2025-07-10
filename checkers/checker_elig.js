@@ -106,7 +106,7 @@ async function parseCsv(file) {
         const text = e.target.result;
         const lines = text.split(/\r?\n/).filter(line => line.trim() !== "");
 
-        // ✅ Debug: Log first four rows exactly as read
+        // Debug: Show first 4 lines
         console.log("CSV Debug - First 4 lines:");
         lines.slice(0, 4).forEach((line, i) => {
           console.log(`Line ${i + 1}:`, line);
@@ -114,12 +114,13 @@ async function parseCsv(file) {
 
         if (lines.length <= 3) return resolve([]);
 
+        // Line 4 is the header row (index 3)
         const headerLine = lines[3];
-        const delimiter = "\t"; // Assumed tab-delimited
-        const headers = headerLine.split(delimiter).map(h => h.trim());
+        const headers = parseCsvLine(headerLine);
 
-        const rows = lines.slice(4).map(line => {
-          const values = line.split(delimiter).map(v => v.trim());
+        const dataRows = lines.slice(4).map(line => parseCsvLine(line));
+
+        const rows = dataRows.map(values => {
           const row = {};
           headers.forEach((header, i) => {
             row[header] = values[i] || "";
@@ -148,7 +149,25 @@ async function parseCsv(file) {
     reader.readAsText(file);
   });
 }
-  
+
+// 🧠 Helper: Parses a single CSV line respecting quotes and commas
+function parseCsvLine(line) {
+  const result = [];
+  let current = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    const next = line[i + 1];
+    if (char === '"' && inQuotes && next === '"') { current += '"'; } 
+    else if (char === '"') { inQuotes = !inQuotes; } 
+    else if (char === ',' && !inQuotes) { result.push(current); current = ""; } 
+    else { current += char; }
+  }
+  result.push(current); // Push last value
+  return result.map(s => s.trim());
+}
+
 // ✅ Modified parseExcel to normalize ClaimDate for report rows
 async function parseExcel(file, range = 0) {
   const reader = new FileReader();
