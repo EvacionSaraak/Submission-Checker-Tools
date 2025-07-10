@@ -6,7 +6,7 @@ window.addEventListener("DOMContentLoaded", () => {
   const xlsInput = document.getElementById("xlsxFileInput");
   const eligInput = document.getElementById("eligibilityFileInput");
   const xmlGroup = document.getElementById("xmlReportInputGroup");
-  const xlsGroup = document.getElementById("xlsxReportInputGroup");
+  const reportGroup = document.getElementById("reportInputGroup");
   const eligGroup = document.getElementById("eligibilityInputGroup");
   const processBtn = document.getElementById("processBtn");
   const status = document.getElementById("uploadStatus");
@@ -77,10 +77,10 @@ function excelDateToDDMMYYYY(excelDate) {
   function swapInputGroups() {
     if (xmlRadio.checked) {
       xmlGroup.style.display = "";
-      xlsGroup.style.display = "none";
+      reportGroup.style.display = "none";
     } else {
       xmlGroup.style.display = "none";
-      xlsGroup.style.display = "";
+      reportGroup.style.display = "";
     }
     updateStatus();
   }
