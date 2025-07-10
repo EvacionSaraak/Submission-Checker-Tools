@@ -105,37 +105,41 @@ async function parseCsv(file) {
     reader.onload = (e) => {
       try {
         const text = e.target.result;
-        const lines = text.split(/\r?\n/).filter((l) => l.trim() !== '');
+        const lines = text.split(/\r?\n/).filter((line) => line.trim() !== '');
 
-        if (lines.length < 4) return resolve([]); // Not enough lines
+        if (lines.length < 4) return resolve([]); // Not enough lines to parse
 
-        const headerLine = lines[3];
-        const delimiter = headerLine.includes('\t') ? '\t' : ',';
-        const headers = headerLine.split(delimiter).map((h) => h.trim());
+        const headerLine = lines[3]; // 4th line (index 3)
+        const delimiter = '\t'; // InstaHMS uses tabs
 
-        const rows = lines.slice(4).map((line) => {
+        const headers = headerLine
+          .split(delimiter)
+          .map((h) => h.trim().replace(/^\uFEFF/, '')); // Clean BOMs
+
+        // Parse rows starting from line 5 (index 4)
+        const dataLines = lines.slice(4);
+
+        const rows = dataLines.map((line) => {
           const values = line.split(delimiter).map((v) => v.trim());
-          const row = {};
+          const rowObj = {};
           headers.forEach((h, i) => {
-            row[h] = values[i] || '';
+            rowObj[h] = values[i] || '';
           });
-          return row;
+          return rowObj;
         });
 
-        const mappedRows = rows.map((row) => {
-          const parsedDate = parseDate(row["Encounter Date"]);
-          return {
-            claimID: row["Pri. Claim No"] || "",
-            memberID: row["Pri. Patient Insurance Card No"] || "",
-            claimDate: parsedDate || row["Encounter Date"] || "",
-            clinicianID: row["Clinician License"] || "",
-            insuranceCompany: row["Pri. Payer Name"] || "",
-            clinic: row["Department"] || "",
-            status: row["Codification Status"] || "",
-            packageName: row["Pri. Plan Name"] || "",
-            raw: row, // (optional) keep original row for debugging
-          };
-        });
+        // Final mapped structure for your app
+        const mappedRows = rows.map((row) => ({
+          claimID: row["Pri. Claim No"] || "",
+          memberID: row["Pri. Patient Insurance Card No"] || "",
+          claimDate: parseDate(row["Encounter Date"]) || row["Encounter Date"] || "",
+          clinicianID: row["Clinician License"] || "",
+          insuranceCompany: row["Pri. Payer Name"] || "",
+          clinic: row["Department"] || "",
+          status: row["Codification Status"] || "",
+          packageName: row["Pri. Plan Name"] || "",
+          raw: row, // raw full row, optional for debugging
+        }));
 
         resolve(mappedRows);
       } catch (err) {
