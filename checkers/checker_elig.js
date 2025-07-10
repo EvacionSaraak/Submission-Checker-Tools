@@ -277,9 +277,12 @@ function validateInstaWithEligibility(instaRows, eligData) {
     let memberIDNorm = (row.MemberID || '').replace(/[-\s]/g, '').trim();
     if (memberIDNorm.startsWith('0')) memberIDNorm = memberIDNorm.substring(1);
 
-    // Skip rows with missing or empty ClaimID
-    if (!row.ClaimID || row.ClaimID.trim() === "") {
-      return; // skip this row, do not add to results
+    const claimID = (row.ClaimID || "").trim();
+
+    // Filter out invalid ClaimIDs: must match expected format, e.g. start with TMCCL and then digits/letters only
+    if (!claimID || !/^TMCCL\d{6,}$/i.test(claimID)) {
+      // skip bad ClaimIDs
+      return;
     }
 
     // Try to find elig rows for this member
@@ -292,7 +295,6 @@ function validateInstaWithEligibility(instaRows, eligData) {
     if (eligRows.length === 0) {
       remarks.push("No eligibility found for MemberID");
     } else {
-      // Find best eligibility match by date and clinician license
       const claimDate = row.ClaimDate instanceof Date ? row.ClaimDate : parseDate(row.ClaimDate);
       const bestMatch = findBestEligibilityMatch(row.MemberID, claimDate, row["Clinician License"], eligRows);
 
@@ -302,7 +304,6 @@ function validateInstaWithEligibility(instaRows, eligData) {
         match = bestMatch.match;
         unknown = bestMatch.unknown;
 
-        // Check if claimDate is within eligibility period (if available)
         const eligibilityStart = match['EffectiveDate'] || match['Effective Date'] || match['Ordered On'] || null;
         const eligibilityEnd = match['Answered On'] || null;
 
@@ -317,7 +318,7 @@ function validateInstaWithEligibility(instaRows, eligData) {
     }
 
     results.push({
-      claimID: row.ClaimID || "",
+      claimID: claimID,
       memberID: row.MemberID || "",
       insuranceCompany: row["Insurance Company"] || "",
       packageName: row["Package Name"] || "",
@@ -333,6 +334,7 @@ function validateInstaWithEligibility(instaRows, eligData) {
 
   return results;
 }
+
 
   // --- Modified validateClinicProWithEligibility ---
   function validateClinicProWithEligibility(reportRows, eligRows) {
