@@ -981,6 +981,11 @@ function updateStatus() {
     const allRows = xlsData || [];
     const claimIDs = new Set(allRows.map((r) => r["ClaimID"]));
     const count = claimIDs.size;
+
+    // Define isCsvFile here locally
+    const firstRow = allRows[0] || {};
+    const isCsvFile = Object.keys(firstRow).includes("Pri. Claim No") && Object.keys(firstRow).includes("Pri. Patient Insurance Card No");
+
     const label = isCsvFile ? "CSV" : "XLS";
     msgs.push(`${allRows.length} ${label} row${allRows.length !== 1 ? "s" : ""} loaded (${count} unique Claim ID${count !== 1 ? "s" : ""})`);
   }
@@ -1033,7 +1038,7 @@ xmlInput.addEventListener("change", async (e) => {
 
 reportInput.addEventListener("change", async (e) => {
   const file = e.target.files[0];
-  const isCsv = file.name.toLowerCase().endsWith(".csv");
+  const isCsv = file.name.toLowerCase().endsWith(".csv");  // <-- simple check here
 
   status.textContent = isCsv ? "Loading CSV as XLSX…" : "Loading XLS…";
   processBtn.disabled = true;
