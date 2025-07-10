@@ -259,10 +259,8 @@ function parseXML(file) {
 function validateInstaWithEligibility(instaRows, eligData) {
   const results = [];
   const eligByCard = {};
-  const usedEligIds = new Set();
-  const seenClaimIDs = new Set();
+  const seenClaimIDs = new Set(); // Deduplication tracker
 
-  // Index eligibilities by cleaned card number
   eligData.forEach(e => {
     let card = (e['Card Number / DHA Member ID'] || '').toString().replace(/[-\s]/g, '').trim();
     if (card.startsWith('0')) card = card.slice(1);
@@ -272,78 +270,76 @@ function validateInstaWithEligibility(instaRows, eligData) {
   function normalizeInsurer(name) {
     if (!name) return '';
     const key = name.toLowerCase().replace(/[^a-z0-9]/g, '');
-
+  
     const aliases = {
+      // THIQA variations
       'thiqanationalhealthinsurancecompanydaman': 'thiqa',
+      'damanthiqá': 'thiqa',
       'damanthiqa': 'thiqa',
       'thiqa': 'thiqa',
-
-      'daman-nationalhealthinsurancecodamanpjsc': 'daman',
+  
+      // DAMAN variations
       'damanenhanced': 'daman',
+      'daman-nationalhealthinsurancecodamanpjsc': 'daman',
       'damannationalinsuranceco': 'daman',
       'damannationalinsurancecodamanpjsc': 'daman',
       'damannationalhealthinsurancecodamanpjsc': 'daman',
       'damannationalhealthinsurancecompany': 'daman',
-
-      // NAS variants
+      'damannationalhealthinsuranceco': 'daman',
+      'damannationalhealthinsurancecodamandamanpjsc': 'daman',
+      'damannationalhealthinsurancecompanydaman': 'daman',
+  
+      // NAS variations
       'nasadministrationservicesllc': 'nas',
       'nasadministrationserviceslimited': 'nas',
     };
-
+  
     if (key.includes('daman')) return 'daman';
     if (key.includes('thiqa')) return 'thiqa';
     if (key.includes('nas')) return 'nas';
-
+  
     return aliases[key] || key;
   }
 
   instaRows.forEach(row => {
-    const claimID = row.ClaimID;
-    if (!claimID || seenClaimIDs.has(claimID)) return; // Skip duplicate
+    const claimID = (row.ClaimID || '').toString().trim();
+    if (!claimID || seenClaimIDs.has(claimID)) return; // Skip duplicates
     seenClaimIDs.add(claimID);
 
     let memberID = (row.MemberID || '').toString().replace(/[-\s]/g, '').trim();
     if (memberID.startsWith('0')) memberID = memberID.slice(1);
 
+    const eligRows = eligByCard[memberID] || [];
     const remarks = [];
     let match = null, unknown = false;
 
-    if (!memberID) {
-      remarks.push("No MemberID present - skipping eligibility match");
+    if (!eligRows.length) {
+      remarks.push("No eligibility found for MemberID/Card Number");
     } else {
-      const eligRows = eligByCard[memberID] || [];
+      const cDate = row.ClaimDate instanceof Date ? row.ClaimDate : parseDate(row.ClaimDate);
+      const best = findBestEligibilityMatch(memberID, cDate, row["Clinician License"], eligRows);
 
-      if (!eligRows.length) {
-        remarks.push("No eligibility found for MemberID/Card Number");
+      if (!best || best.error) {
+        remarks.push(best?.error || "No matching eligibility on or before claim date");
       } else {
-        const cDate = row.ClaimDate instanceof Date ? row.ClaimDate : parseDate(row.ClaimDate);
-        const best = findBestEligibilityMatch(memberID, cDate, row["Clinician License"], eligRows.filter(e => !usedEligIds.has(e['Eligibility Request Number'])));
+        match = best.match;
+        unknown = best.unknown;
 
-        if (!best || best.error) {
-          remarks.push(best?.error || "No matching eligibility on or before claim date");
-        } else {
-          match = best.match;
-          unknown = best.unknown;
+        const st = (match['Status'] || "").toLowerCase();
+        if (st !== "eligible") {
+          remarks.push(`Status not eligible (${match['Status']})`);
+        }
 
-          if (match['Eligibility Request Number']) {
-            usedEligIds.add(match['Eligibility Request Number']);
-          }
+        const start = match['EffectiveDate'] || match['Effective Date'] || match['Ordered On'];
+        const end   = match['Answered On'];
+        if (start && end && !isWithinEligibilityPeriod(cDate, parseDate(start), parseDate(end))) {
+          remarks.push("Claim date outside eligibility period");
+        }
 
-          if (!isEligibilityStatusValid(match['Status'])) {
-            remarks.push(`Status not eligible (${match['Status']})`);
-          }
-
-          const start = match['EffectiveDate'] || match['Effective Date'] || match['Ordered On'];
-          const end   = match['Answered On'];
-          if (start && end && !isWithinEligibilityPeriod(cDate, parseDate(start), parseDate(end))) {
-            remarks.push("Claim date outside eligibility period");
-          }
-
-          const insCsv = normalizeInsurer(row["Insurance Company"]);
-          const insElig = normalizeInsurer(match["Payer Name"]);
-          if (insCsv && insElig && insCsv !== insElig) {
-            remarks.push(`Insurance Company mismatch (CSV: "${row["Insurance Company"]}", Elig: "${match["Payer Name"]}")`);
-          }
+        const insCsv = normalizeInsurer(row["Insurance Company"]);
+        const insElig = normalizeInsurer(match["Payer Name"]);
+        if (insCsv && insElig && insCsv !== insElig) {
+          remarks.push(`Insurance Company mismatch (CSV: "${row["Insurance Company"]}", Elig: "${match["Payer Name"]}")`);
         }
       }
     }
