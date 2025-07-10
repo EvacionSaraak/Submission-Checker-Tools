@@ -95,51 +95,36 @@ function excelDateToDDMMYYYY(excelDate) {
       insuranceLicenses = null;
     });
 
+// 1) parseCsvAsXlsx — reads a .csv via SheetJS and skips the first 3 metadata rows
 async function parseCsvAsXlsx(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = e => {
       try {
         const csvText = e.target.result;
-
-        // Convert to workbook
+        // Read as a workbook (type: 'string' works for CSV & XLS alike)
         const workbook = XLSX.read(csvText, { type: 'string' });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
 
-        // Use the first sheet
-        const sheetName = workbook.SheetNames[0];
-        const sheet = workbook.Sheets[sheetName];
+        // Convert sheet to row arrays, skipping first 3 rows
+        const allRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+        const dataRows = allRows.slice(3);    // now row 0 = your header row, row 1+ = data
 
-        // Convert sheet to JSON
-        const allRows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+        if (dataRows.length < 2) return resolve([]);
 
-        // Strip first 3 metadata lines
-        const dataRows = allRows.slice(3);
-
-        if (dataRows.length === 0) return resolve([]);
-
-        const headers = dataRows[0];
-        const values = dataRows.slice(1);
-
-        const result = values.map(row => {
+        const [headers, ...values] = dataRows;
+        const mapped = values.map(row => {
           const obj = {};
-          headers.forEach((h, i) => {
-            obj[h] = row[i] != null ? String(row[i]).trim() : '';
-          });
-          return obj;
-        });
-
-        // Map to your format
-        const mapped = result.map(row => {
-          const parsedDate = parseDate(row["Encounter Date"]);
+          headers.forEach((h, i) => obj[h] = row[i]);
           return {
-            "ClaimID": row["Pri. Claim No"] || "",
-            "MemberID": row["Pri. Patient Insurance Card No"] || "",
-            "ClaimDate": parsedDate || row["Encounter Date"] || "",
-            "Clinician License": row["Clinician License"] || "",
-            "Insurance Company": row["Pri. Payer Name"] || "",
-            "Clinic": row["Department"] || "",
-            "Status": row["Codification Status"] || "",
-            "Package Name": row["Pri. Plan Name"] || "",
+            ClaimID:                 (obj["Pri. Claim No"]                     || "").toString().trim(),
+            MemberID:                (obj["Pri. Patient Insurance Card No"]    || "").toString().trim(),
+            ClaimDate:               parseDate(obj["Encounter Date"]),
+            "Clinician License":     (obj["Clinician License"]                || "").toString().trim(),
+            "Insurance Company":     (obj["Pri. Payer Name"]                  || "").toString().trim(),
+            Clinic:                  (obj["Department"]                       || "").toString().trim(),
+            Status:                  (obj["Codification Status"]              || "").toString().trim(),
+            "Package Name":          (obj["Pri. Plan Name"]                   || "").toString().trim(),
           };
         });
 
@@ -152,6 +137,7 @@ async function parseCsvAsXlsx(file) {
     reader.readAsText(file);
   });
 }
+
 
 // ✅ Modified parseExcel to normalize ClaimDate for report rows
 async function parseExcel(file, range = 0) {
@@ -260,79 +246,68 @@ function normalizeInsuranceName(name) {
   return aliases[key] || key;
 }
 
+// 2) validateInstaWithEligibility — unchanged except now instaRows come from parseCsvAsXlsx
 function validateInstaWithEligibility(instaRows, eligData) {
   const results = [];
-
   const eligByMember = {};
   eligData.forEach(erow => {
-    let cardNum = (erow['Card Number / DHA Member ID'] || '').replace(/[-\s\r\n]/g, '').trim();
-    if (cardNum.startsWith('0')) cardNum = cardNum.slice(1);
-    if (!eligByMember[cardNum]) eligByMember[cardNum] = [];
-    eligByMember[cardNum].push(erow);
+    let card = (erow['Card Number / DHA Member ID']||'').replace(/[-\s]/g,'').trim();
+    if (card.startsWith('0')) card = card.slice(1);
+    (eligByMember[card] = eligByMember[card]||[]).push(erow);
   });
 
-  instaRows.forEach((row) => {
-    let memberIDNorm = (row.MemberID || '').replace(/[-\s\r\n]/g, '').trim();
-    if (memberIDNorm.startsWith('0')) memberIDNorm = memberIDNorm.slice(1);
+  instaRows.forEach(row => {
+    const rawMember = (row.MemberID||'').replace(/[-\s]/g,'').trim();
+    const memberIDNorm = rawMember.startsWith('0') ? rawMember.slice(1) : rawMember;
+    const eligRows = eligByMember[memberIDNorm]||[];
 
-    const eligRows = eligByMember[memberIDNorm] || [];
     const remarks = [];
-    let unknown = false;
-    let match = null;
+    let unknown = false, match = null;
 
-    if (eligRows.length === 0) {
+    if (!eligRows.length) {
       remarks.push("No eligibility found for MemberID");
     } else {
       const claimDate = row.ClaimDate instanceof Date ? row.ClaimDate : parseDate(row.ClaimDate);
-      const bestMatch = findBestEligibilityMatch(memberIDNorm, claimDate, row["Clinician License"], eligRows);
-
-      if (!bestMatch || bestMatch.error) {
-        remarks.push(bestMatch?.error || "No matching eligibility on or before claim date");
+      const best = findBestEligibilityMatch(memberIDNorm, claimDate, row["Clinician License"], eligRows);
+      if (!best || best.error) {
+        remarks.push(best?.error||"No matching eligibility on or before claim date");
       } else {
-        match = bestMatch.match;
-        unknown = bestMatch.unknown;
-
-        const eligibilityStart = match['EffectiveDate'] || match['Effective Date'] || match['Ordered On'] || null;
-        const eligibilityEnd = match['Answered On'] || null;
-
-        if (eligibilityStart && eligibilityEnd) {
-          const startDate = parseDate(eligibilityStart);
-          const endDate = parseDate(eligibilityEnd);
-          if (!isWithinEligibilityPeriod(claimDate, startDate, endDate)) {
-            remarks.push("Claim date outside eligibility period");
-          }
+        match = best.match; unknown = best.unknown;
+        const start = match['EffectiveDate']||match['Effective Date']||match['Ordered On'];
+        const end   = match['Answered On'];
+        if (start && end && !isWithinEligibilityPeriod(claimDate, parseDate(start), parseDate(end))) {
+          remarks.push("Claim date outside eligibility period");
         }
-
-        // Normalize company names for comparison
-        const claimCompany = (row["Insurance Company"] || "").toLowerCase().replace(/\s+/g, '').replace(/[^a-z0-9]/g, '');
-        const eligCompany = (match["Payer Name"] || "").toLowerCase().replace(/\s+/g, '').replace(/[^a-z0-9]/g, '');
-        if (claimCompany && eligCompany && claimCompany !== eligCompany) {
+        // normalize & compare insurer
+        const n1 = (row["Insurance Company"]||"").toLowerCase().replace(/[^a-z0-9]/g,'');
+        const n2 = (match["Payer Name"]||"").toLowerCase().replace(/[^a-z0-9]/g,'');
+        if (n1 && n2 && n1!==n2) {
           remarks.push(`Insurance Company mismatch (CSV: "${row["Insurance Company"]}", Elig: "${match["Payer Name"]}")`);
         }
-
-        if (match["Status"] === "Cancelled") {
+        if (match["Status"]==="Cancelled") {
           remarks.push("Status not eligible (Cancelled)");
         }
       }
     }
 
     results.push({
-      claimID: row.ClaimID || "",
-      memberID: row.MemberID || "",
-      insuranceCompany: row["Insurance Company"] || "",
-      packageName: row["Package Name"] || "",
-      encounterStart: row.ClaimDate || "",
-      clinicianID: row["Clinician License"] || "",
-      status: row.Status || "",
-      clinic: row.Clinic || "",
+      claimID:        row.ClaimID,
+      memberID:       row.MemberID,
+      insuranceCompany: row["Insurance Company"],
+      packageName:      row["Package Name"],
+      encounterStart:   row.ClaimDate,
+      clinicianID:      row["Clinician License"],
+      status:           row.Status,
+      clinic:           row.Clinic,
       remarks,
       unknown,
-      details: match ? JSON.stringify(match, null, 2) : "",
+      details: match ? JSON.stringify(match, null, 2) : ""
     });
   });
 
   return results;
 }
+
 
   // --- Modified validateClinicProWithEligibility ---
   function validateClinicProWithEligibility(reportRows, eligRows) {
