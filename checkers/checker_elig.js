@@ -344,20 +344,20 @@ function validateInstaWithEligibility(instaRows, eligData) {
       }
     }
 
-    results.push({
-      claimID,
-      memberID,
-      insuranceCompany: row["Insurance Company"],
-      packageName: row["Package Name"],
-      encounterStart: row.ClaimDate,
-      clinicianID: row["Clinician License"],
-      status: match?.['Status'] || "",
-      clinic: row.Clinic,
-      remarks,
-      unknown,
-      eligibilityRequestNumber: match?.["Eligibility Request Number"] || "",
-      details: match ? formatEligibilityDetailsModal(match, memberID) : ""
-    });
+  results.push({
+    claimID: row.ClaimID,
+    memberID,
+    insuranceCompany: row["Insurance Company"],
+    packageName: row["Package Name"],
+    encounterStart: row.ClaimDate,
+    clinicianID: row["Clinician License"],
+    status: match?.['Status'] || "",
+    clinic: row.Clinic,
+    remarks,
+    unknown,
+    eligibilityRequestNumber: match?.["Eligibility Request Number"] || "",
+    serviceCategory: match?.["Service Category"] || "",  // ✅ ADDED
+    details: match ? formatEligibilityDetailsModal(match, memberID) : ""
   });
 
   return results;
