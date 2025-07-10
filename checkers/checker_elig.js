@@ -267,7 +267,18 @@ function parseXML(file) {
     });
   }
 
-  // --- Modified validateInstaWithEligibility ---
+function normalizeInsuranceName(name) {
+  const aliases = {
+    "thiqanationalhealthinsurancecompanydaman": "thiqa",
+    "damanthiqa": "thiqa",
+    "damanbasic": "basic",
+    "damanenhanced": "enhanced",
+    "nationalhealthinsurancecompany": "daman",
+  };
+  const key = (name || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  return aliases[key] || key;
+}
+
 function validateInstaWithEligibility(instaRows, eligData) {
   const results = [];
 
@@ -281,19 +292,9 @@ function validateInstaWithEligibility(instaRows, eligData) {
   });
 
   instaRows.forEach((row, idx) => {
-    // Normalize MemberID safely
     let memberIDNorm = (row.MemberID || '').replace(/[-\s]/g, '').trim();
     if (memberIDNorm.startsWith('0')) memberIDNorm = memberIDNorm.substring(1);
 
-    const claimID = (row.ClaimID || "").trim();
-
-    // Filter out invalid ClaimIDs: must match expected format, e.g. start with TMCCL and then digits/letters only
-    if (!claimID || !/^TMCCL\d{6,}$/i.test(claimID)) {
-      // skip bad ClaimIDs
-      return;
-    }
-
-    // Try to find elig rows for this member
     const eligRows = eligByMember[memberIDNorm] || [];
 
     let remarks = [];
@@ -312,6 +313,7 @@ function validateInstaWithEligibility(instaRows, eligData) {
         match = bestMatch.match;
         unknown = bestMatch.unknown;
 
+        // Check if claimDate is within eligibility period (if available)
         const eligibilityStart = match['EffectiveDate'] || match['Effective Date'] || match['Ordered On'] || null;
         const eligibilityEnd = match['Answered On'] || null;
 
@@ -322,11 +324,20 @@ function validateInstaWithEligibility(instaRows, eligData) {
             remarks.push("Claim date outside eligibility period");
           }
         }
+
+        // ✅ Insurance company match (normalized)
+        const csvIns = normalizeInsuranceName(row["Insurance Company"]);
+        const eligIns = normalizeInsuranceName(match["Payer"] || match["Payer Name"]);
+        if (csvIns && eligIns && csvIns !== eligIns) {
+          remarks.push(
+            `Insurance Company mismatch (XLS: "${row["Insurance Company"]}", Elig: "${match["Payer"] || match["Payer Name"]}")`
+          );
+        }
       }
     }
 
     results.push({
-      claimID: claimID,
+      claimID: row.ClaimID || "",
       memberID: row.MemberID || "",
       insuranceCompany: row["Insurance Company"] || "",
       packageName: row["Package Name"] || "",
@@ -342,7 +353,6 @@ function validateInstaWithEligibility(instaRows, eligData) {
 
   return results;
 }
-
 
   // --- Modified validateClinicProWithEligibility ---
   function validateClinicProWithEligibility(reportRows, eligRows) {
