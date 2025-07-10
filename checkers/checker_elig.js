@@ -22,6 +22,7 @@ window.addEventListener("DOMContentLoaded", () => {
   // Data holders
   let xmlData = null;
   let xlsData = null;
+  let csvData = null;
   let eligData = null;
   let insuranceLicenses = null;
   let filteredXlsData = null; // new cache variable
@@ -129,17 +130,16 @@ async function parseCsv(file) {
         });
 
         const mapped = rows.map(row => ({
-          claimID: row["Pri. Claim No"] || "",
-          memberID: row["Pri. Patient Insurance Card No"] || "",
-          claimDate: parseDate(row["Encounter Date"]) || row["Encounter Date"] || "",
-          clinicianID: row["Clinician License"] || "",
-          insuranceCompany: row["Pri. Payer Name"] || "",
-          clinic: row["Department"] || "",
-          status: row["Codification Status"] || "",
-          packageName: row["Pri. Plan Name"] || "",
+          "ClaimID": row["Pri. Claim No"] || "",
+          "MemberID": row["Pri. Patient Insurance Card No"] || "",
+          "ClaimDate": parseDate(row["Encounter Date"]) || row["Encounter Date"] || "",
+          "Clinician License": row["Clinician License"] || "",
+          "Insurance Company": row["Pri. Payer Name"] || "",
+          "Clinic": row["Department"] || "",
+          "Status": row["Codification Status"] || "",
+          "Package Name": row["Pri. Plan Name"] || "",
           raw: row
         }));
-
         resolve(mapped);
       } catch (err) {
         reject(err);
@@ -953,44 +953,52 @@ function validateDatesInData(data, dateFields, dataLabel = "") {
   return invalidDates;
 }
 
-  // Modified updateStatus function to show filtered count for XLS report rows
-  function updateStatus() {
-    const usingXml = xmlRadio.checked;
-    const xmlLoaded = !!xmlData;
-    const xlsLoaded = !!xlsData;
-    const eligLoaded = !!eligData;
-    const licensesLoaded = !!insuranceLicenses;
-    const msgs = [];
+// Modified updateStatus function to show filtered count for XLS report rows
+function updateStatus() {
+  const usingXml = xmlRadio.checked;
+  const xmlLoaded = !!xmlData;
+  const xlsLoaded = !!xlsData;
+  const csvLoaded = !!csvData;  // New for CSV
+  const eligLoaded = !!eligData;
+  const licensesLoaded = !!insuranceLicenses;
+  const msgs = [];
 
-    if (usingXml && xmlLoaded) {
-      const claimIDs = new Set(
-        (xmlData.encounters || []).map((r) => r.claimID),
-      );
-      const count = claimIDs.size;
-      msgs.push(`${count} unique Claim ID${count !== 1 ? "s" : ""} loaded`);
-    }
+  if (usingXml && xmlLoaded) {
+    const claimIDs = new Set(
+      (xmlData.encounters || []).map((r) => r.claimID),
+    );
+    const count = claimIDs.size;
+    msgs.push(`${count} unique Claim ID${count !== 1 ? "s" : ""} loaded`);
+  }
 
-    if (!usingXml && xlsLoaded) {
+  if (!usingXml) {
+    if (xlsLoaded) {
       const claimIDs = new Set((xlsData || []).map((r) => r["ClaimID"]));
       const count = claimIDs.size;
       msgs.push(`${count} unique XLS Claim ID${count !== 1 ? "s" : ""} loaded`);
+    } else if (csvLoaded) {
+      const claimIDs = new Set((csvData || []).map((r) => r["ClaimID"]));
+      const count = claimIDs.size;
+      msgs.push(`${count} unique CSV Claim ID${count !== 1 ? "s" : ""} loaded`);
     }
-
-    if (eligLoaded) {
-      const count = eligData.length || 0;
-      msgs.push(`${count} Eligibility row${count !== 1 ? "s" : ""} loaded`);
-    }
-
-    if (licensesLoaded) {
-      msgs.push("Insurance Licenses loaded");
-    }
-
-    status.textContent = msgs.join(", ");
-    processBtn.disabled = !(
-      (usingXml && xmlLoaded && eligLoaded) ||
-      (!usingXml && xlsLoaded && eligLoaded)
-    );
   }
+
+  if (eligLoaded) {
+    const count = eligData.length || 0;
+    msgs.push(`${count} Eligibility row${count !== 1 ? "s" : ""} loaded`);
+  }
+
+  if (licensesLoaded) {
+    msgs.push("Insurance Licenses loaded");
+  }
+
+  status.textContent = msgs.join(", ");
+
+  processBtn.disabled = !(
+    (usingXml && xmlLoaded && eligLoaded) ||
+    (!usingXml && (xlsLoaded || csvLoaded) && eligLoaded)
+  );
+}
 
 // ✅ Modified xmlInput handler to show logs per claim when the file is loaded
 xmlInput.addEventListener("change", async (e) => {
