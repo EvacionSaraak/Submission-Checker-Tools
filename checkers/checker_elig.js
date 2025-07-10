@@ -364,7 +364,7 @@ function validateInstaWithEligibility(instaRows, eligData) {
       serviceCategory: (match?.["Service Category"] || match?.[" Service Category"] || "").trim(),
       details: match ? formatEligibilityDetailsModal(match, memberID) : ""
     });
-  }   
+  })
   return results;
 }
   // --- Modified validateClinicProWithEligibility ---
