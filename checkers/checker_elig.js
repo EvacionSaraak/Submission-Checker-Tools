@@ -3,7 +3,7 @@
 window.addEventListener("DOMContentLoaded", () => {
   // Input/group selectors
   const xmlInput = document.getElementById("xmlFileInput");
-  const xlsInput = document.getElementById("xlsxFileInput");
+  const reportInput = document.getElementById("reportFileInput");
   const eligInput = document.getElementById("eligibilityFileInput");
   const xmlGroup = document.getElementById("xmlReportInputGroup");
   const reportGroup = document.getElementById("reportInputGroup");
@@ -884,7 +884,7 @@ xmlInput.addEventListener("change", async (e) => {
   updateStatus();
 });
 
-xlsInput.addEventListener("change", async (e) => {
+reportInput.addEventListener("change", async (e) => {
   status.textContent = "Loading XLS…";
   processBtn.disabled = true;
   try {
