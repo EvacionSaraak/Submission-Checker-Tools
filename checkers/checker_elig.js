@@ -106,32 +106,41 @@ async function parseCsvAsXlsx(file) {
         const workbook = XLSX.read(csvText, { type: 'string' });
         const sheet    = workbook.Sheets[workbook.SheetNames[0]];
         const allRows  = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
-        const dataRows = allRows.slice(3); // skip first 3 metadata lines
+        const dataRows = allRows.slice(3);
 
-        if (dataRows.length < 2) return resolve([]);
+        if (dataRows.length < 2) {
+          console.warn("Not enough rows after skipping metadata:", dataRows.length);
+          return resolve([]);
+        }
 
         const [headers, ...values] = dataRows;
 
-        // find indices by header substring
+        // 🔥 DEBUG: log headers and first raw row
+        console.log("DEBUG headers:", headers);
+        console.log("DEBUG first raw row values:", values[0]);
+
+        // find indices
         const idxClaimID = headers.findIndex(h => /Pri\. Claim No/i.test(h));
         const idxMember  = headers.findIndex(h => /Patient Insurance Card No/i.test(h));
-        const idxDate    = headers.findIndex(h => /^Encounter Date$/i.test(h));
-        const idxClin    = headers.findIndex(h => /Clinician License/i.test(h));
-        const idxPayer   = headers.findIndex(h => /Pri\. Payer Name/i.test(h));
-        const idxDept    = headers.findIndex(h => /Department/i.test(h));
-        const idxStatus  = headers.findIndex(h => /Codification Status/i.test(h));
-        const idxPlan    = headers.findIndex(h => /Pri\. Plan Name/i.test(h));
+        // 🔥 DEBUG: log found indices
+        console.log("DEBUG idxClaimID:", idxClaimID, "idxMember:", idxMember);
 
-        const mapped = values.map(row => ({
-          ClaimID:           row[idxClaimID]?.toString().trim() || "",
-          MemberID:          row[idxMember]?.toString().trim()  || "",
-          ClaimDate:         parseDate(row[idxDate])           || null,
-          "Clinician License": row[idxClin]?.toString().trim() || "",
-          "Insurance Company": row[idxPayer]?.toString().trim()|| "",
-          Clinic:            row[idxDept]?.toString().trim()    || "",
-          Status:            row[idxStatus]?.toString().trim()  || "",
-          "Package Name":    row[idxPlan]?.toString().trim()    || "",
-        }));
+        const mapped = values.map((row, rowIdx) => {
+          const obj = {};
+          headers.forEach((h,i) => obj[h] = row[i]);
+
+          const m = {
+            ClaimID:   (obj["Pri. Claim No"]                     || "").toString().trim(),
+            MemberID:  (obj["Pri. Patient Insurance Card No"]    || "").toString().trim(),
+            ClaimDate: parseDate(obj["Encounter Date"]) || null,
+            // …
+          };
+
+          // 🔥 DEBUG first mapped object
+          if (rowIdx === 0) console.log("DEBUG mapped first row:", m);
+
+          return m;
+        });
 
         resolve(mapped);
       } catch (err) {
