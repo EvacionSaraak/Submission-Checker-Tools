@@ -96,51 +96,67 @@ function excelDateToDDMMYYYY(excelDate) {
     });
 
 async function parseCsv(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = e => {
-      try {
-        const text = e.target.result;
-        const lines = text.split(/\r?\n/).filter(l => l.trim() !== '');
-        if (lines.length < 4) return resolve([]);
+  const text = await file.text();
+  const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
 
-        // Use 4th line (index 3) as header
-        const headerLine = lines[3];
-        const delimiter = ','; // Confirmed as CSV (comma-delimited)
-        const headers = headerLine.split(delimiter).map(h => h.replace(/^"|"$/g, '').trim());
+  console.log("CSV Debug — First 4 lines:");
+  lines.slice(0, 4).forEach((l, i) => console.log(`Line ${i + 1}:`, l));
 
-        const rows = lines.slice(4).map(line => {
-          const values = line.split(delimiter).map(v => v.replace(/^"|"$/g, '').trim());
-          const obj = {};
-          headers.forEach((h, i) => {
-            obj[h] = values[i] || '';
-          });
-          return obj;
-        });
+  if (lines.length < 4) return [];
 
-        const mappedRows = rows
-          .filter(row => row["Pri. Claim No"]?.trim()) // Filter out junk rows
-          .map(row => {
-            return {
-              ClaimID: (row["Pri. Claim No"] || "").trim(),
-              MemberID: (row["Pri. Patient Insurance Card No"] || "").replace(/[\r\n]+/g, '').trim(),
-              ClaimDate: parseDate(row["Encounter Date"]),
-              "Clinician License": (row["Clinician License"] || "").trim(),
-              "Insurance Company": (row["Pri. Payer Name"] || "").trim(),
-              "Clinic": (row["Department"] || "").trim(),
-              "Status": (row["Codification Status"] || "").trim(),
-              "Package Name": (row["Pri. Plan Name"] || "").trim(),
-            };
-          });
+  const headerLine = lines[3].trim();
+  const headers = parseCsvLine(headerLine);
 
-        resolve(mappedRows);
-      } catch (err) {
-        reject(err);
-      }
-    };
-    reader.onerror = () => reject(reader.error);
-    reader.readAsText(file);
+  const rows = lines.slice(4).map(line => {
+    const values = parseCsvLine(line);
+    const obj = {};
+    headers.forEach((key, i) => {
+      obj[key] = values[i] || '';
+    });
+    return obj;
   });
+
+  const mappedRows = rows.map(row => {
+    const parsedDate = parseDate(row["Encounter Date"]);
+    return {
+      "ClaimID": row["Pri. Claim No"]?.trim() || "",
+      "MemberID": row["Pri. Patient Insurance Card No"]?.trim() || "",
+      "ClaimDate": parsedDate || row["Encounter Date"] || "",
+      "Clinician License": row["Clinician License"] || "",
+      "Insurance Company": row["Pri. Payer Name"] || "",
+      "Clinic": row["Department"] || "",
+      "Status": row["Codification Status"] || "",
+      "Package Name": row["Pri. Plan Name"] || "",
+    };
+  });
+
+  return mappedRows;
+}
+
+function parseCsvLine(line) {
+  const result = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    const nextChar = line[i + 1];
+
+    if (char === '"' && inQuotes && nextChar === '"') {
+      current += '"';
+      i++; // skip next quote
+    } else if (char === '"') {
+      inQuotes = !inQuotes;
+    } else if (char === ',' && !inQuotes) {
+      result.push(current.trim());
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+
+  result.push(current.trim());
+  return result;
 }
 
 // ✅ Modified parseExcel to normalize ClaimDate for report rows
