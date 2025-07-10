@@ -101,35 +101,33 @@ function excelDateToDDMMYYYY(excelDate) {
 async function parseCsv(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-
     reader.onload = (e) => {
       try {
         const text = e.target.result;
-        const lines = text.split(/\r?\n/).filter((line) => line.trim() !== '');
+        const lines = text.split(/\r?\n/).filter(line => line.trim() !== "");
 
-        if (lines.length < 4) return resolve([]); // Not enough lines to parse
-
-        const headerLine = lines[3]; // 4th line (index 3)
-        const delimiter = '\t'; // InstaHMS uses tabs
-
-        const headers = headerLine
-          .split(delimiter)
-          .map((h) => h.trim().replace(/^\uFEFF/, '')); // Clean BOMs
-
-        // Parse rows starting from line 5 (index 4)
-        const dataLines = lines.slice(4);
-
-        const rows = dataLines.map((line) => {
-          const values = line.split(delimiter).map((v) => v.trim());
-          const rowObj = {};
-          headers.forEach((h, i) => {
-            rowObj[h] = values[i] || '';
-          });
-          return rowObj;
+        // ✅ Debug: Log first four rows exactly as read
+        console.log("CSV Debug - First 4 lines:");
+        lines.slice(0, 4).forEach((line, i) => {
+          console.log(`Line ${i + 1}:`, line);
         });
 
-        // Final mapped structure for your app
-        const mappedRows = rows.map((row) => ({
+        if (lines.length <= 3) return resolve([]);
+
+        const headerLine = lines[3];
+        const delimiter = "\t"; // Assumed tab-delimited
+        const headers = headerLine.split(delimiter).map(h => h.trim());
+
+        const rows = lines.slice(4).map(line => {
+          const values = line.split(delimiter).map(v => v.trim());
+          const row = {};
+          headers.forEach((header, i) => {
+            row[header] = values[i] || "";
+          });
+          return row;
+        });
+
+        const mapped = rows.map(row => ({
           claimID: row["Pri. Claim No"] || "",
           memberID: row["Pri. Patient Insurance Card No"] || "",
           claimDate: parseDate(row["Encounter Date"]) || row["Encounter Date"] || "",
@@ -138,15 +136,14 @@ async function parseCsv(file) {
           clinic: row["Department"] || "",
           status: row["Codification Status"] || "",
           packageName: row["Pri. Plan Name"] || "",
-          raw: row, // raw full row, optional for debugging
+          raw: row
         }));
 
-        resolve(mappedRows);
+        resolve(mapped);
       } catch (err) {
         reject(err);
       }
     };
-
     reader.onerror = () => reject(reader.error);
     reader.readAsText(file);
   });
