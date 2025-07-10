@@ -244,20 +244,22 @@ function normalizeInsuranceName(name) {
 }
 
 // 2) validateInstaWithEligibility — match each Insta row against eligData
+// validateInstaWithEligibility — ensure memberID is set from instaRows before matching
 function validateInstaWithEligibility(instaRows, eligData) {
   const results = [];
   const eligByMember = {};
   eligData.forEach(e => {
-    let card = (e['Card Number / DHA Member ID'] || '').replace(/[-\s]/g,'').trim();
+    let card = (e['Card Number / DHA Member ID']||'').replace(/[-\s]/g,'').trim();
     if (card.startsWith('0')) card = card.slice(1);
     (eligByMember[card] = eligByMember[card]||[]).push(e);
   });
 
   instaRows.forEach(row => {
-    const rawM = (row.MemberID || '').replace(/[-\s]/g,'').trim();
-    const memberIDNorm = rawM.startsWith('0') ? rawM.slice(1) : rawM;
-    const eligRows = eligByMember[memberIDNorm] || [];
+    // ⚡️ Grab the MemberID parsed from CSV→XLSX
+    let memberID = (row.MemberID||'').replace(/[-\s]/g,'').trim();
+    if (memberID.startsWith('0')) memberID = memberID.slice(1);
 
+    const eligRows = eligByMember[memberID]||[];
     const remarks = [];
     let unknown = false, match = null;
 
@@ -265,31 +267,28 @@ function validateInstaWithEligibility(instaRows, eligData) {
       remarks.push("No eligibility found for MemberID");
     } else {
       const cDate = row.ClaimDate instanceof Date ? row.ClaimDate : parseDate(row.ClaimDate);
-      const best  = findBestEligibilityMatch(memberIDNorm, cDate, row["Clinician License"], eligRows);
+      const best  = findBestEligibilityMatch(memberID, cDate, row["Clinician License"], eligRows);
       if (!best || best.error) {
         remarks.push(best?.error || "No matching eligibility on or before claim date");
       } else {
-        match = best.match;
-        unknown = best.unknown;
-        const start = match['EffectiveDate'] || match['Effective Date'] || match['Ordered On'];
+        match = best.match; unknown = best.unknown;
+        const start = match['EffectiveDate']||match['Effective Date']||match['Ordered On'];
         const end   = match['Answered On'];
         if (start && end && !isWithinEligibilityPeriod(cDate, parseDate(start), parseDate(end))) {
           remarks.push("Claim date outside eligibility period");
         }
         const a = row["Insurance Company"].toLowerCase().replace(/[^a-z0-9]/g,'');
         const b = (match["Payer Name"]||"").toLowerCase().replace(/[^a-z0-9]/g,'');
-        if (a && b && a !== b) {
+        if (a && b && a!==b) {
           remarks.push(`Insurance Company mismatch (CSV: "${row["Insurance Company"]}", Elig: "${match["Payer Name"]}")`);
         }
-        if (match["Status"] === "Cancelled") {
-          remarks.push("Status not eligible (Cancelled)");
-        }
+        if (match["Status"]==="Cancelled") remarks.push("Status not eligible (Cancelled)");
       }
     }
 
     results.push({
-      claimID:        row.ClaimID,
-      memberID:       row.MemberID,
+      claimID:          row.ClaimID,
+      memberID,        // ← now guaranteed to be the CSV value
       insuranceCompany: row["Insurance Company"],
       packageName:      row["Package Name"],
       encounterStart:   row.ClaimDate,
@@ -298,7 +297,9 @@ function validateInstaWithEligibility(instaRows, eligData) {
       clinic:           row.Clinic,
       remarks,
       unknown,
-      details: match ? JSON.stringify(match, null, 2) : ""
+      details: match
+        ? formatEligibilityDetailsModal(match, memberID)
+        : "",
     });
   });
 
@@ -582,7 +583,7 @@ function validateXmlWithEligibility(xmlPayload, eligRows) {
 
   function formatEligibilityDetailsModal(match, memberID) {
     const fields = [
-      { label: "Member ID", value: memberID || "" },
+      { label: "Member ID", value: memberID },
       {
         label: "Eligibility Request Number",
         value: match["Eligibility Request Number"] || "",
