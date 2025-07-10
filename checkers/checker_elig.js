@@ -642,7 +642,6 @@ function validateXmlWithEligibility(xmlPayload, eligRows) {
       <td class="wrap-col">${r.insuranceCompany || ""}</td>
       <td class="wrap-col">${r.packageName || ""}</td> <!-- 🆕 -->
       <td>${r.encounterStart || ""}</td>
-      <td>${r.encounterStart || ""}</td>
       <td></td>
       <td>${r.status || ""}</td>
       <td>${r.serviceCategory || ""}</td>
