@@ -696,18 +696,22 @@ function validateXmlWithEligibility(xmlPayload, eligRows) {
     return { modal, modalContent };
   }
 
-  function renderResults(results, containerId = "results") {
-    const tbody = buildTableContainer(containerId);
-    const modalElements = setupModal(containerId);
-    if (results.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:#888;">No matching rows found.</td></tr>`;
-      return;
-    }
-    results.forEach((r, i) => {
-      const row = createRow(r, i, modalElements);
-      tbody.appendChild(row);
-    });
+// renderResults — now logs each row's data before creating and appending it
+function renderResults(results, containerId = "results") {
+  const tbody = buildTableContainer(containerId);
+  const modalElements = setupModal(containerId);
+
+  if (results.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:#888;">No matching rows found.</td></tr>`;
+    return;
   }
+
+  results.forEach((r, i) => {
+    console.log(`Debug: rendering row #${i + 1}`, r);  // log row data for debug
+    const rowEl = createRow(r, i, modalElements);
+    tbody.appendChild(rowEl);
+  });
+}
 
 // Updated createRow with correct details button placement (7th cell)
 function createRow(r, index, { modal, modalContent }) {
