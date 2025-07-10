@@ -101,65 +101,37 @@ async function parseCsv(file) {
     reader.onload = e => {
       try {
         const text = e.target.result;
+        const lines = text.split(/\r?\n/).filter(l => l.trim() !== '');
+        if (lines.length < 4) return resolve([]);
 
-        // Split lines, skip first 3 lines (header is line 4)
-        const allLines = text.split(/\r?\n/);
-        if (allLines.length < 4) return resolve([]);
+        // Use 4th line (index 3) as header
+        const headerLine = lines[3];
+        const delimiter = ','; // Confirmed as CSV (comma-delimited)
+        const headers = headerLine.split(delimiter).map(h => h.replace(/^"|"$/g, '').trim());
 
-        // Header line (line 4)
-        const headerLine = allLines[3];
-
-        // Parse CSV line with quotes properly:
-        function parseCsvLine(line) {
-          const regex = /("([^"]|"")*"|[^,]*)(,|$)/g;
-          const fields = [];
-          let match;
-          while ((match = regex.exec(line)) !== null) {
-            let val = match[1];
-            // Remove surrounding quotes and unescape double quotes
-            if (val.startsWith('"') && val.endsWith('"')) {
-              val = val.slice(1, -1).replace(/""/g, '"');
-            }
-            fields.push(val);
-            if (match[3] === "") break; // end of line
-          }
-          return fields;
-        }
-
-        const headers = parseCsvLine(headerLine).map(h => h.trim());
-
-        // Parse rows starting from line 5 (index 4)
-        const rows = [];
-        for (let i = 4; i < allLines.length; i++) {
-          const line = allLines[i];
-          if (!line.trim()) continue; // skip empty lines
-          const values = parseCsvLine(line);
-          if (values.length !== headers.length) {
-            // Skip or warn if columns count mismatch
-            console.warn(`Skipping line ${i+1} due to column count mismatch`);
-            continue;
-          }
+        const rows = lines.slice(4).map(line => {
+          const values = line.split(delimiter).map(v => v.replace(/^"|"$/g, '').trim());
           const obj = {};
-          headers.forEach((h, idx) => {
-            obj[h] = values[idx] || "";
+          headers.forEach((h, i) => {
+            obj[h] = values[i] || '';
           });
-          rows.push(obj);
-        }
-
-        // Map to your app fields and parse date
-        const mappedRows = rows.map(row => {
-          const parsedDate = parseDate(row["Encounter Date"]);
-          return {
-            "ClaimID": row["Pri. Claim No"] || "",
-            "MemberID": row["Pri. Patient Insurance Card No"] || "",
-            "ClaimDate": parsedDate || row["Encounter Date"] || "",
-            "Clinician License": row["Clinician License"] || "",
-            "Insurance Company": row["Pri. Payer Name"] || "",
-            "Clinic": row["Department"] || "",
-            "Status": row["Codification Status"] || "",
-            "Package Name": row["Pri. Plan Name"] || "",
-          };
+          return obj;
         });
+
+        const mappedRows = rows
+          .filter(row => row["Pri. Claim No"]?.trim()) // Filter out junk rows
+          .map(row => {
+            return {
+              ClaimID: (row["Pri. Claim No"] || "").trim(),
+              MemberID: (row["Pri. Patient Insurance Card No"] || "").replace(/[\r\n]+/g, '').trim(),
+              ClaimDate: parseDate(row["Encounter Date"]),
+              "Clinician License": (row["Clinician License"] || "").trim(),
+              "Insurance Company": (row["Pri. Payer Name"] || "").trim(),
+              "Clinic": (row["Department"] || "").trim(),
+              "Status": (row["Codification Status"] || "").trim(),
+              "Package Name": (row["Pri. Plan Name"] || "").trim(),
+            };
+          });
 
         resolve(mappedRows);
       } catch (err) {
@@ -170,7 +142,6 @@ async function parseCsv(file) {
     reader.readAsText(file);
   });
 }
-
 
 // ✅ Modified parseExcel to normalize ClaimDate for report rows
 async function parseExcel(file, range = 0) {
@@ -282,22 +253,20 @@ function normalizeInsuranceName(name) {
 function validateInstaWithEligibility(instaRows, eligData) {
   const results = [];
 
-  // Normalize eligibility data member IDs once for efficiency
   const eligByMember = {};
   eligData.forEach(erow => {
-    let cardNum = (erow['Card Number / DHA Member ID'] || '').replace(/[-\s]/g, '').trim();
-    if (cardNum.startsWith('0')) cardNum = cardNum.substring(1);
+    let cardNum = (erow['Card Number / DHA Member ID'] || '').replace(/[-\s\r\n]/g, '').trim();
+    if (cardNum.startsWith('0')) cardNum = cardNum.slice(1);
     if (!eligByMember[cardNum]) eligByMember[cardNum] = [];
     eligByMember[cardNum].push(erow);
   });
 
-  instaRows.forEach((row, idx) => {
-    let memberIDNorm = (row.MemberID || '').replace(/[-\s]/g, '').trim();
-    if (memberIDNorm.startsWith('0')) memberIDNorm = memberIDNorm.substring(1);
+  instaRows.forEach((row) => {
+    let memberIDNorm = (row.MemberID || '').replace(/[-\s\r\n]/g, '').trim();
+    if (memberIDNorm.startsWith('0')) memberIDNorm = memberIDNorm.slice(1);
 
     const eligRows = eligByMember[memberIDNorm] || [];
-
-    let remarks = [];
+    const remarks = [];
     let unknown = false;
     let match = null;
 
@@ -305,15 +274,14 @@ function validateInstaWithEligibility(instaRows, eligData) {
       remarks.push("No eligibility found for MemberID");
     } else {
       const claimDate = row.ClaimDate instanceof Date ? row.ClaimDate : parseDate(row.ClaimDate);
-      const bestMatch = findBestEligibilityMatch(row.MemberID, claimDate, row["Clinician License"], eligRows);
+      const bestMatch = findBestEligibilityMatch(memberIDNorm, claimDate, row["Clinician License"], eligRows);
 
-      if (bestMatch == null || bestMatch.error) {
+      if (!bestMatch || bestMatch.error) {
         remarks.push(bestMatch?.error || "No matching eligibility on or before claim date");
       } else {
         match = bestMatch.match;
         unknown = bestMatch.unknown;
 
-        // Check if claimDate is within eligibility period (if available)
         const eligibilityStart = match['EffectiveDate'] || match['Effective Date'] || match['Ordered On'] || null;
         const eligibilityEnd = match['Answered On'] || null;
 
@@ -325,13 +293,15 @@ function validateInstaWithEligibility(instaRows, eligData) {
           }
         }
 
-        // ✅ Insurance company match (normalized)
-        const csvIns = normalizeInsuranceName(row["Insurance Company"]);
-        const eligIns = normalizeInsuranceName(match["Payer"] || match["Payer Name"]);
-        if (csvIns && eligIns && csvIns !== eligIns) {
-          remarks.push(
-            `Insurance Company mismatch (XLS: "${row["Insurance Company"]}", Elig: "${match["Payer"] || match["Payer Name"]}")`
-          );
+        // Normalize company names for comparison
+        const claimCompany = (row["Insurance Company"] || "").toLowerCase().replace(/\s+/g, '').replace(/[^a-z0-9]/g, '');
+        const eligCompany = (match["Payer Name"] || "").toLowerCase().replace(/\s+/g, '').replace(/[^a-z0-9]/g, '');
+        if (claimCompany && eligCompany && claimCompany !== eligCompany) {
+          remarks.push(`Insurance Company mismatch (CSV: "${row["Insurance Company"]}", Elig: "${match["Payer Name"]}")`);
+        }
+
+        if (match["Status"] === "Cancelled") {
+          remarks.push("Status not eligible (Cancelled)");
         }
       }
     }
@@ -992,20 +962,22 @@ function updateStatus() {
   const msgs = [];
 
   if (usingXml && xmlLoaded) {
-    const claimIDs = new Set((xmlData.encounters || []).map(r => r.claimID));
-    msgs.push(`${claimIDs.size} unique Claim ID${claimIDs.size !== 1 ? "s" : ""} loaded (from XML)`);
+    const claimIDs = new Set((xmlData.encounters || []).map((r) => r.claimID));
+    const count = claimIDs.size;
+    msgs.push(`${count} unique Claim ID${count !== 1 ? "s" : ""} loaded`);
   }
 
   if (!usingXml && xlsLoaded) {
-    // 🧼 Clean out truly empty rows
-    const cleanRows = xlsData.filter(r => r?.ClaimID?.trim());
-    const uniqueClaimIDs = new Set(cleanRows.map(r => r.ClaimID.trim()));
-
-    msgs.push(`${cleanRows.length} total rows loaded, ${uniqueClaimIDs.size} unique Claim ID${uniqueClaimIDs.size !== 1 ? "s" : ""} loaded (from ${xlsData.__source || "XLS/CSV"})`);
+    const allRows = xlsData || [];
+    const claimIDs = new Set(allRows.map((r) => r["ClaimID"]));
+    const count = claimIDs.size;
+    const label = isCsvFile ? "CSV" : "XLS";
+    msgs.push(`${allRows.length} ${label} row${allRows.length !== 1 ? "s" : ""} loaded (${count} unique Claim ID${count !== 1 ? "s" : ""})`);
   }
 
   if (eligLoaded) {
-    msgs.push(`${eligData.length} Eligibility row${eligData.length !== 1 ? "s" : ""} loaded`);
+    const count = eligData.length || 0;
+    msgs.push(`${count} Eligibility row${count !== 1 ? "s" : ""} loaded`);
   }
 
   if (licensesLoaded) {
@@ -1013,13 +985,11 @@ function updateStatus() {
   }
 
   status.textContent = msgs.join(", ");
-
   processBtn.disabled = !(
     (usingXml && xmlLoaded && eligLoaded) ||
     (!usingXml && xlsLoaded && eligLoaded)
   );
 }
-
 
 // ✅ Modified xmlInput handler to show logs per claim when the file is loaded
 xmlInput.addEventListener("change", async (e) => {
