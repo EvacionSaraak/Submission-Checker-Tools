@@ -346,28 +346,27 @@ function validateInstaWithEligibility(instaRows, eligData) {
       }
     }
 
-  const cDate = row.ClaimDate instanceof Date ? row.ClaimDate : parseDate(row.ClaimDate);
-  row.ClaimDate = cDate;
-  
-  results.push({
-    claimID: row.ClaimID,
-    memberID,
-    insuranceCompany: row["Insurance Company"],
-    packageName: row["Package Name"],
-    encounterStart: cDate,
-    clinicianID: row["Clinician License"],
-    status: match?.['Status'] || "",
-    clinic: row.Clinic,
-    remarks,
-    unknown,
-    eligibilityRequestNumber: match?.["Eligibility Request Number"] || "",
-    serviceCategory: (match?.["Service Category"] || match?.[" Service Category"] || "").trim(),
-    details: match ? formatEligibilityDetailsModal(match, memberID) : ""
-  });
-
+    const cDate = row.ClaimDate instanceof Date ? row.ClaimDate : parseDate(row.ClaimDate);
+    row.ClaimDate = cDate;
+    
+    results.push({
+      claimID: row.ClaimID,
+      memberID,
+      insuranceCompany: row["Insurance Company"],
+      packageName: row["Package Name"],
+      encounterStart: cDate,
+      clinicianID: row["Clinician License"],
+      status: match?.['Status'] || "",
+      clinic: row.Clinic,
+      remarks,
+      unknown,
+      eligibilityRequestNumber: match?.["Eligibility Request Number"] || "",
+      serviceCategory: (match?.["Service Category"] || match?.[" Service Category"] || "").trim(),
+      details: match ? formatEligibilityDetailsModal(match, memberID) : ""
+    });
+  }   
   return results;
 }
-
   // --- Modified validateClinicProWithEligibility ---
   function validateClinicProWithEligibility(reportRows, eligRows) {
     if (reportRows.length > 0) {
