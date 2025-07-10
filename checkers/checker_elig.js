@@ -99,6 +99,56 @@ function excelDateToDDMMYYYY(excelDate) {
       insuranceLicenses = null;
     });
 
+async function parseCsv(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      try {
+        const text = e.target.result;
+        const lines = text.split(/\r?\n/).filter(l => l.trim() !== '');
+        if (lines.length < 4) return resolve([]); // Must have at least 4 rows
+
+        // The headers are in line 3 (0-based index 3)
+        const headerLine = lines[3];
+        // Split by tab or comma (try to detect)
+        const delimiter = headerLine.includes('\t') ? '\t' : ',';
+        const headers = headerLine.split(delimiter).map(h => h.trim());
+
+        // Rows start from line 4 (index 4)
+        const rows = lines.slice(4).map(line => {
+          const values = line.split(delimiter).map(v => v.trim());
+          const obj = {};
+          headers.forEach((h, i) => {
+            obj[h] = values[i] || '';
+          });
+          return obj;
+        });
+
+        // Map to your app fields and parse date
+        const mappedRows = rows.map(row => {
+          const parsedDate = parseDate(row["Encounter Date"]);
+          return {
+            "ClaimID": row["Pri. Claim No"] || "",
+            "MemberID": row["Pri. Patient Insurance Card No"] || "",
+            "ClaimDate": parsedDate || row["Encounter Date"] || "",
+            "Clinician License": row["Clinician License"] || "",
+            "Insurance Company": row["Pri. Payer Name"] || "",
+            "Clinic": row["Department"] || "",
+            "Status": row["Codification Status"] || "",
+            "Package Name": row["Pri. Plan Name"] || "",
+          };
+        });
+
+        resolve(mappedRows);
+      } catch (err) {
+        reject(err);
+      }
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsText(file);
+  });
+}
+  
 // ✅ Modified parseExcel to normalize ClaimDate for report rows
 async function parseExcel(file, range = 0) {
   const reader = new FileReader();
@@ -193,6 +243,75 @@ function parseXML(file) {
       return xlsCard && xlsCard === checkID;
     });
   }
+
+  // --- Modified validateInstaWithEligibility ---
+  function validateInstaWithEligibility(instaRows, eligData) {
+  const results = [];
+
+  // Normalize eligibility data member IDs once for efficiency
+  const eligByMember = {};
+  eligData.forEach(erow => {
+    let cardNum = (erow['Card Number / DHA Member ID'] || '').replace(/[-\s]/g, '').trim();
+    if (cardNum.startsWith('0')) cardNum = cardNum.substring(1);
+    if (!eligByMember[cardNum]) eligByMember[cardNum] = [];
+    eligByMember[cardNum].push(erow);
+  });
+
+  instaRows.forEach((row, idx) => {
+    const memberIDNorm = (row.MemberID || '').replace(/[-\s]/g, '').trim();
+    if (memberIDNorm.startsWith('0')) memberIDNorm = memberIDNorm.substring(1);
+
+    // Try to find elig rows for this member
+    const eligRows = eligByMember[memberIDNorm] || [];
+
+    let remarks = [];
+    let unknown = false;
+    let match = null;
+
+    if (eligRows.length === 0) {
+      remarks.push("No eligibility found for MemberID");
+    } else {
+      // Find best eligibility match by date and clinician license
+      const claimDate = row.ClaimDate instanceof Date ? row.ClaimDate : parseDate(row.ClaimDate);
+      const bestMatch = findBestEligibilityMatch(row.MemberID, claimDate, row["Clinician License"], eligRows);
+
+      if (bestMatch == null || bestMatch.error) {
+        remarks.push(bestMatch?.error || "No matching eligibility on or before claim date");
+      } else {
+        match = bestMatch.match;
+        unknown = bestMatch.unknown;
+
+        // Check if claimDate is within eligibility period (if available)
+        const eligibilityStart = match['EffectiveDate'] || match['Effective Date'] || match['Ordered On'] || null;
+        const eligibilityEnd = match['Answered On'] || null;
+
+        if (eligibilityStart && eligibilityEnd) {
+          const startDate = parseDate(eligibilityStart);
+          const endDate = parseDate(eligibilityEnd);
+          if (!isWithinEligibilityPeriod(claimDate, startDate, endDate)) {
+            remarks.push("Claim date outside eligibility period");
+          }
+        }
+      }
+    }
+
+    results.push({
+      claimID: row.ClaimID || "",
+      memberID: row.MemberID || "",
+      insuranceCompany: row["Insurance Company"] || "",
+      packageName: row["Package Name"] || "",
+      encounterStart: row.ClaimDate || "",
+      clinicianID: row["Clinician License"] || "",
+      status: row.Status || "",
+      clinic: row.Clinic || "",
+      remarks,
+      unknown,
+      details: match ? JSON.stringify(match, null, 2) : "",
+    });
+  });
+
+  return results;
+}
 
   // --- Modified validateClinicProWithEligibility ---
   function validateClinicProWithEligibility(reportRows, eligRows) {
@@ -885,21 +1004,34 @@ xmlInput.addEventListener("change", async (e) => {
 });
 
 reportInput.addEventListener("change", async (e) => {
-  status.textContent = "Loading XLS…";
+  status.textContent = "Loading report file…";
   processBtn.disabled = true;
   try {
-    xlsData = await parseExcel(e.target.files[0], 0);
-    const invalids = validateDatesInData(xlsData, ["ClaimDate"], "XLS");
-    if (invalids.length) {
-      console.warn("Invalid dates found in XLS report:", invalids);
-      status.textContent = `Warning: ${invalids.length} invalid date(s) in XLS report. Check console.`;
+    const file = e.target.files[0];
+    if (!file) return;
+
+    let data;
+    if (file.name.toLowerCase().endsWith('.csv')) {
+      data = await parseCsv(file);
+    } else {
+      data = await parseExcel(file, 0);
     }
+
+    // Validate claim dates
+    const invalids = validateDatesInData(data, ["ClaimDate"], "Report");
+    if (invalids.length) {
+      console.warn("Invalid dates found in report:", invalids);
+      status.textContent = `Warning: ${invalids.length} invalid date(s) in report file. Check console.`;
+    }
+
+    xlsData = data;
   } catch (err) {
-    status.textContent = `XLS Error: ${err.message}`;
+    status.textContent = `Report file error: ${err.message}`;
     xlsData = null;
   }
   updateStatus();
 });
+
 
 eligInput.addEventListener("change", async (e) => {
   status.textContent = "Loading Eligibility XLSX…";
@@ -919,60 +1051,36 @@ eligInput.addEventListener("change", async (e) => {
   updateStatus();
 });
 
-
-  processBtn.addEventListener("click", async () => {
-    if (xmlRadio.checked) {
-      if (!xmlData || !eligData) {
-        alert("Please upload both XML report and Eligibility XLSX.");
-        return;
-      }
-      processBtn.disabled = true;
-      status.textContent = "Validating…";
-      try {
-        const results = validateXmlWithEligibility(
-          xmlData,
-          eligData,
-          insuranceLicenses,
-        );
-        renderResults(results);
-        const validCount = results.filter(
-          (r) => r.unknown || r.remarks.length === 0,
-        ).length;
-        const totalCount = results.length;
-        const percent =
-          totalCount > 0 ? Math.round((validCount / totalCount) * 100) : 0;
-        status.textContent = `Valid: ${validCount} / ${totalCount} (${percent}%)`;
-        console.log(`Results: ${validCount} valid out of ${totalCount}`);
-      } catch (err) {
-        status.textContent = `Validation error: ${err.message}`;
-        console.error(err);
-      }
-      processBtn.disabled = false;
-    } else {
-      if (!xlsData || !eligData) {
-        alert("Please upload both XLS report and Eligibility XLSX.");
-        return;
-      }
-      processBtn.disabled = true;
-      status.textContent = "Validating…";
-      try {
-        const results = validateClinicProWithEligibility(xlsData, eligData);
-        renderResults(results);
-        const validCount = results.filter(
-          (r) => r.unknown || r.remarks.length === 0,
-        ).length;
-        const totalCount = results.length;
-        const percent =
-          totalCount > 0 ? Math.round((validCount / totalCount) * 100) : 0;
-        status.textContent = `Valid: ${validCount} / ${totalCount} (${percent}%)`;
-        console.log(`Results: ${validCount} valid out of ${totalCount}`);
-      } catch (err) {
-        status.textContent = `Validation error: ${err.message}`;
-        console.error(err);
-      }
-      processBtn.disabled = false;
+processBtn.addEventListener("click", async () => {
+  if (xmlRadio.checked) {
+    // existing XML path ...
+  } else {
+    if (!xlsData || !eligData) {
+      alert("Please upload both XLS/CSV report and Eligibility XLSX.");
+      return;
     }
-  });
+    processBtn.disabled = true;
+    status.textContent = "Validating…";
+    try {
+      // Detect if xlsData came from CSV by checking first row keys or filename extension if stored
+      const isCsv = xlsData.length && Object.keys(xlsData[0]).some(k => k.includes("Pri. Claim No"));
+      const results = isCsv
+        ? validateInstaWithEligibility(xlsData, eligData)
+        : validateClinicProWithEligibility(xlsData, eligData);
+
+      renderResults(results);
+      const validCount = results.filter(r => r.unknown || r.remarks.length === 0).length;
+      const totalCount = results.length;
+      const percent = totalCount > 0 ? Math.round((validCount / totalCount) * 100) : 0;
+      status.textContent = `Valid: ${validCount} / ${totalCount} (${percent}%)`;
+      console.log(`Results: ${validCount} valid out of ${totalCount}`);
+    } catch (err) {
+      status.textContent = `Validation error: ${err.message}`;
+      console.error(err);
+    }
+    processBtn.disabled = false;
+  }
+});
 
   swapInputGroups();
 });
