@@ -260,78 +260,98 @@ function normalizeInsuranceName(name) {
 // validateInstaWithEligibility — ensure memberID is set from instaRows before matching
 // The Insta validate function remains the same—now row.MemberID will be correctly populated
 // validateInstaWithEligibility — match eligibility by Card Number / DHA Member ID vs row.MemberID
+// validateInstaWithEligibility — now normalizes insurance names before comparing
 function validateInstaWithEligibility(instaRows, eligData) {
   const results = [];
-
-  // Build eligibility index by card number
   const eligByCard = {};
+
   eligData.forEach(e => {
     let card = (e['Card Number / DHA Member ID'] || '').toString().replace(/[-\s]/g, '').trim();
     if (card.startsWith('0')) card = card.slice(1);
-    if (!eligByCard[card]) eligByCard[card] = [];
-    eligByCard[card].push(e);
+    (eligByCard[card] = eligByCard[card] || []).push(e);
   });
 
+  // Helper to normalize insurer names
+  // Extend normalizeInsurer to cover more variants like "DAMAN-National Insurance Co." and "Daman Enhanced"
+  function normalizeInsurer(name) {
+    const key = (name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  
+    const aliases = {
+      'thiqanationalhealthinsurancecompanydaman': 'thiqa',
+      'damanthiqá': 'thiqa',
+      'damanthiqa': 'thiqa',
+      'thiqa': 'thiqa',
+      'daman-nationalhealthinsurancecodamanpjsc': 'daman',
+      'damanenhanced': 'daman',
+      'daman': 'daman',
+      'damannationalinsuranceco': 'daman',
+      'damannationalinsurancecodamanpjsc': 'daman'
+    };
+  
+    return aliases[key] || key;
+  }
+
   instaRows.forEach(row => {
-    // Normalize MemberID from row
     let memberID = (row.MemberID || '').toString().replace(/[-\s]/g, '').trim();
     if (memberID.startsWith('0')) memberID = memberID.slice(1);
 
-    // Lookup eligibility rows by card number
     const eligRows = eligByCard[memberID] || [];
     const remarks = [];
-    let unknown = false, match = null;
+    let match = null, unknown = false;
 
     if (!eligRows.length) {
       remarks.push("No eligibility found for MemberID/Card Number");
     } else {
-      // If multiple elig rows, pick best with date/clinician as before
       const cDate = row.ClaimDate instanceof Date ? row.ClaimDate : parseDate(row.ClaimDate);
       const best = findBestEligibilityMatch(memberID, cDate, row["Clinician License"], eligRows);
+
       if (!best || best.error) {
         remarks.push(best?.error || "No matching eligibility on or before claim date");
       } else {
         match = best.match;
         unknown = best.unknown;
-        // date range check
+
+        // Status check
+        const st = (match['Status'] || "").toLowerCase();
+        if (st !== "eligible") {
+          remarks.push(`Status not eligible (${match['Status']})`);
+        }
+
+        // Date range check
         const start = match['EffectiveDate'] || match['Effective Date'] || match['Ordered On'];
         const end   = match['Answered On'];
         if (start && end && !isWithinEligibilityPeriod(cDate, parseDate(start), parseDate(end))) {
           remarks.push("Claim date outside eligibility period");
         }
-        // status check
-        const st = (match['Status'] || "").toLowerCase();
-        if (st !== "eligible") {
-          remarks.push(`Status not eligible (${match['Status']})`);
-        }
-        // insurance company check
-        const a = (row["Insurance Company"] || "").toLowerCase().replace(/[^a-z0-9]/g,'');
-        const b = (match["Payer Name"]      || "").toLowerCase().replace(/[^a-z0-9]/g,'');
-        if (a && b && a !== b) {
+
+        // Normalized insurance company comparison
+        const insCsv = normalizeInsurer(row["Insurance Company"]);
+        const insElig = normalizeInsurer(match["Payer Name"]);
+        if (insCsv && insElig && insCsv !== insElig) {
+          // Only warn if truly different after normalization
           remarks.push(`Insurance Company mismatch (CSV: "${row["Insurance Company"]}", Elig: "${match["Payer Name"]}")`);
         }
       }
     }
 
     results.push({
-      claimID:           row.ClaimID,
-      memberID,          // now used for lookup
-      insuranceCompany:  row["Insurance Company"],
-      packageName:       row["Package Name"],
-      encounterStart:    row.ClaimDate,
-      clinicianID:       row["Clinician License"],
-      status:            match?.['Status'] || "",
-      clinic:            row.Clinic,
+      claimID: row.ClaimID,
+      memberID,
+      insuranceCompany: row["Insurance Company"],
+      packageName: row["Package Name"],
+      encounterStart: row.ClaimDate,
+      clinicianID: row["Clinician License"],
+      status: match?.['Status'] || "",
+      clinic: row.Clinic,
       remarks,
       unknown,
       eligibilityRequestNumber: match?.["Eligibility Request Number"] || "",
-      details:         match ? formatEligibilityDetailsModal(match, memberID) : ""
+      details: match ? formatEligibilityDetailsModal(match, memberID) : ""
     });
   });
 
   return results;
 }
-
 
   // --- Modified validateClinicProWithEligibility ---
   function validateClinicProWithEligibility(reportRows, eligRows) {
