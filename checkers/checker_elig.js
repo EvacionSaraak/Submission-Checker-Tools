@@ -95,36 +95,33 @@ function excelDateToDDMMYYYY(excelDate) {
       insuranceLicenses = null;
     });
 
-// 1) parseCsvAsXlsx — reads a .csv via SheetJS and skips the first 3 metadata rows
+// 1) parseCsvAsXlsx — convert the CSV to an in-memory workbook and map Insta fields
 async function parseCsvAsXlsx(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = e => {
       try {
         const csvText = e.target.result;
-        // Read as a workbook (type: 'string' works for CSV & XLS alike)
         const workbook = XLSX.read(csvText, { type: 'string' });
-        const sheet = workbook.Sheets[workbook.SheetNames[0]];
-
-        // Convert sheet to row arrays, skipping first 3 rows
-        const allRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
-        const dataRows = allRows.slice(3);    // now row 0 = your header row, row 1+ = data
+        const sheet     = workbook.Sheets[workbook.SheetNames[0]];
+        const allRows   = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+        const dataRows  = allRows.slice(3);  // skip 3 metadata rows
 
         if (dataRows.length < 2) return resolve([]);
 
         const [headers, ...values] = dataRows;
         const mapped = values.map(row => {
           const obj = {};
-          headers.forEach((h, i) => obj[h] = row[i]);
+          headers.forEach((h,i) => obj[h] = row[i]);
           return {
-            ClaimID:                 (obj["Pri. Claim No"]                     || "").toString().trim(),
-            MemberID:                (obj["Pri. Patient Insurance Card No"]    || "").toString().trim(),
-            ClaimDate:               parseDate(obj["Encounter Date"]),
-            "Clinician License":     (obj["Clinician License"]                || "").toString().trim(),
-            "Insurance Company":     (obj["Pri. Payer Name"]                  || "").toString().trim(),
-            Clinic:                  (obj["Department"]                       || "").toString().trim(),
-            Status:                  (obj["Codification Status"]              || "").toString().trim(),
-            "Package Name":          (obj["Pri. Plan Name"]                   || "").toString().trim(),
+            ClaimID:               (obj["Pri. Claim No"]                      || "").toString().trim(),
+            MemberID:              (obj["Pri. Patient Insurance Card No"]     || "").toString().trim(),
+            ClaimDate:             parseDate(obj["Encounter Date"]) || null,
+            "Clinician License":   (obj["Clinician License"]                 || "").toString().trim(),
+            "Insurance Company":   (obj["Pri. Payer Name"]                   || "").toString().trim(),
+            Clinic:                (obj["Department"]                        || "").toString().trim(),
+            Status:                (obj["Codification Status"]               || "").toString().trim(),
+            "Package Name":        (obj["Pri. Plan Name"]                    || "").toString().trim(),
           };
         });
 
@@ -246,20 +243,20 @@ function normalizeInsuranceName(name) {
   return aliases[key] || key;
 }
 
-// 2) validateInstaWithEligibility — unchanged except now instaRows come from parseCsvAsXlsx
+// 2) validateInstaWithEligibility — match each Insta row against eligData
 function validateInstaWithEligibility(instaRows, eligData) {
   const results = [];
   const eligByMember = {};
-  eligData.forEach(erow => {
-    let card = (erow['Card Number / DHA Member ID']||'').replace(/[-\s]/g,'').trim();
+  eligData.forEach(e => {
+    let card = (e['Card Number / DHA Member ID'] || '').replace(/[-\s]/g,'').trim();
     if (card.startsWith('0')) card = card.slice(1);
-    (eligByMember[card] = eligByMember[card]||[]).push(erow);
+    (eligByMember[card] = eligByMember[card]||[]).push(e);
   });
 
   instaRows.forEach(row => {
-    const rawMember = (row.MemberID||'').replace(/[-\s]/g,'').trim();
-    const memberIDNorm = rawMember.startsWith('0') ? rawMember.slice(1) : rawMember;
-    const eligRows = eligByMember[memberIDNorm]||[];
+    const rawM = (row.MemberID || '').replace(/[-\s]/g,'').trim();
+    const memberIDNorm = rawM.startsWith('0') ? rawM.slice(1) : rawM;
+    const eligRows = eligByMember[memberIDNorm] || [];
 
     const remarks = [];
     let unknown = false, match = null;
@@ -267,24 +264,24 @@ function validateInstaWithEligibility(instaRows, eligData) {
     if (!eligRows.length) {
       remarks.push("No eligibility found for MemberID");
     } else {
-      const claimDate = row.ClaimDate instanceof Date ? row.ClaimDate : parseDate(row.ClaimDate);
-      const best = findBestEligibilityMatch(memberIDNorm, claimDate, row["Clinician License"], eligRows);
+      const cDate = row.ClaimDate instanceof Date ? row.ClaimDate : parseDate(row.ClaimDate);
+      const best  = findBestEligibilityMatch(memberIDNorm, cDate, row["Clinician License"], eligRows);
       if (!best || best.error) {
-        remarks.push(best?.error||"No matching eligibility on or before claim date");
+        remarks.push(best?.error || "No matching eligibility on or before claim date");
       } else {
-        match = best.match; unknown = best.unknown;
-        const start = match['EffectiveDate']||match['Effective Date']||match['Ordered On'];
+        match = best.match;
+        unknown = best.unknown;
+        const start = match['EffectiveDate'] || match['Effective Date'] || match['Ordered On'];
         const end   = match['Answered On'];
-        if (start && end && !isWithinEligibilityPeriod(claimDate, parseDate(start), parseDate(end))) {
+        if (start && end && !isWithinEligibilityPeriod(cDate, parseDate(start), parseDate(end))) {
           remarks.push("Claim date outside eligibility period");
         }
-        // normalize & compare insurer
-        const n1 = (row["Insurance Company"]||"").toLowerCase().replace(/[^a-z0-9]/g,'');
-        const n2 = (match["Payer Name"]||"").toLowerCase().replace(/[^a-z0-9]/g,'');
-        if (n1 && n2 && n1!==n2) {
+        const a = row["Insurance Company"].toLowerCase().replace(/[^a-z0-9]/g,'');
+        const b = (match["Payer Name"]||"").toLowerCase().replace(/[^a-z0-9]/g,'');
+        if (a && b && a !== b) {
           remarks.push(`Insurance Company mismatch (CSV: "${row["Insurance Company"]}", Elig: "${match["Payer Name"]}")`);
         }
-        if (match["Status"]==="Cancelled") {
+        if (match["Status"] === "Cancelled") {
           remarks.push("Status not eligible (Cancelled)");
         }
       }
@@ -307,7 +304,6 @@ function validateInstaWithEligibility(instaRows, eligData) {
 
   return results;
 }
-
 
   // --- Modified validateClinicProWithEligibility ---
   function validateClinicProWithEligibility(reportRows, eligRows) {
@@ -713,63 +709,63 @@ function validateXmlWithEligibility(xmlPayload, eligRows) {
     });
   }
 
-  // Updated createRow to render the new insuranceCompany field
-  function createRow(r, index, { modal, modalContent }) {
-    const row = document.createElement("tr");
-    if (r.unknown) {
-      row.classList.add("unknown");
-    } else if (r.remarks.length) {
-      row.classList.add("invalid");
-    } else {
-      row.classList.add("valid");
-    }
-  
-    // Details button
-    const btn = document.createElement("button");
-    btn.textContent = r.eligibilityRequestNumber || "No Request";
-    btn.disabled = !r.eligibilityRequestNumber && !r.details;
-    btn.className = "details-btn";
-    btn.addEventListener("click", () => {
-      if (!r.details) return;
-      modalContent.innerHTML = r.details;
-      modal.style.display = "block";
-    });
-    const tdBtn = document.createElement("td");
-    tdBtn.appendChild(btn);
-  
-    // Prepare remarks cell HTML
-    let remarksCellHtml;
-    if (r.unknown && r.clinicianMismatchMsg) {
-      remarksCellHtml =
-        r.clinicianMismatchMsg +
-        '<br><span style="font-size:90%;color:#888;">(treated as unknown, marked valid)</span>';
-    } else if (r.clinicianMismatchMsg) {
-      remarksCellHtml = r.remarks.join("\n") + "<br>" + r.clinicianMismatchMsg;
-    } else {
-      remarksCellHtml = r.unknown
-        ? "Clinician mismatch (treated as unknown, marked valid)"
-        : r.remarks.join("\n");
-    }
-  
-    row.innerHTML = `
-      <td>${index + 1}</td>
-      <td class="wrap-col">${r.claimID}</td>
-      <td class="wrap-col">${r.memberID}</td>
-      <td class="wrap-col">${r.insuranceCompany || ""}</td>
-      <td class="wrap-col">${r.packageName || ""}</td> <!-- 🆕 -->
-      <td>${r.encounterStart || ""}</td>
-      <td></td>
-      <td>${r.status || ""}</td>
-      <td>${r.serviceCategory || ""}</td>
-      <td>${r.clinic || ""}</td>
-      <td style="white-space: pre-line;">${remarksCellHtml}</td>
-    `;
-  
-    // Replace the empty cell with our details button
-    row.querySelector("td:nth-child(6)").replaceWith(tdBtn);
-  
-    return row;
+// Updated createRow with correct details button placement (7th cell)
+function createRow(r, index, { modal, modalContent }) {
+  const row = document.createElement("tr");
+  if (r.unknown) {
+    row.classList.add("unknown");
+  } else if (r.remarks.length) {
+    row.classList.add("invalid");
+  } else {
+    row.classList.add("valid");
   }
+
+  // Details button
+  const btn = document.createElement("button");
+  btn.textContent = r.eligibilityRequestNumber || "No Request";
+  btn.disabled = !r.eligibilityRequestNumber && !r.details;
+  btn.className = "details-btn";
+  btn.addEventListener("click", () => {
+    if (!r.details) return;
+    modalContent.innerHTML = r.details;
+    modal.style.display = "block";
+  });
+  const tdBtn = document.createElement("td");
+  tdBtn.appendChild(btn);
+
+  // Prepare remarks cell HTML
+  let remarksCellHtml;
+  if (r.unknown && r.clinicianMismatchMsg) {
+    remarksCellHtml =
+      r.clinicianMismatchMsg +
+      '<br><span style="font-size:90%;color:#888;">(treated as unknown, marked valid)</span>';
+  } else if (r.clinicianMismatchMsg) {
+    remarksCellHtml = r.remarks.join("\n") + "<br>" + r.clinicianMismatchMsg;
+  } else {
+    remarksCellHtml = r.unknown
+      ? "Clinician mismatch (treated as unknown, marked valid)"
+      : r.remarks.join("\n");
+  }
+
+  row.innerHTML = `
+    <td>${index + 1}</td>
+    <td class="wrap-col">${r.claimID}</td>
+    <td class="wrap-col">${r.memberID}</td>
+    <td class="wrap-col">${r.insuranceCompany || ""}</td>
+    <td class="wrap-col">${r.packageName || ""}</td>
+    <td>${r.encounterStart || ""}</td>
+    <td></td> <!-- placeholder for details button -->
+    <td>${r.status || ""}</td>
+    <td>${r.serviceCategory || ""}</td>
+    <td>${r.clinic || ""}</td>
+    <td style="white-space: pre-line;">${remarksCellHtml}</td>
+  `;
+
+  // Replace the 7th cell (placeholder) with our details button
+  row.querySelector("td:nth-child(7)").replaceWith(tdBtn);
+
+  return row;
+}
 
 // ✅ Enhanced parseDate with ambiguity handling (X/Y/Z)
 // Parses a date string, number, or Date object to a JS Date or null if invalid
