@@ -1022,34 +1022,36 @@ xmlInput.addEventListener("change", async (e) => {
 });
 
 reportInput.addEventListener("change", async (e) => {
-  status.textContent = "Loading report file…";
+  status.textContent = "Loading report…";
   processBtn.disabled = true;
+  const file = e.target.files[0];
+  if (!file) return;
+  const isCsv = file.name.toLowerCase().endsWith(".csv");
+  isCsvFile = isCsv;
   try {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    let data;
-    if (file.name.toLowerCase().endsWith('.csv')) {
-      data = await parseCsv(file);
+    if (isCsv) {
+      xlsData = await parseCsv(file);
     } else {
-      data = await parseExcel(file, 0);
+      xlsData = await parseExcel(file, 0);
     }
 
-    // Validate claim dates
-    const invalids = validateDatesInData(data, ["ClaimDate"], "Report");
+    const invalids = validateDatesInData(
+      xlsData,
+      ["ClaimDate"],
+      isCsv ? "CSV" : "XLS"
+    );
+
     if (invalids.length) {
-      console.warn("Invalid dates found in report:", invalids);
-      status.textContent = `Warning: ${invalids.length} invalid date(s) in report file. Check console.`;
+      console.warn(`Invalid dates found in ${isCsv ? "CSV" : "XLS"} report:`, invalids);
+      status.textContent = `Warning: ${invalids.length} invalid date(s) in ${isCsv ? "CSV" : "XLS"} report. Check console.`;
     }
-
-    xlsData = data;
   } catch (err) {
-    status.textContent = `Report file error: ${err.message}`;
+    status.textContent = `${isCsv ? "CSV" : "XLS"} Error: ${err.message}`;
     xlsData = null;
   }
+
   updateStatus();
 });
-
 
 eligInput.addEventListener("change", async (e) => {
   status.textContent = "Loading Eligibility XLSX…";
