@@ -366,7 +366,6 @@ function validateInstaWithEligibility(instaRows, eligData) {
   return results;
 }
 
-// Also in validateXmlWithEligibility, ensure encounterStart date formatting uses excelDateToDDMMYYYY
 function validateXmlWithEligibility(xmlPayload, eligRows) {
   const { encounters } = xmlPayload;
   const seenClaimIDs = new Set();
@@ -378,7 +377,9 @@ function validateXmlWithEligibility(xmlPayload, eligRows) {
         memberID,
         encounterStart,
         claimClinician,
-        multipleClinicians
+        multipleClinicians,
+        clinic,
+        serviceCategory
       } = enc;
 
       if (seenClaimIDs.has(claimID)) return null;
@@ -413,6 +414,19 @@ function validateXmlWithEligibility(xmlPayload, eligRows) {
         } else {
           match = result.match;
           status = match["Status"] || "";
+
+          // Service Category validation (optional, add more here)
+          const svc = (match["Service Category"] || "").trim();
+          const consultStatus = (match["Consultation Status"] || "").trim().toLowerCase();
+
+          if (svc === "Consultation" && consultStatus !== "elective") {
+            remarks.push(`Consultation must be Elective (got "${consultStatus}")`);
+          } else if (
+            ["Dental Services", "Physiotherapy", "Other OP Services"].includes(svc)
+          ) {
+            // Future logic may go here for Dental / Physio etc.
+          }
+
           if (status.toLowerCase() !== "eligible") {
             remarks.push(`Status not eligible (${status})`);
           }
@@ -437,15 +451,17 @@ function validateXmlWithEligibility(xmlPayload, eligRows) {
         remarks.push("Clinician mismatch (treated as unknown)");
       }
 
-      const formattedDate = 
-        encounterStart instanceof Date
-          ? excelDateToDDMMYYYY(encounterStart)
-          : encounterStart;
+      const parsedDate = parseDate(encounterStart);
+      const formattedDate = parsedDate
+        ? excelDateToDDMMYYYY(parsedDate)
+        : encounterStart;
 
       return {
         claimID,
         memberID,
         encounterStart: formattedDate,
+        clinic: clinic || "",
+        serviceCategory: (match?.["Service Category"] || "").trim(),
         details: match ? formatEligibilityDetailsModal(match, memberID) : "",
         eligibilityRequestNumber: match?.["Eligibility Request Number"] || null,
         status,
@@ -1219,21 +1235,37 @@ eligInput.addEventListener("change", async (e) => {
   updateStatus();
 });
 
-// 2) In your process button handler, branch Insta vs ClinicPro
 processBtn.addEventListener("click", async () => {
+  const tbody = document.querySelector("#results tbody");
+  if (tbody) tbody.innerHTML = ""; // ✅ Clear previous results
+
   if (xmlRadio.checked) {
-    // … existing XML logic …
+    if (!xmlData || !eligData) {
+      alert("Please upload both XML and Eligibility XLSX.");
+      return;
+    }
+
+    status.textContent = "Validating XML…";
+    processBtn.disabled = true;
+
+    const results = validateXmlWithEligibility(xmlData, eligData);
+    renderResults(results);
+
+    const validCount = results.filter(r => r.unknown || r.remarks.length === 0).length;
+    const totalCount = results.length;
+    status.textContent = `Valid: ${validCount} / ${totalCount} (${totalCount ? Math.round(validCount / totalCount * 100) : 0}%)`;
+
+    processBtn.disabled = false;
   } else {
     if (!xlsData || !eligData) {
       alert("Please upload both report file and Eligibility XLSX.");
       return;
     }
+
     status.textContent = "Validating…";
     processBtn.disabled = true;
 
-    // detect CSV vs XLS by checking our parseCsvAsXlsx path
     const isCsv = xlsData.length > 0 && Object.prototype.hasOwnProperty.call(xlsData[0], "MemberID");
-
     let results;
     if (isCsv) {
       results = validateInstaWithEligibility(xlsData, eligData);
@@ -1242,21 +1274,12 @@ processBtn.addEventListener("click", async () => {
     }
 
     renderResults(results);
+
     const validCount = results.filter(r => r.unknown || r.remarks.length === 0).length;
     const totalCount = results.length;
-    status.textContent = `Valid: ${validCount} / ${totalCount} (${totalCount ? Math.round(validCount/totalCount*100) : 0}%)`;
+    status.textContent = `Valid: ${validCount} / ${totalCount} (${totalCount ? Math.round(validCount / totalCount * 100) : 0}%)`;
 
     processBtn.disabled = false;
-    exportInvalidBtn.disabled = results.length === 0;
-
-    exportInvalidBtn.onclick = () => {
-      exportInvalidRowsXLSX({
-        results,
-        reportRows: xmlRadio.checked ? [] : xlsData,
-        eligRows: eligData,
-        mode: xmlRadio.checked ? "xml" : "insta"
-      });
-    };
   }
 });
 
