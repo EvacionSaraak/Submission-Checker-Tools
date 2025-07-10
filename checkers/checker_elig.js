@@ -270,14 +270,14 @@ function validateInstaWithEligibility(instaRows, eligData) {
   function normalizeInsurer(name) {
     if (!name) return '';
     const key = name.toLowerCase().replace(/[^a-z0-9]/g, '');
-  
+
     const aliases = {
       // THIQA variations
       'thiqanationalhealthinsurancecompanydaman': 'thiqa',
       'damanthiqá': 'thiqa',
       'damanthiqa': 'thiqa',
       'thiqa': 'thiqa',
-  
+
       // DAMAN variations
       'damanenhanced': 'daman',
       'daman-nationalhealthinsurancecodamanpjsc': 'daman',
@@ -288,16 +288,16 @@ function validateInstaWithEligibility(instaRows, eligData) {
       'damannationalhealthinsuranceco': 'daman',
       'damannationalhealthinsurancecodamandamanpjsc': 'daman',
       'damannationalhealthinsurancecompanydaman': 'daman',
-  
+
       // NAS variations
       'nasadministrationservicesllc': 'nas',
       'nasadministrationserviceslimited': 'nas',
     };
-  
+
     if (key.includes('daman')) return 'daman';
     if (key.includes('thiqa')) return 'thiqa';
     if (key.includes('nas')) return 'nas';
-  
+
     return aliases[key] || key;
   }
 
@@ -324,8 +324,6 @@ function validateInstaWithEligibility(instaRows, eligData) {
       } else {
         match = best.match;
         unknown = best.unknown;
-        // Log the matched eligibility row here
-        console.log(`Matched eligibility for MemberID ${memberID}, ClaimID ${claimID}:`, match);
 
         const st = (match['Status'] || "").toLowerCase();
         if (st !== "eligible") {
@@ -343,30 +341,50 @@ function validateInstaWithEligibility(instaRows, eligData) {
         if (insCsv && insElig && insCsv !== insElig) {
           remarks.push(`Insurance Company mismatch (CSV: "${row["Insurance Company"]}", Elig: "${match["Payer Name"]}")`);
         }
+
+        // === New Service Category + Consultation Status Validation ===
+        const serviceCategory = (match["Service Category"] || "").trim();
+        const consultationStatus = (match["Consultation Status"] || "").trim();
+
+        if (serviceCategory === "Consultation" && consultationStatus === "Elective") {
+          // Valid - no remark needed
+        } else if (serviceCategory === "Dental Services") {
+          remarks.push("Service category validation failed: Dental Services");
+        } else if (serviceCategory === "Physiotherapy") {
+          remarks.push("Service category validation failed: Physiotherapy");
+        } else if (serviceCategory === "Other OP Services") {
+          // For Other OP Services, check Consultation Status as subcategory
+          const validSubcategories = ["Physiotherapy", "Dietician", "Occupational Therapy", "Speech Therapy"];
+          if (!validSubcategories.includes(consultationStatus)) {
+            remarks.push(`Service category validation failed: Other OP Services with invalid subcategory "${consultationStatus}"`);
+          }
+        } else {
+          // If none of the above matched, add general remark or ignore as needed
+          remarks.push(`Service category validation failed: ${serviceCategory}`);
+        }
       }
     }
 
-    const cDate = row.ClaimDate instanceof Date ? row.ClaimDate : parseDate(row.ClaimDate);
-    row.ClaimDate = cDate;
-    
     results.push({
       claimID: row.ClaimID,
       memberID,
       insuranceCompany: row["Insurance Company"],
       packageName: row["Package Name"],
-      encounterStart: cDate,
+      encounterStart: row.ClaimDate,
       clinicianID: row["Clinician License"],
       status: match?.['Status'] || "",
       clinic: row.Clinic,
       remarks,
       unknown,
       eligibilityRequestNumber: match?.["Eligibility Request Number"] || "",
-      serviceCategory: (match?.["Service Category"] || match?.[" Service Category"] || "").trim(),
+      serviceCategory: serviceCategory,
       details: match ? formatEligibilityDetailsModal(match, memberID) : ""
     });
-  })
+  });
+
   return results;
 }
+  
   // --- Modified validateClinicProWithEligibility ---
   function validateClinicProWithEligibility(reportRows, eligRows) {
     if (reportRows.length > 0) {
