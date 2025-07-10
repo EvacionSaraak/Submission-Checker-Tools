@@ -260,7 +260,7 @@ function parseXML(file) {
   }
 
   // --- Modified validateInstaWithEligibility ---
-  function validateInstaWithEligibility(instaRows, eligData) {
+function validateInstaWithEligibility(instaRows, eligData) {
   const results = [];
 
   // Normalize eligibility data member IDs once for efficiency
@@ -273,8 +273,14 @@ function parseXML(file) {
   });
 
   instaRows.forEach((row, idx) => {
-    const memberIDNorm = (row.MemberID || '').replace(/[-\s]/g, '').trim();
+    // Normalize MemberID safely
+    let memberIDNorm = (row.MemberID || '').replace(/[-\s]/g, '').trim();
     if (memberIDNorm.startsWith('0')) memberIDNorm = memberIDNorm.substring(1);
+
+    // Skip rows with missing or empty ClaimID
+    if (!row.ClaimID || row.ClaimID.trim() === "") {
+      return; // skip this row, do not add to results
+    }
 
     // Try to find elig rows for this member
     const eligRows = eligByMember[memberIDNorm] || [];
