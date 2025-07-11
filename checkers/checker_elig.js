@@ -378,8 +378,7 @@ function validateXmlWithEligibility(xmlPayload, eligRows) {
         encounterStart,
         claimClinician,
         multipleClinicians,
-        clinic,
-        serviceCategory
+        clinic
       } = enc;
 
       if (seenClaimIDs.has(claimID)) return null;
@@ -399,9 +398,16 @@ function validateXmlWithEligibility(xmlPayload, eligRows) {
         remarks.push("MemberID missing in XML");
       }
 
+      let normalizedMemberID = memberID;
       if (memberID) {
+        const memberIDStr = memberID.toString();
+        if (memberIDStr.startsWith("0")) {
+          remarks.push("MemberID has leading zero; treated as normalized");
+          normalizedMemberID = memberIDStr.replace(/^0+/, '');
+        }
+
         const result = findBestEligibilityMatch(
-          memberID,
+          normalizedMemberID,
           encounterStart || "",
           claimClinician || "",
           eligRows
@@ -415,7 +421,7 @@ function validateXmlWithEligibility(xmlPayload, eligRows) {
           match = result.match;
           status = match["Status"] || "";
 
-          // Service Category validation (optional, add more here)
+          // Service Category and Consultation Status validation
           const svc = (match["Service Category"] || "").trim();
           const consultStatus = (match["Consultation Status"] || "").trim().toLowerCase();
 
@@ -424,7 +430,7 @@ function validateXmlWithEligibility(xmlPayload, eligRows) {
           } else if (
             ["Dental Services", "Physiotherapy", "Other OP Services"].includes(svc)
           ) {
-            // Future logic may go here for Dental / Physio etc.
+            // Optional future rules for these categories
           }
 
           if (status.toLowerCase() !== "eligible") {
@@ -460,12 +466,12 @@ function validateXmlWithEligibility(xmlPayload, eligRows) {
         claimID,
         memberID,
         encounterStart: formattedDate,
-        details: match ? formatEligibilityDetailsModal(match, memberID) : "",
+        details: match ? formatEligibilityDetailsModal(match, normalizedMemberID) : "",
         eligibilityRequestNumber: match?.["Eligibility Request Number"] || null,
-        insuranceCompany: match?.["Payer Name"] || "", // ✅ FIXED
-        packageName: match?.["Package Name"] || "",    // ✅ FIXED
-        serviceCategory: match?.["Service Category"] || "", // ✅ FIXED
-        clinic: enc?.clinic || "",                     // ✅ Only if clinic is part of XML encounter
+        insuranceCompany: match?.["Payer Name"] || "",
+        packageName: match?.["Package Name"] || "",
+        serviceCategory: match?.["Service Category"] || "",
+        clinic: clinic || "",
         status,
         remarks,
         unknown,
@@ -474,6 +480,7 @@ function validateXmlWithEligibility(xmlPayload, eligRows) {
     })
     .filter(Boolean);
 }
+
   
   // --- Modified validateClinicProWithEligibility ---
   function validateClinicProWithEligibility(reportRows, eligRows) {
