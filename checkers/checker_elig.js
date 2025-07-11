@@ -502,7 +502,7 @@ function validateClinicProWithEligibility(reportRows, eligRows) {
       if (!claimID || seenClaimIDs.has(claimID)) return null;
       seenClaimIDs.add(claimID);
 
-      let memberID = (row["PatientCardID"] || "").toString().replace(/[-\s]/g, "").trim();
+      let memberID = (row["MemberID"] || "").toString().replace(/[-\s]/g, "").trim();
       const originalMemberID = memberID;
       const remarks = [];
       let match = null;
