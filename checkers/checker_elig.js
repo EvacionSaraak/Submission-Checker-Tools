@@ -183,7 +183,7 @@ async function parseExcel(file, range = 0) {
         const memberIdHeader = allHeaders.find(h => 
           h && typeof h === 'string' && 
           /(member|card|patient|id)/i.test(h.replace(/[^a-z]/gi, ''))
-          || "MemberID";
+          || "MemberID";)
 
         const json = XLSX.utils.sheet_to_json(worksheet, { 
           defval: '', 
