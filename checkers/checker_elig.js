@@ -106,6 +106,7 @@ function isEligibilityStatusValid(status) {
 // Updated parseCsvAsXlsx — dynamically locate the “MemberID” column by header text
 // parseCsvAsXlsx — now maps all necessary columns including MemberID, Clinician License, Insurance Company, etc.
 async function parseCsvAsXlsx(file) {
+  console.log("-------------PARSING AS CSV, CONVERTING TO XLSX-------------");
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = e => {
@@ -158,6 +159,7 @@ async function parseCsvAsXlsx(file) {
 
 // ✅ Modified parseExcel to normalize ClaimDate for report rows
 async function parseExcel(file, range = 0) {
+  console.log("-------------PARSING AS XLSX-------------");
   const reader = new FileReader();
   return new Promise((resolve, reject) => {
     reader.onload = e => {
