@@ -1,7 +1,6 @@
 /*******************************
  * GLOBAL VARIABLES & CONSTANTS *
  *******************************/
-console.log('Initializing global variables and constants');
 const VALID_SERVICES = ['Consultation', 'Dental Services', 'Physiotherapy'];
 const DATE_KEYS = ['Date', 'On'];
 const MONTHS = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"];
@@ -11,10 +10,8 @@ let xmlData = null;
 let xlsData = null;
 let eligData = null;
 const usedEligibilities = new Set();
-console.log('Global variables initialized');
 
 // DOM Elements
-console.log('Initializing DOM elements');
 const xmlInput = document.getElementById("xmlFileInput");
 const reportInput = document.getElementById("reportFileInput");
 const eligInput = document.getElementById("eligibilityFileInput");
@@ -26,19 +23,16 @@ const xmlGroup = document.getElementById("xmlReportInputGroup");
 const reportGroup = document.getElementById("reportInputGroup");
 const xmlRadio = document.querySelector('input[name="reportSource"][value="xml"]');
 const xlsRadio = document.querySelector('input[name="reportSource"][value="xls"]');
-console.log('DOM elements initialized');
 
 /*************************
  * RADIO BUTTON HANDLING *
  *************************/
 function handleReportSourceChange() {
-  console.log('Report source changed');
   const isXmlMode = xmlRadio.checked;
   
   xmlGroup.style.display = isXmlMode ? 'block' : 'none';
   reportGroup.style.display = isXmlMode ? 'none' : 'block';
   
-  // Clear existing data when switching modes
   if (isXmlMode) {
     xlsData = null;
     reportInput.value = '';
@@ -51,241 +45,161 @@ function handleReportSourceChange() {
 }
 
 function initializeRadioButtons() {
-  console.log('Initializing radio button listeners');
   xmlRadio.addEventListener('change', handleReportSourceChange);
   xlsRadio.addEventListener('change', handleReportSourceChange);
-  
-  // Set initial state
   handleReportSourceChange();
-}
-
-/********************
- * PROCESSING CONTROL *
- ********************/
-function updateProcessButtonState() {
-  const hasEligibility = !!eligData;
-  const hasReportData = xmlRadio.checked ? !!xmlData : !!xlsData;
-  
-  processBtn.disabled = !hasEligibility || !hasReportData;
-  exportInvalidBtn.disabled = !hasEligibility || !hasReportData;
-  
-  console.debug(`Process button state updated - disabled: ${processBtn.disabled}`);
 }
 
 /*************************
  * DATE HANDLING UTILITIES *
  *************************/
-console.log('Creating DateHandler utility');
 const DateHandler = {
   parse: function(input) {
-    console.debug(`Parsing date input: ${input}`);
-    if (!input) {
-      console.debug('Empty date input');
-      return null;
-    }
-    if (input instanceof Date) {
-      console.debug('Input is already Date object');
-      return isNaN(input) ? null : input;
-    }
-    if (typeof input === 'number') {
-      console.debug('Parsing Excel serial date');
-      return this._parseExcelDate(input);
-    }
+    if (!input) return null;
+    if (input instanceof Date) return isNaN(input) ? null : input;
+    if (typeof input === 'number') return this._parseExcelDate(input);
     
     const cleanStr = input.toString().trim().replace(/[,.]/g, '');
-    console.debug(`Cleaned date string: ${cleanStr}`);
     return this._parseStringDate(cleanStr) || new Date(cleanStr);
   },
 
   format: function(date) {
-    if (!date) {
-      console.debug('No date to format');
-      return '';
-    }
+    if (!date) return '';
     const d = date.getDate().toString().padStart(2, '0');
     const m = (date.getMonth() + 1).toString().padStart(2, '0');
     const y = date.getFullYear();
-    const formatted = `${d}/${m}/${y}`;
-    console.debug(`Formatted date: ${formatted}`);
-    return formatted;
+    return `${d}/${m}/${y}`;
   },
 
   isSameDay: function(date1, date2) {
-    if (!date1 || !date2) {
-      console.debug('One or both dates missing for comparison');
-      return false;
-    }
-    const same = date1.getDate() === date2.getDate() && 
-                date1.getMonth() === date2.getMonth() && 
-                date1.getFullYear() === date2.getFullYear();
-    console.debug(`Date comparison result: ${same}`);
-    return same;
+    if (!date1 || !date2) return false;
+    return date1.getDate() === date2.getDate() && 
+           date1.getMonth() === date2.getMonth() && 
+           date1.getFullYear() === date2.getFullYear();
   },
 
   _parseExcelDate: function(serial) {
-    console.debug(`Parsing Excel serial date: ${serial}`);
     const date = new Date(Math.round((serial - 25569) * 86400 * 1000));
     return serial >= 60 ? new Date(date.getTime() + 86400000) : date;
   },
 
   _parseStringDate: function(dateStr) {
-    console.debug(`Attempting to parse date string: ${dateStr}`);
-    
     const dmyMatch = dateStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
-    if (dmyMatch) {
-      console.debug('DMY format matched');
-      return new Date(dmyMatch[3], dmyMatch[2]-1, dmyMatch[1]);
-    }
+    if (dmyMatch) return new Date(dmyMatch[3], dmyMatch[2]-1, dmyMatch[1]);
     
     const mdyMatch = dateStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
-    if (mdyMatch) {
-      console.debug('MDY format matched');
-      return new Date(mdyMatch[3], mdyMatch[1]-1, mdyMatch[2]);
-    }
+    if (mdyMatch) return new Date(mdyMatch[3], mdyMatch[1]-1, mdyMatch[2]);
     
     const textMatch = dateStr.match(/^(\d{1,2})[\/\- ]([a-z]{3})[\/\- ](\d{2,4})$/i);
     if (textMatch) {
-      console.debug('Text month format matched');
       const monthIndex = MONTHS.indexOf(textMatch[2].toLowerCase().substr(0,3));
       if (monthIndex >= 0) return new Date(textMatch[3], monthIndex, textMatch[1]);
     }
     
-    console.debug('No known date format matched');
     return null;
   }
 };
-console.log('DateHandler utility created');
 
 /*****************************
  * DATA NORMALIZATION FUNCTIONS *
  *****************************/
 function normalizeMemberID(id) {
-  console.debug(`Normalizing member ID: ${id}`);
-  if (!id) {
-    console.debug('Empty member ID');
-    return '';
-  }
-  const normalized = id.toString().replace(/\D/g, '').replace(/^0+/, '');
-  console.debug(`Normalized to: ${normalized}`);
-  return normalized;
+  if (!id) return '';
+  return id.toString().replace(/\D/g, '').replace(/^0+/, '');
 }
 
 function normalizeClinician(name) {
-  console.debug(`Normalizing clinician name: ${name}`);
-  if (!name) {
-    console.debug('Empty clinician name');
-    return '';
-  }
-  const normalized = name.trim().toLowerCase().replace(/\s+/g, ' ');
-  console.debug(`Normalized to: ${normalized}`);
-  return normalized;
+  if (!name) return '';
+  return name.trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
 /*******************************
  * ELIGIBILITY MATCHING FUNCTIONS *
  *******************************/
-function findEligibilityForClaim(eligibilities, claimDate, memberID) {
-  console.group(`Finding eligibility for claim - Member: ${memberID}, Date: ${DateHandler.format(claimDate)}`);
+function prepareEligibilityMap(eligData) {
+  console.log('Preparing eligibility map');
+  const eligMap = new Map();
   
-  if (!claimDate || !memberID) {
-    console.debug('Invalid claim date or member ID');
-    console.groupEnd();
-    return null;
-  }
+  eligData.forEach(e => {
+    const memberID = normalizeMemberID(e['Card Number / DHA Member ID']);
+    if (!memberID) return;
+    
+    if (!eligMap.has(memberID)) {
+      eligMap.set(memberID, []);
+    }
+    eligMap.get(memberID).push(e);
+  });
+  
+  return eligMap;
+}
+
+function findEligibilityForClaim(eligMap, claimDate, memberID, claimClinicians) {
+  const eligibilities = eligMap.get(memberID) || [];
+  let bestMatch = null;
+  let bestMatchDateDiff = Infinity;
 
   for (const e of eligibilities) {
     const reqNum = e['Eligibility Request Number'];
-    console.debug(`Checking eligibility request: ${reqNum}`);
-
-    if (usedEligibilities.has(reqNum)) {
-      console.debug('Eligibility already used - skipping');
-      continue;
-    }
-    
-    const eligID = normalizeMemberID(e['Card Number / DHA Member ID']);
-    console.debug(`Eligibility member ID: ${eligID}`);
-    
-    if (eligID !== memberID) {
-      console.debug('Member ID mismatch - skipping');
-      continue;
-    }
+    if (usedEligibilities.has(reqNum)) continue;
     
     const eligDate = DateHandler.parse(e['Answered On'] || e['Ordered On']);
-    console.debug(`Eligibility date: ${DateHandler.format(eligDate)}`);
+    if (!eligDate) continue;
     
-    if (!DateHandler.isSameDay(claimDate, eligDate)) {
-      console.debug('Date mismatch - skipping');
-      continue;
+    // Calculate absolute time difference in milliseconds
+    const dateDiff = Math.abs(claimDate - eligDate);
+    
+    // Check if this is a better match than previous candidates
+    if (dateDiff < bestMatchDateDiff) {
+      const clinicianMatch = checkClinicianMatch(claimClinicians, e.Clinician);
+      
+      if (clinicianMatch) {
+        bestMatch = e;
+        bestMatchDateDiff = dateDiff;
+        
+        // Found exact match, stop searching
+        if (dateDiff === 0) break;
+      }
     }
-    
-    console.debug('Found matching eligibility');
-    usedEligibilities.add(reqNum);
-    console.groupEnd();
-    return e;
   }
 
-  console.debug('No matching eligibility found');
-  console.groupEnd();
-  return null;
+  if (bestMatch) {
+    usedEligibilities.add(bestMatch['Eligibility Request Number']);
+  }
+  
+  return bestMatch;
 }
 
 function checkClinicianMatch(claimClinicians, eligClinician) {
-  console.group('Checking clinician match');
-  console.debug('Claim clinicians:', claimClinicians);
-  console.debug('Eligibility clinician:', eligClinician);
-
-  if (!eligClinician || !claimClinicians?.length) {
-    console.debug('No clinician data to compare');
-    console.groupEnd();
-    return true;
-  }
-
+  if (!eligClinician || !claimClinicians?.length) return true;
   const normElig = normalizeClinician(eligClinician);
-  const matchFound = claimClinicians.some(c => normalizeClinician(c) === normElig);
-
-  console.debug(`Clinician match ${matchFound ? 'found' : 'not found'}`);
-  console.groupEnd();
-  return matchFound;
+  return claimClinicians.some(c => normalizeClinician(c) === normElig);
 }
 
 /************************
  * VALIDATION FUNCTIONS *
  ************************/
-function validateXmlClaims(xmlClaims, eligData) {
-  console.group('Validating XML claims');
-  console.log(`Processing ${xmlClaims.length} XML claims`);
-  
-  const results = xmlClaims.map((claim, index) => {
-    console.group(`Claim ${index + 1}: ${claim.claimID}`);
-    
+function validateXmlClaims(xmlClaims, eligMap) {
+  console.log(`Validating ${xmlClaims.length} XML claims`);
+  return xmlClaims.map(claim => {
     const claimDate = DateHandler.parse(claim.encounterStart);
-    console.debug(`Claim date: ${DateHandler.format(claimDate)}`);
-    
     const memberID = normalizeMemberID(claim.memberID);
-    console.debug(`Member ID: ${memberID}`);
+    const eligibility = findEligibilityForClaim(eligMap, claimDate, memberID, claim.clinicians);
     
-    const eligibility = findEligibilityForClaim(eligData, claimDate, memberID);
-    console.debug('Eligibility record:', eligibility);
-
     let status = 'invalid';
     const remarks = [];
     
     if (!eligibility) {
       remarks.push('No matching eligibility');
-      console.debug('No eligibility found');
     } else if (eligibility.Status?.toLowerCase() !== 'eligible') {
       remarks.push(`Invalid status: ${eligibility.Status}`);
-      console.debug('Ineligible status');
     } else if (!checkClinicianMatch(claim.clinicians, eligibility.Clinician)) {
       status = 'unknown';
       remarks.push('Clinician mismatch');
-      console.debug('Clinician mismatch');
     } else {
       status = 'valid';
-      console.debug('Valid claim');
     }
-
-    const result = {
+    
+    return {
       claimID: claim.claimID,
       memberID: claim.memberID,
       encounterStart: DateHandler.format(claimDate),
@@ -295,48 +209,28 @@ function validateXmlClaims(xmlClaims, eligData) {
       finalStatus: status,
       fullEligibilityRecord: eligibility
     };
-
-    console.debug('Validation result:', result);
-    console.groupEnd();
-    return result;
   });
-
-  console.log(`Validation complete. ${results.length} claims processed`);
-  console.groupEnd();
-  return results;
 }
 
-function validateReportClaims(reportData, eligData) {
-  console.group('Validating report claims');
-  console.log(`Processing ${reportData.length} report rows`);
-  
-  const results = reportData.map((row, index) => {
-    console.group(`Row ${index + 1}: ${row.claimID}`);
-    
+function validateReportClaims(reportData, eligMap) {
+  console.log(`Validating ${reportData.length} report rows`);
+  return reportData.map(row => {
     const claimDate = DateHandler.parse(row.claimDate);
-    console.debug(`Claim date: ${DateHandler.format(claimDate)}`);
-    
     const memberID = normalizeMemberID(row.memberID);
-    console.debug(`Member ID: ${memberID}`);
+    const eligibility = findEligibilityForClaim(eligMap, claimDate, memberID, [row.clinician]);
     
-    const eligibility = findEligibilityForClaim(eligData, claimDate, memberID);
-    console.debug('Eligibility record:', eligibility);
-
     let status = 'invalid';
     const remarks = [];
     
     if (!eligibility) {
       remarks.push('No matching eligibility');
-      console.debug('No eligibility found');
     } else if (eligibility.Status?.toLowerCase() !== 'eligible') {
       remarks.push(`Invalid status: ${eligibility.Status}`);
-      console.debug('Ineligible status');
     } else {
       status = 'valid';
-      console.debug('Valid claim');
     }
-
-    const result = {
+    
+    return {
       claimID: row.claimID,
       memberID: row.memberID,
       encounterStart: DateHandler.format(claimDate),
@@ -346,163 +240,82 @@ function validateReportClaims(reportData, eligData) {
       finalStatus: status,
       fullEligibilityRecord: eligibility
     };
-
-    console.debug('Validation result:', result);
-    console.groupEnd();
-    return result;
   });
-
-  console.log(`Validation complete. ${results.length} rows processed`);
-  console.groupEnd();
-  return results;
 }
 
 /*********************
  * FILE PARSING FUNCTIONS *
  *********************/
 async function parseXmlFile(file) {
-  console.group(`Parsing XML file: ${file.name}`);
-  try {
-    console.log('Reading file content');
-    const text = await file.text();
-    
-    console.log('Parsing XML document');
-    const xmlDoc = new DOMParser().parseFromString(text, "application/xml");
-    
-    console.log('Extracting claims');
-    const claims = Array.from(xmlDoc.querySelectorAll("Claim")).map(claim => {
-      const claimID = claim.querySelector("ID")?.textContent.trim() || '';
-      const memberID = claim.querySelector("MemberID")?.textContent.trim() || '';
-      const encounterStart = claim.querySelector("Encounter Start")?.textContent.trim();
-      const clinicians = Array.from(claim.querySelectorAll("Clinician")).map(c => c.textContent.trim());
-      
-      console.debug(`Parsed claim: ${claimID}`);
-      return { claimID, memberID, encounterStart, clinicians };
-    });
+  console.log(`Parsing XML file: ${file.name}`);
+  const text = await file.text();
+  const xmlDoc = new DOMParser().parseFromString(text, "application/xml");
+  
+  const claims = Array.from(xmlDoc.querySelectorAll("Claim")).map(claim => ({
+    claimID: claim.querySelector("ID")?.textContent.trim() || '',
+    memberID: claim.querySelector("MemberID")?.textContent.trim() || '',
+    encounterStart: claim.querySelector("Encounter Start")?.textContent.trim(),
+    clinicians: Array.from(claim.querySelectorAll("Clinician")).map(c => c.textContent.trim())
+  }));
 
-    console.log(`Successfully parsed ${claims.length} claims`);
-    console.groupEnd();
-    return { claims };
-  } catch (error) {
-    console.error('XML parsing error:', error);
-    console.groupEnd();
-    throw new Error('Failed to parse XML file');
-  }
+  return { claims };
 }
 
 async function parseExcelFile(file) {
-  console.group(`Parsing Excel file: ${file.name}`);
+  console.log(`Parsing Excel file: ${file.name}`);
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    
     reader.onload = function(e) {
       try {
-        console.log('Processing Excel data');
         const data = new Uint8Array(e.target.result);
         const workbook = XLSX.read(data, { type: 'array' });
-        
-        console.log('Getting first worksheet');
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
-        
-        console.log('Converting to JSON');
-        const jsonData = XLSX.utils.sheet_to_json(sheet, { defval: '' });
-        
-        console.log(`Parsed ${jsonData.length} rows`);
-        console.groupEnd();
-        resolve(jsonData);
+        resolve(XLSX.utils.sheet_to_json(sheet, { defval: '' }));
       } catch (error) {
-        console.error('Excel parsing error:', error);
-        console.groupEnd();
         reject(error);
       }
     };
-    
-    reader.onerror = () => {
-      console.error('FileReader error:', reader.error);
-      console.groupEnd();
-      reject(reader.error);
-    };
-    
-    console.log('Reading file as array buffer');
+    reader.onerror = () => reject(reader.error);
     reader.readAsArrayBuffer(file);
   });
 }
 
 async function parseCsvFile(file) {
-  console.group(`Parsing CSV file: ${file.name}`);
+  console.log(`Parsing CSV file: ${file.name}`);
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    
     reader.onload = function(e) {
       try {
-        console.log('Processing CSV data');
         const text = e.target.result;
         const workbook = XLSX.read(text, { type: 'string' });
-        
-        console.log('Getting first worksheet');
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
-        
-        console.log('Getting all rows');
         const allRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
-        console.debug('First few rows:', allRows.slice(0, 3));
         
-        // Determine if this is CSV report (headers on row 4) or ClinicPro (headers on row 1)
         const isCsvReport = allRows[3]?.some(h => h.includes('Pri. Claim No'));
-        console.log(`Detected format: ${isCsvReport ? 'CSV Report' : 'ClinicPro'}`);
+        const headers = isCsvReport ? allRows[3] : allRows[0];
+        const dataRows = isCsvReport ? allRows.slice(4) : allRows.slice(1);
         
-        let headers, dataRows;
-        if (isCsvReport) {
-          console.log('Processing CSV report format');
-          headers = allRows[3];
-          dataRows = allRows.slice(4);
-        } else {
-          console.log('Processing ClinicPro format');
-          headers = allRows[0];
-          dataRows = allRows.slice(1);
-        }
-        
-        console.debug('Headers:', headers);
-        
-        // Map rows to objects using proper headers
-        const jsonData = dataRows.map(row => {
+        resolve(dataRows.map(row => {
           const obj = {};
           headers.forEach((header, index) => {
             obj[header] = row[index] || '';
           });
           return obj;
-        });
-        
-        console.log(`Parsed ${jsonData.length} data rows`);
-        console.groupEnd();
-        resolve(jsonData);
+        }));
       } catch (error) {
-        console.error('CSV parsing error:', error);
-        console.groupEnd();
         reject(error);
       }
     };
-    
-    reader.onerror = () => {
-      console.error('FileReader error:', reader.error);
-      console.groupEnd();
-      reject(reader.error);
-    };
-    
-    console.log('Reading file as text');
+    reader.onerror = () => reject(reader.error);
     reader.readAsText(file);
   });
 }
 
 function normalizeReportData(rawData) {
-  console.group('Normalizing report data');
-  
-  // Check if data is from CSV report or ClinicPro by looking for distinctive columns
   const isCsvReport = rawData[0]?.hasOwnProperty('Pri. Claim No');
-  console.log(`Report type: ${isCsvReport ? 'CSV Report' : 'ClinicPro'}`);
   
-  const normalizedData = rawData.map(row => {
+  return rawData.map(row => {
     if (isCsvReport) {
-      // CSV Report format
       return {
         claimID: row['Pri. Claim No'] || '',
         memberID: row['Pri. Patient Insurance Card No'] || '',
@@ -512,7 +325,6 @@ function normalizeReportData(rawData) {
         department: row['Department'] || ''
       };
     } else {
-      // ClinicPro format
       return {
         claimID: row['ClaimID'] || '',
         memberID: row['Member ID'] || '',
@@ -523,40 +335,26 @@ function normalizeReportData(rawData) {
       };
     }
   });
-  
-  console.debug('First normalized row:', normalizedData[0]);
-  console.log(`Normalized ${normalizedData.length} rows`);
-  console.groupEnd();
-  return normalizedData;
 }
 
 /********************
  * UI RENDERING FUNCTIONS *
  ********************/
 function renderResults(results) {
-  console.group('Rendering results');
-  console.log(`Displaying ${results.length} results`);
-  
   resultsContainer.innerHTML = '';
 
   if (!results || results.length === 0) {
-    console.log('No results to display');
     resultsContainer.innerHTML = '<div class="no-results">No claims to display</div>';
-    console.groupEnd();
     return;
   }
 
-  // Create scrollable container for the table
   const tableContainer = document.createElement('div');
   tableContainer.className = 'analysis-results';
   tableContainer.style.overflowX = 'auto';
 
-  // Create main table
   const table = document.createElement('table');
   table.className = 'shared-table';
 
-  // Create table header
-  console.log('Creating table header');
   const thead = document.createElement('thead');
   thead.innerHTML = `
     <tr>
@@ -571,18 +369,24 @@ function renderResults(results) {
   `;
   table.appendChild(thead);
 
-  // Create table body
-  console.log('Creating table body');
   const tbody = document.createElement('tbody');
+  
   const statusCounts = { valid: 0, invalid: 0, unknown: 0 };
+  
   results.forEach((result, index) => {
     statusCounts[result.finalStatus]++;
+    
     const row = document.createElement('tr');
     row.className = result.finalStatus;
-    // Format status badge
-    const statusBadge = result.status ? `<span class="status-badge ${result.status.toLowerCase() === 'eligible' ? 'eligible' : 'ineligible'}">${result.status}</span>` : '';
-    // Create eligibility details button if record exists
-    const detailsBtn = result.fullEligibilityRecord ? `<button class="details-btn eligibility-details" data-index="${index}">Details</button>` : '';
+    
+    const statusBadge = result.status 
+      ? `<span class="status-badge ${result.status.toLowerCase() === 'eligible' ? 'eligible' : 'ineligible'}">${result.status}</span>`
+      : '';
+    
+    const detailsBtn = result.fullEligibilityRecord
+      ? `<button class="details-btn eligibility-details" data-index="${index}">Details</button>`
+      : '';
+    
     row.innerHTML = `
       <td>${result.claimID}</td>
       <td>${result.memberID}</td>
@@ -600,7 +404,6 @@ function renderResults(results) {
   tableContainer.appendChild(table);
   resultsContainer.appendChild(tableContainer);
 
-  // Add summary statistics
   const summary = document.createElement('div');
   summary.className = 'loaded-count';
   summary.innerHTML = `
@@ -611,21 +414,13 @@ function renderResults(results) {
   `;
   resultsContainer.prepend(summary);
 
-  // Initialize modal for eligibility details
   initEligibilityModal(results);
-
-  console.log('Results breakdown:', statusCounts);
-  console.groupEnd();
 }
 
 function initEligibilityModal(results) {
-  console.log('Initializing eligibility details modal');
-  
-  // Remove existing modal if present
   const existingModal = document.getElementById('eligibilityModal');
   if (existingModal) existingModal.remove();
 
-  // Create modal structure
   const modalHTML = `
     <div id="eligibilityModal" class="modal hidden">
       <div class="modal-content eligibility-modal">
@@ -639,12 +434,10 @@ function initEligibilityModal(results) {
   `;
   document.body.insertAdjacentHTML('beforeend', modalHTML);
 
-  // Get modal elements
   const modal = document.getElementById('eligibilityModal');
   const modalContent = document.getElementById('eligibilityModalContent');
   const closeBtn = modal.querySelector('.close');
 
-  // Add click handlers to all details buttons
   document.querySelectorAll('.eligibility-details').forEach(btn => {
     btn.addEventListener('click', () => {
       const index = parseInt(btn.dataset.index);
@@ -658,7 +451,6 @@ function initEligibilityModal(results) {
     });
   });
 
-  // Close modal handlers
   closeBtn.addEventListener('click', () => modal.classList.add('hidden'));
   modal.addEventListener('click', (e) => {
     if (e.target === modal) modal.classList.add('hidden');
@@ -666,21 +458,42 @@ function initEligibilityModal(results) {
 }
 
 function formatEligibilityDetails(record, memberID) {
-  console.debug('Formatting eligibility details');
-  let html = `<h4>Member: ${memberID}</h4><table class="eligibility-details"><tbody>`;
-  // Add all fields from the eligibility record
+  let html = `
+    <h4>Member: ${memberID}</h4>
+    <table class="eligibility-details">
+      <tbody>
+  `;
+
   Object.entries(record).forEach(([key, value]) => {
-    // Format dates properly
-    if (key.includes('Date') || key.includes('On')) value = DateHandler.format(DateHandler.parse(value)) || value;
-    html += `<tr><th>${key}</th><td>${value || ''}</td></tr>`;
+    if (key.includes('Date') || key.includes('On')) {
+      value = DateHandler.format(DateHandler.parse(value)) || value;
+    }
+    
+    html += `
+      <tr>
+        <th>${key}</th>
+        <td>${value || ''}</td>
+      </tr>
+    `;
   });
-  html += `</tbody></table>`;
+  
+  html += `
+      </tbody>
+    </table>
+  `;
+  
   return html;
 }
 
 function updateStatus(message) {
-  console.debug(`Updating status: ${message}`);
   status.textContent = message || 'Ready';
+}
+
+function updateProcessButtonState() {
+  const hasEligibility = !!eligData;
+  const hasReportData = xmlRadio.checked ? !!xmlData : !!xlsData;
+  processBtn.disabled = !hasEligibility || !hasReportData;
+  exportInvalidBtn.disabled = !hasEligibility || !hasReportData;
 }
 
 /********************
@@ -688,13 +501,9 @@ function updateStatus(message) {
  ********************/
 async function handleFileUpload(event, type) {
   const file = event.target.files[0];
-  if (!file) {
-    console.log('No file selected');
-    return;
-  }
+  if (!file) return;
 
   try {
-    console.group(`Processing ${type} file: ${file.name}`);
     updateStatus(`Loading ${type} file...`);
     
     if (type === 'xml') {
@@ -714,52 +523,37 @@ async function handleFileUpload(event, type) {
     }
     
     updateProcessButtonState();
-    console.groupEnd();
   } catch (error) {
     console.error(`${type} file error:`, error);
     updateStatus(`Error loading ${type} file`);
-    console.groupEnd();
   }
 }
 
 async function handleProcessClick() {
-  console.group('Process button clicked');
-  
   if (!eligData) {
-    const msg = 'Error: Missing eligibility file';
-    console.error(msg);
-    updateStatus(msg);
-    alert('Please upload eligibility file first');
-    console.groupEnd();
-    return;
+    updateStatus('Error: Missing eligibility file');
+    return alert('Please upload eligibility file first');
   }
 
   try {
     updateStatus('Processing...');
-    console.log('Starting validation');
+    usedEligibilities.clear();
     
+    const eligMap = prepareEligibilityMap(eligData);
     const results = xmlRadio.checked
-      ? validateXmlClaims(xmlData.claims, eligData)
-      : validateReportClaims(xlsData, eligData);
+      ? validateXmlClaims(xmlData.claims, eligMap)
+      : validateReportClaims(xlsData, eligMap);
     
-    console.log('Rendering results');
     renderResults(results);
-    
-    const msg = `Processed ${results.length} claims`;
-    updateStatus(msg);
-    console.log(msg);
+    updateStatus(`Processed ${results.length} claims`);
   } catch (error) {
     console.error('Processing error:', error);
     updateStatus('Processing failed');
     resultsContainer.innerHTML = `<div class="error">${error.message}</div>`;
   }
-  
-  console.groupEnd();
 }
 
 function handleExportInvalidClick() {
-  console.log('Export invalid rows functionality to be implemented');
-  // TODO: Implement export functionality
   alert('Export functionality will be implemented in next version');
 }
 
@@ -767,27 +561,15 @@ function handleExportInvalidClick() {
  * INITIALIZATION *
  ********************/
 function initializeEventListeners() {
-  console.log('Initializing event listeners');
-  
-  // File upload handlers
   xmlInput.addEventListener('change', (e) => handleFileUpload(e, 'xml'));
   reportInput.addEventListener('change', (e) => handleFileUpload(e, 'report'));
   eligInput.addEventListener('change', (e) => handleFileUpload(e, 'eligibility'));
-  
-  // Button handlers
   processBtn.addEventListener('click', handleProcessClick);
   exportInvalidBtn.addEventListener('click', handleExportInvalidClick);
-  
-  // Initialize radio buttons
   initializeRadioButtons();
-  
-  console.log('Event listeners initialized');
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  console.group('Application initialization');
   initializeEventListeners();
   updateStatus('Ready to process files');
-  console.log('Application ready');
-  console.groupEnd();
 });
