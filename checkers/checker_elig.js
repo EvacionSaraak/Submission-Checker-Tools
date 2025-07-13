@@ -119,7 +119,13 @@ window.addEventListener("DOMContentLoaded", () => {
     return `${d}-${m}-${y}`;
   }
 
-
+  // Helper: format eligibility date strings (to DD/MM/YYYY)
+  function formatEligibilityDate(dateStr) {
+    if (!dateStr) return '';
+    const parsed = parseDate(dateStr);
+    return parsed ? excelDateToDDMMYYYY(parsed) : '';
+  }
+  
   function formatEligibilityDetailsModal(eligRecord, memberID) {
     if (!eligRecord) return "<p>No eligibility details available</p>";
     
