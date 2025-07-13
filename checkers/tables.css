@@ -189,6 +189,12 @@ td.last-copied {
   position: relative;
 }
 
+.modal-content.eligibility-modal {
+  min-width: 60vw;
+  max-width: 90vw;
+  width: auto;
+}
+
 .modal-content.draggable {
   cursor: move;
   user-select: none;
@@ -240,6 +246,44 @@ td.last-copied {
   font-weight: bold;
 }
 
+/* === ELIGIBILITY DETAILS TABLE === */
+.eligibility-details {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+  font-size: 0.9em;
+}
+
+.eligibility-details th, 
+.eligibility-details td {
+  border: 1px solid #ddd;
+  padding: 8px 12px;
+  text-align: left;
+  vertical-align: top;
+  white-space: normal;
+  max-width: none;
+}
+
+.eligibility-details th {
+  background-color: #f4f4f4;
+  font-weight: bold;
+  white-space: nowrap;
+  width: 30%;
+}
+
+.eligibility-details tr:nth-child(even) {
+  background-color: #f9f9f9;
+}
+
+.eligibility-details tr:hover {
+  background-color: #f0f0f0;
+}
+
+.eligibility-details .date-value {
+  font-family: monospace;
+  white-space: nowrap;
+}
+
 /* === ACTION BUTTONS === */
 .details-btn {
   padding: 2px 10px;
@@ -253,6 +297,16 @@ td.last-copied {
 
 .details-btn:hover {
   background: #eaeaea;
+}
+
+.details-btn.eligibility-details {
+  background-color: #e6f7ff;
+  border-color: #91d5ff;
+  color: #1890ff;
+}
+
+.details-btn.eligibility-details:hover {
+  background-color: #bae7ff;
 }
 
 /* General table responsive tweaks */
@@ -335,4 +389,60 @@ table, tbody, tr, td {
   font-size: 1em;
   margin: 0 2px;
   border: 1px solid #b2c6df;
+}
+
+/* === STATUS BADGES === */
+.status-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.8em;
+  font-weight: bold;
+  text-transform: uppercase;
+}
+
+.status-badge.eligible {
+  background-color: #d5ffd9;
+  color: #0a6b16;
+}
+
+.status-badge.ineligible {
+  background-color: #ffd6d6;
+  color: #a30000;
+}
+
+/* === SCROLLABLE MODAL CONTENT === */
+.modal-scrollable {
+  max-height: 80vh;
+  overflow-y: auto;
+  padding-right: 8px; /* Prevent content shift when scrollbar appears */
+}
+
+/* === RESPONSIVE TWEAKS === */
+@media (max-width: 768px) {
+  .modal-content.eligibility-modal {
+    min-width: 95vw;
+    margin: 2vh 10px;
+    padding: 15px;
+  }
+  
+  .eligibility-details th, 
+  .eligibility-details td {
+    padding: 6px 8px;
+    font-size: 0.85em;
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  
+  .eligibility-details th {
+    background-color: #f4f4f4;
+    margin-top: 4px;
+  }
+  
+  .eligibility-details tr {
+    margin-bottom: 8px;
+    display: block;
+    border: 1px solid #ddd;
+  }
 }
