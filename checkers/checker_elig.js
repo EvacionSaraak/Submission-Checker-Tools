@@ -325,8 +325,9 @@ async function parseExcelFile(file) {
 
         // Fallback to first row if no headers found
         if (!foundHeaders) headerRow = 0;
-
+        
         const headers = allRows[headerRow].map(h => h.trim());
+        console.log(`Headers: ${headers}`);
         const dataRows = allRows.slice(headerRow + 1);
         
         const jsonData = dataRows.map(row => {
