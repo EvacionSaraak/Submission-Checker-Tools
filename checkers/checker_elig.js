@@ -235,7 +235,7 @@ function validateXmlClaims(xmlClaims, eligMap) {
     return {
       claimID: claim.claimID,
       memberID: claim.memberID,
-      encounterStart: formattedDate,
+      encounterStart: DateHandler.format(claimDate),
       packageName: eligibility?.['Package Name'] || '',
       provider: eligibility?.['Provider Name'] || '',
       clinician: eligibility?.['Clinician'] || '',
@@ -267,8 +267,8 @@ function validateReportClaims(reportData, eligMap) {
     }
 
     return {
-      claimID: row.claimID,
-      memberID: row.memberID,
+      claimID: claim.claimID,
+      memberID: claim.memberID,
       encounterStart: DateHandler.format(claimDate),
       packageName: eligibility?.['Package Name'] || '',
       provider: eligibility?.['Provider Name'] || '',
@@ -477,11 +477,11 @@ function renderResults(results) {
       <td>${result.claimID}</td>
       <td>${result.memberID}</td>
       <td>${result.encounterStart}</td>
-      <td>${result.packageName}</td>
-      <td>${result.provider}</td>
-      <td>${result.clinician}</td>
-      <td>${result.serviceCategory}</td>
-      <td>${statusBadge}</td>
+      <td class="description-col">${result.packageName}</td>
+      <td class="description-col">${result.provider}</td>
+      <td class="description-col">${result.clinician}</td>
+      <td class="description-col">${result.serviceCategory}</td>
+      <td class="description-col">${statusBadge}</td>
       <td class="wrap-col">${remarksHTML}</td>
       <td>${detailsBtn}</td>
     `;
