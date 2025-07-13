@@ -446,3 +446,25 @@ table, tbody, tr, td {
     border: 1px solid #ddd;
   }
 }
+
+.shared-table {
+    font-size: 0.85em;
+}
+
+.shared-table th, 
+.shared-table td {
+    padding: 6px 8px;
+    white-space: nowrap;
+}
+
+.shared-table .wrap-col {
+    white-space: normal;
+    max-width: 150px;
+    word-break: break-word;
+}
+
+/* Make modal wider for eligibility details */
+.modal-content.eligibility-modal {
+    min-width: 80vw;
+    max-width: 95vw;
+}
