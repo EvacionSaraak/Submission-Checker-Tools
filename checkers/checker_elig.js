@@ -127,16 +127,35 @@ function prepareEligibilityMap(eligData) {
   const eligMap = new Map();
   
   eligData.forEach(e => {
-    const memberID = normalizeMemberID(e['Card Number / DHA Member ID'] || e['Card Number'] || e['MemberID']);
-    if (!memberID) return;
+    // Try multiple possible fields for member ID
+    const memberID = normalizeMemberID(
+      e['Card Number / DHA Member ID'] || 
+      e['Card Number'] || 
+      e['MemberID'] ||
+      e['Member ID'] ||
+      e['Patient Insurance Card No']
+    );
+    
+    if (!memberID) {
+      console.warn('Skipping eligibility record with no member ID:', e);
+      return;
+    }
     
     if (!eligMap.has(memberID)) {
       eligMap.set(memberID, []);
     }
     eligMap.get(memberID).push(e);
+    
+    // Debug log for the first few records
+    if (eligMap.size <= 3) {
+      console.debug('Mapped eligibility:', { memberID, record: e });
+    }
   });
   
   console.log(`Created eligibility map with ${eligMap.size} unique member IDs`);
+  if (eligMap.size === 0) {
+    console.error('No member IDs found in eligibility data. Sample record:', eligData[0]);
+  }
   return eligMap;
 }
 
