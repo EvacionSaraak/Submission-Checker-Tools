@@ -514,7 +514,7 @@ function initEligibilityModal(results) {
   const existingModal = document.getElementById('eligibilityModal');
   if (existingModal) existingModal.remove();
 
-  // Create modal structure using existing modal classes
+  // Create modal structure
   const modalHTML = `
     <div id="eligibilityModal" class="modal hidden">
       <div class="modal-content eligibility-modal">
@@ -528,23 +528,21 @@ function initEligibilityModal(results) {
   `;
   document.body.insertAdjacentHTML('beforeend', modalHTML);
 
-  // Get modal elements
   const modal = document.getElementById('eligibilityModal');
   const modalContent = document.getElementById('eligibilityModalContent');
   const closeBtn = modal.querySelector('.close');
 
-  // Add click handlers to all details buttons
-  document.querySelectorAll('.eligibility-details').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const index = parseInt(btn.dataset.index);
+  // Use event delegation on the container holding the buttons
+  document.querySelector('.analysis-results').addEventListener('click', (e) => {
+    if (e.target.classList.contains('eligibility-details')) {
+      const index = parseInt(e.target.dataset.index);
       const record = results[index].fullEligibilityRecord;
       const memberID = results[index].memberID;
-      
       if (record) {
         modalContent.innerHTML = formatEligibilityDetails(record, memberID);
         modal.classList.remove('hidden');
       }
-    });
+    }
   });
 
   // Close modal handlers
@@ -553,6 +551,7 @@ function initEligibilityModal(results) {
     if (e.target === modal) modal.classList.add('hidden');
   });
 }
+
 
 function formatEligibilityDetails(record, memberID) {
   // Using existing eligibility-details table class
