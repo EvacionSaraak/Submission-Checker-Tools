@@ -301,28 +301,38 @@ async function parseExcelFile(file) {
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
         const allRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
 
-        // Determine file type and header row
+        // Dynamic header row detection
         let headerRow = 0;
-        let dataStartRow = 1;
+        let foundHeaders = false;
         
-        if (allRows[0]?.some(cell => typeof cell === 'string' && cell.includes('Daman Enhanced'))) {
-          // Eligibility file - headers on row 2 (index 1)
-          headerRow = 1;
-          dataStartRow = 2;
-        } else if (allRows[3]?.some(cell => typeof cell === 'string' && cell.includes('Pri. Claim No'))) {
-          // Insta file - headers on row 4 (index 3)
-          headerRow = 3;
-          dataStartRow = 4;
+        while (headerRow < allRows.length && !foundHeaders) {
+          const currentRow = allRows[headerRow];
+          
+          // Check for Insta report headers (row 4)
+          if (currentRow.some(cell => String(cell).includes('Pri. Claim No'))) {
+            foundHeaders = true;
+            break;
+          }
+          
+          // Check for eligibility headers (row 2)
+          if (currentRow.some(cell => String(cell).includes('Card Number / DHA Member ID'))) {
+            foundHeaders = true;
+            break;
+          }
+          
+          headerRow++;
         }
 
-        const headers = allRows[headerRow];
-        const dataRows = allRows.slice(dataStartRow);
+        // Fallback to first row if no headers found
+        if (!foundHeaders) headerRow = 0;
+
+        const headers = allRows[headerRow].map(h => h.trim());
+        const dataRows = allRows.slice(headerRow + 1);
         
         const jsonData = dataRows.map(row => {
           const obj = {};
           headers.forEach((header, index) => {
-            const key = header.trim() || `_${index}`;
-            obj[key] = row[index] || '';
+            obj[header] = row[index] || '';
           });
           return obj;
         });
