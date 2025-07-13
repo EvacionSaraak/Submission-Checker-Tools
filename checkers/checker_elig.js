@@ -89,6 +89,9 @@ const DateHandler = {
   },
 
   _parseStringDate: function(dateStr) {
+    // Strip time if present (e.g. "17/06/2025 16:10" → "17/06/2025")
+    dateStr = dateStr.split(' ')[0];
+  
     const dmyMatch = dateStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
     if (dmyMatch) return new Date(dmyMatch[3], dmyMatch[2]-1, dmyMatch[1]);
   
@@ -101,13 +104,8 @@ const DateHandler = {
       if (monthIndex >= 0) return new Date(textMatch[3], monthIndex, textMatch[1]);
     }
   
-    const datetimeMatch = dateStr.match(/^(\d{1,2})[\/\-]([a-z]{3,})[\/\-](\d{2,4})\s+(\d{2}):(\d{2})(?::(\d{2}))?/i);
-    if (datetimeMatch) {
-      const day = parseInt(datetimeMatch[1], 10);
-      const monthIndex = MONTHS.indexOf(datetimeMatch[2].toLowerCase().substr(0,3));
-      const year = parseInt(datetimeMatch[3], 10);
-      if (monthIndex >= 0) return new Date(year, monthIndex, day);
-    }
+    const isoMatch = dateStr.match(/^(\d{4})[\/\-](\d{2})[\/\-](\d{2})$/);
+    if (isoMatch) return new Date(isoMatch[1], isoMatch[2]-1, isoMatch[3]);
   
     return null;
   }
