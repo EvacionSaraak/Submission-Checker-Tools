@@ -212,49 +212,56 @@ function checkClinicianMatch(claimClinicians, eligClinician) {
  ************************/
 function isServiceCategoryValid(eligibility) {
   const category = (eligibility['Service Category'] || '').trim();
-  const status = (eligibility['Consultation Status'] || '').trim();
-  const packageName = (eligibility['Package Name'] || '').toLowerCase();
-  const lowerPkg = packageName.toLowerCase();
+  const status = (eligibility['Consultation Status'] || '').trim().toLowerCase();
+  const pkg = (eligibility['Package Name'] || '').toLowerCase();
 
-  // Consultation → Exclude Dental, Physio, etc.
   if (category === 'Consultation') {
-    if (status === 'Elective') {
+    if (status === 'elective') {
       const banned = ['dental', 'physiotherapy', 'dietician', 'occupational therapy', 'speech therapy'];
-      if (banned.some(b => lowerPkg.includes(b))) {
-        return { valid: false, reason: `Category: ${category}, Elective package not allowed (${packageName})` };
+      if (banned.some(term => pkg.includes(term))) {
+        return {
+          valid: false,
+          reason: `Elective Consultation cannot include package: "${eligibility['Package Name']}"`
+        };
       }
     }
     return { valid: true };
   }
 
-  // Dental must include dental
   if (category === 'Dental Services') {
-    if (!lowerPkg.includes('dental')) {
-      return { valid: false, reason: `Category: ${category} requires dental package` };
+    if (!pkg.includes('dental')) {
+      return {
+        valid: false,
+        reason: `Dental Services category requires a dental-related package. Found: "${eligibility['Package Name']}"`
+      };
     }
     return { valid: true };
   }
 
-  // Physio must include physio
   if (category === 'Physiotherapy') {
-    if (!lowerPkg.includes('physio')) {
-      return { valid: false, reason: `Category: ${category} requires physio package` };
+    if (!pkg.includes('physio')) {
+      return {
+        valid: false,
+        reason: `Physiotherapy category requires a physio-related package. Found: "${eligibility['Package Name']}"`
+      };
     }
     return { valid: true };
   }
 
-  // Other OP → Must include specific types
   if (category === 'Other OP Services') {
     const allowed = ['physio', 'dietician', 'occupational therapy', 'speech therapy'];
-    if (!allowed.some(t => lowerPkg.includes(t))) {
-      return { valid: false, reason: `Category: ${category} must match physio, dietician, etc.` };
+    if (!allowed.some(term => pkg.includes(term))) {
+      return {
+        valid: false,
+        reason: `Other OP Services must include one of: ${allowed.join(', ')}. Found: "${eligibility['Package Name']}"`
+      };
     }
     return { valid: true };
   }
 
-  return { valid: true }; // fallback: allow
+  // Unknown category → pass by default
+  return { valid: true };
 }
-
 
 function validateXmlClaims(xmlClaims, eligMap) {
   console.log(`Validating ${xmlClaims.length} XML claims`);
