@@ -434,7 +434,7 @@ window.addEventListener("DOMContentLoaded", () => {
 	            if (!xlsData || !eligData) throw new Error("Missing report or Eligibility data");
 	            // Ensure we have valid data to process
 	            if (xlsData.length > 0) results = xlsData[0]?.hasOwnProperty("Pri. Claim No") ? validateInsta(xlsData, eligData) : validateClinicPro(xlsData, eligData);
-	            else throw new Error("Report data is empty");}
+	            else throw new Error("Report data is empty");
 	        }
 	        // Add safety check before rendering
 	        if (!Array.isArray(results)) throw new Error("Validation returned invalid results format");
