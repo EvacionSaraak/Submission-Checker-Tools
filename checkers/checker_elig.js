@@ -122,46 +122,42 @@ function normalizeClinician(name) {
 /*******************************
  * ELIGIBILITY MATCHING FUNCTIONS *
  *******************************/
-/*******************************
- * ELIGIBILITY MATCHING FUNCTIONS *
- *******************************/
 function prepareEligibilityMap(eligData) {
-  console.log('Preparing eligibility map');
   const eligMap = new Map();
   
   eligData.forEach(e => {
-    // For Daman eligibility files, member ID is in "_5" column
-    const memberID = normalizeMemberID(e['_5'] || e['Card Number'] || e['MemberID']);
-    
-    if (!memberID) {
-      console.warn('Skipping eligibility record with no member ID:', e);
-      return;
-    }
-    
+    // Extract member ID from the correct column based on header
+    const memberID = normalizeMemberID(
+      e['Card Number / DHA Member ID'] || 
+      e['Card Number'] || 
+      e['_5'] || // Fallback for Daman files
+      e['MemberID'] ||
+      e['Member ID'] ||
+      e['Patient Insurance Card No']
+    );
+
+    if (!memberID) return;
+
     if (!eligMap.has(memberID)) {
       eligMap.set(memberID, []);
     }
-    
-    // Create a normalized eligibility record with proper field names
+
+    // Standardize eligibility record format
     const eligRecord = {
-      'Eligibility Request Number': e['_3'],
-      'Card Number / DHA Member ID': e['_5'],
-      'Answered On': e['_7'],
-      'Ordered On': e['_6'],
-      'Status': e['_10'],
-      'Clinician': e['_15'],
-      'Provider Name': e['_16'],
-      'Service Category': e['_19'],
-      'Package Name': e[''] // First column contains payer/plan name
+      'Eligibility Request Number': e['Eligibility Request Number'] || e['_3'],
+      'Card Number / DHA Member ID': memberID,
+      'Answered On': e['Answered On'] || e['_7'],
+      'Ordered On': e['Ordered On'] || e['_6'],
+      'Status': e['Status'] || e['_10'],
+      'Clinician': e['Clinician'] || e['_15'],
+      'Provider Name': e['Provider Name'] || e['_16'],
+      'Service Category': e['Service Category'] || e['_19'],
+      'Package Name': e['Package Name'] || e['']
     };
-    
+
     eligMap.get(memberID).push(eligRecord);
   });
-  
-  console.log(`Created eligibility map with ${eligMap.size} unique member IDs`);
-  if (eligMap.size === 0) {
-    console.error('No member IDs found in eligibility data. Sample record:', eligData[0]);
-  }
+
   return eligMap;
 }
 
