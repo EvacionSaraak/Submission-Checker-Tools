@@ -361,6 +361,7 @@ async function parseCsvFile(file) {
         
         const isCsvReport = allRows[3]?.some(h => h.includes('Pri. Claim No'));
         const headers = isCsvReport ? allRows[3] : allRows[0];
+        console.log(`Headers: ${headers}`);
         const dataRows = isCsvReport ? allRows.slice(4) : allRows.slice(1);
         
         resolve(dataRows.map(row => {
@@ -426,6 +427,7 @@ function renderResults(results) {
   const table = document.createElement('table');
   table.className = 'shared-table';
 
+  // Create table header
   const thead = document.createElement('thead');
   thead.innerHTML = `
     <tr>
@@ -440,6 +442,7 @@ function renderResults(results) {
   `;
   table.appendChild(thead);
 
+  // Create table body
   const tbody = document.createElement('tbody');
   
   const statusCounts = { valid: 0, invalid: 0, unknown: 0 };
@@ -450,35 +453,40 @@ function renderResults(results) {
     const row = document.createElement('tr');
     row.className = result.finalStatus;
     
+    // Status badge using existing status-badge class
     const statusBadge = result.status 
       ? `<span class="status-badge ${result.status.toLowerCase() === 'eligible' ? 'eligible' : 'ineligible'}">${result.status}</span>`
       : '';
     
-    const remarksHTML = result.remarks.length > 0 
-      ? `<div class="remarks-container">${result.remarks.map(r => `<div class="remark-item">${r}</div>`).join('')}</div>`
-      : '';
+    // Remarks list using existing classes
+    const remarksHTML = result.remarks.length > 0
+      ? result.remarks.map(r => `<div>${r}</div>`).join('')
+      : '<div class="source-note">No remarks</div>';
     
+    // Eligibility details button using existing details-btn class
     const detailsBtn = result.fullEligibilityRecord
       ? `<button class="details-btn eligibility-details" data-index="${index}">View</button>`
-      : '';
+      : '<div class="source-note">N/A</div>';
     
     row.innerHTML = `
       <td>${result.claimID}</td>
       <td>${result.memberID}</td>
-      <td class="wrap-col">${result.encounterStart}</td>
-      <td class="wrap-col">${result.packageName}</td>
-      <td class="wrap-col">${statusBadge}</td>
+      <td>${result.encounterStart}</td>
+      <td>${result.packageName}</td>
+      <td>${statusBadge}</td>
       <td class="wrap-col">${remarksHTML}</td>
       <td>${detailsBtn}</td>
     `;
-    console.log(row);
+    
     tbody.appendChild(row);
+    console.log(row);
   });
   
   table.appendChild(tbody);
   tableContainer.appendChild(table);
   resultsContainer.appendChild(tableContainer);
 
+  // Summary using existing loaded-count class
   const summary = document.createElement('div');
   summary.className = 'loaded-count';
   summary.innerHTML = `
@@ -493,26 +501,30 @@ function renderResults(results) {
 }
 
 function initEligibilityModal(results) {
+  // Remove existing modal if present
   const existingModal = document.getElementById('eligibilityModal');
   if (existingModal) existingModal.remove();
 
+  // Create modal structure using existing modal classes
   const modalHTML = `
     <div id="eligibilityModal" class="modal hidden">
       <div class="modal-content eligibility-modal">
         <span class="close">&times;</span>
         <div class="modal-scrollable">
           <h3>Eligibility Details</h3>
-          <div id="eligibilityModalContent"></div>
+          <div id="eligibilityModalContent" class="eligibility-details-container"></div>
         </div>
       </div>
     </div>
   `;
   document.body.insertAdjacentHTML('beforeend', modalHTML);
 
+  // Get modal elements
   const modal = document.getElementById('eligibilityModal');
   const modalContent = document.getElementById('eligibilityModalContent');
   const closeBtn = modal.querySelector('.close');
 
+  // Add click handlers to all details buttons
   document.querySelectorAll('.eligibility-details').forEach(btn => {
     btn.addEventListener('click', () => {
       const index = parseInt(btn.dataset.index);
@@ -526,6 +538,7 @@ function initEligibilityModal(results) {
     });
   });
 
+  // Close modal handlers
   closeBtn.addEventListener('click', () => modal.classList.add('hidden'));
   modal.addEventListener('click', (e) => {
     if (e.target === modal) modal.classList.add('hidden');
@@ -533,21 +546,30 @@ function initEligibilityModal(results) {
 }
 
 function formatEligibilityDetails(record, memberID) {
+  // Using existing eligibility-details table class
   let html = `
-    <h4>Member: ${memberID}</h4>
+    <div class="form-row">
+      <strong>Member:</strong> ${memberID}
+      <span class="status-badge ${record.Status.toLowerCase() === 'eligible' ? 'eligible' : 'ineligible'}">
+        ${record.Status}
+      </span>
+    </div>
     <table class="eligibility-details">
       <tbody>
   `;
 
   Object.entries(record).forEach(([key, value]) => {
+    if (!value && value !== 0) return;
+    
+    // Format dates using existing date-value class
     if (key.includes('Date') || key.includes('On')) {
-      value = DateHandler.format(DateHandler.parse(value)) || value;
+      value = `<span class="date-value">${DateHandler.format(DateHandler.parse(value)) || value}</span>`;
     }
     
     html += `
       <tr>
         <th>${key}</th>
-        <td>${value || ''}</td>
+        <td>${value}</td>
       </tr>
     `;
   });
