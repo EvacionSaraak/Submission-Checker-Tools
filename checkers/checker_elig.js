@@ -292,6 +292,55 @@ window.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+async function parseXML(file) {
+  console.log("Starting XML parsing for file:", file.name);
+  try {
+    const text = await file.text();
+    const xmlDoc = new DOMParser().parseFromString(text, "application/xml");
+    const claims = Array.from(xmlDoc.querySelectorAll('Claim')).map(claim => {
+      const claimID = claim.querySelector('ID')?.textContent.trim() || '';
+      const memberID = claim.querySelector('MemberID')?.textContent.trim() || '';
+
+      console.debug(`Processing claim ${claimID} for member ${memberID}`);
+
+      // Collect clinicians
+      const clinicians = new Set();
+      claim.querySelectorAll('Activity Clinician').forEach(c => {
+        if (c.textContent.trim()) clinicians.add(c.textContent.trim());
+      });
+
+      console.debug(`Found ${clinicians.size} clinicians for claim ${claimID}`);
+
+      // Process encounters
+      const encounters = Array.from(claim.querySelectorAll('Encounter')).map(enc => ({
+        claimID,
+        memberID,
+        encounterStart: parseDate(enc.querySelector('Start')?.textContent.trim()) || '',
+        claimClinician: clinicians.size === 1 ? [...clinicians][0] : null,
+        multipleClinicians: clinicians.size > 1
+      }));
+
+      return { claimID, encounters };
+    });
+
+    const result = {
+      claimsCount: claims.length,
+      encounters: claims.flatMap(c => c.encounters)
+    };
+
+    console.log("XML parsing complete. Found:", {
+      claims: result.claimsCount,
+      encounters: result.encounters.length,
+      sampleEncounter: result.encounters[0]
+    });
+
+    return result;
+  } catch (err) {
+    console.error("Error parsing XML:", err);
+    throw err;
+  }
+}
+  
   // =====================
   // VALIDATION LOGIC
   // =====================
