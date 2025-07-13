@@ -288,40 +288,38 @@ async function parseXML(file) {
     const claims = Array.from(xmlDoc.querySelectorAll('Claim')).map(claim => {
       const claimID = claim.querySelector('ID')?.textContent.trim() || '';
       const memberID = claim.querySelector('MemberID')?.textContent.trim() || '';
-
-      // Collect clinicians from Activity > Clinician and OrderingClinician
+      
+      // Collect clinicians
       const clinicians = new Set();
-      claim.querySelectorAll('Activity').forEach(activity => {
-        const clinicianText = activity.querySelector('Clinician')?.textContent.trim();
-        const orderingClinicianText = activity.querySelector('OrderingClinician')?.textContent.trim();
-        if (clinicianText) clinicians.add(clinicianText);
-        if (orderingClinicianText) clinicians.add(orderingClinicianText);
+      claim.querySelectorAll('Activity Clinician').forEach(c => {
+        if (c.textContent.trim()) clinicians.add(c.textContent.trim());
       });
-
+      
+      console.debug(`Found ${clinicians.size} clinicians for claim ${claimID}`);
+      
       // Process encounters
       const encounters = Array.from(claim.querySelectorAll('Encounter')).map(enc => ({
         claimID,
         memberID,
-        encounterStart: parseDate(enc.querySelector('Start')?.textContent.trim()) || null,
+        encounterStart: parseDate(enc.querySelector('Start')?.textContent.trim()) || '',
         claimClinician: clinicians.size === 1 ? [...clinicians][0] : null,
         multipleClinicians: clinicians.size > 1
       }));
-
+      
       return { claimID, encounters };
     });
-
+    
     const result = {
-      claims: claims.length,
-      encounters: claims.flatMap(c => c.encounters),
-      sampleEncounter: claims.flatMap(c => c.encounters)[0] || null,
+      claimsCount: claims.length,
+      encounters: claims.flatMap(c => c.encounters)
     };
-
+    
     console.log("XML parsing complete. Found:", {
-      claims: result.claims,
+      claims: result.claimsCount,
       encounters: result.encounters.length,
-      sampleEncounter: result.sampleEncounter,
+      sampleEncounter: result.encounters[0]
     });
-
+    
     return result;
   } catch (err) {
     console.error("Error parsing XML:", err);
