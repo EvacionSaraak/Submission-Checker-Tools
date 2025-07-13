@@ -309,7 +309,7 @@ async function parseExcelFile(file) {
           // Eligibility file - headers on row 2 (index 1)
           headerRow = 1;
           dataStartRow = 2;
-        } else if (allRows[3]?.some(cell => typeof cell === 'string' && cell.includes('Pri. Claim No')))) {
+        } else if (allRows[3]?.some(cell => typeof cell === 'string' && cell.includes('Pri. Claim No'))) {
           // Insta file - headers on row 4 (index 3)
           headerRow = 3;
           dataStartRow = 4;
