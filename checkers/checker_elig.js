@@ -468,7 +468,7 @@ function renderResults(results) {
       <td class="wrap-col">${remarksHTML}</td>
       <td>${detailsBtn}</td>
     `;
-    console.log(row);
+    console.log(result);
     tbody.appendChild(row);
   });
 
