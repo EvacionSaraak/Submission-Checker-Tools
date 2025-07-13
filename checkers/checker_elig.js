@@ -122,19 +122,16 @@ function normalizeClinician(name) {
 /*******************************
  * ELIGIBILITY MATCHING FUNCTIONS *
  *******************************/
+/*******************************
+ * ELIGIBILITY MATCHING FUNCTIONS *
+ *******************************/
 function prepareEligibilityMap(eligData) {
   console.log('Preparing eligibility map');
   const eligMap = new Map();
   
   eligData.forEach(e => {
-    // Try multiple possible fields for member ID
-    const memberID = normalizeMemberID(
-      e['Card Number / DHA Member ID'] || 
-      e['Card Number'] || 
-      e['MemberID'] ||
-      e['Member ID'] ||
-      e['Patient Insurance Card No']
-    );
+    // For Daman eligibility files, member ID is in "_5" column
+    const memberID = normalizeMemberID(e['_5'] || e['Card Number'] || e['MemberID']);
     
     if (!memberID) {
       console.warn('Skipping eligibility record with no member ID:', e);
@@ -144,12 +141,21 @@ function prepareEligibilityMap(eligData) {
     if (!eligMap.has(memberID)) {
       eligMap.set(memberID, []);
     }
-    eligMap.get(memberID).push(e);
     
-    // Debug log for the first few records
-    if (eligMap.size <= 3) {
-      console.debug('Mapped eligibility:', { memberID, record: e });
-    }
+    // Create a normalized eligibility record with proper field names
+    const eligRecord = {
+      'Eligibility Request Number': e['_3'],
+      'Card Number / DHA Member ID': e['_5'],
+      'Answered On': e['_7'],
+      'Ordered On': e['_6'],
+      'Status': e['_10'],
+      'Clinician': e['_15'],
+      'Provider Name': e['_16'],
+      'Service Category': e['_19'],
+      'Package Name': e[''] // First column contains payer/plan name
+    };
+    
+    eligMap.get(memberID).push(eligRecord);
   });
   
   console.log(`Created eligibility map with ${eligMap.size} unique member IDs`);
@@ -298,7 +304,33 @@ async function parseExcelFile(file) {
         const data = new Uint8Array(e.target.result);
         const workbook = XLSX.read(data, { type: 'array' });
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
-        resolve(XLSX.utils.sheet_to_json(sheet, { defval: '' }));
+        
+        // Get all rows as array of arrays
+        const allRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+        
+        // For eligibility files, we need to use row 2 (index 1) as headers
+        const isEligibility = allRows[0]?.some(cell => cell.includes('Daman Enhanced'));
+        
+        if (isEligibility) {
+          console.log('Processing eligibility file with custom headers');
+          const headers = allRows[1]; // Second row contains actual headers
+          const dataRows = allRows.slice(2); // Data starts from row 3
+          
+          const jsonData = dataRows.map(row => {
+            const obj = {};
+            headers.forEach((header, index) => {
+              // Skip empty headers and use the Excel column names as fallback
+              const key = header || `_${index}`;
+              obj[key] = row[index] || '';
+            });
+            return obj;
+          });
+          
+          resolve(jsonData);
+        } else {
+          // Standard Excel processing
+          resolve(XLSX.utils.sheet_to_json(sheet, { defval: '' }));
+        }
       } catch (error) {
         reject(error);
       }
