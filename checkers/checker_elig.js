@@ -19,9 +19,45 @@ const xmlInput = document.getElementById("xmlFileInput");
 const reportInput = document.getElementById("reportFileInput");
 const eligInput = document.getElementById("eligibilityFileInput");
 const processBtn = document.getElementById("processBtn");
+const exportInvalidBtn = document.getElementById("exportInvalidBtn");
 const status = document.getElementById("uploadStatus");
 const resultsContainer = document.getElementById("results");
+const xmlGroup = document.getElementById("xmlReportInputGroup");
+const reportGroup = document.getElementById("reportInputGroup");
+const xmlRadio = document.querySelector('input[name="reportSource"][value="xml"]');
+const xlsRadio = document.querySelector('input[name="reportSource"][value="xls"]');
 console.log('DOM elements initialized');
+
+/*************************
+ * RADIO BUTTON HANDLING *
+ *************************/
+function handleReportSourceChange() {
+  console.log('Report source changed');
+  const isXmlMode = xmlRadio.checked;
+  
+  xmlGroup.style.display = isXmlMode ? 'block' : 'none';
+  reportGroup.style.display = isXmlMode ? 'none' : 'block';
+  
+  // Clear existing data when switching modes
+  if (isXmlMode) {
+    xlsData = null;
+    reportInput.value = '';
+  } else {
+    xmlData = null;
+    xmlInput.value = '';
+  }
+  
+  updateStatus();
+}
+
+function initializeRadioButtons() {
+  console.log('Initializing radio button listeners');
+  xmlRadio.addEventListener('change', handleReportSourceChange);
+  xlsRadio.addEventListener('change', handleReportSourceChange);
+  
+  // Set initial state
+  handleReportSourceChange();
+}
 
 /*************************
  * DATE HANDLING UTILITIES *
