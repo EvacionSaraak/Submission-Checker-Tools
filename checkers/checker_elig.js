@@ -510,45 +510,66 @@ async function parseXML(file) {
   // UI RENDERING
   // =====================
   // Render results table
-  function renderResults(results) {
-    const container = document.getElementById('results');
-    if (!results.length) {
-      container.innerHTML = '<p>No validation results found.</p>';
-      return;
-    }
-  
-    let html = `<table class="shared-table">
-      <thead>
-        <tr>
-          <th>Claim ID</th>
-          <th>Member ID</th>
-          <th>Package</th>
-          <th>Date</th>
-          <th>Service</th>
-          <th>Clinic</th>
-          <th>Remarks</th>
-        </tr>
-      </thead>
-      <tbody>`;
-  
-    for (const r of results) {
-      const remarks = r.remarks.length ? r.remarks.join('; ') : 'Valid';
-  
-      html += `<tr>
-        <td>${r.claimID || ''}</td>
-        <td>${r.memberID || ''}</td>
-        <td>${r.packageName || ''}</td>
-        <td>${r.encounterStart || ''}</td>
-        <td>${r.service || ''}</td>
-        <td>${r.clinic || ''}</td>
-        <td>${remarks}</td>
-      </tr>`;
-    }
-  
-    html += '</tbody></table>';
-    container.innerHTML = html;
+function renderResults(results) {
+  const table = document.createElement('table');
+  table.classList.add('shared-table');
+
+  const thead = document.createElement('thead');
+  const headers = [
+    'Claim ID', 'Member ID', 'Encounter Start', 'Package', 'Clinic',
+    'Service', 'Insurance', 'Eligibility Status', 'Eligibility No.', 'Remarks'
+  ];
+  const tr = document.createElement('tr');
+  for (const h of headers) {
+    const th = document.createElement('th');
+    th.textContent = h;
+    tr.appendChild(th);
   }
-  
+  thead.appendChild(tr);
+  table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  for (const row of results) {
+    const tr = document.createElement('tr');
+
+    let rowClass = 'invalid';
+    if (row.remarks.length === 0 || row.remarks.every(r => r.trim() === '')) {
+      rowClass = 'valid';
+    } else if (row.remarks.some(r => r.toLowerCase().includes('clinician mismatch'))) {
+      rowClass = 'unknown';
+    }
+
+    tr.classList.add(rowClass);
+
+    const cells = [
+      row.claimID,
+      row.memberID,
+      row.encounterStart || '',
+      row.packageName || '',
+      row.clinic || '',
+      row.service || '',
+      row.insuranceCompany || '',
+      row.status || '',
+      row.eligibilityRequestNumber || '',
+      row.remarks.join('; ') || ''
+    ];
+
+    for (const val of cells) {
+      const td = document.createElement('td');
+      td.textContent = val;
+      tr.appendChild(td);
+    }
+
+    tbody.appendChild(tr);
+  }
+
+  table.appendChild(tbody);
+
+  const container = document.getElementById('results');
+  container.innerHTML = '';
+  container.appendChild(table);
+}
+
   // Create modal dialog
   function createModal(container) {
     console.log("Creating modal dialog");
