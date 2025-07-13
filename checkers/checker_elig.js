@@ -28,7 +28,10 @@ window.addEventListener("DOMContentLoaded", () => {
   // Format Excel/JS dates to DD/MM/YYYY
   function excelDateToDDMMYYYY(date) {
     if (!date) return "";
-    if (date instanceof Date && isNaN(date)) return ""; // Handle invalid date
+    if (date instanceof Date && isNaN(date)) {
+      console.warn("Invalid Date instance:", date);
+      return "";
+    }
     if (date instanceof Date) return `${String(date.getDate()).padStart(2, "0")}/${String(date.getMonth() + 1).padStart(2, "0")}/${date.getFullYear()}`;
     if (typeof date === "string") {
       if (/\d{1,2}\/\d{1,2}\/\d{2,4}/.test(date)) return date;
@@ -37,7 +40,8 @@ window.addEventListener("DOMContentLoaded", () => {
     try {
       const parsed = new Date(Math.round((date - 25569) * 86400 * 1000));
       return isNaN(parsed) ? "" : parsed.toLocaleDateString("en-GB");
-    } catch {
+    } catch (err) {
+      console.error("Failed to convert Excel date:", date, err);
       return "";
     }
   }
@@ -331,56 +335,82 @@ async function parseExcel(file) {
   // Validate ClinicPro XLS data against eligibility
   function validateClinicPro(reportRows, eligData) {
     const results = [], seenClaims = new Set(), eligMap = {};
-    
-    // Build eligibility index
+  
     eligData.forEach(e => {
       const id = normalizeMemberID(e['Card Number / DHA Member ID'] || e.MemberID);
       if (id) (eligMap[id] = eligMap[id] || []).push(e);
     });
-
+  
     reportRows.forEach(row => {
       const claimID = row.ClaimID;
       if (!claimID || seenClaims.has(claimID)) return;
       seenClaims.add(claimID);
-
+  
       const memberID = normalizeMemberID(row.MemberID);
       const eligMatches = memberID ? (eligMap[memberID] || []) : [];
       const remarks = [];
       let match = null;
-
-      // Find matching eligibility
+  
+      console.log(`\n[Validating ClaimID: ${claimID}]`);
+      console.log("MemberID:", memberID);
       if (!memberID) remarks.push("Missing MemberID");
-      else if (!eligMatches.length) remarks.push("No matching eligibility found");
-      else {
+      else if (!eligMatches.length) {
+        remarks.push("No matching eligibility found");
+        console.warn(`No eligibility rows for memberID: ${memberID}`);
+      } else {
         const claimDate = parseDate(row.ClaimDate);
+        console.log("Parsed Claim Date:", claimDate);
+  
         match = eligMatches.find(e => {
           const start = parseDate(e.EffectiveDate || e['Ordered On']);
           const end = parseDate(e.ExpiryDate || e['Answered On']);
-          return (!claimDate || !start || claimDate >= start) && 
-                 (!claimDate || !end || claimDate <= end);
+          const matchResult = (!claimDate || !start || claimDate >= start) &&
+                              (!claimDate || !end || claimDate <= end);
+          console.log("Checking date window:", {
+            claimDate,
+            start,
+            end,
+            matchResult
+          });
+          return matchResult;
         }) || eligMatches[0];
-        
-        if (match.Status?.toLowerCase() !== "eligible") remarks.push(`Invalid status: ${match.Status}`);
-        
-        // Additional checks
+  
+        if (match) {
+          console.log("Eligibility Match Found:", match);
+        }
+  
+        if (match.Status?.toLowerCase() !== "eligible") {
+          remarks.push(`Invalid status: ${match.Status}`);
+        }
+  
         const svc = match['Service Category'] || '';
         if (!['Consultation', 'Dental Services', 'Physiotherapy'].includes(svc)) {
           remarks.push(`Invalid service: ${svc}`);
         }
       }
-
+  
+      const encounterStart = row.ClaimDate ? excelDateToDDMMYYYY(row.ClaimDate) : row.ClaimDate;
+      const detailsHTML = match
+        ? formatEligibilityDetailsModal(match, memberID)
+        : formatReportDetailsModal(row, encounterStart);
+  
+      console.log("Encounter Start (formatted):", encounterStart);
+      console.log("Details HTML generated:", detailsHTML);
+  
       results.push({
         claimID,
         memberID,
         insuranceCompany: row['Insurance Company'] || "",
         packageName: match?.['Package Name'] || "",
-        encounterStart: row.ClaimDate ? excelDateToDDMMYYYY(row.ClaimDate) : row.ClaimDate,
+        encounterStart,
         status: match?.Status || "",
         remarks,
-        eligibilityRequestNumber: match?.["Eligibility Request Number"] || ""
+        eligibilityRequestNumber: match?.["Eligibility Request Number"] || "",
+        details: detailsHTML,
+        serviceCategory: match?.['Service Category'] || "",
+        clinic: row.Clinic || ""
       });
     });
-    
     return results;
   }
 
