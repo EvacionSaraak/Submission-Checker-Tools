@@ -34,6 +34,20 @@ window.addEventListener("DOMContentLoaded", () => {
   // =====================
   // UTILITY FUNCTIONS
   // =====================
+  function findUnusedEligibility(eligibilities, claimDate, usedEligibilities) {
+    // Try to find eligibility within date range and not already used
+    let match = eligibilities.find(e => {
+      if (usedEligibilities.has(e['Eligibility Request Number'])) return false;
+      const start = parseDate(e.EffectiveDate || e['Ordered On']);
+      const end = parseDate(e.ExpiryDate || e['Answered On']);
+      return (!claimDate || !start || claimDate >= start) && (!claimDate || !end || claimDate <= end);
+    });
+    if (match) return match;
+  
+    // If no date-matched found, find any unused eligibility
+    return eligibilities.find(e => !usedEligibilities.has(e['Eligibility Request Number'])) || null;
+  }
+
   // Normalize member IDs by removing non-digits and leading zeros
   const normalizeMemberID = id => {
     const normalized = id ? String(id).replace(/\D/g, '').replace(/^0+/, '') : '';
@@ -278,83 +292,23 @@ window.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // Parse XML claim files
-  async function parseXML(file) {
-    console.log("Starting XML parsing for file:", file.name);
-    try {
-      const text = await file.text();
-      const xmlDoc = new DOMParser().parseFromString(text, "application/xml");
-      const claims = Array.from(xmlDoc.querySelectorAll('Claim')).map(claim => {
-        const claimID = claim.querySelector('ID')?.textContent.trim() || '';
-        const memberID = claim.querySelector('MemberID')?.textContent.trim() || '';
-        console.debug(`Processing claim ${claimID} for member ${memberID}`);
-        const clinicians = new Set();
-        claim.querySelectorAll('Activity Clinician').forEach(c => {
-          if (c.textContent.trim()) clinicians.add(c.textContent.trim());
-        });
-  
-        console.debug(`Found ${clinicians.size} clinicians for claim ${claimID}`);
-        const encounters = Array.from(claim.querySelectorAll('Encounter')).map(enc => {
-          const startRaw = enc.querySelector('Start')?.textContent.trim() || '';
-          return {
-            claimID,
-            memberID,
-            encounterStart: startRaw, // store raw string, not parsed Date
-            claimClinician: clinicians.size === 1 ? [...clinicians][0] : null,
-            multipleClinicians: clinicians.size > 1
-          };
-        });
-        return { claimID, encounters };
-      });
-  
-      const result = {
-        claimsCount: claims.length,
-        encounters: claims.flatMap(c => c.encounters)
-      };
-  
-      console.log("XML parsing complete. Found:", {
-        claims: result.claimsCount,
-        encounters: result.encounters.length,
-        sampleEncounter: result.encounters[0]
-      });
-  
-      return result;
-    } catch (err) {
-      console.error("Error parsing XML:", err);
-      throw err;
-    }
-  }
-
   // =====================
   // VALIDATION LOGIC
   // =====================
 
   // Validate XML data against eligibility
-  function validateXml(xmlData, eligData) {
+   function validateXml(xmlData, eligData) {
     console.log("Starting XML validation");
-    console.log("XML data:", { claims: xmlData.claimsCount, encounters: xmlData.encounters.length });
-    console.log("Eligibility data count:", eligData.length);
-  
     const results = [], seenClaims = new Set(), eligMap = {};
+    const usedEligibilities = new Set();
   
-    // Build eligibility index
     eligData.forEach(e => {
       const id = normalizeMemberID(e['Card Number / DHA Member ID'] || e.MemberID);
       if (id) (eligMap[id] = eligMap[id] || []).push(e);
     });
   
-    console.log("Eligibility map size:", Object.keys(eligMap).length);
-  
-    const formatEligDate = val => {
-      const parsed = parseDate(val);
-      return parsed ? excelDateToDDMMYYYY(parsed) : "";
-    };
-  
     xmlData.encounters.forEach(enc => {
-      if (!enc.claimID || seenClaims.has(enc.claimID)) {
-        console.debug(`Skipping duplicate or empty claim ID: ${enc.claimID}`);
-        return;
-      }
+      if (!enc.claimID || seenClaims.has(enc.claimID)) return;
       seenClaims.add(enc.claimID);
   
       const memberID = normalizeMemberID(enc.memberID);
@@ -362,49 +316,25 @@ window.addEventListener("DOMContentLoaded", () => {
       const remarks = [];
       let match = null;
   
-      if (!memberID) {
-        remarks.push("Missing MemberID in XML");
-        console.warn("Missing MemberID in XML for claim:", enc.claimID);
-      } else if (!eligMatches.length) {
-        remarks.push("No matching eligibility found");
-        console.warn(`No eligibility matches for member ${memberID}`);
-      } else {
+      if (!memberID) remarks.push("Missing MemberID in XML");
+      else if (!eligMatches.length) remarks.push("No matching eligibility found");
+      else {
         const claimDate = parseDate(enc.encounterStart);
-        console.debug("Claim date:", claimDate);
+        match = findUnusedEligibility(eligMatches, claimDate, usedEligibilities);
+        if (match) usedEligibilities.add(match['Eligibility Request Number']);
   
-        match = eligMatches.find(e => {
-          const start = parseDate(e.EffectiveDate || e['Ordered On']);
-          const end = parseDate(e.ExpiryDate || e['Answered On']);
-          const inWindow = (!claimDate || !start || claimDate >= start) &&
-                           (!claimDate || !end || claimDate <= end);
-          console.debug("Checking eligibility window:", { claimDate, start, end, inWindow });
-          return inWindow;
-        }) || eligMatches[0];
+        if (match?.Status?.toLowerCase() !== "eligible") remarks.push(`Invalid status: ${match?.Status}`);
   
-        if (match.Status?.toLowerCase() !== "eligible") {
-          remarks.push(`Invalid status: ${match.Status}`);
-          console.warn(`Invalid status for claim ${enc.claimID}: ${match.Status}`);
-        }
-  
-        const svc = match['Service Category'] || '';
-        if (!['Consultation', 'Dental Services', 'Physiotherapy'].includes(svc)) {
-          remarks.push(`Invalid service: ${svc}`);
-          console.warn(`Invalid service category for claim ${enc.claimID}: ${svc}`);
-        }
+        const svc = match?.['Service Category'] || '';
+        if (!['Consultation', 'Dental Services', 'Physiotherapy'].includes(svc)) remarks.push(`Invalid service: ${svc}`);
       }
-  
-      const encounterStart = enc.encounterStart
-        ? excelDateToDDMMYYYY(parseDate(enc.encounterStart))
-        : formatEligDate(match?.['Ordered On'] || match?.['Answered On']);
-  
-      const packageName = match?.['Package Name'] || match?.['PolicyName'] || match?.['PolicyId'] || "";
   
       results.push({
         claimID: enc.claimID,
         memberID,
         insuranceCompany: match?.['Payer Name'] || "",
-        packageName,
-        encounterStart,
+        packageName: match?.['Package Name'] || "",
+        encounterStart: enc.encounterStart ? excelDateToDDMMYYYY(parseDate(enc.encounterStart)) : enc.encounterStart,
         status: match?.Status || "",
         remarks,
         eligibilityRequestNumber: match?.["Eligibility Request Number"] || "",
@@ -412,82 +342,42 @@ window.addEventListener("DOMContentLoaded", () => {
       });
     });
   
-    console.log("XML validation complete. Results count:", results.length);
-    console.log("Sample result:", results[0]);
     return results;
   }
 
   // Validate Insta CSV data against eligibility
   function validateInsta(instaRows, eligData) {
     console.log("Starting Insta CSV validation");
-    console.log("Insta rows count:", instaRows.length);
-    console.log("Eligibility data count:", eligData.length);
-    
     const results = [], seenClaims = new Set(), eligMap = {};
-    
-    // Build eligibility index
+    const usedEligibilities = new Set();
+  
     eligData.forEach(e => {
       ['Card Number / DHA Member ID', 'Card Number', 'MemberID'].forEach(field => {
         const id = normalizeMemberID(e[field]);
         if (id) (eligMap[id] = eligMap[id] || []).push(e);
       });
     });
-
-    console.log("Eligibility map size:", Object.keys(eligMap).length);
-    
+  
     instaRows.forEach(row => {
       const claimID = (row.ClaimID || '').toString().trim();
-      if (!claimID || seenClaims.has(claimID)) {
-        console.debug(`Skipping duplicate or empty claim ID: ${claimID}`);
-        return;
-      }
+      if (!claimID || seenClaims.has(claimID)) return;
       seenClaims.add(claimID);
-
+  
       const memberID = normalizeMemberID(row.MemberID);
       const eligMatches = memberID ? (eligMap[memberID] || []) : [];
       const remarks = [];
       let match = null;
-
-      console.debug(`Validating claim ${claimID} for member ${memberID}`);
-      
-      // Find matching eligibility
-      if (!memberID) {
-        remarks.push("Missing MemberID");
-        console.warn("Missing MemberID for claim:", claimID);
-      } else if (!eligMatches.length) {
-        remarks.push("No matching eligibility found");
-        console.warn(`No eligibility matches for member ${memberID}`);
-      } else {
+  
+      if (!memberID) remarks.push("Missing MemberID");
+      else if (!eligMatches.length) remarks.push("No matching eligibility found");
+      else {
         const claimDate = parseDate(row.ClaimDate);
-        console.debug("Claim date:", claimDate);
-        
-        match = eligMatches.find(e => {
-          const start = parseDate(e.EffectiveDate || e['Ordered On']);
-          const end = parseDate(e.ExpiryDate || e['Answered On']);
-          const inWindow = (!claimDate || !start || claimDate >= start) && 
-                         (!claimDate || !end || claimDate <= end);
-          console.debug("Checking eligibility window:", {
-            claimDate,
-            start,
-            end,
-            inWindow
-          });
-          return inWindow;
-        }) || eligMatches[0];
-        
-        if (match) {
-          console.debug("Found matching eligibility:", {
-            requestNumber: match['Eligibility Request Number'],
-            status: match.Status
-          });
-        }
-        
-        if (match.Status?.toLowerCase() !== "eligible") {
-          remarks.push(`Invalid status: ${match.Status}`);
-          console.warn(`Invalid status for claim ${claimID}: ${match.Status}`);
-        }
+        match = findUnusedEligibility(eligMatches, claimDate, usedEligibilities);
+        if (match) usedEligibilities.add(match['Eligibility Request Number']);
+  
+        if (match?.Status?.toLowerCase() !== "eligible") remarks.push(`Invalid status: ${match.Status}`);
       }
-
+  
       results.push({
         claimID,
         memberID,
@@ -497,80 +387,70 @@ window.addEventListener("DOMContentLoaded", () => {
         status: match?.Status || "",
         remarks,
         eligibilityRequestNumber: match?.["Eligibility Request Number"] || "",
-        fullEligibilityRecord: match || null  // Add this line to store the full record
+        fullEligibilityRecord: match || null
       });
     });
-    
-    console.log("Insta validation complete. Results count:", results.length);
-    console.log("Sample result:", results[0]);
+  
     return results;
   }
 
   // Validate ClinicPro XLS data against eligibility
-function validateClinicPro(reportRows, eligData) {
-    const results = [], seenClaims = new Set(), usedEligibilities = new Set(), eligMap = {};
-    
-    // Build eligibility index
+  function validateClinicPro(reportRows, eligData) {
+    const results = [], seenClaims = new Set(), eligMap = {};
+    const usedEligibilities = new Set();
+  
     eligData.forEach(e => {
-        const id = normalizeMemberID(e['Card Number / DHA Member ID'] || e.MemberID);
-        if (id) (eligMap[id] = eligMap[id] || []).push(e);
+      const id = normalizeMemberID(e['Card Number / DHA Member ID'] || e.MemberID);
+      if (id) (eligMap[id] = eligMap[id] || []).push(e);
     });
-
+  
     reportRows.forEach(row => {
-        const claimID = row.ClaimID;
-        if (!claimID || seenClaims.has(claimID)) return;
-        seenClaims.add(claimID);
-
-        const memberID = normalizeMemberID(row.MemberID);
-        const eligMatches = memberID ? (eligMap[memberID] || []) : [];
-        const remarks = [];
-        let match = null;
-
-        if (!memberID) remarks.push("Missing MemberID");
-        else if (!eligMatches.length) remarks.push("No matching eligibility found");
-        else {
-            const claimDate = parseDate(row.ClaimDate);
-            
-            // Find first unused eligibility that matches date range
-            match = eligMatches.find(e => {
-                if (usedEligibilities.has(e['Eligibility Request Number'])) return false;
-                const start = parseDate(e.EffectiveDate || e['Ordered On']);
-                const end = parseDate(e.ExpiryDate || e['Answered On']);
-                return (!claimDate || !start || claimDate >= start) && (!claimDate || !end || claimDate <= end);
-            });
-            
-            if (!match) { match = eligMatches[0]; remarks.push("Eligibility already used for another claim"); }
-            else usedEligibilities.add(match['Eligibility Request Number']);
-
-            if (match.Status?.toLowerCase() !== "eligible") remarks.push(`Invalid status: ${match.Status}`);
-            
-            const svc = match['Service Category'] || '';
-            if (!VALID_SERVICES.includes(svc)) remarks.push(`Invalid service: ${svc}`);
-        }
-
-        const encounterStart = row.ClaimDate ? excelDateToDDMMYYYY(row.ClaimDate) : 
-                             match?.['Ordered On'] ? excelDateToDDMMYYYY(parseDate(match['Ordered On'])) : '';
-        const packageName = match?.['Package Name'] || '';
-        const insuranceCompany = match?.['Payer Name'] || row['Insurance Company'] || '';
-        const detailsHTML = match ? formatEligibilityDetailsModal(match, memberID) : '';
-
-        results.push({
-            claimID,
-            memberID,
-            insuranceCompany,
-            packageName,
-            encounterStart,
-            status: match?.Status || "",
-            remarks,
-            eligibilityRequestNumber: match?.["Eligibility Request Number"] || "",
-            details: detailsHTML,
-            serviceCategory: match?.['Service Category'] || "",
-            clinic: row.Clinic || "",
-            fullEligibilityRecord: match || null
-        });
+      const claimID = row.ClaimID;
+      if (!claimID || seenClaims.has(claimID)) return;
+      seenClaims.add(claimID);
+  
+      const memberID = normalizeMemberID(row.MemberID);
+      const eligMatches = memberID ? (eligMap[memberID] || []) : [];
+      const remarks = [];
+      let match = null;
+  
+      if (!memberID) remarks.push("Missing MemberID");
+      else if (!eligMatches.length) remarks.push("No matching eligibility found");
+      else {
+        const claimDate = parseDate(row.ClaimDate);
+        match = findUnusedEligibility(eligMatches, claimDate, usedEligibilities);
+        if (match) usedEligibilities.add(match['Eligibility Request Number']);
+  
+        if (match?.Status?.toLowerCase() !== "eligible") remarks.push(`Invalid status: ${match.Status}`);
+  
+        const svc = match?.['Service Category'] || '';
+        if (!['Consultation', 'Dental Services', 'Physiotherapy'].includes(svc)) remarks.push(`Invalid service: ${svc}`);
+      }
+  
+      const encounterStart = row.ClaimDate ? excelDateToDDMMYYYY(row.ClaimDate) : 
+        match?.['Ordered On'] ? excelDateToDDMMYYYY(parseDate(match['Ordered On'])) : '';
+      const packageName = match?.['Package Name'] || '';
+      const insuranceCompany = match?.['Payer Name'] || row['Insurance Company'] || '';
+      const detailsHTML = match ? formatEligibilityDetailsModal(match, memberID) : '';
+  
+      results.push({
+        claimID,
+        memberID,
+        insuranceCompany,
+        packageName,
+        encounterStart,
+        status: match?.Status || "",
+        remarks,
+        eligibilityRequestNumber: match?.["Eligibility Request Number"] || "",
+        details: detailsHTML,
+        serviceCategory: match?.['Service Category'] || "",
+        clinic: row.Clinic || "",
+        fullEligibilityRecord: match || null
+      });
     });
+  
     return results;
-}
+  }
   
   // =====================
   // UI RENDERING
