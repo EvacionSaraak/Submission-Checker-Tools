@@ -278,21 +278,16 @@ function validateXmlClaims(xmlClaims, eligMap) {
       remarks.push('No matching eligibility found');
     } else if (eligibility.Status?.toLowerCase() !== 'eligible') {
       remarks.push(`Eligibility status: ${eligibility.Status}`);
-    } else if (!checkClinicianMatch(claim.clinicians, eligibility.Clinician)) {
-      status = 'unknown';
-      remarks.push('Clinician mismatch');
     } else {
-      const serviceCheck = isServiceCategoryValid(eligibility);
-      if (!serviceCheck.valid) {
+      const categoryCheck = isServiceCategoryValid(eligibility);
+      if (!categoryCheck.valid) {
         status = 'invalid';
-        remarks.push(serviceCheck.reason);
+        remarks.push(categoryCheck.reason);
       } else {
         status = 'valid';
       }
     }
-
-
-
+    
     return {
       claimID: claim.claimID,
       memberID: claim.memberID,
@@ -324,10 +319,10 @@ function validateReportClaims(reportData, eligMap) {
     } else if (eligibility.Status?.toLowerCase() !== 'eligible') {
       remarks.push(`Eligibility status: ${eligibility.Status}`);
     } else {
-      const serviceCheck = isServiceCategoryValid(eligibility);
-      if (!serviceCheck.valid) {
+      const categoryCheck = isServiceCategoryValid(eligibility);
+      if (!categoryCheck.valid) {
         status = 'invalid';
-        remarks.push(serviceCheck.reason);
+        remarks.push(categoryCheck.reason);
       } else {
         status = 'valid';
       }
