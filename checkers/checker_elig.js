@@ -37,6 +37,16 @@ window.addEventListener("DOMContentLoaded", () => {
     return normalized;
   };
 
+  function escapeHtml(unsafe) {
+    if (!unsafe) return '';
+    return unsafe
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+  }
+
   // Format Excel/JS dates to DD/MM/YYYY
   function excelDateToDDMMYYYY(date) {
     console.debug("Formatting date:", date);
