@@ -58,7 +58,7 @@ const DateHandler = {
     if (!input) return null;
     if (input instanceof Date) return isNaN(input) ? null : input;
     if (typeof input === 'number') return this._parseExcelDate(input);
-  
+
     const cleanStr = input.toString().trim().replace(/[,.]/g, '');
     const parsed = this._parseStringDate(cleanStr) || new Date(cleanStr);
     if (isNaN(parsed)) {
@@ -89,24 +89,30 @@ const DateHandler = {
   },
 
   _parseStringDate: function(dateStr) {
-    // Strip time if present (e.g. "17/06/2025 16:10" → "17/06/2025")
-    dateStr = dateStr.split(' ')[0];
-  
+    // Remove time portion like "17/06/2025 16:10" → "17/06/2025"
+    if (dateStr.includes(' ')) {
+      dateStr = dateStr.split(' ')[0];
+    }
+
+    // Matches DD/MM/YYYY or DD-MM-YYYY
     const dmyMatch = dateStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
-    if (dmyMatch) return new Date(dmyMatch[3], dmyMatch[2]-1, dmyMatch[1]);
-  
+    if (dmyMatch) return new Date(dmyMatch[3], dmyMatch[2] - 1, dmyMatch[1]);
+
+    // Matches MM/DD/YYYY (not typical for your case, but included)
     const mdyMatch = dateStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
-    if (mdyMatch) return new Date(mdyMatch[3], mdyMatch[1]-1, mdyMatch[2]);
-  
-    const textMatch = dateStr.match(/^(\d{1,2})[\/\- ]([a-z]{3,})[\/\- ](\d{2,4})/i);
+    if (mdyMatch) return new Date(mdyMatch[3], mdyMatch[1] - 1, mdyMatch[2]);
+
+    // Matches 30-Jun-2025 or 30 Jun 2025
+    const textMatch = dateStr.match(/^(\d{1,2})[\/\- ]([a-z]{3,})[\/\- ](\d{2,4})$/i);
     if (textMatch) {
-      const monthIndex = MONTHS.indexOf(textMatch[2].toLowerCase().substr(0,3));
+      const monthIndex = MONTHS.indexOf(textMatch[2].toLowerCase().substr(0, 3));
       if (monthIndex >= 0) return new Date(textMatch[3], monthIndex, textMatch[1]);
     }
-  
+
+    // ISO style fallback: 2025-07-01
     const isoMatch = dateStr.match(/^(\d{4})[\/\-](\d{2})[\/\-](\d{2})$/);
-    if (isoMatch) return new Date(isoMatch[1], isoMatch[2]-1, isoMatch[3]);
-  
+    if (isoMatch) return new Date(isoMatch[1], isoMatch[2] - 1, isoMatch[3]);
+
     return null;
   }
 };
