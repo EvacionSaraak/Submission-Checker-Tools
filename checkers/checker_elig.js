@@ -136,6 +136,39 @@ window.addEventListener("DOMContentLoaded", () => {
     return new Date(val); // Fallback to native parser
   }
 
+  function formatEligibilityDetailsModal(eligRecord, memberID) {
+    if (!eligRecord) return "<p>No eligibility details available</p>";
+    
+    // Create a table with all eligibility fields
+    let html = `
+        <h3>Eligibility Details for Member: ${memberID}</h3>
+        <table class="eligibility-details">
+            <tbody>
+    `;
+    
+    // Add all fields from the eligibility record
+    Object.entries(eligRecord).forEach(([key, value]) => {
+        // Format dates properly
+        if (key.includes('Date') || key.includes('On')) {
+            value = excelDateToDDMMYYYY(parseDate(value)) || value;
+        }
+        
+        html += `
+            <tr>
+                <th>${key}</th>
+                <td>${value || ''}</td>
+            </tr>
+        `;
+    });
+    
+    html += `
+            </tbody>
+        </table>
+    `;
+    
+    return html;
+}
+
   // =====================
   // FILE PARSING
   // =====================
@@ -411,7 +444,8 @@ window.addEventListener("DOMContentLoaded", () => {
         encounterStart: enc.encounterStart ? excelDateToDDMMYYYY(parseDate(enc.encounterStart)) : enc.encounterStart,
         status: match?.Status || "",
         remarks,
-        eligibilityRequestNumber: match?.["Eligibility Request Number"] || ""
+        eligibilityRequestNumber: match?.["Eligibility Request Number"] || "",
+        fullEligibilityRecord: match || null  // Add this line to store the full record
       });
     });
     
@@ -499,7 +533,8 @@ window.addEventListener("DOMContentLoaded", () => {
         encounterStart: row.ClaimDate ? excelDateToDDMMYYYY(row.ClaimDate) : row.ClaimDate,
         status: match?.Status || "",
         remarks,
-        eligibilityRequestNumber: match?.["Eligibility Request Number"] || ""
+        eligibilityRequestNumber: match?.["Eligibility Request Number"] || "",
+        fullEligibilityRecord: match || null  // Add this line to store the full record
       });
     });
     
@@ -601,7 +636,8 @@ window.addEventListener("DOMContentLoaded", () => {
         eligibilityRequestNumber: match?.["Eligibility Request Number"] || "",
         details: detailsHTML,
         serviceCategory: match?.['Service Category'] || "",
-        clinic: row.Clinic || ""
+        clinic: row.Clinic || "",
+        fullEligibilityRecord: match || null  // Add this line to store the full record
       });
     });
     
@@ -615,48 +651,52 @@ window.addEventListener("DOMContentLoaded", () => {
   // =====================
   // Render results table
   function renderResults(results, containerId = "results") {
-    console.log("Rendering results table");
-    const container = document.getElementById(containerId);
-    container.innerHTML = `
-      <table class="shared-table">
-        <thead><tr>
-          <th>#</th><th>ID</th><th>MemberID</th><th>Insurance</th>
-          <th>Package</th><th>Date</th><th>Details</th>
-          <th>Status</th><th>Service</th><th>Clinic</th><th>Remarks</th>
-        </tr></thead>
-        <tbody>
-          ${results.map((r, i) => `
-            <tr class="${r.remarks.length ? "invalid" : "valid"}">
-              <td>${i + 1}</td>
-              <td class="wrap-col">${r.claimID}</td>
-              <td class="wrap-col">${r.memberID}</td>
-              <td class="wrap-col">${r.insuranceCompany || ""}</td>
-              <td class="wrap-col">${r.packageName || ""}</td>
-              <td class="wrap-col">${r.encounterStart || ""}</td>
-              <td><button class="details-btn" ${r.details && r.details.trim() ? "" : "disabled"}>
-                ${r.eligibilityRequestNumber || "No Request"}
-              </button></td>
-              <td>${r.status || ""}</td>
-              <td>${r.serviceCategory || ""}</td>
-              <td>${r.clinic || ""}</td>
-              <td style="white-space: pre-line;">${r.remarks.join("\n")}</td>
-            </tr>`
-          ).join("")}
-        </tbody>
-      </table>
-    `;
-    
-    console.log("Results table rendered with", results.length, "rows");
-    
-    // Attach modal handlers
-    container.querySelectorAll(".details-btn").forEach(btn => {
-      btn.addEventListener("click", () => {
-        console.log("Details button clicked for claim:", btn.textContent.trim());
-        const modal = document.getElementById("eligibilityModal") || createModal(container);
-        modal.querySelector("#modalContent").innerHTML = btn.closest("tr").dataset.details;
-        modal.style.display = "block";
+      console.log("Rendering results table");
+      const container = document.getElementById(containerId);
+      container.innerHTML = `
+        <table class="shared-table">
+          <thead><tr>
+            <th>#</th><th>ID</th><th>MemberID</th><th>Insurance</th>
+            <th>Package</th><th>Date</th><th>Details</th>
+            <th>Status</th><th>Service</th><th>Clinic</th><th>Remarks</th>
+          </tr></thead>
+          <tbody>
+            ${results.map((r, i) => {
+              const detailsHTML = r.fullEligibilityRecord 
+                  ? formatEligibilityDetailsModal(r.fullEligibilityRecord, r.memberID)
+                  : formatReportDetailsModal(r, r.encounterStart);
+              
+              return `
+              <tr class="${r.remarks.length ? "invalid" : "valid"}" data-details="${escapeHtml(detailsHTML)}">
+                <td>${i + 1}</td>
+                <td class="wrap-col">${r.claimID}</td>
+                <td class="wrap-col">${r.memberID}</td>
+                <td class="wrap-col">${r.insuranceCompany || ""}</td>
+                <td class="wrap-col">${r.packageName || ""}</td>
+                <td class="wrap-col">${r.encounterStart || ""}</td>
+                <td><button class="details-btn" ${r.fullEligibilityRecord ? "" : "disabled"}>
+                  ${r.eligibilityRequestNumber || "No Request"}
+                </button></td>
+                <td>${r.status || ""}</td>
+                <td>${r.serviceCategory || ""}</td>
+                <td>${r.clinic || ""}</td>
+                <td style="white-space: pre-line;">${r.remarks.join("\n")}</td>
+              </tr>`;
+            }).join("")}
+          </tbody>
+        </table>
+      `;
+      console.log("Results table rendered with", results.length, "rows");
+      
+      // Attach modal handlers (same as before)
+      container.querySelectorAll(".details-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+          console.log("Details button clicked for claim:", btn.textContent.trim());
+          const modal = document.getElementById("eligibilityModal") || createModal(container);
+          modal.querySelector("#modalContent").innerHTML = btn.closest("tr").dataset.details;
+          modal.style.display = "block";
+        });
       });
-    });
   }
   
   // Create modal dialog
