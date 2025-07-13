@@ -5,6 +5,10 @@ window.addEventListener("DOMContentLoaded", () => {
   // =====================
   // DOM INITIALIZATION
   // =====================
+  const VALID_SERVICES = ['Consultation', 'Dental Services', 'Physiotherapy'];
+  const DATE_KEYS = ['Date', 'On'];
+  const MONTHS = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"];
+
   const xmlInput = document.getElementById("xmlFileInput");
   const reportInput = document.getElementById("reportFileInput");
   const eligInput = document.getElementById("eligibilityFileInput");
@@ -50,100 +54,60 @@ window.addEventListener("DOMContentLoaded", () => {
   // Format Excel/JS dates to DD/MM/YYYY
   function excelDateToDDMMYYYY(date) {
     console.debug("Formatting date:", date);
-    if (!date) {
-      console.debug("Empty date, returning empty string");
-      return "";
-    }
-    if (date instanceof Date && isNaN(date)) {
-      console.warn("Invalid Date instance:", date);
-      return "";
-    }
+    if (!date) return "";
+    if (date instanceof Date && isNaN(date)) return "";
     if (date instanceof Date) {
-      const formatted = `${String(date.getDate()).padStart(2, "0")}/${String(date.getMonth() + 1).padStart(2, "0")}/${date.getFullYear()}`;
-      console.debug("Formatted Date instance:", formatted);
-      return formatted;
+      return `${String(date.getDate()).padStart(2, "0")}/${String(date.getMonth() + 1).padStart(2, "0")}/${date.getFullYear()}`;
     }
     if (typeof date === "string") {
-      if (/\d{1,2}\/\d{1,2}\/\d{2,4}/.test(date)) {
-        console.debug("Already in DD/MM/YYYY format");
-        return date;
-      }
-      if (/\d{4}-\d{2}-\d{2}/.test(date)) {
-        const formatted = date.split("-").reverse().join("/");
-        console.debug("Formatted YYYY-MM-DD to DD/MM/YYYY:", formatted);
-        return formatted;
-      }
+      if (/\d{1,2}\/\d{1,2}\/\d{2,4}/.test(date)) return date;
+      if (/\d{4}-\d{2}-\d{2}/.test(date)) return date.split("-").reverse().join("/");
     }
     try {
       const parsed = new Date(Math.round((date - 25569) * 86400 * 1000));
-      const result = isNaN(parsed) ? "" : parsed.toLocaleDateString("en-GB");
-      console.debug("Converted Excel date:", {input: date, output: result});
-      return result;
+      return isNaN(parsed) ? "" : parsed.toLocaleDateString("en-GB");
     } catch (err) {
       console.error("Failed to convert Excel date:", date, err);
       return "";
     }
   }
 
-  // Robust date parser with DMY/MDY detection
   function parseDate(val) {
-    console.debug("Parsing date:", val);
-    if (!val) {
-      console.debug("Empty value, returning null");
-      return null;
-    }
-    if (val instanceof Date) {
-      console.debug("Already a Date object");
-      return val;
-    }
-    if (typeof val === "number") {
-      const dateObj = new Date(Math.round((val - 25569) * 86400 * 1000));
-      console.debug("Converted Excel numeric date:", dateObj);
-      return dateObj;
-    }
-    
-    // Try common formats
+    if (!val) return null;
+    if (val instanceof Date) return val;
+    if (typeof val === "number") return new Date(Math.round((val - 25569) * 86400 * 1000));
+  
     const formats = [
       /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/,
       /^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/,
       /^(\d{1,2})[\/\-]([a-z]{3})[\/\-](\d{4})$/i
     ];
-    
+  
     for (const regex of formats) {
       const parts = val.match(regex);
       if (!parts) continue;
-      
+  
       let day, month, year;
-      if (parts[2] && isNaN(parts[2])) { // Month name format
-        const months = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"];
+      if (parts[2] && isNaN(parts[2])) {
         day = parseInt(parts[1]);
-        month = months.indexOf(parts[2].toLowerCase());
+        month = MONTHS.indexOf(parts[2].toLowerCase());
         year = parseInt(parts[3]);
-        console.debug("Month name format detected:", {day, month, year});
-      } else if (parts[1] > 31) { // YYYY-MM-DD
+      } else if (parts[1] > 31) {
         year = parseInt(parts[1]);
         month = parseInt(parts[2]) - 1;
         day = parseInt(parts[3]);
-        console.debug("YYYY-MM-DD format detected:", {year, month, day});
-      } else { // DD/MM/YYYY or MM/DD/YYYY
+      } else {
         day = parseInt(parts[1]);
         month = parseInt(parts[2]) - 1;
         year = parseInt(parts[3]) + (parts[3].length === 2 ? 2000 : 0);
-        if (day > 12 && month <= 11) {
-          console.debug("Ambiguous date, swapping day/month:", {before: {day, month}, after: {day: month + 1, month: day - 1}});
-          [day, month] = [month + 1, day - 1];
-        }
+        if (day > 12 && month <= 11) [day, month] = [month + 1, day - 1];
       }
-      
+  
       const dateObj = new Date(year, month, day);
-      if (!isNaN(dateObj.getTime())) {
-        console.debug("Successfully parsed date:", dateObj);
-        return dateObj;
-      }
+      if (!isNaN(dateObj.getTime())) return dateObj;
     }
-    
-    console.debug("Falling back to native Date parser");
-    return new Date(val); // Fallback to native parser
+  
+    return new Date(val); // Fallback
   }
 
   function formatEligibilityDetailsModal(eligRecord, memberID) {
@@ -276,9 +240,7 @@ window.addEventListener("DOMContentLoaded", () => {
               const obj = {};
               headers.forEach((h, i) => {
                 obj[h] = row[i] || '';
-                if (h.includes('Date') || h.includes('On')) {
-                  obj[h] = parseDate(obj[h]) || obj[h];
-                }
+                if (DATE_KEYS.some(key => h.includes(key))) obj[h] = parseDate(obj[h]) || obj[h];
               });
               return obj;
             });
@@ -440,7 +402,7 @@ window.addEventListener("DOMContentLoaded", () => {
         
         // Additional checks
         const svc = match['Service Category'] || '';
-        if (!['Consultation', 'Dental Services', 'Physiotherapy'].includes(svc)) {
+        if (!VALID_SERVICES.includes(svc)) {
           remarks.push(`Invalid service: ${svc}`);
           console.warn(`Invalid service category for claim ${enc.claimID}: ${svc}`);
         }
@@ -592,7 +554,7 @@ function validateClinicPro(reportRows, eligData) {
             if (match.Status?.toLowerCase() !== "eligible") remarks.push(`Invalid status: ${match.Status}`);
             
             const svc = match['Service Category'] || '';
-            if (!['Consultation', 'Dental Services', 'Physiotherapy'].includes(svc)) remarks.push(`Invalid service: ${svc}`);
+            if if (!VALID_SERVICES.includes(svc)) remarks.push(`Invalid service: ${svc}`);
         }
 
         const encounterStart = row.ClaimDate ? excelDateToDDMMYYYY(row.ClaimDate) : 
@@ -702,14 +664,12 @@ function renderResults(results, containerId = "results") {
     if (xlsRadio.checked && xlsData) statusParts.push(`${xlsData.length} report rows`);
     if (eligData) statusParts.push(`${eligData.length} eligibility records`);
     if (insuranceLicenses) statusParts.push("Licenses loaded");
-    
+  
     const newStatus = statusParts.join(", ") || "Awaiting files";
-    console.log("Updating status:", newStatus);
     status.textContent = newStatus;
-    
-    const isDisabled = !(xmlRadio.checked ? xmlData && eligData : xlsData && eligData);
-    console.log("Process button disabled:", isDisabled);
-    processBtn.disabled = isDisabled;
+  
+    const hasRequiredData = xmlRadio.checked ? xmlData && eligData : xlsData && eligData;
+    processBtn.disabled = !hasRequiredData;
   }
 
   // Handle file uploads
@@ -718,27 +678,14 @@ function renderResults(results, containerId = "results") {
     status.textContent = `Loading ${type}...`;
     try {
       const file = input.files[0];
-      if (!file) {
-        console.log("No file selected");
-        return;
-      }
-      
+      if (!file) return console.log("No file selected");
+  
       console.log(`Processing ${type} file:`, file.name);
-      
-      if (type === "XML") {
-        xmlData = await parseXML(file);
-        console.log("XML data parsed:", xmlData);
-      } else if (type === "CSV") {
-        xlsData = await parseCsv(file);
-        console.log("CSV data parsed:", xlsData?.slice(0, 3));
-      } else if (type === "Eligibility") {
-        eligData = await parseExcel(file);
-        console.log("Eligibility data parsed:", eligData?.slice(0, 3));
-      } else {
-        xlsData = await parseExcel(file); // XLS/XLSX
-        console.log("Report data parsed:", xlsData?.slice(0, 3));
-      }
-      
+      if (type === "XML") xmlData = await parseXML(file);
+      else if (type === "CSV") xlsData = await parseCsv(file);
+      else if (type === "Eligibility") eligData = await parseExcel(file);
+      else xlsData = await parseExcel(file);
+  
       updateStatus();
     } catch (err) {
       console.error(`Error processing ${type} file:`, err);
