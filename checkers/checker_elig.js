@@ -59,6 +59,19 @@ function initializeRadioButtons() {
   handleReportSourceChange();
 }
 
+/********************
+ * PROCESSING CONTROL *
+ ********************/
+function updateProcessButtonState() {
+  const hasEligibility = !!eligData;
+  const hasReportData = xmlRadio.checked ? !!xmlData : !!xlsData;
+  
+  processBtn.disabled = !hasEligibility || !hasReportData;
+  exportInvalidBtn.disabled = !hasEligibility || !hasReportData;
+  
+  console.debug(`Process button state updated - disabled: ${processBtn.disabled}`);
+}
+
 /*************************
  * DATE HANDLING UTILITIES *
  *************************/
@@ -700,6 +713,7 @@ async function handleFileUpload(event, type) {
       updateStatus(`Loaded ${xlsData.length} report rows`);
     }
     
+    updateProcessButtonState();
     console.groupEnd();
   } catch (error) {
     console.error(`${type} file error:`, error);
@@ -724,7 +738,7 @@ async function handleProcessClick() {
     updateStatus('Processing...');
     console.log('Starting validation');
     
-    const results = xmlData 
+    const results = xmlRadio.checked
       ? validateXmlClaims(xmlData.claims, eligData)
       : validateReportClaims(xlsData, eligData);
     
@@ -743,16 +757,29 @@ async function handleProcessClick() {
   console.groupEnd();
 }
 
+function handleExportInvalidClick() {
+  console.log('Export invalid rows functionality to be implemented');
+  // TODO: Implement export functionality
+  alert('Export functionality will be implemented in next version');
+}
+
 /********************
  * INITIALIZATION *
  ********************/
 function initializeEventListeners() {
   console.log('Initializing event listeners');
   
+  // File upload handlers
   xmlInput.addEventListener('change', (e) => handleFileUpload(e, 'xml'));
   reportInput.addEventListener('change', (e) => handleFileUpload(e, 'report'));
   eligInput.addEventListener('change', (e) => handleFileUpload(e, 'eligibility'));
+  
+  // Button handlers
   processBtn.addEventListener('click', handleProcessClick);
+  exportInvalidBtn.addEventListener('click', handleExportInvalidClick);
+  
+  // Initialize radio buttons
+  initializeRadioButtons();
   
   console.log('Event listeners initialized');
 }
