@@ -124,58 +124,60 @@ window.addEventListener("DOMContentLoaded", () => {
   }
 
   // Unified Excel parser for both reports and eligibility files
-  async function parseExcel(file) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = async e => {
-        try {
-          const data = new Uint8Array(e.target.result);
-          const workbook = XLSX.read(data, { type: 'array' });
-          const sheet = workbook.Sheets[workbook.SheetNames[0]];
-          if (!sheet) throw new Error('Worksheet not found');
-          
-          const allRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
-          const isEligibility = allRows[0]?.some(h => h.includes("Card Number / DHA Member ID"));
-          
-          if (isEligibility) {
-            // Fixed header mapping for eligibility files
-            const headers = [
-              'Payer Name', 'Member Name', 'Transcation Id', 'Eligibility Request Number',
-              'Card Number / DHA Member ID', 'EID', 'Ordered On', 'Answered On', 'Mobile Number',
-              'Authorization Number', 'Status', 'Denial Code/Rule ID', 'Denial Description/Rule Description',
-              'Clinician', 'Clinician Name', 'Provider License', 'Provider Name', 'User Name',
-              'Submitted via Emirates Id', 'Service Category', 'Consultation Status', 'Reffering Clinician',
-              'Refferal Letter Reference No', 'Has Multiple Policy', 'Rule Ansswered', 'VOI Number',
-              'VOI Message', 'Card Number', 'PolicyId', 'PolicyName', 'EffectiveDate', 'ExpiryDate',
-              'Package Name', 'Card Network', 'Network Billing Reference'
-            ];
-            
-            resolve(allRows.slice(1).map(row => {
-              const obj = {};
-              headers.forEach((h, i) => {
-                obj[h] = row[i] || '';
-                if (h.includes('Date') || h.includes('On')) obj[h] = parseDate(obj[h]) || obj[h];
-              });
-              return obj;
-            }));
-          } else {
-            // Standard report processing
-            const headers = allRows[1];
-            resolve(allRows.slice(2).map(row => {
-              const obj = {};
-              headers.forEach((h, i) => obj[h.trim()] = row[i] || '');
-              if (obj.ClaimDate) obj.ClaimDate = parseDate(obj.ClaimDate);
-              obj.MemberID = normalizeMemberID(obj.MemberID);
-              return obj;
-            }));
-          }
-        } catch (err) {
-          reject(err);
+async function parseExcel(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = async e => {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        if (!sheet) throw new Error('Worksheet not found');
+        const allRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+        const isEligibility = allRows[0]?.some(h => h.includes("Card Number / DHA Member ID"));
+        if (isEligibility) {
+          // Fixed header mapping for eligibility files
+          const headers = [
+            'Payer Name', 'Member Name', 'Transcation Id', 'Eligibility Request Number',
+            'Card Number / DHA Member ID', 'EID', 'Ordered On', 'Answered On', 'Mobile Number',
+            'Authorization Number', 'Status', 'Denial Code/Rule ID', 'Denial Description/Rule Description',
+            'Clinician', 'Clinician Name', 'Provider License', 'Provider Name', 'User Name',
+            'Submitted via Emirates Id', 'Service Category', 'Consultation Status', 'Reffering Clinician',
+            'Refferal Letter Reference No', 'Has Multiple Policy', 'Rule Ansswered', 'VOI Number',
+            'VOI Message', 'Card Number', 'PolicyId', 'PolicyName', 'EffectiveDate', 'ExpiryDate',
+            'Package Name', 'Card Network', 'Network Billing Reference'
+          ];
+
+          resolve(allRows.slice(1).map(row => {
+            const obj = {};
+            headers.forEach((h, i) => {
+              obj[h] = row[i] || '';
+              if (h.includes('Date') || h.includes('On')) {
+                obj[h] = parseDate(obj[h]) || obj[h];
+              }
+            });
+            return obj;
+          }));
+        } else {
+          // Standard report processing
+          const headers = allRows[1];
+          resolve(allRows.slice(2).map(row => {
+            const obj = {};
+            headers.forEach((h, i) => obj[h.trim()] = row[i] || '');
+
+            // Preserve MemberID as-is for display and later normalization
+            if (obj.ClaimDate) obj.ClaimDate = parseDate(obj.ClaimDate);
+            obj.MemberID = (obj.MemberID || "").toString().trim();
+            return obj;
+          }));
         }
-      };
-      reader.readAsArrayBuffer(file);
-    });
-  }
+      } catch (err) {
+        reject(err);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
 
   // Parse XML claim files
   async function parseXML(file) {
