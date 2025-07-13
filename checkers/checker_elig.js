@@ -315,15 +315,114 @@ function parseXML(file) {
 }
 
 // 2) validateInstaWithEligibility — match each Insta row against eligData
+async function parseEligibilityExcel(file) {
+  const reader = new FileReader();
+  return new Promise((resolve, reject) => {
+    reader.onload = e => {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        if (!worksheet) throw new Error('No worksheet found');
+
+        // Your exact header names
+        const headers = [
+          'Payer Name',
+          'Member Name',
+          'Transcation Id',
+          'Eligibility Request Number',
+          'Card Number / DHA Member ID',
+          'EID',
+          'Ordered On',
+          'Answered On',
+          'Mobile Number',
+          'Authorization Number',
+          'Status',
+          'Denial Code/Rule ID',
+          'Denial Description/Rule Description',
+          'Clinician',
+          'Clinician Name',
+          'Provider License',
+          'Provider Name',
+          'User Name',
+          'Submitted via Emirates Id',
+          'Service Category',
+          'Consultation Status',
+          'Reffering Clinician',
+          'Refferal Letter Reference No',
+          'Has Multiple Policy',
+          'Rule Ansswered',
+          'VOI Number',
+          'VOI Message',
+          'Card Number',
+          'PolicyId',
+          'PolicyName',
+          'EffectiveDate',
+          'ExpiryDate',
+          'Package Name',
+          'Card Network',
+          'Network Billing Reference',
+          'Card Number',
+          'PolicyId',
+          'PolicyName',
+          'EffectiveDate',
+          'ExpiryDate',
+          'Package Name',
+          'Card Network',
+          'Network Billing Reference'
+        ];
+
+        // Get all rows (skip first metadata row)
+        const allRows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+        
+        // Process data rows (starting from row 2 since header is row 1)
+        const json = allRows.slice(1).map(row => {
+          const obj = {};
+          headers.forEach((header, i) => {
+            // Handle duplicate columns by keeping first occurrence
+            if (!obj[header]) {
+              obj[header] = row[i] || '';
+              // Auto-parse date fields
+              if (header.includes('Date') || header.includes('On')) {
+                obj[header] = parseDate(obj[header]) || obj[header];
+              }
+            }
+          });
+          return obj;
+        });
+
+        console.log("First parsed eligibility row:", json[0]);
+        resolve(json);
+      } catch (err) {
+        reject(err);
+      }
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsArrayBuffer(file);
+  });
+}
+
 function validateInstaWithEligibility(instaRows, eligData) {
   const results = [];
   const seenClaimIDs = new Set();
   const eligMap = {};
 
+  // Build optimized eligibility map using all possible ID fields
   eligData.forEach(eligRow => {
-    ['Card Number / DHA Member ID', 'MemberID', 'PatientCardID'].forEach(field => {
-      const memberID = normalizeMemberID(eligRow[field]);
-      if (memberID) (eligMap[memberID] = eligMap[memberID] || []).push(eligRow);
+    const idFields = [
+      'Card Number / DHA Member ID',
+      'Card Number',
+      'MemberID',
+      'EID'
+    ];
+    
+    idFields.forEach(field => {
+      const cardNumber = normalizeMemberID(eligRow[field]);
+      if (cardNumber) {
+        if (!eligMap[cardNumber]) eligMap[cardNumber] = [];
+        eligMap[cardNumber].push(eligRow);
+      }
     });
   });
 
@@ -332,39 +431,56 @@ function validateInstaWithEligibility(instaRows, eligData) {
     if (!claimID || seenClaimIDs.has(claimID)) return;
     seenClaimIDs.add(claimID);
 
-    let memberID = normalizeMemberID(row.MemberID);
+    const memberID = normalizeMemberID(row.MemberID);
     const eligRows = memberID ? (eligMap[memberID] || []) : [];
     const remarks = [];
     let match = null, unknown = false;
 
-    if (!memberID) remarks.push("MemberID missing in claim.");
-    else if (!eligRows.length) remarks.push("No eligibility rows found for card number.");
-    else {
-      const best = findBestEligibilityMatch(memberID, row.ClaimDate, row["Clinician License"], eligRows);
-      if (!best || best.error) remarks.push(best?.error || "No matching eligibility.");
-      else {
-        match = best.match;
-        unknown = best.unknown;
-        if ((match['Status'] || "").toLowerCase() !== "eligible") remarks.push(`Status not eligible (${match['Status']})`);
-        if (!isWithinEligibilityPeriod(row.ClaimDate, match['EffectiveDate'], match['Answered On'])) {
-          remarks.push("Claim date outside eligibility period.");
-        }
+    if (!memberID) {
+      remarks.push("MemberID missing in claim");
+    } else if (!eligRows.length) {
+      console.debug('Eligibility match failed for:', {
+        memberID,
+        availableIDs: Object.keys(eligMap).slice(0, 5),
+        sampleEligibility: eligData[0] ? {
+          'Card Number': eligData[0]['Card Number / DHA Member ID'],
+          'MemberID': eligData[0].MemberID,
+          'Status': eligData[0].Status
+        } : null
+      });
+      remarks.push("No eligibility rows found for card number");
+    } else {
+      const claimDate = parseDate(row.ClaimDate);
+      match = eligRows.find(e => {
+        const startDate = parseDate(e['EffectiveDate'] || e['Ordered On']);
+        const endDate = parseDate(e['ExpiryDate'] || e['Answered On']);
+        return (!claimDate || !startDate || claimDate >= startDate) && 
+               (!claimDate || !endDate || claimDate <= endDate);
+      }) || eligRows[0];
+      
+      if ((match.Status || "").toLowerCase() !== "eligible") {
+        remarks.push(`Status: ${match.Status}`);
+      }
+
+      // Additional validation checks
+      if (match['Service Category'] && !['Dental Services', 'Consultation'].includes(match['Service Category'])) {
+        remarks.push(`Invalid Service Category: ${match['Service Category']}`);
       }
     }
 
     results.push({
       claimID: row.ClaimID,
       memberID,
-      insuranceCompany: row["Insurance Company"],
-      packageName: row["Package Name"],
+      insuranceCompany: match?.['Payer Name'] || "",
+      packageName: match?.['Package Name'] || match?.['Network Billing Reference'] || "",
       encounterStart: row.ClaimDate ? excelDateToDDMMYYYY(row.ClaimDate) : row.ClaimDate,
-      clinicianID: row["Clinician License"],
-      status: match?.['Status'] || "",
-      clinic: row.Clinic,
+      clinicianID: row["Clinician License"] || match?.['Provider License'] || "",
+      status: match?.Status || "",
+      clinic: row.Clinic || match?.['Provider Name'] || "",
       remarks,
       unknown,
       eligibilityRequestNumber: match?.["Eligibility Request Number"] || "",
-      serviceCategory: (match?.["Service Category"] || "").trim(),
+      serviceCategory: match?.["Service Category"] || "",
       details: match ? formatEligibilityDetailsModal(match, memberID) : ""
     });
   });
