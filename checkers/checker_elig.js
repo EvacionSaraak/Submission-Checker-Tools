@@ -263,28 +263,13 @@ function validateXmlClaims(xmlClaims, eligMap) {
 
     if (!eligibility) {
       remarks.push('No matching eligibility found');
+    } else if (eligibility.Status?.toLowerCase() !== 'eligible') {
+      remarks.push(`Eligibility status: ${eligibility.Status}`);
+    } else if (!checkClinicianMatch(claim.clinicians, eligibility.Clinician)) {
+      status = 'unknown';
+      remarks.push('Clinician mismatch');
     } else {
-      if (eligibility.Status?.toLowerCase() !== 'eligible') {
-        remarks.push(`Eligibility status: ${eligibility.Status}`);
-      }
-
-      const serviceCheck = isServiceCategoryValid(
-        eligibility['Service Category'],
-        eligibility['Consultation Status'],
-        eligibility['Package Name']
-      );
-      if (!serviceCheck.valid) {
-        remarks.push(serviceCheck.reason);
-      }
-
-      if (!checkClinicianMatch(claim.clinicians, eligibility.Clinician)) {
-        remarks.push('Clinician mismatch');
-        status = 'unknown';
-      }
-
-      if (remarks.length === 0) {
-        status = 'valid';
-      }
+      status = 'valid';
     }
 
     return {
@@ -292,9 +277,10 @@ function validateXmlClaims(xmlClaims, eligMap) {
       memberID: claim.memberID,
       encounterStart: formattedDate,
       packageName: eligibility?.['Package Name'] || '',
-      provider: eligibility?.['Payer Name'] || '', // <-- renamed
+      provider: eligibility?.['Payer Name'] || '',
       clinician: eligibility?.['Clinician'] || '',
       serviceCategory: eligibility?.['Service Category'] || '',
+      consultationStatus: eligibility?.['Consultation Status'] || '',
       status: eligibility?.Status || '',
       remarks,
       finalStatus: status,
@@ -312,24 +298,41 @@ function validateReportClaims(reportData, eligMap) {
 
     let status = 'invalid';
     const remarks = [];
+    const department = (row.department || row.clinic || '').toLowerCase();
 
     if (!eligibility) {
       remarks.push('No matching eligibility found');
+    } else if (eligibility.Status?.toLowerCase() !== 'eligible') {
+      remarks.push(`Eligibility status: ${eligibility.Status}`);
     } else {
-      if (eligibility.Status?.toLowerCase() !== 'eligible') {
-        remarks.push(`Eligibility status: ${eligibility.Status}`);
-      }
+      const serviceCategory = eligibility['Service Category']?.trim() || '';
+      const consultationStatus = eligibility['Consultation Status']?.trim()?.toLowerCase() || '';
+      const dept = department.toLowerCase();
 
-      const serviceCheck = isServiceCategoryValid(
-        eligibility['Service Category'],
-        eligibility['Consultation Status'],
-        eligibility['Package Name']
-      );
-      if (!serviceCheck.valid) {
-        remarks.push(serviceCheck.reason);
-      }
+      const matchesCategory = (() => {
+        if (serviceCategory === 'Consultation' && consultationStatus === 'elective') {
+          const excluded = ['dental', 'physiotherapy', 'dietician', 'occupational therapy', 'speech therapy'];
+          return !excluded.includes(dept);
+        }
 
-      if (remarks.length === 0) {
+        if (serviceCategory === 'Dental Services') {
+          return dept.includes('dental');
+        }
+
+        if (serviceCategory === 'Physiotherapy') {
+          return dept.includes('physio');
+        }
+
+        if (serviceCategory === 'Other OP Services') {
+          return ['physio', 'dietician', 'occupational', 'speech'].some(term => dept.includes(term));
+        }
+
+        return true; // allow all else
+      })();
+
+      if (!matchesCategory) {
+        remarks.push(`Invalid for category: ${serviceCategory}, department: ${row.department || row.clinic}`);
+      } else {
         status = 'valid';
       }
     }
@@ -339,9 +342,10 @@ function validateReportClaims(reportData, eligMap) {
       memberID: row.memberID,
       encounterStart: DateHandler.format(claimDate),
       packageName: eligibility?.['Package Name'] || '',
-      provider: eligibility?.['Payer Name'] || '', // <-- renamed
+      provider: eligibility?.['Payer Name'] || '',
       clinician: eligibility?.['Clinician'] || '',
       serviceCategory: eligibility?.['Service Category'] || '',
+      consultationStatus: eligibility?.['Consultation Status'] || '',
       status: eligibility?.Status || '',
       remarks,
       finalStatus: status,
@@ -349,6 +353,7 @@ function validateReportClaims(reportData, eligMap) {
     };
   });
 }
+
 
 /*********************
  * FILE PARSING FUNCTIONS *
