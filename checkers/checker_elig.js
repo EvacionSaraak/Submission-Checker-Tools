@@ -359,6 +359,7 @@ async function parseXML(file) {
     const usedEligibilities = new Set();
     const results = [];
   
+    // Map eligibilities by normalized MemberID
     const eligMap = {};
     for (const e of eligData) {
       const id = normalizeMemberID(e["Card Number / DHA Member ID"]);
@@ -369,30 +370,63 @@ async function parseXML(file) {
       const memberID = normalizeMemberID(claim.memberID);
       const eligList = eligMap[memberID] || [];
   
-      const remarks = [];
-      const match = findUnusedEligibility(eligList, claim.encounterStart, usedEligibilities);
+      // Filter eligibilities matching claim date exactly (date only)
+      const claimDateStr = claim.encounterStart ? formatDate(claim.encounterStart).split('-').reverse().join('/') : '';
+      // claimDateStr formatted as DD/MM/YYYY to compare with eligibility dates
   
-      if (!match) {
-        remarks.push("No matching eligibility on same day or already used");
-      } else {
-        usedEligibilities.add(match['Eligibility Request Number']);
-        if ((match.Status || '').toLowerCase() !== 'eligible') {
-          remarks.push(`Invalid status: ${match.Status}`);
+      const validEligibilities = eligList.filter(e => {
+        const eligDate = formatEligibilityDate(e['Answered On']); // format DD/MM/YYYY
+        return eligDate === claimDateStr;
+      });
+  
+      let remarks = [];
+      let matchedEligibility = null;
+  
+      if (validEligibilities.length === 1) {
+        matchedEligibility = validEligibilities[0];
+  
+        // Check clinician license match
+        const eligClinician = matchedEligibility['Clinician']?.trim();
+        // claim.clinicians is an array — check if any match or if empty
+        const claimClinician = claim.clinicians && claim.clinicians.length === 1 ? claim.clinicians[0].trim() : null;
+  
+        if (eligClinician && claimClinician && eligClinician !== claimClinician) {
+          remarks.push(`Clinician mismatch: claim ${claimClinician} vs eligibility ${eligClinician}`);
         }
+  
+        // Check eligibility status
+        if ((matchedEligibility.Status || '').toLowerCase() !== 'eligible') {
+          remarks.push(`Invalid status: ${matchedEligibility.Status}`);
+        }
+  
+        usedEligibilities.add(matchedEligibility['Eligibility Request Number']);
+      } else if (validEligibilities.length > 1) {
+        remarks.push('Multiple eligibilities found for claim date');
+      } else {
+        remarks.push('No matching eligibility found for claim date');
+      }
+  
+      // Determine final status for display row class, per remarks
+      let finalStatus = 'invalid';
+      if (remarks.length === 0) {
+        finalStatus = 'valid';
+      } else if (remarks.some(r => r.toLowerCase().includes('clinician mismatch'))) {
+        finalStatus = 'unknown';
       }
   
       results.push({
         claimID: claim.claimID,
         memberID: claim.memberID,
-        packageName: match?.['Package Name'] || '',
+        packageName: matchedEligibility?.['Package Name'] || '',
         encounterStart: claim.encounterStart ? formatDate(claim.encounterStart) : '',
-        service: match?.['Service Category'] || '',
-        clinic: match?.['Provider Name'] || '',
-        insuranceCompany: match?.['Payer Name'] || '',
-        status: match?.Status || '',
-        eligibilityRequestNumber: match?.["Eligibility Request Number"] || '',
+        service: matchedEligibility?.['Service Category'] || '',
+        clinic: matchedEligibility?.['Provider Name'] || '',
+        insuranceCompany: matchedEligibility?.['Payer Name'] || '',
+        status: matchedEligibility?.Status || '',
+        eligibilityRequestNumber: matchedEligibility?.["Eligibility Request Number"] || '',
         remarks,
-        fullEligibilityRecord: match || null
+        finalStatus,          // Add this if you want to use it in rendering
+        fullEligibilityRecord: matchedEligibility || null
       });
     }
   
