@@ -554,7 +554,7 @@ function validateClinicPro(reportRows, eligData) {
             if (match.Status?.toLowerCase() !== "eligible") remarks.push(`Invalid status: ${match.Status}`);
             
             const svc = match['Service Category'] || '';
-            if if (!VALID_SERVICES.includes(svc)) remarks.push(`Invalid service: ${svc}`);
+            if (!VALID_SERVICES.includes(svc)) remarks.push(`Invalid service: ${svc}`);
         }
 
         const encounterStart = row.ClaimDate ? excelDateToDDMMYYYY(row.ClaimDate) : 
