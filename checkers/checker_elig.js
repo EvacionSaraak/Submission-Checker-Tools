@@ -64,7 +64,7 @@ const DateHandler = {
   },
 
   format: function(date) {
-    if (!date) return '';
+    if (!(date instanceof Date) || isNaN(date)) return '';
     const d = date.getDate().toString().padStart(2, '0');
     const m = (date.getMonth() + 1).toString().padStart(2, '0');
     const y = date.getFullYear();
@@ -197,6 +197,7 @@ function validateXmlClaims(xmlClaims, eligMap) {
   console.log(`Validating ${xmlClaims.length} XML claims`);
   return xmlClaims.map(claim => {
     const claimDate = DateHandler.parse(claim.encounterStart);
+    const formattedDate = DateHandler.format(claimDate);
     const memberID = normalizeMemberID(claim.memberID);
     const eligibility = findEligibilityForClaim(eligMap, claimDate, memberID, claim.clinicians);
 
@@ -217,7 +218,7 @@ function validateXmlClaims(xmlClaims, eligMap) {
     return {
       claimID: claim.claimID,
       memberID: claim.memberID,
-      encounterStart: DateHandler.format(claimDate),
+      encounterStart: formattedDate,
       packageName: eligibility?.['Package Name'] || '',
       provider: eligibility?.['Provider Name'] || '',
       clinician: eligibility?.['Clinician'] || '',
@@ -467,7 +468,7 @@ function renderResults(results) {
       <td class="wrap-col">${remarksHTML}</td>
       <td>${detailsBtn}</td>
     `;
-
+    console.log(row);
     tbody.appendChild(row);
   });
 
