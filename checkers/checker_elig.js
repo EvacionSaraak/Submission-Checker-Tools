@@ -280,52 +280,53 @@ window.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-function validateXml(xmlData, eligData) {
-  const usedEligibilities = [];
-  const results = [];
+async function parseXML(file) {
+  console.log("Starting XML parsing for file:", file.name);
+  try {
+    const text = await file.text();
+    const xmlDoc = new DOMParser().parseFromString(text, "application/xml");
+    const claims = Array.from(xmlDoc.querySelectorAll('Claim')).map(claim => {
+      const claimID = claim.querySelector('ID')?.textContent.trim() || '';
+      const memberID = claim.querySelector('MemberID')?.textContent.trim() || '';
 
-  for (const claim of xmlData.encounters) {
-    const eligRecord = eligData.find(elig =>
-      elig["Card Number / DHA Member ID"] === claim.memberID &&
-      elig["Payer Name"] === claim.insuranceCompany
-    );
-
-    if (!eligRecord || usedEligibilities.includes(eligRecord["Eligibility Request Number"])) {
-      results.push({
-        claimID: claim.claimID,
-        memberID: claim.memberID,
-        packageName: '',
-        encounterStart: '',
-        service: '',
-        clinic: '',
-        remarks: ['No matching eligibility or eligibility already used'],
-        eligibilityRequestNumber: eligRecord ? eligRecord["Eligibility Request Number"] : '',
-        fullEligibilityRecord: eligRecord || null
+      // Collect clinicians from Activity > Clinician and OrderingClinician
+      const clinicians = new Set();
+      claim.querySelectorAll('Activity').forEach(activity => {
+        const clinicianText = activity.querySelector('Clinician')?.textContent.trim();
+        const orderingClinicianText = activity.querySelector('OrderingClinician')?.textContent.trim();
+        if (clinicianText) clinicians.add(clinicianText);
+        if (orderingClinicianText) clinicians.add(orderingClinicianText);
       });
-      continue;
-    }
 
-    usedEligibilities.push(eligRecord["Eligibility Request Number"]);
+      // Process encounters
+      const encounters = Array.from(claim.querySelectorAll('Encounter')).map(enc => ({
+        claimID,
+        memberID,
+        encounterStart: parseDate(enc.querySelector('Start')?.textContent.trim()) || null,
+        claimClinician: clinicians.size === 1 ? [...clinicians][0] : null,
+        multipleClinicians: clinicians.size > 1
+      }));
 
-    const packageName = eligRecord["Package Name"] || '';
-    const service = eligRecord["Service Category"] || '';
-    const clinic = eligRecord["Provider Name"] || '';
-    const encounterStart = claim.encounterStart ? formatDate(claim.encounterStart) : '';
-
-    results.push({
-      claimID: claim.claimID,
-      memberID: claim.memberID,
-      packageName,
-      encounterStart,
-      service,
-      clinic,
-      remarks: [],
-      eligibilityRequestNumber: eligRecord["Eligibility Request Number"],
-      fullEligibilityRecord: eligRecord
+      return { claimID, encounters };
     });
-  }
 
-  return results;
+    const result = {
+      claims: claims.length,
+      encounters: claims.flatMap(c => c.encounters),
+      sampleEncounter: claims.flatMap(c => c.encounters)[0] || null,
+    };
+
+    console.log("XML parsing complete. Found:", {
+      claims: result.claims,
+      encounters: result.encounters.length,
+      sampleEncounter: result.sampleEncounter,
+    });
+
+    return result;
+  } catch (err) {
+    console.error("Error parsing XML:", err);
+    throw err;
+  }
 }
   
   // =====================
@@ -333,50 +334,50 @@ function validateXml(xmlData, eligData) {
   // =====================
 
   // Validate XML data against eligibility
-   function validateXml(xmlData, eligData) {
-    console.log("Starting XML validation");
-    const results = [], seenClaims = new Set(), eligMap = {};
-    const usedEligibilities = new Set();
+  function validateXml(xmlData, eligData) {
+    const usedEligibilities = [];
+    const results = [];
   
-    eligData.forEach(e => {
-      const id = normalizeMemberID(e['Card Number / DHA Member ID'] || e.MemberID);
-      if (id) (eligMap[id] = eligMap[id] || []).push(e);
-    });
+    for (const claim of xmlData.encounters) {
+      const eligRecord = eligData.find(elig =>
+        elig["Card Number / DHA Member ID"] === claim.memberID &&
+        elig["Payer Name"] === claim.insuranceCompany
+      );
   
-    xmlData.encounters.forEach(enc => {
-      if (!enc.claimID || seenClaims.has(enc.claimID)) return;
-      seenClaims.add(enc.claimID);
-  
-      const memberID = normalizeMemberID(enc.memberID);
-      const eligMatches = memberID ? (eligMap[memberID] || []) : [];
-      const remarks = [];
-      let match = null;
-  
-      if (!memberID) remarks.push("Missing MemberID in XML");
-      else if (!eligMatches.length) remarks.push("No matching eligibility found");
-      else {
-        const claimDate = parseDate(enc.encounterStart);
-        match = findUnusedEligibility(eligMatches, claimDate, usedEligibilities);
-        if (match) usedEligibilities.add(match['Eligibility Request Number']);
-  
-        if (match?.Status?.toLowerCase() !== "eligible") remarks.push(`Invalid status: ${match?.Status}`);
-  
-        const svc = match?.['Service Category'] || '';
-        if (!['Consultation', 'Dental Services', 'Physiotherapy'].includes(svc)) remarks.push(`Invalid service: ${svc}`);
+      if (!eligRecord || usedEligibilities.includes(eligRecord["Eligibility Request Number"])) {
+        results.push({
+          claimID: claim.claimID,
+          memberID: claim.memberID,
+          packageName: '',
+          encounterStart: '',
+          service: '',
+          clinic: '',
+          remarks: ['No matching eligibility or eligibility already used'],
+          eligibilityRequestNumber: eligRecord ? eligRecord["Eligibility Request Number"] : '',
+          fullEligibilityRecord: eligRecord || null
+        });
+        continue;
       }
   
+      usedEligibilities.push(eligRecord["Eligibility Request Number"]);
+  
+      const packageName = eligRecord["Package Name"] || '';
+      const service = eligRecord["Service Category"] || '';
+      const clinic = eligRecord["Provider Name"] || '';
+      const encounterStart = claim.encounterStart ? formatDate(claim.encounterStart) : '';
+  
       results.push({
-        claimID: enc.claimID,
-        memberID,
-        insuranceCompany: match?.['Payer Name'] || "",
-        packageName: match?.['Package Name'] || "",
-        encounterStart: enc.encounterStart ? excelDateToDDMMYYYY(parseDate(enc.encounterStart)) : enc.encounterStart,
-        status: match?.Status || "",
-        remarks,
-        eligibilityRequestNumber: match?.["Eligibility Request Number"] || "",
-        fullEligibilityRecord: match || null
+        claimID: claim.claimID,
+        memberID: claim.memberID,
+        packageName,
+        encounterStart,
+        service,
+        clinic,
+        remarks: [],
+        eligibilityRequestNumber: eligRecord["Eligibility Request Number"],
+        fullEligibilityRecord: eligRecord
       });
-    });
+    }
   
     return results;
   }
