@@ -103,6 +103,15 @@ window.addEventListener("DOMContentLoaded", () => {
     return isNaN(parsedDate.getTime()) ? null : parsedDate;
   }
 
+  function formatDate(date) {
+    if (!date) return '';
+    const d = date.getDate().toString().padStart(2, '0');
+    const m = (date.getMonth() + 1).toString().padStart(2, '0');
+    const y = date.getFullYear();
+    return `${d}-${m}-${y}`;
+  }
+
+
   function formatEligibilityDetailsModal(eligRecord, memberID) {
     if (!eligRecord) return "<p>No eligibility details available</p>";
     
@@ -271,56 +280,52 @@ window.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-async function parseXML(file) {
-  console.log("Starting XML parsing for file:", file.name);
-  try {
-    const text = await file.text();
-    const xmlDoc = new DOMParser().parseFromString(text, "application/xml");
-    const claims = Array.from(xmlDoc.querySelectorAll('Claim')).map(claim => {
-      const claimID = claim.querySelector('ID')?.textContent.trim() || '';
-      const memberID = claim.querySelector('MemberID')?.textContent.trim() || '';
+function validateXml(xmlData, eligData) {
+  const usedEligibilities = [];
+  const results = [];
 
-      console.debug(`Processing claim ${claimID} for member ${memberID}`);
+  for (const claim of xmlData.encounters) {
+    const eligRecord = eligData.find(elig =>
+      elig["Card Number / DHA Member ID"] === claim.memberID &&
+      elig["Payer Name"] === claim.insuranceCompany
+    );
 
-      // Collect clinicians from Activity > Clinician or OrderingClinician
-      const clinicians = new Set();
-      claim.querySelectorAll('Activity Clinician, Activity OrderingClinician').forEach(c => {
-        if (c.textContent.trim()) clinicians.add(c.textContent.trim());
+    if (!eligRecord || usedEligibilities.includes(eligRecord["Eligibility Request Number"])) {
+      results.push({
+        claimID: claim.claimID,
+        memberID: claim.memberID,
+        packageName: '',
+        encounterStart: '',
+        service: '',
+        clinic: '',
+        remarks: ['No matching eligibility or eligibility already used'],
+        eligibilityRequestNumber: eligRecord ? eligRecord["Eligibility Request Number"] : '',
+        fullEligibilityRecord: eligRecord || null
       });
+      continue;
+    }
 
-      console.debug(`Found ${clinicians.size} clinicians for claim ${claimID}`);
+    usedEligibilities.push(eligRecord["Eligibility Request Number"]);
 
-      // Process encounters
-      const encounters = Array.from(claim.querySelectorAll('Encounter')).map(enc => {
-        const startText = enc.querySelector('Start')?.textContent;
-        return {
-          claimID,
-          memberID,
-          encounterStart: startText ? parseDate(startText.trim()) : null,
-          claimClinician: clinicians.size === 1 ? [...clinicians][0] : null,
-          multipleClinicians: clinicians.size > 1
-        };
-      });
+    const packageName = eligRecord["Package Name"] || '';
+    const service = eligRecord["Service Category"] || '';
+    const clinic = eligRecord["Provider Name"] || '';
+    const encounterStart = claim.encounterStart ? formatDate(claim.encounterStart) : '';
 
-      return { claimID, encounters };
+    results.push({
+      claimID: claim.claimID,
+      memberID: claim.memberID,
+      packageName,
+      encounterStart,
+      service,
+      clinic,
+      remarks: [],
+      eligibilityRequestNumber: eligRecord["Eligibility Request Number"],
+      fullEligibilityRecord: eligRecord
     });
-
-    const result = {
-      claimsCount: claims.length,
-      encounters: claims.flatMap(c => c.encounters)
-    };
-
-    console.log("XML parsing complete. Found:", {
-      claims: result.claimsCount,
-      encounters: result.encounters.length,
-      sampleEncounter: result.encounters[0]
-    });
-
-    return result;
-  } catch (err) {
-    console.error("Error parsing XML:", err);
-    throw err;
   }
+
+  return results;
 }
   
   // =====================
@@ -487,46 +492,44 @@ async function parseXML(file) {
   // UI RENDERING
   // =====================
   // Render results table
-function renderResults(results, containerId = "results") {
-    const container = document.getElementById(containerId);
-    container.innerHTML = `
-      <table class="shared-table">
-        <thead><tr>
-          <th>#</th><th>ID</th><th>MemberID</th><th>Insurance</th>
-          <th>Package</th><th>Date</th><th>Details</th>
-          <th>Status</th><th>Service</th><th>Clinic</th><th>Remarks</th>
-        </tr></thead>
-        <tbody>
-          ${results.map((r, i) => `
-            <tr class="${r.remarks.length ? "invalid" : "valid"}" data-details="${escapeHtml(r.details)}">
-              <td>${i + 1}</td>
-              <td class="wrap-col">${r.claimID}</td>
-              <td class="wrap-col">${r.memberID}</td>
-              <td class="wrap-col">${r.insuranceCompany || ""}</td>
-              <td class="wrap-col">${r.packageName || ""}</td>
-              <td class="wrap-col">${r.encounterStart || ""}</td>
-              <td><button class="details-btn" ${r.details && r.details.trim() ? "" : "disabled"}>
-                ${r.eligibilityRequestNumber || "No Request"}
-              </button></td>
-              <td>${r.status || ""}</td>
-              <td>${r.serviceCategory || ""}</td>
-              <td>${r.clinic || ""}</td>
-              <td style="white-space: pre-line;">${r.remarks.join("\n")}</td>
-            </tr>`
-          ).join("")}
-        </tbody>
-      </table>
-    `;
-    
-    // Attach modal handlers
-    container.querySelectorAll(".details-btn").forEach(btn => {
-      btn.addEventListener("click", () => {
-        const modal = document.getElementById("eligibilityModal") || createModal(container);
-        modal.querySelector("#modalContent").innerHTML = btn.closest("tr").dataset.details;
-        modal.style.display = "block";
-      });
-    });
-}
+  function renderResults(results) {
+    const container = document.getElementById('results');
+    if (!results.length) {
+      container.innerHTML = '<p>No validation results found.</p>';
+      return;
+    }
+  
+    let html = `<table class="shared-table">
+      <thead>
+        <tr>
+          <th>Claim ID</th>
+          <th>Member ID</th>
+          <th>Package</th>
+          <th>Date</th>
+          <th>Service</th>
+          <th>Clinic</th>
+          <th>Remarks</th>
+        </tr>
+      </thead>
+      <tbody>`;
+  
+    for (const r of results) {
+      const remarks = r.remarks.length ? r.remarks.join('; ') : 'Valid';
+  
+      html += `<tr>
+        <td>${r.claimID || ''}</td>
+        <td>${r.memberID || ''}</td>
+        <td>${r.packageName || ''}</td>
+        <td>${r.encounterStart || ''}</td>
+        <td>${r.service || ''}</td>
+        <td>${r.clinic || ''}</td>
+        <td>${remarks}</td>
+      </tr>`;
+    }
+  
+    html += '</tbody></table>';
+    container.innerHTML = html;
+  }
   
   // Create modal dialog
   function createModal(container) {
