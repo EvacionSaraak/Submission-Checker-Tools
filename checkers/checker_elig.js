@@ -335,34 +335,36 @@ window.addEventListener("DOMContentLoaded", () => {
   // Validate XML data against eligibility
   function validateXml(xmlData, eligData) {
     console.log("Starting XML validation");
-    console.log("XML data:", {claims: xmlData.claimsCount, encounters: xmlData.encounters.length});
+    console.log("XML data:", { claims: xmlData.claimsCount, encounters: xmlData.encounters.length });
     console.log("Eligibility data count:", eligData.length);
-    
+  
     const results = [], seenClaims = new Set(), eligMap = {};
-    
+  
     // Build eligibility index
     eligData.forEach(e => {
       const id = normalizeMemberID(e['Card Number / DHA Member ID'] || e.MemberID);
       if (id) (eligMap[id] = eligMap[id] || []).push(e);
     });
-
+  
     console.log("Eligibility map size:", Object.keys(eligMap).length);
-    
+  
+    const formatEligDate = val => {
+      const parsed = parseDate(val);
+      return parsed ? excelDateToDDMMYYYY(parsed) : "";
+    };
+  
     xmlData.encounters.forEach(enc => {
       if (!enc.claimID || seenClaims.has(enc.claimID)) {
         console.debug(`Skipping duplicate or empty claim ID: ${enc.claimID}`);
         return;
       }
       seenClaims.add(enc.claimID);
-
+  
       const memberID = normalizeMemberID(enc.memberID);
       const eligMatches = memberID ? (eligMap[memberID] || []) : [];
       const remarks = [];
       let match = null;
-
-      console.debug(`Validating claim ${enc.claimID} for member ${memberID}`);
-      
-      // Find matching eligibility
+  
       if (!memberID) {
         remarks.push("Missing MemberID in XML");
         console.warn("Missing MemberID in XML for claim:", enc.claimID);
@@ -372,55 +374,47 @@ window.addEventListener("DOMContentLoaded", () => {
       } else {
         const claimDate = parseDate(enc.encounterStart);
         console.debug("Claim date:", claimDate);
-        
+  
         match = eligMatches.find(e => {
           const start = parseDate(e.EffectiveDate || e['Ordered On']);
           const end = parseDate(e.ExpiryDate || e['Answered On']);
-          const inWindow = (!claimDate || !start || claimDate >= start) && 
-                         (!claimDate || !end || claimDate <= end);
-          console.debug("Checking eligibility window:", {
-            claimDate,
-            start,
-            end,
-            inWindow
-          });
+          const inWindow = (!claimDate || !start || claimDate >= start) &&
+                           (!claimDate || !end || claimDate <= end);
+          console.debug("Checking eligibility window:", { claimDate, start, end, inWindow });
           return inWindow;
         }) || eligMatches[0];
-        
-        if (match) {
-          console.debug("Found matching eligibility:", {
-            requestNumber: match['Eligibility Request Number'],
-            status: match.Status,
-            service: match['Service Category']
-          });
-        }
-        
+  
         if (match.Status?.toLowerCase() !== "eligible") {
           remarks.push(`Invalid status: ${match.Status}`);
           console.warn(`Invalid status for claim ${enc.claimID}: ${match.Status}`);
         }
-        
-        // Additional checks
+  
         const svc = match['Service Category'] || '';
-        if (!VALID_SERVICES.includes(svc)) {
+        if (!['Consultation', 'Dental Services', 'Physiotherapy'].includes(svc)) {
           remarks.push(`Invalid service: ${svc}`);
           console.warn(`Invalid service category for claim ${enc.claimID}: ${svc}`);
         }
       }
-
+  
+      const encounterStart = enc.encounterStart
+        ? excelDateToDDMMYYYY(parseDate(enc.encounterStart))
+        : formatEligDate(match?.['Ordered On'] || match?.['Answered On']);
+  
+      const packageName = match?.['Package Name'] || match?.['PolicyName'] || match?.['PolicyId'] || "";
+  
       results.push({
         claimID: enc.claimID,
         memberID,
         insuranceCompany: match?.['Payer Name'] || "",
-        packageName: match?.['Package Name'] || "",
-        encounterStart: enc.encounterStart ? excelDateToDDMMYYYY(parseDate(enc.encounterStart)) : enc.encounterStart,
+        packageName,
+        encounterStart,
         status: match?.Status || "",
         remarks,
         eligibilityRequestNumber: match?.["Eligibility Request Number"] || "",
-        fullEligibilityRecord: match || null  // Add this line to store the full record
+        fullEligibilityRecord: match || null
       });
     });
-    
+  
     console.log("XML validation complete. Results count:", results.length);
     console.log("Sample result:", results[0]);
     return results;
