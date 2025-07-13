@@ -214,30 +214,47 @@ function isServiceCategoryValid(eligibility) {
   const category = (eligibility['Service Category'] || '').trim();
   const status = (eligibility['Consultation Status'] || '').trim();
   const packageName = (eligibility['Package Name'] || '').toLowerCase();
-
   const lowerPkg = packageName.toLowerCase();
 
-  if (category === 'Consultation' && status === 'Elective') {
-    const banned = ['dental', 'physiotherapy', 'dietician', 'occupational therapy', 'speech therapy'];
-    return !banned.some(b => lowerPkg.includes(b));
+  // Consultation → Exclude Dental, Physio, etc.
+  if (category === 'Consultation') {
+    if (status === 'Elective') {
+      const banned = ['dental', 'physiotherapy', 'dietician', 'occupational therapy', 'speech therapy'];
+      if (banned.some(b => lowerPkg.includes(b))) {
+        return { valid: false, reason: `Category: ${category}, Elective package not allowed (${packageName})` };
+      }
+    }
+    return { valid: true };
   }
 
+  // Dental must include dental
   if (category === 'Dental Services') {
-    return lowerPkg.includes('dental');
+    if (!lowerPkg.includes('dental')) {
+      return { valid: false, reason: `Category: ${category} requires dental package` };
+    }
+    return { valid: true };
   }
 
+  // Physio must include physio
   if (category === 'Physiotherapy') {
-    return lowerPkg.includes('physio');
+    if (!lowerPkg.includes('physio')) {
+      return { valid: false, reason: `Category: ${category} requires physio package` };
+    }
+    return { valid: true };
   }
 
+  // Other OP → Must include specific types
   if (category === 'Other OP Services') {
-    return ['physio', 'dietician', 'occupational therapy', 'speech therapy'].some(
-      allowed => lowerPkg.includes(allowed)
-    );
+    const allowed = ['physio', 'dietician', 'occupational therapy', 'speech therapy'];
+    if (!allowed.some(t => lowerPkg.includes(t))) {
+      return { valid: false, reason: `Category: ${category} must match physio, dietician, etc.` };
+    }
+    return { valid: true };
   }
 
-  return true; // default pass-through
+  return { valid: true }; // fallback: allow
 }
+
 
 function validateXmlClaims(xmlClaims, eligMap) {
   console.log(`Validating ${xmlClaims.length} XML claims`);
@@ -257,12 +274,16 @@ function validateXmlClaims(xmlClaims, eligMap) {
     } else if (!checkClinicianMatch(claim.clinicians, eligibility.Clinician)) {
       status = 'unknown';
       remarks.push('Clinician mismatch');
-    } else if (!isServiceCategoryValid(eligibility)) {
-      status = 'invalid';
-      remarks.push(`Invalid for category: ${eligibility['Service Category']}, status: ${eligibility['Consultation Status']}`);
     } else {
-      status = 'valid';
+      const serviceCheck = isServiceCategoryValid(eligibility);
+      if (!serviceCheck.valid) {
+        status = 'invalid';
+        remarks.push(serviceCheck.reason);
+      } else {
+        status = 'valid';
+      }
     }
+
 
 
     return {
@@ -295,13 +316,15 @@ function validateReportClaims(reportData, eligMap) {
       remarks.push('No matching eligibility found');
     } else if (eligibility.Status?.toLowerCase() !== 'eligible') {
       remarks.push(`Eligibility status: ${eligibility.Status}`);
-    } else if (!isServiceCategoryValid(eligibility)) {
-      status = 'invalid';
-      remarks.push(`Invalid for category: ${eligibility['Service Category']}, status: ${eligibility['Consultation Status']}`);
     } else {
-      status = 'valid';
+      const serviceCheck = isServiceCategoryValid(eligibility);
+      if (!serviceCheck.valid) {
+        status = 'invalid';
+        remarks.push(serviceCheck.reason);
+      } else {
+        status = 'valid';
+      }
     }
-
 
     return {
       claimID: claim.claimID,
