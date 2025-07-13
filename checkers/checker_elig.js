@@ -119,6 +119,27 @@ window.addEventListener("DOMContentLoaded", () => {
     return `${d}-${m}-${y}`;
   }
 
+  function compareDate(dateA, dateB) {
+    if (!(dateA instanceof Date) || !(dateB instanceof Date)) return null;
+  
+    const dA = dateA.getDate();
+    const mA = dateA.getMonth();
+    const yA = dateA.getFullYear();
+  
+    const dB = dateB.getDate();
+    const mB = dateB.getMonth();
+    const yB = dateB.getFullYear();
+  
+    if (yA < yB) return -1;
+    if (yA > yB) return 1;
+    if (mA < mB) return -1;
+    if (mA > mB) return 1;
+    if (dA < dB) return -1;
+    if (dA > dB) return 1;
+  
+    return 0;
+  }
+  
   // Helper: format eligibility date strings (to DD/MM/YYYY)
   function formatEligibilityDate(dateStr) {
     if (!dateStr) return '';
@@ -376,13 +397,32 @@ async function parseXML(file) {
       const memberID = normalizeMemberID(claim.memberID);
       const eligList = eligMap[memberID] || [];
   
-      // Filter eligibilities matching claim date exactly (date only)
-      const claimDateStr = claim.encounterStart ? formatDate(claim.encounterStart).split('-').reverse().join('/') : '';
-      // claimDateStr formatted as DD/MM/YYYY to compare with eligibility dates
+      if (!claim.encounterStart) {
+        results.push({
+          claimID: claim.claimID || '',
+          memberID: claim.memberID || '',
+          packageName: '',
+          encounterStart: '',
+          service: '',
+          clinic: '',
+          insuranceCompany: '',
+          status: '',
+          eligibilityRequestNumber: '',
+          remarks: ['Missing encounter date'],
+          finalStatus: 'invalid',
+          fullEligibilityRecord: null
+        });
+        continue;
+      }
   
+      // Filter eligibilities matching claim date exactly and not used
       const validEligibilities = eligList.filter(e => {
-        const eligDate = formatEligibilityDate(e['Answered On']); // format DD/MM/YYYY
-        return eligDate === claimDateStr;
+        const eligDateRaw = e['Answered On'];
+        const eligDate = eligDateRaw instanceof Date ? eligDateRaw : parseDate(eligDateRaw);
+        if (!eligDate) return false;
+  
+        const reqNum = e['Eligibility Request Number'];
+        return compareDate(eligDate, claim.encounterStart) === 0 && !usedEligibilities.has(reqNum);
       });
   
       let remarks = [];
@@ -390,48 +430,43 @@ async function parseXML(file) {
   
       if (validEligibilities.length === 1) {
         matchedEligibility = validEligibilities[0];
+        usedEligibilities.add(matchedEligibility['Eligibility Request Number']);
   
-        // Check clinician license match
+        // Clinician matching
         const eligClinician = matchedEligibility['Clinician']?.trim();
-        // claim.clinicians is an array — check if any match or if empty
-        const claimClinician = claim.clinicians && claim.clinicians.length === 1 ? claim.clinicians[0].trim() : null;
+        const claimClinicians = claim.clinicians || [];
+        const claimCliniciansTrimmed = claimClinicians.map(c => c.trim());
   
-        if (eligClinician && claimClinician && eligClinician !== claimClinician) {
-          remarks.push(`Clinician mismatch: claim ${claimClinician} vs eligibility ${eligClinician}`);
+        if (eligClinician && claimCliniciansTrimmed.length > 0 && !claimCliniciansTrimmed.includes(eligClinician)) {
+          remarks.push(`Clinician mismatch: claim ${claimCliniciansTrimmed.join(', ')} vs eligibility ${eligClinician}`);
         }
   
-        // Check eligibility status
+        // Eligibility status check
         if ((matchedEligibility.Status || '').toLowerCase() !== 'eligible') {
           remarks.push(`Invalid status: ${matchedEligibility.Status}`);
         }
-  
-        usedEligibilities.add(matchedEligibility['Eligibility Request Number']);
       } else if (validEligibilities.length > 1) {
         remarks.push('Multiple eligibilities found for claim date');
       } else {
         remarks.push('No matching eligibility found for claim date');
       }
   
-      // Determine final status for display row class, per remarks
       let finalStatus = 'invalid';
-      if (remarks.length === 0) {
-        finalStatus = 'valid';
-      } else if (remarks.some(r => r.toLowerCase().includes('clinician mismatch'))) {
-        finalStatus = 'unknown';
-      }
+      if (remarks.length === 0) finalStatus = 'valid';
+      else if (remarks.some(r => r.toLowerCase().includes('clinician mismatch'))) finalStatus = 'unknown';
   
       results.push({
-        claimID: claim.claimID,
-        memberID: claim.memberID,
+        claimID: claim.claimID || '',
+        memberID: claim.memberID || '',
         packageName: matchedEligibility?.['Package Name'] || '',
-        encounterStart: claim.encounterStart ? formatDate(claim.encounterStart) : '',
+        encounterStart: excelDateToDDMMYYYY(claim.encounterStart),
         service: matchedEligibility?.['Service Category'] || '',
         clinic: matchedEligibility?.['Provider Name'] || '',
         insuranceCompany: matchedEligibility?.['Payer Name'] || '',
         status: matchedEligibility?.Status || '',
         eligibilityRequestNumber: matchedEligibility?.["Eligibility Request Number"] || '',
         remarks,
-        finalStatus,          // Add this if you want to use it in rendering
+        finalStatus,
         fullEligibilityRecord: matchedEligibility || null
       });
     }
