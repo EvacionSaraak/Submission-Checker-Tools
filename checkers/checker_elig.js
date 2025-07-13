@@ -619,7 +619,7 @@ function renderResults(results) {
   const tbody = document.createElement('tbody');
   for (const row of results) {
     // Log the entire row object before rendering
-    console.debug("Rendering row data:", row);
+    console.log("Rendering row data:", row);
 
     const tr = document.createElement('tr');
 
