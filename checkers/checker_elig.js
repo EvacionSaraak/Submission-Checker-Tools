@@ -86,25 +86,21 @@ window.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  // Robust parseDate function to handle date strings like "17/06/2025 16:10"
   function parseDate(dateStr) {
-    if (!dateStr) return null;
-    // Expected format: dd/MM/yyyy HH:mm
-    // e.g. "17/06/2025 16:10"
-    const dateTimeParts = dateStr.split(' ');
-    if (dateTimeParts.length !== 2) return null;
+    if (typeof dateStr !== 'string') return null;
   
-    const [datePart, timePart] = dateTimeParts;
-    const [dd, MM, yyyy] = datePart.split('/');
-    const [HH, mm] = timePart.split(':');
+    const [datePart, timePart] = dateStr.split(' ');
+    if (!datePart) return null;
   
-    if (!dd || !MM || !yyyy || !HH || !mm) return null;
+    const [day, month, year] = datePart.split('/');
+    if (!day || !month || !year) return null;
   
-    // Construct a Date object using ISO format "yyyy-MM-ddTHH:mm"
-    const isoString = `${yyyy.padStart(4,'0')}-${MM.padStart(2,'0')}-${dd.padStart(2,'0')}T${HH.padStart(2,'0')}:${mm.padStart(2,'0')}:00`;
+    // Format to ISO for Date constructor: "YYYY-MM-DDTHH:mm:ss"
+    const isoString = `${year.padStart(4, '0')}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${timePart || '00:00:00'}`;
   
     const parsedDate = new Date(isoString);
-    if (isNaN(parsedDate.getTime())) return null;
-    return parsedDate;
+    return isNaN(parsedDate.getTime()) ? null : parsedDate;
   }
 
   function formatEligibilityDetailsModal(eligRecord, memberID) {
@@ -286,9 +282,9 @@ async function parseXML(file) {
 
       console.debug(`Processing claim ${claimID} for member ${memberID}`);
 
-      // Collect clinicians
+      // Collect clinicians from Activity > Clinician or OrderingClinician
       const clinicians = new Set();
-      claim.querySelectorAll('Activity Clinician').forEach(c => {
+      claim.querySelectorAll('Activity Clinician, Activity OrderingClinician').forEach(c => {
         if (c.textContent.trim()) clinicians.add(c.textContent.trim());
       });
 
@@ -296,16 +292,16 @@ async function parseXML(file) {
 
       // Process encounters
       const encounters = Array.from(claim.querySelectorAll('Encounter')).map(enc => {
-        const startText = enc.querySelector('Start')?.textContent.trim() || '';
-        const encounterStart = parseDate(startText) || '';
+        const startText = enc.querySelector('Start')?.textContent;
         return {
           claimID,
           memberID,
-          encounterStart,
+          encounterStart: startText ? parseDate(startText.trim()) : null,
           claimClinician: clinicians.size === 1 ? [...clinicians][0] : null,
           multipleClinicians: clinicians.size > 1
         };
       });
+
       return { claimID, encounters };
     });
 
