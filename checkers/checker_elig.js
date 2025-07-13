@@ -86,42 +86,25 @@ window.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  function parseDate(val) {
-    if (!val) return null;
-    if (val instanceof Date) return val;
-    if (typeof val === "number") return new Date(Math.round((val - 25569) * 86400 * 1000));
+  function parseDate(dateStr) {
+    if (!dateStr) return null;
+    // Expected format: dd/MM/yyyy HH:mm
+    // e.g. "17/06/2025 16:10"
+    const dateTimeParts = dateStr.split(' ');
+    if (dateTimeParts.length !== 2) return null;
   
-    const formats = [
-      /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/,
-      /^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/,
-      /^(\d{1,2})[\/\-]([a-z]{3})[\/\-](\d{4})$/i
-    ];
+    const [datePart, timePart] = dateTimeParts;
+    const [dd, MM, yyyy] = datePart.split('/');
+    const [HH, mm] = timePart.split(':');
   
-    for (const regex of formats) {
-      const parts = val.match(regex);
-      if (!parts) continue;
+    if (!dd || !MM || !yyyy || !HH || !mm) return null;
   
-      let day, month, year;
-      if (parts[2] && isNaN(parts[2])) {
-        day = parseInt(parts[1]);
-        month = MONTHS.indexOf(parts[2].toLowerCase());
-        year = parseInt(parts[3]);
-      } else if (parts[1] > 31) {
-        year = parseInt(parts[1]);
-        month = parseInt(parts[2]) - 1;
-        day = parseInt(parts[3]);
-      } else {
-        day = parseInt(parts[1]);
-        month = parseInt(parts[2]) - 1;
-        year = parseInt(parts[3]) + (parts[3].length === 2 ? 2000 : 0);
-        if (day > 12 && month <= 11) [day, month] = [month + 1, day - 1];
-      }
+    // Construct a Date object using ISO format "yyyy-MM-ddTHH:mm"
+    const isoString = `${yyyy.padStart(4,'0')}-${MM.padStart(2,'0')}-${dd.padStart(2,'0')}T${HH.padStart(2,'0')}:${mm.padStart(2,'0')}:00`;
   
-      const dateObj = new Date(year, month, day);
-      if (!isNaN(dateObj.getTime())) return dateObj;
-    }
-  
-    return new Date(val); // Fallback
+    const parsedDate = new Date(isoString);
+    if (isNaN(parsedDate.getTime())) return null;
+    return parsedDate;
   }
 
   function formatEligibilityDetailsModal(eligRecord, memberID) {
@@ -313,20 +296,16 @@ async function parseXML(file) {
 
       // Process encounters
       const encounters = Array.from(claim.querySelectorAll('Encounter')).map(enc => {
-        const startElem = enc.querySelector('Start');
-        const startText = startElem ? startElem.textContent.trim() : '';
-        console.debug(`Encounter Start text for claim ${claimID}:`, startText);
-        const encounterStart = startText ? parseDate(startText) : null;
+        const startText = enc.querySelector('Start')?.textContent.trim() || '';
+        const encounterStart = parseDate(startText) || '';
         return {
           claimID,
           memberID,
-          encounterStart: encounterStart || '',
+          encounterStart,
           claimClinician: clinicians.size === 1 ? [...clinicians][0] : null,
           multipleClinicians: clinicians.size > 1
         };
       });
-
-
       return { claimID, encounters };
     });
 
