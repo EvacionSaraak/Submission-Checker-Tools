@@ -372,10 +372,12 @@ async function parseCsvFile(file) {
 }
 
 function normalizeReportData(rawData) {
-  const isCsvReport = rawData[0]?.hasOwnProperty('Pri. Claim No');
+  // Check if data is from Insta (has 'Pri. Claim No' header)
+  const isInsta = rawData[0]?.hasOwnProperty('Pri. Claim No');
   
   return rawData.map(row => {
-    if (isCsvReport) {
+    if (isInsta) {
+      // Insta report format
       return {
         claimID: row['Pri. Claim No'] || '',
         memberID: row['Pri. Patient Insurance Card No'] || '',
@@ -385,6 +387,7 @@ function normalizeReportData(rawData) {
         department: row['Department'] || ''
       };
     } else {
+      // ClinicPro format
       return {
         claimID: row['ClaimID'] || '',
         memberID: row['Member ID'] || '',
