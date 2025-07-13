@@ -292,7 +292,6 @@ async function parseXmlFile(file) {
 }
 
 async function parseExcelFile(file) {
-  console.log(`Parsing Excel file: ${file.name}`);
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = function(e) {
@@ -300,33 +299,35 @@ async function parseExcelFile(file) {
         const data = new Uint8Array(e.target.result);
         const workbook = XLSX.read(data, { type: 'array' });
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
-        
-        // Get all rows as array of arrays
         const allRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+
+        // Determine file type and header row
+        let headerRow = 0;
+        let dataStartRow = 1;
         
-        // For eligibility files, we need to use row 2 (index 1) as headers
-        const isEligibility = allRows[0]?.some(cell => cell.includes('Daman Enhanced'));
-        
-        if (isEligibility) {
-          console.log('Processing eligibility file with custom headers');
-          const headers = allRows[1]; // Second row contains actual headers
-          const dataRows = allRows.slice(2); // Data starts from row 3
-          
-          const jsonData = dataRows.map(row => {
-            const obj = {};
-            headers.forEach((header, index) => {
-              // Skip empty headers and use the Excel column names as fallback
-              const key = header || `_${index}`;
-              obj[key] = row[index] || '';
-            });
-            return obj;
-          });
-          
-          resolve(jsonData);
-        } else {
-          // Standard Excel processing
-          resolve(XLSX.utils.sheet_to_json(sheet, { defval: '' }));
+        if (allRows[0]?.some(cell => typeof cell === 'string' && cell.includes('Daman Enhanced'))) {
+          // Eligibility file - headers on row 2 (index 1)
+          headerRow = 1;
+          dataStartRow = 2;
+        } else if (allRows[3]?.some(cell => typeof cell === 'string' && cell.includes('Pri. Claim No')))) {
+          // Insta file - headers on row 4 (index 3)
+          headerRow = 3;
+          dataStartRow = 4;
         }
+
+        const headers = allRows[headerRow];
+        const dataRows = allRows.slice(dataStartRow);
+        
+        const jsonData = dataRows.map(row => {
+          const obj = {};
+          headers.forEach((header, index) => {
+            const key = header.trim() || `_${index}`;
+            obj[key] = row[index] || '';
+          });
+          return obj;
+        });
+
+        resolve(jsonData);
       } catch (error) {
         reject(error);
       }
