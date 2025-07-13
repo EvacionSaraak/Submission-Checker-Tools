@@ -165,38 +165,23 @@ function findEligibilityForClaim(eligMap, claimDate, memberID, claimClinicians) 
   if (!claimDate) return null;
   
   const eligibilities = eligMap.get(normalizeMemberID(memberID)) || [];
-  let bestMatch = null;
-  let bestMatchDateDiff = Infinity;
 
   for (const e of eligibilities) {
     const reqNum = e['Eligibility Request Number'];
     if (usedEligibilities.has(reqNum)) continue;
-    
+
     const eligDate = DateHandler.parse(e['Answered On'] || e['Ordered On']);
     if (!eligDate) continue;
-    
-    // Calculate absolute time difference in milliseconds
-    const dateDiff = Math.abs(claimDate - eligDate);
-    
-    // Check if this is a better match than previous candidates
-    if (dateDiff < bestMatchDateDiff) {
-      const clinicianMatch = checkClinicianMatch(claimClinicians, e.Clinician);
-      
-      if (clinicianMatch) {
-        bestMatch = e;
-        bestMatchDateDiff = dateDiff;
-        
-        // Found exact match, stop searching
-        if (dateDiff === 0) break;
+
+    if (DateHandler.isSameDay(claimDate, eligDate)) {
+      if (checkClinicianMatch(claimClinicians, e.Clinician)) {
+        usedEligibilities.add(reqNum);
+        return e;
       }
     }
   }
 
-  if (bestMatch) {
-    usedEligibilities.add(bestMatch['Eligibility Request Number']);
-  }
-  
-  return bestMatch;
+  return null;
 }
 
 function checkClinicianMatch(claimClinicians, eligClinician) {
@@ -214,10 +199,10 @@ function validateXmlClaims(xmlClaims, eligMap) {
     const claimDate = DateHandler.parse(claim.encounterStart);
     const memberID = normalizeMemberID(claim.memberID);
     const eligibility = findEligibilityForClaim(eligMap, claimDate, memberID, claim.clinicians);
-    
+
     let status = 'invalid';
     const remarks = [];
-    
+
     if (!eligibility) {
       remarks.push('No matching eligibility found');
     } else if (eligibility.Status?.toLowerCase() !== 'eligible') {
@@ -228,12 +213,15 @@ function validateXmlClaims(xmlClaims, eligMap) {
     } else {
       status = 'valid';
     }
-    
+
     return {
       claimID: claim.claimID,
       memberID: claim.memberID,
       encounterStart: DateHandler.format(claimDate),
       packageName: eligibility?.['Package Name'] || '',
+      provider: eligibility?.['Provider Name'] || '',
+      clinician: eligibility?.['Clinician'] || '',
+      serviceCategory: eligibility?.['Service Category'] || '',
       status: eligibility?.Status || '',
       remarks,
       finalStatus: status,
@@ -248,10 +236,10 @@ function validateReportClaims(reportData, eligMap) {
     const claimDate = DateHandler.parse(row.claimDate);
     const memberID = normalizeMemberID(row.memberID);
     const eligibility = findEligibilityForClaim(eligMap, claimDate, memberID, [row.clinician]);
-    
+
     let status = 'invalid';
     const remarks = [];
-    
+
     if (!eligibility) {
       remarks.push('No matching eligibility found');
     } else if (eligibility.Status?.toLowerCase() !== 'eligible') {
@@ -259,12 +247,15 @@ function validateReportClaims(reportData, eligMap) {
     } else {
       status = 'valid';
     }
-    
+
     return {
       claimID: row.claimID,
       memberID: row.memberID,
       encounterStart: DateHandler.format(claimDate),
       packageName: eligibility?.['Package Name'] || '',
+      provider: eligibility?.['Provider Name'] || '',
+      clinician: eligibility?.['Clinician'] || '',
+      serviceCategory: eligibility?.['Service Category'] || '',
       status: eligibility?.Status || '',
       remarks,
       finalStatus: status,
@@ -427,7 +418,6 @@ function renderResults(results) {
   const table = document.createElement('table');
   table.className = 'shared-table';
 
-  // Create table header
   const thead = document.createElement('thead');
   thead.innerHTML = `
     <tr>
@@ -435,6 +425,9 @@ function renderResults(results) {
       <th>Member ID</th>
       <th>Encounter Date</th>
       <th>Package</th>
+      <th>Provider</th>
+      <th>Clinician</th>
+      <th>Service Category</th>
       <th>Status</th>
       <th class="wrap-col">Remarks</th>
       <th>Details</th>
@@ -442,51 +435,46 @@ function renderResults(results) {
   `;
   table.appendChild(thead);
 
-  // Create table body
   const tbody = document.createElement('tbody');
-  
   const statusCounts = { valid: 0, invalid: 0, unknown: 0 };
-  
+
   results.forEach((result, index) => {
     statusCounts[result.finalStatus]++;
-    
     const row = document.createElement('tr');
     row.className = result.finalStatus;
-    
-    // Status badge using existing status-badge class
+
     const statusBadge = result.status 
       ? `<span class="status-badge ${result.status.toLowerCase() === 'eligible' ? 'eligible' : 'ineligible'}">${result.status}</span>`
       : '';
-    
-    // Remarks list using existing classes
+
     const remarksHTML = result.remarks.length > 0
       ? result.remarks.map(r => `<div>${r}</div>`).join('')
       : '<div class="source-note">No remarks</div>';
-    
-    // Eligibility details button using existing details-btn class
+
     const detailsBtn = result.fullEligibilityRecord
       ? `<button class="details-btn eligibility-details" data-index="${index}">View</button>`
       : '<div class="source-note">N/A</div>';
-    
+
     row.innerHTML = `
       <td>${result.claimID}</td>
       <td>${result.memberID}</td>
       <td>${result.encounterStart}</td>
       <td>${result.packageName}</td>
+      <td>${result.provider}</td>
+      <td>${result.clinician}</td>
+      <td>${result.serviceCategory}</td>
       <td>${statusBadge}</td>
       <td class="wrap-col">${remarksHTML}</td>
       <td>${detailsBtn}</td>
     `;
-    
+
     tbody.appendChild(row);
-    console.log(row);
   });
-  
+
   table.appendChild(tbody);
   tableContainer.appendChild(table);
   resultsContainer.appendChild(tableContainer);
 
-  // Summary using existing loaded-count class
   const summary = document.createElement('div');
   summary.className = 'loaded-count';
   summary.innerHTML = `
@@ -499,6 +487,7 @@ function renderResults(results) {
 
   initEligibilityModal(results);
 }
+
 
 function initEligibilityModal(results) {
   // Remove existing modal if present
