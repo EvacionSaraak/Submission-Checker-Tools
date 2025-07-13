@@ -167,7 +167,7 @@ function prepareEligibilityMap(eligData) {
       'Ordered On': e['Ordered On'] || e['_6'],
       'Status': e['Status'] || e['_10'],
       'Clinician': e['Clinician'] || e['_15'],
-      'Provider Name': e['Provider Name'] || e['_16'],
+      'Payer Name': e['Payer Name'] || e['_16'],
       'Service Category': e['Service Category'] || e['_19'],
       'Package Name': e['Package Name'] || e['']
     };
@@ -237,7 +237,7 @@ function validateXmlClaims(xmlClaims, eligMap) {
       memberID: claim.memberID,
       encounterStart: DateHandler.format(claimDate),
       packageName: eligibility?.['Package Name'] || '',
-      provider: eligibility?.['Provider Name'] || '',
+      payer: eligibility?.['Payer Name'] || '',
       clinician: eligibility?.['Clinician'] || '',
       serviceCategory: eligibility?.['Service Category'] || '',
       status: eligibility?.Status || '',
@@ -271,7 +271,7 @@ function validateReportClaims(reportData, eligMap) {
       memberID: claim.memberID,
       encounterStart: DateHandler.format(claimDate),
       packageName: eligibility?.['Package Name'] || '',
-      provider: eligibility?.['Provider Name'] || '',
+      payer: eligibility?.['payer Name'] || '',
       clinician: eligibility?.['Clinician'] || '',
       serviceCategory: eligibility?.['Service Category'] || '',
       status: eligibility?.Status || '',
@@ -443,7 +443,7 @@ function renderResults(results) {
       <th>Member ID</th>
       <th>Encounter Date</th>
       <th>Package</th>
-      <th>Provider</th>
+      <th>Payer</th>
       <th>Clinician</th>
       <th>Service Category</th>
       <th>Status</th>
@@ -480,7 +480,7 @@ function renderResults(results) {
       <td>${result.memberID}</td>
       <td>${result.encounterStart}</td>
       <td class="description-col">${result.packageName}</td>
-      <td class="description-col">${result.provider}</td>
+      <td class="description-col">${result.payer}</td>
       <td class="description-col">${result.clinician}</td>
       <td class="description-col">${result.serviceCategory}</td>
       <td class="description-col">${statusBadge}</td>
