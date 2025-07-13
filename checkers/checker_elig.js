@@ -28,12 +28,18 @@ window.addEventListener("DOMContentLoaded", () => {
   // Format Excel/JS dates to DD/MM/YYYY
   function excelDateToDDMMYYYY(date) {
     if (!date) return "";
+    if (date instanceof Date && isNaN(date)) return ""; // Handle invalid date
     if (date instanceof Date) return `${String(date.getDate()).padStart(2, "0")}/${String(date.getMonth() + 1).padStart(2, "0")}/${date.getFullYear()}`;
     if (typeof date === "string") {
       if (/\d{1,2}\/\d{1,2}\/\d{2,4}/.test(date)) return date;
       if (/\d{4}-\d{2}-\d{2}/.test(date)) return date.split("-").reverse().join("/");
     }
-    return new Date(Math.round((date - 25569) * 86400 * 1000)).toLocaleDateString("en-GB");
+    try {
+      const parsed = new Date(Math.round((date - 25569) * 86400 * 1000));
+      return isNaN(parsed) ? "" : parsed.toLocaleDateString("en-GB");
+    } catch {
+      return "";
+    }
   }
 
   // Robust date parser with DMY/MDY detection
@@ -400,7 +406,7 @@ async function parseExcel(file) {
               <td class="wrap-col">${r.insuranceCompany || ""}</td>
               <td class="wrap-col">${r.packageName || ""}</td>
               <td class="wrap-col">${r.encounterStart || ""}</td>
-              <td><button class="details-btn" ${r.details ? "" : "disabled"}>
+              <td><button class="details-btn" ${r.details && r.details.trim() ? "" : "disabled"}>
                 ${r.eligibilityRequestNumber || "No Request"}
               </button></td>
               <td>${r.status || ""}</td>
