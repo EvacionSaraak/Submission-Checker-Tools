@@ -469,8 +469,10 @@ function renderResults(results) {
       ? result.remarks.map(r => `<div>${r}</div>`).join('')
       : '<div class="source-note">No remarks</div>';
 
-    const detailsBtn = result.fullEligibilityRecord
-      ? `<button class="details-btn eligibility-details" data-index="${index}">View</button>`
+    const detailsBtn = result.fullEligibilityRecord?.['Eligibility Request Number']
+      ? `<button class="details-btn eligibility-details" data-index="${index}">
+           ${result.fullEligibilityRecord['Eligibility Request Number']}
+         </button>`
       : '<div class="source-note">N/A</div>';
 
     row.innerHTML = `
