@@ -95,21 +95,25 @@ window.addEventListener("DOMContentLoaded", () => {
   }
 
   // Robust parseDate function to handle date strings like "17/06/2025 16:10"
-  function parseDate(dateStr) {
-    if (typeof dateStr !== 'string') return null;
-  
-    const [datePart, timePart] = dateStr.split(' ');
-    if (!datePart) return null;
-  
-    const [day, month, year] = datePart.split('/');
-    if (!day || !month || !year) return null;
-  
-    // Format to ISO for Date constructor: "YYYY-MM-DDTHH:mm:ss"
-    const isoString = `${year.padStart(4, '0')}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${timePart || '00:00:00'}`;
-  
-    const parsedDate = new Date(isoString);
-    return isNaN(parsedDate.getTime()) ? null : parsedDate;
+function parseDate(dateStr) {
+  if (!dateStr) return null;
+
+  // Try parsing "17-Jun-2025 16:15:42" using Date.parse (fallback)
+  const d = new Date(dateStr);
+  if (!isNaN(d)) return d;
+
+  // fallback: try DD/MM/YYYY
+  const parts = dateStr.split(/[\/\-]/);
+  if (parts.length === 3) {
+    // assume DD/MM/YYYY or similar
+    const day = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10) - 1;
+    const year = parseInt(parts[2], 10);
+    return new Date(year, month, day);
   }
+
+  return null; // failed to parse
+}
 
   function formatDate(date) {
     if (!date) return '';
