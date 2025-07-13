@@ -421,30 +421,31 @@ window.addEventListener("DOMContentLoaded", () => {
   }
 
   // Process validation
-  async function processValidation() {
-    const resultsContainer = document.getElementById("results");
-    resultsContainer.innerHTML = "<div class='loading'>Processing...</div>";
-    
-    try {
-      let results;
-      if (xmlRadio.checked) {
-        if (!xmlData || !eligData) throw new Error("Missing XML or Eligibility data");
-        // XML validation logic would go here
-      } else {
-        if (!xlsData || !eligData) throw new Error("Missing report or Eligibility data");
-        results = xlsData[0]?.hasOwnProperty("Pri. Claim No") ? 
-          validateInsta(xlsData, eligData) : 
-          validateClinicPro(xlsData, eligData);
-      }
-      
-      renderResults(results || []);
-      const validCount = results.filter(r => !r.remarks.length).length;
-      status.textContent = `Valid: ${validCount}/${results.length} (${Math.round(validCount/results.length*100)}%)`;
-    } catch (err) {
-      resultsContainer.innerHTML = `<div class="error">${err.message}</div>`;
-    }
-  }
-
+	async function processValidation() {
+	    const resultsContainer = document.getElementById("results");
+	    resultsContainer.innerHTML = "<div class='loading'>Processing...</div>";
+	    try {
+	        let results = [];  // Initialize as empty array
+	        if (xmlRadio.checked) {
+	            if (!xmlData || !eligData) throw new Error("Missing XML or Eligibility data");
+	            // For now, return empty results for XML
+	            results = []; 
+	        } else {
+	            if (!xlsData || !eligData) throw new Error("Missing report or Eligibility data");
+	            // Ensure we have valid data to process
+	            if (xlsData.length > 0) results = xlsData[0]?.hasOwnProperty("Pri. Claim No") ? validateInsta(xlsData, eligData) : validateClinicPro(xlsData, eligData);
+	            else throw new Error("Report data is empty");}
+	        }
+	        // Add safety check before rendering
+	        if (!Array.isArray(results)) throw new Error("Validation returned invalid results format");
+	        renderResults(results);
+	        const validCount = results.filter(r => !r.remarks.length).length;
+	        status.textContent = `Valid: ${validCount}/${results.length} (${Math.round(validCount/results.length*100)}%)`;
+	    } catch (err) {
+	        resultsContainer.innerHTML = `<div class="error">${err.message}</div>`;
+	        status.textContent = "Processing failed";
+	    }
+	}
   // =====================
   // INITIAL SETUP
   // =====================
