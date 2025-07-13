@@ -105,7 +105,13 @@ const DateHandler = {
  *****************************/
 function normalizeMemberID(id) {
   if (!id) return '';
-  return id.toString().replace(/\D/g, '').replace(/^0+/, '');
+  // Handle cases where ID might be a number in scientific notation
+  if (typeof id === 'number') return String(id).replace(/\.0+$/, ''); 
+  // Standard normalization
+  return String(id)
+    .replace(/\D/g, '')
+    .replace(/^0+/, '')
+    .trim();
 }
 
 function normalizeClinician(name) {
