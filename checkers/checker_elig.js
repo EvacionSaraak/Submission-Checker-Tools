@@ -555,71 +555,57 @@ window.addEventListener("DOMContentLoaded", () => {
 
   // Validate ClinicPro XLS data against eligibility
 function validateClinicPro(reportRows, eligData) {
-    const results = [];
-    const seenClaims = new Set();
-    const usedEligibilities = new Set(); // Track used eligibilities
-    const eligMap = {};
-  
+    const results = [], seenClaims = new Set(), usedEligibilities = new Set(), eligMap = {};
+    
     // Build eligibility index
     eligData.forEach(e => {
         const id = normalizeMemberID(e['Card Number / DHA Member ID'] || e.MemberID);
         if (id) (eligMap[id] = eligMap[id] || []).push(e);
     });
-  
+
     reportRows.forEach(row => {
         const claimID = row.ClaimID;
         if (!claimID || seenClaims.has(claimID)) return;
         seenClaims.add(claimID);
-    
+
         const memberID = normalizeMemberID(row.MemberID);
         const eligMatches = memberID ? (eligMap[memberID] || []) : [];
         const remarks = [];
         let match = null;
-    
-        if (!memberID) {
-            remarks.push("Missing MemberID");
-        } else if (!eligMatches.length) {
-            remarks.push("No matching eligibility found");
-        } else {
+
+        if (!memberID) remarks.push("Missing MemberID");
+        else if (!eligMatches.length) remarks.push("No matching eligibility found");
+        else {
             const claimDate = parseDate(row.ClaimDate);
             
             // Find first unused eligibility that matches date range
             match = eligMatches.find(e => {
                 if (usedEligibilities.has(e['Eligibility Request Number'])) return false;
-                
                 const start = parseDate(e.EffectiveDate || e['Ordered On']);
                 const end = parseDate(e.ExpiryDate || e['Answered On']);
-                return (!claimDate || !start || claimDate >= start) &&
-                       (!claimDate || !end || claimDate <= end);
+                return (!claimDate || !start || claimDate >= start) && (!claimDate || !end || claimDate <= end);
             });
             
-            if (!match) {
-                // If no unused eligibilities, use the first one but mark as reused
-                match = eligMatches[0];
-                remarks.push("Eligibility already used for another claim");
-            } else {
-                usedEligibilities.add(match['Eligibility Request Number']);
-            }
-    
-            if (match.Status?.toLowerCase() !== "eligible") {
-                remarks.push(`Invalid status: ${match.Status}`);
-            }
-    
+            if (!match) { match = eligMatches[0]; remarks.push("Eligibility already used for another claim"); }
+            else usedEligibilities.add(match['Eligibility Request Number']);
+
+            if (match.Status?.toLowerCase() !== "eligible") remarks.push(`Invalid status: ${match.Status}`);
+            
             const svc = match['Service Category'] || '';
-            if (!['Consultation', 'Dental Services', 'Physiotherapy'].includes(svc)) {
-                remarks.push(`Invalid service: ${svc}`);
-            }
+            if (!['Consultation', 'Dental Services', 'Physiotherapy'].includes(svc)) remarks.push(`Invalid service: ${svc}`);
         }
-    
-        // Get all data from eligibility record
-        const encounterStart = row.ClaimDate ? excelDateToDDMMYYYY(row.ClaimDate) : row.ClaimDate;
+
+        const encounterStart = row.ClaimDate ? excelDateToDDMMYYYY(row.ClaimDate) : 
+                             match?.['Ordered On'] ? excelDateToDDMMYYYY(parseDate(match['Ordered On'])) : '';
+        const packageName = match?.['Package Name'] || '';
+        const insuranceCompany = match?.['Payer Name'] || row['Insurance Company'] || '';
         const detailsHTML = match ? formatEligibilityDetailsModal(match, memberID) : '';
-    
+
         results.push({
             claimID,
             memberID,
-            insuranceCompany: match?.['Payer Name'] || row['Insurance Company'] || "",
-            packageName: match?.['Package Name'] || "",
+            insuranceCompany,
+            packageName,
             encounterStart,
             status: match?.Status || "",
             remarks,
@@ -627,19 +613,12 @@ function validateClinicPro(reportRows, eligData) {
             details: detailsHTML,
             serviceCategory: match?.['Service Category'] || "",
             clinic: row.Clinic || "",
-            fullEligibilityRecord: match || null,
-            // Additional fields from eligibility
-            clinicianLicense: match?.['Clinician'] || "",
-            clinicianName: match?.['Clinician Name'] || "",
-            providerLicense: match?.['Provider License'] || "",
-            providerName: match?.['Provider Name'] || "",
-            authorizationNumber: match?.['Authorization Number'] || "",
-            effectiveDate: match?.EffectiveDate ? excelDateToDDMMYYYY(parseDate(match.EffectiveDate)) : "",
-            expiryDate: match?.ExpiryDate ? excelDateToDDMMYYYY(parseDate(match.ExpiryDate)) : ""
+            fullEligibilityRecord: match || null
         });
     });
     return results;
 }
+  
   // =====================
   // UI RENDERING
   // =====================
@@ -649,48 +628,28 @@ function renderResults(results, containerId = "results") {
     container.innerHTML = `
       <table class="shared-table">
         <thead><tr>
-          <th>#</th>
-          <th>Claim ID</th>
-          <th>Member ID</th>
-          <th>Insurance</th>
-          <th>Package</th>
-          <th>Date</th>
-          <th>Status</th>
-          <th>Service</th>
-          <th>Clinic</th>
-          <th>Clinician</th>
-          <th>Provider</th>
-          <th>Auth Number</th>
-          <th>Effective Date</th>
-          <th>Expiry Date</th>
-          <th>Details</th>
-          <th>Remarks</th>
+          <th>#</th><th>ID</th><th>MemberID</th><th>Insurance</th>
+          <th>Package</th><th>Date</th><th>Details</th>
+          <th>Status</th><th>Service</th><th>Clinic</th><th>Remarks</th>
         </tr></thead>
         <tbody>
-          ${results.map((r, i) => {
-            const detailsHTML = r.fullEligibilityRecord ? formatEligibilityDetailsModal(r.fullEligibilityRecord, r.memberID) : '';
-            return `
-            <tr class="${r.remarks.length ? "invalid" : "valid"}" data-details="${escapeHtml(detailsHTML)}">
+          ${results.map((r, i) => `
+            <tr class="${r.remarks.length ? "invalid" : "valid"}" data-details="${escapeHtml(r.details)}">
               <td>${i + 1}</td>
               <td class="wrap-col">${r.claimID}</td>
               <td class="wrap-col">${r.memberID}</td>
               <td class="wrap-col">${r.insuranceCompany || ""}</td>
               <td class="wrap-col">${r.packageName || ""}</td>
               <td class="wrap-col">${r.encounterStart || ""}</td>
+              <td><button class="details-btn" ${r.details && r.details.trim() ? "" : "disabled"}>
+                ${r.eligibilityRequestNumber || "No Request"}
+              </button></td>
               <td>${r.status || ""}</td>
               <td>${r.serviceCategory || ""}</td>
               <td>${r.clinic || ""}</td>
-              <td>${r.clinicianName} (${r.clinicianLicense})</td>
-              <td>${r.providerName} (${r.providerLicense})</td>
-              <td>${r.authorizationNumber || ""}</td>
-              <td>${r.effectiveDate || ""}</td>
-              <td>${r.expiryDate || ""}</td>
-              <td><button class="details-btn" ${r.fullEligibilityRecord ? "" : "disabled"}>
-                ${r.eligibilityRequestNumber || "No Request"}
-              </button></td>
               <td style="white-space: pre-line;">${r.remarks.join("\n")}</td>
-            </tr>`;
-          }).join("")}
+            </tr>`
+          ).join("")}
         </tbody>
       </table>
     `;
