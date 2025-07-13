@@ -554,160 +554,156 @@ window.addEventListener("DOMContentLoaded", () => {
   }
 
   // Validate ClinicPro XLS data against eligibility
-  function validateClinicPro(reportRows, eligData) {
-    console.log("Starting ClinicPro validation");
-    console.log("Report rows count:", reportRows.length);
-    console.log("Eligibility data count:", eligData.length);
-    
-    const results = [], seenClaims = new Set(), eligMap = {};
+function validateClinicPro(reportRows, eligData) {
+    const results = [];
+    const seenClaims = new Set();
+    const usedEligibilities = new Set(); // Track used eligibilities
+    const eligMap = {};
   
+    // Build eligibility index
     eligData.forEach(e => {
-      const id = normalizeMemberID(e['Card Number / DHA Member ID'] || e.MemberID);
-      if (id) (eligMap[id] = eligMap[id] || []).push(e);
+        const id = normalizeMemberID(e['Card Number / DHA Member ID'] || e.MemberID);
+        if (id) (eligMap[id] = eligMap[id] || []).push(e);
     });
   
-    console.log("Eligibility map size:", Object.keys(eligMap).length);
-    
     reportRows.forEach(row => {
-      const claimID = row.ClaimID;
-      if (!claimID || seenClaims.has(claimID)) {
-        console.debug(`Skipping duplicate or empty claim ID: ${claimID}`);
-        return;
-      }
-      seenClaims.add(claimID);
-  
-      const memberID = normalizeMemberID(row.MemberID);
-      const eligMatches = memberID ? (eligMap[memberID] || []) : [];
-      const remarks = [];
-      let match = null;
-  
-      console.log(`\n[Validating ClaimID: ${claimID}]`);
-      console.log("MemberID:", memberID);
-      if (!memberID) {
-        remarks.push("Missing MemberID");
-        console.warn("Missing MemberID for claim:", claimID);
-      } else if (!eligMatches.length) {
-        remarks.push("No matching eligibility found");
-        console.warn(`No eligibility rows for memberID: ${memberID}`);
-      } else {
-        const claimDate = parseDate(row.ClaimDate);
-        console.log("Parsed Claim Date:", claimDate);
-  
-        match = eligMatches.find(e => {
-          const start = parseDate(e.EffectiveDate || e['Ordered On']);
-          const end = parseDate(e.ExpiryDate || e['Answered On']);
-          const matchResult = (!claimDate || !start || claimDate >= start) &&
-                            (!claimDate || !end || claimDate <= end);
-          console.log("Checking date window:", {
-            claimDate,
-            start,
-            end,
-            matchResult
-          });
-          return matchResult;
-        }) || eligMatches[0];
-  
-        if (match) {
-          console.log("Eligibility Match Found:", {
-            requestNumber: match['Eligibility Request Number'],
-            status: match.Status,
-            service: match['Service Category']
-          });
-        }
-  
-        if (match.Status?.toLowerCase() !== "eligible") {
-          remarks.push(`Invalid status: ${match.Status}`);
-          console.warn(`Invalid status for claim ${claimID}: ${match.Status}`);
-        }
-  
-        const svc = match['Service Category'] || '';
-        if (!['Consultation', 'Dental Services', 'Physiotherapy'].includes(svc)) {
-          remarks.push(`Invalid service: ${svc}`);
-          console.warn(`Invalid service category for claim ${claimID}: ${svc}`);
-        }
-      }
-  
-      const encounterStart = row.ClaimDate ? excelDateToDDMMYYYY(row.ClaimDate) : row.ClaimDate;
-      const detailsHTML = match
-        ? formatEligibilityDetailsModal(match, memberID)
-        : formatReportDetailsModal(row, encounterStart);
-  
-      console.log("Encounter Start (formatted):", encounterStart);
-      console.log("Details HTML generated:", detailsHTML);
-  
-      results.push({
-        claimID,
-        memberID,
-        insuranceCompany: row['Insurance Company'] || "",
-        packageName: match?.['Package Name'] || "",
-        encounterStart,
-        status: match?.Status || "",
-        remarks,
-        eligibilityRequestNumber: match?.["Eligibility Request Number"] || "",
-        details: detailsHTML,
-        serviceCategory: match?.['Service Category'] || "",
-        clinic: row.Clinic || "",
-        fullEligibilityRecord: match || null  // Add this line to store the full record
-      });
-    });
+        const claimID = row.ClaimID;
+        if (!claimID || seenClaims.has(claimID)) return;
+        seenClaims.add(claimID);
     
-    console.log("ClinicPro validation complete. Results count:", results.length);
-    console.log("Sample result:", results[0]);
+        const memberID = normalizeMemberID(row.MemberID);
+        const eligMatches = memberID ? (eligMap[memberID] || []) : [];
+        const remarks = [];
+        let match = null;
+    
+        if (!memberID) {
+            remarks.push("Missing MemberID");
+        } else if (!eligMatches.length) {
+            remarks.push("No matching eligibility found");
+        } else {
+            const claimDate = parseDate(row.ClaimDate);
+            
+            // Find first unused eligibility that matches date range
+            match = eligMatches.find(e => {
+                if (usedEligibilities.has(e['Eligibility Request Number'])) return false;
+                
+                const start = parseDate(e.EffectiveDate || e['Ordered On']);
+                const end = parseDate(e.ExpiryDate || e['Answered On']);
+                return (!claimDate || !start || claimDate >= start) &&
+                       (!claimDate || !end || claimDate <= end);
+            });
+            
+            if (!match) {
+                // If no unused eligibilities, use the first one but mark as reused
+                match = eligMatches[0];
+                remarks.push("Eligibility already used for another claim");
+            } else {
+                usedEligibilities.add(match['Eligibility Request Number']);
+            }
+    
+            if (match.Status?.toLowerCase() !== "eligible") {
+                remarks.push(`Invalid status: ${match.Status}`);
+            }
+    
+            const svc = match['Service Category'] || '';
+            if (!['Consultation', 'Dental Services', 'Physiotherapy'].includes(svc)) {
+                remarks.push(`Invalid service: ${svc}`);
+            }
+        }
+    
+        // Get all data from eligibility record
+        const encounterStart = row.ClaimDate ? excelDateToDDMMYYYY(row.ClaimDate) : row.ClaimDate;
+        const detailsHTML = match ? formatEligibilityDetailsModal(match, memberID) : '';
+    
+        results.push({
+            claimID,
+            memberID,
+            insuranceCompany: match?.['Payer Name'] || row['Insurance Company'] || "",
+            packageName: match?.['Package Name'] || "",
+            encounterStart,
+            status: match?.Status || "",
+            remarks,
+            eligibilityRequestNumber: match?.["Eligibility Request Number"] || "",
+            details: detailsHTML,
+            serviceCategory: match?.['Service Category'] || "",
+            clinic: row.Clinic || "",
+            fullEligibilityRecord: match || null,
+            // Additional fields from eligibility
+            clinicianLicense: match?.['Clinician'] || "",
+            clinicianName: match?.['Clinician Name'] || "",
+            providerLicense: match?.['Provider License'] || "",
+            providerName: match?.['Provider Name'] || "",
+            authorizationNumber: match?.['Authorization Number'] || "",
+            effectiveDate: match?.EffectiveDate ? excelDateToDDMMYYYY(parseDate(match.EffectiveDate)) : "",
+            expiryDate: match?.ExpiryDate ? excelDateToDDMMYYYY(parseDate(match.ExpiryDate)) : ""
+        });
+    });
     return results;
-  }
-
+}
   // =====================
   // UI RENDERING
   // =====================
   // Render results table
-  function renderResults(results, containerId = "results") {
-      console.log("Rendering results table");
-      const container = document.getElementById(containerId);
-      container.innerHTML = `
-        <table class="shared-table">
-          <thead><tr>
-            <th>#</th><th>ID</th><th>MemberID</th><th>Insurance</th>
-            <th>Package</th><th>Date</th><th>Details</th>
-            <th>Status</th><th>Service</th><th>Clinic</th><th>Remarks</th>
-          </tr></thead>
-          <tbody>
-            ${results.map((r, i) => {
-              const detailsHTML = r.fullEligibilityRecord 
-                  ? formatEligibilityDetailsModal(r.fullEligibilityRecord, r.memberID)
-                  : formatReportDetailsModal(r, r.encounterStart);
-              
-              return `
-              <tr class="${r.remarks.length ? "invalid" : "valid"}" data-details="${escapeHtml(detailsHTML)}">
-                <td>${i + 1}</td>
-                <td class="wrap-col">${r.claimID}</td>
-                <td class="wrap-col">${r.memberID}</td>
-                <td class="wrap-col">${r.insuranceCompany || ""}</td>
-                <td class="wrap-col">${r.packageName || ""}</td>
-                <td class="wrap-col">${r.encounterStart || ""}</td>
-                <td><button class="details-btn" ${r.fullEligibilityRecord ? "" : "disabled"}>
-                  ${r.eligibilityRequestNumber || "No Request"}
-                </button></td>
-                <td>${r.status || ""}</td>
-                <td>${r.serviceCategory || ""}</td>
-                <td>${r.clinic || ""}</td>
-                <td style="white-space: pre-line;">${r.remarks.join("\n")}</td>
-              </tr>`;
-            }).join("")}
-          </tbody>
-        </table>
-      `;
-      console.log("Results table rendered with", results.length, "rows");
-      
-      // Attach modal handlers (same as before)
-      container.querySelectorAll(".details-btn").forEach(btn => {
-        btn.addEventListener("click", () => {
-          console.log("Details button clicked for claim:", btn.textContent.trim());
-          const modal = document.getElementById("eligibilityModal") || createModal(container);
-          modal.querySelector("#modalContent").innerHTML = btn.closest("tr").dataset.details;
-          modal.style.display = "block";
-        });
+function renderResults(results, containerId = "results") {
+    const container = document.getElementById(containerId);
+    container.innerHTML = `
+      <table class="shared-table">
+        <thead><tr>
+          <th>#</th>
+          <th>Claim ID</th>
+          <th>Member ID</th>
+          <th>Insurance</th>
+          <th>Package</th>
+          <th>Date</th>
+          <th>Status</th>
+          <th>Service</th>
+          <th>Clinic</th>
+          <th>Clinician</th>
+          <th>Provider</th>
+          <th>Auth Number</th>
+          <th>Effective Date</th>
+          <th>Expiry Date</th>
+          <th>Details</th>
+          <th>Remarks</th>
+        </tr></thead>
+        <tbody>
+          ${results.map((r, i) => {
+            const detailsHTML = r.fullEligibilityRecord ? formatEligibilityDetailsModal(r.fullEligibilityRecord, r.memberID) : '';
+            return `
+            <tr class="${r.remarks.length ? "invalid" : "valid"}" data-details="${escapeHtml(detailsHTML)}">
+              <td>${i + 1}</td>
+              <td class="wrap-col">${r.claimID}</td>
+              <td class="wrap-col">${r.memberID}</td>
+              <td class="wrap-col">${r.insuranceCompany || ""}</td>
+              <td class="wrap-col">${r.packageName || ""}</td>
+              <td class="wrap-col">${r.encounterStart || ""}</td>
+              <td>${r.status || ""}</td>
+              <td>${r.serviceCategory || ""}</td>
+              <td>${r.clinic || ""}</td>
+              <td>${r.clinicianName} (${r.clinicianLicense})</td>
+              <td>${r.providerName} (${r.providerLicense})</td>
+              <td>${r.authorizationNumber || ""}</td>
+              <td>${r.effectiveDate || ""}</td>
+              <td>${r.expiryDate || ""}</td>
+              <td><button class="details-btn" ${r.fullEligibilityRecord ? "" : "disabled"}>
+                ${r.eligibilityRequestNumber || "No Request"}
+              </button></td>
+              <td style="white-space: pre-line;">${r.remarks.join("\n")}</td>
+            </tr>`;
+          }).join("")}
+        </tbody>
+      </table>
+    `;
+    
+    // Attach modal handlers
+    container.querySelectorAll(".details-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const modal = document.getElementById("eligibilityModal") || createModal(container);
+        modal.querySelector("#modalContent").innerHTML = btn.closest("tr").dataset.details;
+        modal.style.display = "block";
       });
-  }
+    });
+}
   
   // Create modal dialog
   function createModal(container) {
