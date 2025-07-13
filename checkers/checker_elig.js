@@ -497,8 +497,14 @@ function renderResults(results) {
     return;
   }
 
+  // Create scrollable container for the table
+  const tableContainer = document.createElement('div');
+  tableContainer.className = 'analysis-results';
+  tableContainer.style.overflowX = 'auto';
+
+  // Create main table
   const table = document.createElement('table');
-  table.className = 'results-table';
+  table.className = 'shared-table';
 
   // Create table header
   console.log('Creating table header');
@@ -510,7 +516,8 @@ function renderResults(results) {
       <th>Encounter Date</th>
       <th>Package</th>
       <th>Status</th>
-      <th>Remarks</th>
+      <th class="wrap-col">Remarks</th>
+      <th>Actions</th>
     </tr>
   `;
   table.appendChild(thead);
@@ -518,32 +525,108 @@ function renderResults(results) {
   // Create table body
   console.log('Creating table body');
   const tbody = document.createElement('tbody');
-  
   const statusCounts = { valid: 0, invalid: 0, unknown: 0 };
-  
-  results.forEach(result => {
+  results.forEach((result, index) => {
     statusCounts[result.finalStatus]++;
-    
     const row = document.createElement('tr');
     row.className = result.finalStatus;
-    
+    // Format status badge
+    const statusBadge = result.status ? `<span class="status-badge ${result.status.toLowerCase() === 'eligible' ? 'eligible' : 'ineligible'}">${result.status}</span>` : '';
+    // Create eligibility details button if record exists
+    const detailsBtn = result.fullEligibilityRecord ? `<button class="details-btn eligibility-details" data-index="${index}">Details</button>` : '';
     row.innerHTML = `
       <td>${result.claimID}</td>
       <td>${result.memberID}</td>
       <td>${result.encounterStart}</td>
       <td>${result.packageName}</td>
-      <td>${result.status}</td>
-      <td>${result.remarks.join('; ')}</td>
+      <td>${statusBadge}</td>
+      <td class="wrap-col">${result.remarks.join('; ')}</td>
+      <td>${detailsBtn}</td>
     `;
     
     tbody.appendChild(row);
   });
   
   table.appendChild(tbody);
-  resultsContainer.appendChild(table);
-  
+  tableContainer.appendChild(table);
+  resultsContainer.appendChild(tableContainer);
+
+  // Add summary statistics
+  const summary = document.createElement('div');
+  summary.className = 'loaded-count';
+  summary.innerHTML = `
+    Processed ${results.length} claims: 
+    <span class="valid">${statusCounts.valid} valid</span>, 
+    <span class="unknown">${statusCounts.unknown} unknown</span>, 
+    <span class="invalid">${statusCounts.invalid} invalid</span>
+  `;
+  resultsContainer.prepend(summary);
+
+  // Initialize modal for eligibility details
+  initEligibilityModal(results);
+
   console.log('Results breakdown:', statusCounts);
   console.groupEnd();
+}
+
+function initEligibilityModal(results) {
+  console.log('Initializing eligibility details modal');
+  
+  // Remove existing modal if present
+  const existingModal = document.getElementById('eligibilityModal');
+  if (existingModal) existingModal.remove();
+
+  // Create modal structure
+  const modalHTML = `
+    <div id="eligibilityModal" class="modal hidden">
+      <div class="modal-content eligibility-modal">
+        <span class="close">&times;</span>
+        <div class="modal-scrollable">
+          <h3>Eligibility Details</h3>
+          <div id="eligibilityModalContent"></div>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.insertAdjacentHTML('beforeend', modalHTML);
+
+  // Get modal elements
+  const modal = document.getElementById('eligibilityModal');
+  const modalContent = document.getElementById('eligibilityModalContent');
+  const closeBtn = modal.querySelector('.close');
+
+  // Add click handlers to all details buttons
+  document.querySelectorAll('.eligibility-details').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const index = parseInt(btn.dataset.index);
+      const record = results[index].fullEligibilityRecord;
+      const memberID = results[index].memberID;
+      
+      if (record) {
+        modalContent.innerHTML = formatEligibilityDetails(record, memberID);
+        modal.classList.remove('hidden');
+      }
+    });
+  });
+
+  // Close modal handlers
+  closeBtn.addEventListener('click', () => modal.classList.add('hidden'));
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) modal.classList.add('hidden');
+  });
+}
+
+function formatEligibilityDetails(record, memberID) {
+  console.debug('Formatting eligibility details');
+  let html = `<h4>Member: ${memberID}</h4><table class="eligibility-details"><tbody>`;
+  // Add all fields from the eligibility record
+  Object.entries(record).forEach(([key, value]) => {
+    // Format dates properly
+    if (key.includes('Date') || key.includes('On')) value = DateHandler.format(DateHandler.parse(value)) || value;
+    html += `<tr><th>${key}</th><td>${value || ''}</td></tr>`;
+  });
+  html += `</tbody></table>`;
+  return html;
 }
 
 function updateStatus(message) {
