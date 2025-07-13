@@ -1,3 +1,4 @@
+/* tables.css */
 /* === BASE AND LAYOUT === */
 body {
   font-family: Arial, sans-serif;
@@ -452,19 +453,43 @@ table, tbody, tr, td {
   }
 }
 
-/* === SHARED TABLE — PRIORITY PRESERVED === */
+/* === SHARED TABLE — PRIORITY PRESERVED & IMPROVED WRAPPING === */
 .shared-table {
   font-size: 0.85em;
+  width: 100%;
+  table-layout: fixed; /* Fix column widths for better layout control */
+  border-collapse: collapse;
+  border: 1px solid #ccc;
 }
 
 .shared-table th,
 .shared-table td {
   padding: 6px 8px;
-  white-space: nowrap;
+  white-space: normal; /* Allow wrapping */
+  overflow-wrap: break-word;
+  word-break: break-word;
+  text-overflow: ellipsis;
+  border: 1px solid #ccc;
+  vertical-align: top;
+  max-width: 300px;
+  text-align: left;
 }
 
+/* Wrap long text in columns meant to expand */
 .shared-table .wrap-col {
+  max-width: 180px; /* Adjust width as needed */
   white-space: normal;
-  max-width: 150px;
   word-break: break-word;
+}
+
+.shared-table .description-col {
+  max-width: 300px;
+  white-space: normal;
+  word-break: break-word;
+}
+
+/* Optional min-width to avoid overly narrow columns */
+.shared-table th,
+.shared-table td {
+  min-width: 80px;
 }
