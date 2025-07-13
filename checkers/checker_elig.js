@@ -212,6 +212,62 @@ window.addEventListener("DOMContentLoaded", () => {
   // =====================
   // VALIDATION LOGIC
   // =====================
+
+  // Validate XML data against eligibility
+	function validateXml(xmlData, eligData) {
+    const results = [], seenClaims = new Set(), eligMap = {};
+    
+    // Build eligibility index
+    eligData.forEach(e => {
+        const id = normalizeMemberID(e['Card Number / DHA Member ID'] || e.MemberID);
+        if (id) (eligMap[id] = eligMap[id] || []).push(e);
+    });
+
+    xmlData.encounters.forEach(enc => {
+        if (!enc.claimID || seenClaims.has(enc.claimID)) return;
+        seenClaims.add(enc.claimID);
+
+        const memberID = normalizeMemberID(enc.memberID);
+        const eligMatches = memberID ? (eligMap[memberID] || []) : [];
+        const remarks = [];
+        let match = null;
+
+        // Find matching eligibility
+        if (!memberID) remarks.push("Missing MemberID in XML");
+        else if (!eligMatches.length) remarks.push("No matching eligibility found");
+        else {
+            const claimDate = parseDate(enc.encounterStart);
+            match = eligMatches.find(e => {
+                const start = parseDate(e.EffectiveDate || e['Ordered On']);
+                const end = parseDate(e.ExpiryDate || e['Answered On']);
+                return (!claimDate || !start || claimDate >= start) && 
+                       (!claimDate || !end || claimDate <= end);
+            }) || eligMatches[0];
+            
+            if (match.Status?.toLowerCase() !== "eligible") remarks.push(`Invalid status: ${match.Status}`);
+            
+            // Additional checks
+            const svc = match['Service Category'] || '';
+            if (!['Consultation', 'Dental Services', 'Physiotherapy'].includes(svc)) {
+                remarks.push(`Invalid service: ${svc}`);
+            }
+        }
+
+        results.push({
+            claimID: enc.claimID,
+            memberID,
+            insuranceCompany: match?.['Payer Name'] || "",
+            packageName: match?.['Package Name'] || "",
+            encounterStart: enc.encounterStart ? excelDateToDDMMYYYY(parseDate(enc.encounterStart)) : enc.encounterStart,
+            status: match?.Status || "",
+            remarks,
+            eligibilityRequestNumber: match?.["Eligibility Request Number"] || ""
+        });
+    });
+    
+    return results;
+}
+
   // Validate Insta CSV data against eligibility
   function validateInsta(instaRows, eligData) {
     const results = [], seenClaims = new Set(), eligMap = {};
@@ -421,31 +477,37 @@ window.addEventListener("DOMContentLoaded", () => {
   }
 
   // Process validation
-	async function processValidation() {
-	    const resultsContainer = document.getElementById("results");
-	    resultsContainer.innerHTML = "<div class='loading'>Processing...</div>";
-	    try {
-	        let results = [];  // Initialize as empty array
-	        if (xmlRadio.checked) {
-	            if (!xmlData || !eligData) throw new Error("Missing XML or Eligibility data");
-	            // For now, return empty results for XML
-	            results = []; 
-	        } else {
-	            if (!xlsData || !eligData) throw new Error("Missing report or Eligibility data");
-	            // Ensure we have valid data to process
-	            if (xlsData.length > 0) results = xlsData[0]?.hasOwnProperty("Pri. Claim No") ? validateInsta(xlsData, eligData) : validateClinicPro(xlsData, eligData);
-	            else throw new Error("Report data is empty");
-	        }
-	        // Add safety check before rendering
-	        if (!Array.isArray(results)) throw new Error("Validation returned invalid results format");
-	        renderResults(results);
-	        const validCount = results.filter(r => !r.remarks.length).length;
-	        status.textContent = `Valid: ${validCount}/${results.length} (${Math.round(validCount/results.length*100)}%)`;
-	    } catch (err) {
-	        resultsContainer.innerHTML = `<div class="error">${err.message}</div>`;
-	        status.textContent = "Processing failed";
-	    }
-	}
+async function processValidation() {
+    const resultsContainer = document.getElementById("results");
+    resultsContainer.innerHTML = "<div class='loading'>Processing...</div>";
+    
+    try {
+        let results = [];
+        
+        if (xmlRadio.checked) {
+            if (!xmlData || !eligData) throw new Error("Missing XML or Eligibility data");
+            results = validateXml(xmlData, eligData); // Call XML validation
+        } else {
+            if (!xlsData || !eligData) throw new Error("Missing report or Eligibility data");
+            results = xlsData[0]?.hasOwnProperty("Pri. Claim No") ? 
+                validateInsta(xlsData, eligData) : 
+                validateClinicPro(xlsData, eligData);
+        }
+        
+        // Add safety check before rendering
+        if (!Array.isArray(results)) {
+            throw new Error("Validation returned invalid results format");
+        }
+        
+        renderResults(results);
+        const validCount = results.filter(r => r.remarks.length === 0).length;
+        const totalCount = results.length;
+        status.textContent = `Valid: ${validCount}/${totalCount} (${totalCount ? Math.round(validCount/totalCount*100) : 0}%)`;
+    } catch (err) {
+        resultsContainer.innerHTML = `<div class="error">${err.message}</div>`;
+        status.textContent = "Processing failed";
+    }
+}
   // =====================
   // INITIAL SETUP
   // =====================
