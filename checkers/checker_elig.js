@@ -121,7 +121,7 @@ function prepareEligibilityMap(eligData) {
   const eligMap = new Map();
   
   eligData.forEach(e => {
-    const memberID = normalizeMemberID(e['Card Number / DHA Member ID']);
+    const memberID = normalizeMemberID(e['Card Number / DHA Member ID'] || e['Card Number'] || e['MemberID']);
     if (!memberID) return;
     
     if (!eligMap.has(memberID)) {
@@ -130,11 +130,14 @@ function prepareEligibilityMap(eligData) {
     eligMap.get(memberID).push(e);
   });
   
+  console.log(`Created eligibility map with ${eligMap.size} unique member IDs`);
   return eligMap;
 }
 
 function findEligibilityForClaim(eligMap, claimDate, memberID, claimClinicians) {
-  const eligibilities = eligMap.get(memberID) || [];
+  if (!claimDate) return null;
+  
+  const eligibilities = eligMap.get(normalizeMemberID(memberID)) || [];
   let bestMatch = null;
   let bestMatchDateDiff = Infinity;
 
@@ -189,9 +192,9 @@ function validateXmlClaims(xmlClaims, eligMap) {
     const remarks = [];
     
     if (!eligibility) {
-      remarks.push('No matching eligibility');
+      remarks.push('No matching eligibility found');
     } else if (eligibility.Status?.toLowerCase() !== 'eligible') {
-      remarks.push(`Invalid status: ${eligibility.Status}`);
+      remarks.push(`Eligibility status: ${eligibility.Status}`);
     } else if (!checkClinicianMatch(claim.clinicians, eligibility.Clinician)) {
       status = 'unknown';
       remarks.push('Clinician mismatch');
@@ -223,9 +226,9 @@ function validateReportClaims(reportData, eligMap) {
     const remarks = [];
     
     if (!eligibility) {
-      remarks.push('No matching eligibility');
+      remarks.push('No matching eligibility found');
     } else if (eligibility.Status?.toLowerCase() !== 'eligible') {
-      remarks.push(`Invalid status: ${eligibility.Status}`);
+      remarks.push(`Eligibility status: ${eligibility.Status}`);
     } else {
       status = 'valid';
     }
@@ -364,7 +367,7 @@ function renderResults(results) {
       <th>Package</th>
       <th>Status</th>
       <th class="wrap-col">Remarks</th>
-      <th>Actions</th>
+      <th>Details</th>
     </tr>
   `;
   table.appendChild(thead);
@@ -383,17 +386,21 @@ function renderResults(results) {
       ? `<span class="status-badge ${result.status.toLowerCase() === 'eligible' ? 'eligible' : 'ineligible'}">${result.status}</span>`
       : '';
     
+    const remarksHTML = result.remarks.length > 0 
+      ? `<div class="remarks-container">${result.remarks.map(r => `<div class="remark-item">${r}</div>`).join('')}</div>`
+      : '';
+    
     const detailsBtn = result.fullEligibilityRecord
-      ? `<button class="details-btn eligibility-details" data-index="${index}">Details</button>`
+      ? `<button class="details-btn eligibility-details" data-index="${index}">View</button>`
       : '';
     
     row.innerHTML = `
       <td>${result.claimID}</td>
       <td>${result.memberID}</td>
-      <td>${result.encounterStart}</td>
-      <td>${result.packageName}</td>
-      <td>${statusBadge}</td>
-      <td class="wrap-col">${result.remarks.join('; ')}</td>
+      <td class="wrap-col">${result.encounterStart}</td>
+      <td class="wrap-col">${result.packageName}</td>
+      <td class="wrap-col">${statusBadge}</td>
+      <td class="wrap-col">${remarksHTML}</td>
       <td>${detailsBtn}</td>
     `;
     
