@@ -163,13 +163,14 @@ td.last-copied {
 }
 
 /* === MODAL COMPONENTS === */
+/* default (visible) modal — you can choose flex or block, depending on centering styles */
 .modal {
-  display: none;
+  display: flex;
   position: fixed;
   z-index: 999;
   inset: 0;
-  width: 100vw;
-  height: 100vh;
+  justify-content: center;
+  align-items: center;
   background: rgba(0, 0, 0, 0.5);
 }
 
@@ -184,6 +185,11 @@ td.last-copied {
   overflow-y: auto;
   min-width: 320px;
   position: relative;
+}
+
+/* only when we explicitly hide it */
+.modal.hidden {
+  display: none !important;
 }
 
 /* PRIORITY: MODAL WIDTH FOR ELIGIBILITY */
