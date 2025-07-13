@@ -386,6 +386,32 @@ function validateXml(xmlData, eligData) {
   const usedEligibilities = new Set();
   const results = [];
 
+  // Helper: parse date strings safely (DD/MM/YYYY or YYYY-MM-DD)
+  function parseDate(dateStr) {
+    if (!dateStr) return null;
+    const parts = dateStr.split(/[\/\-]/);
+    if (parts.length === 3) {
+      if (dateStr.includes('/')) {
+        // DD/MM/YYYY
+        return new Date(+parts[2], parts[1] - 1, +parts[0]);
+      } else {
+        // YYYY-MM-DD
+        return new Date(+parts[0], parts[1] - 1, +parts[2]);
+      }
+    }
+    return new Date(dateStr);
+  }
+
+  // Compare only day/month/year
+  function compareDate(d1, d2) {
+    const date1 = d1 instanceof Date ? d1 : new Date(d1);
+    const date2 = d2 instanceof Date ? d2 : new Date(d2);
+    return date1.getFullYear() === date2.getFullYear()
+      && date1.getMonth() === date2.getMonth()
+      && date1.getDate() === date2.getDate()
+      ? 0 : date1 < date2 ? -1 : 1;
+  }
+
   // Map eligibilities by normalized MemberID
   const eligMap = {};
   for (const e of eligData) {
@@ -416,8 +442,12 @@ function validateXml(xmlData, eligData) {
       continue;
     }
 
-    // For debug log: only first three entries
-    if (i < 3) console.debug(`Claim #${i + 1} [${claim.claimID}]: Checking eligibilities for memberID=${memberID}`);
+    // Parse claim encounter date safely
+    const claimDate = claim.encounterStart instanceof Date ? claim.encounterStart : parseDate(claim.encounterStart);
+
+    if (i < 3) {
+      console.log(`Claim #${i + 1} [${claim.claimID}]: memberID=${memberID}, encounterStart raw="${claim.encounterStart}", parsed=${claimDate}`);
+    }
 
     // Filter eligibilities matching claim date exactly and not used
     const validEligibilities = eligList.filter(e => {
@@ -426,17 +456,17 @@ function validateXml(xmlData, eligData) {
       if (!eligDate) return false;
 
       const reqNum = e['Eligibility Request Number'];
-      const isDateMatch = compareDate(eligDate, claim.encounterStart) === 0;
+      const isDateMatch = compareDate(eligDate, claimDate) === 0;
       const isUsed = usedEligibilities.has(reqNum);
 
       if (i < 3) {
-        console.debug(`-- Elig Req#: ${reqNum}, Answered On: ${eligDateRaw}, Parsed: ${eligDate}, DateMatch: ${isDateMatch}, Used: ${isUsed}`);
+        console.log(`-- Elig Req#: ${reqNum}, Answered On raw="${eligDateRaw}", parsed=${eligDate}, DateMatch=${isDateMatch}, Used=${isUsed}`);
       }
 
       return isDateMatch && !isUsed;
     });
 
-    if (i < 3) console.debug(`-- Valid eligibilities found: ${validEligibilities.length}`);
+    if (i < 3) console.log(`-- Valid eligibilities found: ${validEligibilities.length}`);
 
     let remarks = [];
     let matchedEligibility = null;
@@ -449,7 +479,7 @@ function validateXml(xmlData, eligData) {
       const claimClinicians = claim.clinicians || [];
       const claimCliniciansTrimmed = claimClinicians.map(c => c.trim());
 
-      if (i < 3) console.debug(`-- Matched eligibility Clinician: "${eligClinician}", Claim clinicians: [${claimCliniciansTrimmed.join(', ')}]`);
+      if (i < 3) console.log(`-- Matched eligibility Clinician: "${eligClinician}", Claim clinicians: [${claimCliniciansTrimmed.join(', ')}]`);
 
       if (eligClinician && claimCliniciansTrimmed.length > 0 && !claimCliniciansTrimmed.includes(eligClinician)) {
         remarks.push(`Clinician mismatch: claim ${claimCliniciansTrimmed.join(', ')} vs eligibility ${eligClinician}`);
