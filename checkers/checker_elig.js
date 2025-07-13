@@ -58,9 +58,14 @@ const DateHandler = {
     if (!input) return null;
     if (input instanceof Date) return isNaN(input) ? null : input;
     if (typeof input === 'number') return this._parseExcelDate(input);
-    
+  
     const cleanStr = input.toString().trim().replace(/[,.]/g, '');
-    return this._parseStringDate(cleanStr) || new Date(cleanStr);
+    const parsed = this._parseStringDate(cleanStr) || new Date(cleanStr);
+    if (isNaN(parsed)) {
+      console.warn('Unrecognized date:', input);
+      return null;
+    }
+    return parsed;
   },
 
   format: function(date) {
@@ -86,16 +91,24 @@ const DateHandler = {
   _parseStringDate: function(dateStr) {
     const dmyMatch = dateStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
     if (dmyMatch) return new Date(dmyMatch[3], dmyMatch[2]-1, dmyMatch[1]);
-    
+  
     const mdyMatch = dateStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
     if (mdyMatch) return new Date(mdyMatch[3], mdyMatch[1]-1, mdyMatch[2]);
-    
-    const textMatch = dateStr.match(/^(\d{1,2})[\/\- ]([a-z]{3})[\/\- ](\d{2,4})$/i);
+  
+    const textMatch = dateStr.match(/^(\d{1,2})[\/\- ]([a-z]{3,})[\/\- ](\d{2,4})/i);
     if (textMatch) {
       const monthIndex = MONTHS.indexOf(textMatch[2].toLowerCase().substr(0,3));
       if (monthIndex >= 0) return new Date(textMatch[3], monthIndex, textMatch[1]);
     }
-    
+  
+    const datetimeMatch = dateStr.match(/^(\d{1,2})[\/\-]([a-z]{3,})[\/\-](\d{2,4})\s+(\d{2}):(\d{2})(?::(\d{2}))?/i);
+    if (datetimeMatch) {
+      const day = parseInt(datetimeMatch[1], 10);
+      const monthIndex = MONTHS.indexOf(datetimeMatch[2].toLowerCase().substr(0,3));
+      const year = parseInt(datetimeMatch[3], 10);
+      if (monthIndex >= 0) return new Date(year, monthIndex, day);
+    }
+  
     return null;
   }
 };
