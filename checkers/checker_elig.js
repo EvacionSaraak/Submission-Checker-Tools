@@ -312,13 +312,20 @@ async function parseXML(file) {
       console.debug(`Found ${clinicians.size} clinicians for claim ${claimID}`);
 
       // Process encounters
-      const encounters = Array.from(claim.querySelectorAll('Encounter')).map(enc => ({
-        claimID,
-        memberID,
-        encounterStart: parseDate(enc.querySelector('Start')?.textContent.trim()) || '',
-        claimClinician: clinicians.size === 1 ? [...clinicians][0] : null,
-        multipleClinicians: clinicians.size > 1
-      }));
+      const encounters = Array.from(claim.querySelectorAll('Encounter')).map(enc => {
+        const startElem = enc.querySelector('Start');
+        const startText = startElem ? startElem.textContent.trim() : '';
+        console.debug(`Encounter Start text for claim ${claimID}:`, startText);
+        const encounterStart = startText ? parseDate(startText) : null;
+        return {
+          claimID,
+          memberID,
+          encounterStart: encounterStart || '',
+          claimClinician: clinicians.size === 1 ? [...clinicians][0] : null,
+          multipleClinicians: clinicians.size > 1
+        };
+      });
+
 
       return { claimID, encounters };
     });
