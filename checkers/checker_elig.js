@@ -161,15 +161,15 @@ function prepareEligibilityMap(eligData) {
 
     // Standardize eligibility record format
     const eligRecord = {
-      'Eligibility Request Number': e['Eligibility Request Number'] || e['_3'],
+      'Eligibility Request Number': e['Eligibility Request Number'],
       'Card Number / DHA Member ID': memberID,
-      'Answered On': e['Answered On'] || e['_7'],
-      'Ordered On': e['Ordered On'] || e['_6'],
-      'Status': e['Status'] || e['_10'],
-      'Clinician': e['Clinician'] || e['_15'],
-      'Payer Name': e['Payer Name'] || e['_16'],
-      'Service Category': e['Service Category'] || e['_19'],
-      'Package Name': e['Package Name'] || e['']
+      'Answered On': e['Answered On'],
+      'Ordered On': e['Ordered On'],
+      'Status': e['Status'],
+      'Clinician': e['Clinician'],
+      'Payer Name': e['Payer Name'],
+      'Service Category': e['Service Category'],
+      'Package Name': e['Package Name']
     };
 
     eligMap.get(memberID).push(eligRecord);
