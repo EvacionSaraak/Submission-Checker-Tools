@@ -312,8 +312,8 @@ function validateReportClaims(reportData, eligMap) {
         if (serviceCategory === 'Dental Services') { return dept.includes('dental'); }
         if (serviceCategory === 'Physiotherapy') { return dept.includes('physio'); }
         if (serviceCategory === 'Other OP Services') {
-          const allowed = ['physio', 'diet', 'occupational', 'speech'];
-          return allowed.some(term => dept.includes(term));
+          const disallowed = ['dental']; // Only exclude departments clearly not allowed
+          return !disallowed.some(term => dept.includes(term));
         }
         return true;
       })();
