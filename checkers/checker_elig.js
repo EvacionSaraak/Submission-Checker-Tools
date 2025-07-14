@@ -726,7 +726,7 @@ async function handleFileUpload(event, type) {
       const rawData = file.name.endsWith('.csv') 
         ? await parseCsvFile(file) 
         : await parseExcelFile(file);
-      xlsData = normalizeReportData(rawData);
+      xlsData = normalizeReportData(rawData).filter(r => r.claimID && r.claimID.trim() !== '');
       updateStatus(`Loaded ${xlsData.length} report rows`);
     }
     
