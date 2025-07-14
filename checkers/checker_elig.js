@@ -751,13 +751,13 @@ async function handleProcessClick() {
   try {
     updateStatus('Processing...');
     usedEligibilities.clear();
-    
+
     const eligMap = prepareEligibilityMap(eligData);
     const results = xmlRadio.checked
       ? validateXmlClaims(xmlData.claims, eligMap)
       : validateReportClaims(xlsData, eligMap);
-    
-    renderResults(results);
+
+    renderResults(results, eligMap);  // ✅ Pass eligMap here
     updateStatus(`Processed ${results.length} claims`);
   } catch (error) {
     console.error('Processing error:', error);
