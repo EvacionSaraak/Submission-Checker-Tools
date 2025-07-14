@@ -467,9 +467,9 @@ function normalizeReportData(rawData) {
         memberID: row['Pri. Patient Insurance Card No'] || '',
         claimDate: row['Encounter Date'] || '',
         clinician: row['Clinician License'] || '',
-        insuranceCompany: row['Pri. Payer Name'] || '',
         department: row['Department'] || '',
-        packageName: row['Pri. Payer Name'] || ''  // <-- important
+        packageName: row['Pri. Payer Name'] || '', // ✅ shown in table as "Package"
+        insuranceCompany: row['Pri. Payer Name'] || '', // not used in XML but useful for ClinicPro
       };
     } else {
       // ClinicPro report format (starts from row 1)
