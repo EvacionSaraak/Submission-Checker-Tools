@@ -262,7 +262,7 @@ function validateXmlClaims(xmlClaims, eligMap) {
     const remarks = [];
 
     if (!eligibility) {
-      remarks.push('No matching eligibility found');
+      remarks.push(`No matching eligibility found for ${memberID} on ${formattedDate}`);
     } else if (eligibility.Status?.toLowerCase() !== 'eligible') {
       remarks.push(`Eligibility status: ${eligibility.Status}`);
     } else if (!checkClinicianMatch(claim.clinicians, eligibility.Clinician)) {
@@ -299,7 +299,7 @@ function validateReportClaims(reportData, eligMap) {
     const department = (row.department || row.clinic || '').toLowerCase();
 
     if (!eligibility) {
-      remarks.push('No matching eligibility found');
+      remarks.push(`No matching eligibility found for ${memberID} on ${formattedDate}`);
     } else if (eligibility.Status?.toLowerCase() !== 'eligible') {
       remarks.push(`Eligibility status: ${eligibility.Status}`);
     } else {
