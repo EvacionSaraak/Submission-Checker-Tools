@@ -89,12 +89,14 @@ const DateHandler = {
   },
 
   _parseExcelDate: function(serial) {
-    const date = new Date(Math.round((serial - 25569) * 86400 * 1000));
-    return serial >= 60 ? new Date(date.getTime() + 86400000) : date;
+    // Floor the serial to ensure we only use full day values
+    const floored = Math.floor(serial);
+    const date = new Date((floored - 25569) * 86400 * 1000);
+    // Adjust for Excel bug on leap year 1900 (Excel wrongly thinks 1900 is a leap year)
+    return floored >= 60 ? new Date(date.getTime() + 86400000) : date;
   },
 
   _parseStringDate: function(dateStr) {
-    // Remove time portion like "17/06/2025 16:10" → "17/06/2025"
     if (dateStr.includes(' ')) {
       dateStr = dateStr.split(' ')[0];
     }
@@ -103,7 +105,7 @@ const DateHandler = {
     const dmyMatch = dateStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
     if (dmyMatch) return new Date(dmyMatch[3], dmyMatch[2] - 1, dmyMatch[1]);
 
-    // Matches MM/DD/YYYY (not typical for your case, but included)
+    // Matches MM/DD/YYYY
     const mdyMatch = dateStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
     if (mdyMatch) return new Date(mdyMatch[3], mdyMatch[1] - 1, mdyMatch[2]);
 
@@ -114,10 +116,9 @@ const DateHandler = {
       if (monthIndex >= 0) return new Date(textMatch[3], monthIndex, textMatch[1]);
     }
 
-    // ISO style fallback: 2025-07-01
+    // ISO: 2025-07-01
     const isoMatch = dateStr.match(/^(\d{4})[\/\-](\d{2})[\/\-](\d{2})$/);
     if (isoMatch) return new Date(isoMatch[1], isoMatch[2] - 1, isoMatch[3]);
-
     return null;
   }
 };
