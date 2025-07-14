@@ -554,6 +554,7 @@ function renderResults(results, eligMap) {
       <td class="wrap-col">${remarksHTML}</td>
       <td>${detailsCell}</td>
     `;
+    if (result.remarks.length > 0) console.log('Rendering packageName:', result.packageName);
     tbody.appendChild(row);
   });
 
