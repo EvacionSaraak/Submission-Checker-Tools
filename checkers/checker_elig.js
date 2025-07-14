@@ -437,14 +437,17 @@ async function parseExcelFile(file) {
 
 async function parseCsvFile(file) {
   console.log(`Parsing CSV file: ${file.name}`);
+
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
+
     reader.onload = function(e) {
       try {
         const text = e.target.result;
         const workbook = XLSX.read(text, { type: 'string' });
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
         const allRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+
         // Dynamically detect header row by scanning first 5 rows
         let headerRowIndex = -1;
         for (let i = 0; i < 5; i++) {
@@ -456,22 +459,47 @@ async function parseCsvFile(file) {
             break;
           }
         }
+
         if (headerRowIndex === -1) throw new Error("Could not detect header row in CSV");
+
         const headers = allRows[headerRowIndex];
         const dataRows = allRows.slice(headerRowIndex + 1);
+
         console.log(`Detected header at row ${headerRowIndex + 1}:`, headers);
-        const parsed = dataRows.map(row => {
+
+        const rawParsed = dataRows.map(row => {
           const obj = {};
           headers.forEach((header, index) => {
             obj[header] = row[index] || '';
           });
           return obj;
         });
-        resolve(parsed);
+
+        // Deduplicate based on claim ID
+        const seen = new Set();
+        const uniqueRows = [];
+
+        const claimIdHeader = headers.find(h =>
+          h.toLowerCase().replace(/\s+/g, '') === 'claimid' ||
+          h.toLowerCase().includes('claim')  // fallback if no exact match
+        );
+
+        if (!claimIdHeader) throw new Error("Could not find a Claim ID column");
+
+        rawParsed.forEach(row => {
+          const claimID = row[claimIdHeader];
+          if (claimID && !seen.has(claimID)) {
+            seen.add(claimID);
+            uniqueRows.push(row);
+          }
+        });
+
+        resolve(uniqueRows);
       } catch (error) {
         reject(error);
       }
     };
+
     reader.onerror = () => reject(reader.error);
     reader.readAsText(file);
   });
