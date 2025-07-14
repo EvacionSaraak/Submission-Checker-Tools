@@ -288,6 +288,11 @@ function validateReportClaims(reportData, eligMap) {
     if (!row.claimID || String(row.claimID).trim() === '') return null; // Skip blank Claim ID
 
     const memberID = String(row.memberID || '').trim();
+    const claimDateRaw = row.claimDate;
+
+    // Parse and format the claimDate for display, regardless of source
+    const claimDate = DateHandler.parse(claimDateRaw);
+    const formattedDate = DateHandler.format(claimDate);
 
     // VVIP IDs: mark as valid with a special remark, but do NOT skip
     const isVVIP = memberID.startsWith('(VVIP)');
@@ -296,9 +301,9 @@ function validateReportClaims(reportData, eligMap) {
       return {
         claimID: row.claimID,
         memberID,
-        encounterStart: row.claimDate || '',
-        packageName: '',
-        provider: '',
+        encounterStart: formattedDate,  // use formatted date here
+        packageName: row.packageName || '',
+        provider: row.provider || '',
         clinician: row.clinician || '',
         serviceCategory: '',
         consultationStatus: '',
@@ -310,9 +315,6 @@ function validateReportClaims(reportData, eligMap) {
     }
 
     // Proceed with normal eligibility lookup
-    const claimDate = DateHandler.parse(row.claimDate);
-    const formattedDate = DateHandler.format(claimDate);
-
     const eligibility = findEligibilityForClaim(eligMap, claimDate, memberID, [row.clinician]);
 
     let status = 'invalid';
@@ -344,7 +346,7 @@ function validateReportClaims(reportData, eligMap) {
       memberID,
       encounterStart: formattedDate,
       packageName: eligibility?.['Package Name'] || row.packageName || '',
-      provider: eligibility?.['Payer Name'] || '',
+      provider: eligibility?.['Payer Name'] || row.provider || '',
       clinician: eligibility?.['Clinician'] || row.clinician || '',
       serviceCategory: eligibility?.['Service Category'] || '',
       consultationStatus: eligibility?.['Consultation Status'] || '',
