@@ -483,7 +483,7 @@ function normalizeReportData(rawData) {
         claimDate: row['ClaimDate'] || '',
         clinician: row['Clinician License'] || '',
         insuranceCompany: row['Insurance Company'] || '',
-        department: row['Institution'] || ''
+        department: row['Clinic'] || ''
       };
     }
   });
