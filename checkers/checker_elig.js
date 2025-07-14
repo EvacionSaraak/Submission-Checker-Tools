@@ -461,12 +461,12 @@ async function parseCsvFile(file) {
 }
 
 function normalizeReportData(rawData) {
-  // Check if data is from Insta (has 'Pri. Claim No' header)
+  // Check if data is from InstaHMS (has 'Pri. Claim No' header)
   const isInsta = rawData[0]?.hasOwnProperty('Pri. Claim No');
-  
+
   return rawData.map(row => {
     if (isInsta) {
-      // Insta report format
+      // InstaHMS report format
       return {
         claimID: row['Pri. Claim No'] || '',
         memberID: row['Pri. Patient Insurance Card No'] || '',
@@ -476,12 +476,12 @@ function normalizeReportData(rawData) {
         department: row['Department'] || ''
       };
     } else {
-      // ClinicPro format
+      // ClinicPro report format (starts from row 1)
       return {
         claimID: row['ClaimID'] || '',
-        memberID: row['Member ID'] || '',
+        memberID: row['PatientCardID'] || '', // patient ID for eligibility match
         claimDate: row['ClaimDate'] || '',
-        clinician: row['Clinician'] || '',
+        clinician: row['Clinician License'] || '',
         insuranceCompany: row['Insurance Company'] || '',
         department: row['Institution'] || ''
       };
