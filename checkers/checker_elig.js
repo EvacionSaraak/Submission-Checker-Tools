@@ -146,25 +146,21 @@ function normalizeClinician(name) {
  *******************************/
 function prepareEligibilityMap(eligData) {
   const eligMap = new Map();
-  
+
   eligData.forEach(e => {
-    // Extract member ID from the correct column based on header
-    const memberID = normalizeMemberID(
-      e['Card Number / DHA Member ID'] || 
-      e['Card Number'] || 
-      e['_5'] || // Fallback for Daman files
+    // Use raw member ID without normalization
+    const memberID =
+      e['Card Number / DHA Member ID'] ||
+      e['Card Number'] ||
+      e['_5'] ||
       e['MemberID'] ||
       e['Member ID'] ||
-      e['Patient Insurance Card No']
-    );
+      e['Patient Insurance Card No'];
 
     if (!memberID) return;
 
-    if (!eligMap.has(memberID)) {
-      eligMap.set(memberID, []);
-    }
+    if (!eligMap.has(memberID)) eligMap.set(memberID, []);
 
-    // Standardize eligibility record format
     const eligRecord = {
       'Eligibility Request Number': e['Eligibility Request Number'],
       'Card Number / DHA Member ID': memberID,
@@ -185,8 +181,9 @@ function prepareEligibilityMap(eligData) {
 
 function findEligibilityForClaim(eligMap, claimDate, memberID, claimClinicians) {
   if (!claimDate) return null;
-  
-  const eligibilities = eligMap.get(normalizeMemberID(memberID)) || [];
+
+  // Use raw memberID directly, no normalization
+  const eligibilities = eligMap.get(memberID) || [];
 
   for (const e of eligibilities) {
     const reqNum = e['Eligibility Request Number'];
@@ -291,11 +288,12 @@ function validateReportClaims(reportData, eligMap) {
   console.log(`Validating ${reportData.length} report rows`);
 
   const results = reportData.map(row => {
-    if (!row.claimID || row.claimID.trim() === '') return null; // ✅ Skip blank Claim ID
+    if (!row.claimID || row.claimID.trim() === '') return null; // Skip blank Claim ID
 
     const claimDate = DateHandler.parse(row.claimDate);
     const formattedDate = DateHandler.format(claimDate);
-    const memberID = normalizeMemberID(row.memberID);
+    // IMPORTANT: remove normalization here if your memberIDs are distinct as raw values
+    const memberID = row.memberID; 
     const eligibility = findEligibilityForClaim(eligMap, claimDate, memberID, [row.clinician]);
 
     let status = 'invalid';
@@ -320,10 +318,9 @@ function validateReportClaims(reportData, eligMap) {
         if (serviceCategory === 'Physiotherapy') { return dept.includes('physio'); }
         if (serviceCategory === 'Other OP Services') {
           const excluded = ['dental', 'physio', 'dietician', 'occupational', 'speech'];
-          // valid if department is blank OR does NOT include any excluded term
           return !excluded.some(term => dept.includes(term));
         }
-        return true; // allow all else
+        return true;
       })();
 
       if (!matchesCategory) {
@@ -349,7 +346,7 @@ function validateReportClaims(reportData, eligMap) {
     };
   });
 
-  return results.filter(r => r); // ✅ Remove nulls from skipped blank claimIDs
+  return results.filter(r => r); // Remove null entries from blank Claim ID rows
 }
 
 /*********************
@@ -492,6 +489,7 @@ function normalizeReportData(rawData) {
 /********************
  * UI RENDERING FUNCTIONS *
  ********************/
+// renderResults: no normalization of memberID in button data attributes
 function renderResults(results, eligMap) {
   resultsContainer.innerHTML = '';
 
@@ -529,6 +527,7 @@ function renderResults(results, eligMap) {
 
   results.forEach((result, index) => {
     statusCounts[result.finalStatus]++;
+
     const row = document.createElement('tr');
     row.className = result.finalStatus;
 
@@ -543,8 +542,9 @@ function renderResults(results, eligMap) {
     let detailsCell = '<div class="source-note">N/A</div>';
     if (result.fullEligibilityRecord?.['Eligibility Request Number']) {
       detailsCell = `<button class="details-btn eligibility-details" data-index="${index}">${result.fullEligibilityRecord['Eligibility Request Number']}</button>`;
-    } else if (eligMap.has(normalizeMemberID(result.memberID))) {
-      detailsCell = `<button class="details-btn show-all-eligibilities" data-member="${normalizeMemberID(result.memberID)}" data-clinicians="${(result.clinicians || [result.clinician || '']).join(',')}">View All</button>`;
+    } else if (eligMap.has(result.memberID)) {
+      // Use raw memberID here directly
+      detailsCell = `<button class="details-btn show-all-eligibilities" data-member="${result.memberID}" data-clinicians="${(result.clinicians || [result.clinician || '']).join(',')}">View All</button>`;
     }
 
     row.innerHTML = `
@@ -558,7 +558,6 @@ function renderResults(results, eligMap) {
       <td class="wrap-col">${remarksHTML}</td>
       <td>${detailsCell}</td>
     `;
-    if (result.remarks.length > 0) console.log('Rendering packageName:', result.packageName);
     tbody.appendChild(row);
   });
 
@@ -576,7 +575,7 @@ function renderResults(results, eligMap) {
   `;
   resultsContainer.prepend(summary);
 
-  initEligibilityModal(results, eligMap);  // updated call
+  initEligibilityModal(results, eligMap);
 }
 
 function initEligibilityModal(results, eligMap) {
