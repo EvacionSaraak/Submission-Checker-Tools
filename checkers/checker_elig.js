@@ -470,6 +470,7 @@ function normalizeReportData(rawData) {
         memberID: row['PatientCardID'] || '', // patient ID for eligibility match
         claimDate: row['ClaimDate'] || '',
         clinician: row['Clinician License'] || '',
+        packageName: row['Insurance Company'] || '', // ✅ shown in table as "Package"
         insuranceCompany: row['Insurance Company'] || '',
         department: row['Clinic'] || ''
       };
