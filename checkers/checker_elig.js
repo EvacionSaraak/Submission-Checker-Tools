@@ -89,11 +89,10 @@ const DateHandler = {
   },
 
   _parseExcelDate: function(serial) {
-    // Floor the serial to ensure we only use full day values
-    const floored = Math.floor(serial);
-    const date = new Date((floored - 25569) * 86400 * 1000);
-    // Adjust for Excel bug on leap year 1900 (Excel wrongly thinks 1900 is a leap year)
-    return floored >= 60 ? new Date(date.getTime() + 86400000) : date;
+    const utcDays = Math.floor(serial) - 25569;
+    const utcTime = utcDays * 86400 * 1000;
+    const tempDate = new Date(utcTime + (serial >= 60 ? 86400000 : 0));
+    return new Date(Date.UTC(tempDate.getUTCFullYear(), tempDate.getUTCMonth(), tempDate.getUTCDate()));
   },
 
   _parseStringDate: function(dateStr) {
