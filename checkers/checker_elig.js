@@ -318,7 +318,11 @@ function validateReportClaims(reportData, eligMap) {
         }
         if (serviceCategory === 'Dental Services') { return dept.includes('dental'); }
         if (serviceCategory === 'Physiotherapy') { return dept.includes('physio'); }
-        if (serviceCategory === 'Other OP Services') { return ['physio', 'dietician', 'occupational', 'speech'].some(term => dept.includes(term)); }
+        if (serviceCategory === 'Other OP Services') {
+          const excluded = ['dental', 'physio', 'dietician', 'occupational', 'speech'];
+          // valid if department is blank OR does NOT include any excluded term
+          return !excluded.some(term => dept.includes(term));
+        }
         return true; // allow all else
       })();
 
