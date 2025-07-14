@@ -468,7 +468,8 @@ function normalizeReportData(rawData) {
         claimDate: row['Encounter Date'] || '',
         clinician: row['Clinician License'] || '',
         insuranceCompany: row['Pri. Payer Name'] || '',
-        department: row['Department'] || ''
+        department: row['Department'] || '',
+        packageName: row['Pri. Payer Name'] || ''
       };
     } else {
       // ClinicPro report format (starts from row 1)
