@@ -127,13 +127,7 @@ const DateHandler = {
  *****************************/
 function normalizeMemberID(id) {
   if (!id) return '';
-  // Handle cases where ID might be a number in scientific notation
-  if (typeof id === 'number') return String(id).replace(/\.0+$/, ''); 
-  // Standard normalization
-  return String(id)
-    .replace(/\D/g, '')
-    .replace(/^0+/, '')
-    .trim();
+  return String(id).trim().replace(/^0+/, '');
 }
 
 function normalizeClinician(name) {
@@ -148,8 +142,7 @@ function prepareEligibilityMap(eligData) {
   const eligMap = new Map();
 
   eligData.forEach(e => {
-    // Use raw member ID without normalization
-    const memberID =
+    const rawID =
       e['Card Number / DHA Member ID'] ||
       e['Card Number'] ||
       e['_5'] ||
@@ -157,13 +150,15 @@ function prepareEligibilityMap(eligData) {
       e['Member ID'] ||
       e['Patient Insurance Card No'];
 
-    if (!memberID) return;
+    if (!rawID) return;
+
+    const memberID = normalizeMemberID(rawID); // ✅ only strips leading zeroes
 
     if (!eligMap.has(memberID)) eligMap.set(memberID, []);
 
     const eligRecord = {
       'Eligibility Request Number': e['Eligibility Request Number'],
-      'Card Number / DHA Member ID': memberID,
+      'Card Number / DHA Member ID': rawID, // preserve original for display
       'Answered On': e['Answered On'],
       'Ordered On': e['Ordered On'],
       'Status': e['Status'],
@@ -182,8 +177,8 @@ function prepareEligibilityMap(eligData) {
 function findEligibilityForClaim(eligMap, claimDate, memberID, claimClinicians) {
   if (!claimDate) return null;
 
-  // Use raw memberID directly, no normalization
-  const eligibilities = eligMap.get(memberID) || [];
+  const normalizedID = normalizeMemberID(memberID); // ✅ Strip leading zeroes only
+  const eligibilities = eligMap.get(normalizedID) || [];
 
   for (const e of eligibilities) {
     const reqNum = e['Eligibility Request Number'];
@@ -252,7 +247,7 @@ function validateXmlClaims(xmlClaims, eligMap) {
   return xmlClaims.map(claim => {
     const claimDate = DateHandler.parse(claim.encounterStart);
     const formattedDate = DateHandler.format(claimDate);
-    const memberID = normalizeMemberID(claim.memberID);
+    const memberID = claim.memberID;
     const eligibility = findEligibilityForClaim(eligMap, claimDate, memberID, claim.clinicians);
 
     let status = 'invalid';
