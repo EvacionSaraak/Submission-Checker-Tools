@@ -283,12 +283,11 @@ function validateReportClaims(reportData, eligMap) {
   console.log(`Validating ${reportData.length} report rows`);
 
   const results = reportData.map(row => {
-    if (!row.claimID || row.claimID.trim() === '') return null; // Skip blank Claim ID
+    if (!row.claimID || String(row.claimID).trim() === '') return null;
 
     const claimDate = DateHandler.parse(row.claimDate);
     const formattedDate = DateHandler.format(claimDate);
-    // IMPORTANT: remove normalization here if your memberIDs are distinct as raw values
-    const memberID = row.memberID; 
+    const memberID = row.memberID;
     const eligibility = findEligibilityForClaim(eligMap, claimDate, memberID, [row.clinician]);
 
     let status = 'invalid';
@@ -307,18 +306,17 @@ function validateReportClaims(reportData, eligMap) {
       const matchesCategory = (() => {
         if (serviceCategory === 'Consultation' && consultationStatus === 'elective')
           return !['dental', 'physiotherapy', 'dietician', 'occupational therapy', 'speech therapy'].some(term => dept.includes(term));
-      
+
         if (serviceCategory === 'Dental Services') return dept.includes('dental');
         if (serviceCategory === 'Physiotherapy') return dept.includes('physio');
         if (serviceCategory === 'Other OP Services') return !['dental'].some(term => dept.includes(term));
         return true;
       })();
 
-      if (!matchesCategory) {
+      if (!matchesCategory)
         remarks.push(`Invalid for category: ${serviceCategory}, department: ${row.department || row.clinic}`);
-      } else {
+      else
         status = 'valid';
-      }
     }
 
     return {
@@ -337,7 +335,7 @@ function validateReportClaims(reportData, eligMap) {
     };
   });
 
-  return results.filter(r => r); // Remove null entries from blank Claim ID rows
+  return results.filter(r => r);
 }
 
 /*********************
