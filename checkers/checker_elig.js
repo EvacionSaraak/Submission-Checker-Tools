@@ -445,19 +445,29 @@ async function parseCsvFile(file) {
         const workbook = XLSX.read(text, { type: 'string' });
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
         const allRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
-        
-        const isCsvReport = allRows[3]?.some(h => h.includes('Pri. Claim No'));
-        const headers = isCsvReport ? allRows[3] : allRows[0];
-        console.log(`Headers: ${headers}`);
-        const dataRows = isCsvReport ? allRows.slice(4) : allRows.slice(1);
-        
-        resolve(dataRows.map(row => {
+        // Dynamically detect header row by scanning first 5 rows
+        let headerRowIndex = -1;
+        for (let i = 0; i < 5; i++) {
+          const row = allRows[i];
+          if (!row) continue;
+          const joined = row.join(',').toLowerCase();
+          if (joined.includes('pri. claim no') || joined.includes('claimid') || joined.includes('claim id')) {
+            headerRowIndex = i;
+            break;
+          }
+        }
+        if (headerRowIndex === -1) throw new Error("Could not detect header row in CSV");
+        const headers = allRows[headerRowIndex];
+        const dataRows = allRows.slice(headerRowIndex + 1);
+        console.log(`Detected header at row ${headerRowIndex + 1}:`, headers);
+        const parsed = dataRows.map(row => {
           const obj = {};
           headers.forEach((header, index) => {
             obj[header] = row[index] || '';
           });
           return obj;
-        }));
+        });
+        resolve(parsed);
       } catch (error) {
         reject(error);
       }
