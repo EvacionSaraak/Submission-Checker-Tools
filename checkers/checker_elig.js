@@ -285,22 +285,31 @@ function validateReportClaims(reportData, eligMap) {
   console.log(`Validating ${reportData.length} report rows`);
 
   const results = reportData.map(row => {
-    if (!row.claimID || String(row.claimID).trim() === '') return null;
+    if (!row.claimID || typeof row.claimID !== 'string' || row.claimID.trim() === '') return null; // Skip blank Claim ID
 
     const claimDate = DateHandler.parse(row.claimDate);
     const formattedDate = DateHandler.format(claimDate);
     const memberID = row.memberID;
-    const eligibility = findEligibilityForClaim(eligMap, claimDate, memberID, [row.clinician]);
-
     let status = 'invalid';
     const remarks = [];
     const department = (row.department || row.clinic || '').toLowerCase();
 
-    if (!eligibility) {
-      remarks.push(`No matching eligibility found for ${memberID} on ${formattedDate}`);
-    } else if (eligibility.Status?.toLowerCase() !== 'eligible') {
-      remarks.push(`Eligibility status: ${eligibility.Status}`);
+    let eligibility = null;
+    let isVVIP = false;
+
+    if (typeof memberID === 'string' && memberID.trim().startsWith('(VVIP)')) {
+      isVVIP = true;
+      status = 'valid';
+      remarks.push('VVIP case – eligibility not required');
     } else {
+      eligibility = findEligibilityForClaim(eligMap, claimDate, memberID, [row.clinician]);
+    }
+
+    if (!eligibility && !isVVIP) {
+      remarks.push(`No matching eligibility found for ${memberID} on ${formattedDate}`);
+    } else if (eligibility && eligibility.Status?.toLowerCase() !== 'eligible') {
+      remarks.push(`Eligibility status: ${eligibility.Status}`);
+    } else if (!isVVIP) {
       const serviceCategory = eligibility['Service Category']?.trim() || '';
       const consultationStatus = eligibility['Consultation Status']?.trim()?.toLowerCase() || '';
       const dept = department.toLowerCase();
@@ -315,10 +324,11 @@ function validateReportClaims(reportData, eligMap) {
         return true;
       })();
 
-      if (!matchesCategory)
+      if (!matchesCategory) {
         remarks.push(`Invalid for category: ${serviceCategory}, department: ${row.department || row.clinic}`);
-      else
+      } else {
         status = 'valid';
+      }
     }
 
     return {
@@ -330,14 +340,14 @@ function validateReportClaims(reportData, eligMap) {
       clinician: eligibility?.['Clinician'] || row.clinician || '',
       serviceCategory: eligibility?.['Service Category'] || '',
       consultationStatus: eligibility?.['Consultation Status'] || '',
-      status: eligibility?.Status || '',
+      status: eligibility?.Status || (isVVIP ? 'N/A' : ''),
       remarks,
       finalStatus: status,
       fullEligibilityRecord: eligibility
     };
   });
 
-  return results.filter(r => r);
+  return results.filter(r => r); // Remove null entries from blank Claim ID rows
 }
 
 /*********************
