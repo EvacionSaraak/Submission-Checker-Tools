@@ -305,16 +305,12 @@ function validateReportClaims(reportData, eligMap) {
       const dept = department.toLowerCase();
 
       const matchesCategory = (() => {
-        if (serviceCategory === 'Consultation' && consultationStatus === 'elective') {
-          const excluded = ['dental', 'physiotherapy', 'dietician', 'occupational therapy', 'speech therapy'];
-          return !excluded.includes(dept);
-        }
-        if (serviceCategory === 'Dental Services') { return dept.includes('dental'); }
-        if (serviceCategory === 'Physiotherapy') { return dept.includes('physio'); }
-        if (serviceCategory === 'Other OP Services') {
-          const disallowed = ['dental']; // Only exclude departments clearly not allowed
-          return !disallowed.some(term => dept.includes(term));
-        }
+        if (serviceCategory === 'Consultation' && consultationStatus === 'elective')
+          return !['dental', 'physiotherapy', 'dietician', 'occupational therapy', 'speech therapy'].some(term => dept.includes(term));
+      
+        if (serviceCategory === 'Dental Services') return dept.includes('dental');
+        if (serviceCategory === 'Physiotherapy') return dept.includes('physio');
+        if (serviceCategory === 'Other OP Services') return !['dental'].some(term => dept.includes(term));
         return true;
       })();
 
