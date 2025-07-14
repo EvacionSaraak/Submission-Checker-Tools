@@ -285,62 +285,70 @@ function validateReportClaims(reportData, eligMap) {
   console.log(`Validating ${reportData.length} report rows`);
 
   const results = reportData.map(row => {
-    if (!row.claimID || typeof row.claimID !== 'string' || row.claimID.trim() === '') return null; // Skip blank Claim ID
+    if (!row.claimID || String(row.claimID).trim() === '') return null; // Skip blank Claim ID
 
+    const memberID = String(row.memberID || '').trim();
+
+    // VVIP IDs: mark as valid with a special remark, but do NOT skip
+    const isVVIP = memberID.startsWith('(VVIP)');
+
+    if (isVVIP) {
+      return {
+        claimID: row.claimID,
+        memberID,
+        encounterStart: row.claimDate || '',
+        packageName: '',
+        provider: '',
+        clinician: row.clinician || '',
+        serviceCategory: '',
+        consultationStatus: '',
+        status: 'VVIP',
+        remarks: ['VVIP member, eligibility check bypassed'],
+        finalStatus: 'valid',
+        fullEligibilityRecord: null
+      };
+    }
+
+    // Proceed with normal eligibility lookup
     const claimDate = DateHandler.parse(row.claimDate);
     const formattedDate = DateHandler.format(claimDate);
-    const memberID = row.memberID;
+
+    const eligibility = findEligibilityForClaim(eligMap, claimDate, memberID, [row.clinician]);
+
     let status = 'invalid';
     const remarks = [];
     const department = (row.department || row.clinic || '').toLowerCase();
 
-    let eligibility = null;
-    let isVVIP = false;
-
-    if (typeof memberID === 'string' && memberID.trim().startsWith('(VVIP)')) {
-      isVVIP = true;
-      status = 'valid';
-      remarks.push('VVIP case – eligibility not required');
-    } else {
-      eligibility = findEligibilityForClaim(eligMap, claimDate, memberID, [row.clinician]);
-    }
-
-    if (!eligibility && !isVVIP) {
-      remarks.push(`No matching eligibility found for ${memberID} on ${formattedDate}`);
-    } else if (eligibility && eligibility.Status?.toLowerCase() !== 'eligible') {
-      remarks.push(`Eligibility status: ${eligibility.Status}`);
-    } else if (!isVVIP) {
+    if (!eligibility) remarks.push(`No matching eligibility found for ${memberID} on ${formattedDate}`);
+    else if (eligibility.Status?.toLowerCase() !== 'eligible') remarks.push(`Eligibility status: ${eligibility.Status}`);
+    else {
       const serviceCategory = eligibility['Service Category']?.trim() || '';
       const consultationStatus = eligibility['Consultation Status']?.trim()?.toLowerCase() || '';
-      const dept = department.toLowerCase();
+      const dept = department;
 
       const matchesCategory = (() => {
         if (serviceCategory === 'Consultation' && consultationStatus === 'elective')
           return !['dental', 'physiotherapy', 'dietician', 'occupational therapy', 'speech therapy'].some(term => dept.includes(term));
-
         if (serviceCategory === 'Dental Services') return dept.includes('dental');
         if (serviceCategory === 'Physiotherapy') return dept.includes('physio');
         if (serviceCategory === 'Other OP Services') return !['dental'].some(term => dept.includes(term));
         return true;
       })();
 
-      if (!matchesCategory) {
-        remarks.push(`Invalid for category: ${serviceCategory}, department: ${row.department || row.clinic}`);
-      } else {
-        status = 'valid';
-      }
+      if (!matchesCategory) remarks.push(`Invalid for category: ${serviceCategory}, department: ${row.department || row.clinic}`);
+      else status = 'valid';
     }
 
     return {
       claimID: row.claimID,
-      memberID: row.memberID,
+      memberID,
       encounterStart: formattedDate,
       packageName: eligibility?.['Package Name'] || row.packageName || '',
       provider: eligibility?.['Payer Name'] || '',
       clinician: eligibility?.['Clinician'] || row.clinician || '',
       serviceCategory: eligibility?.['Service Category'] || '',
       consultationStatus: eligibility?.['Consultation Status'] || '',
-      status: eligibility?.Status || (isVVIP ? 'N/A' : ''),
+      status: eligibility?.Status || '',
       remarks,
       finalStatus: status,
       fullEligibilityRecord: eligibility
