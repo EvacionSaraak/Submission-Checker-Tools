@@ -289,7 +289,10 @@ function validateXmlClaims(xmlClaims, eligMap) {
 
 function validateReportClaims(reportData, eligMap) {
   console.log(`Validating ${reportData.length} report rows`);
-  return reportData.map(row => {
+
+  const results = reportData.map(row => {
+    if (!row.claimID || row.claimID.trim() === '') return null; // ✅ Skip blank Claim ID
+
     const claimDate = DateHandler.parse(row.claimDate);
     const formattedDate = DateHandler.format(claimDate);
     const memberID = normalizeMemberID(row.memberID);
@@ -313,19 +316,9 @@ function validateReportClaims(reportData, eligMap) {
           const excluded = ['dental', 'physiotherapy', 'dietician', 'occupational therapy', 'speech therapy'];
           return !excluded.includes(dept);
         }
-
-        if (serviceCategory === 'Dental Services') {
-          return dept.includes('dental');
-        }
-
-        if (serviceCategory === 'Physiotherapy') {
-          return dept.includes('physio');
-        }
-
-        if (serviceCategory === 'Other OP Services') {
-          return ['physio', 'dietician', 'occupational', 'speech'].some(term => dept.includes(term));
-        }
-
+        if (serviceCategory === 'Dental Services') { return dept.includes('dental'); }
+        if (serviceCategory === 'Physiotherapy') { return dept.includes('physio'); }
+        if (serviceCategory === 'Other OP Services') { return ['physio', 'dietician', 'occupational', 'speech'].some(term => dept.includes(term)); }
         return true; // allow all else
       })();
 
@@ -339,7 +332,7 @@ function validateReportClaims(reportData, eligMap) {
     return {
       claimID: row.claimID,
       memberID: row.memberID,
-      encounterStart: DateHandler.format(claimDate),
+      encounterStart: formattedDate,
       packageName: eligibility?.['Package Name'] || '',
       provider: eligibility?.['Payer Name'] || '',
       clinician: eligibility?.['Clinician'] || '',
@@ -351,8 +344,9 @@ function validateReportClaims(reportData, eligMap) {
       fullEligibilityRecord: eligibility
     };
   });
-}
 
+  return results.filter(r => r); // ✅ Remove nulls from skipped blank claimIDs
+}
 
 /*********************
  * FILE PARSING FUNCTIONS *
