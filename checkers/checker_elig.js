@@ -89,10 +89,12 @@ const DateHandler = {
   },
 
   _parseExcelDate: function(serial) {
-    const utcDays = Math.floor(serial) - 25569;
-    const utcTime = utcDays * 86400 * 1000;
-    const tempDate = new Date(utcTime + (serial >= 60 ? 86400000 : 0));
-    return new Date(Date.UTC(tempDate.getUTCFullYear(), tempDate.getUTCMonth(), tempDate.getUTCDate()));
+    const utcDays = Math.floor(serial) - 25569; // 25569 = days between 1899-12-30 and 1970-01-01
+    const ms = utcDays * 86400 * 1000;
+    const date = new Date(ms);
+  
+    // Manually extract date parts from UTC (avoid local time shift)
+    return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
   },
 
   _parseStringDate: function(dateStr) {
