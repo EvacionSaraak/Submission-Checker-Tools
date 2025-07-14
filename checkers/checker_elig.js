@@ -276,8 +276,6 @@ function validateXmlClaims(xmlClaims, eligMap) {
       claimID: claim.claimID,
       memberID: claim.memberID,
       encounterStart: formattedDate,
-      packageName: eligibility?.['Package Name'] || '',
-      provider: eligibility?.['Payer Name'] || '',
       clinician: eligibility?.['Clinician'] || '',
       serviceCategory: eligibility?.['Service Category'] || '',
       consultationStatus: eligibility?.['Consultation Status'] || '',
@@ -502,6 +500,8 @@ function renderResults(results) {
     return;
   }
 
+  const isXml = xmlRadio.checked; // 👈 Determine if XML mode is active
+
   const tableContainer = document.createElement('div');
   tableContainer.className = 'analysis-results';
   tableContainer.style.overflowX = 'auto';
@@ -515,8 +515,8 @@ function renderResults(results) {
       <th>Claim ID</th>
       <th>Member ID</th>
       <th>Encounter Date</th>
-      <th>Package</th>
-      <th>Payer</th>
+      ${!isXml ? '<th>Package</th>' : ''}
+      ${!isXml ? '<th>Provider</th>' : ''}
       <th>Clinician</th>
       <th>Service Category</th>
       <th>Status</th>
@@ -552,15 +552,14 @@ function renderResults(results) {
       <td>${result.claimID}</td>
       <td>${result.memberID}</td>
       <td>${result.encounterStart}</td>
-      <td class="description-col">${result.packageName}</td>
-      <td class="description-col">${result.payer}</td>
+      ${!isXml ? `<td class="description-col">${result.packageName}</td>` : ''}
+      ${!isXml ? `<td class="description-col">${result.provider}</td>` : ''}
       <td class="description-col">${result.clinician}</td>
       <td class="description-col">${result.serviceCategory}</td>
       <td class="description-col">${statusBadge}</td>
       <td class="wrap-col">${remarksHTML}</td>
       <td>${detailsBtn}</td>
     `;
-    console.log(result);
     tbody.appendChild(row);
   });
 
@@ -580,7 +579,6 @@ function renderResults(results) {
 
   initEligibilityModal(results);
 }
-
 
 function initEligibilityModal(results) {
   // Remove existing modal if present
