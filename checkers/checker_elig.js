@@ -291,6 +291,7 @@ function validateReportClaims(reportData, eligMap) {
   console.log(`Validating ${reportData.length} report rows`);
   return reportData.map(row => {
     const claimDate = DateHandler.parse(row.claimDate);
+    const formattedDate = DateHandler.format(claimDate);
     const memberID = normalizeMemberID(row.memberID);
     const eligibility = findEligibilityForClaim(eligMap, claimDate, memberID, [row.clinician]);
 
