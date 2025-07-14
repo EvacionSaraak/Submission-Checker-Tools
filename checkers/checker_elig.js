@@ -492,15 +492,13 @@ function normalizeReportData(rawData) {
 /********************
  * UI RENDERING FUNCTIONS *
  ********************/
-function renderResults(results) {
+function renderResults(results, eligMap) {
   resultsContainer.innerHTML = '';
 
   if (!results || results.length === 0) {
     resultsContainer.innerHTML = '<div class="no-results">No claims to display</div>';
     return;
   }
-
-  const isXml = xmlRadio.checked; // 👈 Determine if XML mode is active
 
   const tableContainer = document.createElement('div');
   tableContainer.className = 'analysis-results';
@@ -509,14 +507,14 @@ function renderResults(results) {
   const table = document.createElement('table');
   table.className = 'shared-table';
 
+  const isXmlMode = xmlRadio.checked;
   const thead = document.createElement('thead');
   thead.innerHTML = `
     <tr>
       <th>Claim ID</th>
       <th>Member ID</th>
       <th>Encounter Date</th>
-      ${!isXml ? '<th>Package</th>' : ''}
-      ${!isXml ? '<th>Provider</th>' : ''}
+      ${!isXmlMode ? '<th>Package</th><th>Provider</th>' : ''}
       <th>Clinician</th>
       <th>Service Category</th>
       <th>Status</th>
@@ -542,23 +540,23 @@ function renderResults(results) {
       ? result.remarks.map(r => `<div>${r}</div>`).join('')
       : '<div class="source-note">No remarks</div>';
 
-    const detailsBtn = result.fullEligibilityRecord?.['Eligibility Request Number']
-      ? `<button class="details-btn eligibility-details" data-index="${index}">
-           ${result.fullEligibilityRecord['Eligibility Request Number']}
-         </button>`
-      : '<div class="source-note">N/A</div>';
+    let detailsCell = '<div class="source-note">N/A</div>';
+    if (result.fullEligibilityRecord?.['Eligibility Request Number']) {
+      detailsCell = `<button class="details-btn eligibility-details" data-index="${index}">${result.fullEligibilityRecord['Eligibility Request Number']}</button>`;
+    } else if (eligMap.has(normalizeMemberID(result.memberID))) {
+      detailsCell = `<button class="details-btn show-all-eligibilities" data-member="${normalizeMemberID(result.memberID)}" data-clinicians="${(result.clinicians || [result.clinician || '']).join(',')}">View All</button>`;
+    }
 
     row.innerHTML = `
       <td>${result.claimID}</td>
       <td>${result.memberID}</td>
       <td>${result.encounterStart}</td>
-      ${!isXml ? `<td class="description-col">${result.packageName}</td>` : ''}
-      ${!isXml ? `<td class="description-col">${result.provider}</td>` : ''}
+      ${!isXmlMode ? `<td class="description-col">${result.packageName}</td><td class="description-col">${result.provider}</td>` : ''}
       <td class="description-col">${result.clinician}</td>
       <td class="description-col">${result.serviceCategory}</td>
       <td class="description-col">${statusBadge}</td>
       <td class="wrap-col">${remarksHTML}</td>
-      <td>${detailsBtn}</td>
+      <td>${detailsCell}</td>
     `;
     tbody.appendChild(row);
   });
@@ -577,15 +575,13 @@ function renderResults(results) {
   `;
   resultsContainer.prepend(summary);
 
-  initEligibilityModal(results);
+  initEligibilityModal(results, eligMap);  // updated call
 }
 
-function initEligibilityModal(results) {
-  // Remove existing modal if present
+function initEligibilityModal(results, eligMap) {
   const existingModal = document.getElementById('eligibilityModal');
   if (existingModal) existingModal.remove();
 
-  // Create modal structure
   const modalHTML = `
     <div id="eligibilityModal" class="modal hidden">
       <div class="modal-content eligibility-modal">
@@ -603,26 +599,67 @@ function initEligibilityModal(results) {
   const modalContent = document.getElementById('eligibilityModalContent');
   const closeBtn = modal.querySelector('.close');
 
-  // Use event delegation on the container holding the buttons
-  document.querySelector('.analysis-results').addEventListener('click', (e) => {
-    if (e.target.classList.contains('eligibility-details')) {
-      const index = parseInt(e.target.dataset.index);
+  // Individual eligibility match
+  document.querySelectorAll('.eligibility-details').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const index = parseInt(btn.dataset.index);
       const record = results[index].fullEligibilityRecord;
       const memberID = results[index].memberID;
+
       if (record) {
         modalContent.innerHTML = formatEligibilityDetails(record, memberID);
         modal.classList.remove('hidden');
       }
-    }
+    });
   });
 
-  // Close modal handlers
+  // Show all eligibilities under a member ID
+  document.querySelectorAll('.show-all-eligibilities').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const memberID = btn.dataset.member;
+      const claimClinicians = btn.dataset.clinicians?.split(',').map(normalizeClinician);
+      const eligibilities = [...(eligMap.get(memberID) || [])];
+
+      eligibilities.sort((a, b) => {
+        const dateA = DateHandler.parse(a['Answered On'] || a['Ordered On']);
+        const dateB = DateHandler.parse(b['Answered On'] || b['Ordered On']);
+        return (dateB?.getTime() || 0) - (dateA?.getTime() || 0);
+      });
+
+      const details = eligibilities.map((e, idx) => {
+        return `
+          <table class="eligibility-details">
+            <tbody>
+              <tr><th>#${idx + 1}</th><td></td></tr>
+              <tr><th>Eligibility Request Number</th><td>${e['Eligibility Request Number']}</td></tr>
+              <tr><th>Answered On</th><td>${DateHandler.format(DateHandler.parse(e['Answered On']))}</td></tr>
+              <tr><th>Ordered On</th><td>${DateHandler.format(DateHandler.parse(e['Ordered On']))}</td></tr>
+              <tr><th>Status</th><td>${e.Status}</td></tr>
+              <tr><th>Clinician</th><td>${e.Clinician}</td></tr>
+              <tr><th>Claim Clinician(s)</th><td>${claimClinicians.join(', ')}</td></tr>
+              <tr><th>Service Category</th><td>${e['Service Category']}</td></tr>
+              <tr><th>Package</th><td>${e['Package Name']}</td></tr>
+              <tr><th>Payer Name</th><td>${e['Provider Name']}</td></tr>
+            </tbody>
+          </table>
+        `;
+      }).join('<hr>');
+
+      modalContent.innerHTML = `
+        <div class="form-row">
+          <strong>Member ID:</strong> ${memberID}
+        </div>
+        ${details}
+      `;
+      modal.classList.remove('hidden');
+    });
+  });
+
   closeBtn.addEventListener('click', () => modal.classList.add('hidden'));
-  modal.addEventListener('click', (e) => {
+  modal.addEventListener('click', e => {
     if (e.target === modal) modal.classList.add('hidden');
   });
 }
-
 
 function formatEligibilityDetails(record, memberID) {
   // Using existing eligibility-details table class
