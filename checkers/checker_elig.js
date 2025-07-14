@@ -700,6 +700,45 @@ function updateProcessButtonState() {
   exportInvalidBtn.disabled = !hasEligibility || !hasReportData;
 }
 
+
+/************************
+ * EXPORT FUNCTIONALITY *
+ ************************/
+function exportInvalidEntries(results) {
+  // Filter only invalid entries
+  const invalidEntries = results.filter(r => r && r.finalStatus === 'invalid');
+
+  if (invalidEntries.length === 0) {
+    alert('No invalid entries to export.');
+    return;
+  }
+
+  // Map data to plain objects for export
+  const exportData = invalidEntries.map(entry => ({
+    'Claim ID': entry.claimID,
+    'Member ID': entry.memberID,
+    'Encounter Date': entry.encounterStart,
+    'Package Name': entry.packageName || '',
+    'Provider': entry.provider || '',
+    'Clinician': entry.clinician || '',
+    'Service Category': entry.serviceCategory || '',
+    'Consultation Status': entry.consultationStatus || '',
+    'Eligibility Status': entry.status || '',
+    'Final Status': entry.finalStatus,
+    'Remarks': entry.remarks.join('; ')
+  }));
+
+  // Create a new workbook and worksheet
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(exportData);
+
+  XLSX.utils.book_append_sheet(wb, ws, 'Invalid Claims');
+
+  // Generate XLSX file and trigger download
+  XLSX.writeFile(wb, `invalid_claims_${new Date().toISOString().slice(0,10)}.xlsx`);
+}
+
+
 /********************
  * EVENT HANDLERS *
  ********************/
@@ -749,6 +788,8 @@ async function handleProcessClick() {
       ? validateXmlClaims(xmlData.claims, eligMap)
       : validateReportClaims(xlsData, eligMap);
 
+    window.lastValidationResults = results;  // <-- Save here
+
     renderResults(results, eligMap);  // ✅ Pass eligMap here
     updateStatus(`Processed ${results.length} claims`);
   } catch (error) {
@@ -759,7 +800,11 @@ async function handleProcessClick() {
 }
 
 function handleExportInvalidClick() {
-  alert('Export functionality will be implemented in next version');
+  if (!window.lastValidationResults) {
+    alert('Please run the validation first.');
+    return;
+  }
+  exportInvalidEntries(window.lastValidationResults);
 }
 
 /********************
