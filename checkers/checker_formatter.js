@@ -85,7 +85,7 @@ worker.onmessage = e => {
     progressBar.style.width = `${p}%`;
     progressText.textContent = `${p}%`;
   } else if (msg.type === 'result') {
-    lastWorkbookData = msg.workbookData;
+    lastWorkbookData = new Uint8Array(msg.workbookData);
     messageBox.textContent = 'Processing complete.';
     combineButton.disabled = false;
     downloadButton.disabled = false;
