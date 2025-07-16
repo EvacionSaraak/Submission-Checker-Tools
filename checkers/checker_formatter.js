@@ -57,17 +57,18 @@ combineButton.addEventListener('click', async () => {
     progressText.textContent = '0%';
     progressBarContainer.style.display = 'block';
 
-    // Read files as arrayBuffers
+    // Read files as ArrayBuffers here in main thread ONLY
     const fileBuffers = [];
     for (let i = 0; i < inputFiles.length; i++) {
       const f = inputFiles[i];
-      messageBox.textContent = `Reading file ${i+1} of ${inputFiles.length}: ${f.name}`;
+      messageBox.textContent = `Reading file ${i + 1} of ${inputFiles.length}: ${f.name}`;
       const buffer = await f.arrayBuffer();
       fileBuffers.push(buffer);
     }
 
     messageBox.textContent = 'Files read. Starting processing...';
 
+    // Send raw buffers and mode to worker
     worker.postMessage({ type: 'start', mode, files: fileBuffers });
 
   } catch (err) {
