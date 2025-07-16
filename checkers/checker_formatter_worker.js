@@ -1,5 +1,3 @@
-// checker_formatter_worker.js
-
 importScripts('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
 
 const MONTHS = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
@@ -41,20 +39,17 @@ const DateHandler = {
   _parseStringDate: function(dateStr) {
     if (dateStr.includes(' ')) dateStr = dateStr.split(' ')[0];
 
-    // DD/MM/YYYY or DD-MM-YYYY
-    const dmyMatch = dateStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
-    if (dmyMatch) return new Date(dmyMatch[3], dmyMatch[2] - 1, dmyMatch[1]);
+    const dmy = dateStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+    if (dmy) return new Date(dmy[3], dmy[2] - 1, dmy[1]);
 
-    // 30-Jun-2025 or 30 Jun 2025
     const textMatch = dateStr.match(/^(\d{1,2})[\/\- ]([a-z]{3,})[\/\- ](\d{2,4})$/i);
     if (textMatch) {
-      const monthIndex = MONTHS.indexOf(textMatch[2].toLowerCase().substr(0, 3));
-      if (monthIndex >= 0) return new Date(textMatch[3], monthIndex, textMatch[1]);
+      const mIndex = MONTHS.indexOf(textMatch[2].toLowerCase().substr(0, 3));
+      if (mIndex >= 0) return new Date(textMatch[3], mIndex, textMatch[1]);
     }
 
-    // ISO: 2025-07-01
-    const isoMatch = dateStr.match(/^(\d{4})[\/\-](\d{2})[\/\-](\d{2})$/);
-    if (isoMatch) return new Date(isoMatch[1], isoMatch[2] - 1, isoMatch[3]);
+    const iso = dateStr.match(/^(\d{4})[\/\-](\d{2})[\/\-](\d{2})$/);
+    if (iso) return new Date(iso[1], iso[2] - 1, iso[3]);
 
     return null;
   }
@@ -67,222 +62,130 @@ self.onmessage = async e => {
   const { mode, files } = data;
 
   try {
+    const buffers = await Promise.all(files.map(f => f.arrayBuffer()));
+
     if (mode === 'eligibility') {
-      const combinedWb = await combineEligibilities(files);
-      const wbData = XLSX.write(combinedWb, { bookType: 'xlsx', type: 'array' });
-      self.postMessage({ type: 'result', workbookData: wbData });
+      const wb = await combineEligibilities(buffers);
+      const wbData = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      self.postMessage({ type: 'result', workbookData: wbData }, [wbData]);
     } else if (mode === 'reporting') {
-      const combinedWb = await combineReportings(files);
-      const wbData = XLSX.write(combinedWb, { bookType: 'xlsx', type: 'array' });
-      self.postMessage({ type: 'result', workbookData: wbData });
+      const wb = await combineReportings(buffers);
+      const wbData = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      self.postMessage({ type: 'result', workbookData: wbData }, [wbData]);
     } else {
       throw new Error(`Unknown mode: ${mode}`);
     }
+
   } catch (err) {
     self.postMessage({ type: 'error', error: err.message });
   }
 };
 
-async function combineEligibilities(fileBuffers) {
-  const combinedRows = [];
-  let headerRow = null;
+function findHeaderRow(sheetData, maxScan = 5) {
+  for (let i = 0; i < Math.min(sheetData.length, maxScan); i++) {
+    const row = sheetData[i];
+    if (!Array.isArray(row)) continue;
+    const normalized = row.map(v => v?.toString().toLowerCase().trim());
+    if (normalized.includes('claimid') || normalized.includes('pri. claim no')) return i;
+  }
+  return 0;
+}
 
-  for (let i = 0; i < fileBuffers.length; i++) {
-    const buf = fileBuffers[i];
-    try {
-      const wb = XLSX.read(buf, { type: 'array' });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const sheetData = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' });
+async function combineEligibilities(buffers) {
+  const combined = [];
+  let header = null;
 
-      if (sheetData.length < 2) throw new Error(`File ${i + 1} has no data rows.`);
+  for (let i = 0; i < buffers.length; i++) {
+    const wb = XLSX.read(buffers[i], { type: 'array' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const sheet = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' });
 
-      // Header is on second row (index 1)
-      const currentHeader = sheetData[1];
+    if (sheet.length < 2) continue;
 
-      if (!headerRow) {
-        headerRow = currentHeader;
-        combinedRows.push(headerRow);
-      }
-
-      // Append rows from index 2 (data rows)
-      for (let r = 2; r < sheetData.length; r++) {
-        const row = sheetData[r];
-        if (!row || row.length === 0) continue;
-        combinedRows.push(row);
-      }
-
-      self.postMessage({ type: 'progress', progress: Math.floor(((i + 1) / fileBuffers.length) * 50) });
-
-    } catch (err) {
-      throw new Error(`Failed to read eligibility file #${i + 1}: ${err.message}`);
+    const detectedHeader = sheet[1];
+    if (!header) {
+      header = detectedHeader;
+      combined.push(header);
     }
+
+    for (let j = 2; j < sheet.length; j++) {
+      const row = sheet[j];
+      if (row && row.length > 0) combined.push(row);
+    }
+
+    self.postMessage({ type: 'progress', progress: Math.floor(((i + 1) / buffers.length) * 50) });
   }
 
-  // Remove exact duplicate rows by stringifying row arrays
-  const uniqueRows = [];
+  const deduped = [];
   const seen = new Set();
-  for (const row of combinedRows) {
+  for (const row of combined) {
     const key = JSON.stringify(row);
     if (!seen.has(key)) {
-      uniqueRows.push(row);
       seen.add(key);
+      deduped.push(row);
     }
   }
 
-  const ws = XLSX.utils.aoa_to_sheet(uniqueRows);
+  const ws = XLSX.utils.aoa_to_sheet(deduped);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Combined Eligibility');
-
   self.postMessage({ type: 'progress', progress: 100 });
-
   return wb;
 }
 
-async function combineReportings(fileBuffers) {
-  // Target headers:
-  const TARGET_HEADERS = [
-    'Pri. Claim No',
-    'Clinician License',
-    'Encounter Date',
-    'Pri. Patient Insurance Card No',
-    'Department',
-    'Visit Id',
-    'Pri. Plan Type',
-    'Facility ID',
-    'Patient Code',
-    'Clinician Name',
-    'Opened by'
+async function combineReportings(buffers) {
+  const headers = [
+    'Pri. Claim No', 'Clinician License', 'Encounter Date',
+    'Pri. Patient Insurance Card No', 'Department', 'Visit Id',
+    'Pri. Plan Type', 'Facility ID', 'Patient Code',
+    'Clinician Name', 'Opened by'
   ];
 
-  // ClinicPro header mapping (some fields may be missing and handled)
-  const CLINICPRO_MAP = {
-    'ClaimID': 'Pri. Claim No',
-    'Clinician License': 'Clinician License',
-    'ClaimDate': 'Encounter Date',
-    'Insurance Company': 'Pri. Plan Type',
-    'Facility ID': 'Facility ID',
-    'PatientCardID': 'Patient Code', // fallback to Member ID if empty
-    'Member ID': 'Patient Code',
-    'Clinic': 'Department',
-    'Visit Id': 'Visit Id',
-    'Clinician Name': 'Clinician Name',
-    'Opened by/Registration Staff name': 'Opened by',
-    'Opened by': 'Opened by'
-  };
-
-  // InstaHMS header mapping
-  const INSTAHMS_MAP = {
-    'Pri. Claim No': 'Pri. Claim No',
-    'Clinician License': 'Clinician License',
-    'Encounter Date': 'Encounter Date',
-    'Pri. Patient Insurance Card No': 'Pri. Patient Insurance Card No',
-    'Department': 'Department',
-    'Visit Id': 'Visit Id',
-    'Pri. Plan Type': 'Pri. Plan Type',
-    'Facility ID': 'Facility ID',
-    'Patient Code': 'Patient Code',
-    'Clinician Name': 'Clinician Name',
-    'Opened by': 'Opened by'
-  };
-
-  const combinedRows = [];
-  combinedRows.push(TARGET_HEADERS);
-
+  const output = [headers];
   const seenClaimIDs = new Set();
 
-  for (let i = 0; i < fileBuffers.length; i++) {
-    const buf = fileBuffers[i];
-    try {
-      const wb = XLSX.read(buf, { type: 'array', cellDates: false, raw: false });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const sheetData = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+  for (let i = 0; i < buffers.length; i++) {
+    const wb = XLSX.read(buffers[i], { type: 'array' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
 
-      // Detect header row (search top 5 rows)
-      let headerRowIndex = -1;
-      let headerRow = null;
-      for (let r = 0; r < Math.min(5, sheetData.length); r++) {
-        const row = sheetData[r].map(h => h.toString().trim());
-        if (row.some(h => h.toLowerCase() === 'claimid' || h.toLowerCase() === 'pri. claim no')) {
-          headerRowIndex = r;
-          headerRow = row;
-          break;
-        }
-      }
-      if (headerRowIndex === -1) throw new Error(`Cannot find header row in reporting file #${i + 1}`);
+    const hIndex = findHeaderRow(data);
+    const headerRow = data[hIndex].map(v => v.toString().trim());
+    const rows = data.slice(hIndex + 1);
 
-      // Determine if ClinicPro or InstaHMS by header match
-      const isClinicPro = headerRow.some(h => Object.keys(CLINICPRO_MAP).includes(h));
-      const isInstaHMS = headerRow.some(h => Object.keys(INSTAHMS_MAP).includes(h));
+    const isClinicPro = headerRow.includes('ClaimID') || headerRow.includes('Insurance Company');
 
-      const headerMap = isClinicPro ? CLINICPRO_MAP : INSTAHMS_MAP;
+    for (const row of rows) {
+      const rowObj = {};
+      headerRow.forEach((h, idx) => rowObj[h] = row[idx] ?? '');
 
-      // Build reverse map: target header => source header in this sheet
-      const targetToSource = {};
-      for (const [src, tgt] of Object.entries(headerMap)) {
-        if (headerRow.includes(src)) targetToSource[tgt] = src;
-      }
+      const claimID = rowObj['ClaimID'] || rowObj['Pri. Claim No'];
+      if (!claimID || seenClaimIDs.has(claimID)) continue;
 
-      // Parse rows after header
-      for (let r = headerRowIndex + 1; r < sheetData.length; r++) {
-        const row = sheetData[r];
-        if (!row || row.length === 0) continue;
+      seenClaimIDs.add(claimID);
 
-        // Build source row object: header -> cell
-        const sourceRow = {};
-        headerRow.forEach((h, idx) => {
-          sourceRow[h] = row[idx] ?? '';
-        });
-
-        // Map to target row
-        const targetRow = [];
-
-        // Pri. Claim No (mandatory, for dedup)
-        let claimID = '';
-        if (targetToSource['Pri. Claim No']) {
-          claimID = sourceRow[targetToSource['Pri. Claim No']]?.toString().trim() || '';
-        }
-        if (!claimID) continue; // skip if no claim ID
-
-        if (seenClaimIDs.has(claimID)) continue; // skip duplicates
-
-        seenClaimIDs.add(claimID);
-
-        // Map other fields in target order
-        for (const tgtHeader of TARGET_HEADERS) {
-          if (tgtHeader === 'Patient Code') {
-            // Special logic for ClinicPro: prefer PatientCardID, else Member ID
-            if (isClinicPro) {
-              let val = sourceRow['PatientCardID']?.toString().trim() || '';
-              if (!val) val = sourceRow['Member ID']?.toString().trim() || '';
-              targetRow.push(val);
-              continue;
-            }
-            // InstaHMS just direct map
-            const srcHdr = targetToSource[tgtHeader];
-            targetRow.push(srcHdr ? (sourceRow[srcHdr]?.toString().trim() || '') : '');
-            continue;
-          }
-          // General mapping
-          const srcHdr = targetToSource[tgtHeader];
-          targetRow.push(srcHdr ? (sourceRow[srcHdr]?.toString().trim() || '') : '');
+      const targetRow = headers.map(h => {
+        if (h === 'Patient Code') {
+          return (rowObj['PatientCardID'] || rowObj['Member ID'] || '').toString().trim();
         }
 
-        combinedRows.push(targetRow);
-      }
+        if (h === 'Encounter Date') {
+          const parsed = DateHandler.parse(rowObj['ClaimDate'] || rowObj[h]);
+          return DateHandler.format(parsed);
+        }
 
-      self.postMessage({ type: 'progress', progress: 50 + Math.floor(((i + 1) / fileBuffers.length) * 50) });
+        return rowObj[h] || rowObj[headerRow.find(k => k.toLowerCase() === h.toLowerCase())] || '';
+      });
 
-    } catch (err) {
-      throw new Error(`Failed to read reporting file #${i + 1}: ${err.message}`);
+      output.push(targetRow);
     }
+
+    self.postMessage({ type: 'progress', progress: 50 + Math.floor(((i + 1) / buffers.length) * 50) });
   }
 
-  // Construct worksheet & workbook
-  const ws = XLSX.utils.aoa_to_sheet(combinedRows);
+  const ws = XLSX.utils.aoa_to_sheet(output);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Combined Reporting');
-
   self.postMessage({ type: 'progress', progress: 100 });
-
   return wb;
 }
