@@ -70,11 +70,13 @@ self.onmessage = async e => {
     if (mode === 'eligibility') {
       const combinedWb = await combineEligibilities(files);
       const wbData = XLSX.write(combinedWb, { bookType: 'xlsx', type: 'array' });
-      self.postMessage({ type: 'result', workbookData: wbData });
+      // Transfer buffer to main thread to avoid crash
+      self.postMessage({ type: 'result', workbookData: wbData.buffer }, [wbData.buffer]);
     } else if (mode === 'reporting') {
       const combinedWb = await combineReportings(files);
       const wbData = XLSX.write(combinedWb, { bookType: 'xlsx', type: 'array' });
-      self.postMessage({ type: 'result', workbookData: wbData });
+      // Transfer buffer to main thread to avoid crash
+      self.postMessage({ type: 'result', workbookData: wbData.buffer }, [wbData.buffer]);
     } else {
       throw new Error(`Unknown mode: ${mode}`);
     }
@@ -139,6 +141,7 @@ async function combineEligibilities(fileBuffers) {
 }
 
 async function combineReportings(fileBuffers) {
+  // Target headers:
   const TARGET_HEADERS = [
     'Pri. Claim No',
     'Clinician License',
@@ -153,13 +156,14 @@ async function combineReportings(fileBuffers) {
     'Opened by'
   ];
 
+  // ClinicPro header mapping (some fields may be missing and handled)
   const CLINICPRO_MAP = {
     'ClaimID': 'Pri. Claim No',
     'Clinician License': 'Clinician License',
     'ClaimDate': 'Encounter Date',
     'Insurance Company': 'Pri. Plan Type',
     'Facility ID': 'Facility ID',
-    'PatientCardID': 'Patient Code',
+    'PatientCardID': 'Patient Code', // fallback to Member ID if empty
     'Member ID': 'Patient Code',
     'Clinic': 'Department',
     'Visit Id': 'Visit Id',
@@ -168,6 +172,7 @@ async function combineReportings(fileBuffers) {
     'Opened by': 'Opened by'
   };
 
+  // InstaHMS header mapping
   const INSTAHMS_MAP = {
     'Pri. Claim No': 'Pri. Claim No',
     'Clinician License': 'Clinician License',
@@ -194,7 +199,7 @@ async function combineReportings(fileBuffers) {
       const ws = wb.Sheets[wb.SheetNames[0]];
       const sheetData = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
 
-      // Detect header row (top 5 rows)
+      // Detect header row (search top 5 rows)
       let headerRowIndex = -1;
       let headerRow = null;
       for (let r = 0; r < Math.min(5, sheetData.length); r++) {
@@ -207,12 +212,13 @@ async function combineReportings(fileBuffers) {
       }
       if (headerRowIndex === -1) throw new Error(`Cannot find header row in reporting file #${i + 1}`);
 
+      // Determine if ClinicPro or InstaHMS by header match
       const isClinicPro = headerRow.some(h => Object.keys(CLINICPRO_MAP).includes(h));
       const isInstaHMS = headerRow.some(h => Object.keys(INSTAHMS_MAP).includes(h));
 
       const headerMap = isClinicPro ? CLINICPRO_MAP : INSTAHMS_MAP;
 
-      // Map target header => source header in sheet
+      // Build reverse map: target header => source header in this sheet
       const targetToSource = {};
       for (const [src, tgt] of Object.entries(headerMap)) {
         if (headerRow.includes(src)) targetToSource[tgt] = src;
@@ -229,29 +235,36 @@ async function combineReportings(fileBuffers) {
           sourceRow[h] = row[idx] ?? '';
         });
 
-        // Extract claim ID
+        // Map to target row
+        const targetRow = [];
+
+        // Pri. Claim No (mandatory, for dedup)
         let claimID = '';
         if (targetToSource['Pri. Claim No']) {
           claimID = sourceRow[targetToSource['Pri. Claim No']]?.toString().trim() || '';
         }
-        if (!claimID) continue;
-        if (seenClaimIDs.has(claimID)) continue;
+        if (!claimID) continue; // skip if no claim ID
+
+        if (seenClaimIDs.has(claimID)) continue; // skip duplicates
+
         seenClaimIDs.add(claimID);
 
         // Map other fields in target order
-        const targetRow = [];
         for (const tgtHeader of TARGET_HEADERS) {
           if (tgtHeader === 'Patient Code') {
+            // Special logic for ClinicPro: prefer PatientCardID, else Member ID
             if (isClinicPro) {
               let val = sourceRow['PatientCardID']?.toString().trim() || '';
               if (!val) val = sourceRow['Member ID']?.toString().trim() || '';
               targetRow.push(val);
               continue;
             }
+            // InstaHMS just direct map
             const srcHdr = targetToSource[tgtHeader];
             targetRow.push(srcHdr ? (sourceRow[srcHdr]?.toString().trim() || '') : '');
             continue;
           }
+          // General mapping
           const srcHdr = targetToSource[tgtHeader];
           targetRow.push(srcHdr ? (sourceRow[srcHdr]?.toString().trim() || '') : '');
         }
@@ -266,6 +279,7 @@ async function combineReportings(fileBuffers) {
     }
   }
 
+  // Construct worksheet & workbook
   const ws = XLSX.utils.aoa_to_sheet(combinedRows);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Combined Reporting');
