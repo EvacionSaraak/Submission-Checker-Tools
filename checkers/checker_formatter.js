@@ -1,6 +1,7 @@
 const eligibilitySection = document.getElementById('eligibility-section');
 const reportSection = document.getElementById('report-section');
 const combineButton = document.getElementById('combine-button');
+const messageBox = document.getElementById('messageBox');
 let mode = 'eligibility';
 
 document.querySelectorAll('input[name="mode"]').forEach(radio => {
@@ -8,16 +9,25 @@ document.querySelectorAll('input[name="mode"]').forEach(radio => {
     mode = e.target.value;
     eligibilitySection.classList.toggle('hidden', mode !== 'eligibility');
     reportSection.classList.toggle('hidden', mode !== 'report');
+    messageBox.textContent = '';
   });
 });
 
 combineButton.addEventListener('click', async () => {
-  if (mode === 'eligibility') {
-    const files = document.getElementById('eligibility-files').files;
-    if (files.length) await combineEligibilityFiles(files);
-  } else {
-    const files = document.getElementById('report-files').files;
-    if (files.length) await combineReportFiles(files);
+  messageBox.textContent = '';
+  try {
+    if (mode === 'eligibility') {
+      const files = document.getElementById('eligibility-files').files;
+      if (files.length) await combineEligibilityFiles(files);
+      else messageBox.textContent = 'No eligibility files selected.';
+    } else {
+      const files = document.getElementById('report-files').files;
+      if (files.length) await combineReportFiles(files);
+      else messageBox.textContent = 'No report files selected.';
+    }
+  } catch (err) {
+    console.error(err);
+    messageBox.textContent = 'An error occurred during processing.';
   }
 });
 
@@ -56,7 +66,7 @@ async function combineReportFiles(fileList) {
     const sheet = wb.Sheets[wb.SheetNames[0]];
     const allRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
 
-    // Auto-detect actual header row (first with "Clinician License" or "Pri. Claim No")
+    // Auto-detect header row
     let headerRowIndex = allRows.findIndex(row =>
       row.includes("Clinician License") || row.includes("Pri. Claim No")
     );
