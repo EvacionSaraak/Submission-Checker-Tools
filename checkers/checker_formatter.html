@@ -2,32 +2,30 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Checker Formatter</title>
+  <link rel="stylesheet" href="tables.css" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script defer src="checker_formatter.js"></script>
-  <link rel="stylesheet" href="tables.css">
 </head>
 <body>
-  <h2>Excel Combiner</h2>
+  <div id="mode-selector" class="form-row">
+    <label><input type="radio" name="mode" value="eligibility" checked /> Eligibility</label>
+    <label><input type="radio" name="mode" value="report" /> Report</label>
+  </div>
 
-  <label>
-    <input type="radio" name="mode" value="eligibility" checked /> Eligibility
-  </label>
-  <label>
-    <input type="radio" name="mode" value="report" /> Report
-  </label>
-
-  <div id="eligibility-section">
+  <div id="eligibility-section" class="form-row">
     <label>Upload Eligibility XLSX files:</label>
     <input type="file" id="eligibility-files" multiple accept=".xlsx" />
   </div>
 
-  <div id="report-section" class="hidden">
+  <div id="report-section" class="form-row hidden">
     <label>Upload Report files (XLS/XLSX/CSV):</label>
     <input type="file" id="report-files" multiple accept=".xls,.xlsx,.csv" />
   </div>
 
-  <button id="combine-button">Combine Files</button>
+  <div class="form-row">
+    <button id="combine-button">Combine Files</button>
+    <span id="messageBox"></span>
+  </div>
 </body>
 </html>
