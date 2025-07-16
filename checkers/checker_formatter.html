@@ -1,1 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Checker Formatter</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script defer src="checker_formatter.js"></script>
+  <style>
+    body { font-family: sans-serif; padding: 20px; }
+    .hidden { display: none; }
+    label { display: block; margin: 10px 0 5px; }
+    button { margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <h2>Excel Combiner</h2>
 
+  <label>
+    <input type="radio" name="mode" value="eligibility" checked /> Eligibility
+  </label>
+  <label>
+    <input type="radio" name="mode" value="report" /> Report
+  </label>
+
+  <div id="eligibility-section">
+    <label>Upload Eligibility XLSX files:</label>
+    <input type="file" id="eligibility-files" multiple accept=".xlsx" />
+  </div>
+
+  <div id="report-section" class="hidden">
+    <label>Upload Report files (XLS/XLSX/CSV):</label>
+    <input type="file" id="report-files" multiple accept=".xls,.xlsx,.csv" />
+  </div>
+
+  <button id="combine-button">Combine Files</button>
+</body>
+</html>
