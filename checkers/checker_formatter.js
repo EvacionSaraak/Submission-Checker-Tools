@@ -17,8 +17,7 @@ const worker = new Worker('checker_formatter_worker.js');
 
 let lastWorkbookData = null;
 
-// Toggle file input panels based on mode selection
-document.getElementById('mode-selector').addEventListener('change', e => {
+document.getElementById('mode-selector').addEventListener('change', () => {
   const mode = document.querySelector('input[name="mode"]:checked').value;
   if (mode === 'eligibility') {
     eligibilityPanel.classList.remove('hidden');
@@ -57,7 +56,7 @@ combineButton.addEventListener('click', async () => {
     progressText.textContent = '0%';
     progressBarContainer.style.display = 'block';
 
-    // Read files as ArrayBuffers here in main thread ONLY
+    // Read files as ArrayBuffers here
     const fileBuffers = [];
     for (let i = 0; i < inputFiles.length; i++) {
       const f = inputFiles[i];
@@ -68,7 +67,6 @@ combineButton.addEventListener('click', async () => {
 
     messageBox.textContent = 'Files read. Starting processing...';
 
-    // Send raw buffers and mode to worker
     worker.postMessage({ type: 'start', mode, files: fileBuffers });
 
   } catch (err) {
@@ -115,10 +113,10 @@ downloadButton.addEventListener('click', () => {
   const a = document.createElement('a');
   a.href = url;
 
-  // Filename with timestamp
   const mode = document.querySelector('input[name="mode"]:checked').value;
   const timestamp = new Date().toISOString().slice(0,19).replace(/:/g,'-');
   a.download = `combined_${mode}_${timestamp}.xlsx`;
+
   document.body.appendChild(a);
   a.click();
   setTimeout(() => {
@@ -127,5 +125,4 @@ downloadButton.addEventListener('click', () => {
   }, 0);
 });
 
-// Initialize UI state on load
 resetUI();
