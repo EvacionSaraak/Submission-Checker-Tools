@@ -1,5 +1,3 @@
-// checker_formatter_worker.js
-
 importScripts('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
 
 const MONTHS = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
@@ -70,12 +68,11 @@ self.onmessage = async e => {
     if (mode === 'eligibility') {
       const combinedWb = await combineEligibilities(files);
       const wbData = XLSX.write(combinedWb, { bookType: 'xlsx', type: 'array' });
-      // Transfer buffer to main thread to avoid crash
+      // Transfer buffer to main thread to avoid copy
       self.postMessage({ type: 'result', workbookData: wbData.buffer }, [wbData.buffer]);
     } else if (mode === 'reporting') {
       const combinedWb = await combineReportings(files);
       const wbData = XLSX.write(combinedWb, { bookType: 'xlsx', type: 'array' });
-      // Transfer buffer to main thread to avoid crash
       self.postMessage({ type: 'result', workbookData: wbData.buffer }, [wbData.buffer]);
     } else {
       throw new Error(`Unknown mode: ${mode}`);
@@ -114,7 +111,6 @@ async function combineEligibilities(fileBuffers) {
       }
 
       self.postMessage({ type: 'progress', progress: Math.floor(((i + 1) / fileBuffers.length) * 50) });
-
     } catch (err) {
       throw new Error(`Failed to read eligibility file #${i + 1}: ${err.message}`);
     }
@@ -141,7 +137,6 @@ async function combineEligibilities(fileBuffers) {
 }
 
 async function combineReportings(fileBuffers) {
-  // Target headers:
   const TARGET_HEADERS = [
     'Pri. Claim No',
     'Clinician License',
@@ -156,14 +151,13 @@ async function combineReportings(fileBuffers) {
     'Opened by'
   ];
 
-  // ClinicPro header mapping (some fields may be missing and handled)
   const CLINICPRO_MAP = {
     'ClaimID': 'Pri. Claim No',
     'Clinician License': 'Clinician License',
     'ClaimDate': 'Encounter Date',
     'Insurance Company': 'Pri. Plan Type',
     'Facility ID': 'Facility ID',
-    'PatientCardID': 'Patient Code', // fallback to Member ID if empty
+    'PatientCardID': 'Patient Code',
     'Member ID': 'Patient Code',
     'Clinic': 'Department',
     'Visit Id': 'Visit Id',
@@ -172,7 +166,6 @@ async function combineReportings(fileBuffers) {
     'Opened by': 'Opened by'
   };
 
-  // InstaHMS header mapping
   const INSTAHMS_MAP = {
     'Pri. Claim No': 'Pri. Claim No',
     'Clinician License': 'Clinician License',
@@ -273,13 +266,11 @@ async function combineReportings(fileBuffers) {
       }
 
       self.postMessage({ type: 'progress', progress: 50 + Math.floor(((i + 1) / fileBuffers.length) * 50) });
-
     } catch (err) {
       throw new Error(`Failed to read reporting file #${i + 1}: ${err.message}`);
     }
   }
 
-  // Construct worksheet & workbook
   const ws = XLSX.utils.aoa_to_sheet(combinedRows);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Combined Reporting');
