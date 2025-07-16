@@ -151,6 +151,8 @@ function resetUI() {
 
 function setProgress(percent) {
   progressBar.style.width = `${percent}%`;
+  const label = document.getElementById('progress-label');
+  if (label) label.textContent = `${Math.round(percent)}%`;
 }
 
 // --- Modified combineEligibilityFiles ---
