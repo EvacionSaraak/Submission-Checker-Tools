@@ -1,155 +1,130 @@
 // checker_formatter.js
 
-// Elements
-const modeRadios = document.querySelectorAll('input[name="mode"]');
+const combineButton = document.getElementById('combine-button');
+const downloadButton = document.getElementById('download-button');
+const progressBarContainer = document.getElementById('progress-bar-container');
+const progressBar = document.getElementById('progress-bar');
+const progressText = document.getElementById('progress-text');
+const messageBox = document.getElementById('messageBox');
+
 const eligibilityPanel = document.getElementById('eligibility-panel');
 const reportingPanel = document.getElementById('reporting-panel');
 
 const eligibilityInput = document.getElementById('eligibility-files');
 const reportingInput = document.getElementById('reporting-files');
 
-const combineBtn = document.getElementById('combine-button');
-const downloadBtn = document.getElementById('download-button');
-
-const progressBar = document.getElementById('progress-bar');
-const progressText = document.getElementById('progress-text');
-const progressContainer = document.getElementById('progress-bar-container');
-
-const messageBox = document.getElementById('messageBox');
-
-let combinedWorkbook; // To hold final combined workbook
-
-// Switch panels based on mode
-function updatePanels() {
-  const mode = getSelectedMode();
-  eligibilityPanel.classList.toggle('hidden', mode !== 'eligibility');
-  reportingPanel.classList.toggle('hidden', mode !== 'reporting');
-  clearUI();
-}
-
-function getSelectedMode() {
-  return [...modeRadios].find(r => r.checked).value;
-}
-
-function clearUI() {
-  progressBar.style.width = '0%';
-  progressText.textContent = '0%';
-  progressContainer.style.display = 'none';
-  messageBox.textContent = '';
-  downloadBtn.disabled = true;
-  combinedWorkbook = null;
-}
-
-modeRadios.forEach(radio => {
-  radio.addEventListener('change', updatePanels);
-});
-
-// Progress update helper
-function setProgress(percent) {
-  progressBar.style.width = `${percent}%`;
-  progressText.textContent = `${percent}%`;
-}
-
-// Download helper
-function downloadWorkbook(wb, filename) {
-  const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-  const blob = new Blob([wbout], { type: 'application/octet-stream' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
-
-// Read files as ArrayBuffers
-async function readFilesAsArrayBuffers(fileList) {
-  const buffers = [];
-  for (const file of fileList) {
-    try {
-      buffers.push(await file.arrayBuffer());
-    } catch (err) {
-      throw new Error(`Failed to read file '${file.name}': ${err.message}`);
-    }
-  }
-  return buffers;
-}
-
-// Initialize worker
 const worker = new Worker('checker_formatter_worker.js');
 
-worker.onmessage = e => {
-  const data = e.data;
-  if (data.type === 'progress') {
-    setProgress(data.progress);
-  } else if (data.type === 'result') {
-    combinedWorkbook = XLSX.read(data.workbookData, { type: 'array' });
-    setProgress(100);
-    downloadBtn.disabled = false;
-    messageBox.textContent = 'Combine complete.';
-  } else if (data.type === 'error') {
-    messageBox.textContent = `Error: ${data.error}`;
-    setProgress(0);
-    downloadBtn.disabled = true;
+let lastWorkbookData = null;
+
+// Toggle file input panels based on mode selection
+document.getElementById('mode-selector').addEventListener('change', e => {
+  const mode = document.querySelector('input[name="mode"]:checked').value;
+  if (mode === 'eligibility') {
+    eligibilityPanel.classList.remove('hidden');
+    reportingPanel.classList.add('hidden');
+  } else {
+    eligibilityPanel.classList.add('hidden');
+    reportingPanel.classList.remove('hidden');
   }
-};
+  resetUI();
+});
 
-worker.onerror = e => {
-  messageBox.textContent = `Worker error: ${e.message}`;
-  setProgress(0);
-  downloadBtn.disabled = true;
-};
+function resetUI() {
+  progressBar.style.width = '0%';
+  progressText.textContent = '0%';
+  progressBarContainer.style.display = 'none';
+  messageBox.textContent = '';
+  combineButton.disabled = false;
+  downloadButton.disabled = true;
+  lastWorkbookData = null;
+}
 
-// Combine button click handler
 combineButton.addEventListener('click', async () => {
   try {
+    messageBox.textContent = '';
     const mode = document.querySelector('input[name="mode"]:checked').value;
-    // Select the correct file input based on mode
-    const inputFiles = mode === 'eligibility'
-      ? document.getElementById('eligibility-files').files
-      : document.getElementById('reporting-files').files;
+    const inputFiles = mode === 'eligibility' ? eligibilityInput.files : reportingInput.files;
 
     if (!inputFiles.length) {
       alert('Please upload one or more files first.');
       return;
     }
 
-    // Convert each file/blob to ArrayBuffer safely
-    const fileBuffers = await Promise.all([...inputFiles].map(async f => {
-      if (f instanceof File || f instanceof Blob) {
-        return await f.arrayBuffer();
-      } else {
-        // Already an ArrayBuffer or something else
-        return f;
-      }
-    }));
-
-    // Disable buttons while processing
     combineButton.disabled = true;
     downloadButton.disabled = true;
     progressBar.style.width = '0%';
+    progressText.textContent = '0%';
     progressBarContainer.style.display = 'block';
-    messageBox.textContent = '';
 
-    // Start worker with buffers
+    // Read files as arrayBuffers
+    const fileBuffers = [];
+    for (let i = 0; i < inputFiles.length; i++) {
+      const f = inputFiles[i];
+      messageBox.textContent = `Reading file ${i+1} of ${inputFiles.length}: ${f.name}`;
+      const buffer = await f.arrayBuffer();
+      fileBuffers.push(buffer);
+    }
+
+    messageBox.textContent = 'Files read. Starting processing...';
+
     worker.postMessage({ type: 'start', mode, files: fileBuffers });
+
   } catch (err) {
-    console.error('Error during file preparation:', err);
     messageBox.textContent = 'Error reading files: ' + err.message;
     combineButton.disabled = false;
   }
 });
 
-// Download button click handler
-downloadBtn.addEventListener('click', () => {
-  if (!combinedWorkbook) return;
-  const mode = getSelectedMode();
-  const filename = mode === 'eligibility' ? 'Combined_Eligibility.xlsx' : 'Combined_Reporting.xlsx';
-  downloadWorkbook(combinedWorkbook, filename);
+worker.onmessage = e => {
+  const msg = e.data;
+  if (msg.type === 'progress') {
+    const p = msg.progress;
+    progressBar.style.width = `${p}%`;
+    progressText.textContent = `${p}%`;
+  } else if (msg.type === 'result') {
+    lastWorkbookData = msg.workbookData;
+    messageBox.textContent = 'Processing complete.';
+    combineButton.disabled = false;
+    downloadButton.disabled = false;
+    progressBar.style.width = '100%';
+    progressText.textContent = '100%';
+  } else if (msg.type === 'error') {
+    messageBox.textContent = 'Error: ' + msg.error;
+    combineButton.disabled = false;
+    downloadButton.disabled = true;
+    progressBar.style.width = '0%';
+    progressText.textContent = '0%';
+  }
+};
+
+worker.onerror = e => {
+  messageBox.textContent = 'Worker error: ' + e.message;
+  combineButton.disabled = false;
+  downloadButton.disabled = true;
+  progressBar.style.width = '0%';
+  progressText.textContent = '0%';
+  e.preventDefault();
+};
+
+downloadButton.addEventListener('click', () => {
+  if (!lastWorkbookData) return;
+  const blob = new Blob([lastWorkbookData], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+
+  // Filename with timestamp
+  const mode = document.querySelector('input[name="mode"]:checked').value;
+  const timestamp = new Date().toISOString().slice(0,19).replace(/:/g,'-');
+  a.download = `combined_${mode}_${timestamp}.xlsx`;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 0);
 });
 
-// Initialize UI
-updatePanels();
-clearUI();
+// Initialize UI state on load
+resetUI();
