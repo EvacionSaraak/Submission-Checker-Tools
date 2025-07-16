@@ -1,5 +1,3 @@
-// checker_formatter.js
-
 const combineButton = document.getElementById('combine-button');
 const downloadButton = document.getElementById('download-button');
 const progressBarContainer = document.getElementById('progress-bar-container');
@@ -17,7 +15,7 @@ const worker = new Worker('checker_formatter_worker.js');
 
 let lastWorkbookData = null;
 
-document.getElementById('mode-selector').addEventListener('change', () => {
+document.getElementById('mode-selector').addEventListener('change', e => {
   const mode = document.querySelector('input[name="mode"]:checked').value;
   if (mode === 'eligibility') {
     eligibilityPanel.classList.remove('hidden');
@@ -56,12 +54,17 @@ combineButton.addEventListener('click', async () => {
     progressText.textContent = '0%';
     progressBarContainer.style.display = 'block';
 
-    // Read files as ArrayBuffers here
     const fileBuffers = [];
     for (let i = 0; i < inputFiles.length; i++) {
       const f = inputFiles[i];
       messageBox.textContent = `Reading file ${i + 1} of ${inputFiles.length}: ${f.name}`;
-      const buffer = await f.arrayBuffer();
+      // Use FileReader as .arrayBuffer() not always supported
+      const buffer = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(new Error('File read error'));
+        reader.readAsArrayBuffer(f);
+      });
       fileBuffers.push(buffer);
     }
 
@@ -116,7 +119,6 @@ downloadButton.addEventListener('click', () => {
   const mode = document.querySelector('input[name="mode"]:checked').value;
   const timestamp = new Date().toISOString().slice(0,19).replace(/:/g,'-');
   a.download = `combined_${mode}_${timestamp}.xlsx`;
-
   document.body.appendChild(a);
   a.click();
   setTimeout(() => {
