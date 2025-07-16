@@ -1,5 +1,6 @@
 document.addEventListener('DOMContentLoaded', () => {
   const pages = [
+    { label: "Formatting", file: "checkers/checker_formatter.html" },
     { label: "Clinicians", file: "checkers/checker_clinician.html" },
     { label: "Eligibilities", file: "checkers/checker_elig.html" },
     { label: "Authorizations", file: "checkers/checker_auths.html" },
