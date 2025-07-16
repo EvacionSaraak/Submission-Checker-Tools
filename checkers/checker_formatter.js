@@ -40,13 +40,15 @@ async function combineEligibilityFiles(fileList) {
     const wb = XLSX.read(data, { type: 'array' });
     const sheet = wb.Sheets[wb.SheetNames[0]];
     const json = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
-
-    if (!headers) headers = json[1]; // Header on second row
+    if (!headers) headers = json[1]; // second row = header
     const dataRows = json.slice(2);
     mergedRows.push(...dataRows);
   }
 
-  const worksheet = XLSX.utils.aoa_to_sheet([headers, ...mergedRows]);
+  // Remove exact duplicate rows
+  const uniqueRows = Array.from(new Set(mergedRows.map(row => JSON.stringify(row)))).map(str => JSON.parse(str));
+  
+  const worksheet = XLSX.utils.aoa_to_sheet([headers, ...uniqueRows]);
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, 'Eligibility');
   XLSX.writeFile(workbook, 'EligibilityCombined.xlsx');
@@ -58,6 +60,7 @@ async function combineReportFiles(fileList) {
     "Department", "Visit Id", "Pri. Plan Type", "Facility ID", "Patient Code", "Clinician Name", "Opened by"
   ];
   const mergedRows = [];
+  const seenClaimIds = new Set();
 
   for (const file of fileList) {
     const ext = file.name.split('.').pop().toLowerCase();
@@ -66,7 +69,6 @@ async function combineReportFiles(fileList) {
     const sheet = wb.Sheets[wb.SheetNames[0]];
     const allRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
 
-    // Auto-detect header row
     let headerRowIndex = allRows.findIndex(row =>
       row.includes("Clinician License") || row.includes("Pri. Claim No")
     );
@@ -75,15 +77,19 @@ async function combineReportFiles(fileList) {
 
     for (const row of dataRows) {
       const rowObj = Object.fromEntries(headers.map((key, i) => [key, row[i]]));
+      const claimId = rowObj["Pri. Claim No"] || rowObj["ClaimID"];
+
+      if (!claimId || seenClaimIds.has(claimId)) continue;
+      seenClaimIds.add(claimId);
 
       mergedRows.push([
-        rowObj["Pri. Claim No"] || rowObj["ClaimID"] || '',
+        claimId,
         rowObj["Clinician License"] || '',
         rowObj["Encounter Date"] || rowObj["ClaimDate"] || '',
         rowObj["Pri. Patient Insurance Card No"] || rowObj["Member ID"] || '',
         rowObj["Department"] || '',
         rowObj["Visit Id"] || '',
-        rowObj["Pri. Plan Type"] || '',
+        rowObj["Pri. Plan Type"] || rowObj["Clinic"] || '',
         rowObj["Facility ID"] || rowObj["Institution"] || '',
         rowObj["Patient Code"] || rowObj["FileNo"] || '',
         rowObj["Clinician Name"] || '',
