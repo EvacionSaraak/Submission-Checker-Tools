@@ -2,10 +2,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const pages = [
     { label: "Formatting", file: "checkers/checker_formatter.html" },
     { label: "Clinicians", file: "checkers/checker_clinician.html" },
-    { label: "Eligibilities", file: "checkers/checker_elig.html" },
-    { label: "Authorizations", file: "checkers/checker_auths.html" },
+    { label: "Eligs", file: "checkers/checker_elig.html" },
+    { label: "Auths", file: "checkers/checker_auths.html" },
     { label: "Timings", file: "checkers/checker_timings.html" },
-    { label: "Tooths", file: "checkers/checker_tooths.html" },
+    { label: "Teeth", file: "checkers/checker_tooths.html" },
     { label: "Schema", file: "checkers/checker_schema.html" },
     { label: "Drugs", file: "checkers/checker_drugs.html" }
   ];
