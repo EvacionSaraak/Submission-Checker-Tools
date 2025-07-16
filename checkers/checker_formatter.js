@@ -103,25 +103,42 @@ worker.onerror = e => {
 };
 
 // Combine button click handler
-combineBtn.addEventListener('click', async () => {
-  clearUI();
-  progressContainer.style.display = 'block';
-  setProgress(0);
-
-  const mode = getSelectedMode();
+combineButton.addEventListener('click', async () => {
   try {
-    let buffers = [];
-    if (mode === 'eligibility') {
-      if (eligibilityInput.files.length === 0) throw new Error('No eligibility files selected.');
-      buffers = await readFilesAsArrayBuffers(eligibilityInput.files);
-    } else {
-      if (reportingInput.files.length === 0) throw new Error('No reporting files selected.');
-      buffers = await readFilesAsArrayBuffers(reportingInput.files);
+    const mode = document.querySelector('input[name="mode"]:checked').value;
+    // Select the correct file input based on mode
+    const inputFiles = mode === 'eligibility'
+      ? document.getElementById('eligibility-files').files
+      : document.getElementById('reporting-files').files;
+
+    if (!inputFiles.length) {
+      alert('Please upload one or more files first.');
+      return;
     }
-    worker.postMessage({ type: 'start', mode, files: buffers });
+
+    // Convert each file/blob to ArrayBuffer safely
+    const fileBuffers = await Promise.all([...inputFiles].map(async f => {
+      if (f instanceof File || f instanceof Blob) {
+        return await f.arrayBuffer();
+      } else {
+        // Already an ArrayBuffer or something else
+        return f;
+      }
+    }));
+
+    // Disable buttons while processing
+    combineButton.disabled = true;
+    downloadButton.disabled = true;
+    progressBar.style.width = '0%';
+    progressBarContainer.style.display = 'block';
+    messageBox.textContent = '';
+
+    // Start worker with buffers
+    worker.postMessage({ type: 'start', mode, files: fileBuffers });
   } catch (err) {
-    messageBox.textContent = err.message;
-    progressContainer.style.display = 'none';
+    console.error('Error during file preparation:', err);
+    messageBox.textContent = 'Error reading files: ' + err.message;
+    combineButton.disabled = false;
   }
 });
 
