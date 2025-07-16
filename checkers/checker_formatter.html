@@ -24,8 +24,12 @@
   </div>
 
   <div class="form-row">
-    <button id="combine-button">Combine Files</button>
-    <span id="messageBox"></span>
+    <button id="combine-button">Combine</button>
+    <button id="download-button" disabled style="margin-left:10px;">Download Results</button>
+    <div id="progress-bar-container" style="margin-top:10px; width: 100%; max-width: 400px; height: 18px; background: #eee; border-radius: 9px; overflow: hidden; display:none;">
+      <div id="progress-bar" style="height: 100%; width: 0%; background: #1890ff; transition: width 0.3s;"></div>
+    </div>
+    <div id="messageBox" style="margin-top:10px; color: red;"></div>
   </div>
 </body>
 </html>
