@@ -68,12 +68,12 @@ self.onmessage = async e => {
     if (mode === 'eligibility') {
       const combinedWb = await combineEligibilities(files);
       const wbData = XLSX.write(combinedWb, { bookType: 'xlsx', type: 'array' });
-      // Transfer buffer to main thread to avoid copy
-      self.postMessage({ type: 'result', workbookData: wbData.buffer }, [wbData.buffer]);
+      // Send Uint8Array directly, transfer its underlying ArrayBuffer
+      self.postMessage({ type: 'result', workbookData: wbData }, [wbData.buffer]);
     } else if (mode === 'reporting') {
       const combinedWb = await combineReportings(files);
       const wbData = XLSX.write(combinedWb, { bookType: 'xlsx', type: 'array' });
-      self.postMessage({ type: 'result', workbookData: wbData.buffer }, [wbData.buffer]);
+      self.postMessage({ type: 'result', workbookData: wbData }, [wbData.buffer]);
     } else {
       throw new Error(`Unknown mode: ${mode}`);
     }
@@ -111,6 +111,7 @@ async function combineEligibilities(fileBuffers) {
       }
 
       self.postMessage({ type: 'progress', progress: Math.floor(((i + 1) / fileBuffers.length) * 50) });
+
     } catch (err) {
       throw new Error(`Failed to read eligibility file #${i + 1}: ${err.message}`);
     }
@@ -192,7 +193,7 @@ async function combineReportings(fileBuffers) {
       const ws = wb.Sheets[wb.SheetNames[0]];
       const sheetData = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
 
-      // Detect header row (search top 5 rows)
+      // Detect header row (top 5 rows)
       let headerRowIndex = -1;
       let headerRow = null;
       for (let r = 0; r < Math.min(5, sheetData.length); r++) {
@@ -205,59 +206,47 @@ async function combineReportings(fileBuffers) {
       }
       if (headerRowIndex === -1) throw new Error(`Cannot find header row in reporting file #${i + 1}`);
 
-      // Determine if ClinicPro or InstaHMS by header match
       const isClinicPro = headerRow.some(h => Object.keys(CLINICPRO_MAP).includes(h));
       const isInstaHMS = headerRow.some(h => Object.keys(INSTAHMS_MAP).includes(h));
 
       const headerMap = isClinicPro ? CLINICPRO_MAP : INSTAHMS_MAP;
 
-      // Build reverse map: target header => source header in this sheet
+      // Map target headers to source headers
       const targetToSource = {};
       for (const [src, tgt] of Object.entries(headerMap)) {
         if (headerRow.includes(src)) targetToSource[tgt] = src;
       }
 
-      // Parse rows after header
       for (let r = headerRowIndex + 1; r < sheetData.length; r++) {
         const row = sheetData[r];
         if (!row || row.length === 0) continue;
 
-        // Build source row object: header -> cell
         const sourceRow = {};
         headerRow.forEach((h, idx) => {
           sourceRow[h] = row[idx] ?? '';
         });
 
-        // Map to target row
-        const targetRow = [];
-
-        // Pri. Claim No (mandatory, for dedup)
         let claimID = '';
         if (targetToSource['Pri. Claim No']) {
           claimID = sourceRow[targetToSource['Pri. Claim No']]?.toString().trim() || '';
         }
-        if (!claimID) continue; // skip if no claim ID
-
-        if (seenClaimIDs.has(claimID)) continue; // skip duplicates
-
+        if (!claimID) continue;
+        if (seenClaimIDs.has(claimID)) continue;
         seenClaimIDs.add(claimID);
 
-        // Map other fields in target order
+        const targetRow = [];
         for (const tgtHeader of TARGET_HEADERS) {
           if (tgtHeader === 'Patient Code') {
-            // Special logic for ClinicPro: prefer PatientCardID, else Member ID
             if (isClinicPro) {
               let val = sourceRow['PatientCardID']?.toString().trim() || '';
               if (!val) val = sourceRow['Member ID']?.toString().trim() || '';
               targetRow.push(val);
               continue;
             }
-            // InstaHMS just direct map
             const srcHdr = targetToSource[tgtHeader];
             targetRow.push(srcHdr ? (sourceRow[srcHdr]?.toString().trim() || '') : '');
             continue;
           }
-          // General mapping
           const srcHdr = targetToSource[tgtHeader];
           targetRow.push(srcHdr ? (sourceRow[srcHdr]?.toString().trim() || '') : '');
         }
@@ -266,6 +255,7 @@ async function combineReportings(fileBuffers) {
       }
 
       self.postMessage({ type: 'progress', progress: 50 + Math.floor(((i + 1) / fileBuffers.length) * 50) });
+
     } catch (err) {
       throw new Error(`Failed to read reporting file #${i + 1}: ${err.message}`);
     }
