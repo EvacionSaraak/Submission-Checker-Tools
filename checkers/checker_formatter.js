@@ -69,11 +69,16 @@ const DateHandler = {
 };
 
 // Elements and state
-const eligibilitySection = document.getElementById('eligibility-section');
-const reportSection = document.getElementById('report-section');
+// ... (keep DateHandler and other functions unchanged) ...
+
 const combineButton = document.getElementById('combine-button');
+const downloadButton = document.getElementById('download-button');
+const progressBarContainer = document.getElementById('progress-bar-container');
+const progressBar = document.getElementById('progress-bar');
 const messageBox = document.getElementById('messageBox');
+
 let mode = 'eligibility';
+let lastWorkbookBlob = null; // Store last generated file as Blob for download
 
 document.querySelectorAll('input[name="mode"]').forEach(radio => {
   radio.addEventListener('change', e => {
@@ -81,37 +86,84 @@ document.querySelectorAll('input[name="mode"]').forEach(radio => {
     eligibilitySection.classList.toggle('hidden', mode !== 'eligibility');
     reportSection.classList.toggle('hidden', mode !== 'report');
     messageBox.textContent = '';
+    resetUI();
   });
 });
 
 combineButton.addEventListener('click', async () => {
-  messageBox.textContent = '';
+  resetUI();
   try {
+    combineButton.disabled = true;
+    progressBarContainer.style.display = 'block';
+    setProgress(10); // start progress bar
+    messageBox.textContent = 'Processing...';
+
     if (mode === 'eligibility') {
       const files = document.getElementById('eligibility-files').files;
-      if (files.length) await combineEligibilityFiles(files);
-      else messageBox.textContent = 'No eligibility files selected.';
+      if (files.length) {
+        await combineEligibilityFiles(files);
+      } else {
+        messageBox.textContent = 'No eligibility files selected.';
+        resetUI();
+        return;
+      }
     } else {
       const files = document.getElementById('report-files').files;
-      if (files.length) await combineReportFiles(files);
-      else messageBox.textContent = 'No report files selected.';
+      if (files.length) {
+        await combineReportFiles(files);
+      } else {
+        messageBox.textContent = 'No report files selected.';
+        resetUI();
+        return;
+      }
     }
+
+    setProgress(100);
+    messageBox.textContent = 'Done! Click "Download Results" to save your file.';
+    downloadButton.disabled = false;
   } catch (err) {
     console.error(err);
     messageBox.textContent = 'An error occurred during processing.';
+  } finally {
+    combineButton.disabled = false;
   }
 });
 
-// --- Eligibility combining with exact row duplicate removal ---
+downloadButton.addEventListener('click', () => {
+  if (!lastWorkbookBlob) return;
+  const filename = mode === 'eligibility' ? 'EligibilityCombined.xlsx' : 'ReportsCombined.xlsx';
+
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(lastWorkbookBlob);
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+});
+
+// --- Helpers ---
+function resetUI() {
+  downloadButton.disabled = true;
+  progressBarContainer.style.display = 'none';
+  setProgress(0);
+  lastWorkbookBlob = null;
+}
+
+function setProgress(percent) {
+  progressBar.style.width = `${percent}%`;
+}
+
+// --- Modified combineEligibilityFiles ---
 async function combineEligibilityFiles(fileList) {
   const mergedRows = [];
   let headers;
 
-  for (const file of fileList) {
+  for (let i = 0; i < fileList.length; i++) {
+    const file = fileList[i];
+    setProgress(10 + 80 * (i / fileList.length)); // progress between 10-90%
     const data = await readFileAsArrayBuffer(file);
     const wb = XLSX.read(data, { type: 'array' });
     const sheet = wb.Sheets[wb.SheetNames[0]];
-    // Header is on second row => index 1
     const json = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
 
     if (!headers) headers = json[1];
@@ -120,17 +172,19 @@ async function combineEligibilityFiles(fileList) {
     mergedRows.push(...dataRows);
   }
 
-  // Remove exact duplicate rows (full row match)
-  const uniqueRows = Array.from(new Set(mergedRows.map(row => JSON.stringify(row))))
-                          .map(str => JSON.parse(str));
+  // Remove exact duplicate rows
+  const uniqueRows = Array.from(new Set(mergedRows.map(row => JSON.stringify(row)))).map(str => JSON.parse(str));
 
   const worksheet = XLSX.utils.aoa_to_sheet([headers, ...uniqueRows]);
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, 'Eligibility');
-  XLSX.writeFile(workbook, 'EligibilityCombined.xlsx');
+
+  // Create blob for download
+  const wbout = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+  lastWorkbookBlob = new Blob([wbout], { type: 'application/octet-stream' });
 }
 
-// --- Reporting combining with duplicate claim ID removal ---
+// --- Modified combineReportFiles ---
 async function combineReportFiles(fileList) {
   const finalHeaders = [
     "Pri. Claim No", "Clinician License", "Encounter Date", "Pri. Patient Insurance Card No",
@@ -139,13 +193,15 @@ async function combineReportFiles(fileList) {
   const mergedRows = [];
   const seenClaimIds = new Set();
 
-  for (const file of fileList) {
+  for (let i = 0; i < fileList.length; i++) {
+    const file = fileList[i];
+    setProgress(10 + 80 * (i / fileList.length)); // progress between 10-90%
+
     const data = await readFileAsArrayBuffer(file);
     const wb = XLSX.read(data, { type: 'array' });
     const sheet = wb.Sheets[wb.SheetNames[0]];
     const allRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
 
-    // Auto-detect header row index based on known headers
     const headerRowIndex = allRows.findIndex(row =>
       row.includes("Clinician License") || row.includes("Pri. Claim No") || row.includes("ClaimID")
     );
@@ -161,38 +217,27 @@ async function combineReportFiles(fileList) {
     for (const row of dataRows) {
       const rowObj = Object.fromEntries(headers.map((key, i) => [key, row[i]]));
 
-      // Get claim ID: ClinicPro = ClaimID, InstaHMS = Pri. Claim No
       const claimId = rowObj["Pri. Claim No"] || rowObj["ClaimID"];
-      if (!claimId) continue; // skip rows without claim id
+      if (!claimId) continue;
 
-      // Skip duplicates (keep first occurrence)
       if (seenClaimIds.has(claimId)) continue;
       seenClaimIds.add(claimId);
 
-      // Extract mapped fields with fallback logic
       const clinicianLicense = rowObj["Clinician License"] || '';
       const rawEncounterDate = rowObj["Encounter Date"] || rowObj["ClaimDate"] || '';
       const parsedDate = DateHandler.parse(rawEncounterDate);
       const encounterDate = DateHandler.format(parsedDate);
 
-      // Patient Insurance Card No
       const patientInsuranceCardNo = rowObj["Pri. Patient Insurance Card No"] || rowObj["Member ID"] || '';
-
-      // Department fallback: ClinicPro may have Clinic or Department
       const department = rowObj["Department"] || rowObj["Clinic"] || '';
+      const visitId = rowObj["Visit Id"] || '';
 
-      const visitId = rowObj["Visit Id"] || ''; // may be blank
-
-      // Pri. Plan Type mapping for ClinicPro = Insurance Company
-      // InstaHMS uses Pri. Plan Type directly
       let priPlanType = '';
       if ("Insurance Company" in rowObj) priPlanType = rowObj["Insurance Company"];
       else if ("Pri. Plan Type" in rowObj) priPlanType = rowObj["Pri. Plan Type"];
 
-      // Facility ID fallback
       const facilityId = rowObj["Facility ID"] || rowObj["Institution"] || '';
 
-      // Patient Code priority: ClinicPro: PatientCardID or Member ID; InstaHMS: Patient Code
       let patientCode = '';
       if ("PatientCardID" in rowObj && rowObj["PatientCardID"]) {
         patientCode = rowObj["PatientCardID"];
@@ -205,7 +250,7 @@ async function combineReportFiles(fileList) {
       }
 
       const clinicianName = rowObj["Clinician Name"] || '';
-      // Opened by: ClinicPro "Opened by/Registration Staff name", InstaHMS "Opened by" or "Updated By"
+
       let openedBy = '';
       if ("Opened by/Registration Staff name" in rowObj && rowObj["Opened by/Registration Staff name"]) {
         openedBy = rowObj["Opened by/Registration Staff name"];
@@ -234,10 +279,12 @@ async function combineReportFiles(fileList) {
   const worksheet = XLSX.utils.aoa_to_sheet([finalHeaders, ...mergedRows]);
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, 'Reports');
-  XLSX.writeFile(workbook, 'ReportsCombined.xlsx');
+
+  const wbout = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+  lastWorkbookBlob = new Blob([wbout], { type: 'application/octet-stream' });
 }
 
-// Utility to read file as ArrayBuffer for XLSX
+// Utility function (unchanged)
 function readFileAsArrayBuffer(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
