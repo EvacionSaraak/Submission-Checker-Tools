@@ -11,6 +11,8 @@ const reportingPanel = document.getElementById('reporting-panel');
 const eligibilityInput = document.getElementById('eligibility-files');
 const reportingInput = document.getElementById('reporting-files');
 
+const outputTableContainer = document.getElementById('outputTableContainer');
+
 const worker = new Worker('checker_formatter_worker.js');
 
 let lastWorkbookData = null;
@@ -32,6 +34,7 @@ function resetUI() {
   progressText.textContent = '0%';
   progressBarContainer.style.display = 'none';
   messageBox.textContent = '';
+  outputTableContainer.innerHTML = '';  // Clear previous table
   combineButton.disabled = false;
   downloadButton.disabled = true;
   lastWorkbookData = null;
@@ -40,6 +43,7 @@ function resetUI() {
 combineButton.addEventListener('click', async () => {
   try {
     messageBox.textContent = '';
+    outputTableContainer.innerHTML = '';
     const mode = document.querySelector('input[name="mode"]:checked').value;
     const inputFiles = mode === 'eligibility' ? eligibilityInput.files : reportingInput.files;
 
@@ -69,7 +73,6 @@ combineButton.addEventListener('click', async () => {
 
     messageBox.textContent = 'Files read. Starting processing...';
 
-    // ✅ Send array of { name, buffer }
     worker.postMessage({ type: 'start', mode, files: fileEntries });
 
   } catch (err) {
@@ -91,6 +94,8 @@ worker.onmessage = e => {
     downloadButton.disabled = false;
     progressBar.style.width = '100%';
     progressText.textContent = '100%';
+
+    renderWorkbookTable(lastWorkbookData);
   } else if (msg.type === 'error') {
     messageBox.textContent = 'Error: ' + msg.error;
     combineButton.disabled = false;
@@ -126,5 +131,42 @@ downloadButton.addEventListener('click', () => {
     URL.revokeObjectURL(url);
   }, 0);
 });
+
+function renderWorkbookTable(workbookUint8) {
+  outputTableContainer.innerHTML = '';
+  const blob = new Blob([workbookUint8], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const reader = new FileReader();
+
+  reader.onload = function(evt) {
+    const data = evt.target.result; // binary string
+    const workbook = XLSX.read(data, { type: 'binary' });
+    const firstSheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[firstSheetName];
+    const sheetData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+
+    renderTable(sheetData);
+  };
+
+  reader.readAsBinaryString(blob);
+}
+
+function renderTable(data) {
+  outputTableContainer.innerHTML = '';
+
+  const table = document.createElement('table');
+  table.classList.add('shared_tables_css_class'); // replace with your CSS class name if needed
+
+  data.forEach((row, i) => {
+    const tr = document.createElement('tr');
+    row.forEach(cell => {
+      const cellEl = i === 0 ? document.createElement('th') : document.createElement('td');
+      cellEl.textContent = cell;
+      tr.appendChild(cellEl);
+    });
+    table.appendChild(tr);
+  });
+
+  outputTableContainer.appendChild(table);
+}
 
 resetUI();
