@@ -1,5 +1,3 @@
-// checker_formatter.js
-
 const combineButton = document.getElementById('combine-button');
 const downloadButton = document.getElementById('download-button');
 const progressBarContainer = document.getElementById('progress-bar-container');
@@ -56,12 +54,9 @@ combineButton.addEventListener('click', async () => {
     progressText.textContent = '0%';
     progressBarContainer.style.display = 'block';
 
-    const fileBuffers = [];
-    const fileNames = [];
-
+    const fileEntries = [];
     for (let i = 0; i < inputFiles.length; i++) {
       const f = inputFiles[i];
-      fileNames.push(f.name);
       messageBox.textContent = `Reading file ${i + 1} of ${inputFiles.length}: ${f.name}`;
       const buffer = await new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -69,12 +64,13 @@ combineButton.addEventListener('click', async () => {
         reader.onerror = () => reject(new Error('File read error'));
         reader.readAsArrayBuffer(f);
       });
-      fileBuffers.push(buffer);
+      fileEntries.push({ name: f.name, buffer });
     }
 
     messageBox.textContent = 'Files read. Starting processing...';
 
-    worker.postMessage({ type: 'start', mode, files: fileBuffers, fileNames });
+    // ✅ Send array of { name, buffer }
+    worker.postMessage({ type: 'start', mode, files: fileEntries });
 
   } catch (err) {
     messageBox.textContent = 'Error reading files: ' + err.message;
