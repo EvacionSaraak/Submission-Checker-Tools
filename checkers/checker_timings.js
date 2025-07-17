@@ -120,36 +120,47 @@ function parseXML(xmlString) {
  *  • Existing timing checks (start vs. end, encounter duration).
  */
 function extractClaims(xmlDoc, requiredType = "6") {
-  const claimElements = xmlDoc.querySelectorAll('Claim');
   const results = [];
 
-  claimElements.forEach(claim => {
+  xmlDoc.querySelectorAll('Claim').forEach(claim => {
     const claimId = claim.querySelector('ID')?.textContent || 'Unknown';
 
-    const encounterStartStr = claim.querySelector('Encounter > Start')?.textContent;
-    const encounterEndStr   = claim.querySelector('Encounter > End')?.textContent;
+    const encounterEl = claim.querySelector('Encounter');
+    const encounterStartStr = encounterEl?.querySelector('Start')?.textContent;
+    const encounterEndStr   = encounterEl?.querySelector('End')?.textContent;
+    const startType = encounterEl?.querySelector('StartType')?.textContent?.trim();
+    const endType   = encounterEl?.querySelector('EndType')?.textContent?.trim();
+
     if (!encounterStartStr || !encounterEndStr) return;
 
     const encounterStart = parseDateTime(encounterStartStr);
     const encounterEnd   = parseDateTime(encounterEndStr);
     if (!encounterStart || !encounterEnd) return;
 
-    const encMs  = encounterEnd - encounterStart;
-    const encMin = Math.floor(encMs / 60000);
+    const encMin = Math.floor((encounterEnd - encounterStart) / 60000);
 
-    // Check if encounter end is before start
-    let baseRemarks = [];
     let baseValid = true;
+    const baseRemarks = [];
+
+    // StartType / EndType checks
+    if (startType !== '1') {
+      baseValid = false;
+      baseRemarks.push(`Invalid Encounter StartType: expected 1 but found ${startType || '(missing)'}.`);
+    }
+    if (endType !== '1') {
+      baseValid = false;
+      baseRemarks.push(`Invalid Encounter EndType: expected 1 but found ${endType || '(missing)'}.`);
+    }
+
     if (encMin < 0) {
       baseValid = false;
       baseRemarks.push('Encounter end is before encounter start.');
     }
 
-    const activityElements = claim.querySelectorAll('Activity');
-    activityElements.forEach(activity => {
-      const activityId       = activity.querySelector('ID')?.textContent || 'Unknown';
+    claim.querySelectorAll('Activity').forEach(activity => {
+      const activityId = activity.querySelector('ID')?.textContent || 'Unknown';
       const activityStartStr = activity.querySelector('Start')?.textContent;
-      const typeValue        = activity.querySelector('Type')?.textContent?.trim() || '';
+      const typeValue = activity.querySelector('Type')?.textContent?.trim() || '';
 
       let isValid = baseValid;
       const remarks = [...baseRemarks];
@@ -165,10 +176,10 @@ function extractClaims(xmlDoc, requiredType = "6") {
           claimId,
           activityId,
           encounterStart: encounterStartStr,
-          encounterEnd:   encounterEndStr,
-          start:          activityStartStr || 'N/A',
-          duration:       formatDuration(encMin),
-          excess:         'N/A',
+          encounterEnd: encounterEndStr,
+          start: 'N/A',
+          duration: formatDuration(encMin),
+          excess: 'N/A',
           isValid,
           remarks
         });
@@ -181,32 +192,29 @@ function extractClaims(xmlDoc, requiredType = "6") {
         remarks.push('Invalid Activity Start format');
       }
 
-      let excessMin = NaN;
-      if (activityStart instanceof Date && !isNaN(activityStart)) {
-        const excessMs = encounterEnd - activityStart;
-        excessMin = Math.floor(excessMs / 60000);
-      }
+      const excessMin = (activityStart instanceof Date && !isNaN(activityStart))
+        ? Math.floor((encounterEnd - activityStart) / 60000)
+        : NaN;
 
-      if (activityStart && encounterStart && activityStart < encounterStart) {
+      if (activityStart && activityStart < encounterStart) {
         isValid = false;
         remarks.push('Activity start is before encounter start.');
       }
-      if (activityStart && encounterEnd && activityStart > encounterEnd) {
+      if (activityStart && activityStart > encounterEnd) {
         isValid = false;
         remarks.push('Activity start is after encounter end.');
       }
+
       if (encMin >= 0 && encMin < 10) {
         isValid = false;
         remarks.push(`Encounter duration too short (${encMin} min). Should be 10 minutes minimum.`);
       } else if (encMin > 240) {
         isValid = false;
         if (encMin >= 1440) {
-          // 24 hours or more: show explicit dates
-          const startDate = encounterStartStr.split(' ')[0];
-          const endDate = encounterEndStr.split(' ')[0];
+          const [startDate] = encounterStartStr.split(' ');
+          const [endDate] = encounterEndStr.split(' ');
           remarks.push(`Encounter crosses days: ${startDate} → ${endDate}`);
         } else {
-          // Over 4 hours but less than 24 hours: show exact hours and minutes
           const hours = Math.floor(encMin / 60);
           const minutes = encMin % 60;
           remarks.push(`Encounter duration too long (${hours}h ${minutes}m). Should be 4 hours maximum.`);
@@ -217,10 +225,10 @@ function extractClaims(xmlDoc, requiredType = "6") {
         claimId,
         activityId,
         encounterStart: encounterStartStr,
-        encounterEnd:   encounterEndStr,
-        start:          activityStartStr,
-        duration:       formatDuration(encMin),
-        excess:         isNaN(excessMin) ? 'N/A' : formatDuration(excessMin),
+        encounterEnd: encounterEndStr,
+        start: activityStartStr,
+        duration: formatDuration(encMin),
+        excess: isNaN(excessMin) ? 'N/A' : formatDuration(excessMin),
         isValid,
         remarks
       });
