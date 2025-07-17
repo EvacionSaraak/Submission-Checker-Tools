@@ -67,16 +67,23 @@ self.onmessage = async e => {
   try {
     if (mode === 'eligibility') {
       const combinedWb = await combineEligibilities(files);
-      const wbData = XLSX.write(combinedWb, { bookType: 'xlsx', type: 'array' });
-      // Send Uint8Array directly, transfer its underlying ArrayBuffer
+
+      // Ensure wbArray is a valid transferable Uint8Array
+      const wbArray = XLSX.write(combinedWb, { bookType: 'xlsx', type: 'array' });
+      const wbData = new Uint8Array(wbArray); // Ensure it's a transferable object
       self.postMessage({ type: 'result', workbookData: wbData }, [wbData.buffer]);
+
     } else if (mode === 'reporting') {
       const combinedWb = await combineReportings(files);
-      const wbData = XLSX.write(combinedWb, { bookType: 'xlsx', type: 'array' });
+
+      const wbArray = XLSX.write(combinedWb, { bookType: 'xlsx', type: 'array' });
+      const wbData = new Uint8Array(wbArray); // Ensure it's a transferable object
       self.postMessage({ type: 'result', workbookData: wbData }, [wbData.buffer]);
+
     } else {
       throw new Error(`Unknown mode: ${mode}`);
     }
+
   } catch (err) {
     self.postMessage({ type: 'error', error: err.message });
   }
