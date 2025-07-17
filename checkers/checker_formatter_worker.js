@@ -155,7 +155,7 @@ async function combineReportings(fileBuffers) {
     'Pri. Plan Type',
     'Facility ID',
     'Patient Code',
-    'Clinician Name',
+    'Clinician Name',    // Make sure this is here
     'Opened by'
   ];
 
@@ -168,11 +168,9 @@ async function combineReportings(fileBuffers) {
     'Member ID': 'Pri. Patient Insurance Card No',
     'Clinic': 'Department',
     'Visit Id': 'Visit Id',
-    'FileNo': 'Patient Code',
-    'Clinician Name': 'Clinician Name',
+    'Clinician Name': 'Clinician Name',            // Included mapping
     'Opened by/Registration Staff name': 'Opened by',
     'Opened by': 'Opened by'
-    // Note: 'ProviderID' not standard here, handled via Visit Id pattern for Facility ID
   };
 
   const INSTAHMS_MAP = {
@@ -185,7 +183,7 @@ async function combineReportings(fileBuffers) {
     'Pri. Plan Type': 'Pri. Plan Type',
     'Facility ID': 'Facility ID',
     'Patient Code': 'Patient Code',
-    'Clinician Name': 'Clinician Name',
+    'Clinician Name': 'Clinician Name',            // Included mapping
     'Opened by': 'Opened by'
   };
 
@@ -214,55 +212,32 @@ async function combineReportings(fileBuffers) {
       }
       if (headerRowIndex === -1) throw new Error(`Cannot find header row in reporting file #${i + 1}`);
 
-      // Determine file type
       const isClinicPro = headerRow.some(h => Object.keys(CLINICPRO_MAP).includes(h));
       const isInstaHMS = headerRow.some(h => Object.keys(INSTAHMS_MAP).includes(h));
 
-      if (!isClinicPro && !isInstaHMS) {
-        throw new Error(`Unknown file format in reporting file #${i + 1}`);
-      }
-
       const headerMap = isClinicPro ? CLINICPRO_MAP : INSTAHMS_MAP;
 
-      // Map target headers to source headers in this file
+      // Map target headers to source headers
       const targetToSource = {};
       for (const [src, tgt] of Object.entries(headerMap)) {
         if (headerRow.includes(src)) targetToSource[tgt] = src;
       }
 
-      // Determine Facility ID for this file:
-      let facilityId = '';
-      if (isClinicPro) {
-        const visitIdIndex = headerRow.findIndex(h => h.toLowerCase() === 'visit id');
-        if (visitIdIndex !== -1) {
-          for (let r = headerRowIndex + 1; r < sheetData.length; r++) {
-            const visitIdVal = (sheetData[r][visitIdIndex] || '').toString();
-            const match = visitIdVal.match(/(MF\d+)/i);
+      // Determine Facility ID for this file (based on Visit Id if available)
+      let facilityIdForFile = '';
+      if (headerRow.includes('Visit Id')) {
+        for (let r = headerRowIndex + 1; r < sheetData.length; r++) {
+          const visitIdCell = sheetData[r][headerRow.indexOf('Visit Id')] || '';
+          if (visitIdCell) {
+            const match = visitIdCell.toString().match(/MF\d+/i);
             if (match) {
-              facilityId = match[1];
+              facilityIdForFile = match[0].toUpperCase();
               break;
             }
           }
         }
-      } else {
-        // InstaHMS has Facility ID column directly
-        const facilityIdIndex = headerRow.findIndex(h => h.toLowerCase() === 'facility id');
-        if (facilityIdIndex !== -1) {
-          for (let r = headerRowIndex + 1; r < sheetData.length; r++) {
-            const fid = (sheetData[r][facilityIdIndex] || '').toString().trim();
-            if (fid) {
-              facilityId = fid;
-              break;
-            }
-          }
-        }
-      }
-      if (!facilityId) {
-        facilityId = 'UNKNOWN_FACILITY';
-        self.postMessage({ type: 'progress', progress: 50, message: `File ${i + 1}: Facility ID not found, using UNKNOWN_FACILITY` });
       }
 
-      // Process rows
       for (let r = headerRowIndex + 1; r < sheetData.length; r++) {
         const row = sheetData[r];
         if (!row || row.length === 0) continue;
@@ -272,63 +247,47 @@ async function combineReportings(fileBuffers) {
           sourceRow[h] = row[idx] ?? '';
         });
 
-        // Claim ID must be present and unique
+        // Get claim ID and ignore blanks
         let claimID = '';
         if (targetToSource['Pri. Claim No']) {
           claimID = sourceRow[targetToSource['Pri. Claim No']]?.toString().trim() || '';
         }
-        if (!claimID) continue;
+        if (!claimID) continue;   // skip rows with blank claim ID
         if (seenClaimIDs.has(claimID)) continue;
         seenClaimIDs.add(claimID);
 
         const targetRow = [];
-
         for (const tgtHeader of TARGET_HEADERS) {
           if (tgtHeader === 'Facility ID') {
-            targetRow.push(facilityId);
+            targetRow.push(facilityIdForFile);
             continue;
           }
+
           if (tgtHeader === 'Pri. Patient Insurance Card No') {
+            // ClinicPro uses Member ID or PatientCardID for this field
             if (isClinicPro) {
-              let val = (sourceRow['Member ID'] || '').toString().trim();
-              if (!val) val = (sourceRow['PatientCardID'] || '').toString().trim();
+              let val = sourceRow['Member ID']?.toString().trim() || sourceRow['PatientCardID']?.toString().trim() || '';
               targetRow.push(val);
               continue;
             }
             const srcHdr = targetToSource[tgtHeader];
-            targetRow.push(srcHdr ? (sourceRow[srcHdr] || '').toString().trim() : '');
+            targetRow.push(srcHdr ? (sourceRow[srcHdr]?.toString().trim() || '') : '');
             continue;
           }
+
           if (tgtHeader === 'Patient Code') {
             if (isClinicPro) {
-              let val = (sourceRow['FileNo'] || '').toString().trim();
-              if (!val) val = (sourceRow['PatientCardID'] || '').toString().trim();
-              if (!val) val = (sourceRow['Member ID'] || '').toString().trim();
-              targetRow.push(val);
+              targetRow.push(sourceRow['FileNo']?.toString().trim() || '');
               continue;
             }
             const srcHdr = targetToSource[tgtHeader];
-            targetRow.push(srcHdr ? (sourceRow[srcHdr] || '').toString().trim() : '');
+            targetRow.push(srcHdr ? (sourceRow[srcHdr]?.toString().trim() || '') : '');
             continue;
           }
-          if (tgtHeader === 'Clinician Name') {
-            const val = (sourceRow['Clinician Name'] || '').toString().trim();
-            targetRow.push(val);
-            continue;
-          }
-          if (tgtHeader === 'Opened by') {
-            if (isClinicPro) {
-              let val = (sourceRow['Opened by/Registration Staff name'] || '').toString().trim();
-              if (!val) val = (sourceRow['Updated By'] || '').toString().trim();
-              targetRow.push(val);
-              continue;
-            }
-            const srcHdr = targetToSource[tgtHeader];
-            targetRow.push(srcHdr ? (sourceRow[srcHdr] || '').toString().trim() : '');
-            continue;
-          }
+
+          // All other columns direct mapping
           const srcHdr = targetToSource[tgtHeader];
-          targetRow.push(srcHdr ? (sourceRow[srcHdr] || '').toString().trim() : '');
+          targetRow.push(srcHdr ? (sourceRow[srcHdr]?.toString().trim() || '') : '');
         }
 
         combinedRows.push(targetRow);
@@ -341,17 +300,29 @@ async function combineReportings(fileBuffers) {
     }
   }
 
-  // Fix dates in Encounter Date column (index 2) converting Excel serial numbers to formatted string dates
+  // Convert Excel serial dates to formatted strings for Encounter Date
+  // Find Encounter Date column index
+  const encounterDateIdx = TARGET_HEADERS.indexOf('Encounter Date');
   for (let i = 1; i < combinedRows.length; i++) {
-    const dateVal = combinedRows[i][2];
-    if (typeof dateVal === 'number' || !isNaN(Number(dateVal))) {
-      const serial = Number(dateVal);
-      if (serial > 59) { // Excel leap year bug offset
-        const jsDate = new Date((serial - 25569) * 86400 * 1000);
-        const day = jsDate.getDate().toString().padStart(2, '0');
-        const month = (jsDate.getMonth() + 1).toString().padStart(2, '0');
-        const year = jsDate.getFullYear();
-        combinedRows[i][2] = `${day}/${month}/${year}`;
+    const val = combinedRows[i][encounterDateIdx];
+    if (typeof val === 'number') {
+      // Convert Excel serial date to JS date
+      const jsDate = XLSX.SSF.parse_date_code(val);
+      if (jsDate) {
+        const dateObj = new Date(jsDate.y, jsDate.m - 1, jsDate.d);
+        combinedRows[i][encounterDateIdx] = 
+          `${String(dateObj.getDate()).padStart(2,'0')}/${String(dateObj.getMonth()+1).padStart(2,'0')}/${dateObj.getFullYear()}`;
+      }
+    } else if (typeof val === 'string' && val.match(/^\d+(\.\d+)?$/)) {
+      // Also convert string numbers like '45836.5375'
+      const numVal = parseFloat(val);
+      if (!isNaN(numVal)) {
+        const jsDate = XLSX.SSF.parse_date_code(numVal);
+        if (jsDate) {
+          const dateObj = new Date(jsDate.y, jsDate.m - 1, jsDate.d);
+          combinedRows[i][encounterDateIdx] = 
+            `${String(dateObj.getDate()).padStart(2,'0')}/${String(dateObj.getMonth()+1).padStart(2,'0')}/${dateObj.getFullYear()}`;
+        }
       }
     }
   }
