@@ -15,6 +15,25 @@ const worker = new Worker('checker_formatter_worker.js');
 
 let lastWorkbookData = null;
 
+function renderCombinedTable(workbookArrayBuffer) {
+  // Parse workbook from array buffer
+  const wb = XLSX.read(workbookArrayBuffer, { type: 'array' });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const sheetData = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+  const table = document.getElementById('combined-table');
+  table.innerHTML = ''; // clear old table
+  sheetData.forEach((row, i) => {
+    const tr = document.createElement('tr');
+    row.forEach(cell => {
+      const td = document.createElement(i === 0 ? 'th' : 'td');
+      td.textContent = cell;
+      tr.appendChild(td);
+    });
+    table.appendChild(tr);
+  });
+  document.getElementById('combined-table-container').style.display = 'block';
+}
+
 document.getElementById('mode-selector').addEventListener('change', e => {
   const mode = document.querySelector('input[name="mode"]:checked').value;
   if (mode === 'eligibility') {
@@ -85,12 +104,13 @@ worker.onmessage = e => {
     progressBar.style.width = `${p}%`;
     progressText.textContent = `${p}%`;
   } else if (msg.type === 'result') {
-    lastWorkbookData = new Uint8Array(msg.workbookData);
+    lastWorkbookData = msg.workbookData;
     messageBox.textContent = 'Processing complete.';
     combineButton.disabled = false;
     downloadButton.disabled = false;
     progressBar.style.width = '100%';
     progressText.textContent = '100%';
+    renderCombinedTable(lastWorkbookData);
   } else if (msg.type === 'error') {
     messageBox.textContent = 'Error: ' + msg.error;
     combineButton.disabled = false;
@@ -115,7 +135,6 @@ downloadButton.addEventListener('click', () => {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-
   const mode = document.querySelector('input[name="mode"]:checked').value;
   const timestamp = new Date().toISOString().slice(0,19).replace(/:/g,'-');
   a.download = `combined_${mode}_${timestamp}.xlsx`;
