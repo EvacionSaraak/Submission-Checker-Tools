@@ -140,10 +140,6 @@ async function combineEligibilities(fileBuffers) {
   XLSX.utils.book_append_sheet(wb, ws, 'Combined Eligibility');
 
   self.postMessage({ type: 'progress', progress: 100 });
-
-  return wb;
-}
-
 async function combineReportings(fileBuffers) {
   const TARGET_HEADERS = [
     'Pri. Claim No',
@@ -158,21 +154,23 @@ async function combineReportings(fileBuffers) {
     'Clinician Name',
     'Opened by'
   ];
-
+  
   const CLINICPRO_MAP = {
     'ClaimID': 'Pri. Claim No',
     'Clinician License': 'Clinician License',
     'ClaimDate': 'Encounter Date',
-    'Insurance Company': 'Pri. Plan Type',
     'PatientCardID': 'Pri. Patient Insurance Card No',
     'Member ID': 'Pri. Patient Insurance Card No',
     'Clinic': 'Department',
     'Visit Id': 'Visit Id',
+    'Insurance Company': 'Pri. Plan Type',
+    // Facility ID is handled separately per file, no direct mapping here
+    'FileNo': 'Patient Code',
     'Clinician Name': 'Clinician Name',
     'Opened by/Registration Staff name': 'Opened by',
     'Opened by': 'Opened by'
   };
-
+  
   const INSTAHMS_MAP = {
     'Pri. Claim No': 'Pri. Claim No',
     'Clinician License': 'Clinician License',
@@ -199,7 +197,7 @@ async function combineReportings(fileBuffers) {
       const ws = wb.Sheets[wb.SheetNames[0]];
       const sheetData = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
 
-      // Find header row
+      // Find header row index and headers
       let headerRowIndex = -1;
       let headerRow = null;
       for (let r = 0; r < Math.min(5, sheetData.length); r++) {
@@ -214,7 +212,6 @@ async function combineReportings(fileBuffers) {
 
       const isClinicPro = headerRow.some(h => Object.keys(CLINICPRO_MAP).includes(h));
       const isInstaHMS = headerRow.some(h => Object.keys(INSTAHMS_MAP).includes(h));
-
       const headerMap = isClinicPro ? CLINICPRO_MAP : INSTAHMS_MAP;
 
       // Map target headers to source headers
@@ -223,18 +220,14 @@ async function combineReportings(fileBuffers) {
         if (headerRow.includes(src)) targetToSource[tgt] = src;
       }
 
-      // *** Determine Facility ID for ClinicPro by scanning Visit Id prefix ***
+      // Facility ID for ClinicPro: detect once per file from Visit Id prefix if available
       let facilityID = '';
       if (isClinicPro) {
-        // Find Visit Id header name if present
         const visitIdHeader = headerRow.find(h => h.toLowerCase() === 'visit id');
         if (visitIdHeader) {
-          // Find first non-empty Visit Id to extract prefix
           for (let r = headerRowIndex + 1; r < sheetData.length; r++) {
-            const row = sheetData[r];
-            const visitIdCell = row[headerRow.indexOf(visitIdHeader)]?.toString().trim() || '';
-            if (visitIdCell) {
-              // Assuming prefix is first 6 characters (like MF5357)
+            const visitIdCell = sheetData[r][headerRow.indexOf(visitIdHeader)]?.toString().trim() || '';
+            if (visitIdCell.length >= 6) {
               facilityID = visitIdCell.substring(0, 6);
               break;
             }
@@ -255,7 +248,7 @@ async function combineReportings(fileBuffers) {
         if (targetToSource['Pri. Claim No']) {
           claimID = sourceRow[targetToSource['Pri. Claim No']].toString().trim();
         }
-        if (!claimID) continue; // skip blank claim IDs
+        if (!claimID) continue; // Skip blank Claim IDs
         if (seenClaimIDs.has(claimID)) continue;
         seenClaimIDs.add(claimID);
 
@@ -263,11 +256,9 @@ async function combineReportings(fileBuffers) {
 
         for (const tgtHeader of TARGET_HEADERS) {
           if (tgtHeader === 'Pri. Patient Insurance Card No') {
-            // ClinicPro: may come from PatientCardID or Member ID
             if (isClinicPro) {
-              let val = '';
-              if ('PatientCardID' in sourceRow) val = sourceRow['PatientCardID'].toString().trim();
-              if (!val && 'Member ID' in sourceRow) val = sourceRow['Member ID'].toString().trim();
+              let val = sourceRow['PatientCardID']?.toString().trim() || '';
+              if (!val) val = sourceRow['Member ID']?.toString().trim() || '';
               targetRow.push(val);
               continue;
             }
@@ -289,7 +280,6 @@ async function combineReportings(fileBuffers) {
             targetRow.push(srcHdr ? sourceRow[srcHdr].toString().trim() : '');
             continue;
           }
-
           const srcHdr = targetToSource[tgtHeader];
           targetRow.push(srcHdr ? sourceRow[srcHdr].toString().trim() : '');
         }
