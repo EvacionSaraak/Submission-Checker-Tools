@@ -1,63 +1,5 @@
 importScripts('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
 
-const MONTHS = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
-
-const DateHandler = {
-  parse: function(input) {
-    if (!input) return null;
-    if (input instanceof Date) return isNaN(input) ? null : input;
-    if (typeof input === 'number') return this._parseExcelDate(input);
-
-    const cleanStr = input.toString().trim().replace(/[,.]/g, '');
-    const parsed = this._parseStringDate(cleanStr) || new Date(cleanStr);
-    if (isNaN(parsed)) return null;
-    return parsed;
-  },
-
-  format: function(date) {
-    if (!(date instanceof Date) || isNaN(date)) return '';
-    const d = date.getDate().toString().padStart(2, '0');
-    const m = (date.getMonth() + 1).toString().padStart(2, '0');
-    const y = date.getFullYear();
-    return `${d}/${m}/${y}`;
-  },
-
-  isSameDay: function(date1, date2) {
-    if (!date1 || !date2) return false;
-    return date1.getDate() === date2.getDate() &&
-           date1.getMonth() === date2.getMonth() &&
-           date1.getFullYear() === date2.getFullYear();
-  },
-
-  _parseExcelDate: function(serial) {
-    const utcDays = Math.floor(serial) - 25569;
-    const ms = utcDays * 86400 * 1000;
-    const date = new Date(ms);
-    return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
-  },
-
-  _parseStringDate: function(dateStr) {
-    if (dateStr.includes(' ')) dateStr = dateStr.split(' ')[0];
-
-    // DD/MM/YYYY or DD-MM-YYYY
-    const dmyMatch = dateStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
-    if (dmyMatch) return new Date(dmyMatch[3], dmyMatch[2] - 1, dmyMatch[1]);
-
-    // 30-Jun-2025 or 30 Jun 2025
-    const textMatch = dateStr.match(/^(\d{1,2})[\/\- ]([a-z]{3,})[\/\- ](\d{2,4})$/i);
-    if (textMatch) {
-      const monthIndex = MONTHS.indexOf(textMatch[2].toLowerCase().substr(0, 3));
-      if (monthIndex >= 0) return new Date(textMatch[3], monthIndex, textMatch[1]);
-    }
-
-    // ISO: 2025-07-01
-    const isoMatch = dateStr.match(/^(\d{4})[\/\-](\d{2})[\/\-](\d{2})$/);
-    if (isoMatch) return new Date(isoMatch[1], isoMatch[2] - 1, isoMatch[3]);
-
-    return null;
-  }
-};
-
 self.onmessage = async e => {
   const data = e.data;
   if (data.type !== 'start') return;
@@ -65,66 +7,48 @@ self.onmessage = async e => {
   const { mode, files } = data;
 
   try {
-    if (mode === 'eligibility') {
-      const combinedWb = await combineEligibilities(files);
+    const fileEntries = files.map((buf, i) => ({
+      name: `File_${i}`,
+      buffer: buf
+    }));
 
-      // Ensure wbArray is a valid transferable Uint8Array
-      const wbArray = XLSX.write(combinedWb, { bookType: 'xlsx', type: 'array' });
-      const wbData = new Uint8Array(wbArray); // Ensure it's a transferable object
-      self.postMessage({ type: 'result', workbookData: wbData }, [wbData.buffer]);
+    const workbook = (mode === 'eligibility')
+      ? await combineEligibilities(fileEntries)
+      : await combineReportings(fileEntries);
 
-    } else if (mode === 'reporting') {
-      const combinedWb = await combineReportings(files);
-
-      const wbArray = XLSX.write(combinedWb, { bookType: 'xlsx', type: 'array' });
-      const wbData = new Uint8Array(wbArray); // Ensure it's a transferable object
-      self.postMessage({ type: 'result', workbookData: wbData }, [wbData.buffer]);
-
-    } else {
-      throw new Error(`Unknown mode: ${mode}`);
-    }
-
+    const wbData = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+    self.postMessage({ type: 'result', workbookData: wbData }, [wbData.buffer]);
   } catch (err) {
     self.postMessage({ type: 'error', error: err.message });
   }
 };
 
-async function combineEligibilities(fileBuffers) {
+async function combineEligibilities(fileEntries) {
   const combinedRows = [];
   let headerRow = null;
 
-  for (let i = 0; i < fileBuffers.length; i++) {
-    const buf = fileBuffers[i];
-    try {
-      const wb = XLSX.read(buf, { type: 'array' });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const sheetData = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' });
+  for (let i = 0; i < fileEntries.length; i++) {
+    const { buffer } = fileEntries[i];
+    const wb = XLSX.read(buffer, { type: 'array' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const sheetData = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' });
 
-      if (sheetData.length < 2) throw new Error(`File ${i + 1} has no data rows.`);
-
-      // Header is on second row (index 1)
-      const currentHeader = sheetData[1];
-
-      if (!headerRow) {
-        headerRow = currentHeader;
-        combinedRows.push(headerRow);
-      }
-
-      // Append rows from index 2 (data rows)
-      for (let r = 2; r < sheetData.length; r++) {
-        const row = sheetData[r];
-        if (!row || row.length === 0) continue;
-        combinedRows.push(row);
-      }
-
-      self.postMessage({ type: 'progress', progress: Math.floor(((i + 1) / fileBuffers.length) * 50) });
-
-    } catch (err) {
-      throw new Error(`Failed to read eligibility file #${i + 1}: ${err.message}`);
+    if (sheetData.length < 2) continue;
+    const currentHeader = sheetData[1];
+    if (!headerRow) {
+      headerRow = currentHeader;
+      combinedRows.push(headerRow);
     }
+
+    for (let r = 2; r < sheetData.length; r++) {
+      const row = sheetData[r];
+      if (!row || row.length === 0) continue;
+      combinedRows.push(row);
+    }
+
+    self.postMessage({ type: 'progress', progress: Math.floor(((i + 1) / fileEntries.length) * 50) });
   }
 
-  // Remove exact duplicate rows by stringifying row arrays
   const uniqueRows = [];
   const seen = new Set();
   for (const row of combinedRows) {
@@ -138,9 +62,11 @@ async function combineEligibilities(fileBuffers) {
   const ws = XLSX.utils.aoa_to_sheet(uniqueRows);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Combined Eligibility');
-
   self.postMessage({ type: 'progress', progress: 100 });
-async function combineReportings(fileBuffers) {
+  return wb;
+}
+
+async function combineReportings(fileEntries) {
   const TARGET_HEADERS = [
     'Pri. Claim No',
     'Clinician License',
@@ -154,23 +80,22 @@ async function combineReportings(fileBuffers) {
     'Clinician Name',
     'Opened by'
   ];
-  
+
   const CLINICPRO_MAP = {
     'ClaimID': 'Pri. Claim No',
     'Clinician License': 'Clinician License',
     'ClaimDate': 'Encounter Date',
+    'Insurance Company': 'Pri. Plan Type',
     'PatientCardID': 'Pri. Patient Insurance Card No',
     'Member ID': 'Pri. Patient Insurance Card No',
     'Clinic': 'Department',
     'Visit Id': 'Visit Id',
-    'Insurance Company': 'Pri. Plan Type',
-    // Facility ID is handled separately per file, no direct mapping here
-    'FileNo': 'Patient Code',
     'Clinician Name': 'Clinician Name',
     'Opened by/Registration Staff name': 'Opened by',
-    'Opened by': 'Opened by'
+    'Opened by': 'Opened by',
+    'FileNo': 'Patient Code'
   };
-  
+
   const INSTAHMS_MAP = {
     'Pri. Claim No': 'Pri. Claim No',
     'Clinician License': 'Clinician License',
@@ -185,120 +110,88 @@ async function combineReportings(fileBuffers) {
     'Opened by': 'Opened by'
   };
 
-  const combinedRows = [];
-  combinedRows.push(TARGET_HEADERS);
-
+  const combinedRows = [TARGET_HEADERS];
   const seenClaimIDs = new Set();
 
-  for (let i = 0; i < fileBuffers.length; i++) {
-    const buf = fileBuffers[i];
-    try {
-      const wb = XLSX.read(buf, { type: 'array', cellDates: false, raw: false });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const sheetData = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+  for (let i = 0; i < fileEntries.length; i++) {
+    const { name, buffer } = fileEntries[i];
+    const isCSV = name.toLowerCase().endsWith('.csv');
+    const isClinicPro = !isCSV;
+    const headerMap = isClinicPro ? CLINICPRO_MAP : INSTAHMS_MAP;
 
-      // Find header row index and headers
-      let headerRowIndex = -1;
-      let headerRow = null;
-      for (let r = 0; r < Math.min(5, sheetData.length); r++) {
-        const row = sheetData[r].map(h => h.toString().trim());
-        if (row.some(h => h.toLowerCase() === 'claimid' || h.toLowerCase() === 'pri. claim no')) {
-          headerRowIndex = r;
-          headerRow = row;
-          break;
-        }
-      }
-      if (headerRowIndex === -1) throw new Error(`Cannot find header row in reporting file #${i + 1}`);
+    const wb = XLSX.read(buffer, { type: 'array', cellDates: false, raw: false });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const sheetData = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
 
-      const isClinicPro = headerRow.some(h => Object.keys(CLINICPRO_MAP).includes(h));
-      const isInstaHMS = headerRow.some(h => Object.keys(INSTAHMS_MAP).includes(h));
-      const headerMap = isClinicPro ? CLINICPRO_MAP : INSTAHMS_MAP;
+    if (sheetData.length < 2) continue;
 
-      // Map target headers to source headers
-      const targetToSource = {};
-      for (const [src, tgt] of Object.entries(headerMap)) {
-        if (headerRow.includes(src)) targetToSource[tgt] = src;
-      }
-
-      // Facility ID for ClinicPro: detect once per file from Visit Id prefix if available
-      let facilityID = '';
-      if (isClinicPro) {
-        const visitIdHeader = headerRow.find(h => h.toLowerCase() === 'visit id');
-        if (visitIdHeader) {
-          for (let r = headerRowIndex + 1; r < sheetData.length; r++) {
-            const visitIdCell = sheetData[r][headerRow.indexOf(visitIdHeader)]?.toString().trim() || '';
-            if (visitIdCell.length >= 6) {
-              facilityID = visitIdCell.substring(0, 6);
-              break;
-            }
-          }
-        }
-      }
-
-      for (let r = headerRowIndex + 1; r < sheetData.length; r++) {
-        const row = sheetData[r];
-        if (!row || row.length === 0) continue;
-
-        const sourceRow = {};
-        headerRow.forEach((h, idx) => {
-          sourceRow[h] = row[idx] ?? '';
-        });
-
-        let claimID = '';
-        if (targetToSource['Pri. Claim No']) {
-          claimID = sourceRow[targetToSource['Pri. Claim No']].toString().trim();
-        }
-        if (!claimID) continue; // Skip blank Claim IDs
-        if (seenClaimIDs.has(claimID)) continue;
-        seenClaimIDs.add(claimID);
-
-        const targetRow = [];
-
-        for (const tgtHeader of TARGET_HEADERS) {
-          if (tgtHeader === 'Pri. Patient Insurance Card No') {
-            if (isClinicPro) {
-              let val = sourceRow['PatientCardID']?.toString().trim() || '';
-              if (!val) val = sourceRow['Member ID']?.toString().trim() || '';
-              targetRow.push(val);
-              continue;
-            }
-            const srcHdr = targetToSource[tgtHeader];
-            targetRow.push(srcHdr ? sourceRow[srcHdr].toString().trim() : '');
-            continue;
-          }
-          if (tgtHeader === 'Facility ID') {
-            if (isClinicPro) {
-              targetRow.push(facilityID);
-              continue;
-            }
-            const srcHdr = targetToSource[tgtHeader];
-            targetRow.push(srcHdr ? sourceRow[srcHdr].toString().trim() : '');
-            continue;
-          }
-          if (tgtHeader === 'Visit Id' || tgtHeader === 'Clinician Name' || tgtHeader === 'Opened by' || tgtHeader === 'Patient Code') {
-            const srcHdr = targetToSource[tgtHeader];
-            targetRow.push(srcHdr ? sourceRow[srcHdr].toString().trim() : '');
-            continue;
-          }
-          const srcHdr = targetToSource[tgtHeader];
-          targetRow.push(srcHdr ? sourceRow[srcHdr].toString().trim() : '');
-        }
-
-        combinedRows.push(targetRow);
-      }
-
-      self.postMessage({ type: 'progress', progress: 50 + Math.floor(((i + 1) / fileBuffers.length) * 50) });
-
-    } catch (err) {
-      throw new Error(`Failed to read reporting file #${i + 1}: ${err.message}`);
+    const headerRow = sheetData[0].map(h => h.toString().trim());
+    const targetToSource = {};
+    for (const [src, tgt] of Object.entries(headerMap)) {
+      if (headerRow.includes(src)) targetToSource[tgt] = src;
     }
+
+    let facilityID = '';
+    for (let r = 1; r < Math.min(sheetData.length, 20); r++) {
+      const row = sheetData[r];
+      const visitIdx = headerRow.indexOf('Visit Id');
+      const visitVal = row?.[visitIdx]?.toString() || '';
+      const match = visitVal.match(/(MF\d{4,})/i);
+      if (match) {
+        facilityID = match[1];
+        break;
+      }
+    }
+
+    for (let r = 1; r < sheetData.length; r++) {
+      const row = sheetData[r];
+      if (!row || row.length === 0) continue;
+
+      const sourceRow = {};
+      headerRow.forEach((h, idx) => {
+        sourceRow[h] = row[idx] ?? '';
+      });
+
+      let claimID = '';
+      if (targetToSource['Pri. Claim No']) {
+        claimID = sourceRow[targetToSource['Pri. Claim No']]?.toString().trim() || '';
+      }
+      if (!claimID || seenClaimIDs.has(claimID)) continue;
+      seenClaimIDs.add(claimID);
+
+      const targetRow = [];
+      for (const tgtHeader of TARGET_HEADERS) {
+        if (tgtHeader === 'Facility ID') {
+          targetRow.push(sourceRow['Facility ID'] || facilityID);
+          continue;
+        }
+        if (tgtHeader === 'Pri. Patient Insurance Card No') {
+          let val = sourceRow['PatientCardID']?.toString().trim() || '';
+          if (!val) val = sourceRow['Member ID']?.toString().trim() || '';
+          if (!val && targetToSource[tgtHeader]) val = sourceRow[targetToSource[tgtHeader]]?.toString().trim() || '';
+          targetRow.push(val);
+          continue;
+        }
+        if (tgtHeader === 'Patient Code') {
+          let val = sourceRow['FileNo']?.toString().trim() || '';
+          if (!val && targetToSource[tgtHeader]) val = sourceRow[targetToSource[tgtHeader]]?.toString().trim() || '';
+          targetRow.push(val);
+          continue;
+        }
+        const srcHdr = targetToSource[tgtHeader];
+        const val = srcHdr ? (sourceRow[srcHdr]?.toString().trim() || '') : '';
+        targetRow.push(val);
+      }
+
+      combinedRows.push(targetRow);
+    }
+
+    self.postMessage({ type: 'progress', progress: 50 + Math.floor(((i + 1) / fileEntries.length) * 50) });
   }
 
   const ws = XLSX.utils.aoa_to_sheet(combinedRows);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Combined Reporting');
-
   self.postMessage({ type: 'progress', progress: 100 });
-
   return wb;
 }
