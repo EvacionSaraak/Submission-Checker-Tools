@@ -83,7 +83,9 @@ combineButton.addEventListener('click', async () => {
 
 worker.onmessage = e => {
   const msg = e.data;
-  if (msg.type === 'progress') {
+  if (msg.type === 'log') {
+    console.log('[Worker log]', msg.message);
+  } else if (msg.type === 'progress') {
     const p = msg.progress;
     progressBar.style.width = `${p}%`;
     progressText.textContent = `${p}%`;
@@ -94,8 +96,6 @@ worker.onmessage = e => {
     downloadButton.disabled = false;
     progressBar.style.width = '100%';
     progressText.textContent = '100%';
-
-    renderWorkbookTable(lastWorkbookData);
   } else if (msg.type === 'error') {
     messageBox.textContent = 'Error: ' + msg.error;
     combineButton.disabled = false;
