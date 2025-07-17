@@ -281,11 +281,19 @@ async function combineReportings(fileEntries) {
       // Fix date formatting for Encounter Date (convert Excel serial or strings to dd/mm/yyyy)
       const encounterDateIdx = TARGET_HEADERS.indexOf('Encounter Date');
       if (encounterDateIdx >= 0) {
-        const rawDate = targetRow[encounterDateIdx];
-        const parsedDate = DateHandler.parse(rawDate);
-        targetRow[encounterDateIdx] = parsedDate ? DateHandler.format(parsedDate) : '';
+        let rawDate = targetRow[encounterDateIdx];
+      
+        if (typeof rawDate === 'string' && rawDate.trim() === '') {
+          targetRow[encounterDateIdx] = '';
+        } else {
+          // Try convert string numbers to actual number
+          if (typeof rawDate === 'string' && !isNaN(rawDate)) {
+            rawDate = Number(rawDate);
+          }
+          const parsedDate = DateHandler.parse(rawDate);
+          targetRow[encounterDateIdx] = parsedDate ? DateHandler.format(parsedDate) : '';
+        }
       }
-
       combinedRows.push(targetRow);
     }
 
