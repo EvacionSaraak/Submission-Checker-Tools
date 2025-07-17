@@ -133,6 +133,23 @@ async function combineReportings(fileEntries) {
     'Opened by'
   ];
 
+  const CLINICIAN_LICENSE_MAP = {
+    "PranJal Sharma": "GD25271",
+    "Hiba Sirelkhatim Mahgoub": "GD36723",
+    "Shimaa Ibrahim Rashed": "GD25730",
+    "Vaqar Miyan Khan": "GD19319",
+    "Vinod Venugopal Menon": "GD44108",
+    "Aalaa Salim Ahmed Salim": "GD45251",
+    "Mozher Habib": "GD11562",
+    "Sami Wajih Mousa Owais": "GD40942",
+    "Isameldeen  Yassin Abdelmageed": "GD45348",
+    "Rhea Mahajan": "GD43977",
+    "Reem H A Ammoura": "GD25389",
+    "Zakia Abualhassan Osman Aidam": "GD45711",
+    "Khaled Mohammad Jamal Al Deri": "GD41075",
+    "Juhi Jaiswal Ramesh Shankar": "GD44353"
+  };
+
   const CLINICPRO_MAP = {
     'ClaimID': 'Pri. Claim No',
     'Clinician License': 'Clinician License',
@@ -167,8 +184,6 @@ async function combineReportings(fileEntries) {
 
   for (let i = 0; i < fileEntries.length; i++) {
     const { name, buffer } = fileEntries[i];
-    self.postMessage({ type: 'log', message: `Reading reporting file ${i + 1}: ${name}` });
-
     const isCSV = name.toLowerCase().endsWith('.csv');
     const isClinicPro = !isCSV;
     const headerMap = isClinicPro ? CLINICPRO_MAP : INSTAHMS_MAP;
@@ -177,10 +192,7 @@ async function combineReportings(fileEntries) {
     const ws = wb.Sheets[wb.SheetNames[0]];
     const sheetData = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
 
-    if (sheetData.length < 2) {
-      self.postMessage({ type: 'log', message: `File ${name} has less than 2 rows, skipping.` });
-      continue;
-    }
+    if (sheetData.length < 2) continue;
 
     const headerRow = sheetData[0].map(h => h.toString().trim());
     const targetToSource = {};
@@ -188,7 +200,7 @@ async function combineReportings(fileEntries) {
       if (headerRow.includes(src)) targetToSource[tgt] = src;
     }
 
-    // Find Facility ID from Visit Id pattern in first 20 rows (if any)
+    // Determine facility ID from Visit Id in first 20 rows
     let facilityID = '';
     for (let r = 1; r < Math.min(sheetData.length, 20); r++) {
       const row = sheetData[r];
@@ -200,7 +212,6 @@ async function combineReportings(fileEntries) {
         break;
       }
     }
-    self.postMessage({ type: 'log', message: `Determined facility ID for file ${name}: ${facilityID}` });
 
     for (let r = 1; r < sheetData.length; r++) {
       const row = sheetData[r];
@@ -215,15 +226,16 @@ async function combineReportings(fileEntries) {
       if (targetToSource['Pri. Claim No']) {
         claimID = sourceRow[targetToSource['Pri. Claim No']]?.toString().trim() || '';
       }
-      if (!claimID) {
-        self.postMessage({ type: 'log', message: `Skipping row ${r + 1} in file ${name}: missing claim ID.` });
-        continue;
-      }
-      if (seenClaimIDs.has(claimID)) {
-        self.postMessage({ type: 'log', message: `Skipping duplicate claim ID ${claimID} in file ${name}.` });
-        continue;
-      }
+      if (!claimID || seenClaimIDs.has(claimID)) continue;
       seenClaimIDs.add(claimID);
+
+      // Get clinician info and fill license if missing
+      let clinicianName = sourceRow['Clinician Name']?.toString().trim() || '';
+      let clinicianLicense = sourceRow['Clinician License']?.toString().trim() || '';
+
+      if (!clinicianLicense && clinicianName && CLINICIAN_LICENSE_MAP[clinicianName]) {
+        clinicianLicense = CLINICIAN_LICENSE_MAP[clinicianName];
+      }
 
       const targetRow = [];
       for (const tgtHeader of TARGET_HEADERS) {
@@ -244,6 +256,15 @@ async function combineReportings(fileEntries) {
           targetRow.push(val);
           continue;
         }
+        if (tgtHeader === 'Clinician License') {
+          targetRow.push(clinicianLicense);
+          continue;
+        }
+        if (tgtHeader === 'Clinician Name') {
+          targetRow.push(clinicianName);
+          continue;
+        }
+
         const srcHdr = targetToSource[tgtHeader];
         const val = srcHdr ? (sourceRow[srcHdr]?.toString().trim() || '') : '';
         targetRow.push(val);
