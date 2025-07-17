@@ -23,7 +23,6 @@ const DateHandler = {
   },
 
   _parseExcelDate: function(serial) {
-    // Excel date serial to JS Date (corrected for 1900 leap year bug)
     const utcDays = Math.floor(serial) - 25569;
     const ms = utcDays * 86400 * 1000;
     const date = new Date(ms);
@@ -33,29 +32,21 @@ const DateHandler = {
   _parseStringDate: function(dateStr) {
     if (dateStr.includes(' ')) dateStr = dateStr.split(' ')[0];
 
-    // Matches dd/mm/yyyy or dd-mm-yyyy
     const dmyMatch = dateStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
     if (dmyMatch) return new Date(dmyMatch[3], dmyMatch[2] - 1, dmyMatch[1]);
 
-    // Matches dd mmm yyyy e.g. 12 Jan 2023
     const textMatch = dateStr.match(/^(\d{1,2})[\/\- ]([a-z]{3,})[\/\- ](\d{2,4})$/i);
     if (textMatch) {
       const monthIndex = MONTHS.indexOf(textMatch[2].toLowerCase().substr(0, 3));
       if (monthIndex >= 0) return new Date(textMatch[3], monthIndex, textMatch[1]);
     }
 
-    // Matches ISO yyyy-mm-dd
     const isoMatch = dateStr.match(/^(\d{4})[\/\-](\d{2})[\/\-](\d{2})$/);
     if (isoMatch) return new Date(isoMatch[1], isoMatch[2] - 1, isoMatch[3]);
 
     return null;
   }
 };
-
-// Helper: normalize header string for flexible matching
-function normalizeHeader(h) {
-  return h.toString().trim().toLowerCase().replace(/[^\w]/g, '');
-}
 
 self.onmessage = async e => {
   const data = e.data;
@@ -64,17 +55,14 @@ self.onmessage = async e => {
   const { mode, files, fileTypes } = data;
 
   try {
-    if (mode === 'eligibility') {
-      const wb = await combineEligibilities(files);
-      const wbArray = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-      const wbUint8 = new Uint8Array(wbArray);
-      self.postMessage({ type: 'result', workbookData: wbUint8 }, [wbUint8.buffer]);
-    } else if (mode === 'reporting') {
-      const wb = await combineReportings(files);
-      const wbArray = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-      const wbUint8 = new Uint8Array(wbArray);
-      self.postMessage({ type: 'result', workbookData: wbUint8 }, [wbUint8.buffer]);
-    }
+    // Log start
+    self.postMessage({ type: 'log', message: `Processing started in mode: ${mode}, files: ${files.length}` });
+
+    const combineFn = mode === 'eligibility' ? combineEligibilities : combineReportings;
+    const wb = await combineFn(files, fileTypes || []);
+    const wbArray = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    const wbUint8 = new Uint8Array(wbArray);
+    self.postMessage({ type: 'result', workbookData: wbUint8 }, [wbUint8.buffer]);
   } catch (err) {
     self.postMessage({ type: 'error', error: err.message });
   }
@@ -85,12 +73,18 @@ async function combineEligibilities(fileEntries) {
   let headerRow = null;
 
   for (let i = 0; i < fileEntries.length; i++) {
-    const { buffer, name } = fileEntries[i];
+    const { name, buffer } = fileEntries[i];
+    self.postMessage({ type: 'log', message: `Reading eligibility file ${i + 1}: ${name}` });
+
     const wb = XLSX.read(buffer, { type: 'array' });
     const ws = wb.Sheets[wb.SheetNames[0]];
     const sheetData = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' });
 
-    if (sheetData.length < 2) continue;
+    if (sheetData.length < 2) {
+      self.postMessage({ type: 'log', message: `File ${name} has less than 2 rows, skipping.` });
+      continue;
+    }
+
     const currentHeader = sheetData[1];
     if (!headerRow) {
       headerRow = currentHeader;
@@ -106,7 +100,7 @@ async function combineEligibilities(fileEntries) {
     self.postMessage({ type: 'progress', progress: Math.floor(((i + 1) / fileEntries.length) * 50) });
   }
 
-  // Remove exact duplicate rows (stringify entire row)
+  // Remove exact duplicate rows
   const uniqueRows = [];
   const seen = new Set();
   for (const row of combinedRows) {
@@ -173,9 +167,10 @@ async function combineReportings(fileEntries) {
 
   for (let i = 0; i < fileEntries.length; i++) {
     const { name, buffer } = fileEntries[i];
+    self.postMessage({ type: 'log', message: `Reading reporting file ${i + 1}: ${name}` });
+
     const isCSV = name.toLowerCase().endsWith('.csv');
     const isClinicPro = !isCSV;
-
     const headerMap = isClinicPro ? CLINICPRO_MAP : INSTAHMS_MAP;
 
     const wb = XLSX.read(buffer, { type: 'array', cellDates: false, raw: false });
@@ -183,93 +178,69 @@ async function combineReportings(fileEntries) {
     const sheetData = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
 
     if (sheetData.length < 2) {
-      self.postMessage({ type: 'log', message: `File ${name} skipped: less than 2 rows` });
+      self.postMessage({ type: 'log', message: `File ${name} has less than 2 rows, skipping.` });
       continue;
     }
 
     const headerRow = sheetData[0].map(h => h.toString().trim());
-    // normalize headers for matching
-    const normalizedHeaderRow = headerRow.map(normalizeHeader);
-
-    // Normalize keys from headerMap for matching
-    const normalizedHeaderMap = {};
-    for (const [src, tgt] of Object.entries(headerMap)) {
-      normalizedHeaderMap[normalizeHeader(src)] = tgt;
-    }
-
-    // Build targetToSource mapping: target header -> actual header in sheet
     const targetToSource = {};
-    for (let col = 0; col < normalizedHeaderRow.length; col++) {
-      const normHdr = normalizedHeaderRow[col];
-      if (normHdr in normalizedHeaderMap) {
-        const tgtHeader = normalizedHeaderMap[normHdr];
-        targetToSource[tgtHeader] = headerRow[col]; // original header in sheet
-      }
+    for (const [src, tgt] of Object.entries(headerMap)) {
+      if (headerRow.includes(src)) targetToSource[tgt] = src;
     }
 
-    self.postMessage({ type: 'log', message: `File: ${name} headers: ${headerRow.join(', ')}` });
-    self.postMessage({ type: 'log', message: `File: ${name} targetToSource: ${JSON.stringify(targetToSource)}` });
-
-    // Detect Facility ID for ClinicPro files (search Visit Id for MFxxxx)
+    // Find Facility ID from Visit Id pattern in first 20 rows (if any)
     let facilityID = '';
-    if (isClinicPro) {
-      const visitIdx = headerRow.findIndex(h => h === targetToSource['Visit Id']);
-      for (let r = 1; r < Math.min(sheetData.length, 20); r++) {
-        const row = sheetData[r];
-        const visitVal = row?.[visitIdx]?.toString() || '';
-        const match = visitVal.match(/(MF\d{4,})/i);
-        if (match) {
-          facilityID = match[1];
-          break;
-        }
+    for (let r = 1; r < Math.min(sheetData.length, 20); r++) {
+      const row = sheetData[r];
+      const visitIdx = headerRow.indexOf('Visit Id');
+      const visitVal = row?.[visitIdx]?.toString() || '';
+      const match = visitVal.match(/(MF\d{4,})/i);
+      if (match) {
+        facilityID = match[1];
+        break;
       }
     }
+    self.postMessage({ type: 'log', message: `Determined facility ID for file ${name}: ${facilityID}` });
 
     for (let r = 1; r < sheetData.length; r++) {
       const row = sheetData[r];
       if (!row || row.length === 0) continue;
 
-      // Build sourceRow object: header -> value
       const sourceRow = {};
-      for (let col = 0; col < headerRow.length; col++) {
-        sourceRow[headerRow[col]] = row[col] ?? '';
-      }
+      headerRow.forEach((h, idx) => {
+        sourceRow[h] = row[idx] ?? '';
+      });
 
-      // Get Claim ID and skip if blank or duplicate
       let claimID = '';
       if (targetToSource['Pri. Claim No']) {
         claimID = sourceRow[targetToSource['Pri. Claim No']]?.toString().trim() || '';
       }
-      if (!claimID) continue;
-      if (seenClaimIDs.has(claimID)) continue;
+      if (!claimID) {
+        self.postMessage({ type: 'log', message: `Skipping row ${r + 1} in file ${name}: missing claim ID.` });
+        continue;
+      }
+      if (seenClaimIDs.has(claimID)) {
+        self.postMessage({ type: 'log', message: `Skipping duplicate claim ID ${claimID} in file ${name}.` });
+        continue;
+      }
       seenClaimIDs.add(claimID);
 
-      // Build target row in order
       const targetRow = [];
       for (const tgtHeader of TARGET_HEADERS) {
         if (tgtHeader === 'Facility ID') {
-          targetRow.push(sourceRow['Facility ID'] || facilityID || '');
+          targetRow.push(sourceRow['Facility ID'] || facilityID);
           continue;
         }
         if (tgtHeader === 'Pri. Patient Insurance Card No') {
-          // For ClinicPro, try PatientCardID then Member ID
-          let val = '';
-          if (isClinicPro) {
-            val = sourceRow[targetToSource['Pri. Patient Insurance Card No']]?.toString().trim() || '';
-            if (!val) {
-              val = sourceRow['PatientCardID']?.toString().trim() || '';
-              if (!val) val = sourceRow['Member ID']?.toString().trim() || '';
-            }
-          } else {
-            // InstaHMS direct
-            val = sourceRow[targetToSource['Pri. Patient Insurance Card No']]?.toString().trim() || '';
-          }
+          let val = sourceRow['PatientCardID']?.toString().trim() || '';
+          if (!val) val = sourceRow['Member ID']?.toString().trim() || '';
+          if (!val && targetToSource[tgtHeader]) val = sourceRow[targetToSource[tgtHeader]]?.toString().trim() || '';
           targetRow.push(val);
           continue;
         }
         if (tgtHeader === 'Patient Code') {
-          let val = sourceRow[targetToSource['Patient Code']]?.toString().trim() || '';
-          if (isClinicPro && !val) val = sourceRow['FileNo']?.toString().trim() || '';
+          let val = sourceRow['FileNo']?.toString().trim() || '';
+          if (!val && targetToSource[tgtHeader]) val = sourceRow[targetToSource[tgtHeader]]?.toString().trim() || '';
           targetRow.push(val);
           continue;
         }
@@ -278,22 +249,6 @@ async function combineReportings(fileEntries) {
         targetRow.push(val);
       }
 
-      // Fix date formatting for Encounter Date (convert Excel serial or strings to dd/mm/yyyy)
-      const encounterDateIdx = TARGET_HEADERS.indexOf('Encounter Date');
-      if (encounterDateIdx >= 0) {
-        let rawDate = targetRow[encounterDateIdx];
-      
-        if (typeof rawDate === 'string' && rawDate.trim() === '') {
-          targetRow[encounterDateIdx] = '';
-        } else {
-          // Try convert string numbers to actual number
-          if (typeof rawDate === 'string' && !isNaN(rawDate)) {
-            rawDate = Number(rawDate);
-          }
-          const parsedDate = DateHandler.parse(rawDate);
-          targetRow[encounterDateIdx] = parsedDate ? DateHandler.format(parsedDate) : '';
-        }
-      }
       combinedRows.push(targetRow);
     }
 
