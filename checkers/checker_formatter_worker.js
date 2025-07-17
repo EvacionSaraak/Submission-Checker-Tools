@@ -159,21 +159,23 @@ async function combineReportings(fileBuffers) {
     'Opened by'
   ];
 
+  // ClinicPro source header mappings (some custom logic needed for FacilityID)
   const CLINICPRO_MAP = {
     'ClaimID': 'Pri. Claim No',
     'Clinician License': 'Clinician License',
     'ClaimDate': 'Encounter Date',
     'Insurance Company': 'Pri. Plan Type',
-    'Facility ID': 'Facility ID',
-    'PatientCardID': 'Patient Code',
-    'Member ID': 'Patient Code',
+    'PatientCardID': 'Pri. Patient Insurance Card No',
+    'Member ID': 'Pri. Patient Insurance Card No',
     'Clinic': 'Department',
     'Visit Id': 'Visit Id',
+    'FileNo': 'Patient Code',
     'Clinician Name': 'Clinician Name',
     'Opened by/Registration Staff name': 'Opened by',
-    'Opened by': 'Opened by'
+    'Updated By': 'Opened by' // Sometimes this is used
   };
 
+  // InstaHMS source header mappings (direct mapping)
   const INSTAHMS_MAP = {
     'Pri. Claim No': 'Pri. Claim No',
     'Clinician License': 'Clinician License',
@@ -188,22 +190,54 @@ async function combineReportings(fileBuffers) {
     'Opened by': 'Opened by'
   };
 
-  const combinedRows = [TARGET_HEADERS];
+  const combinedRows = [];
+  combinedRows.push(TARGET_HEADERS);
+
   const seenClaimIDs = new Set();
+
+  // Helper to format Excel dates (numbers) to DD/MM/YYYY
+  function formatExcelDate(value) {
+    if (typeof value === 'number') {
+      const utc_days = Math.floor(value - 25569);
+      const utc_value = utc_days * 86400 * 1000;
+      const date_info = new Date(utc_value);
+      const d = date_info.getUTCDate().toString().padStart(2, '0');
+      const m = (date_info.getUTCMonth() + 1).toString().padStart(2, '0');
+      const y = date_info.getUTCFullYear();
+      return `${d}/${m}/${y}`;
+    }
+    // fallback: if already string or Date
+    if (value instanceof Date) {
+      const d = value.getDate().toString().padStart(2, '0');
+      const m = (value.getMonth() + 1).toString().padStart(2, '0');
+      const y = value.getFullYear();
+      return `${d}/${m}/${y}`;
+    }
+    if (typeof value === 'string') return value.trim();
+    return '';
+  }
+
+  // For FacilityID in ClinicPro, determine from Visit Id first matching pattern like "MF5357"
+  function extractFacilityIDFromVisitId(visitId) {
+    if (!visitId) return '';
+    const match = visitId.match(/(MF\d{4,})/i);
+    if (match) return match[1].toUpperCase();
+    return '';
+  }
 
   for (let i = 0; i < fileBuffers.length; i++) {
     const buf = fileBuffers[i];
     try {
-      const wb = XLSX.read(buf, { type: 'array', cellDates: false, raw: true });
+      const wb = XLSX.read(buf, { type: 'array', cellDates: false, raw: false });
       const ws = wb.Sheets[wb.SheetNames[0]];
       const sheetData = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
 
-      // Find header row
+      // Detect header row (top 5 rows)
       let headerRowIndex = -1;
       let headerRow = null;
       for (let r = 0; r < Math.min(5, sheetData.length); r++) {
         const row = sheetData[r].map(h => h.toString().trim());
-        if (row.includes('ClaimID') || row.includes('Pri. Claim No')) {
+        if (row.some(h => h.toLowerCase() === 'claimid' || h.toLowerCase() === 'pri. claim no')) {
           headerRowIndex = r;
           headerRow = row;
           break;
@@ -211,15 +245,27 @@ async function combineReportings(fileBuffers) {
       }
       if (headerRowIndex === -1) throw new Error(`Cannot find header row in reporting file #${i + 1}`);
 
+      // Determine source type by headers
       const isClinicPro = headerRow.some(h => Object.keys(CLINICPRO_MAP).includes(h));
       const isInstaHMS = headerRow.some(h => Object.keys(INSTAHMS_MAP).includes(h));
+
       const headerMap = isClinicPro ? CLINICPRO_MAP : INSTAHMS_MAP;
 
-      // Map: target => source field
+      // Map target headers to source headers present in file
       const targetToSource = {};
       for (const [src, tgt] of Object.entries(headerMap)) {
-        if (headerRow.includes(src)) {
-          if (!targetToSource[tgt]) targetToSource[tgt] = src; // prefer first match
+        if (headerRow.includes(src)) targetToSource[tgt] = src;
+      }
+
+      // For ClinicPro: get Facility ID from first non-empty Visit Id in this file
+      let facilityIDForFile = '';
+      if (isClinicPro) {
+        for (let r = headerRowIndex + 1; r < sheetData.length; r++) {
+          const visitIdVal = sheetData[r][headerRow.indexOf(targetToSource['Visit Id'])];
+          if (visitIdVal) {
+            facilityIDForFile = extractFacilityIDFromVisitId(visitIdVal.toString());
+            if (facilityIDForFile) break;
+          }
         }
       }
 
@@ -227,37 +273,66 @@ async function combineReportings(fileBuffers) {
         const row = sheetData[r];
         if (!row || row.length === 0) continue;
 
+        // Build source row dictionary
         const sourceRow = {};
         headerRow.forEach((h, idx) => {
           sourceRow[h] = row[idx] ?? '';
         });
 
-        let claimID = targetToSource['Pri. Claim No'] ? sourceRow[targetToSource['Pri. Claim No']]?.toString().trim() : '';
-        if (!claimID || seenClaimIDs.has(claimID)) continue;
+        // Deduplicate by Claim ID
+        let claimID = '';
+        if (targetToSource['Pri. Claim No']) {
+          claimID = sourceRow[targetToSource['Pri. Claim No']].toString().trim();
+        }
+        if (!claimID) continue;
+        if (seenClaimIDs.has(claimID)) continue;
         seenClaimIDs.add(claimID);
 
         const targetRow = [];
-        for (const tgt of TARGET_HEADERS) {
-          let value = '';
 
-          if (tgt === 'Patient Code') {
-            if (isClinicPro) {
-              value = sourceRow['PatientCardID']?.toString().trim() || sourceRow['Member ID']?.toString().trim() || '';
-            } else {
-              const src = targetToSource[tgt];
-              value = src ? sourceRow[src]?.toString().trim() || '' : '';
-            }
-          } else if (tgt === 'Encounter Date') {
-            const src = targetToSource[tgt];
-            const rawDate = src ? sourceRow[src] : '';
-            const parsed = DateHandler.parse(rawDate);
-            value = parsed ? DateHandler.format(parsed) : '';
-          } else {
-            const src = targetToSource[tgt];
-            value = src ? sourceRow[src]?.toString().trim() || '' : '';
+        for (const tgtHeader of TARGET_HEADERS) {
+          let val = '';
+
+          switch (tgtHeader) {
+            case 'Pri. Patient Insurance Card No':
+              // ClinicPro might have either Member ID or PatientCardID
+              if (isClinicPro) {
+                val = (sourceRow['Member ID'] || sourceRow['PatientCardID'] || '').toString().trim();
+              } else {
+                const srcHdr = targetToSource[tgtHeader];
+                val = srcHdr ? sourceRow[srcHdr].toString().trim() : '';
+              }
+              break;
+
+            case 'Visit Id':
+              if (targetToSource['Visit Id']) {
+                val = sourceRow[targetToSource['Visit Id']].toString().trim();
+              }
+              break;
+
+            case 'Facility ID':
+              if (isClinicPro) {
+                // Use determined facility ID per file from Visit Id
+                val = facilityIDForFile || '';
+              } else {
+                const srcHdr = targetToSource[tgtHeader];
+                val = srcHdr ? sourceRow[srcHdr].toString().trim() : '';
+              }
+              break;
+
+            case 'Encounter Date':
+              if (targetToSource['Encounter Date']) {
+                val = formatExcelDate(sourceRow[targetToSource['Encounter Date']]);
+              }
+              break;
+
+            default:
+              if (targetToSource[tgtHeader]) {
+                val = sourceRow[targetToSource[tgtHeader]].toString().trim();
+              }
           }
 
-          targetRow.push(value);
+          targetRow.push(val);
         }
 
         combinedRows.push(targetRow);
@@ -273,6 +348,8 @@ async function combineReportings(fileBuffers) {
   const ws = XLSX.utils.aoa_to_sheet(combinedRows);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Combined Reporting');
+
   self.postMessage({ type: 'progress', progress: 100 });
+
   return wb;
 }
