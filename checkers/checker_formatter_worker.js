@@ -171,7 +171,8 @@ async function combineReportings(fileBuffers) {
     'Visit Id': 'Visit Id',
     'Clinician Name': 'Clinician Name',
     'Opened by/Registration Staff name': 'Opened by',
-    'Opened by': 'Opened by'
+    'Opened by': 'Opened by',
+    'Patient Insurance Number': 'Pri. Patient Insurance Card No'
   };
 
   const INSTAHMS_MAP = {
@@ -188,21 +189,18 @@ async function combineReportings(fileBuffers) {
     'Opened by': 'Opened by'
   };
 
-  const combinedRows = [];
-  combinedRows.push(TARGET_HEADERS);
-
+  const combinedRows = [TARGET_HEADERS];
   const seenClaimIDs = new Set();
 
   for (let i = 0; i < fileBuffers.length; i++) {
-    const buf = fileBuffers[i];
     try {
-      const wb = XLSX.read(buf, { type: 'array', cellDates: false, raw: false });
+      const wb = XLSX.read(fileBuffers[i], { type: 'array', cellDates: false, raw: false });
       const ws = wb.Sheets[wb.SheetNames[0]];
       const sheetData = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
 
-      // Detect header row (top 5 rows)
       let headerRowIndex = -1;
       let headerRow = null;
+
       for (let r = 0; r < Math.min(5, sheetData.length); r++) {
         const row = sheetData[r].map(h => h.toString().trim());
         if (row.some(h => h.toLowerCase() === 'claimid' || h.toLowerCase() === 'pri. claim no')) {
@@ -211,14 +209,13 @@ async function combineReportings(fileBuffers) {
           break;
         }
       }
-      if (headerRowIndex === -1) throw new Error(`Cannot find header row in reporting file #${i + 1}`);
+
+      if (headerRowIndex === -1) throw new Error(`Header row not found in file #${i + 1}`);
 
       const isClinicPro = headerRow.some(h => Object.keys(CLINICPRO_MAP).includes(h));
       const isInstaHMS = headerRow.some(h => Object.keys(INSTAHMS_MAP).includes(h));
-
       const headerMap = isClinicPro ? CLINICPRO_MAP : INSTAHMS_MAP;
 
-      // Map target headers to source headers
       const targetToSource = {};
       for (const [src, tgt] of Object.entries(headerMap)) {
         if (headerRow.includes(src)) targetToSource[tgt] = src;
@@ -237,25 +234,32 @@ async function combineReportings(fileBuffers) {
         if (targetToSource['Pri. Claim No']) {
           claimID = sourceRow[targetToSource['Pri. Claim No']]?.toString().trim() || '';
         }
-        if (!claimID) continue;
-        if (seenClaimIDs.has(claimID)) continue;
+        if (!claimID || seenClaimIDs.has(claimID)) continue;
         seenClaimIDs.add(claimID);
 
         const targetRow = [];
+
         for (const tgtHeader of TARGET_HEADERS) {
+          let val = '';
+
           if (tgtHeader === 'Patient Code') {
             if (isClinicPro) {
-              let val = sourceRow['PatientCardID']?.toString().trim() || '';
-              if (!val) val = sourceRow['Member ID']?.toString().trim() || '';
-              targetRow.push(val);
-              continue;
+              val = sourceRow['PatientCardID']?.toString().trim() || sourceRow['Member ID']?.toString().trim() || '';
+            } else {
+              const srcHdr = targetToSource[tgtHeader];
+              val = srcHdr ? (sourceRow[srcHdr]?.toString().trim() || '') : '';
             }
+          } else if (tgtHeader === 'Encounter Date') {
             const srcHdr = targetToSource[tgtHeader];
-            targetRow.push(srcHdr ? (sourceRow[srcHdr]?.toString().trim() || '') : '');
-            continue;
+            const raw = srcHdr ? sourceRow[srcHdr] : '';
+            const parsed = DateHandler.parse(raw);
+            val = DateHandler.format(parsed);
+          } else {
+            const srcHdr = targetToSource[tgtHeader];
+            val = srcHdr ? (sourceRow[srcHdr]?.toString().trim() || '') : '';
           }
-          const srcHdr = targetToSource[tgtHeader];
-          targetRow.push(srcHdr ? (sourceRow[srcHdr]?.toString().trim() || '') : '');
+
+          targetRow.push(val);
         }
 
         combinedRows.push(targetRow);
@@ -264,7 +268,7 @@ async function combineReportings(fileBuffers) {
       self.postMessage({ type: 'progress', progress: 50 + Math.floor(((i + 1) / fileBuffers.length) * 50) });
 
     } catch (err) {
-      throw new Error(`Failed to read reporting file #${i + 1}: ${err.message}`);
+      throw new Error(`Failed to process reporting file #${i + 1}: ${err.message}`);
     }
   }
 
