@@ -164,14 +164,17 @@ async function combineReportings(fileBuffers) {
     'Clinician License': 'Clinician License',
     'ClaimDate': 'Encounter Date',
     'Insurance Company': 'Pri. Plan Type',
-    'Clinic': 'Department',
-    'Visit Id': 'Visit Id',
     'Facility ID': 'Facility ID',
     'PatientCardID': 'Patient Code',
     'Member ID': 'Patient Code',
+    'Clinic': 'Department',
+    'Visit Id': 'Visit Id',
     'Clinician Name': 'Clinician Name',
     'Opened by/Registration Staff name': 'Opened by',
-    'Opened by': 'Opened by'
+    'Opened by': 'Opened by',
+    // Add PatientCardID/Member ID for insurance card field dynamically
+    'PatientCardID_ins': 'Pri. Patient Insurance Card No',
+    'Member ID_ins': 'Pri. Patient Insurance Card No'
   };
 
   const INSTAHMS_MAP = {
@@ -192,55 +195,83 @@ async function combineReportings(fileBuffers) {
   const seenClaimIDs = new Set();
 
   for (let i = 0; i < fileBuffers.length; i++) {
+    const buf = fileBuffers[i];
     try {
-      const buf = fileBuffers[i];
       const wb = XLSX.read(buf, { type: 'array', cellDates: false, raw: false });
       const ws = wb.Sheets[wb.SheetNames[0]];
       const sheetData = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
 
-      // Find header row
       let headerRowIndex = -1;
       let headerRow = null;
       for (let r = 0; r < Math.min(5, sheetData.length); r++) {
         const row = sheetData[r].map(h => h.toString().trim());
-        if (row.includes('ClaimID') || row.includes('Pri. Claim No')) {
+        if (row.some(h => h.toLowerCase() === 'claimid' || h.toLowerCase() === 'pri. claim no')) {
           headerRowIndex = r;
           headerRow = row;
           break;
         }
       }
-      if (headerRowIndex === -1) throw new Error(`Header row not found in file #${i + 1}`);
+
+      if (headerRowIndex === -1) throw new Error(`Cannot find header row in reporting file #${i + 1}`);
+
       const isClinicPro = headerRow.some(h => Object.keys(CLINICPRO_MAP).includes(h));
+      const isInstaHMS = headerRow.some(h => Object.keys(INSTAHMS_MAP).includes(h));
       const headerMap = isClinicPro ? CLINICPRO_MAP : INSTAHMS_MAP;
+
       const targetToSource = {};
       for (const [src, tgt] of Object.entries(headerMap)) {
-        if (headerRow.includes(src)) targetToSource[tgt] = src;
+        if (headerRow.includes(src)) {
+          targetToSource[tgt] = src;
+        }
       }
-      
+
       for (let r = headerRowIndex + 1; r < sheetData.length; r++) {
         const row = sheetData[r];
         if (!row || row.length === 0) continue;
+
         const sourceRow = {};
-        headerRow.forEach((h, idx) => sourceRow[h] = row[idx] ?? '');
-        let claimID = '';
-        if (targetToSource['Pri. Claim No']) claimID = (sourceRow[targetToSource['Pri. Claim No']] || '').toString().trim();
+        headerRow.forEach((h, idx) => {
+          sourceRow[h] = row[idx] ?? '';
+        });
+
+        const claimSrc = targetToSource['Pri. Claim No'];
+        const claimID = sourceRow[claimSrc]?.toString().trim() || '';
         if (!claimID || seenClaimIDs.has(claimID)) continue;
         seenClaimIDs.add(claimID);
+
         const targetRow = [];
+
         for (const tgt of TARGET_HEADERS) {
-          if (tgt === 'Patient Code' && isClinicPro) {
-            const val = (sourceRow['PatientCardID'] || sourceRow['Member ID'] || '').toString().trim();
-            targetRow.push(val);
-            continue;
+          let val = '';
+
+          if (tgt === 'Pri. Patient Insurance Card No') {
+            if (isClinicPro) {
+              val = (sourceRow['PatientCardID'] || sourceRow['Member ID'] || '').toString().trim();
+            } else {
+              const srcHdr = targetToSource[tgt];
+              val = srcHdr ? (sourceRow[srcHdr] || '').toString().trim() : '';
+            }
           }
-          const srcHdr = targetToSource[tgt];
-          let val = srcHdr ? (sourceRow[srcHdr] || '').toString().trim() : '';
-          if (tgt === 'Encounter Date') {
-            const parsedDate = DateHandler.parse(val);
-            val = parsedDate ? DateHandler.format(parsedDate) : val;
+
+          else if (tgt === 'Patient Code' && isClinicPro) {
+            val = (sourceRow['PatientCardID'] || sourceRow['Member ID'] || '').toString().trim();
           }
+
+          else if (tgt === 'Encounter Date') {
+            const srcHdr = targetToSource[tgt];
+            const rawDate = srcHdr ? (sourceRow[srcHdr] || '').toString().trim() : '';
+            const parsed = DateHandler.parse(rawDate);
+            val = parsed ? DateHandler.format(parsed) : rawDate;
+          }
+
+          else {
+            const srcHdr = targetToSource[tgt];
+            val = srcHdr ? (sourceRow[srcHdr] || '').toString().trim() : '';
+          }
+
           targetRow.push(val);
         }
+
         combinedRows.push(targetRow);
       }
 
@@ -250,9 +281,11 @@ async function combineReportings(fileBuffers) {
       throw new Error(`Failed to read reporting file #${i + 1}: ${err.message}`);
     }
   }
+
   const ws = XLSX.utils.aoa_to_sheet(combinedRows);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Combined Reporting');
+
   self.postMessage({ type: 'progress', progress: 100 });
   return wb;
 }
