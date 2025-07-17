@@ -155,7 +155,7 @@ async function combineReportings(fileBuffers) {
     'Pri. Plan Type',
     'Facility ID',
     'Patient Code',
-    'Clinician Name',    // Make sure this is here
+    'Clinician Name',
     'Opened by'
   ];
 
@@ -168,7 +168,7 @@ async function combineReportings(fileBuffers) {
     'Member ID': 'Pri. Patient Insurance Card No',
     'Clinic': 'Department',
     'Visit Id': 'Visit Id',
-    'Clinician Name': 'Clinician Name',            // Included mapping
+    'Clinician Name': 'Clinician Name',
     'Opened by/Registration Staff name': 'Opened by',
     'Opened by': 'Opened by'
   };
@@ -183,7 +183,7 @@ async function combineReportings(fileBuffers) {
     'Pri. Plan Type': 'Pri. Plan Type',
     'Facility ID': 'Facility ID',
     'Patient Code': 'Patient Code',
-    'Clinician Name': 'Clinician Name',            // Included mapping
+    'Clinician Name': 'Clinician Name',
     'Opened by': 'Opened by'
   };
 
@@ -199,7 +199,7 @@ async function combineReportings(fileBuffers) {
       const ws = wb.Sheets[wb.SheetNames[0]];
       const sheetData = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
 
-      // Detect header row (top 5 rows)
+      // Find header row
       let headerRowIndex = -1;
       let headerRow = null;
       for (let r = 0; r < Math.min(5, sheetData.length); r++) {
@@ -223,15 +223,19 @@ async function combineReportings(fileBuffers) {
         if (headerRow.includes(src)) targetToSource[tgt] = src;
       }
 
-      // Determine Facility ID for this file (based on Visit Id if available)
-      let facilityIdForFile = '';
-      if (headerRow.includes('Visit Id')) {
-        for (let r = headerRowIndex + 1; r < sheetData.length; r++) {
-          const visitIdCell = sheetData[r][headerRow.indexOf('Visit Id')] || '';
-          if (visitIdCell) {
-            const match = visitIdCell.toString().match(/MF\d+/i);
-            if (match) {
-              facilityIdForFile = match[0].toUpperCase();
+      // *** Determine Facility ID for ClinicPro by scanning Visit Id prefix ***
+      let facilityID = '';
+      if (isClinicPro) {
+        // Find Visit Id header name if present
+        const visitIdHeader = headerRow.find(h => h.toLowerCase() === 'visit id');
+        if (visitIdHeader) {
+          // Find first non-empty Visit Id to extract prefix
+          for (let r = headerRowIndex + 1; r < sheetData.length; r++) {
+            const row = sheetData[r];
+            const visitIdCell = row[headerRow.indexOf(visitIdHeader)]?.toString().trim() || '';
+            if (visitIdCell) {
+              // Assuming prefix is first 6 characters (like MF5357)
+              facilityID = visitIdCell.substring(0, 6);
               break;
             }
           }
@@ -247,47 +251,47 @@ async function combineReportings(fileBuffers) {
           sourceRow[h] = row[idx] ?? '';
         });
 
-        // Get claim ID and ignore blanks
         let claimID = '';
         if (targetToSource['Pri. Claim No']) {
-          claimID = sourceRow[targetToSource['Pri. Claim No']]?.toString().trim() || '';
+          claimID = sourceRow[targetToSource['Pri. Claim No']].toString().trim();
         }
-        if (!claimID) continue;   // skip rows with blank claim ID
+        if (!claimID) continue; // skip blank claim IDs
         if (seenClaimIDs.has(claimID)) continue;
         seenClaimIDs.add(claimID);
 
         const targetRow = [];
-        for (const tgtHeader of TARGET_HEADERS) {
-          if (tgtHeader === 'Facility ID') {
-            targetRow.push(facilityIdForFile);
-            continue;
-          }
 
+        for (const tgtHeader of TARGET_HEADERS) {
           if (tgtHeader === 'Pri. Patient Insurance Card No') {
-            // ClinicPro uses Member ID or PatientCardID for this field
+            // ClinicPro: may come from PatientCardID or Member ID
             if (isClinicPro) {
-              let val = sourceRow['Member ID']?.toString().trim() || sourceRow['PatientCardID']?.toString().trim() || '';
+              let val = '';
+              if ('PatientCardID' in sourceRow) val = sourceRow['PatientCardID'].toString().trim();
+              if (!val && 'Member ID' in sourceRow) val = sourceRow['Member ID'].toString().trim();
               targetRow.push(val);
               continue;
             }
             const srcHdr = targetToSource[tgtHeader];
-            targetRow.push(srcHdr ? (sourceRow[srcHdr]?.toString().trim() || '') : '');
+            targetRow.push(srcHdr ? sourceRow[srcHdr].toString().trim() : '');
             continue;
           }
-
-          if (tgtHeader === 'Patient Code') {
+          if (tgtHeader === 'Facility ID') {
             if (isClinicPro) {
-              targetRow.push(sourceRow['FileNo']?.toString().trim() || '');
+              targetRow.push(facilityID);
               continue;
             }
             const srcHdr = targetToSource[tgtHeader];
-            targetRow.push(srcHdr ? (sourceRow[srcHdr]?.toString().trim() || '') : '');
+            targetRow.push(srcHdr ? sourceRow[srcHdr].toString().trim() : '');
+            continue;
+          }
+          if (tgtHeader === 'Visit Id' || tgtHeader === 'Clinician Name' || tgtHeader === 'Opened by' || tgtHeader === 'Patient Code') {
+            const srcHdr = targetToSource[tgtHeader];
+            targetRow.push(srcHdr ? sourceRow[srcHdr].toString().trim() : '');
             continue;
           }
 
-          // All other columns direct mapping
           const srcHdr = targetToSource[tgtHeader];
-          targetRow.push(srcHdr ? (sourceRow[srcHdr]?.toString().trim() || '') : '');
+          targetRow.push(srcHdr ? sourceRow[srcHdr].toString().trim() : '');
         }
 
         combinedRows.push(targetRow);
@@ -297,33 +301,6 @@ async function combineReportings(fileBuffers) {
 
     } catch (err) {
       throw new Error(`Failed to read reporting file #${i + 1}: ${err.message}`);
-    }
-  }
-
-  // Convert Excel serial dates to formatted strings for Encounter Date
-  // Find Encounter Date column index
-  const encounterDateIdx = TARGET_HEADERS.indexOf('Encounter Date');
-  for (let i = 1; i < combinedRows.length; i++) {
-    const val = combinedRows[i][encounterDateIdx];
-    if (typeof val === 'number') {
-      // Convert Excel serial date to JS date
-      const jsDate = XLSX.SSF.parse_date_code(val);
-      if (jsDate) {
-        const dateObj = new Date(jsDate.y, jsDate.m - 1, jsDate.d);
-        combinedRows[i][encounterDateIdx] = 
-          `${String(dateObj.getDate()).padStart(2,'0')}/${String(dateObj.getMonth()+1).padStart(2,'0')}/${dateObj.getFullYear()}`;
-      }
-    } else if (typeof val === 'string' && val.match(/^\d+(\.\d+)?$/)) {
-      // Also convert string numbers like '45836.5375'
-      const numVal = parseFloat(val);
-      if (!isNaN(numVal)) {
-        const jsDate = XLSX.SSF.parse_date_code(numVal);
-        if (jsDate) {
-          const dateObj = new Date(jsDate.y, jsDate.m - 1, jsDate.d);
-          combinedRows[i][encounterDateIdx] = 
-            `${String(dateObj.getDate()).padStart(2,'0')}/${String(dateObj.getMonth()+1).padStart(2,'0')}/${dateObj.getFullYear()}`;
-        }
-      }
     }
   }
 
