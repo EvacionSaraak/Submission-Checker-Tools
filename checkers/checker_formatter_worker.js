@@ -78,7 +78,7 @@ async function combineReportings(fileEntries) {
   const TARGET_HEADERS = [
     'Pri. Claim No', 'Clinician License', 'Encounter Date', 'Pri. Patient Insurance Card No',
     'Department', 'Visit Id', 'Pri. Plan Type', 'Facility ID',
-    'Patient Code', 'Clinician Name', 'Opened by'
+    'Patient Code', 'Clinician Name', 'Opened by', 'Source File'
   ];
 
   const CLINICPRO_V1_MAP = {
@@ -130,18 +130,12 @@ async function combineReportings(fileEntries) {
     const wb = XLSX.read(buffer, { type: 'array' });
     const ws = wb.Sheets[wb.SheetNames[0]];
     const sheetData = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
-
     if (sheetData.length < 2) continue;
 
-    // Detect header row index
-    // Detect header row index for all known formats
     let headerRowIndex = -1;
     for (let r = 0; r < sheetData.length; r++) {
       const row = sheetData[r].map(h => h.toString().trim());
-      if (
-        (row.includes('Pri. Claim No') && row.includes('Encounter Date')) || // InstaHMS
-        (row.includes('ClaimID') && row.includes('ClaimDate')) // ClinicPro V1 & V2
-      ) {
+      if ((row.includes('Pri. Claim No') && row.includes('Encounter Date')) || (row.includes('ClaimID') && row.includes('ClaimDate'))) {
         headerRowIndex = r;
         break;
       }
@@ -152,48 +146,32 @@ async function combineReportings(fileEntries) {
     }
 
     const headerRow = sheetData[headerRowIndex].map(h => h.toString().trim());
-
-    // Determine which mapping to use by checking unique headers
     let headerMap = null;
 
-    if (headerRow.includes('ClaimID') && headerRow.includes('ClaimDate')) {
-      if (headerRow.includes('InvoiceNo')) {
-        headerMap = CLINICPRO_V2_MAP;
-      } else {
-        headerMap = CLINICPRO_V1_MAP;
-      }
-    } else if (headerRow.includes('Pri. Claim No') && headerRow.includes('Encounter Date')) {
-      headerMap = INSTAHMS_MAP;
-    } else {
+    headerMap = (headerRow.includes('ClaimID') && headerRow.includes('ClaimDate'))
+      ? (headerRow.includes('InvoiceNo') ? CLINICPRO_V2_MAP : CLINICPRO_V1_MAP)
+      : (headerRow.includes('Pri. Claim No') && headerRow.includes('Encounter Date') ? INSTAHMS_MAP : null);
+
+    if (!headerMap) {
       self.postMessage({ type: 'log', message: `File ${name} skipped: unrecognized header format.` });
       continue;
     }
 
-    // Build targetToSource mapping
     const targetToSource = {};
-    for (const [src, tgt] of Object.entries(headerMap)) {
-      if (headerRow.includes(src)) targetToSource[tgt] = src;
-    }
+    for (const [src, tgt] of Object.entries(headerMap)) if (headerRow.includes(src)) targetToSource[tgt] = src;
 
-    // Determine Facility ID
     let facilityID = '';
     for (let r = headerRowIndex + 1; r < Math.min(sheetData.length, headerRowIndex + 20); r++) {
       const row = sheetData[r];
       if (!row) continue;
-      let visitVal = '';
-      if (headerMap === CLINICPRO_V1_MAP) {
-        const visitIdx = headerRow.indexOf('Visit Id');
-        visitVal = visitIdx >= 0 ? (row[visitIdx] || '').toString() : '';
-      } else if (headerMap === CLINICPRO_V2_MAP) {
-        const invoiceIdx = headerRow.indexOf('InvoiceNo');
-        visitVal = invoiceIdx >= 0 ? (row[invoiceIdx] || '').toString() : '';
-      } else if (headerMap === INSTAHMS_MAP) {
-        const facilityIdx = headerRow.indexOf('Facility ID');
-        if (facilityIdx >= 0) {
-          facilityID = (row[facilityIdx] || '').toString();
-          break;
-        }
-      }
+      let visitVal = headerMap === CLINICPRO_V1_MAP
+        ? (headerRow.indexOf('Visit Id') >= 0 ? (row[headerRow.indexOf('Visit Id')] || '').toString() : '')
+        : headerMap === CLINICPRO_V2_MAP
+          ? (headerRow.indexOf('InvoiceNo') >= 0 ? (row[headerRow.indexOf('InvoiceNo')] || '').toString() : '')
+          : (headerRow.indexOf('Facility ID') >= 0 ? (row[headerRow.indexOf('Facility ID')] || '').toString() : '');
+
+      if (headerMap === INSTAHMS_MAP && facilityID) break;
+
       const match = visitVal.match(/(MF\d{4,})/i);
       if (match) {
         facilityID = match[1];
@@ -201,18 +179,14 @@ async function combineReportings(fileEntries) {
       }
     }
 
-    // Per-file seenClaimIDs to deduplicate within the file only
     const seenClaimIDs = new Set();
 
-    // Process rows
     for (let r = headerRowIndex + 1; r < sheetData.length; r++) {
       const row = sheetData[r];
       if (!row || row.length === 0) continue;
 
       const sourceRow = {};
-      headerRow.forEach((h, idx) => {
-        sourceRow[h] = row[idx] ?? '';
-      });
+      headerRow.forEach((h, idx) => sourceRow[h] = row[idx] ?? '');
 
       const claimIDKey = targetToSource['Pri. Claim No'];
       const claimID = claimIDKey ? sourceRow[claimIDKey]?.toString().trim() : '';
@@ -221,34 +195,12 @@ async function combineReportings(fileEntries) {
 
       const targetRow = TARGET_HEADERS.map(tgt => {
         if (tgt === 'Facility ID') return sourceRow['Facility ID'] || facilityID;
-        if (tgt === 'Pri. Patient Insurance Card No') {
-          return (
-            sourceRow['PatientCardID']?.toString().trim() ||
-            sourceRow['Member ID']?.toString().trim() ||
-            (targetToSource[tgt] ? sourceRow[targetToSource[tgt]]?.toString().trim() : '')
-          );
-        }
-        if (tgt === 'Patient Code') {
-          return (
-            sourceRow['FileNo']?.toString().trim() ||
-            (targetToSource[tgt] ? sourceRow[targetToSource[tgt]]?.toString().trim() : '')
-          );
-        }
-        if (tgt === 'Clinician License') {
-          return sourceRow['Clinician License']?.toString().trim() || '';
-        }
-        if (tgt === 'Clinician Name') {
-          if (headerMap === CLINICPRO_V2_MAP) {
-            return sourceRow['OrderDoctor']?.toString().trim() || sourceRow['Clinician Name']?.toString().trim() || '';
-          }
-          return sourceRow['Clinician Name']?.toString().trim() || '';
-        }
-        if (tgt === 'Opened by') {
-          if (headerMap === CLINICPRO_V2_MAP) {
-            return sourceRow['Updated By']?.toString().trim() || '';
-          }
-          return sourceRow['Opened by']?.toString().trim() || sourceRow['Opened by/Registration Staff name']?.toString().trim() || '';
-        }
+        if (tgt === 'Pri. Patient Insurance Card No') return sourceRow['PatientCardID']?.toString().trim() || sourceRow['Member ID']?.toString().trim() || (targetToSource[tgt] ? sourceRow[targetToSource[tgt]]?.toString().trim() : '');
+        if (tgt === 'Patient Code') return sourceRow['FileNo']?.toString().trim() || (targetToSource[tgt] ? sourceRow[targetToSource[tgt]]?.toString().trim() : '');
+        if (tgt === 'Clinician License') return sourceRow['Clinician License']?.toString().trim() || '';
+        if (tgt === 'Clinician Name') return headerMap === CLINICPRO_V2_MAP ? (sourceRow['OrderDoctor']?.toString().trim() || sourceRow['Clinician Name']?.toString().trim() || '') : (sourceRow['Clinician Name']?.toString().trim() || '');
+        if (tgt === 'Opened by') return headerMap === CLINICPRO_V2_MAP ? (sourceRow['Updated By']?.toString().trim() || '') : (sourceRow['Opened by']?.toString().trim() || sourceRow['Opened by/Registration Staff name']?.toString().trim() || '');
+        if (tgt === 'Source File') return name;
         const srcKey = targetToSource[tgt];
         return srcKey ? (sourceRow[srcKey]?.toString().trim() || '') : '';
       });
