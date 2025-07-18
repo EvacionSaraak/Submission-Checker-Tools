@@ -116,17 +116,27 @@ async function combineReportings(fileEntries) {
   for (let i = 0; i < fileEntries.length; i++) {
     const { name, buffer } = fileEntries[i];
     const isCSV = name.toLowerCase().endsWith('.csv');
-    const isClinicPro = !isCSV;
-    const headerMap = isClinicPro ? CLINICPRO_MAP : INSTAHMS_MAP;
 
-    log(`Reading reporting file: ${name} (${isClinicPro ? 'ClinicPro' : 'InstaHMS'})`);
+    log(`Reading reporting file: ${name}`);
 
-    const wb = XLSX.read(buffer, { type: 'array' });
+    let wb;
+    try {
+      if (isCSV) {
+        const csvText = new TextDecoder().decode(buffer);
+        wb = XLSX.read(csvText, { type: 'string' });
+      } else {
+        wb = XLSX.read(buffer, { type: 'array' });
+      }
+    } catch (err) {
+      log(`Failed to read workbook from file: ${name}`, 'ERROR');
+      continue;
+    }
+
     const ws = wb.Sheets[wb.SheetNames[0]];
     const sheetData = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
 
     const headerRowIndex = sheetData.findIndex(row =>
-      row.includes('Pri. Claim No') && row.includes('Encounter Date')
+      row.includes('Pri. Claim No') || row.includes('ClaimID')
     );
     if (headerRowIndex === -1) {
       log(`Header row not found in file: ${name}`, 'WARN');
@@ -134,6 +144,11 @@ async function combineReportings(fileEntries) {
     }
 
     const headerRow = sheetData[headerRowIndex].map(h => h.toString().trim());
+
+    // Detect if it's ClinicPro or InstaHMS based on headers
+    const isClinicPro = headerRow.includes('ClaimID') || headerRow.includes('Insurance Company');
+    const headerMap = isClinicPro ? CLINICPRO_MAP : INSTAHMS_MAP;
+
     const targetToSource = {};
     for (const [src, tgt] of Object.entries(headerMap)) {
       if (headerRow.includes(src)) targetToSource[tgt] = src;
@@ -153,7 +168,6 @@ async function combineReportings(fileEntries) {
     }
 
     let validRows = 0;
-
     for (let r = headerRowIndex + 1; r < sheetData.length; r++) {
       const row = sheetData[r];
       if (!row || row.length === 0) continue;
@@ -199,8 +213,8 @@ async function combineReportings(fileEntries) {
 
   log(`Total reporting claims combined: ${combinedRows.length - 1}`);
   const ws = XLSX.utils.aoa_to_sheet(combinedRows);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Combined Reporting');
+  const wbOut = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wbOut, ws, 'Combined Reporting');
   self.postMessage({ type: 'progress', progress: 100 });
-  return wb;
+  return wbOut;
 }
