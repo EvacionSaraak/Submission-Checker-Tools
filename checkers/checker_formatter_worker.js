@@ -81,12 +81,25 @@ async function combineReportings(fileEntries) {
     'Patient Code', 'Clinician Name', 'Opened by'
   ];
 
-  const CLINICPRO_MAP = {
+  const CLINICPRO_V1_MAP = {
     'ClaimID': 'Pri. Claim No',
     'Clinician License': 'Clinician License',
     'ClaimDate': 'Encounter Date',
     'Insurance Company': 'Pri. Plan Type',
     'PatientCardID': 'Pri. Patient Insurance Card No',
+    'Clinic': 'Department',
+    'Visit Id': 'Visit Id',
+    'Clinician Name': 'Clinician Name',
+    'Opened by/Registration Staff name': 'Opened by',
+    'Opened by': 'Opened by',
+    'FileNo': 'Patient Code'
+  };
+
+  const CLINICPRO_V2_MAP = {
+    'ClaimID': 'Pri. Claim No',
+    'Clinician License': 'Clinician License',
+    'ClaimDate': 'Encounter Date',
+    'Insurance Company': 'Pri. Plan Type',
     'Member ID': 'Pri. Patient Insurance Card No',
     'Clinic': 'Department',
     'Visit Id': 'Visit Id',
@@ -111,63 +124,73 @@ async function combineReportings(fileEntries) {
   };
 
   const combinedRows = [TARGET_HEADERS];
-  const seenClaimIDs = new Set();
 
   for (let i = 0; i < fileEntries.length; i++) {
     const { name, buffer } = fileEntries[i];
-    const isCSV = name.toLowerCase().endsWith('.csv');
-
-    log(`Reading reporting file: ${name}`);
-
-    let wb;
-    try {
-      if (isCSV) {
-        const csvText = new TextDecoder().decode(buffer);
-        wb = XLSX.read(csvText, { type: 'string' });
-      } else {
-        wb = XLSX.read(buffer, { type: 'array' });
-      }
-    } catch (err) {
-      log(`Failed to read workbook from file: ${name}`, 'ERROR');
-      continue;
-    }
-
+    const wb = XLSX.read(buffer, { type: 'array' });
     const ws = wb.Sheets[wb.SheetNames[0]];
     const sheetData = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
 
-    const headerRowIndex = sheetData.findIndex(row =>
-      row.includes('Pri. Claim No') || row.includes('ClaimID')
-    );
-    if (headerRowIndex === -1) {
-      log(`Header row not found in file: ${name}`, 'WARN');
-      continue;
-    }
+    if (sheetData.length < 2) continue;
+
+    // Detect header row index
+    let headerRowIndex = sheetData.findIndex(row => row.includes('Pri. Claim No') && row.includes('Encounter Date'));
+    if (headerRowIndex === -1) continue;
 
     const headerRow = sheetData[headerRowIndex].map(h => h.toString().trim());
 
-    // Detect if it's ClinicPro or InstaHMS based on headers
-    const isClinicPro = headerRow.includes('ClaimID') || headerRow.includes('Insurance Company');
-    const headerMap = isClinicPro ? CLINICPRO_MAP : INSTAHMS_MAP;
+    // Determine which mapping to use by checking unique headers
+    let headerMap = null;
 
+    if (headerRow.includes('ClaimID') && headerRow.includes('ClaimDate')) {
+      if (headerRow.includes('InvoiceNo')) {
+        headerMap = CLINICPRO_V2_MAP;
+      } else {
+        headerMap = CLINICPRO_V1_MAP;
+      }
+    } else if (headerRow.includes('Pri. Claim No') && headerRow.includes('Encounter Date')) {
+      headerMap = INSTAHMS_MAP;
+    } else {
+      self.postMessage({ type: 'log', message: `File ${name} skipped: unrecognized header format.` });
+      continue;
+    }
+
+    // Build targetToSource mapping
     const targetToSource = {};
     for (const [src, tgt] of Object.entries(headerMap)) {
       if (headerRow.includes(src)) targetToSource[tgt] = src;
     }
 
+    // Determine Facility ID
     let facilityID = '';
     for (let r = headerRowIndex + 1; r < Math.min(sheetData.length, headerRowIndex + 20); r++) {
       const row = sheetData[r];
-      const visitIdx = headerRow.indexOf('Visit Id');
-      const visitVal = row?.[visitIdx]?.toString() || '';
+      if (!row) continue;
+      let visitVal = '';
+      if (headerMap === CLINICPRO_V1_MAP) {
+        const visitIdx = headerRow.indexOf('Visit Id');
+        visitVal = visitIdx >= 0 ? (row[visitIdx] || '').toString() : '';
+      } else if (headerMap === CLINICPRO_V2_MAP) {
+        const invoiceIdx = headerRow.indexOf('InvoiceNo');
+        visitVal = invoiceIdx >= 0 ? (row[invoiceIdx] || '').toString() : '';
+      } else if (headerMap === INSTAHMS_MAP) {
+        const facilityIdx = headerRow.indexOf('Facility ID');
+        if (facilityIdx >= 0) {
+          facilityID = (row[facilityIdx] || '').toString();
+          break;
+        }
+      }
       const match = visitVal.match(/(MF\d{4,})/i);
       if (match) {
         facilityID = match[1];
-        log(`Facility ID detected: ${facilityID}`);
         break;
       }
     }
 
-    let validRows = 0;
+    // Per-file seenClaimIDs to deduplicate within the file only
+    const seenClaimIDs = new Set();
+
+    // Process rows
     for (let r = headerRowIndex + 1; r < sheetData.length; r++) {
       const row = sheetData[r];
       if (!row || row.length === 0) continue;
@@ -183,9 +206,7 @@ async function combineReportings(fileEntries) {
       seenClaimIDs.add(claimID);
 
       const targetRow = TARGET_HEADERS.map(tgt => {
-        if (tgt === 'Facility ID') {
-          return sourceRow['Facility ID'] || facilityID;
-        }
+        if (tgt === 'Facility ID') return sourceRow['Facility ID'] || facilityID;
         if (tgt === 'Pri. Patient Insurance Card No') {
           return (
             sourceRow['PatientCardID']?.toString().trim() ||
@@ -199,22 +220,34 @@ async function combineReportings(fileEntries) {
             (targetToSource[tgt] ? sourceRow[targetToSource[tgt]]?.toString().trim() : '')
           );
         }
+        if (tgt === 'Clinician License') {
+          return sourceRow['Clinician License']?.toString().trim() || '';
+        }
+        if (tgt === 'Clinician Name') {
+          if (headerMap === CLINICPRO_V2_MAP) {
+            return sourceRow['OrderDoctor']?.toString().trim() || sourceRow['Clinician Name']?.toString().trim() || '';
+          }
+          return sourceRow['Clinician Name']?.toString().trim() || '';
+        }
+        if (tgt === 'Opened by') {
+          if (headerMap === CLINICPRO_V2_MAP) {
+            return sourceRow['Updated By']?.toString().trim() || '';
+          }
+          return sourceRow['Opened by']?.toString().trim() || sourceRow['Opened by/Registration Staff name']?.toString().trim() || '';
+        }
         const srcKey = targetToSource[tgt];
         return srcKey ? (sourceRow[srcKey]?.toString().trim() || '') : '';
       });
 
       combinedRows.push(targetRow);
-      validRows++;
     }
 
-    log(`Rows added from file: ${name}: ${validRows}`);
     self.postMessage({ type: 'progress', progress: 50 + Math.floor(((i + 1) / fileEntries.length) * 50) });
   }
 
-  log(`Total reporting claims combined: ${combinedRows.length - 1}`);
   const ws = XLSX.utils.aoa_to_sheet(combinedRows);
-  const wbOut = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wbOut, ws, 'Combined Reporting');
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Combined Reporting');
   self.postMessage({ type: 'progress', progress: 100 });
-  return wbOut;
+  return wb;
 }
