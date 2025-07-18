@@ -134,8 +134,22 @@ async function combineReportings(fileEntries) {
     if (sheetData.length < 2) continue;
 
     // Detect header row index
-    let headerRowIndex = sheetData.findIndex(row => row.includes('Pri. Claim No') && row.includes('Encounter Date'));
-    if (headerRowIndex === -1) continue;
+    // Detect header row index for all known formats
+    let headerRowIndex = -1;
+    for (let r = 0; r < sheetData.length; r++) {
+      const row = sheetData[r].map(h => h.toString().trim());
+      if (
+        (row.includes('Pri. Claim No') && row.includes('Encounter Date')) || // InstaHMS
+        (row.includes('ClaimID') && row.includes('ClaimDate')) // ClinicPro V1 & V2
+      ) {
+        headerRowIndex = r;
+        break;
+      }
+    }
+    if (headerRowIndex === -1) {
+      self.postMessage({ type: 'log', message: `File ${name} skipped: header row not found.` });
+      continue;
+    }
 
     const headerRow = sheetData[headerRowIndex].map(h => h.toString().trim());
 
