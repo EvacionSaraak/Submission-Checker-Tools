@@ -84,13 +84,34 @@ async function combineReportings(fileEntries, clinicianFile) {
     'Patient Code', 'Clinician Name', 'Opened by', 'Source File'
   ];
 
-  function normalizeKey(str) {
-    return str?.toString()
-      .trim()
-      .toUpperCase()
-      .replace(/\s+/g, ' ')  // Replace multiple spaces with single space
-      || '';
-  }
+  const facilityNameToID = {
+    "ivory medical center": "MF4456",
+    "korean cosmetics medical center": "MF5708",
+    "lauretta medical center": "MF4706",
+    "laurette medical center": "MF4184",
+    "majestic dental center": "MF1901",
+    "nazek medical center": "MF5009",
+    "nazek pharmacy": "PF4005",
+    "new look medical center (ad)": "MF4957",
+    "new look medical center (extra mall branch 1)": "MF5090",
+    "new look medical center (al khabisi branch 2)": "MF5020",
+    "new look medical center (al yahar  branch 3)": "MF5357",
+    "new look pharmacy": "PF3076",
+    "scandcare": "MF456",
+    "talat medical center": "MF494",
+    "true life pharmacy": "PF4000",
+    "true life primary care center": "MF7003",
+    "true life primary care center (al wagan branch 1)": "MF7231",
+    "wldy medical center": "MF5339",
+    "cosmo health medical center (sharjah)": "MOH 6771",
+    "cosmo health medical center (jumeirah)": "DHA-0046807",
+    "cosmo health medical center -ajman branch": "MOH 8237",
+    "cosmo health medical center -rak branch": "MOH 8243",
+    "cosmo health medical center  -marina branch": "DHA-9488623",
+    "cosmo health medical center- mirdif branch": "DHA-8726611",
+    "cosmo plus pharmacy": "DHA-0971583",
+    "american academy of cosmetic surgery hospital": "DHA-F-3613596"
+};
 
   function convertToExcelDateUniversal(value) {
     if (!value) return '';
@@ -133,8 +154,8 @@ async function combineReportings(fileEntries, clinicianFile) {
     const dataClinician = XLSX.utils.sheet_to_json(wsClinician, { defval: '', raw: false });
 
     dataClinician.forEach(row => {
-      const license = normalizeKey(row['Clinician License']);
-      const name = normalizeKey(row['Clinician Name']);
+      const license = row['Clinician License']?.toString().trim();
+      const name = row['Clinician Name']?.toString().trim();
       if (license) clinicianMapByLicense.set(license, row);
       if (name) clinicianMapByName.set(name, row);
     });
@@ -188,6 +209,11 @@ async function combineReportings(fileEntries, clinicianFile) {
 
   for (let i = 0; i < fileEntries.length; i++) {
     const { name, buffer } = fileEntries[i];
+
+    // Normalize filename to key for facility mapping
+    const fileKey = name.toLowerCase().replace('.xls', '').trim();
+    const matchedFacilityID = facilityFileNameMap[fileKey] || '';
+
     const wb = XLSX.read(buffer, { type: 'array', cellDates: true });
     const ws = wb.Sheets[wb.SheetNames[0]];
     const sheetData = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false });
@@ -260,17 +286,14 @@ async function combineReportings(fileEntries, clinicianFile) {
         : sourceRow['Clinician Name']?.toString().trim() || '';
 
       if ((!clinLicense || !clinName) && clinicianFile) {
-        const normClinName = normalizeKey(clinName);
-        const normClinLicense = normalizeKey(clinLicense);
-
-        if (!clinLicense && normClinName && clinicianMapByName.has(normClinName))
-          clinLicense = clinicianMapByName.get(normClinName)['Clinician License'] || '';
-        if (!clinName && normClinLicense && clinicianMapByLicense.has(normClinLicense))
-          clinName = clinicianMapByLicense.get(normClinLicense)['Clinician Name'] || '';
+        if (!clinLicense && clinName && clinicianMapByName.has(clinName))
+          clinLicense = clinicianMapByName.get(clinName)['Clinician License'] || '';
+        if (!clinName && clinLicense && clinicianMapByLicense.has(clinLicense))
+          clinName = clinicianMapByLicense.get(clinLicense)['Clinician Name'] || '';
       }
 
       const targetRow = TARGET_HEADERS.map(tgt => {
-        if (tgt === 'Facility ID') return sourceRow['Facility ID'] || facilityID;
+        if (tgt === 'Facility ID') return sourceRow['Facility ID'] || facilityID || matchedFacilityID;
         if (tgt === 'Pri. Patient Insurance Card No') return sourceRow['PatientCardID'] || sourceRow['Member ID'] || sourceRow[targetToSource[tgt]] || '';
         if (tgt === 'Patient Code') return sourceRow['FileNo'] || sourceRow[targetToSource[tgt]] || '';
         if (tgt === 'Clinician License') return clinLicense;
@@ -280,7 +303,7 @@ async function combineReportings(fileEntries, clinicianFile) {
           : sourceRow['Opened by'] || sourceRow['Opened by/Registration Staff name'] || '';
         if (tgt === 'Encounter Date') return convertToExcelDateUniversal(sourceRow[targetToSource[tgt]]);
         if (tgt === 'Source File') return name;
-      
+
         const srcKey = targetToSource[tgt];
         return srcKey ? sourceRow[srcKey] || '' : '';
       });
