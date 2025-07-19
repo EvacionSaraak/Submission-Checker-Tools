@@ -85,7 +85,11 @@ async function combineReportings(fileEntries, clinicianFile) {
   ];
 
   function normalizeKey(str) {
-    return str?.toString().trim().toUpperCase() || '';
+    return str?.toString()
+      .trim()
+      .toUpperCase()
+      .replace(/\s+/g, ' ')  // Replace multiple spaces with single space
+      || '';
   }
 
   function convertToExcelDateUniversal(value) {
