@@ -84,7 +84,7 @@ async function combineReportings(fileEntries, clinicianFile) {
     'Patient Code', 'Clinician Name', 'Opened by', 'Source File'
   ];
 
-  const facilityNameToID = {
+  const facilityNameMap = {
     "Ivory": "MF4456",
     "Korean": "MF5708",
     "Lauretta": "MF4706",
