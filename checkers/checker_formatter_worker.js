@@ -87,33 +87,59 @@ async function combineReportings(fileEntries, clinicianFile) {
   // Helper: convert Excel serial date or DD-MM-YYYY string to ISO yyyy-mm-dd
   function convertEncounterDate(val) {
     if (val === null || val === undefined || val === '') return '';
-
+  
+    // If it's already a Date object
+    if (val instanceof Date) {
+      if (isNaN(val.getTime())) return '';
+      return val.toISOString().split('T')[0];
+    }
+  
+    // If it's a number, try to parse as Excel serial date
     if (typeof val === 'number') {
-      // Use XLSX.SSF.parse_date_code to get components
+      // Excel serial date must be in a reasonable range
+      // Excel date 1 is 1900-01-01 (serial 1), let's allow from 1 to ~60000 (year ~2073)
+      if (val < 1 || val > 60000) return '';
       const d = XLSX.SSF.parse_date_code(val);
       if (!d) return '';
       const pad = n => n.toString().padStart(2, '0');
       return `${d.y}-${pad(d.m)}-${pad(d.d)}`;
     }
-
+  
+    // If string, check common date formats
     if (typeof val === 'string') {
-      // Match DD-MM-YYYY format
+      // Trim first
+      val = val.trim();
+  
+      // Match DD-MM-YYYY
       const ddmmyyyy = /^(\d{1,2})-(\d{1,2})-(\d{4})$/;
-      const m = val.match(ddmmyyyy);
+      let m = val.match(ddmmyyyy);
       if (m) {
         const [_, dd, mm, yyyy] = m;
         return `${yyyy}-${mm.padStart(2,'0')}-${dd.padStart(2,'0')}`;
       }
+  
+      // Match YYYY-MM-DD (ISO)
+      const yyyymmdd = /^(\d{4})-(\d{1,2})-(\d{1,2})$/;
+      m = val.match(yyyymmdd);
+      if (m) {
+        const [_, yyyy, mm, dd] = m;
+        return `${yyyy}-${mm.padStart(2,'0')}-${dd.padStart(2,'0')}`;
+      }
+  
       // Try Date parse fallback
       const parsed = new Date(val);
-      if (!isNaN(parsed)) return parsed.toISOString().split('T')[0];
-      return val;
+      if (!isNaN(parsed.getTime())) return parsed.toISOString().split('T')[0];
+  
+      // If it looks like a number string, try converting to number and parse
+      if (!isNaN(Number(val))) {
+        return convertEncounterDate(Number(val));
+      }
+  
+      // Otherwise, return as-is or empty
+      return '';
     }
-
-    if (val instanceof Date) {
-      return val.toISOString().split('T')[0];
-    }
-
+  
+    // Unknown type
     return '';
   }
 
