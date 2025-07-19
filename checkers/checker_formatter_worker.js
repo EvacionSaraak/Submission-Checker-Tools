@@ -84,6 +84,39 @@ async function combineReportings(fileEntries, clinicianFile) {
     'Patient Code', 'Clinician Name', 'Opened by', 'Source File'
   ];
 
+  // Helper: convert Excel serial date or DD-MM-YYYY string to ISO yyyy-mm-dd
+  function convertEncounterDate(val) {
+    if (val === null || val === undefined || val === '') return '';
+
+    if (typeof val === 'number') {
+      // Use XLSX.SSF.parse_date_code to get components
+      const d = XLSX.SSF.parse_date_code(val);
+      if (!d) return '';
+      const pad = n => n.toString().padStart(2, '0');
+      return `${d.y}-${pad(d.m)}-${pad(d.d)}`;
+    }
+
+    if (typeof val === 'string') {
+      // Match DD-MM-YYYY format
+      const ddmmyyyy = /^(\d{1,2})-(\d{1,2})-(\d{4})$/;
+      const m = val.match(ddmmyyyy);
+      if (m) {
+        const [_, dd, mm, yyyy] = m;
+        return `${yyyy}-${mm.padStart(2,'0')}-${dd.padStart(2,'0')}`;
+      }
+      // Try Date parse fallback
+      const parsed = new Date(val);
+      if (!isNaN(parsed)) return parsed.toISOString().split('T')[0];
+      return val;
+    }
+
+    if (val instanceof Date) {
+      return val.toISOString().split('T')[0];
+    }
+
+    return '';
+  }
+
   const clinicianMapByLicense = new Map();
   const clinicianMapByName = new Map();
 
@@ -142,12 +175,6 @@ async function combineReportings(fileEntries, clinicianFile) {
     'Patient Code': 'Patient Code',
     'Clinician Name': 'Clinician Name',
     'Opened by': 'Opened by'
-  };
-
-  const excelDateToJSDate = (serial) => {
-    const utc_days = Math.floor(serial - 25569);
-    const utc_value = utc_days * 86400;
-    return new Date(utc_value * 1000).toISOString().split('T')[0];
   };
 
   const combinedRows = [TARGET_HEADERS];
@@ -243,9 +270,7 @@ async function combineReportings(fileEntries, clinicianFile) {
           : (sourceRow['Opened by'] || sourceRow['Opened by/Registration Staff name'] || '');
         if (tgt === 'Encounter Date') {
           const val = sourceRow[targetToSource[tgt]];
-          if (val instanceof Date) return val.toISOString().split('T')[0];
-          if (typeof val === 'number') return excelDateToJSDate(val);
-          return val;
+          return convertEncounterDate(val);
         }
         if (tgt === 'Source File') return name;
         const srcKey = targetToSource[tgt];
