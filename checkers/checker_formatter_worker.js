@@ -94,7 +94,7 @@ async function combineReportings(fileEntries, clinicianFile) {
     "Extramall": "MF5090",
     "Khabisi": "MF5020",
     "Al Yahar": "MF5357",
-    "Scandcare": "MF456",
+    "Ccandcare": "MF456", // Confirm spelling? 'Scandcare'?
     "Talat": "MF494",
     "True Life": "MF7003",
     "Al Wagan": "MF7231",
@@ -111,32 +111,32 @@ async function combineReportings(fileEntries, clinicianFile) {
 
   function convertToExcelDateUniversal(value) {
     if (!value) return '';
-  
+
     if (!isNaN(value) && typeof value !== 'object') {
       const num = Number(value);
       if (num > 20000 && num < 60000) return Math.floor(num);
     }
-  
+
     let date;
     if (Object.prototype.toString.call(value) === '[object Date]' && !isNaN(value)) date = value;
-  
+
     if (!date && typeof value === 'string') {
       const v = value.trim();
-  
+
       const dmy = v.match(/^(\d{2})-(\d{2})-(\d{4})$/);
       if (dmy) date = new Date(`${dmy[3]}-${dmy[2]}-${dmy[1]}`);
-  
+
       const ymd = !date && v.match(/^(\d{4})-(\d{2})-(\d{2})$/);
       if (ymd) date = new Date(v);
-  
+
       const mdy = !date && v.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
       if (mdy) date = new Date(`${mdy[3]}-${mdy[1]}-${mdy[2]}`);
-  
+
       if (!date && !isNaN(Date.parse(v))) date = new Date(v);
     }
-  
+
     if (!date || isNaN(date)) return '';
-  
+
     const base = new Date(Date.UTC(1899, 11, 30));
     return Math.floor((date - base) / (1000 * 60 * 60 * 24));
   }
@@ -206,7 +206,6 @@ async function combineReportings(fileEntries, clinicianFile) {
   for (let i = 0; i < fileEntries.length; i++) {
     const { name, buffer } = fileEntries[i];
 
-    // Use helper to map facility ID from filename
     const matchedFacilityID = getFacilityIDFromFileName(name);
 
     const wb = XLSX.read(buffer, { type: 'array', cellDates: true });
@@ -267,18 +266,24 @@ async function combineReportings(fileEntries, clinicianFile) {
       const row = sheetData[r];
       if (!row || row.length === 0) continue;
 
+      // Normalize keys to lowercase trimmed keys for consistent access
       const sourceRow = {};
-      headerRow.forEach((h, idx) => sourceRow[h] = row[idx] ?? '');
+      headerRow.forEach((h, idx) => {
+        sourceRow[h.toLowerCase().trim()] = row[idx] ?? '';
+      });
 
       const claimIDKey = targetToSource['Pri. Claim No'];
-      const claimID = claimIDKey ? sourceRow[claimIDKey]?.toString().trim() : '';
+      const claimID = claimIDKey ? sourceRow[claimIDKey.toLowerCase()]?.toString().trim() : '';
       if (!claimID || seenClaimIDs.has(claimID)) continue;
       seenClaimIDs.add(claimID);
 
-      let clinLicense = sourceRow['Clinician License']?.toString().trim() || '';
-      let clinName = headerMap === CLINICPRO_V2_MAP
-        ? sourceRow['OrderDoctor']?.toString().trim() || sourceRow['Clinician Name']?.toString().trim() || ''
-        : sourceRow['Clinician Name']?.toString().trim() || '';
+      let clinLicense = sourceRow['clinician license']?.toString().trim() || '';
+      let clinName = '';
+      if (headerMap === CLINICPRO_V2_MAP) {
+        clinName = sourceRow['orderdoctor']?.toString().trim() || sourceRow['clinician name']?.toString().trim() || '';
+      } else {
+        clinName = sourceRow['clinician name']?.toString().trim() || '';
+      }
 
       if ((!clinLicense || !clinName) && clinicianFile) {
         if (!clinLicense && clinName && clinicianMapByName.has(clinName))
@@ -289,23 +294,31 @@ async function combineReportings(fileEntries, clinicianFile) {
 
       const targetRow = TARGET_HEADERS.map(tgt => {
         if (tgt === 'Facility ID') {
-          const currentFacilityID = sourceRow['Facility ID']?.toString().trim();
+          const currentFacilityID = sourceRow['facility id']?.toString().trim();
           if (currentFacilityID) return currentFacilityID;
           if (matchedFacilityID) return matchedFacilityID;
           return facilityID || '';
         }
-        if (tgt === 'Pri. Patient Insurance Card No') return sourceRow['PatientCardID'] || sourceRow['Member ID'] || sourceRow[targetToSource[tgt]] || '';
-        if (tgt === 'Patient Code') return sourceRow['FileNo'] || sourceRow[targetToSource[tgt]] || '';
+        if (tgt === 'Pri. Patient Insurance Card No') {
+          return sourceRow['patientcardid'] || sourceRow['member id'] || sourceRow[targetToSource[tgt]?.toLowerCase()] || '';
+        }
+        if (tgt === 'Patient Code') {
+          return sourceRow['fileno'] || sourceRow[targetToSource[tgt]?.toLowerCase()] || '';
+        }
         if (tgt === 'Clinician License') return clinLicense;
         if (tgt === 'Clinician Name') return clinName;
-        if (tgt === 'Opened by') return headerMap === CLINICPRO_V2_MAP
-          ? sourceRow['Updated By'] || ''
-          : sourceRow['Opened by'] || sourceRow['Opened by/Registration Staff name'] || '';
-        if (tgt === 'Encounter Date') return convertToExcelDateUniversal(sourceRow[targetToSource[tgt]]);
+        if (tgt === 'Opened by') {
+          if (headerMap === CLINICPRO_V2_MAP) {
+            return sourceRow['updated by'] || '';
+          } else {
+            return sourceRow['opened by'] || sourceRow['opened by/registration staff name'] || '';
+          }
+        }
+        if (tgt === 'Encounter Date') return convertToExcelDateUniversal(sourceRow[targetToSource[tgt]?.toLowerCase()]);
         if (tgt === 'Source File') return name;
 
         const srcKey = targetToSource[tgt];
-        return srcKey ? sourceRow[srcKey] || '' : '';
+        return srcKey ? sourceRow[srcKey.toLowerCase()] || '' : '';
       });
       combinedRows.push(targetRow);
     }
