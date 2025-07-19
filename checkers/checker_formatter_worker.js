@@ -85,33 +85,21 @@ async function combineReportings(fileEntries, clinicianFile) {
   ];
 
   const facilityNameToID = {
-    "ivory medical center": "MF4456",
-    "korean cosmetics medical center": "MF5708",
-    "lauretta medical center": "MF4706",
-    "laurette medical center": "MF4184",
-    "majestic dental center": "MF1901",
-    "nazek medical center": "MF5009",
-    "nazek pharmacy": "PF4005",
-    "new look medical center (ad)": "MF4957",
-    "new look medical center (extra mall branch 1)": "MF5090",
-    "new look medical center (al khabisi branch 2)": "MF5020",
-    "new look medical center (al yahar  branch 3)": "MF5357",
-    "new look pharmacy": "PF3076",
-    "scandcare": "MF456",
-    "talat medical center": "MF494",
-    "true life pharmacy": "PF4000",
-    "true life primary care center": "MF7003",
-    "true life primary care center (al wagan branch 1)": "MF7231",
-    "wldy medical center": "MF5339",
-    "cosmo health medical center (sharjah)": "MOH 6771",
-    "cosmo health medical center (jumeirah)": "DHA-0046807",
-    "cosmo health medical center -ajman branch": "MOH 8237",
-    "cosmo health medical center -rak branch": "MOH 8243",
-    "cosmo health medical center  -marina branch": "DHA-9488623",
-    "cosmo health medical center- mirdif branch": "DHA-8726611",
-    "cosmo plus pharmacy": "DHA-0971583",
-    "american academy of cosmetic surgery hospital": "DHA-F-3613596"
-};
+    "Ivory": "MF4456",
+    "Korean": "MF5708",
+    "Lauretta": "MF4706",
+    "Laurette": "MF4184",
+    "Majestic": "MF1901",
+    "Nazek": "MF5009",
+    "Extramall": "MF5090",
+    "Khabisi": "MF5020",
+    "Al Yahar": "MF5357",
+    "Ccandcare": "MF456",
+    "Talat": "MF494",
+    "True Life": "MF7003",
+    "Al Wagan": "MF7231",
+    "WLDY": "MF5339"
+  };
 
   function convertToExcelDateUniversal(value) {
     if (!value) return '';
