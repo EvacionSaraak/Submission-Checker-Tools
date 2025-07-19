@@ -84,63 +84,99 @@ async function combineReportings(fileEntries, clinicianFile) {
     'Patient Code', 'Clinician Name', 'Opened by', 'Source File'
   ];
 
+  function normalizeKey(str) {
+    return str?.toString().trim().toUpperCase() || '';
+  }
+
   function convertToExcelDateUniversal(value) {
     if (!value) return '';
+  
     if (!isNaN(value) && typeof value !== 'object') {
       const num = Number(value);
       if (num > 20000 && num < 60000) return Math.floor(num);
     }
+  
     let date;
     if (Object.prototype.toString.call(value) === '[object Date]' && !isNaN(value)) date = value;
+  
     if (!date && typeof value === 'string') {
       const v = value.trim();
+  
       const dmy = v.match(/^(\d{2})-(\d{2})-(\d{4})$/);
       if (dmy) date = new Date(`${dmy[3]}-${dmy[2]}-${dmy[1]}`);
+  
       const ymd = !date && v.match(/^(\d{4})-(\d{2})-(\d{2})$/);
       if (ymd) date = new Date(v);
+  
       const mdy = !date && v.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
       if (mdy) date = new Date(`${mdy[3]}-${mdy[1]}-${mdy[2]}`);
+  
       if (!date && !isNaN(Date.parse(v))) date = new Date(v);
     }
+  
     if (!date || isNaN(date)) return '';
+  
     const base = new Date(Date.UTC(1899, 11, 30));
     return Math.floor((date - base) / (1000 * 60 * 60 * 24));
   }
 
-  const clinicianMapByLicense = new Map(), clinicianMapByName = new Map();
+  const clinicianMapByLicense = new Map();
+  const clinicianMapByName = new Map();
+
   if (clinicianFile) {
     const wbClinician = XLSX.read(clinicianFile.buffer, { type: 'array', cellDates: true });
     const wsClinician = wbClinician.Sheets[wbClinician.SheetNames[0]];
     const dataClinician = XLSX.utils.sheet_to_json(wsClinician, { defval: '', raw: false });
+
     dataClinician.forEach(row => {
-      const license = row['Clinician License']?.toString().trim();
-      const name = row['Clinician Name']?.toString().trim();
+      const license = normalizeKey(row['Clinician License']);
+      const name = normalizeKey(row['Clinician Name']);
       if (license) clinicianMapByLicense.set(license, row);
       if (name) clinicianMapByName.set(name, row);
     });
   }
 
   const CLINICPRO_V1_MAP = {
-    'ClaimID': 'Pri. Claim No', 'Clinician License': 'Clinician License', 'ClaimDate': 'Encounter Date',
-    'Insurance Company': 'Pri. Plan Type', 'PatientCardID': 'Pri. Patient Insurance Card No',
-    'Clinic': 'Department', 'Visit Id': 'Visit Id', 'Clinician Name': 'Clinician Name',
-    'Opened by/Registration Staff name': 'Opened by', 'Opened by': 'Opened by', 'FileNo': 'Patient Code'
+    'ClaimID': 'Pri. Claim No',
+    'Clinician License': 'Clinician License',
+    'ClaimDate': 'Encounter Date',
+    'Insurance Company': 'Pri. Plan Type',
+    'PatientCardID': 'Pri. Patient Insurance Card No',
+    'Clinic': 'Department',
+    'Visit Id': 'Visit Id',
+    'Clinician Name': 'Clinician Name',
+    'Opened by/Registration Staff name': 'Opened by',
+    'Opened by': 'Opened by',
+    'FileNo': 'Patient Code'
   };
 
   const CLINICPRO_V2_MAP = {
-    'ClaimID': 'Pri. Claim No', 'Clinician License': 'Clinician License', 'ClaimDate': 'Encounter Date',
-    'Insurance Company': 'Pri. Plan Type', 'Member ID': 'Pri. Patient Insurance Card No',
-    'Clinic': 'Department', 'Visit Id': 'Visit Id', 'Clinician Name': 'Clinician Name',
-    'OrderDoctor': 'Clinician Name', 'Updated By': 'Opened by',
-    'Opened by/Registration Staff name': 'Opened by', 'Opened by': 'Opened by',
+    'ClaimID': 'Pri. Claim No',
+    'Clinician License': 'Clinician License',
+    'ClaimDate': 'Encounter Date',
+    'Insurance Company': 'Pri. Plan Type',
+    'Member ID': 'Pri. Patient Insurance Card No',
+    'Clinic': 'Department',
+    'Visit Id': 'Visit Id',
+    'Clinician Name': 'Clinician Name',
+    'OrderDoctor': 'Clinician Name',
+    'Updated By': 'Opened by',
+    'Opened by/Registration Staff name': 'Opened by',
+    'Opened by': 'Opened by',
     'FileNo': 'Patient Code'
   };
 
   const INSTAHMS_MAP = {
-    'Pri. Claim No': 'Pri. Claim No', 'Clinician License': 'Clinician License',
-    'Encounter Date': 'Encounter Date', 'Pri. Patient Insurance Card No': 'Pri. Patient Insurance Card No',
-    'Department': 'Department', 'Visit Id': 'Visit Id', 'Pri. Plan Type': 'Pri. Plan Type',
-    'Facility ID': 'Facility ID', 'Patient Code': 'Patient Code', 'Clinician Name': 'Clinician Name',
+    'Pri. Claim No': 'Pri. Claim No',
+    'Clinician License': 'Clinician License',
+    'Encounter Date': 'Encounter Date',
+    'Pri. Patient Insurance Card No': 'Pri. Patient Insurance Card No',
+    'Department': 'Department',
+    'Visit Id': 'Visit Id',
+    'Pri. Plan Type': 'Pri. Plan Type',
+    'Facility ID': 'Facility ID',
+    'Patient Code': 'Patient Code',
+    'Clinician Name': 'Clinician Name',
     'Opened by': 'Opened by'
   };
 
@@ -168,6 +204,7 @@ async function combineReportings(fileEntries, clinicianFile) {
     }
 
     const headerRow = sheetData[headerRowIndex].map(h => h.toString().trim());
+
     let headerMap = null;
     headerMap = (headerRow.includes('ClaimID') && headerRow.includes('ClaimDate'))
       ? (headerRow.includes('InvoiceNo') ? CLINICPRO_V2_MAP : CLINICPRO_V1_MAP)
@@ -179,8 +216,9 @@ async function combineReportings(fileEntries, clinicianFile) {
     }
 
     const targetToSource = {};
-    for (const [src, tgt] of Object.entries(headerMap))
+    for (const [src, tgt] of Object.entries(headerMap)) {
       if (headerRow.includes(src)) targetToSource[tgt] = src;
+    }
 
     let facilityID = '';
     for (let r = headerRowIndex + 1; r < Math.min(sheetData.length, headerRowIndex + 20); r++) {
@@ -218,10 +256,13 @@ async function combineReportings(fileEntries, clinicianFile) {
         : sourceRow['Clinician Name']?.toString().trim() || '';
 
       if ((!clinLicense || !clinName) && clinicianFile) {
-        if (!clinLicense && clinName && clinicianMapByName.has(clinName))
-          clinLicense = clinicianMapByName.get(clinName)['Clinician License'] || '';
-        if (!clinName && clinLicense && clinicianMapByLicense.has(clinLicense))
-          clinName = clinicianMapByLicense.get(clinLicense)['Clinician Name'] || '';
+        const normClinName = normalizeKey(clinName);
+        const normClinLicense = normalizeKey(clinLicense);
+
+        if (!clinLicense && normClinName && clinicianMapByName.has(normClinName))
+          clinLicense = clinicianMapByName.get(normClinName)['Clinician License'] || '';
+        if (!clinName && normClinLicense && clinicianMapByLicense.has(normClinLicense))
+          clinName = clinicianMapByLicense.get(normClinLicense)['Clinician Name'] || '';
       }
 
       const targetRow = TARGET_HEADERS.map(tgt => {
@@ -235,10 +276,10 @@ async function combineReportings(fileEntries, clinicianFile) {
           : sourceRow['Opened by'] || sourceRow['Opened by/Registration Staff name'] || '';
         if (tgt === 'Encounter Date') return convertToExcelDateUniversal(sourceRow[targetToSource[tgt]]);
         if (tgt === 'Source File') return name;
+      
         const srcKey = targetToSource[tgt];
         return srcKey ? sourceRow[srcKey] || '' : '';
       });
-
       combinedRows.push(targetRow);
     }
 
