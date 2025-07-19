@@ -328,14 +328,7 @@ function validateReportClaims(reportData, eligMap) {
       const consultationStatus = eligibility['Consultation Status']?.trim()?.toLowerCase() || '';
       const dept = department;
 
-      const matchesCategory = (() => {
-        if (serviceCategory === 'Consultation' && consultationStatus === 'elective')
-          return !['dental', 'physiotherapy', 'dietician', 'occupational therapy', 'speech therapy'].some(term => dept.includes(term));
-        if (serviceCategory === 'Dental Services') return dept.includes('dental');
-        if (serviceCategory === 'Physiotherapy') return dept.includes('physio');
-        if (serviceCategory === 'Other OP Services') return !['dental'].some(term => dept.includes(term));
-        return true;
-      })();
+      const matchesCategory = isServiceCategoryAllowedForDepartment(serviceCategory, consultationStatus, department);
 
       if (!matchesCategory) remarks.push(`Invalid for category: ${serviceCategory}, department: ${row.department || row.clinic}`);
       else status = 'valid';
