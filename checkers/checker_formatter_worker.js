@@ -94,12 +94,20 @@ async function combineReportings(fileEntries, clinicianFile) {
     "Extramall": "MF5090",
     "Khabisi": "MF5020",
     "Al Yahar": "MF5357",
-    "Ccandcare": "MF456",
+    "Scandcare": "MF456",
     "Talat": "MF494",
     "True Life": "MF7003",
     "Al Wagan": "MF7231",
     "WLDY": "MF5339"
   };
+
+  function getFacilityIDFromFileName(filename) {
+    const lowerName = filename.toLowerCase();
+    for (const key of Object.keys(facilityNameMap)) {
+      if (lowerName.includes(key.toLowerCase())) return facilityNameMap[key];
+    }
+    return '';
+  }
 
   function convertToExcelDateUniversal(value) {
     if (!value) return '';
@@ -198,9 +206,8 @@ async function combineReportings(fileEntries, clinicianFile) {
   for (let i = 0; i < fileEntries.length; i++) {
     const { name, buffer } = fileEntries[i];
 
-    // Normalize filename to key for facility mapping
-    const fileKey = name.toLowerCase().replace('.xls', '').trim();
-    const matchedFacilityID = facilityFileNameMap[fileKey] || '';
+    // Use helper to map facility ID from filename
+    const matchedFacilityID = getFacilityIDFromFileName(name);
 
     const wb = XLSX.read(buffer, { type: 'array', cellDates: true });
     const ws = wb.Sheets[wb.SheetNames[0]];
@@ -281,7 +288,12 @@ async function combineReportings(fileEntries, clinicianFile) {
       }
 
       const targetRow = TARGET_HEADERS.map(tgt => {
-        if (tgt === 'Facility ID') return sourceRow['Facility ID'] || facilityID || matchedFacilityID;
+        if (tgt === 'Facility ID') {
+          const currentFacilityID = sourceRow['Facility ID']?.toString().trim();
+          if (currentFacilityID) return currentFacilityID;
+          if (matchedFacilityID) return matchedFacilityID;
+          return facilityID || '';
+        }
         if (tgt === 'Pri. Patient Insurance Card No') return sourceRow['PatientCardID'] || sourceRow['Member ID'] || sourceRow[targetToSource[tgt]] || '';
         if (tgt === 'Patient Code') return sourceRow['FileNo'] || sourceRow[targetToSource[tgt]] || '';
         if (tgt === 'Clinician License') return clinLicense;
