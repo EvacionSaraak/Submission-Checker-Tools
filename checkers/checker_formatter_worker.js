@@ -88,9 +88,9 @@ async function combineReportings(fileEntries, clinicianFile) {
   const clinicianMapByName = new Map();
 
   if (clinicianFile) {
-    const wbClinician = XLSX.read(clinicianFile.buffer, { type: 'array' });
+    const wbClinician = XLSX.read(clinicianFile.buffer, { type: 'array', cellDates: true });
     const wsClinician = wbClinician.Sheets[wbClinician.SheetNames[0]];
-    const dataClinician = XLSX.utils.sheet_to_json(wsClinician, { defval: '' });
+    const dataClinician = XLSX.utils.sheet_to_json(wsClinician, { defval: '', raw: false });
 
     dataClinician.forEach(row => {
       const license = row['Clinician License']?.toString().trim();
@@ -144,13 +144,19 @@ async function combineReportings(fileEntries, clinicianFile) {
     'Opened by': 'Opened by'
   };
 
+  const excelDateToJSDate = (serial) => {
+    const utc_days = Math.floor(serial - 25569);
+    const utc_value = utc_days * 86400;
+    return new Date(utc_value * 1000).toISOString().split('T')[0];
+  };
+
   const combinedRows = [TARGET_HEADERS];
 
   for (let i = 0; i < fileEntries.length; i++) {
     const { name, buffer } = fileEntries[i];
-    const wb = XLSX.read(buffer, { type: 'array' });
+    const wb = XLSX.read(buffer, { type: 'array', cellDates: true });
     const ws = wb.Sheets[wb.SheetNames[0]];
-    const sheetData = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+    const sheetData = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false });
     if (sheetData.length < 2) continue;
 
     let headerRowIndex = -1;
@@ -235,6 +241,12 @@ async function combineReportings(fileEntries, clinicianFile) {
         if (tgt === 'Opened by') return headerMap === CLINICPRO_V2_MAP
           ? (sourceRow['Updated By'] || '')
           : (sourceRow['Opened by'] || sourceRow['Opened by/Registration Staff name'] || '');
+        if (tgt === 'Encounter Date') {
+          const val = sourceRow[targetToSource[tgt]];
+          if (val instanceof Date) return val.toISOString().split('T')[0];
+          if (typeof val === 'number') return excelDateToJSDate(val);
+          return val;
+        }
         if (tgt === 'Source File') return name;
         const srcKey = targetToSource[tgt];
         return srcKey ? sourceRow[srcKey] || '' : '';
