@@ -253,7 +253,6 @@ async function combineReportings(fileEntries, clinicianFile) {
       }
 
       const targetRow = TARGET_HEADERS.map(tgt => {
-        if (tgt === 'Facility const targetRow = TARGET_HEADERS.map(tgt => {
         if (tgt === 'Facility ID') return sourceRow['Facility ID'] || facilityID;
         if (tgt === 'Pri. Patient Insurance Card No') return sourceRow['PatientCardID'] || sourceRow['Member ID'] || sourceRow[targetToSource[tgt]] || '';
         if (tgt === 'Patient Code') return sourceRow['FileNo'] || sourceRow[targetToSource[tgt]] || '';
