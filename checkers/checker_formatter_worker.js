@@ -105,7 +105,6 @@ async function combineReportings(fileEntries, clinicianFile) {
       const num = Number(value);
       if (num > 20000 && num < 60000) return Math.floor(num);
     }
-
     let date;
     if (Object.prototype.toString.call(value) === '[object Date]' && !isNaN(value)) date = value;
     if (!date && typeof value === 'string') {
@@ -118,13 +117,11 @@ async function combineReportings(fileEntries, clinicianFile) {
       if (mdy) date = new Date(`${mdy[3]}-${mdy[1]}-${mdy[2]}`);
       if (!date && !isNaN(Date.parse(v))) date = new Date(v);
     }
-
     if (!date || isNaN(date)) return '';
     const base = new Date(Date.UTC(1899, 11, 30));
     return Math.floor((date - base) / (1000 * 60 * 60 * 24));
   }
 
-  // Load and parse local JSON clinician file
   const clinicianMapByLicense = new Map();
   const clinicianMapByName = new Map();
   try {
@@ -140,7 +137,6 @@ async function combineReportings(fileEntries, clinicianFile) {
     log(`Failed to load clinician_licenses.json: ${err.message}`, 'ERROR');
   }
 
-  // Parse uploaded clinician XLS for fallback
   let fallbackExcel = [];
   if (clinicianFile) {
     const wbClin = XLSX.read(clinicianFile, { type: 'array' });
@@ -206,7 +202,6 @@ async function combineReportings(fileEntries, clinicianFile) {
   for (let i = 0; i < fileEntries.length; i++) {
     const { name, buffer } = fileEntries[i];
     const matchedFacilityID = getFacilityIDFromFileName(name);
-
     const wb = XLSX.read(buffer, { type: 'array', cellDates: true });
     const ws = wb.Sheets[wb.SheetNames[0]];
     const sheetData = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false });
@@ -260,14 +255,12 @@ async function combineReportings(fileEntries, clinicianFile) {
       if (!claimID || seenClaimIDs.has(claimID)) continue;
       seenClaimIDs.add(claimID);
 
-      // Clinician matching
       const rawName = (headerMap === CLINICPRO_V2_MAP)
         ? sourceRow['orderdoctor']?.toString().trim() || sourceRow['clinician name']?.toString().trim()
         : sourceRow['clinician name']?.toString().trim() || '';
       let clinLicense = sourceRow['clinician license']?.toString().trim() || '';
       let clinName = '';
 
-      // Try JSON map first
       const normRaw = normalizeName(rawName);
       if (clinicianMapByName.has(normRaw)) {
         const ent = clinicianMapByName.get(normRaw);
@@ -275,35 +268,45 @@ async function combineReportings(fileEntries, clinicianFile) {
         clinName = ent['Clinician Name'];
       }
 
-      // Fallback if missing
       if (!clinLicense || !clinName) {
         const fb = fallbackClinicianLookup(rawName);
         if (fb) { clinLicense = fb.license; clinName = fb.name; }
       }
 
-      const targetRow = TARGET_HEADERS.map(tgt => {
-        if (tgt === 'Facility ID') {
-          const curr = sourceRow['facility id']?.toString().trim();
-          return curr || matchedFacilityID || facilityID || '';
+      try {
+        const targetRow = TARGET_HEADERS.map(tgt => {
+          if (tgt === 'Facility ID') {
+            const curr = sourceRow['facility id']?.toString().trim();
+            return curr || matchedFacilityID || facilityID || '';
+          }
+          if (tgt === 'Pri. Patient Insurance Card No') {
+            return sourceRow['patientcardid'] || sourceRow['member id'] || sourceRow[targetToSource[tgt]?.toLowerCase()] || '';
+          }
+          if (tgt === 'Patient Code') {
+            return sourceRow['fileno'] || sourceRow[targetToSource[tgt]?.toLowerCase()] || '';
+          }
+          if (tgt === 'Clinician License') return clinLicense;
+          if (tgt === 'Clinician Name') return clinName;
+          if (tgt === 'Opened by') {
+            return (headerMap === CLINICPRO_V2_MAP)
+              ? sourceRow['updated by'] || ''
+              : sourceRow['opened by'] || sourceRow['opened by/registration staff name'] || '';
+          }
+          if (tgt === 'Encounter Date') return convertToExcelDateUniversal(sourceRow[targetToSource[tgt]?.toLowerCase()]);
+          if (tgt === 'Source File') return name;
+          const key = targetToSource[tgt];
+          return key ? sourceRow[key.toLowerCase()] || '' : '';
+        });
+
+        if (!Array.isArray(targetRow) || targetRow.length !== TARGET_HEADERS.length) {
+          log(`Skipping malformed row in ${name} due to length mismatch`, 'WARN');
+        } else {
+          combinedRows.push(targetRow);
         }
-        if (tgt === 'Pri. Patient Insurance Card No') {
-          return sourceRow['patientcardid'] || sourceRow['member id'] || sourceRow[targetToSource[tgt]?.toLowerCase()] || '';
-        }
-        if (tgt === 'Patient Code') {
-          return sourceRow['fileno'] || sourceRow[targetToSource[tgt]?.toLowerCase()] || ''; }
-        if (tgt === 'Clinician License') return clinLicense;
-        if (tgt === 'Clinician Name') return clinName;
-        if (tgt === 'Opened by') {
-          return (headerMap === CLINICPRO_V2_MAP)
-            ? sourceRow['updated by'] || ''
-            : sourceRow['opened by'] || sourceRow['opened by/registration staff name'] || '';
-        }
-        if (tgt === 'Encounter Date') return convertToExcelDateUniversal(sourceRow[targetToSource[tgt]?.toLowerCase()]);
-        if (tgt === 'Source File') return name;
-        const key = targetToSource[tgt];
-        return key ? sourceRow[key.toLowerCase()] || '' : '';
-      });
-      combinedRows.push(targetRow);
+
+      } catch (err) {
+        log(`Failed to process row in ${name}: ${err.message}`, 'ERROR');
+      }
     }
 
     self.postMessage({ type: 'progress', progress: 50 + Math.floor(((i + 1) / fileEntries.length) * 50) });
