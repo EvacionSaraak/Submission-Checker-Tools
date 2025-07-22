@@ -308,11 +308,16 @@ async function combineReportings(fileEntries, clinicianFile) {
           }
         });
 
-        if (targetRow.length === TARGET_HEADERS.length) {
-          combinedRows.push(targetRow);
-        } else {
-          log(`Malformed row in file ${name}, row ${r + 1}: expected ${TARGET_HEADERS.length} cols, got ${targetRow.length}`, 'WARN');
+        if (!Array.isArray(targetRow)) {
+          log(`Row ${r + 1} in file ${name} is not an array`, 'ERROR');
+          continue;
         }
+        if (targetRow.length !== TARGET_HEADERS.length) {
+          log(`Malformed row in file ${name}, row ${r + 1}: expected ${TARGET_HEADERS.length} cols, got ${targetRow.length}`, 'ERROR');
+          continue;
+        }
+
+        combinedRows.push(targetRow);
       } catch (err) {
         log(`Fatal row error in file ${name}, row ${r + 1}: ${err.message}`, 'ERROR');
       }
@@ -321,22 +326,18 @@ async function combineReportings(fileEntries, clinicianFile) {
     self.postMessage({ type: 'progress', progress: 50 + Math.floor(((i + 1) / fileEntries.length) * 50) });
   }
 
+  // Filter combinedRows just to be extra safe before output
   const safeRows = combinedRows.filter((row, i) => {
     if (!Array.isArray(row)) {
-      log(`Row ${i} is not an array`, 'ERROR');
+      log(`Filtered out non-array row at index ${i}`, 'ERROR');
       return false;
     }
     if (row.length !== TARGET_HEADERS.length) {
-      log(`Row ${i} has invalid length: expected ${TARGET_HEADERS.length}, got ${row.length}`, 'ERROR');
+      log(`Filtered out row at index ${i} due to invalid length: expected ${TARGET_HEADERS.length}, got ${row.length}`, 'ERROR');
       return false;
     }
     return true;
   });
-
-  if (!safeRows.length) {
-    log('No valid rows to write to workbook', 'ERROR');
-    throw new Error('No valid rows for reporting output');
-  }
 
   const ws = XLSX.utils.aoa_to_sheet(safeRows);
   const wb = XLSX.utils.book_new();
