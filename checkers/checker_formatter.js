@@ -95,6 +95,9 @@ combineButton.addEventListener('click', async () => {
 
     messageBox.textContent = 'Files read. Starting processing...';
 
+    // Debug log before posting message to worker
+    console.log('Posting start message to worker', { mode, files: fileEntries.length, clinicianFile: clinicianFileEntry ? clinicianFileEntry.name : 'none' });
+
     // Post message to worker with clinician file included
     worker.postMessage({ type: 'start', mode, files: fileEntries, clinicianFile: clinicianFileEntry });
 
@@ -129,6 +132,7 @@ worker.onmessage = e => {
 };
 
 worker.onerror = e => {
+  console.error('Worker error event:', e);
   messageBox.textContent = 'Worker error: ' + e.message;
   combineButton.disabled = false;
   downloadButton.disabled = true;
