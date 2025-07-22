@@ -29,6 +29,62 @@ self.onmessage = async e => {
   }
 };
 
+async function combineEligibilities(fileEntries) {
+  const combined = [];
+  let headerRow = null;
+
+  for (let i = 0; i < fileEntries.length; i++) {
+    const { name, buffer } = fileEntries[i];
+    log(`Reading eligibility file: ${name}`);
+    const wb = XLSX.read(buffer, { type: 'array' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const sheetData = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+
+    if (sheetData.length < 2) {
+      log(`File ${name} has less than 2 rows. Skipping.`, 'WARN');
+      continue;
+    }
+
+    const currentHeader = sheetData[1];
+    if (!headerRow) {
+      headerRow = currentHeader;
+      combined.push(headerRow);
+      log(`Header row captured from file: ${name}`);
+    }
+
+    for (let r = 2; r < sheetData.length; r++) {
+      const row = sheetData[r];
+      if (row && row.length) combined.push(row);
+    }
+
+    self.postMessage({
+      type: 'progress',
+      progress: Math.floor(((i + 1) / fileEntries.length) * 50)
+    });
+  }
+
+  const seen = new Set();
+  const uniqueRows = combined.filter(row => {
+    const key = JSON.stringify(row);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  log(`Deduplicated eligibility rows: ${uniqueRows.length}`);
+
+  try {
+    const ws = XLSX.utils.aoa_to_sheet(uniqueRows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Combined Eligibility');
+    self.postMessage({ type: 'progress', progress: 100 });
+    return wb;
+  } catch (err) {
+    log(`Error generating combined eligibility sheet: ${err.message}`, 'ERROR');
+    throw err;
+  }
+}
+
 async function combineReportings(fileEntries, clinicianFile) {
   const TARGET_HEADERS = [
     'Pri. Claim No', 'Clinician License', 'Encounter Date', 'Pri. Patient Insurance Card No',
