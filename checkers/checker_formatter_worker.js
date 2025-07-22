@@ -185,26 +185,34 @@ async function combineEligibilities(fileEntries) {
 }
 
 async function combineReportings(fileEntries, clinicianFile) {
+  console.log('Starting combineReportings function');
+
   const combinedRows = [TARGET_HEADERS];
+  console.log('Initialized combinedRows with headers');
 
   const clinicianMapByLicense = new Map();
   const clinicianMapByName = new Map();
   let fallbackExcel = [];
 
   try {
+    console.log('Fetching clinician_licenses.json');
     const resp = await fetch('./clinician_licenses.json');
     const clinicianData = await resp.json();
+    console.log(`Loaded clinician licenses: ${clinicianData.length} entries`);
+
     clinicianData.forEach(entry => {
       const lic = entry['Phy Lic']?.toString().trim();
       const nm = entry['Clinician Name']?.toString().trim();
       if (lic) clinicianMapByLicense.set(lic, entry);
       if (nm) clinicianMapByName.set(normalizeName(nm), entry);
     });
+    console.log('Populated clinician maps');
   } catch (err) {
-    log(`Failed to load clinician_licenses.json: ${err.message}`, 'ERROR');
+    console.log(`Failed to load clinician_licenses.json: ${err.message}`);
   }
 
   if (clinicianFile) {
+    console.log('Reading fallback clinician file');
     const wbClin = XLSX.read(clinicianFile, { type: 'array' });
     const wsClin = wbClin.Sheets[wbClin.SheetNames[0]];
     fallbackExcel = XLSX.utils.sheet_to_json(wsClin, { defval: '' }).map(r => ({
@@ -212,17 +220,27 @@ async function combineReportings(fileEntries, clinicianFile) {
       nm: (r['Clinician Name'] || '').trim().replace(/\s+/g, ' '),
       raw: r
     }));
+    console.log(`Fallback clinician file loaded: ${fallbackExcel.length} entries`);
+  } else {
+    console.log('No fallback clinician file provided');
   }
 
   for (let i = 0; i < fileEntries.length; i++) {
     const { name, buffer } = fileEntries[i];
-    log(`Reading reporting file: ${name}`);
+    console.log(`Processing file ${i + 1} of ${fileEntries.length}: ${name}`);
+
     const matchedFacilityID = getFacilityIDFromFileName(name);
+    console.log(`Matched facility ID: ${matchedFacilityID}`);
+
     const wb = XLSX.read(buffer, { type: 'array', cellDates: true });
     const ws = wb.Sheets[wb.SheetNames[0]];
     const sheetData = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false });
+    console.log(`Sheet data rows: ${sheetData.length}`);
 
-    if (sheetData.length < 2) continue;
+    if (sheetData.length < 2) {
+      console.log(`File ${name} skipped: sheet has less than 2 rows`);
+      continue;
+    }
 
     let headerRowIndex = -1;
     for (let r = 0; r < sheetData.length; r++) {
@@ -230,23 +248,26 @@ async function combineReportings(fileEntries, clinicianFile) {
       if ((row.includes('Pri. Claim No') && row.includes('Encounter Date')) ||
           (row.includes('ClaimID') && row.includes('ClaimDate'))) {
         headerRowIndex = r;
+        console.log(`Header row found at index ${headerRowIndex}`);
         break;
       }
     }
 
     if (headerRowIndex === -1) {
-      log(`File ${name} skipped: header row not found.`, 'WARN');
+      console.log(`File ${name} skipped: header row not found`);
       continue;
     }
 
     const headerRow = sheetData[headerRowIndex].map(h => h.toString().trim());
     const isClinicProV2 = headerRow.includes('InvoiceNo');
+    console.log(`Header format identified as ${isClinicProV2 ? 'ClinicPro V2' : (headerRow.includes('ClaimID') ? 'ClinicPro V1' : 'InstaHMS')}`);
+
     const headerMap = (headerRow.includes('ClaimID') && headerRow.includes('ClaimDate'))
       ? (isClinicProV2 ? CLINICPRO_V2_MAP : CLINICPRO_V1_MAP)
       : ((headerRow.includes('Pri. Claim No') && headerRow.includes('Encounter Date')) ? INSTAHMS_MAP : null);
 
     if (!headerMap) {
-      log(`File ${name} skipped: unrecognized header format.`, 'WARN');
+      console.log(`File ${name} skipped: unrecognized header format`);
       continue;
     }
 
@@ -254,6 +275,7 @@ async function combineReportings(fileEntries, clinicianFile) {
     for (const [src, tgt] of Object.entries(headerMap)) {
       if (headerRow.includes(src)) targetToSource[tgt] = src;
     }
+    console.log('Built targetToSource map');
 
     const seenClaimIDs = new Set();
     for (let r = headerRowIndex + 1; r < sheetData.length; r++) {
@@ -303,45 +325,35 @@ async function combineReportings(fileEntries, clinicianFile) {
             const key = targetToSource[tgt];
             return key ? sourceRow[key.toLowerCase()] || '' : '';
           } catch (cellErr) {
-            log(`Cell error in file ${name}, row ${r + 1}, column ${colIndex} (${tgt}): ${cellErr.message}`, 'ERROR');
+            console.log(`Cell error in file ${name}, row ${r + 1}, column ${colIndex} (${tgt}): ${cellErr.message}`);
             return '';
           }
         });
 
         if (!Array.isArray(targetRow)) {
-          log(`Row ${r + 1} in file ${name} is not an array`, 'ERROR');
+          console.log(`Row ${r + 1} in file ${name} is not an array`);
           continue;
         }
         if (targetRow.length !== TARGET_HEADERS.length) {
-          log(`Malformed row in file ${name}, row ${r + 1}: expected ${TARGET_HEADERS.length} cols, got ${targetRow.length}`, 'ERROR');
+          console.log(`Malformed row in file ${name}, row ${r + 1}: expected ${TARGET_HEADERS.length} cols, got ${targetRow.length}`);
           continue;
         }
 
         combinedRows.push(targetRow);
       } catch (err) {
-        log(`Fatal row error in file ${name}, row ${r + 1}: ${err.message}`, 'ERROR');
+        console.log(`Fatal row error in file ${name}, row ${r + 1}: ${err.message}`);
       }
     }
 
+    console.log(`Finished processing file ${name}, total combined rows: ${combinedRows.length}`);
     self.postMessage({ type: 'progress', progress: 50 + Math.floor(((i + 1) / fileEntries.length) * 50) });
   }
 
-  // Filter combinedRows just to be extra safe before output
-  const safeRows = combinedRows.filter((row, i) => {
-    if (!Array.isArray(row)) {
-      log(`Filtered out non-array row at index ${i}`, 'ERROR');
-      return false;
-    }
-    if (row.length !== TARGET_HEADERS.length) {
-      log(`Filtered out row at index ${i} due to invalid length: expected ${TARGET_HEADERS.length}, got ${row.length}`, 'ERROR');
-      return false;
-    }
-    return true;
-  });
-
-  const ws = XLSX.utils.aoa_to_sheet(safeRows);
+  console.log(`Converting combined rows to worksheet, total rows: ${combinedRows.length}`);
+  const ws = XLSX.utils.aoa_to_sheet(combinedRows);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Combined Reporting');
   self.postMessage({ type: 'progress', progress: 100 });
+  console.log('combineReportings function completed successfully');
   return wb;
 }
