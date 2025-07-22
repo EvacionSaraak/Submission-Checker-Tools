@@ -235,6 +235,9 @@ async function combineReportings(fileEntries, clinicianFile) {
     }
   }
 
+  // Array to collect rows where clinician license & name are blank after processing
+  const blankClinicianRows = [];
+
   for (let i = 0; i < fileEntries.length; i++) {
     const { name, buffer } = fileEntries[i];
     log(`Reading reporting file: ${name}`);
@@ -327,12 +330,15 @@ async function combineReportings(fileEntries, clinicianFile) {
         const facilityLicense = sourceRow['facility id']?.toString().trim() || matchedFacilityID || '';
 
         const normRaw = normalizeName(rawName);
+        log(`Checking normalized name: "${normRaw}"`);
+
         if (clinicianMapByName.has(normRaw)) {
           const ent = clinicianMapByName.get(normRaw);
           clinLicense = ent['Phy Lic'];
           clinName = ent['Clinician Name'];
           log(`Matched via map: ${normRaw} -> ${clinName} (${clinLicense})`);
         } else if (rawName && facilityLicense) {
+          log(`Not found in map: "${normRaw}" – trying fallback...`);
           const fb = fallbackClinicianLookupWithFacility(rawName, facilityLicense, fallbackExcel);
           if (fb) {
             clinLicense = fb.license;
@@ -361,6 +367,17 @@ async function combineReportings(fileEntries, clinicianFile) {
           }
         });
 
+        // If both clinician license and name are blank, track this row for later logging
+        if (!clinLicense && !clinName) {
+          blankClinicianRows.push({
+            file: name,
+            row: r + 1,
+            rawClinicianName: rawName,
+            facilityLicense,
+            claimID
+          });
+        }
+
         if (!Array.isArray(targetRow)) {
           log(`targetRow is not an array in file ${name}, row ${r + 1}`, 'ERROR');
           continue;
@@ -377,6 +394,14 @@ async function combineReportings(fileEntries, clinicianFile) {
     }
 
     self.postMessage({ type: 'progress', progress: 50 + Math.floor(((i + 1) / fileEntries.length) * 50) });
+  }
+
+  // After processing all files, log any rows with missing clinician info
+  if (blankClinicianRows.length > 0) {
+    log(`Clinician license and name were blank in ${blankClinicianRows.length} rows:`);
+    blankClinicianRows.forEach(({file, row, rawClinicianName, facilityLicense, claimID}) => {
+      log(`  File: ${file}, Row: ${row}, Clinician: "${rawClinicianName}", Facility: ${facilityLicense}, ClaimID: ${claimID}`, 'WARN');
+    });
   }
 
   for (const [idx, row] of combinedRows.entries()) {
