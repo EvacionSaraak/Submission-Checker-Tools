@@ -240,6 +240,7 @@ async function combineReportings(fileEntries, clinicianFile) {
     log(`Reading reporting file: ${name}`);
 
     const matchedFacilityID = getFacilityIDFromFileName(name);
+    const isKhabisiOrYahar = matchedFacilityID === 'MF5020' || matchedFacilityID === 'MF5357';
 
     let wb;
     try {
@@ -281,7 +282,7 @@ async function combineReportings(fileEntries, clinicianFile) {
     const headerRow = headerRowRaw.map(h => (h === undefined || h === null) ? '' : h.toString().trim());
 
     const facilityFromCard = headerRow.includes('Member ID');
-    const isClinicProV2 = facilityFromCard || matchedFacilityID === 'MF5020' || matchedFacilityID === 'MF5357';
+    const isClinicProV2 = facilityFromCard || isKhabisiOrYahar;
 
     const headerMap = (headerRow.includes('ClaimID') && headerRow.includes('ClaimDate'))
       ? (isClinicProV2 ? CLINICPRO_V2_MAP : CLINICPRO_V1_MAP)
@@ -314,8 +315,8 @@ async function combineReportings(fileEntries, clinicianFile) {
         if (!claimID || seenClaimIDs.has(claimID)) continue;
         seenClaimIDs.add(claimID);
 
-        const rawName = isClinicProV2
-          ? (sourceRow['orderdoctor']?.toString().trim() || sourceRow['clinician name']?.toString().trim() || '')
+        const rawName = isKhabisiOrYahar
+          ? (sourceRow['orderdoctor']?.toString().trim() || '')
           : (sourceRow['clinician name']?.toString().trim() || '');
         let clinLicense = sourceRow['clinician license']?.toString().trim() || '';
         let clinName = '';
