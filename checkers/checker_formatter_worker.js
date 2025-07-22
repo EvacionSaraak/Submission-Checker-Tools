@@ -181,41 +181,64 @@ async function combineEligibilities(fileEntries) {
   }
 }
 
-async function combineReportings(fileEntries, clinicianFile) {
-  log('Starting combineReportings function');
+function fallbackClinicianLookupWithFacility(rawName, facilityLicense, fallbackExcel) {
+  const normRawWords = (rawName || '').toLowerCase().trim().split(/\s+/);
+  if (normRawWords.length === 0) return null;
 
+  // Filter fallback records by facility license first
+  const candidates = fallbackExcel.filter(row => {
+    return row.facilityLicense && row.facilityLicense.toLowerCase() === (facilityLicense || '').toLowerCase();
+  });
+
+  for (const row of candidates) {
+    const normClinWords = (row.nm || '').toLowerCase().split(/\s+/);
+    if (normClinWords.length === 0) continue;
+
+    // Check if all words in rawName appear in clinician license name words (partial match)
+    const allWordsMatch = normRawWords.every(w => normClinWords.includes(w));
+
+    if (allWordsMatch) {
+      // Optionally also verify first and last name match loosely
+      const rawFirst = normRawWords[0];
+      const rawLast = normRawWords[normRawWords.length - 1];
+      const clinFirst = normClinWords[0];
+      const clinLast = normClinWords[normClinWords.length - 1];
+
+      if (rawFirst === clinFirst && rawLast === clinLast) {
+        return { license: row.lic, name: row.nm };
+      }
+    }
+  }
+  return null;
+}
+
+async function combineReportings(fileEntries, clinicianFile) {
   const combinedRows = [TARGET_HEADERS];
-  log('Initialized combinedRows with headers');
 
   const clinicianMapByLicense = new Map();
   const clinicianMapByName = new Map();
   let fallbackExcel = [];
 
-  log('Fetching clinician_licenses.json');
   try {
     const resp = await fetch('./clinician_licenses.json');
     const clinicianData = await resp.json();
-    log(`Loaded clinician licenses: ${clinicianData.length} entries`);
-
     clinicianData.forEach(entry => {
-      const lic = entry['Clinician License']?.toString().trim();
+      const lic = entry['Phy Lic']?.toString().trim();
       const nm = entry['Clinician Name']?.toString().trim();
       if (lic) clinicianMapByLicense.set(lic, entry);
       if (nm) clinicianMapByName.set(normalizeName(nm), entry);
     });
-    log('Populated clinician maps');
   } catch (err) {
     log(`Failed to load clinician_licenses.json: ${err.message}`, 'ERROR');
   }
 
   if (clinicianFile) {
-    log('Reading fallback clinician file');
-    const wbClin = XLSX.read(clinicianFile.buffer, { type: 'array' });
+    const wbClin = XLSX.read(clinicianFile, { type: 'array' });
     const wsClin = wbClin.Sheets[wbClin.SheetNames[0]];
     fallbackExcel = XLSX.utils.sheet_to_json(wsClin, { defval: '' }).map(r => ({
       lic: r['Clinician License']?.toString().trim(),
       nm: (r['Clinician Name'] || '').trim().replace(/\s+/g, ' '),
-      facilityLicense: r['Facility License']?.toString().trim() || '',
+      facilityLicense: r['Facility License']?.toString().trim(),
       raw: r
     }));
   }
@@ -228,10 +251,7 @@ async function combineReportings(fileEntries, clinicianFile) {
     const ws = wb.Sheets[wb.SheetNames[0]];
     const sheetData = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false });
 
-    if (sheetData.length < 2) {
-      log(`File ${name} skipped: less than 2 rows`, 'WARN');
-      continue;
-    }
+    if (sheetData.length < 2) continue;
 
     let headerRowIndex = -1;
     for (let r = 0; r < sheetData.length; r++) {
@@ -287,12 +307,13 @@ async function combineReportings(fileEntries, clinicianFile) {
         const normRaw = normalizeName(rawName);
         if (clinicianMapByName.has(normRaw)) {
           const ent = clinicianMapByName.get(normRaw);
-          clinLicense = ent['Clinician License'] || clinLicense;
-          clinName = ent['Clinician Name'] || clinName;
+          clinLicense = ent['Phy Lic'];
+          clinName = ent['Clinician Name'];
         }
 
         if (!clinLicense || !clinName) {
-          const fb = fallbackClinicianLookup(rawName, fallbackExcel);
+          const facilityLicenseFromRow = sourceRow['facility license'] || sourceRow['facility id'] || matchedFacilityID || '';
+          const fb = fallbackClinicianLookupWithFacility(rawName, facilityLicenseFromRow, fallbackExcel);
           if (fb) {
             clinLicense = fb.license;
             clinName = fb.name;
@@ -330,14 +351,9 @@ async function combineReportings(fileEntries, clinicianFile) {
     self.postMessage({ type: 'progress', progress: 50 + Math.floor(((i + 1) / fileEntries.length) * 50) });
   }
 
-  try {
-    const ws = XLSX.utils.aoa_to_sheet(combinedRows);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Combined Reporting');
-    self.postMessage({ type: 'progress', progress: 100 });
-    return wb;
-  } catch (sheetErr) {
-    log(`Error converting to worksheet: ${sheetErr.message}`, 'ERROR');
-    throw sheetErr;
-  }
+  const ws = XLSX.utils.aoa_to_sheet(combinedRows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Combined Reporting');
+  self.postMessage({ type: 'progress', progress: 100 });
+  return wb;
 }
