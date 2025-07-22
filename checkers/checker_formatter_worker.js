@@ -321,7 +321,24 @@ async function combineReportings(fileEntries, clinicianFile) {
     self.postMessage({ type: 'progress', progress: 50 + Math.floor(((i + 1) / fileEntries.length) * 50) });
   }
 
-  const ws = XLSX.utils.aoa_to_sheet(combinedRows);
+  const safeRows = combinedRows.filter((row, i) => {
+    if (!Array.isArray(row)) {
+      log(`Row ${i} is not an array`, 'ERROR');
+      return false;
+    }
+    if (row.length !== TARGET_HEADERS.length) {
+      log(`Row ${i} has invalid length: expected ${TARGET_HEADERS.length}, got ${row.length}`, 'ERROR');
+      return false;
+    }
+    return true;
+  });
+
+  if (!safeRows.length) {
+    log('No valid rows to write to workbook', 'ERROR');
+    throw new Error('No valid rows for reporting output');
+  }
+
+  const ws = XLSX.utils.aoa_to_sheet(safeRows);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Combined Reporting');
   self.postMessage({ type: 'progress', progress: 100 });
