@@ -316,8 +316,11 @@ async function combineReportings(fileEntries, clinicianFile) {
         seenClaimIDs.add(claimID);
 
         const rawName = isKhabisiOrYahar
-          ? (sourceRow['orderdoctor'] || sourceRow['OrderDoctor'] || '').toString().trim()
-          : (sourceRow['clinician name'] || sourceRow['Clinician Name'] || '').toString().trim();
+          ? (sourceRow['orderdoctor']?.toString().trim() || '')
+          : (sourceRow['clinician name']?.toString().trim() || '');
+
+        log(`File: ${name}, Row ${r + 1}, Raw Clinician: "${rawName}", Facility: ${matchedFacilityID}`);
+
         let clinLicense = sourceRow['clinician license']?.toString().trim() || '';
         let clinName = '';
 
@@ -328,13 +331,15 @@ async function combineReportings(fileEntries, clinicianFile) {
           const ent = clinicianMapByName.get(normRaw);
           clinLicense = ent['Phy Lic'];
           clinName = ent['Clinician Name'];
-        }
-
-        if ((!clinLicense || !clinName) && rawName && facilityLicense) {
+          log(`Matched via map: ${normRaw} -> ${clinName} (${clinLicense})`);
+        } else if (rawName && facilityLicense) {
           const fb = fallbackClinicianLookupWithFacility(rawName, facilityLicense, fallbackExcel);
           if (fb) {
             clinLicense = fb.license;
             clinName = fb.name;
+            log(`Matched via fallback: ${rawName} at ${facilityLicense} -> ${clinName} (${clinLicense})`);
+          } else {
+            log(`No match for: "${rawName}" (${normRaw}) at facility ${facilityLicense}`, "WARN");
           }
         }
 
