@@ -226,6 +226,7 @@ async function combineReportings(fileEntries, clinicianFile) {
         lic: r['Clinician License']?.toString().trim(),
         nm: (r['Clinician Name'] || '').trim().replace(/\s+/g, ' '),
         facilityLicense: r['Facility License']?.toString().trim() || '',
+        raw: r
       }));
       log(`Fallback clinician entries loaded: ${fallbackExcel.length}`);
     } catch (err) {
@@ -278,7 +279,9 @@ async function combineReportings(fileEntries, clinicianFile) {
       continue;
     }
     const headerRow = headerRowRaw.map(h => (h === undefined || h === null) ? '' : h.toString().trim());
-    const isClinicProV2 = headerRow.includes('InvoiceNo');
+
+    const facilityFromCard = headerRow.includes('Member ID');
+    const isClinicProV2 = facilityFromCard || matchedFacilityID === 'MF5020' || matchedFacilityID === 'MF5357';
 
     const headerMap = (headerRow.includes('ClaimID') && headerRow.includes('ClaimDate'))
       ? (isClinicProV2 ? CLINICPRO_V2_MAP : CLINICPRO_V1_MAP)
@@ -334,45 +337,61 @@ async function combineReportings(fileEntries, clinicianFile) {
           }
         }
 
-        const targetRow = TARGET_HEADERS.map((tgt) => {
-          if (tgt === 'Facility ID') return facilityLicense || '';
-          if (tgt === 'Pri. Patient Insurance Card No')
-            return sourceRow['patientcardid'] || sourceRow['member id'] || sourceRow[targetToSource[tgt]?.toLowerCase()] || '';
-          if (tgt === 'Patient Code') return sourceRow['fileno'] || sourceRow[targetToSource[tgt]?.toLowerCase()] || '';
-          if (tgt === 'Clinician License') return clinLicense;
-          if (tgt === 'Clinician Name') return clinName;
-          if (tgt === 'Opened by')
-            return isClinicProV2
-              ? sourceRow['updated by'] || ''
-              : sourceRow['opened by'] || sourceRow['opened by/registration staff name'] || '';
-          if (tgt === 'Encounter Date') return convertToExcelDateUniversal(sourceRow[targetToSource[tgt]?.toLowerCase()]);
-          if (tgt === 'Source File') return name;
-          const key = targetToSource[tgt];
-          return key ? sourceRow[key.toLowerCase()] || '' : '';
+        const targetRow = TARGET_HEADERS.map((tgt, colIndex) => {
+          try {
+            if (tgt === 'Facility ID') return facilityLicense || '';
+            if (tgt === 'Pri. Patient Insurance Card No') return sourceRow['patientcardid'] || sourceRow['member id'] || sourceRow[targetToSource[tgt]?.toLowerCase()] || '';
+            if (tgt === 'Patient Code') return sourceRow['fileno'] || sourceRow[targetToSource[tgt]?.toLowerCase()] || '';
+            if (tgt === 'Clinician License') return clinLicense;
+            if (tgt === 'Clinician Name') return clinName;
+            if (tgt === 'Opened by') return isClinicProV2 ? sourceRow['updated by'] || '' : sourceRow['opened by'] || sourceRow['opened by/registration staff name'] || '';
+            if (tgt === 'Encounter Date') return convertToExcelDateUniversal(sourceRow[targetToSource[tgt]?.toLowerCase()]);
+            if (tgt === 'Source File') return name;
+            const key = targetToSource[tgt];
+            return key ? sourceRow[key.toLowerCase()] || '' : '';
+          } catch (cellErr) {
+            log(`Cell error in file ${name}, row ${r + 1}, column ${colIndex} (${tgt}): ${cellErr.message}`, 'ERROR');
+            return '';
+          }
         });
+
+        if (!Array.isArray(targetRow)) {
+          log(`targetRow is not an array in file ${name}, row ${r + 1}`, 'ERROR');
+          continue;
+        }
+        if (targetRow.length !== TARGET_HEADERS.length) {
+          log(`Malformed row length in file ${name}, row ${r + 1}: expected ${TARGET_HEADERS.length}, got ${targetRow.length}`, 'ERROR');
+          continue;
+        }
 
         combinedRows.push(targetRow);
       } catch (err) {
-        log(`Error processing row ${r + 1} in file ${name}: ${err.message}`, 'ERROR');
+        log(`Fatal row error in file ${name}, row ${r + 1}: ${err.message}`, 'ERROR');
       }
     }
 
     self.postMessage({ type: 'progress', progress: 50 + Math.floor(((i + 1) / fileEntries.length) * 50) });
   }
 
-  // Final validation before output
-  combinedRows.forEach((row, idx) => {
+  for (const [idx, row] of combinedRows.entries()) {
     if (!Array.isArray(row)) {
-      throw new Error(`Row ${idx} is not an array`);
+      log(`Row ${idx} is not an array: ${JSON.stringify(row)}`, 'ERROR');
+      throw new Error(`Invalid row at index ${idx}: not an array`);
     }
     if (row.length !== TARGET_HEADERS.length) {
-      throw new Error(`Row ${idx} length mismatch: expected ${TARGET_HEADERS.length}, got ${row.length}`);
+      log(`Row ${idx} length ${row.length} does not match headers length ${TARGET_HEADERS.length}: ${JSON.stringify(row)}`, 'ERROR');
+      throw new Error(`Invalid row length at index ${idx}`);
     }
-  });
+  }
 
-  const ws = XLSX.utils.aoa_to_sheet(combinedRows);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Combined Reporting');
-  self.postMessage({ type: 'progress', progress: 100 });
-  return wb;
+  try {
+    const ws = XLSX.utils.aoa_to_sheet(combinedRows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Combined Reporting');
+    self.postMessage({ type: 'progress', progress: 100 });
+    return wb;
+  } catch (sheetErr) {
+    log(`Error converting to worksheet: ${sheetErr.message}`, 'ERROR');
+    throw sheetErr;
+  }
 }
