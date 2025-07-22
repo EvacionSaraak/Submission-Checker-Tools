@@ -316,8 +316,8 @@ async function combineReportings(fileEntries, clinicianFile) {
         seenClaimIDs.add(claimID);
 
         const rawName = isKhabisiOrYahar
-          ? (sourceRow['orderdoctor']?.toString().trim() || '')
-          : (sourceRow['clinician name']?.toString().trim() || '');
+          ? (sourceRow['orderdoctor'] || sourceRow['OrderDoctor'] || '').toString().trim()
+          : (sourceRow['clinician name'] || sourceRow['Clinician Name'] || '').toString().trim();
         let clinLicense = sourceRow['clinician license']?.toString().trim() || '';
         let clinName = '';
 
