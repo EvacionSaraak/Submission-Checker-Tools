@@ -319,12 +319,12 @@ async function combineReportings(fileEntries, clinicianFile) {
         seenClaimIDs.add(claimID);
 
         const rawName = isKhabisiOrYahar
-          ? (sourceRow['orderdoctor']?.toString().trim() || '')
-          : (sourceRow['clinician name']?.toString().trim() || '');
+          ? (sourceRow['OrderDoctor']?.toString().trim() || '')
+          : (sourceRow['Clinician Name']?.toString().trim() || '');
 
         log(`File: ${name}, Row ${r + 1}, Raw Clinician: "${rawName}", Facility: ${matchedFacilityID}`);
 
-        let clinLicense = sourceRow['clinician license']?.toString().trim() || '';
+        let clinLicense = sourceRow['Clinician License']?.toString().trim() || '';
         let clinName = '';
 
         const facilityLicense = sourceRow['facility id']?.toString().trim() || matchedFacilityID || '';
@@ -344,6 +344,20 @@ async function combineReportings(fileEntries, clinicianFile) {
           } else {
             log(`No match for: "${rawName}" (${normRaw}) at facility ${facilityLicense}`, "WARN");
           }
+        }
+
+        if (!clinName && !clinLicense) {
+          const fullRowArray = row.map(cell => cell?.toString().trim?.() || '');
+          console.log({
+            type: 'FATAL_MISSING_CLINICIAN',
+            file: name,
+            row: r + 1,
+            claimID,
+            rawClinicianName: rawName,
+            facilityLicense,
+            fullRow: fullRowArray
+          });
+          throw new Error(`Both Clinician Name and License missing at row ${r + 1} in ${name}`);
         }
 
         // Collect blanks after processing
