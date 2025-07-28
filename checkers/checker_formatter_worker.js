@@ -166,17 +166,22 @@ async function combineEligibilities(fileEntries) {
 
 async function combineReportings(fileEntries, clinicianFile) {
   log("Starting combineReportings function");
+
   if (!Array.isArray(fileEntries) || fileEntries.length === 0) {
     log("No input files provided", "ERROR");
     throw new Error("No input files provided");
   }
+
   const combinedRows = [TARGET_HEADERS];
   log("Initialized combinedRows with headers");
 
   const clinicianMapByLicense = new Map();
   const clinicianMapByName = new Map();
   let fallbackExcel = [];
+
+  // Array to collect rows with blank clinician fields
   const blankFieldsRows = [];
+
   try {
     log("Fetching clinician_licenses.json");
     const resp = await fetch('./clinician_licenses.json');
@@ -196,6 +201,7 @@ async function combineReportings(fileEntries, clinicianFile) {
   } catch (err) {
     log(`Failed to load clinician_licenses.json: ${err.message}`, 'ERROR');
   }
+
   if (clinicianFile) {
     try {
       log("Reading fallback clinician file");
@@ -213,11 +219,14 @@ async function combineReportings(fileEntries, clinicianFile) {
       fallbackExcel = [];
     }
   }
+
   for (let i = 0; i < fileEntries.length; i++) {
     const { name, buffer } = fileEntries[i];
     log(`Reading reporting file: ${name}`);
+
     const matchedFacilityID = getFacilityIDFromFileName(name);
     const isKhabisiOrYahar = matchedFacilityID === 'MF5020' || matchedFacilityID === 'MF5357';
+
     let wb;
     try {
       wb = XLSX.read(buffer, { type: 'array', cellDates: true });
@@ -225,96 +234,108 @@ async function combineReportings(fileEntries, clinicianFile) {
       log(`Failed to read XLSX from buffer for file ${name}: ${err.message}`, 'ERROR');
       continue;
     }
+
     const ws = wb.Sheets[wb.SheetNames[0]];
     const sheetData = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false });
+
     if (!Array.isArray(sheetData) || sheetData.length < 2) {
       log(`File ${name} skipped: no or insufficient data`, 'WARN');
       continue;
     }
+
     let headerRowIndex = -1;
     for (let r = 0; r < sheetData.length; r++) {
       if (!Array.isArray(sheetData[r])) continue;
       const row = sheetData[r].map(h => (h === undefined || h === null) ? '' : h.toString().trim());
       if ((row.includes('Pri. Claim No') && row.includes('Encounter Date')) ||
-        (row.includes('ClaimID') && row.includes('ClaimDate'))) {
+          (row.includes('ClaimID') && row.includes('ClaimDate'))) {
         headerRowIndex = r;
         break;
       }
     }
+
     if (headerRowIndex === -1) {
       log(`File ${name} skipped: header row not found.`, 'WARN');
       continue;
     }
+
     const headerRowRaw = sheetData[headerRowIndex];
     if (!Array.isArray(headerRowRaw)) {
       log(`File ${name} skipped: header row is invalid`, 'WARN');
       continue;
     }
     const headerRow = headerRowRaw.map(h => (h === undefined || h === null) ? '' : h.toString().trim());
+
     const facilityFromCard = headerRow.includes('Member ID');
     const isClinicProV2 = facilityFromCard || isKhabisiOrYahar;
+
     const headerMap = (headerRow.includes('ClaimID') && headerRow.includes('ClaimDate'))
       ? (isClinicProV2 ? CLINICPRO_V2_MAP : CLINICPRO_V1_MAP)
       : ((headerRow.includes('Pri. Claim No') && headerRow.includes('Encounter Date')) ? INSTAHMS_MAP : null);
+
     if (!headerMap) {
       log(`File ${name} skipped: unrecognized header format.`, 'WARN');
       continue;
     }
+
     const targetToSource = {};
     for (const [src, tgt] of Object.entries(headerMap)) {
       if (headerRow.includes(src)) targetToSource[tgt] = src;
     }
+
     const seenClaimIDs = new Set();
+
     for (let r = headerRowIndex + 1; r < sheetData.length; r++) {
       const row = sheetData[r];
       if (!Array.isArray(row) || row.length === 0) continue;
+
       try {
         const sourceRow = {};
         headerRow.forEach((h, idx) => {
           sourceRow[h.toLowerCase().trim()] = (row[idx] === undefined || row[idx] === null) ? '' : row[idx];
         });
+
         const claimIDKey = targetToSource['Pri. Claim No'];
         const claimID = claimIDKey ? sourceRow[claimIDKey.toLowerCase()]?.toString().trim() : '';
         if (!claimID || seenClaimIDs.has(claimID)) continue;
         seenClaimIDs.add(claimID);
-        // For Al Yahar/Khabisi: clinician name is always OrderDoctor, license is likely blank
-        const rawName = isKhabisiOrYahar
-          ? (sourceRow['orderdoctor']?.toString().trim() || '')
-          : (sourceRow['clinician name']?.toString().trim() || '');
-        log(`File: ${name}, Row ${r + 1}, Raw Clinician: "${rawName}", Facility: ${matchedFacilityID}`);
+
+        // --- Clinician fields ---
         let clinLicense = sourceRow['clinician license']?.toString().trim() || '';
-        let clinName = '';
+        let clinName = sourceRow['clinician name']?.toString().trim() || '';
+        // ClinicPro V2 special: OrderDoctor as name
+        if (isKhabisiOrYahar || (headerRow.includes('OrderDoctor') && !clinName)) {
+          clinName = sourceRow['orderdoctor']?.toString().trim() || clinName;
+        }
+
         const facilityLicense = sourceRow['facility id']?.toString().trim() || matchedFacilityID || '';
-        const normRaw = normalizeName(rawName);
-        if (clinicianMapByName.has(normRaw)) {
-          const ent = clinicianMapByName.get(normRaw);
-          clinLicense = ent['Phy Lic'];
-          clinName = ent['Clinician Name'];
-          log(`Matched via map: ${normRaw} -> ${clinName} (${clinLicense})`);
-        } else if (rawName && facilityLicense) {
-          const fb = fallbackClinicianLookupWithFacility(rawName, facilityLicense, fallbackExcel);
+
+        // Fill missing clinician info from clinician_licenses.json
+        if (clinLicense && !clinName && clinicianMapByLicense.has(clinLicense)) {
+          clinName = clinicianMapByLicense.get(clinLicense)['Clinician Name'];
+          log(`Filled name from license: ${clinLicense} => ${clinName}`);
+        }
+        if (clinName && !clinLicense && clinicianMapByName.has(normalizeName(clinName))) {
+          clinLicense = clinicianMapByName.get(normalizeName(clinName))['Phy Lic'];
+          log(`Filled license from name: ${clinName} => ${clinLicense}`);
+        }
+
+        // If still missing, fallback lookup if possible (unchanged)
+        if ((!clinName || !clinLicense) && clinName && facilityLicense) {
+          const fb = fallbackClinicianLookupWithFacility(clinName, facilityLicense, fallbackExcel);
           if (fb) {
-            clinLicense = fb.license;
-            clinName = fb.name;
-            log(`Matched via fallback: ${rawName} at ${facilityLicense} -> ${clinName} (${clinLicense})`);
-          } else {
-            log(`No match for: "${rawName}" (${normRaw}) at facility ${facilityLicense}`, "WARN");
+            clinLicense = fb.license || clinLicense;
+            clinName = fb.name || clinName;
+            log(`Fallback matched: ${clinName} (${clinLicense})`);
           }
         }
-        // For special clinics: allow at least name or license to be present
-        let mustHaveClin;
-        if (isKhabisiOrYahar) {
-          // always use OrderDoctor as the name for these
-          clinName = rawName;
-          mustHaveClin = clinName || clinLicense;
-        } else {
-          mustHaveClin = clinName && clinLicense;
-        }
-        if (!mustHaveClin) {
-          const fullRowArray = row.map(cell => cell?.toString().trim?.() || '');
-          log(`[SKIP] Clinician fields missing: File ${name} Row ${r + 1} claimID:${claimID}`, "WARN");
+
+        // Only skip if both are missing
+        if (!clinName && !clinLicense) {
+          log(`[SKIP] Both Clinician fields missing: File ${name} Row ${r + 1} claimID:${claimID}`, "WARN");
           continue;
         }
+
         // Collect blanks after processing
         const missingFields = [];
         if (!clinName) missingFields.push('Clinician Name');
@@ -325,10 +346,11 @@ async function combineReportings(fileEntries, clinicianFile) {
             missingFields,
             file: name,
             row: r + 1,
-            rawClinicianName: rawName,
+            rawClinicianName: clinName,
             facilityLicense,
           });
         }
+
         const targetRow = TARGET_HEADERS.map((tgt, colIndex) => {
           try {
             if (tgt === 'Facility ID') return facilityLicense || '';
@@ -346,6 +368,7 @@ async function combineReportings(fileEntries, clinicianFile) {
             return '';
           }
         });
+
         if (!Array.isArray(targetRow)) {
           log(`targetRow is not an array in file ${name}, row ${r + 1}`, 'ERROR');
           continue;
@@ -354,18 +377,23 @@ async function combineReportings(fileEntries, clinicianFile) {
           log(`Malformed row length in file ${name}, row ${r + 1}: expected ${TARGET_HEADERS.length}, got ${targetRow.length}`, 'ERROR');
           continue;
         }
+
         combinedRows.push(targetRow);
       } catch (err) {
         log(`Fatal row error in file ${name}, row ${r + 1}: ${err.message}`, 'ERROR');
       }
     }
+
     self.postMessage({ type: 'progress', progress: 50 + Math.floor(((i + 1) / fileEntries.length) * 50) });
   }
+
   // After processing all files, output all blank clinician field rows in one log:
   if (blankFieldsRows.length > 0) {
     log(`Rows with missing clinician fields (Name or License):`);
-    // console.log(blankFieldsRows); // Uncomment for browser debugging
+    // Using console.log here so you can expand and inspect the array in browser devtools
+    // console.log(blankFieldsRows);
   }
+
   for (const [idx, row] of combinedRows.entries()) {
     if (!Array.isArray(row)) {
       log(`Row ${idx} is not an array: ${JSON.stringify(row)}`, 'ERROR');
@@ -376,6 +404,7 @@ async function combineReportings(fileEntries, clinicianFile) {
       throw new Error(`Invalid row length at index ${idx}`);
     }
   }
+
   try {
     const ws = XLSX.utils.aoa_to_sheet(combinedRows);
     const wb = XLSX.utils.book_new();
