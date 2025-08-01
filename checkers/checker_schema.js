@@ -164,8 +164,9 @@ function validateClaimSchema(xmlDoc) {
           (obs, j) => {
             const oprefix = `${prefix}Observation[${j}].`;
             ["Type", "Code"].forEach(tag => invalidIfNull(tag, obs, oprefix));
-            if (present("Value", obs)) invalidIfNull("Value", obs, oprefix);
-            if (present("ValueType", obs)) invalidIfNull("ValueType", obs, oprefix);
+            // DO NOT check for Value or ValueType being empty - allow empty!
+            // if (present("Value", obs)) invalidIfNull("Value", obs, oprefix);
+            // if (present("ValueType", obs)) invalidIfNull("ValueType", obs, oprefix);
           }
         );
       });
