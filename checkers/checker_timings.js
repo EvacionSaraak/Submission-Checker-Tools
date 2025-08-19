@@ -94,7 +94,18 @@ function extractClaims(xmlDoc, requiredType = "6") {
           isValid = false;
           remarks.push(`Type 5 activity with invalid or missing Code: "${codeValue}".`);
         }
-      } else if (typeValue !== requiredType) {
+      }
+      // Type 4 special code J3490
+      else if (typeValue === "4") {
+        if (codeValue === "J3490") {
+          // valid, do not push type error!
+        } else if (typeValue !== requiredType) {
+          isValid = false;
+          remarks.push(`Invalid Type: expected ${requiredType} but found ${typeValue || '(missing)'}.`);
+        }
+      }
+      // Normal type check for all other types
+      else if (typeValue !== requiredType) {
         isValid = false;
         remarks.push(`Invalid Type: expected ${requiredType} but found ${typeValue || '(missing)'}.`);
       }
