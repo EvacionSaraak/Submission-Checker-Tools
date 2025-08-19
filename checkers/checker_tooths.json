@@ -4086,5 +4086,13 @@
         "description": "No idea, it's a Medical thingy.",
         "dentition_type": "all",
         "affiliated_teeth": "all"
+    },
+    {
+        "code": [
+            "J3490"
+        ],
+        "description": "No idea, it's a Medical thingy. Bababooey.",
+        "dentition_type": "all",
+        "affiliated_teeth": "all"
     }
 ]
