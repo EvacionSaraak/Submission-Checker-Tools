@@ -393,6 +393,22 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions) {
       const code = rawCode.trim();
       const codeLastDigit = code.slice(-1);
 
+      // --- ADDED: Check for code === "0000"
+      if (code === "0000") {
+        const row = buildActivityRow({
+          claimId,
+          activityId,
+          code,
+          description: '(invalid placeholder code)',
+          details: 'N/A',
+          remarks: ['Code "0000" is invalid. Please ask IT to delete this activity or set it to "In Progress".']
+        });
+        claimHasInvalid = true;
+        rows.push(row);
+        return; // Skip further validation for this activity
+      }
+      // --- END ADDED
+
       let meta = codeToMeta[code];
       let fallback = fallbackDescriptions?.[code];
       const obsCodes = parseObservationCodes(obsList);
