@@ -195,8 +195,13 @@ function buildCodeMeta(data) {
 function parseObservationCodes(obsList) {
   return Array.from(obsList).map(obs => {
     const obsCodeRaw = obs.querySelector('Code')?.textContent.trim() || '';
+    if (obsCodeRaw === 'Drug Patient Share') return 'Drug Patient Share';
     return obsCodeRaw.toUpperCase();
   }).filter(Boolean);
+}
+
+function isDrugPatientShareOrPDF(obsCode) {
+  return obsCode === 'Drug Patient Share' || obsCode === 'PDF';
 }
 
 function checkRegionDuplication(tracker, code, regionType, regionKey, codeLastDigit) {
@@ -226,9 +231,28 @@ function validateUnknownCode({
 
   let regionKey = null;
 
+  // PATCH: If all obsCodes are Drug Patient Share or PDF, mark valid and skip remarks
+  const allDrugShareOrPDF = obsCodes.length > 0 && obsCodes.every(isDrugPatientShareOrPDF);
+  if (allDrugShareOrPDF) {
+    details = obsCodes.map(obsCode =>
+      obsCode === 'Drug Patient Share'
+        ? 'Drug Patient Share (valid - no validation)'
+        : 'PDF (valid - no validation)'
+    ).join('<br>');
+    return buildActivityRow({
+      claimId,
+      activityId,
+      code,
+      description,
+      details,
+      remarks: []
+    });
+  }
+  // END PATCH
+
   if (isRegion && obsCodes.length > 0) {
     details = obsCodes.map(obsCode => {
-      if (obsCode === 'PDF') return 'PDF (valid - no validation)';
+      if (isDrugPatientShareOrPDF(obsCode)) return `${obsCode} (valid - no validation)`;
 
       let regionRemark = '';
       if (regionType === 'sextant') {
@@ -254,12 +278,12 @@ function validateUnknownCode({
     }).join('<br>');
   } else if (obsCodes.length > 0) {
     details = obsCodes.map(obsCode => (
-      obsCode === 'PDF' ? 'PDF (valid - no validation)' : obsCode
+      isDrugPatientShareOrPDF(obsCode) ? `${obsCode} (valid - no validation)` : obsCode
     )).join('<br>');
 
-    const nonPDFObs = obsCodes.filter(o => o !== 'PDF');
+    const nonPDFObs = obsCodes.filter(o => !isDrugPatientShareOrPDF(o));
     if (nonPDFObs.length > 0) {
-      remarks.push(`Unknown code but obervation is present (${nonPDFObs.join(', ')}).`);
+      remarks.push(`Unknown code but observation is present (${nonPDFObs.join(', ')}).`);
     }
   } else {
     details = 'N/A';
@@ -291,12 +315,30 @@ function validateKnownCode({
   let regionKey = null;
   const remarks = [];
 
+  // PATCH: If all obsCodes are Drug Patient Share or PDF, mark valid and skip remarks
+  const allDrugShareOrPDF = obsCodes.length > 0 && obsCodes.every(isDrugPatientShareOrPDF);
+  if (allDrugShareOrPDF) {
+    return buildActivityRow({
+      claimId,
+      activityId,
+      code,
+      description: meta.description,
+      details: obsCodes.map(obsCode =>
+        obsCode === 'Drug Patient Share'
+          ? 'Drug Patient Share (valid - no validation)'
+          : 'PDF (valid - no validation)'
+      ).join('<br>'),
+      remarks: []
+    });
+  }
+  // END PATCH
+
   // Special handling for codes 17999 and 0232T
   if (code === "17999" || code === "0232T") {
     if (obsCodes.length === 0) {
       remarks.push(`${code} requires at least one observation code, but none were provided.`);
     } else {
-      const nonPDFObs = obsCodes.filter(oc => oc !== 'PDF');
+      const nonPDFObs = obsCodes.filter(oc => !isDrugPatientShareOrPDF(oc));
       const toothCodesUsed = nonPDFObs.filter(oc => ALL_TEETH.has(oc));
       if (toothCodesUsed.length > 0) {
         remarks.push(`${code} cannot be used with tooth codes: ${toothCodesUsed.join(", ")}`);
@@ -309,7 +351,9 @@ function validateKnownCode({
       code,
       description: meta.description,
       details: obsCodes.length ? obsCodes.map(oc =>
-        oc === 'PDF' ? 'PDF (valid - no validation)' : oc
+        isDrugPatientShareOrPDF(oc)
+          ? `${oc} (valid - no validation)`
+          : oc
       ).join('<br>') : 'None provided',
       remarks
     });
@@ -323,8 +367,8 @@ function validateKnownCode({
   const details = obsCodes.length === 0
     ? 'None provided'
     : obsCodes.map(obsCode => {
-      if (obsCode === 'PDF') {
-        return 'PDF (valid - no validation)';
+      if (isDrugPatientShareOrPDF(obsCode)) {
+        return `${obsCode} (valid - no validation)`;
       }
 
       let thisRemark = '';
@@ -493,3 +537,10 @@ function renderResults(container, rows) {
   container.innerHTML = html;
   console.log('[renderResults] Rendered table with', rows.length, 'rows');
 }
+
+// ----------- SUPERFLUOUS FUNCTIONS (no longer used, kept for reference) -----------
+
+// function getTeethSet(region) { ... }
+// function getRegionName(tooth) { ... }
+// function getQuadrant(tooth) { ... }
+// function getSextant(tooth) { ... }
