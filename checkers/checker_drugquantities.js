@@ -73,7 +73,7 @@ document.getElementById('processBtn').addEventListener('click', function() {
                         quantity !== "" && quantityPerPackage !== "" &&
                         Number(quantity).toFixed(2) !== Number(quantityPerPackage).toFixed(2)
                     ) {
-                        errors.push("Quantity does not match quantity per package");
+                        errors.push("XML quantity does not match calculated quantity.");
                     }
                     outputRows.push({
                         claimId,
@@ -101,12 +101,12 @@ document.getElementById('processBtn').addEventListener('click', function() {
                     <tr>
                         <th>Claim ID</th>
                         <th>Drug Code</th>
-                        <th>Quantity</th>
+                        <th>XML Quantity</th>
                         <th class="wrap-col">Package Name</th>
                         <th>Package Price to Public</th>
                         <th>Unit Price to Public</th>
                         <th>Unit per Package</th>
-                        <th>Quantity per Package</th>
+                        <th>Quantity</th>
                         <th class="description-col">Error Remark</th>
                     </tr>
                 </thead>
