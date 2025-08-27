@@ -11,9 +11,23 @@
     <strong>What this tool does:</strong>
     <p>
       Upload the Claim XML and the Drugs Excel file (with a <b>Drugs</b> sheet).<br>
-      The tool matches activity codes in the claims against drug codes, calculates quantities, checks types and errors, and displays the results color-coded by validity.
+      The tool matches activity codes in the claims against drug codes, calculates quantities, checks types and errors, and displays the results color-coded by validity.<br>
+      You can also check a single drug code for its correct quantity using the tool below.
     </p>
   </div>
+
+  <div id="singleCodeSection" style="display:flex; align-items: flex-start; gap: 32px; margin-bottom: 24px;">
+    <div id="singleCodeBox">
+      <div class="input-group">
+        <label for="singleDrugCodeInput">Test a Drug Code:</label>
+        <input type="text" id="singleDrugCodeInput" placeholder="Enter drug code" autocomplete="off" />
+        <button id="checkSingleCodeBtn" disabled>Check Code</button>
+      </div>
+      <div id="singleCodeStatus" aria-live="polite"></div>
+    </div>
+    <div id="singleCodeResults" style="min-width:360px;"></div>
+  </div>
+
   <div id="fileInputs">
     <div class="input-group">
       <label for="xmlFile">Claim Submissions XML File:</label>
