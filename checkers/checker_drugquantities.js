@@ -96,12 +96,18 @@ document.getElementById('processBtn').addEventListener('click', function() {
                 if(packagePrice>0&&unitPrice>0){unitPerPackage=(packagePrice/unitPrice).toFixed(2);correctQuantity=(1/(packagePrice/unitPrice)).toFixed(2);}
                 let errors=[], type=act.getElementsByTagName('Type')[0]?.textContent||'';
                 const xmlQ = Number(quantity), corrQ = Number(correctQuantity);
-                if(type!=="5") errors.push("Activity type is not 5");
-                // Valid if correctQuantity is 1.00 (exactly), otherwise XML quantity must be >= correct quantity (not less)
-                if(correctQuantity !== "" && quantity !== "") {
-                    if (corrQ === 1.00) { /* valid, do not push error */ }
-                    else if (corrQ > xmlQ) errors.push("XML quantity is less than correct quantity");
-                    else if (corrQ !== xmlQ) errors.push("XML quantity does not match correct quantity");
+                if (type !== "5") errors.push("Activity type is not 5");
+                // Unknown logic
+                if (
+                    correctQuantity === "" || quantity === "" || isNaN(corrQ) || isNaN(xmlQ)
+                ) {
+                    errors.push("unknown");
+                } else if (corrQ === 1.00) {
+                    // valid, no error
+                } else if (corrQ > xmlQ) {
+                    errors.push("XML quantity is less than correct quantity");
+                } else if (corrQ !== xmlQ) {
+                    errors.push("XML quantity does not match correct quantity");
                 }
                 outputRows.push({claimId,code,xmlQuantity:quantity,packageName,packageSize,packagePrice,unitPrice,unitPerPackage,correctQuantity,error:errors.join("; ")});
             });
