@@ -96,33 +96,34 @@ document.getElementById('processBtn').addEventListener('click', function() {
                 return String(a.claimId).localeCompare(String(b.claimId));
             });
 
-            let table = `<table border="1" cellpadding="4" cellspacing="0">
-            <thead>
-                <tr>
-                    <th>Claim ID</th>
-                    <th>Drug Code</th>
-                    <th>Quantity</th>
-                    <th>Package Name</th>
-                    <th>Package Price to Public</th>
-                    <th>Unit Price to Public</th>
-                    <th>Unit per Package</th>
-                    <th>Quantity per Package</th>
-                    <th>Error Remark</th>
-                </tr>
-            </thead>
-            <tbody>`;
+            let table = `<table class="shared-table">
+                <thead>
+                    <tr>
+                        <th>Claim ID</th>
+                        <th>Drug Code</th>
+                        <th>Quantity</th>
+                        <th class="wrap-col">Package Name</th>
+                        <th>Package Price to Public</th>
+                        <th>Unit Price to Public</th>
+                        <th>Unit per Package</th>
+                        <th>Quantity per Package</th>
+                        <th class="description-col">Error Remark</th>
+                    </tr>
+                </thead>
+                <tbody>`;
             let lastClaimId = null;
             outputRows.forEach(row => {
-                table += `<tr>
+                const rowClass = row.error ? 'invalid' : 'valid';
+                table += `<tr class="${rowClass}">
                     <td>${row.claimId === lastClaimId ? "" : row.claimId}</td>
                     <td>${row.code}</td>
                     <td>${row.quantity}</td>
-                    <td>${row.packageName}</td>
+                    <td class="wrap-col">${row.packageName}</td>
                     <td>${row.packagePrice !== "" ? row.packagePrice : ""}</td>
                     <td>${row.unitPrice !== "" ? row.unitPrice : ""}</td>
                     <td>${row.unitPerPackage}</td>
                     <td>${row.quantityPerPackage}</td>
-                    <td>${row.error}</td>
+                    <td class="description-col">${row.error}</td>
                 </tr>`;
                 lastClaimId = row.claimId;
             });
