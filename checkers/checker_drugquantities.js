@@ -14,6 +14,7 @@ document.getElementById('processBtn').addEventListener('click', function() {
         const sheetName = workbook.SheetNames.find(name => name.trim().toLowerCase() === "drugs");
         if (!sheetName) {
             document.getElementById('results').innerHTML = "<p style='color:red'>No 'Drugs' sheet found in XLSX file.</p>";
+            document.getElementById('exportErrorsBtn').disabled = true;
             return;
         }
         const worksheet = workbook.Sheets[sheetName];
@@ -32,6 +33,7 @@ document.getElementById('processBtn').addEventListener('click', function() {
             const xmlDoc = parser.parseFromString(xmlText, "application/xml");
             if (xmlDoc.getElementsByTagName('parsererror').length > 0) {
                 document.getElementById('results').innerHTML = "<p style='color:red'>Error parsing XML file.</p>";
+                document.getElementById('exportErrorsBtn').disabled = true;
                 return;
             }
 
@@ -73,7 +75,7 @@ document.getElementById('processBtn').addEventListener('click', function() {
                         quantity !== "" && quantityPerPackage !== "" &&
                         Number(quantity).toFixed(2) !== Number(quantityPerPackage).toFixed(2)
                     ) {
-                        errors.push("XML quantity does not match calculated quantity.");
+                        errors.push("Quantity does not match quantity per package");
                     }
                     outputRows.push({
                         claimId,
@@ -96,6 +98,13 @@ document.getElementById('processBtn').addEventListener('click', function() {
                 return String(a.claimId).localeCompare(String(b.claimId));
             });
 
+            // --- Enable/Disable Export Button depending on errors ---
+            const hasErrors = outputRows.some(row => row.error && row.error.trim() !== "");
+            document.getElementById('exportErrorsBtn').disabled = !hasErrors;
+
+            // --- Store for export ---
+            window._drugQuantityOutputRows = outputRows; // For export button handler
+
             let table = `<table class="shared-table">
                 <thead>
                     <tr>
@@ -106,7 +115,7 @@ document.getElementById('processBtn').addEventListener('click', function() {
                         <th>Package Price to Public</th>
                         <th>Unit Price to Public</th>
                         <th>Unit per Package</th>
-                        <th>Quantity</th>
+                        <th>Correct Quantity</th>
                         <th class="description-col">Error Remark</th>
                     </tr>
                 </thead>
@@ -134,4 +143,50 @@ document.getElementById('processBtn').addEventListener('click', function() {
         readerXML.readAsText(xmlInput);
     };
     readerXLSX.readAsArrayBuffer(xlsxInput);
+});
+
+// --- Export Errors Button Handler ---
+document.getElementById('exportErrorsBtn').addEventListener('click', function() {
+    const outputRows = window._drugQuantityOutputRows || [];
+    // Filter to only rows with errors
+    const errorRows = outputRows.filter(row => row.error && row.error.trim() !== "");
+    if (errorRows.length === 0) {
+        alert("There are no errors to export.");
+        return;
+    }
+
+    // Define the header and data order to match table columns
+    const header = [
+        "Claim ID",
+        "Drug Code",
+        "XML Quantity",
+        "Package Name",
+        "Package Price to Public",
+        "Unit Price to Public",
+        "Unit per Package",
+        "Correct Quantity",
+        "Error Remark"
+    ];
+
+    // Map data to array of arrays
+    const data = errorRows.map(row => [
+        row.claimId,
+        row.code,
+        row.quantity,
+        row.packageName,
+        row.packagePrice,
+        row.unitPrice,
+        row.unitPerPackage,
+        row.quantityPerPackage,
+        row.error
+    ]);
+
+    // Combine header and data
+    const exportArr = [header, ...data];
+
+    // Create worksheet and workbook
+    const ws = XLSX.utils.aoa_to_sheet(exportArr);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Errors");
+    XLSX.writeFile(wb, "DrugQuantityErrors.xlsx");
 });
