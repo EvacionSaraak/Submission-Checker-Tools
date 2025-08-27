@@ -1,1 +1,29 @@
-
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Drug Quantities Checker</title>
+    <link rel="stylesheet" href="../styles/checkers.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>Drug Quantities Checker</h1>
+        <form id="file-upload-form">
+            <div class="form-group">
+                <label for="xlsxFile">Upload Drugs XLSX File:</label>
+                <input type="file" id="xlsxFile" accept=".xlsx,.xls" required>
+            </div>
+            <div class="form-group">
+                <label for="xmlFile">Upload XML File:</label>
+                <input type="file" id="xmlFile" accept=".xml" required>
+            </div>
+            <button type="button" id="processBtn">Process Files</button>
+        </form>
+        <div id="results">
+            <!-- The output table will appear here -->
+        </div>
+    </div>
+    <script src="checker_drugquantities.js"></script>
+</body>
+</html>
