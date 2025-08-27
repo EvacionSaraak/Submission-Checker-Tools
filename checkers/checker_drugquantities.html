@@ -1,30 +1,37 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Drug Quantities Checker</title>
-    <link rel="stylesheet" href="tables.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <meta charset="UTF-8" />
+  <title>Drug Quantities Checker</title>
+  <link rel="stylesheet" href="tables.css" />
 </head>
 <body>
-    <div class="container">
-        <h1>Drug Quantities Checker</h1>
-        <form id="file-upload-form">
-            <div class="form-group">
-                <label for="xlsxFile">Upload Drugs XLSX File:</label>
-                <input type="file" id="xlsxFile" accept=".xlsx,.xls" required>
-            </div>
-            <div class="form-group">
-                <label for="xmlFile">Upload XML File:</label>
-                <input type="file" id="xmlFile" accept=".xml" required>
-            </div>
-            <button type="button" id="processBtn">Process Files</button>
-        </form>
-        <div id="results">
-            <!-- The output table will appear here -->
-        </div>
+  <h2>Drug Quantities Checker</h2>
+  <div id="explanationBox">
+    <strong>What this tool does:</strong>
+    <p>
+      Upload the Claim XML and the Drugs Excel file (with a <b>Drugs</b> sheet).<br>
+      The tool matches activity codes in the claims against drug codes, calculates quantities, checks types and errors, and displays the results color-coded by validity.
+    </p>
+  </div>
+  <div id="fileInputs">
+    <div class="input-group">
+      <label for="xmlFile">Claim Submissions XML File:</label>
+      <input type="file" id="xmlFile" accept=".xml" />
     </div>
-    <script src="checker_drugquantities.js"></script>
-    <script src="table_clipboard.js"></script>
+    <div class="input-group">
+      <label for="xlsxFile">Drugs List (.xlsx):</label>
+      <input type="file" id="xlsxFile" accept=".xlsx" />
+    </div>
+    <div class="input-group">
+      <button id="processBtn">Process</button>
+    </div>
+  </div>
+  <div id="uploadStatus" aria-live="polite"></div>
+  <div id="results"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="checker_drugquantities.js"></script>
+  <script src="table_clipboard.js"></script>
 </body>
 </html>
