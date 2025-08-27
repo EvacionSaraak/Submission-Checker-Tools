@@ -54,7 +54,7 @@ document.getElementById('checkSingleCodeBtn').addEventListener('click', function
     if(packagePrice>0&&unitPrice>0){unitPerPackage=(packagePrice/unitPrice).toFixed(2);correctQuantity=(1/(packagePrice/unitPrice)).toFixed(2);}
     let table = `<table class="shared-table"><thead><tr>
         <th>Drug Code</th><th class="wrap-col">Package Name</th><th>Package Size</th><th>Package Price to Public</th>
-        <th>Unit Price to Public</th><th>Unit per Package</th><th>Correct Quantity</th>
+        <th>Unit Price to Public</th><th>Unit per Package</th><th>Required Quantity</th>
         </tr></thead><tbody>
         <tr><td>${code}</td><td class="wrap-col">${packageName}</td><td>${packageSize}</td><td>${packagePrice||""}</td>
         <td>${unitPrice||""}</td><td>${unitPerPackage}</td><td>${correctQuantity}</td></tr>
@@ -94,34 +94,44 @@ document.getElementById('processBtn').addEventListener('click', function() {
                       unitPrice=parseFloat(drug['Unit Price to Public'])||0;
                 let unitPerPackage="", correctQuantity="";
                 if(packagePrice>0&&unitPrice>0){unitPerPackage=(packagePrice/unitPrice).toFixed(2);correctQuantity=(1/(packagePrice/unitPrice)).toFixed(2);}
-                let errors=[], type=act.getElementsByTagName('Type')[0]?.textContent||'';
+                let errors=[], validationStatus = "", type=act.getElementsByTagName('Type')[0]?.textContent||'';
                 const xmlQ = Number(quantity), corrQ = Number(correctQuantity);
-                if (type !== "5") errors.push("Activity type is not 5");
-                // Unknown logic
-                if (
-                    correctQuantity === "" || quantity === "" || isNaN(corrQ) || isNaN(xmlQ)
-                ) {
-                    errors.push("unknown");
-                } else if (corrQ === 1.00) {
-                    // valid, no error
-                } else if (corrQ > xmlQ) {
-                    errors.push("XML quantity is less than correct quantity");
-                } else if (corrQ !== xmlQ) {
-                    errors.push("XML quantity does not match correct quantity");
+
+                // Professional error and status messages
+                if (type !== "5") {
+                    errors.push(`Drug codes must have Type 5 and not ${type}`);
                 }
-                outputRows.push({claimId,code,xmlQuantity:quantity,packageName,packageSize,packagePrice,unitPrice,unitPerPackage,correctQuantity,error:errors.join("; ")});
+
+                if (correctQuantity === "" || quantity === "" || isNaN(corrQ) || isNaN(xmlQ)) {
+                    errors.push("Quantity validation cannot be determined");
+                    validationStatus = "Insufficient data to perform validation.";
+                } else if (corrQ === 1.00) {
+                    validationStatus = "";
+                } else if (corrQ > xmlQ) {
+                    errors.push("Claimed quantity is less than the required quantity");
+                    validationStatus = "This entry is non-compliant; the claimed quantity is insufficient.";
+                } else if (corrQ !== xmlQ) {
+                    errors.push("Quantity validation cannot be determined");
+                    validationStatus = "Unable to verify correctness; further review required.";
+                } else {
+                    validationStatus = "";
+                }
+                outputRows.push({
+                    claimId,code,xmlQuantity:quantity,packageName,packageSize,packagePrice,unitPrice,
+                    unitPerPackage,correctQuantity,error:errors.join("; "),validationStatus
+                });
             });
         });
         outputRows.sort((a,b)=>{
             if(!isNaN(a.claimId)&&!isNaN(b.claimId)) return Number(a.claimId)-Number(b.claimId);
             return String(a.claimId).localeCompare(String(b.claimId));
         });
-        document.getElementById('exportErrorsBtn').disabled = !outputRows.some(r=>r.error&&r.error.trim()!=="");
+        document.getElementById('exportErrorsBtn').disabled = !outputRows.some(r=>r.error && r.error.trim()!=="");
         _drugQuantityOutputRows = outputRows;
         let table = `<table class="shared-table"><thead><tr>
             <th>Claim ID</th><th>Drug Code</th><th>XML Quantity</th><th class="wrap-col">Package Name</th><th>Package Size</th>
             <th>Package Price to Public</th><th>Unit Price to Public</th><th>Unit per Package</th>
-            <th>Correct Quantity</th><th class="description-col">Error Remark</th>
+            <th>Required Quantity</th><th class="description-col">Error Remark</th><th>Validation Status</th>
             </tr></thead><tbody>`;
         let lastClaimId = null;
         outputRows.forEach(row=>{
@@ -131,7 +141,9 @@ document.getElementById('processBtn').addEventListener('click', function() {
                 <td>${row.code}</td><td>${row.xmlQuantity}</td><td class="wrap-col">${row.packageName}</td>
                 <td>${row.packageSize}</td><td>${row.packagePrice!==""?row.packagePrice:""}</td>
                 <td>${row.unitPrice!==""?row.unitPrice:""}</td>
-                <td>${row.unitPerPackage}</td><td>${row.correctQuantity}</td><td class="description-col">${row.error}</td>
+                <td>${row.unitPerPackage}</td><td>${row.correctQuantity}</td>
+                <td class="description-col">${row.error}</td>
+                <td>${row.validationStatus}</td>
             </tr>`;lastClaimId=row.claimId;
         });
         table+="</tbody></table>";
@@ -143,8 +155,8 @@ document.getElementById('processBtn').addEventListener('click', function() {
 document.getElementById('exportErrorsBtn').addEventListener('click', function() {
     const errorRows = (_drugQuantityOutputRows||[]).filter(r=>r.error&&r.error.trim()!=="");
     if(errorRows.length===0) return alert("There are no errors to export.");
-    const header=["Claim ID","Drug Code","XML Quantity","Package Name","Package Size","Package Price to Public","Unit Price to Public","Unit per Package","Correct Quantity","Error Remark"];
-    const data = errorRows.map(r=>[r.claimId,r.code,r.xmlQuantity,r.packageName,r.packageSize,r.packagePrice,r.unitPrice,r.unitPerPackage,r.correctQuantity,r.error]);
+    const header=["Claim ID","Drug Code","XML Quantity","Package Name","Package Size","Package Price to Public","Unit Price to Public","Unit per Package","Required Quantity","Error Remark","Validation Status"];
+    const data = errorRows.map(r=>[r.claimId,r.code,r.xmlQuantity,r.packageName,r.packageSize,r.packagePrice,r.unitPrice,r.unitPerPackage,r.correctQuantity,r.error,r.validationStatus]);
     const ws = XLSX.utils.aoa_to_sheet([header,...data]), wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Errors"); XLSX.writeFile(wb, "DrugQuantityErrors.xlsx");
 });
