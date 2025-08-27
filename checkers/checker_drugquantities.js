@@ -1,3 +1,14 @@
+// --- Globals to share state between handlers ---
+let _drugsLookupMap = null; // for single code lookup
+let _drugQuantityOutputRows = []; // for export
+
+// --- Enable single code checker when drugsMap is ready ---
+function enableSingleCodeChecker(drugsMap) {
+    _drugsLookupMap = drugsMap;
+    document.getElementById('checkSingleCodeBtn').disabled = false;
+}
+
+// --- Handle process button ---
 document.getElementById('processBtn').addEventListener('click', function() {
     const xlsxInput = document.getElementById('xlsxFile').files[0];
     const xmlInput = document.getElementById('xmlFile').files[0];
@@ -15,6 +26,7 @@ document.getElementById('processBtn').addEventListener('click', function() {
         if (!sheetName) {
             document.getElementById('results').innerHTML = "<p style='color:red'>No 'Drugs' sheet found in XLSX file.</p>";
             document.getElementById('exportErrorsBtn').disabled = true;
+            enableSingleCodeChecker({});
             return;
         }
         const worksheet = workbook.Sheets[sheetName];
@@ -25,6 +37,9 @@ document.getElementById('processBtn').addEventListener('click', function() {
                 drugsMap[String(row['Drug Code']).trim()] = row;
             }
         });
+
+        // Enable single code checker now that the map is ready
+        enableSingleCodeChecker(drugsMap);
 
         const readerXML = new FileReader();
         readerXML.onload = function(e2) {
@@ -60,10 +75,10 @@ document.getElementById('processBtn').addEventListener('click', function() {
                     const packagePrice = parseFloat(drug['Package Price to Public']) || 0;
                     const unitPrice = parseFloat(drug['Unit Price to Public']) || 0;
                     let unitPerPackage = "";
-                    let quantityPerPackage = "";
+                    let correctQuantity = "";
                     if (packagePrice > 0 && unitPrice > 0) {
                         unitPerPackage = (packagePrice / unitPrice).toFixed(2);
-                        quantityPerPackage = (1 / (packagePrice / unitPrice)).toFixed(2);
+                        correctQuantity = (1 / (packagePrice / unitPrice)).toFixed(2);
                     }
                     let errors = [];
                     const type = activity.getElementsByTagName('Type')[0]?.textContent || '';
@@ -72,20 +87,20 @@ document.getElementById('processBtn').addEventListener('click', function() {
                     }
                     // Only check for mismatch if both are non-empty
                     if (
-                        quantity !== "" && quantityPerPackage !== "" &&
-                        Number(quantity).toFixed(2) !== Number(quantityPerPackage).toFixed(2)
+                        quantity !== "" && correctQuantity !== "" &&
+                        Number(quantity).toFixed(2) !== Number(correctQuantity).toFixed(2)
                     ) {
-                        errors.push("Quantity does not match quantity per package");
+                        errors.push("XML quantity does not match correct quantity");
                     }
                     outputRows.push({
                         claimId,
                         code,
-                        quantity,
+                        xmlQuantity: quantity,
                         packageName,
                         packagePrice,
                         unitPrice,
                         unitPerPackage,
-                        quantityPerPackage,
+                        correctQuantity,
                         error: errors.join("; ")
                     });
                 });
@@ -103,7 +118,7 @@ document.getElementById('processBtn').addEventListener('click', function() {
             document.getElementById('exportErrorsBtn').disabled = !hasErrors;
 
             // --- Store for export ---
-            window._drugQuantityOutputRows = outputRows; // For export button handler
+            _drugQuantityOutputRows = outputRows; // For export button handler
 
             let table = `<table class="shared-table">
                 <thead>
@@ -126,12 +141,12 @@ document.getElementById('processBtn').addEventListener('click', function() {
                 table += `<tr class="${rowClass}">
                     <td>${row.claimId === lastClaimId ? "" : row.claimId}</td>
                     <td>${row.code}</td>
-                    <td>${row.quantity}</td>
+                    <td>${row.xmlQuantity}</td>
                     <td class="wrap-col">${row.packageName}</td>
                     <td>${row.packagePrice !== "" ? row.packagePrice : ""}</td>
                     <td>${row.unitPrice !== "" ? row.unitPrice : ""}</td>
                     <td>${row.unitPerPackage}</td>
-                    <td>${row.quantityPerPackage}</td>
+                    <td>${row.correctQuantity}</td>
                     <td class="description-col">${row.error}</td>
                 </tr>`;
                 lastClaimId = row.claimId;
@@ -147,7 +162,7 @@ document.getElementById('processBtn').addEventListener('click', function() {
 
 // --- Export Errors Button Handler ---
 document.getElementById('exportErrorsBtn').addEventListener('click', function() {
-    const outputRows = window._drugQuantityOutputRows || [];
+    const outputRows = _drugQuantityOutputRows || [];
     // Filter to only rows with errors
     const errorRows = outputRows.filter(row => row.error && row.error.trim() !== "");
     if (errorRows.length === 0) {
@@ -172,12 +187,12 @@ document.getElementById('exportErrorsBtn').addEventListener('click', function() 
     const data = errorRows.map(row => [
         row.claimId,
         row.code,
-        row.quantity,
+        row.xmlQuantity,
         row.packageName,
         row.packagePrice,
         row.unitPrice,
         row.unitPerPackage,
-        row.quantityPerPackage,
+        row.correctQuantity,
         row.error
     ]);
 
@@ -189,4 +204,65 @@ document.getElementById('exportErrorsBtn').addEventListener('click', function() 
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Errors");
     XLSX.writeFile(wb, "DrugQuantityErrors.xlsx");
+});
+
+// --- Single code lookup logic ---
+document.getElementById('checkSingleCodeBtn').addEventListener('click', function() {
+    const code = document.getElementById('singleDrugCodeInput').value.trim();
+    const outDiv = document.getElementById('singleCodeResults');
+    const statusDiv = document.getElementById('singleCodeStatus');
+    if (!_drugsLookupMap) {
+        statusDiv.innerHTML = "<span style='color:red'>Please upload the Drugs Excel file first.</span>";
+        outDiv.innerHTML = "";
+        return;
+    }
+    if (!code) {
+        statusDiv.innerHTML = "<span style='color:red'>Please enter a drug code.</span>";
+        outDiv.innerHTML = "";
+        return;
+    }
+    const drug = _drugsLookupMap[code];
+    if (!drug) {
+        statusDiv.innerHTML = "<span style='color:red'>Drug code not found in uploaded file.</span>";
+        outDiv.innerHTML = "";
+        return;
+    }
+    statusDiv.innerHTML = "";
+    const packageName = drug['Package Name'] || '';
+    const packagePrice = parseFloat(drug['Package Price to Public']) || 0;
+    const unitPrice = parseFloat(drug['Unit Price to Public']) || 0;
+    let unitPerPackage = "";
+    let correctQuantity = "";
+    if (packagePrice > 0 && unitPrice > 0) {
+        unitPerPackage = (packagePrice / unitPrice).toFixed(2);
+        correctQuantity = (1 / (packagePrice / unitPrice)).toFixed(2);
+    }
+    let table = `<table class="shared-table">
+        <thead>
+            <tr>
+                <th>Drug Code</th>
+                <th class="wrap-col">Package Name</th>
+                <th>Package Price to Public</th>
+                <th>Unit Price to Public</th>
+                <th>Unit per Package</th>
+                <th>Correct Quantity</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>${code}</td>
+                <td class="wrap-col">${packageName}</td>
+                <td>${packagePrice || ""}</td>
+                <td>${unitPrice || ""}</td>
+                <td>${unitPerPackage}</td>
+                <td>${correctQuantity}</td>
+            </tr>
+        </tbody>
+    </table>`;
+    outDiv.innerHTML = table;
+});
+
+// Enable the check button only after XLSX is loaded
+document.getElementById('singleDrugCodeInput').addEventListener('input', function() {
+    document.getElementById('checkSingleCodeBtn').disabled = !_drugsLookupMap;
 });
