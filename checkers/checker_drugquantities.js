@@ -49,14 +49,14 @@ document.getElementById('checkSingleCodeBtn').addEventListener('click', function
     const drug=_drugsLookupMap[code];
     if(!drug){statusDiv.innerHTML="<span style='color:red'>Drug code not found in uploaded file.</span>";outDiv.innerHTML="";return;}
     statusDiv.innerHTML="";
-    const packageName=drug['Package Name']||'', packagePrice=parseFloat(drug['Package Price to Public'])||0, unitPrice=parseFloat(drug['Unit Price to Public'])||0;
+    const packageName=drug['Package Name']||'', packagePrice=parseFloat(drug['Package Price to Public'])||0, unitPrice=parseFloat(drug['Unit Price to Public'])||0, packageSize=drug['Package Size']||"";
     let unitPerPackage="", correctQuantity="";
     if(packagePrice>0&&unitPrice>0){unitPerPackage=(packagePrice/unitPrice).toFixed(2);correctQuantity=(1/(packagePrice/unitPrice)).toFixed(2);}
     let table = `<table class="shared-table"><thead><tr>
-        <th>Drug Code</th><th class="wrap-col">Package Name</th><th>Package Price to Public</th>
+        <th>Drug Code</th><th class="wrap-col">Package Name</th><th>Package Size</th><th>Package Price to Public</th>
         <th>Unit Price to Public</th><th>Unit per Package</th><th>Correct Quantity</th>
         </tr></thead><tbody>
-        <tr><td>${code}</td><td class="wrap-col">${packageName}</td><td>${packagePrice||""}</td>
+        <tr><td>${code}</td><td class="wrap-col">${packageName}</td><td>${packageSize}</td><td>${packagePrice||""}</td>
         <td>${unitPrice||""}</td><td>${unitPerPackage}</td><td>${correctQuantity}</td></tr>
         </tbody></table>`;
     outDiv.innerHTML=table;
@@ -86,14 +86,24 @@ document.getElementById('processBtn').addEventListener('click', function() {
             Array.from(claim.getElementsByTagName('Activity')).forEach(act=>{
                 const code = act.getElementsByTagName('Code')[0]?.textContent?.trim()||'';
                 if(!_drugsLookupMap[code]) return;
-                const quantity = act.getElementsByTagName('Quantity')[0]?.textContent||'', drug = _drugsLookupMap[code];
-                const packageName=drug['Package Name']||'', packagePrice=parseFloat(drug['Package Price to Public'])||0, unitPrice=parseFloat(drug['Unit Price to Public'])||0;
+                const quantity = act.getElementsByTagName('Quantity')[0]?.textContent||'',
+                      drug = _drugsLookupMap[code],
+                      packageName=drug['Package Name']||'',
+                      packageSize=drug['Package Size']||'',
+                      packagePrice=parseFloat(drug['Package Price to Public'])||0,
+                      unitPrice=parseFloat(drug['Unit Price to Public'])||0;
                 let unitPerPackage="", correctQuantity="";
                 if(packagePrice>0&&unitPrice>0){unitPerPackage=(packagePrice/unitPrice).toFixed(2);correctQuantity=(1/(packagePrice/unitPrice)).toFixed(2);}
                 let errors=[], type=act.getElementsByTagName('Type')[0]?.textContent||'';
+                const xmlQ = Number(quantity), corrQ = Number(correctQuantity);
                 if(type!=="5") errors.push("Activity type is not 5");
-                if(quantity!==""&&correctQuantity!==""&&Number(quantity).toFixed(2)!==Number(correctQuantity).toFixed(2)) errors.push("XML quantity does not match correct quantity");
-                outputRows.push({claimId,code,xmlQuantity:quantity,packageName,packagePrice,unitPrice,unitPerPackage,correctQuantity,error:errors.join("; ")});
+                // Valid if correctQuantity is 1.00 (exactly), otherwise XML quantity must be >= correct quantity (not less)
+                if(correctQuantity !== "" && quantity !== "") {
+                    if (corrQ === 1.00) { /* valid, do not push error */ }
+                    else if (corrQ > xmlQ) errors.push("XML quantity is less than correct quantity");
+                    else if (corrQ !== xmlQ) errors.push("XML quantity does not match correct quantity");
+                }
+                outputRows.push({claimId,code,xmlQuantity:quantity,packageName,packageSize,packagePrice,unitPrice,unitPerPackage,correctQuantity,error:errors.join("; ")});
             });
         });
         outputRows.sort((a,b)=>{
@@ -103,7 +113,7 @@ document.getElementById('processBtn').addEventListener('click', function() {
         document.getElementById('exportErrorsBtn').disabled = !outputRows.some(r=>r.error&&r.error.trim()!=="");
         _drugQuantityOutputRows = outputRows;
         let table = `<table class="shared-table"><thead><tr>
-            <th>Claim ID</th><th>Drug Code</th><th>XML Quantity</th><th class="wrap-col">Package Name</th>
+            <th>Claim ID</th><th>Drug Code</th><th>XML Quantity</th><th class="wrap-col">Package Name</th><th>Package Size</th>
             <th>Package Price to Public</th><th>Unit Price to Public</th><th>Unit per Package</th>
             <th>Correct Quantity</th><th class="description-col">Error Remark</th>
             </tr></thead><tbody>`;
@@ -113,7 +123,8 @@ document.getElementById('processBtn').addEventListener('click', function() {
             table+=`<tr class="${rowClass}">
                 <td>${row.claimId===lastClaimId?"":row.claimId}</td>
                 <td>${row.code}</td><td>${row.xmlQuantity}</td><td class="wrap-col">${row.packageName}</td>
-                <td>${row.packagePrice!==""?row.packagePrice:""}</td><td>${row.unitPrice!==""?row.unitPrice:""}</td>
+                <td>${row.packageSize}</td><td>${row.packagePrice!==""?row.packagePrice:""}</td>
+                <td>${row.unitPrice!==""?row.unitPrice:""}</td>
                 <td>${row.unitPerPackage}</td><td>${row.correctQuantity}</td><td class="description-col">${row.error}</td>
             </tr>`;lastClaimId=row.claimId;
         });
@@ -126,8 +137,8 @@ document.getElementById('processBtn').addEventListener('click', function() {
 document.getElementById('exportErrorsBtn').addEventListener('click', function() {
     const errorRows = (_drugQuantityOutputRows||[]).filter(r=>r.error&&r.error.trim()!=="");
     if(errorRows.length===0) return alert("There are no errors to export.");
-    const header=["Claim ID","Drug Code","XML Quantity","Package Name","Package Price to Public","Unit Price to Public","Unit per Package","Correct Quantity","Error Remark"];
-    const data = errorRows.map(r=>[r.claimId,r.code,r.xmlQuantity,r.packageName,r.packagePrice,r.unitPrice,r.unitPerPackage,r.correctQuantity,r.error]);
+    const header=["Claim ID","Drug Code","XML Quantity","Package Name","Package Size","Package Price to Public","Unit Price to Public","Unit per Package","Correct Quantity","Error Remark"];
+    const data = errorRows.map(r=>[r.claimId,r.code,r.xmlQuantity,r.packageName,r.packageSize,r.packagePrice,r.unitPrice,r.unitPerPackage,r.correctQuantity,r.error]);
     const ws = XLSX.utils.aoa_to_sheet([header,...data]), wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Errors"); XLSX.writeFile(wb, "DrugQuantityErrors.xlsx");
 });
