@@ -7,8 +7,8 @@ document.addEventListener('DOMContentLoaded', () => {
     { label: "Timings", file: "checkers/checker_timings.html" },
     { label: "Teeth", file: "checkers/checker_tooths.html" },
     { label: "Schema", file: "checkers/checker_schema.html" },
-    { label: "Drug UPP", file: "checkers/checker_drugs.html" },
-    { label: "Drug Quantity", file: "checkers/checker_drugquantities.html" }
+    { label: "UPP", file: "checkers/checker_drugs.html" },
+    { label: "Drugs", file: "checkers/checker_drugquantities.html" }
   ];
 
   const navLeft = document.getElementById("navLeft");
