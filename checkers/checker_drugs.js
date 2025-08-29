@@ -395,10 +395,9 @@ function renderClaimTableWithModals(xmlRows) {
   const inclusionType = getCurrentInclusion();
 
   // Main table with one row per claim
-  let tableHTML = '<table><thead><tr><th>Claim ID</th><th>Number of Activities</th><th>Actions</th></tr></thead><tbody>';
+    let tableHTML = '<table><thead><tr><th>Claim ID</th><th>Number of Activities</th><th>Actions</th></tr></thead><tbody>';
   Object.keys(claimsMap).forEach((claimId, idx) => {
     const activities = claimsMap[claimId];
-    // Set claim row to invalid if any activity is invalid
     let claimClass = "valid";
     for (const activity of activities) {
       if (!isActivityValid(activity.drug, inclusionType)) {
@@ -406,12 +405,13 @@ function renderClaimTableWithModals(xmlRows) {
         break;
       }
     }
+    // Ensures modal starts hidden!
     tableHTML += `<tr class="${claimClass}">
       <td>${claimId}</td>
       <td>${activities.length}</td>
       <td>
         <button class="details-btn" data-modal="modal-claim-${idx}" data-idx="${idx}">Show Activities</button>
-        <div id="modal-claim-${idx}" class="modal">
+        <div id="modal-claim-${idx}" class="modal" style="display: none;">
           <div class="modal-content">
             <span class="close" data-modal-close="modal-claim-${idx}">&times;</span>
             <h4>Activities for Claim ${claimId}</h4>
@@ -424,15 +424,10 @@ function renderClaimTableWithModals(xmlRows) {
     </tr>`;
   });
   tableHTML += '</tbody></table>';
-
   const container = document.createElement('div');
   container.innerHTML = tableHTML;
-
-  // Hide all modals after DOM insertion
-  container.querySelectorAll('.modal').forEach(modal => {
-    modal.style.display = 'none';
-  });
-
+  // Safety: Hide all modals after DOM insertion
+  container.querySelectorAll('.modal').forEach(modal => {modal.style.display = 'none';});
   setTimeout(() => setupModalListeners(container), 0);
   return container;
 }
