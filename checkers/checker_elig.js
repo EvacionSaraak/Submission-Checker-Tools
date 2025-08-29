@@ -137,6 +137,58 @@ function normalizeClinician(name) {
   return name.trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
+// Finds the correct header row within the first `maxScan` rows of a sheet (array-of-arrays)
+// Returns an object with the detected headerRowIndex, normalized headers array, and rows as objects
+function findHeaderRowFromArrays(allRows, maxScan = 10) {
+  if (!Array.isArray(allRows) || allRows.length === 0) { return { headerRowIndex: -1, headers: [], rows: [] }; }
+
+  // tokens that commonly appear in the header rows for the supported file types
+  const tokens = [
+    'pri. claim no', 'pri claim no', 'claimid', 'claim id', 'pri. claim id', 'pri claim id',
+    'center name', 'card number', 'card number / dha member id', 'member id', 'patientcardid',
+    'pri. patient insurance card no', 'institution', 'facility id', 'mr no.', 'pri. claim id'
+  ];
+
+  const scanLimit = Math.min(maxScan, allRows.length);
+  let bestIndex = 0;
+  let bestScore = 0;
+
+  for (let i = 0; i < scanLimit; i++) {
+    const row = allRows[i] || [];
+    const joined = row.map(c => (c === null || c === undefined) ? '' : String(c)).join(' ').toLowerCase();
+
+    let score = 0;
+    for (const t of tokens) { if (joined.includes(t)) score++; }
+
+    // prefer a row that contains multiple token hits; tie-breaker: earlier row wins
+    if (score > bestScore) {
+      bestScore = score;
+      bestIndex = i;
+    }
+  }
+
+  // If we found no meaningful header row, default to first row (index 0)
+  const headerRowIndex = bestScore > 0 ? bestIndex : 0;
+  const rawHeaderRow = allRows[headerRowIndex] || [];
+
+  // normalize headers (trim strings)
+  const headers = rawHeaderRow.map(h => (h === null || h === undefined) ? '' : String(h).trim());
+
+  // assemble data rows (everything after headerRowIndex)
+  const dataRows = allRows.slice(headerRowIndex + 1);
+
+  // convert to array of objects using detected headers
+  const rows = dataRows.map(rowArray => {
+    const obj = {};
+    for (let c = 0; c < headers.length; c++) {
+      const key = headers[c] || `Column${c+1}`;
+      obj[key] = rowArray[c] === undefined || rowArray[c] === null ? '' : rowArray[c];
+    }
+    return obj;
+  });
+  return { headerRowIndex, headers, rows };
+}
+
 /*******************************
  * ELIGIBILITY MATCHING FUNCTIONS *
  *******************************/
