@@ -394,8 +394,8 @@ function renderClaimTableWithModals(xmlRows) {
 
   const inclusionType = getCurrentInclusion();
 
-  // Main table with one row per claim
-    let tableHTML = '<table><thead><tr><th>Claim ID</th><th>Number of Activities</th><th>Actions</th></tr></thead><tbody>';
+  // Build table HTML (buttons only - no modal DOM inside table)
+  let tableHTML = '<table><thead><tr><th>Claim ID</th><th>Number of Activities</th><th>Actions</th></tr></thead><tbody>';
   Object.keys(claimsMap).forEach((claimId, idx) => {
     const activities = claimsMap[claimId];
     let claimClass = "valid";
@@ -405,30 +405,55 @@ function renderClaimTableWithModals(xmlRows) {
         break;
       }
     }
-    // Ensures modal starts hidden!
+
+    // Button references an external modal id
     tableHTML += `<tr class="${claimClass}">
       <td>${claimId}</td>
       <td>${activities.length}</td>
       <td>
-        <button class="details-btn" data-modal="modal-claim-${idx}" data-idx="${idx}">Show Activities</button>
-        <div id="modal-claim-${idx}" class="modal" style="display: none;">
-          <div class="modal-content">
-            <span class="close" data-modal-close="modal-claim-${idx}">&times;</span>
-            <h4>Activities for Claim ${claimId}</h4>
-            <div class="modal-table-container">
-              ${renderActivitiesTable(activities, inclusionType)}
-            </div>
-          </div>
-        </div>
+        <button class="details-btn" data-modal-id="modal-claim-${idx}" data-idx="${idx}">Show Activities</button>
       </td>
     </tr>`;
   });
   tableHTML += '</tbody></table>';
+
+  // Create container for table
   const container = document.createElement('div');
   container.innerHTML = tableHTML;
-  // Safety: Hide all modals after DOM insertion
-  container.querySelectorAll('.modal').forEach(modal => {modal.style.display = 'none';});
-  setTimeout(() => setupModalListeners(container), 0);
+
+  // Create / reset modal container outside the table
+  let modalContainer = document.getElementById('modal-container');
+  if (!modalContainer) {
+    modalContainer = document.createElement('div');
+    modalContainer.id = 'modal-container';
+    // place modal container next to analysisResults (so it's in the same logical area)
+    analysisPanel.appendChild(modalContainer);
+  }
+  modalContainer.innerHTML = ''; // wipe previous modals
+
+  // Create modals for each claim and append to modalContainer
+  Object.keys(claimsMap).forEach((claimId, idx) => {
+    const activities = claimsMap[claimId];
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.id = `modal-claim-${idx}`;
+    modal.style.display = 'none'; // ensure hidden by default
+
+    modal.innerHTML = `
+      <div class="modal-content">
+        <span class="close" data-modal-close="modal-claim-${idx}">&times;</span>
+        <h4>Activities for Claim ${claimId}</h4>
+        <div class="modal-table-container">
+          ${renderActivitiesTable(activities, inclusionType)}
+        </div>
+      </div>
+    `;
+    modalContainer.appendChild(modal);
+  });
+
+  // Setup listeners (delegated) - idempotent
+  setupModalListeners();
+
   return container;
 }
 
@@ -494,37 +519,46 @@ function getCurrentInclusion() {
   return document.querySelector('input[name="inclusion"]:checked').value;
 }
 
-function setupModalListeners(container) {
-  container.querySelectorAll('.details-btn').forEach(btn => {
-    btn.addEventListener('click', function() {
-      const modalId = btn.getAttribute('data-modal');
+function setupModalListeners() {
+  if (window._checker_modal_listeners_installed) return;
+  window._checker_modal_listeners_installed = true;
+
+  // Open modal when details button clicked
+  document.addEventListener('click', function (e) {
+    const btn = e.target.closest && e.target.closest('.details-btn');
+    if (btn) {
+      const modalId = btn.getAttribute('data-modal-id');
       const idx = btn.getAttribute('data-idx');
-      const modal = container.querySelector(`#${modalId}`);
+      const modal = document.getElementById(modalId);
       if (modal) {
-        modal.style.display = 'flex';
+        modal.style.display = 'flex'; // uses flex so modal-content can center if your CSS handles it
         currentModalIdx = idx;
+        // Ensure contents are up-to-date with current inclusion type
         refreshModalActivities(modal, idx);
       }
-    });
-  });
-  // Close modal
-  container.querySelectorAll('.close').forEach(btn => {
-    btn.addEventListener('click', function() {
-      const modalId = btn.getAttribute('data-modal-close');
-      const modal = container.querySelector(`#${modalId}`);
-      if (modal) modal.style.display = 'none';
-      currentModalIdx = null;
-    });
-  });
-  // Close when clicking outside modal-content
-  container.querySelectorAll('.modal').forEach(modal => {
-    modal.addEventListener('click', function(event) {
-      if (event.target === modal) {
+      return;
+    }
+
+    // Close button inside modal
+    const closeBtn = e.target.closest && e.target.closest('.close');
+    if (closeBtn) {
+      const targetId = closeBtn.getAttribute('data-modal-close');
+      const modal = document.getElementById(targetId);
+      if (modal) {
         modal.style.display = 'none';
-        currentModalIdx = null;
       }
-    });
-  });
+      currentModalIdx = null;
+      return;
+    }
+
+    // Click outside modal-content (on overlay) to close
+    const clickedModal = e.target.closest && e.target.closest('.modal');
+    if (clickedModal && e.target === clickedModal) {
+      clickedModal.style.display = 'none';
+      currentModalIdx = null;
+      return;
+    }
+  }, true); // use capture to ensure early handling
 }
 
 // Redraw claim table and modal activities on inclusion radio change
@@ -535,9 +569,10 @@ document.querySelectorAll('input[name="inclusion"]').forEach(radio => {
       analysisResults.appendChild(renderClaimTableWithModals(lastXmlRows));
       updateExportInvalidsButton();
     }
+    // If a modal is open, refresh its contents (modal might live in modal-container)
     if (currentModalIdx !== null) {
       const modal = document.getElementById(`modal-claim-${currentModalIdx}`);
-      if (modal && modal.style.display === 'block') {
+      if (modal && modal.style.display !== 'none') {
         refreshModalActivities(modal, currentModalIdx);
       }
     }
