@@ -1,7 +1,7 @@
-// Ensure modals are hidden by default with CSS
+// Ensure modals are hidden by default with CSS (no !important so JS can override)
 (function() {
   const style = document.createElement('style');
-  style.textContent = `.modal { display: none !important; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.4); }`;
+  style.textContent = `.modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.4); }`;
   document.head.appendChild(style);
 })();
 
@@ -159,9 +159,6 @@ searchDrugBtn && searchDrugBtn.addEventListener('click', () => {
         // Highlight selected row
         tableRows.forEach(row => row.classList.remove('selected'));
         tr.classList.add('selected');
-        // Update selected drug code display if needed
-        // const selectedDrugCodeDiv = document.getElementById('selected-drug-code');
-        // if (selectedDrugCodeDiv) selectedDrugCodeDiv.textContent = selectedDrug["Drug Code"] || "N/A";
       });
     });
   } else {
@@ -431,7 +428,7 @@ function renderClaimTableWithModals(xmlRows) {
   const container = document.createElement('div');
   container.innerHTML = tableHTML;
 
-  // Safety: Hide all modals after DOM insertion
+  // Hide all modals after DOM insertion
   container.querySelectorAll('.modal').forEach(modal => {
     modal.style.display = 'none';
   });
