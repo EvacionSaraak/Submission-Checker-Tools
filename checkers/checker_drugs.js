@@ -407,7 +407,7 @@ function renderClaimTableWithModals(xmlRows) {
       <td>${activities.length}</td>
       <td>
         <button class="details-btn" data-modal="modal-claim-${idx}" data-idx="${idx}">Show Activities</button>
-        <div id="modal-claim-${idx}" class="modal">
+        <div id="modal-claim-${idx}" class="modal" style="display:none;">
           <div class="modal-content">
             <span class="close" data-modal-close="modal-claim-${idx}">&times;</span>
             <h4>Activities for Claim ${claimId}</h4>
