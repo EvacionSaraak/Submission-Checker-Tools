@@ -501,7 +501,7 @@ function setupModalListeners(container) {
       const idx = btn.getAttribute('data-idx');
       const modal = container.querySelector(`#${modalId}`);
       if (modal) {
-        modal.style.display = 'block';
+        modal.style.display = 'flex';
         currentModalIdx = idx;
         refreshModalActivities(modal, idx);
       }
