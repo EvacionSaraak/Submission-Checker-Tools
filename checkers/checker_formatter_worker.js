@@ -135,6 +135,23 @@ function getFacilityIDFromCenterName(centerName) {
   return '';
 }
 
+// Helper: simple tolerant presence check for a header name in detected headerRow
+// Returns the matched header string from headerRow if found, otherwise null.
+function headerExists(headerRow, srcHeader) {
+  if (!Array.isArray(headerRow) || headerRow.length === 0) return null;
+  // use the previously defined tolerant match function if available; fall back to normalized exact
+  if (typeof findHeaderMatch === 'function') {
+    return findHeaderMatch(headerRow, srcHeader);
+  }
+  // fallback normalization (lowercase trimmed, remove punctuation)
+  const normalize = s => String(s || '').toLowerCase().trim().replace(/[\.\-\/,_\s]+/g, ' ');
+  const target = normalize(srcHeader);
+  for (const h of headerRow) {
+    if (normalize(h) === target) return h;
+  }
+  return null;
+}
+
 function convertToExcelDateUniversal(value) {
   if (!value) return '';
   if (!isNaN(value) && typeof value !== 'object') {
@@ -222,6 +239,7 @@ async function combineEligibilities(fileEntries) {
 // Modified combineReportings() — replaces the previous implementation.
 // Uses findHeaderRowFromArrays + mapping tables and supports Odoo header detection (headers may be on row 2).
 // Modified combineReportings() using ODOO_MAP and tolerant header matching
+// Updated combineReportings() — uses headerExists (tolerant matching) instead of direct headerRow.includes('ClaimID')
 async function combineReportings(fileEntries, clinicianFile) {
   log("Starting combineReportings function");
 
@@ -237,7 +255,7 @@ async function combineReportings(fileEntries, clinicianFile) {
   const clinicianMapByName = new Map();
   let fallbackExcel = [];
 
-  // load clinician_licenses.json
+  // load clinician_licenses.json (unchanged)
   try {
     log("Fetching clinician_licenses.json");
     const resp = await fetch('./clinician_licenses.json');
@@ -298,35 +316,34 @@ async function combineReportings(fileEntries, clinicianFile) {
       continue;
     }
 
-    // Use universal header row finder
+    // Detect header row using the universal finder
     const { headerRowIndex, headers: headerRow, rows: rowsAfter } = findHeaderRowFromArrays(sheetData, 10);
     if (headerRowIndex === -1 || !Array.isArray(headerRow) || headerRow.length === 0) {
       log(`File ${name} skipped: header row not found.`, 'WARN');
       continue;
     }
 
-    // normalize headerRow values (trimmed)
+    // Trim headers for consistency
     const headerRowTrimmed = headerRow.map(h => (h === undefined || h === null) ? '' : String(h).trim());
 
-    // Determine file type: ClinicPro v1/v2, InstaHMS, or Odoo
-    const hdrLower = headerRowTrimmed.map(h => (h || '').toString().trim().toLowerCase());
-    const hasClaimID = hdrLower.some(h => h === 'claimid' || h === 'claim id');
-    const hasClaimDate = hdrLower.some(h => h === 'claimdate' || h === 'claim date');
-    const hasPriClaimNo = hdrLower.some(h => h === 'pri. claim no' || h === 'pri claim no' || h === 'pri. claim no');
-    const hasEncounterDate = hdrLower.some(h => h === 'encounter date' || h === 'encounterdate');
-    const hasCenterName = hdrLower.some(h => h === 'center name');
-    const hasPriClaimId = hdrLower.some(h => h === 'pri. claim id' || h === 'pri claim id' || h === 'pri. claim id');
+    // Use tolerant headerExists checks instead of direct headerRow.includes('ClaimID')
+    const claimIdHdr = headerExists(headerRowTrimmed, 'ClaimID') || headerExists(headerRowTrimmed, 'Claim ID');
+    const claimDateHdr = headerExists(headerRowTrimmed, 'ClaimDate') || headerExists(headerRowTrimmed, 'Claim Date');
+    const priClaimNoHdr = headerExists(headerRowTrimmed, 'Pri. Claim No') || headerExists(headerRowTrimmed, 'Pri Claim No');
+    const encounterDateHdr = headerExists(headerRowTrimmed, 'Encounter Date');
+    const centerNameHdr = headerExists(headerRowTrimmed, 'Center Name');
+    const priClaimIdHdr = headerExists(headerRowTrimmed, 'Pri. Claim ID') || headerExists(headerRowTrimmed, 'Pri Claim ID');
 
-    const isOdoo = hasCenterName && hasPriClaimId;
-    const isInsta = hasPriClaimNo && hasEncounterDate;
-    const isClinicPro = hasClaimID && hasClaimDate;
+    const isOdoo = !!centerNameHdr && !!priClaimIdHdr;
+    const isInsta = !!priClaimNoHdr && !!encounterDateHdr;
+    const isClinicPro = !!claimIdHdr && !!claimDateHdr;
 
     if (isOdoo) log(`Odoo file detected: ${name}`, 'INFO');
 
-    // Build header map selection
+    // pick header map
     let headerMap = null;
     if (isClinicPro) {
-      const hasMemberId = hdrLower.some(h => h === 'member id');
+      const hasMemberId = !!headerExists(headerRowTrimmed, 'Member ID');
       const isClinicProV2 = hasMemberId || isKhabisiOrYahar;
       headerMap = isClinicProV2 ? CLINICPRO_V2_MAP : CLINICPRO_V1_MAP;
     } else if (isInsta) {
@@ -340,10 +357,10 @@ async function combineReportings(fileEntries, clinicianFile) {
       continue;
     }
 
-    // Build mapping target -> actual source header (using tolerant findHeaderMatch)
+    // Map target -> matched source header (using tolerant matching)
     const targetToSource = {};
     for (const [src, tgt] of Object.entries(headerMap)) {
-      const matched = findHeaderMatch(headerRowTrimmed, src);
+      const matched = headerExists(headerRowTrimmed, src);
       if (matched) targetToSource[tgt] = matched;
     }
 
@@ -356,37 +373,36 @@ async function combineReportings(fileEntries, clinicianFile) {
       if (!Array.isArray(row) || row.length === 0) continue;
 
       try {
-        // Build sourceRow keyed by normalized lowercased header keys
+        // Build sourceRow keyed by normalized lowercased headers
         const sourceRow = {};
         headerRowTrimmed.forEach((h, idx) => {
           const key = (h || '').toString().trim().toLowerCase();
           sourceRow[key] = (row[idx] === undefined || row[idx] === null) ? '' : row[idx];
         });
 
-        // Claim ID dedupe
         const claimIDKey = (targetToSource['Pri. Claim No'] || '').toString().toLowerCase();
         const claimID = claimIDKey ? (sourceRow[claimIDKey] || '').toString().trim() : '';
         if (!claimID || seenClaimIDs.has(claimID)) continue;
         seenClaimIDs.add(claimID);
 
-        // Facility License resolution
+        // Facility resolution
         let facilityLicense = (sourceRow['facility id'] || '').toString().trim() || '';
         if (!facilityLicense && sourceRow['center name']) {
           facilityLicense = getFacilityIDFromCenterName(sourceRow['center name']);
         }
         if (!facilityLicense) facilityLicense = matchedFacilityID || '';
 
-        // Clinician keys (using mapped source header names)
+        // Clinician keys
         const clinLicenseKey = (targetToSource['Clinician License'] || 'Clinician License').toString().toLowerCase();
         const clinNameKey = (targetToSource['Clinician Name'] || 'Clinician Name').toString().toLowerCase();
 
         let clinLicense = (sourceRow[clinLicenseKey] || '').toString().trim();
         let clinName = (sourceRow[clinNameKey] || '').toString().trim();
 
-        // ClinicPro V2 special: OrderDoctor fallback
+        // OrderDoctor fallback
         if (!clinName && sourceRow['orderdoctor']) clinName = sourceRow['orderdoctor'].toString().trim();
 
-        // Fallbacks from clinician maps
+        // Clinician mapping fallbacks (license->name, name->license)
         if (clinLicense && !clinName && clinicianMapByLicense.has(clinLicense)) {
           clinName = clinicianMapByLicense.get(clinLicense)['Clinician Name'];
           log(`Filled name from license: ${clinLicense} => ${clinName}`);
@@ -426,7 +442,7 @@ async function combineReportings(fileEntries, clinicianFile) {
           });
         }
 
-        // Build targetRow
+        // Build the output row
         const targetRow = TARGET_HEADERS.map((tgt) => {
           try {
             if (tgt === 'Facility ID') return facilityLicense || '';
@@ -469,18 +485,18 @@ async function combineReportings(fileEntries, clinicianFile) {
       } catch (err) {
         log(`Fatal row error in file ${name}, row ${r + 1}: ${err.message}`, 'ERROR');
       }
-    } // end rows loop
+    } // end row loop
 
     self.postMessage({ type: 'progress', progress: 50 + Math.floor(((i + 1) / fileEntries.length) * 50) });
   } // end files loop
 
-  // Log blank clinician rows summary
+  // Summarize missing clinician fields
   if (blankFieldsRows.length > 0) {
     log(`Rows with missing clinician fields (Name or License):`);
     // console.log(blankFieldsRows);
   }
 
-  // Final validations
+  // Final sanity checks
   for (const [idx, row] of combinedRows.entries()) {
     if (!Array.isArray(row)) {
       log(`Row ${idx} is not an array: ${JSON.stringify(row)}`, 'ERROR');
@@ -503,4 +519,3 @@ async function combineReportings(fileEntries, clinicianFile) {
     throw sheetErr;
   }
 }
-
