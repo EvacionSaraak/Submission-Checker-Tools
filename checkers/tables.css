@@ -165,13 +165,15 @@ td.last-copied {
 /* === MODAL COMPONENTS === */
 /* default (visible) modal — you can choose flex or block, depending on centering styles */
 .modal {
-  display: flex;
+  display: none;
   position: fixed;
   z-index: 999;
   inset: 0;
+  width: 100vw;
+  height: 100vh;
   justify-content: center;
   align-items: center;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(0,0,0,0.5);
 }
 
 .modal-content {
