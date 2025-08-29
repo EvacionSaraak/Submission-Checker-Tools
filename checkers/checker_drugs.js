@@ -1,3 +1,10 @@
+// Ensure modals are hidden by default with CSS
+(function() {
+  const style = document.createElement('style');
+  style.textContent = `.modal { display: none !important; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.4); }`;
+  document.head.appendChild(style);
+})();
+
 let drugData = [], xmlData = null, selectedDrug = null;
 let currentModalIdx = null;
 let claimsMapGlobal = {};
@@ -407,7 +414,7 @@ function renderClaimTableWithModals(xmlRows) {
       <td>${activities.length}</td>
       <td>
         <button class="details-btn" data-modal="modal-claim-${idx}" data-idx="${idx}">Show Activities</button>
-        <div id="modal-claim-${idx}" class="modal" style="display:none;">
+        <div id="modal-claim-${idx}" class="modal">
           <div class="modal-content">
             <span class="close" data-modal-close="modal-claim-${idx}">&times;</span>
             <h4>Activities for Claim ${claimId}</h4>
@@ -423,6 +430,12 @@ function renderClaimTableWithModals(xmlRows) {
 
   const container = document.createElement('div');
   container.innerHTML = tableHTML;
+
+  // Safety: Hide all modals after DOM insertion
+  container.querySelectorAll('.modal').forEach(modal => {
+    modal.style.display = 'none';
+  });
+
   setTimeout(() => setupModalListeners(container), 0);
   return container;
 }
