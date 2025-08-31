@@ -468,11 +468,16 @@ async function combineReportings(fileEntries, clinicianFile) {
           // Use internal Facility ID from the InstaHMS file
           const facilityKey = targetToSourceLower['Facility ID'] || 'facility id';
           facilityLicense = (sourceRow[facilityKey] || '').toString().trim();
-        } else if (isClinicPro) {
-          // Use facilityNameMap + file name
-          facilityLicense = matchedFacilityID || '';
         } else {
-          facilityLicense = '';
+          // ClinicPro or Odoo: use facilityNameMap + normalized file name
+          const nameNormalized = name.toLowerCase().replace(/[^a-z0-9]/g, '');
+          for (const [facName, facID] of Object.entries(facilityNameMap)) {
+            const facNorm = facName.toLowerCase().replace(/[^a-z0-9]/g, '');
+            if (nameNormalized.includes(facNorm)) {
+              facilityLicense = facID;
+              break;
+            }
+          }
         }
 
         // clinician info
