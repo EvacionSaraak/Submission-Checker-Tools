@@ -295,6 +295,7 @@ async function combineReportings(fileEntries, clinicianFile) {
     }
   }
 
+  // Helper to detect file type robustly
   function detectFileTypeFromHeaders(headers) {
     const low = headers.map(h => (h || '').toString().trim().toLowerCase());
     const has = (token) => low.some(h => h.includes(token));
@@ -309,10 +310,11 @@ async function combineReportings(fileEntries, clinicianFile) {
     log(`Reading reporting file: ${name}`);
 
     const matchedFacilityID = getFacilityIDFromFileName(name);
+    const isKhabisiOrYahar = matchedFacilityID === 'MF5020' || matchedFacilityID === 'MF5357';
 
     let wb;
     try { wb = XLSX.read(buffer, { type: 'array', cellDates: true }); }
-    catch (err) { log(`Failed to read XLSX for file ${name}: ${err.message}`, 'ERROR'); continue; }
+    catch (err) { log(`Failed to read XLSX from buffer for file ${name}: ${err.message}`, 'ERROR'); continue; }
 
     const ws = wb.Sheets[wb.SheetNames[0]];
     const sheetData = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false });
@@ -321,28 +323,53 @@ async function combineReportings(fileEntries, clinicianFile) {
     const { headerRowIndex, headers: headerRow, rows: rowsAfter } = findHeaderRowFromArrays(sheetData, 10);
     if (!headerRow || headerRow.length === 0) { log(`File ${name} skipped: header row not found.`, 'WARN'); continue; }
 
-    // Normalize headers
-    let headerRowTrimmed = headerRow.map(h => (h || '').toString().trim());
-    const { headers: normalizedHeaders } = normalizeHeadersForCombining(headerRowTrimmed);
-    headerRowTrimmed = normalizedHeaders;
+    let headerRowTrimmed = null;
+    let isOdooFromHeaders = false;
+    try {
+      const norm = normalizeHeadersForCombining(headerRow);
+      headerRowTrimmed = norm.headers.map(h => (h || '').toString().trim());
+      isOdooFromHeaders = !!norm.isOdoo;
+    } catch (normErr) {
+      log(`Header normalization failed for file ${name}: ${normErr.message}`, 'WARN');
+      headerRowTrimmed = headerRow.map(h => (h || '').toString().trim());
+      isOdooFromHeaders = false;
+    }
+
+    log(`DEBUG: File ${name} headerRow (normalized/fallback): ${JSON.stringify(headerRowTrimmed)}`);
 
     const headerSigMap = {};
     headerRowTrimmed.forEach(h => { const s = headerSignature(h); if (s) headerSigMap[s] = h; });
 
     const detectedType = detectFileTypeFromHeaders(headerRowTrimmed);
-    const isOdoo = detectedType === 'odoo';
-    const isInsta = detectedType === 'instahms';
-    const isClinicPro = detectedType === 'clinicpro';
+    const isOdoo = (detectedType === 'odoo') || isOdooFromHeaders;
+    const isInsta = (detectedType === 'instahms');
+    const isClinicPro = (detectedType === 'clinicpro');
 
     if (isOdoo) log(`Odoo file detected: ${name}`, 'INFO');
     else if (isClinicPro) log(`ClinicPro file detected: ${name}`, 'INFO');
     else if (isInsta) log(`InstaHMS file detected: ${name}`, 'INFO');
     else log(`Unknown/other file detected: ${name}`, 'INFO');
 
-    // Determine header map
-    let headerMap = isClinicPro ? CLINICPRO_V2_MAP :
-                    isInsta ? INSTAHMS_MAP :
-                    isOdoo ? ODOO_MAP : null;
+    // Build target -> source mapping
+    let headerMap = null;
+    if (isClinicPro) {
+      const hasMemberId = !!headerExists(headerRowTrimmed, 'Member ID');
+      const isClinicProV2 = hasMemberId || isKhabisiOrYahar;
+      headerMap = isClinicProV2 ? CLINICPRO_V2_MAP : CLINICPRO_V1_MAP;
+    } else if (isInsta) {
+      headerMap = INSTAHMS_MAP;
+    } else if (isOdoo) {
+      headerMap = ODOO_MAP;
+    } else {
+      const tryMaps = [INSTAHMS_MAP, CLINICPRO_V2_MAP, CLINICPRO_V1_MAP, ODOO_MAP];
+      for (const m of tryMaps) {
+        const sampleSrc = Object.keys(m)[0];
+        if (headerExists(headerRowTrimmed, sampleSrc)) {
+          headerMap = m;
+          break;
+        }
+      }
+    }
 
     if (!headerMap) {
       log(`File ${name} skipped: unrecognized header format.`, 'WARN');
@@ -353,14 +380,8 @@ async function combineReportings(fileEntries, clinicianFile) {
     for (const [src, tgt] of Object.entries(headerMap)) {
       const srcSig = headerSignature(src);
       let matched = srcSig && headerSigMap[srcSig] ? headerSigMap[srcSig] : null;
-      if (!matched) {
-        const found = headerExists(headerRowTrimmed, src);
-        if (found) matched = found;
-      }
-      if (!matched) {
-        const alt = findHeaderMatch(headerRowTrimmed, src);
-        if (alt) matched = alt;
-      }
+      if (!matched) matched = headerExists(headerRowTrimmed, src);
+      if (!matched) matched = findHeaderMatch(headerRowTrimmed, src);
       if (matched) targetToSource[tgt] = matched;
       else log(`TRACE: File ${name} could not match source header "${src}" for target "${tgt}"`, 'INFO');
     }
@@ -375,6 +396,7 @@ async function combineReportings(fileEntries, clinicianFile) {
     const seenClaimIDs = new Set();
     const startRow = headerRowIndex + 1;
     const totalRows = sheetData.length;
+    let loggedSourceRowSample = false;
 
     for (let r = startRow; r < totalRows; r++) {
       const row = sheetData[r];
@@ -387,42 +409,74 @@ async function combineReportings(fileEntries, clinicianFile) {
           sourceRow[key] = (row[idx] === undefined || row[idx] === null) ? '' : row[idx];
         });
 
+        if (!loggedSourceRowSample) {
+          log(`DEBUG: File ${name} sample sourceRow keys: ${Object.keys(sourceRow).slice(0, 40).join(', ')}`);
+          loggedSourceRowSample = true;
+        }
+
         const claimIDKey = (targetToSourceLower['Pri. Claim No'] || 'pri. claim no').toString();
         const claimID = (sourceRow[claimIDKey] || '').toString().trim();
         if (!claimID || seenClaimIDs.has(claimID)) continue;
         seenClaimIDs.add(claimID);
 
-        // === Facility ID extrapolated from file name ===
-        const facilityLicense = matchedFacilityID || '';
+        let facilityLicense = (sourceRow[targetToSourceLower['Facility ID']] || '').toString().trim();
+        if (!facilityLicense && sourceRow['center name']) facilityLicense = getFacilityIDFromCenterName(sourceRow['center name']);
+        if (!facilityLicense) facilityLicense = matchedFacilityID || '';
 
         const clinLicenseKey = (targetToSourceLower['Clinician License'] || 'clinician license').toString();
         const clinNameKey = (targetToSourceLower['Clinician Name'] || 'clinician name').toString();
+
         let clinLicense = (sourceRow[clinLicenseKey] || '').toString().trim();
         let clinName = (sourceRow[clinNameKey] || '').toString().trim();
         if (!clinName && sourceRow['orderdoctor']) clinName = sourceRow['orderdoctor'].toString().trim();
 
         if (clinLicense && !clinName && clinicianMapByLicense.has(clinLicense)) clinName = clinicianMapByLicense.get(clinLicense)['Clinician Name'];
         if (clinName && !clinLicense && clinicianMapByName.has(normalizeName(clinName))) clinLicense = clinicianMapByName.get(normalizeName(clinName))['Phy Lic'];
+        if ((!clinName || !clinLicense) && clinName && facilityLicense) {
+          const fb = fallbackClinicianLookupWithFacility(clinName, facilityLicense, fallbackExcel);
+          if (fb) { clinLicense = fb.license || clinLicense; clinName = fb.name || clinName; }
+        }
+
+        if (!clinName && !clinLicense) { log(`[SKIP] Both Clinician fields missing: File ${name} Row ${r + 1} claimID:${claimID}`, "WARN"); continue; }
+
+        const missingFields = [];
+        if (!clinName) missingFields.push('Clinician Name');
+        if (!clinLicense) missingFields.push('Clinician License');
+        if (missingFields.length > 0) blankFieldsRows.push({ claimID, missingFields, file: name, row: r + 1, rawClinicianName: clinName, facilityLicense });
 
         const targetRow = TARGET_HEADERS.map((tgt) => {
-          if (tgt === 'Facility ID') return facilityLicense || '';
-          if (tgt === 'Pri. Patient Insurance Card No') return sourceRow['patientcardid'] || sourceRow['member id'] || '';
-          if (tgt === 'Patient Code') return sourceRow['fileno'] || '';
-          if (tgt === 'Clinician License') return clinLicense || '';
-          if (tgt === 'Clinician Name') return clinName || '';
-          if (tgt === 'Opened by') return isOdoo ? '' : (sourceRow['opened by'] || sourceRow['opened by/registration staff name'] || sourceRow['updated by'] || '');
-          if (tgt === 'Encounter Date') return convertToExcelDateUniversal(sourceRow[targetToSourceLower[tgt]] || '');
-          if (tgt === 'Source File') return name;
-          return sourceRow[targetToSourceLower[tgt]] || '';
+          try {
+            if (tgt === 'Facility ID') return facilityLicense || '';
+            if (tgt === 'Pri. Patient Insurance Card No') return (sourceRow['patientcardid'] || sourceRow['member id'] || sourceRow[(targetToSourceLower[tgt] || '')]) || '';
+            if (tgt === 'Patient Code') return (sourceRow['fileno'] || sourceRow[(targetToSourceLower[tgt] || '')]) || '';
+            if (tgt === 'Clinician License') return clinLicense || '';
+            if (tgt === 'Clinician Name') return clinName || '';
+            if (tgt === 'Opened by') {
+              if (isOdoo) return '';
+              const mapped = (targetToSourceLower[tgt] || '').toString();
+              return mapped ? (sourceRow[mapped] || '') : (sourceRow['opened by'] || sourceRow['opened by/registration staff name'] || sourceRow['updated by'] || '');
+            }
+            if (tgt === 'Encounter Date') { const src = (targetToSourceLower[tgt] || '').toString(); return convertToExcelDateUniversal(sourceRow[src]); }
+            if (tgt === 'Source File') return name;
+            const key = targetToSourceLower[tgt];
+            return key ? (sourceRow[key] || '') : '';
+          } catch { return ''; }
         });
 
+        if (!Array.isArray(targetRow) || targetRow.length !== TARGET_HEADERS.length) { log(`Malformed output row in file ${name}, row ${r + 1}`, 'ERROR'); continue; }
+
         combinedRows.push(targetRow);
-      } catch (err) {
-        log(`Row error in file ${name}, row ${r + 1}: ${err.message}`, 'ERROR');
-      }
+
+      } catch (err) { log(`Fatal row error in file ${name}, row ${r + 1}: ${err.message}`, 'ERROR'); }
     }
 
     self.postMessage({ type: 'progress', progress: 50 + Math.floor(((i + 1) / fileEntries.length) * 50) });
+  }
+
+  if (blankFieldsRows.length > 0) log(`Rows with missing clinician fields: ${blankFieldsRows.length}`);
+
+  for (const [idx, row] of combinedRows.entries()) {
+    if (!Array.isArray(row) || row.length !== TARGET_HEADERS.length) { log(`Bad combined row at index ${idx}`, 'ERROR'); throw new Error('Invalid combined rows'); }
   }
 
   try {
