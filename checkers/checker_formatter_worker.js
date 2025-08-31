@@ -62,16 +62,37 @@ function log(message, level = 'INFO') {
   // console.log(msg); // Uncomment for browser debugging
 }
 
-function normalizeName(name) {
-  return (name || '').replace(/\s+/g, '').toLowerCase();
+function normalizeName(name) { return (name || '').replace(/\s+/g, '').toLowerCase(); }
+
+function findHeaderRowFromArrays(sheetRows, maxScan = 10) {
+  if (!Array.isArray(sheetRows) || sheetRows.length === 0) { return { headerRowIndex: -1, headers: [], rows: [] }; }
+  const tokens = [
+    'pri. claim no', 'pri claim no', 'claimid', 'claim id', 'pri. claim id', 'pri claim id',
+    'center name', 'card number', 'card number / dha member id', 'member id', 'patientcardid',
+    'pri. patient insurance card no', 'institution', 'facility id', 'mr no.', 'pri. claim id',
+    'encounter date', 'claimdate', 'adm/reg. date', 'adm/reg date'
+  ];
+  const limit = Math.min(maxScan, sheetRows.length);
+  let bestIndex = 0;
+  let bestScore = 0;
+  for (let i = 0; i < limit; i++) {
+    const row = sheetRows[i];
+    if (!Array.isArray(row)) continue;
+    const joined = row.map(c => (c === undefined || c === null) ? '' : String(c)).join(' ').toLowerCase();
+    let score = 0;
+    for (const t of tokens) { if (joined.includes(t)) score++; }
+    if (score > bestScore) {
+      bestScore = score;
+      bestIndex = i;
+    }
+  }
+  const headerRowIndex = bestScore > 0 ? bestIndex : 0;
+  const rawHeaderRow = sheetRows[headerRowIndex] || [];
+  const headers = rawHeaderRow.map(h => (h === undefined || h === null) ? '' : String(h).trim());
+  const rowsAfterHeader = sheetRows.slice(headerRowIndex + 1);
+  return { headerRowIndex, headers, rows: rowsAfterHeader };
 }
 
-// Resolve a facility ID from the filename.
-// Matches:
-//  - explicit MF codes (e.g. "MF5357")
-//  - substring matches against facilityNameMap keys (case-insensitive) like "Khabisi", "Extramall"
-//  - tokenized fallback (compacted token match against map keys)
-// Returns '' if no match.
 function getFacilityIDFromFileName(filename) {
   if (!filename) return '';
   const s = String(filename).trim();
