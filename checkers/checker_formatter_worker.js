@@ -201,6 +201,43 @@ function headerExists(headerRow, srcHeader) {
   return null;
 }
 
+// Helper: read various input types and return first sheet as array-of-arrays (header:1)
+async function readXlsxFile(input) {
+  if (!input) return [];
+
+  // Accept: File/Blob, ArrayBuffer, or an object with .buffer (Uint8/ArrayBuffer)
+  let buffer = null;
+  try {
+    if (input instanceof ArrayBuffer) {
+      buffer = input;
+    } else if (typeof input.arrayBuffer === 'function') {
+      // File/Blob-like
+      buffer = await input.arrayBuffer();
+    } else if (input.buffer) {
+      // custom object { name, buffer }
+      buffer = input.buffer;
+    } else if (input.data) {
+      buffer = input.data;
+    } else {
+      throw new Error('Unsupported input type for readXlsxFile');
+    }
+  } catch (err) {
+    throw new Error(`readXlsxFile: failed to obtain buffer - ${err.message}`);
+  }
+
+  // Parse workbook
+  const wb = XLSX.read(buffer, { type: 'array', cellDates: true });
+  if (!wb || !wb.SheetNames || wb.SheetNames.length === 0) return [];
+
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  if (!ws) return [];
+
+  // Return as array-of-arrays (first row = header row)
+  const sheetData = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+  return sheetData;
+}
+
+
 function convertToExcelDateUniversal(value) {
   if (!value) return '';
   if (!isNaN(value) && typeof value !== 'object') {
