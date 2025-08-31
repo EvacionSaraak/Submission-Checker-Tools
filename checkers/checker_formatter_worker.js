@@ -301,8 +301,9 @@ async function combineReportings(fileEntries, clinicianFile) {
   log("Initialized combinedRows with headers");
 
   const clinicianMapByLicense = new Map();
-  const clinicianMapByName = new Map();
+  const clinicianMapByName = new Map();  
   let fallbackExcel = [];
+  const blankFieldsRows = []; // <-- add this
 
   // load clinician_licenses.json (unchanged)
   try {
