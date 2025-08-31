@@ -242,6 +242,62 @@ self.onmessage = async (e) => {
   }
 };
 
+function normalizeHeadersForCombining(headers) {
+  const mapping = {
+    // ClinicPro
+    "claimid": "Pri. Claim No",
+    "claimdate": "Encounter Date",
+    "insurance company": "Pri. Plan Type",
+    "patientcardid": "Pri. Patient Insurance Card No",
+    "member id": "Pri. Patient Insurance Card No",
+    "clinic": "Department",
+    "fileno": "Patient Code",
+    "clinician license": "Clinician License",
+    "opened by/registration staff name": "Opened by",
+    "clinician name": "Clinician Name",
+    // Odoo
+    "invoice no": "Pri. Claim No",
+    "date": "Encounter Date",
+    "payer": "Pri. Plan Type",
+    "patient card no": "Pri. Patient Insurance Card No",
+    "department": "Department",
+    "file number": "Patient Code",
+    "doctor license": "Clinician License",
+    "created by": "Opened by",
+    // InstaHMS
+    "pri. claim no": "Pri. Claim No",
+    "encounter date": "Encounter Date",
+    "pri. plan type": "Pri. Plan Type",
+    "pri. patient insurance card no": "Pri. Patient Insurance Card No",
+    "department": "Department",
+    "patient code": "Patient Code",
+    "clinician license": "Clinician License",
+    "opened by": "Opened by",
+    "clinician name": "Clinician Name",
+    "visit id": "Visit Id",
+    "facility id": "Facility ID"
+  };
+
+  const lowerHeaders = headers.map(h => (h || '').toString().trim().toLowerCase());
+  const normalizedHeaders = lowerHeaders.map(h => mapping[h] || h);
+
+  // Example detection of Odoo file by header tokens
+  const isOdoo = lowerHeaders.includes('pri. claim id') &&
+                 (lowerHeaders.includes('adm/reg') || lowerHeaders.includes('adm/reg. date') || lowerHeaders.includes('adm reg'));
+
+  return { headers: normalizedHeaders, isOdoo };
+}
+
+function headerSignature(s) {
+  if (s === undefined || s === null) return '';
+  return String(s)
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')   // remove zero-width
+    .replace(/\u00A0/g, ' ')                 // NBSP -> space
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');              // remove non-alphanumerics
+}
+
 async function combineReportings(fileEntries, clinicianFile) {
   log("Starting combineReportings function");
 
