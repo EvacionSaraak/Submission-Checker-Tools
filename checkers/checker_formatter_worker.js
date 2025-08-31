@@ -298,6 +298,23 @@ function headerSignature(s) {
     .replace(/[^a-z0-9]/g, '');              // remove non-alphanumerics
 }
 
+// Must match your last working version
+function detectFileTypeFromHeaders(headers) {
+  const low = headers.map(h => (h || '').toString().trim().toLowerCase());
+  const has = (token) => low.some(h => h.includes(token));
+
+  // ClinicPro signature
+  if (has('claimid') && has('claimdate')) return 'clinicpro';
+
+  // InstaHMS signature
+  if (has('pri. claim no') && has('encounter date')) return 'instahms';
+
+  // Odoo signature (more strict)
+  if (has('pri. claim id') && (has('adm/reg') || has('adm/reg. date') || has('adm reg'))) return 'odoo';
+
+  return 'unknown';
+}
+
 async function combineReportings(fileEntries, clinicianFile) {
   log("Starting combineReportings function");
 
