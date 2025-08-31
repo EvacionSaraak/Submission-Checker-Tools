@@ -315,6 +315,66 @@ function detectFileTypeFromHeaders(headers) {
   return 'unknown';
 }
 
+async function combinedEligibilities(files) {
+  logMessage("[INFO] Starting Eligibility merge...");
+
+  let combinedData = [];
+  let headers = null;
+
+  for (let file of files) {
+    logMessage(`[INFO] Processing file: ${file.name}`);
+    const data = await readXlsxFile(file);
+
+    if (!data || data.length < 2) {
+      logMessage(`[WARN] Skipping ${file.name}: no data rows found`);
+      continue;
+    }
+
+    // First row is usually the header row
+    const fileHeaders = data[0].map(h => h ? h.toString().trim() : "");
+
+    if (!headers) {
+      headers = fileHeaders;
+      logMessage("[INFO] Headers set from first file");
+    }
+
+    // All subsequent rows are data
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i].map(cell => (cell !== null && cell !== undefined) ? cell : "");
+      combinedData.push(row);
+    }
+  }
+
+  if (!headers) {
+    logMessage("[ERROR] No headers found in eligibility files");
+    return null;
+  }
+
+  logMessage(`[INFO] Total rows before duplicate removal: ${combinedData.length}`);
+
+  // Remove exact duplicate rows
+  const uniqueData = [];
+  const seen = new Set();
+
+  for (let row of combinedData) {
+    const rowString = JSON.stringify(row);
+    if (!seen.has(rowString)) {
+      seen.add(rowString);
+      uniqueData.push(row);
+    }
+  }
+
+  logMessage(`[INFO] Total rows after duplicate removal: ${uniqueData.length}`);
+
+  // Build workbook
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...uniqueData]);
+  XLSX.utils.book_append_sheet(wb, ws, "Eligibilities");
+
+  logMessage("[INFO] Eligibility merge complete.");
+  return wb;
+}
+
 async function combineReportings(fileEntries, clinicianFile) {
   log("Starting combineReportings function");
 
