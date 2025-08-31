@@ -66,10 +66,38 @@ function normalizeName(name) {
   return (name || '').replace(/\s+/g, '').toLowerCase();
 }
 
-// Finds the best header row within the first `maxScan` rows of `sheetRows` (array-of-arrays).
-// Returns an object: { headerRowIndex, headers (normalized array), rows (array-of-arrays after header) }.
-// Find the best matching header from detected headerRow for a given source header name.
-// Normalizes both sides (lowercase, trim, remove punctuation) for robust matching.
+// Resolve a facility ID from the filename.
+// Matches:
+//  - explicit MF codes (e.g. "MF5357")
+//  - substring matches against facilityNameMap keys (case-insensitive) like "Khabisi", "Extramall"
+//  - tokenized fallback (compacted token match against map keys)
+// Returns '' if no match.
+function getFacilityIDFromFileName(filename) {
+  if (!filename) return '';
+  const s = String(filename).trim();
+  const lower = s.toLowerCase();
+  const mfMatch = lower.match(/\bmf\d{2,}\b/);
+  
+  if (mfMatch) return mfMatch[0].toUpperCase();
+  for (const key of Object.keys(facilityNameMap)) {
+    if (!key) continue;
+    if (lower.includes(key.toLowerCase())) return facilityNameMap[key];
+  }
+  const tokens = lower.split(/[^a-z0-9]+/).filter(Boolean);
+  if (tokens.length) {
+    const normalizedMap = Object.keys(facilityNameMap).reduce((acc, k) => {
+      const nk = k.toLowerCase().replace(/\s+/g, '');
+      acc[nk] = facilityNameMap[k];
+      return acc;
+    }, {});
+    for (const t of tokens) {
+      const compact = t.replace(/\s+/g, '');
+      if (normalizedMap[compact]) return normalizedMap[compact];
+    }
+  }
+  return '';
+}
+
 function findHeaderMatch(headerRow, srcHeader) {
   if (!Array.isArray(headerRow) || !srcHeader) return null;
   const normalize = s => String(s || '').toLowerCase().trim().replace(/[\.\-\/,_\s]+/g, ' ');
