@@ -325,7 +325,9 @@ function normalizeHeadersForCombining(headers) {
   const normalizedHeaders = lowerHeaders.map(h => mapping[h] || h);
 
   // Detect if Odoo (presence of "center name" or "pri. claim id")
-  const isOdoo = lowerHeaders.some(h => h.includes('center name') || h.includes('pri. claim id'));
+  const isOdoo = headerExists(headerRowTrimmed, 'Pri. Claim ID') &&
+               headerExists(headerRowTrimmed, 'Admitting License') &&
+               headerExists(headerRowTrimmed, 'Adm/Reg. Date');
 
   return { headers: normalizedHeaders, isOdoo };
 }
