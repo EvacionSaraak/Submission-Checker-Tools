@@ -285,6 +285,49 @@ async function combineEligibilities(fileEntries) {
   return wb;
 }
 
+function normalizeHeadersForCombining(headers) {
+  const lowerHeaders = headers.map(h => h.toLowerCase());
+  const mapping = {
+    // ClinicPro mappings
+    "claimid": "Pri. Claim No",
+    "claimdate": "Encounter Date",
+    "insurance company": "Pri. Plan Type",
+    "patientcardid": "Pri. Patient Insurance Card No",
+    "member id": "Pri. Patient Insurance Card No",
+    "clinic": "Department",
+    "fileno": "Patient Code",
+    "clinician license": "Clinician License",
+    "opened by/registration staff name": "Opened by",
+    "clinician name": "Clinician Name",
+    // Odoo mappings
+    "invoice no": "Pri. Claim No",
+    "date": "Encounter Date",
+    "payer": "Pri. Plan Type",
+    "patient card no": "Pri. Patient Insurance Card No",
+    "department": "Department",
+    "file number": "Patient Code",
+    "doctor license": "Clinician License",
+    "created by": "Opened by",
+    // InstaHMS mappings
+    "pri. claim no": "Pri. Claim No",
+    "encounter date": "Encounter Date",
+    "pri. plan type": "Pri. Plan Type",
+    "pri. patient insurance card no": "Pri. Patient Insurance Card No",
+    "department": "Department",
+    "patient code": "Patient Code",
+    "clinician license": "Clinician License",
+    "opened by": "Opened by",
+    "clinician name": "Clinician Name",
+    "visit id": "Visit Id",
+    "facility id": "Facility ID"
+  };
+
+  return headers.map((h, idx) => {
+    const normalized = mapping[lowerHeaders[idx]];
+    return normalized ? normalized : h; // fallback: keep original if no match
+  });
+}
+
 function headerSignature(s) {
   if (s === undefined || s === null) return '';
   return String(s)
@@ -296,7 +339,6 @@ function headerSignature(s) {
     .replace(/[^a-z0-9]/g, '');              // remove non-alphanumerics
 }
 
-// REPLACEMENT: combineReportings with signature-based header matching (keeps rest of logic unchanged)
 async function combineReportings(fileEntries, clinicianFile) {
   log("Starting combineReportings function");
 
