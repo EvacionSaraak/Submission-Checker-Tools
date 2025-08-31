@@ -315,7 +315,7 @@ function detectFileTypeFromHeaders(headers) {
   return 'unknown';
 }
 
-async function combinedEligibilities(files) {
+async function combineEligibilities(files) {
   logMessage("[INFO] Starting Eligibility merge...");
 
   let combinedData = [];
