@@ -428,13 +428,6 @@ async function combineReportings(fileEntries, clinicianFile) {
     }
   }
 
-  // Helper: get Facility ID from file name for ClinicPro/Odoo
-  function getFacilityIDFromFileName(name) {
-    if (!name) return '';
-    const baseName = name.replace(/\.[^/.]+$/, '').trim(); // strip extension
-    return facilityNameMap[baseName] || '';
-  }
-
   for (let i = 0; i < fileEntries.length; i++) {
     const { name, buffer } = fileEntries[i];
     log(`Reading reporting file: ${name}`);
