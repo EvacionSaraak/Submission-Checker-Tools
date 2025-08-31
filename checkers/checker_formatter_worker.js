@@ -285,7 +285,70 @@ async function combineEligibilities(fileEntries) {
   return wb;
 }
 
+// NEW: singular function that cleans and canonicalizes headers for combining
+function normalizeHeadersForCombining(headerRowRaw) {
+  // inner helper: strip zero-width chars, NBSP, collapse whitespace
+  const clean = (s) => String(s ?? '')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')   // zero-width chars
+    .replace(/\u00A0/g, ' ')                 // NBSP -> space
+    .replace(/[ \t\r\n]+/g, ' ')             // collapse spaces
+    .trim();
+
+  // inner helper: alnum signature for robust comparisons
+  const sig = (s) => clean(s).toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  // Canonical labels we want to use internally (works for Odoo/ClinicPro/Insta)
+  const canonicalBySig = new Map([
+    // Odoo
+    ['centername', 'Center Name'],
+    ['mrno', 'MR No.'],
+    ['admregdate', 'Adm/Reg. Date'],
+    ['priclaimid', 'Pri. Claim ID'],
+    ['visitid', 'Visit Id'],
+    ['priplantype', 'Pri. Plan Type'],
+    ['admittinglicense', 'Admitting License'],
+    ['admittingdepartment', 'Admitting Department'],
+    ['admittingdoctor', 'Admitting Doctor'],
+    ['pripatientinsurancecardno', 'Pri. Patient Insurance Card No'],
+    ['pri.memberid'.replace(/[^a-z0-9]/g,''), 'Pri. Member ID'], // safety alias
+
+    // ClinicPro (common variants)
+    ['claimid', 'ClaimID'],
+    ['claimdate', 'ClaimDate'],
+    ['insurancecompany', 'Insurance Company'],
+    ['patientcardid', 'PatientCardID'],
+    ['memberid', 'Member ID'],
+    ['clinic', 'Clinic'],
+    ['clinicianname', 'Clinician Name'],
+    ['fileno', 'FileNo'],
+    ['orderdoctor', 'OrderDoctor'],
+    ['updatedby', 'Updated By'],
+    ['openedby', 'Opened by'],
+    ['openedbyregistrationstaffname', 'Opened by/Registration Staff name'],
+
+    // InstaHMS
+    ['priclaimno', 'Pri. Claim No'],
+    ['encounterdate', 'Encounter Date'],
+    ['department', 'Department'],
+    ['facilityid', 'Facility ID'],
+    ['patientcode', 'Patient Code'],
+  ]);
+
+  // 1) Clean
+  const cleaned = (Array.isArray(headerRowRaw) ? headerRowRaw : []).map(clean);
+
+  // 2) Canonicalize by signature when we recognize a header
+  const coerced = cleaned.map(h => canonicalBySig.get(sig(h)) || h);
+
+  // 3) Detect Odoo quickly from canonicalized headers (used for “Opened by” blanking)
+  const sigSet = new Set(coerced.map(sig));
+  const isOdoo = sigSet.has('centername') && sigSet.has('priclaimid');
+
+  return { headers: coerced, isOdoo };
+}
+
 // DEBUG-ready combineReportings() — paste/replace in your worker
+// UPDATED: full function with integration of normalizeHeadersForCombining()
 async function combineReportings(fileEntries, clinicianFile) {
   log("Starting combineReportings function");
 
@@ -365,14 +428,17 @@ async function combineReportings(fileEntries, clinicianFile) {
     }
 
     // find header row
-    const { headerRowIndex, headers: headerRow, rows: rowsAfter } = findHeaderRowFromArrays(sheetData, 10);
+    const { headerRowIndex, headers: headerRow } = findHeaderRowFromArrays(sheetData, 10);
     if (headerRowIndex === -1 || !Array.isArray(headerRow) || headerRow.length === 0) {
       log(`File ${name} skipped: header row not found.`, 'WARN');
       continue;
     }
-    const headerRowTrimmed = headerRow.map(h => (h === undefined || h === null) ? '' : String(h).trim());
 
-    // tolerant header checks
+    // >>> NEW <<< clean + canonicalize + detect Odoo
+    const { headers: headerRowTrimmed, isOdoo: isOdooFromHeaders } = normalizeHeadersForCombining(headerRow);
+    log(`DEBUG: File ${name} headerRow (detected): ${JSON.stringify(headerRowTrimmed)}`);
+
+    // tolerant header checks after canonicalization
     const claimIdHdr = headerExists(headerRowTrimmed, 'ClaimID') || headerExists(headerRowTrimmed, 'Claim ID');
     const claimDateHdr = headerExists(headerRowTrimmed, 'ClaimDate') || headerExists(headerRowTrimmed, 'Claim Date');
     const priClaimNoHdr = headerExists(headerRowTrimmed, 'Pri. Claim No') || headerExists(headerRowTrimmed, 'Pri Claim No');
@@ -380,7 +446,7 @@ async function combineReportings(fileEntries, clinicianFile) {
     const centerNameHdr = headerExists(headerRowTrimmed, 'Center Name');
     const priClaimIdHdr = headerExists(headerRowTrimmed, 'Pri. Claim ID') || headerExists(headerRowTrimmed, 'Pri Claim ID');
 
-    const isOdoo = !!centerNameHdr && !!priClaimIdHdr;
+    const isOdoo = isOdooFromHeaders || (!!centerNameHdr && !!priClaimIdHdr);
     const isInsta = !!priClaimNoHdr && !!encounterDateHdr;
     const isClinicPro = !!claimIdHdr && !!claimDateHdr;
 
@@ -409,17 +475,15 @@ async function combineReportings(fileEntries, clinicianFile) {
       if (matched) targetToSource[tgt] = matched;
     }
 
-    // --- DEBUG OUTPUT: essential lines you should paste back here if fields are missing ---
-    log(`DEBUG: File ${name} headerRow (detected): ${JSON.stringify(headerRowTrimmed)}`);
+    // Debug & early warning if criticals missing
     log(`DEBUG: File ${name} detected mapping (target -> source): ${JSON.stringify(targetToSource)}`);
-    const criticalTargets = ['Pri. Claim No', 'Encounter Date', 'Pri. Patient Insurance Card No'];
+    const criticalTargets = ['Pri. Claim No', 'Encounter Date'];
     const missingCritical = criticalTargets.filter(t => !targetToSource[t]);
     if (missingCritical.length) {
       log(`WARN: File ${name} missing critical mapping(s): ${missingCritical.join(', ')}`, 'WARN');
     }
-    // -------------------------------------------------------------------------------
 
-    // create lowercased mapping for stable lookups
+    // lowercased lookup map
     const targetToSourceLower = {};
     for (const [tgt, src] of Object.entries(targetToSource)) {
       targetToSourceLower[tgt] = src ? src.toString().trim().toLowerCase() : '';
@@ -435,7 +499,7 @@ async function combineReportings(fileEntries, clinicianFile) {
       if (!Array.isArray(row) || row.length === 0) continue;
 
       try {
-        // sourceRow keyed by lowercased header strings
+        // sourceRow keyed by lowercased canonical headers
         const sourceRow = {};
         headerRowTrimmed.forEach((h, idx) => {
           const key = (h || '').toString().trim().toLowerCase();
@@ -447,7 +511,7 @@ async function combineReportings(fileEntries, clinicianFile) {
           loggedSourceRowSample = true;
         }
 
-        // claim id dedupe using lowercased mapping
+        // claim id dedupe
         const claimIDKey = (targetToSourceLower['Pri. Claim No'] || '').toString();
         const claimID = claimIDKey ? (sourceRow[claimIDKey] || '').toString().trim() : '';
         if (!claimID || seenClaimIDs.has(claimID)) continue;
@@ -456,6 +520,7 @@ async function combineReportings(fileEntries, clinicianFile) {
         // Facility resolution
         let facilityLicense = (sourceRow[targetToSourceLower['Facility ID']] || '').toString().trim() || '';
         if (!facilityLicense && sourceRow['center name']) {
+          // Odoo fallback from Center Name
           facilityLicense = getFacilityIDFromCenterName(sourceRow['center name']);
         }
         if (!facilityLicense) facilityLicense = matchedFacilityID || '';
@@ -467,7 +532,7 @@ async function combineReportings(fileEntries, clinicianFile) {
         let clinLicense = (sourceRow[clinLicenseKey] || '').toString().trim();
         let clinName = (sourceRow[clinNameKey] || '').toString().trim();
 
-        // OrderDoctor fallback
+        // OrderDoctor fallback (ClinicPro v2)
         if (!clinName && sourceRow['orderdoctor']) clinName = sourceRow['orderdoctor'].toString().trim();
 
         // fill missing clinician info from maps
@@ -522,7 +587,7 @@ async function combineReportings(fileEntries, clinicianFile) {
             if (tgt === 'Clinician License') return clinLicense || '';
             if (tgt === 'Clinician Name') return clinName || '';
             if (tgt === 'Opened by') {
-              if (isOdoo) return '';
+              if (isOdoo) return ''; // Odoo: leave blank
               const mapped = (targetToSourceLower[tgt] || '').toString();
               return mapped ? (sourceRow[mapped] || '') : (sourceRow['opened by'] || sourceRow['opened by/registration staff name'] || sourceRow['updated by'] || '');
             }
