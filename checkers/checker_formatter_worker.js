@@ -372,6 +372,8 @@ async function combineReportings(fileEntries, clinicianFile) {
     const { name, buffer } = fileEntries[i];
     log(`Reading reporting file: ${name}`);
 
+    const matchedFacilityID = getFacilityIDFromFileName(name);
+
     let wb;
     try { wb = XLSX.read(buffer, { type: 'array', cellDates: true }); }
     catch (err) { log(`Failed to read XLSX from buffer for file ${name}: ${err.message}`, 'ERROR'); continue; }
@@ -384,17 +386,19 @@ async function combineReportings(fileEntries, clinicianFile) {
     const { headerRowIndex, headers: headerRow, rows: rowsAfter } = findHeaderRowFromArrays(sheetData, 10);
     if (!headerRow || headerRow.length === 0) { log(`File ${name} skipped: header row not found.`, 'WARN'); continue; }
 
-    const headerRowTrimmed = headerRow.map(h => (h || '').toString().trim());
+    // Normalize headers
+    const norm = normalizeHeadersForCombining(headerRow);
+    const headerRowTrimmed = norm.headers.map(h => (h || '').toString().trim());
+    const isOdooFromHeaders = !!norm.isOdoo;
 
-    // Build signature map (sig -> original header text)
+    // Build signature map
     const headerSigMap = {};
     headerRowTrimmed.forEach(h => { const s = headerSignature(h); if (s) headerSigMap[s] = h; });
 
-    // Detect file type using last approved logic
-    const detectedType = detectFileTypeFromHeaders(headerRowTrimmed);
-    const isOdoo = detectedType === 'odoo';
-    const isInsta = detectedType === 'instahms';
-    const isClinicPro = detectedType === 'clinicpro';
+    // Detect file type
+    const isOdoo = headerRowTrimmed.some(h => h.toLowerCase().includes('pri. claim id')) || isOdooFromHeaders;
+    const isInsta = headerRowTrimmed.some(h => h.toLowerCase() === 'pri. claim no' && headerRowTrimmed.includes('Encounter Date'));
+    const isClinicPro = !isInsta && !isOdoo;
 
     if (isOdoo) log(`Odoo file detected: ${name}`, 'INFO');
     else if (isClinicPro) log(`ClinicPro file detected: ${name}`, 'INFO');
@@ -403,18 +407,39 @@ async function combineReportings(fileEntries, clinicianFile) {
 
     // pick header map
     let headerMap = null;
-    if (isClinicPro) headerMap = CLINICPRO_V2_MAP;
-    else if (isInsta) headerMap = INSTAHMS_MAP;
-    else if (isOdoo) headerMap = ODOO_MAP;
-    else { log(`File ${name} skipped: unrecognized header format.`, 'WARN'); continue; }
+    if (isClinicPro) {
+      headerMap = CLINICPRO_V2_MAP;
+    } else if (isInsta) {
+      headerMap = INSTAHMS_MAP;
+    } else if (isOdoo) {
+      headerMap = ODOO_MAP;
+    }
 
-    // Build target -> matched source header using tolerant matching
-    const targetToSourceLower = {};
+    if (!headerMap) {
+      log(`File ${name} skipped: unrecognized header format.`, 'WARN');
+      continue;
+    }
+
+    // Build target -> source mapping
+    const targetToSource = {};
     for (const [src, tgt] of Object.entries(headerMap)) {
       const srcSig = headerSignature(src);
       let matched = srcSig && headerSigMap[srcSig] ? headerSigMap[srcSig] : null;
-      if (!matched) { if (headerExists(headerRowTrimmed, src)) matched = headerExists(headerRowTrimmed, src); }
-      targetToSourceLower[tgt] = matched ? matched.toLowerCase() : '';
+      if (!matched) {
+        const found = headerExists(headerRowTrimmed, src);
+        if (found) matched = found;
+      }
+      if (!matched) {
+        const alt = findHeaderMatch(headerRowTrimmed, src);
+        if (alt) matched = alt;
+      }
+      if (matched) targetToSource[tgt] = matched;
+      else log(`TRACE: File ${name} could not match source header "${src}" for target "${tgt}"`, 'INFO');
+    }
+
+    const targetToSourceLower = {};
+    for (const [tgt, src] of Object.entries(targetToSource)) {
+      targetToSourceLower[tgt] = src ? src.toString().trim().toLowerCase() : '';
     }
 
     const seenClaimIDs = new Set();
@@ -424,6 +449,7 @@ async function combineReportings(fileEntries, clinicianFile) {
     for (let r = startRow; r < totalRows; r++) {
       const row = sheetData[r];
       if (!Array.isArray(row) || row.length === 0) continue;
+
       try {
         const sourceRow = {};
         headerRowTrimmed.forEach((h, idx) => {
@@ -436,26 +462,34 @@ async function combineReportings(fileEntries, clinicianFile) {
         if (!claimID || seenClaimIDs.has(claimID)) continue;
         seenClaimIDs.add(claimID);
 
-        // Facility ID: normalize file name and match against facilityNameMap
+        // === Facility ID resolution ===
         let facilityLicense = '';
-        const lowerFileName = name.toLowerCase();
-        for (const [k, v] of Object.entries(facilityNameMap)) {
-          if (lowerFileName.includes(k.toLowerCase())) {
-            facilityLicense = v;
-            break;
-          }
+        if (isInsta) {
+          // Use internal Facility ID from the InstaHMS file
+          const facilityKey = targetToSourceLower['Facility ID'] || 'facility id';
+          facilityLicense = (sourceRow[facilityKey] || '').toString().trim();
+        } else if (isClinicPro) {
+          // Use facilityNameMap + file name
+          facilityLicense = matchedFacilityID || '';
+        } else {
+          facilityLicense = '';
         }
 
-        // clinician keys
+        // clinician info
         const clinLicenseKey = (targetToSourceLower['Clinician License'] || 'clinician license').toString();
         const clinNameKey = (targetToSourceLower['Clinician Name'] || 'clinician name').toString();
 
         let clinLicense = (sourceRow[clinLicenseKey] || '').toString().trim();
         let clinName = (sourceRow[clinNameKey] || '').toString().trim();
-
         if (!clinName && sourceRow['orderdoctor']) clinName = sourceRow['orderdoctor'].toString().trim();
-        if (clinLicense && !clinName && clinicianMapByLicense.has(clinLicense)) { clinName = clinicianMapByLicense.get(clinLicense)['Clinician Name']; }
-        if (clinName && !clinLicense && clinicianMapByName.has(normalizeName(clinName))) { clinLicense = clinicianMapByName.get(normalizeName(clinName))['Phy Lic']; }
+
+        if (clinLicense && !clinName && clinicianMapByLicense.has(clinLicense)) {
+          clinName = clinicianMapByLicense.get(clinLicense)['Clinician Name'];
+        }
+        if (clinName && !clinLicense && clinicianMapByName.has(normalizeName(clinName))) {
+          clinLicense = clinicianMapByName.get(normalizeName(clinName))['Phy Lic'];
+        }
+
         if ((!clinName || !clinLicense) && clinName && facilityLicense) {
           const fb = fallbackClinicianLookupWithFacility(clinName, facilityLicense, fallbackExcel);
           if (fb) {
@@ -466,34 +500,49 @@ async function combineReportings(fileEntries, clinicianFile) {
 
         if (!clinName && !clinLicense) continue;
 
+        const missingFields = [];
+        if (!clinName) missingFields.push('Clinician Name');
+        if (!clinLicense) missingFields.push('Clinician License');
+        if (missingFields.length > 0) {
+          blankFieldsRows.push({ claimID, missingFields, file: name, row: r + 1, rawClinicianName: clinName, facilityLicense });
+        }
+
+        // build output row
         const targetRow = TARGET_HEADERS.map((tgt) => {
-          if (tgt === 'Facility ID') return facilityLicense || '';
-          if (tgt === 'Pri. Patient Insurance Card No') { return (sourceRow['patientcardid'] || sourceRow['member id'] || sourceRow[(targetToSourceLower[tgt] || '')]) || ''; }
-          if (tgt === 'Patient Code') return (sourceRow['fileno'] || sourceRow[(targetToSourceLower[tgt] || '')]) || '';
-          if (tgt === 'Clinician License') return clinLicense || '';
-          if (tgt === 'Clinician Name') return clinName || '';
-          if (tgt === 'Opened by') {
-            if (isOdoo) return '';
-            const mapped = (targetToSourceLower[tgt] || '').toString();
-            return mapped ? (sourceRow[mapped] || '') : (sourceRow['opened by'] || sourceRow['opened by/registration staff name'] || sourceRow['updated by'] || '');
-          }
-          if (tgt === 'Encounter Date') {
-            const src = (targetToSourceLower[tgt] || '').toString();
-            return convertToExcelDateUniversal(sourceRow[src]);
-          }
-          if (tgt === 'Source File') return name;
-          const key = targetToSourceLower[tgt];
-          return key ? (sourceRow[key] || '') : '';
+          try {
+            if (tgt === 'Facility ID') return facilityLicense || '';
+            if (tgt === 'Pri. Patient Insurance Card No') {
+              return (sourceRow['patientcardid'] || sourceRow['member id'] || sourceRow[(targetToSourceLower[tgt] || '')]) || '';
+            }
+            if (tgt === 'Patient Code') return (sourceRow['fileno'] || sourceRow[(targetToSourceLower[tgt] || '')]) || '';
+            if (tgt === 'Clinician License') return clinLicense || '';
+            if (tgt === 'Clinician Name') return clinName || '';
+            if (tgt === 'Opened by') {
+              if (isOdoo) return '';
+              const mapped = (targetToSourceLower[tgt] || '').toString();
+              return mapped ? (sourceRow[mapped] || '') : (sourceRow['opened by'] || sourceRow['opened by/registration staff name'] || sourceRow['updated by'] || '');
+            }
+            if (tgt === 'Encounter Date') {
+              const src = (targetToSourceLower[tgt] || '').toString();
+              return convertToExcelDateUniversal(sourceRow[src]);
+            }
+            if (tgt === 'Source File') return name;
+            const key = targetToSourceLower[tgt];
+            return key ? (sourceRow[key] || '') : '';
+          } catch (cellErr) { return ''; }
         });
 
         combinedRows.push(targetRow);
-      } catch (err) {
-        log(`Fatal row error in file ${name}, row ${r + 1}: ${err.message}`, 'ERROR');
-      }
-    } // rows end
+
+      } catch (err) { log(`Fatal row error in file ${name}, row ${r + 1}: ${err.message}`, 'ERROR'); }
+    }
 
     self.postMessage({ type: 'progress', progress: 50 + Math.floor(((i + 1) / fileEntries.length) * 50) });
-  } // files end
+  }
+
+  if (blankFieldsRows.length > 0) {
+    log(`Rows with missing clinician fields: ${blankFieldsRows.length}`);
+  }
 
   try {
     const wsOut = XLSX.utils.aoa_to_sheet(combinedRows);
