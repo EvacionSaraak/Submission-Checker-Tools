@@ -285,6 +285,7 @@ async function combineEligibilities(fileEntries) {
   return wb;
 }
 
+// DEBUG-ready combineReportings() — paste/replace in your worker
 async function combineReportings(fileEntries, clinicianFile) {
   log("Starting combineReportings function");
 
@@ -310,14 +311,13 @@ async function combineReportings(fileEntries, clinicianFile) {
       log("Clinician data is not an array", "ERROR");
       throw new Error("Clinician data is not an array");
     }
-    log(`Loaded clinician licenses: ${clinicianData.length} entries`);
     clinicianData.forEach(entry => {
       const lic = entry['Phy Lic']?.toString().trim();
       const nm = entry['Clinician Name']?.toString().trim();
       if (lic) clinicianMapByLicense.set(lic, entry);
       if (nm) clinicianMapByName.set(normalizeName(nm), entry);
     });
-    log("Populated clinician maps");
+    log(`Loaded clinician licenses: ${clinicianMapByLicense.size} by license`);
   } catch (err) {
     log(`Failed to load clinician_licenses.json: ${err.message}`, 'ERROR');
   }
@@ -341,7 +341,7 @@ async function combineReportings(fileEntries, clinicianFile) {
     }
   }
 
-  // iterate files
+  // process each file
   for (let i = 0; i < fileEntries.length; i++) {
     const { name, buffer } = fileEntries[i];
     log(`Reading reporting file: ${name}`);
@@ -364,17 +364,15 @@ async function combineReportings(fileEntries, clinicianFile) {
       continue;
     }
 
-    // detect header row (universal)
+    // find header row
     const { headerRowIndex, headers: headerRow, rows: rowsAfter } = findHeaderRowFromArrays(sheetData, 10);
     if (headerRowIndex === -1 || !Array.isArray(headerRow) || headerRow.length === 0) {
       log(`File ${name} skipped: header row not found.`, 'WARN');
       continue;
     }
-
-    // normalized header row for matching/lookup
     const headerRowTrimmed = headerRow.map(h => (h === undefined || h === null) ? '' : String(h).trim());
 
-    // tolerant presence checks
+    // tolerant header checks
     const claimIdHdr = headerExists(headerRowTrimmed, 'ClaimID') || headerExists(headerRowTrimmed, 'Claim ID');
     const claimDateHdr = headerExists(headerRowTrimmed, 'ClaimDate') || headerExists(headerRowTrimmed, 'Claim Date');
     const priClaimNoHdr = headerExists(headerRowTrimmed, 'Pri. Claim No') || headerExists(headerRowTrimmed, 'Pri Claim No');
@@ -388,7 +386,7 @@ async function combineReportings(fileEntries, clinicianFile) {
 
     if (isOdoo) log(`Odoo file detected: ${name}`, 'INFO');
 
-    // pick the appropriate header map
+    // pick header map
     let headerMap = null;
     if (isClinicPro) {
       const hasMemberId = !!headerExists(headerRowTrimmed, 'Member ID');
@@ -399,30 +397,29 @@ async function combineReportings(fileEntries, clinicianFile) {
     } else if (isOdoo) {
       headerMap = ODOO_MAP;
     }
-
     if (!headerMap) {
       log(`File ${name} skipped: unrecognized header format.`, 'WARN');
       continue;
     }
 
-    // Build mapping target -> matched source header using tolerant matching
+    // Build mapping target -> matched source header (tolerant)
     const targetToSource = {};
     for (const [src, tgt] of Object.entries(headerMap)) {
       const matched = headerExists(headerRowTrimmed, src);
       if (matched) targetToSource[tgt] = matched;
     }
 
-    // debug logs and critical mapping check
-    log(`File ${name} headerRow (detected): ${JSON.stringify(headerRowTrimmed)}`);
-    log(`File ${name} detected mapping (target -> source): ${JSON.stringify(targetToSource)}`);
-
+    // --- DEBUG OUTPUT: essential lines you should paste back here if fields are missing ---
+    log(`DEBUG: File ${name} headerRow (detected): ${JSON.stringify(headerRowTrimmed)}`);
+    log(`DEBUG: File ${name} detected mapping (target -> source): ${JSON.stringify(targetToSource)}`);
     const criticalTargets = ['Pri. Claim No', 'Encounter Date', 'Pri. Patient Insurance Card No'];
     const missingCritical = criticalTargets.filter(t => !targetToSource[t]);
     if (missingCritical.length) {
-      log(`File ${name} WARNING: missing critical mapping(s): ${missingCritical.join(', ')}`, 'WARN');
+      log(`WARN: File ${name} missing critical mapping(s): ${missingCritical.join(', ')}`, 'WARN');
     }
+    // -------------------------------------------------------------------------------
 
-    // Lowercased target->source for consistent lookups against lowercased sourceRow keys
+    // create lowercased mapping for stable lookups
     const targetToSourceLower = {};
     for (const [tgt, src] of Object.entries(targetToSource)) {
       targetToSourceLower[tgt] = src ? src.toString().trim().toLowerCase() : '';
@@ -431,8 +428,6 @@ async function combineReportings(fileEntries, clinicianFile) {
     const seenClaimIDs = new Set();
     const startRow = headerRowIndex + 1;
     const totalRows = sheetData.length;
-
-    // per-file one-time sample log flag (reduce spam)
     let loggedSourceRowSample = false;
 
     for (let r = startRow; r < totalRows; r++) {
@@ -440,20 +435,19 @@ async function combineReportings(fileEntries, clinicianFile) {
       if (!Array.isArray(row) || row.length === 0) continue;
 
       try {
-        // Build sourceRow keyed by normalized lowercased header keys
+        // sourceRow keyed by lowercased header strings
         const sourceRow = {};
         headerRowTrimmed.forEach((h, idx) => {
           const key = (h || '').toString().trim().toLowerCase();
           sourceRow[key] = (row[idx] === undefined || row[idx] === null) ? '' : row[idx];
         });
 
-        // Debug: log sample sourceRow keys once per file to help troubleshooting
         if (!loggedSourceRowSample) {
-          log(`File ${name} sample sourceRow keys: ${Object.keys(sourceRow).slice(0, 40).join(', ')}`);
+          log(`DEBUG: File ${name} sample sourceRow keys: ${Object.keys(sourceRow).slice(0,40).join(', ')}`);
           loggedSourceRowSample = true;
         }
 
-        // claim id dedupe (use lowercased mapping)
+        // claim id dedupe using lowercased mapping
         const claimIDKey = (targetToSourceLower['Pri. Claim No'] || '').toString();
         const claimID = claimIDKey ? (sourceRow[claimIDKey] || '').toString().trim() : '';
         if (!claimID || seenClaimIDs.has(claimID)) continue;
@@ -466,17 +460,17 @@ async function combineReportings(fileEntries, clinicianFile) {
         }
         if (!facilityLicense) facilityLicense = matchedFacilityID || '';
 
-        // Clinician keys (use mapped lowercased source headers if available)
+        // clinician keys
         const clinLicenseKey = (targetToSourceLower['Clinician License'] || 'clinician license').toString();
         const clinNameKey = (targetToSourceLower['Clinician Name'] || 'clinician name').toString();
 
         let clinLicense = (sourceRow[clinLicenseKey] || '').toString().trim();
         let clinName = (sourceRow[clinNameKey] || '').toString().trim();
 
-        // ClinicPro V2 special: OrderDoctor fallback if clinName missing
+        // OrderDoctor fallback
         if (!clinName && sourceRow['orderdoctor']) clinName = sourceRow['orderdoctor'].toString().trim();
 
-        // Fill missing clinician info from clinician maps
+        // fill missing clinician info from maps
         if (clinLicense && !clinName && clinicianMapByLicense.has(clinLicense)) {
           clinName = clinicianMapByLicense.get(clinLicense)['Clinician Name'];
           log(`Filled name from license: ${clinLicense} => ${clinName}`);
@@ -486,7 +480,6 @@ async function combineReportings(fileEntries, clinicianFile) {
           log(`Filled license from name: ${clinName} => ${clinLicense}`);
         }
 
-        // Additional fallback lookup using fallbackExcel
         if ((!clinName || !clinLicense) && clinName && facilityLicense) {
           const fb = fallbackClinicianLookupWithFacility(clinName, facilityLicense, fallbackExcel);
           if (fb) {
@@ -496,13 +489,12 @@ async function combineReportings(fileEntries, clinicianFile) {
           }
         }
 
-        // If both clinician fields missing, skip row
         if (!clinName && !clinLicense) {
           log(`[SKIP] Both Clinician fields missing: File ${name} Row ${r + 1} claimID:${claimID}`, "WARN");
           continue;
         }
 
-        // Collect blanks for reporting
+        // collect blanks
         const missingFields = [];
         if (!clinName) missingFields.push('Clinician Name');
         if (!clinLicense) missingFields.push('Clinician License');
@@ -517,7 +509,7 @@ async function combineReportings(fileEntries, clinicianFile) {
           });
         }
 
-        // Build the output row using TARGET_HEADERS and the lowercased mapping keys
+        // build output row
         const targetRow = TARGET_HEADERS.map((tgt) => {
           try {
             if (tgt === 'Facility ID') return facilityLicense || '';
@@ -547,12 +539,8 @@ async function combineReportings(fileEntries, clinicianFile) {
           }
         });
 
-        if (!Array.isArray(targetRow)) {
-          log(`targetRow is not an array in file ${name}, row ${r + 1}`, 'ERROR');
-          continue;
-        }
-        if (targetRow.length !== TARGET_HEADERS.length) {
-          log(`Malformed row length in file ${name}, row ${r + 1}: expected ${TARGET_HEADERS.length}, got ${targetRow.length}`, 'ERROR');
+        if (!Array.isArray(targetRow) || targetRow.length !== TARGET_HEADERS.length) {
+          log(`Malformed output row in file ${name}, row ${r + 1}`, 'ERROR');
           continue;
         }
 
@@ -560,37 +548,32 @@ async function combineReportings(fileEntries, clinicianFile) {
       } catch (err) {
         log(`Fatal row error in file ${name}, row ${r + 1}: ${err.message}`, 'ERROR');
       }
-    } // end per-row loop
+    } // rows end
 
     self.postMessage({ type: 'progress', progress: 50 + Math.floor(((i + 1) / fileEntries.length) * 50) });
-  } // end files loop
+  } // files end
 
-  // Summarize missing clinician fields (if any)
+  // final logs
   if (blankFieldsRows.length > 0) {
-    log(`Rows with missing clinician fields (Name or License): ${blankFieldsRows.length} rows found`);
-    // console.log(blankFieldsRows);
+    log(`Rows with missing clinician fields: ${blankFieldsRows.length}`);
   }
 
-  // Final sanity checks on combinedRows
+  // sanity checks and return workbook
   for (const [idx, row] of combinedRows.entries()) {
-    if (!Array.isArray(row)) {
-      log(`Row ${idx} is not an array: ${JSON.stringify(row)}`, 'ERROR');
-      throw new Error(`Invalid row at index ${idx}: not an array`);
-    }
-    if (row.length !== TARGET_HEADERS.length) {
-      log(`Row ${idx} length ${row.length} does not match headers length ${TARGET_HEADERS.length}: ${JSON.stringify(row)}`, 'ERROR');
-      throw new Error(`Invalid row length at index ${idx}`);
+    if (!Array.isArray(row) || row.length !== TARGET_HEADERS.length) {
+      log(`Bad combined row at index ${idx}`, 'ERROR');
+      throw new Error('Invalid combined rows');
     }
   }
 
   try {
-    const ws = XLSX.utils.aoa_to_sheet(combinedRows);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Combined Reporting');
+    const wsOut = XLSX.utils.aoa_to_sheet(combinedRows);
+    const wbOut = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wbOut, wsOut, 'Combined Reporting');
     self.postMessage({ type: 'progress', progress: 100 });
-    return wb;
+    return wbOut;
   } catch (sheetErr) {
-    log(`Error converting to worksheet: ${sheetErr.message}`, 'ERROR');
+    log(`Error building output workbook: ${sheetErr.message}`, 'ERROR');
     throw sheetErr;
   }
 }
