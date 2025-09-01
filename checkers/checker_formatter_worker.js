@@ -119,26 +119,40 @@ function getFacilityIDFromFileName(filename) {
   return '';
 }
 
+// REPLACEMENT: safer tolerant header matcher
 function findHeaderMatch(headerRow, srcHeader) {
   if (!Array.isArray(headerRow) || !srcHeader) return null;
-  const normalize = s => String(s || '').toLowerCase().trim().replace(/[\.\-\/,_\s]+/g, ' ');
+
+  // normalize: lowercase, trim, remove zero-width, collapse punctuation/whitespace to single space
+  const normalize = s => String(s || '')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')   // zero-width
+    .replace(/\u00A0/g, ' ')                 // NBSP
+    .toLowerCase()
+    .trim()
+    .replace(/[\.\-\/,_\s]+/g, ' ');
+
   const targetNorm = normalize(srcHeader);
-  // First try exact normalized equality
-  for (const h of headerRow) { if (normalize(h) === targetNorm) return h; }
-  // Next try containment both ways (header contains src or src contains header)
-  for (const h of headerRow) {
-    const hn = normalize(h);
-    if (hn.includes(targetNorm) || targetNorm.includes(hn)) return h;
-  }
-  // As a last resort, try tokenized prefix match (useful for variants like "Pri Claim ID" vs "Pri. Claim ID")
   const targetTokens = targetNorm.split(' ').filter(Boolean);
+
+  // 1) exact normalized equality (strongest)
+  for (const h of headerRow) {
+    if (normalize(h) === targetNorm) return h;
+  }
+
+  // 2) token-overlap: require at least two shared tokens, or all tokens if target has <=2 tokens
+  //    (this prevents short-substring accidental matches like "clinic" <> "clinician license")
   for (const h of headerRow) {
     const hn = normalize(h);
     const hTokens = hn.split(' ').filter(Boolean);
-    // require at least two shared tokens to reduce false positives
+    if (hTokens.length === 0 || targetTokens.length === 0) continue;
+
+    // count shared tokens (exact token equality)
     const shared = targetTokens.filter(t => hTokens.includes(t));
-    if (shared.length >= Math.min(2, targetTokens.length)) return h;
+    const required = Math.min(2, targetTokens.length); // if target has 1 token -> require 1, else 2
+    if (shared.length >= required) return h;
   }
+
+  // No safe match found
   return null;
 }
 
