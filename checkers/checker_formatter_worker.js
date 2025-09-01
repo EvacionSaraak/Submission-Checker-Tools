@@ -366,64 +366,56 @@ function detectFileTypeFromHeaders(headers) {
   return 'unknown';
 }
 
-async function combineEligibilities(files) {
-  log("[INFO] Starting Eligibility merge...");
+async function combineEligibilities(fileEntries) {
+  log("Starting eligibility combining");
 
-  let combinedData = [];
-  let headers = null;
+  const XLSX = window.XLSX;
+  if (!fileEntries || fileEntries.length === 0) {
+    log("No eligibility files provided", "ERROR");
+    return;
+  }
 
-  for (let file of files) {
-    log(`[INFO] Processing file: ${file.name}`);
-    const data = await readXlsxFile(file);
+  let combinedRows = [];
+  let headerRow = null;
+  const seenRows = new Set();
 
-    if (!data || data.length < 2) {
-      log(`[WARN] Skipping ${file.name}: no data rows found`);
-      continue;
+  for (let entry of fileEntries) {
+    log(`Reading file: ${entry.name}`);
+    const data = await entry.arrayBuffer();
+    const wb = XLSX.read(data, { type: "array" });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    let rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+
+    // Headers are on row 2 (index 1)
+    if (!headerRow) {
+      headerRow = rows[1]; // row index 1
+      combinedRows.push(headerRow);
     }
 
-    // First row is usually the header row
-    const fileHeaders = data[0].map(h => h ? h.toString().trim() : "");
+    // All rows after header
+    const dataRows = rows.slice(2);
 
-    if (!headers) {
-      headers = fileHeaders;
-      log("[INFO] Headers set from first file");
-    }
-
-    // All subsequent rows are data
-    for (let i = 1; i < data.length; i++) {
-      const row = data[i].map(cell => (cell !== null && cell !== undefined) ? cell : "");
-      combinedData.push(row);
+    for (let row of dataRows) {
+      const key = JSON.stringify(row);
+      if (!seenRows.has(key)) {
+        combinedRows.push(row);
+        seenRows.add(key);
+      }
     }
   }
 
-  if (!headers) {
-    log("[ERROR] No headers found in eligibility files");
-    return null;
+  if (!headerRow) {
+    log("No header row found in any file", "ERROR");
+    return;
   }
 
-  log(`[INFO] Total rows before duplicate removal: ${combinedData.length}`);
+  const ws = XLSX.utils.aoa_to_sheet(combinedRows);
+  const wbOut = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wbOut, ws, "Combined Eligibility");
 
-  // Remove exact duplicate rows
-  const uniqueData = [];
-  const seen = new Set();
-
-  for (let row of combinedData) {
-    const rowString = JSON.stringify(row);
-    if (!seen.has(rowString)) {
-      seen.add(rowString);
-      uniqueData.push(row);
-    }
-  }
-
-  log(`[INFO] Total rows after duplicate removal: ${uniqueData.length}`);
-
-  // Build workbook
-  const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.aoa_to_sheet([headers, ...uniqueData]);
-  XLSX.utils.book_append_sheet(wb, ws, "Eligibilities");
-
-  log("[INFO] Eligibility merge complete.");
-  return wb;
+  const outputFileName = "combined_eligibility.xlsx";
+  XLSX.writeFile(wbOut, outputFileName);
+  log(`Eligibility combining complete. File saved: ${outputFileName}`);
 }
 
 async function combineReportings(fileEntries, clinicianFile) {
