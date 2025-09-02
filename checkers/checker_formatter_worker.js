@@ -369,7 +369,7 @@ function detectFileTypeFromHeaders(headers) {
 async function combineEligibilities(fileEntries) {
   log("Starting eligibility combining");
 
-  const XLSX = window.XLSX;
+  const XLSX = (typeof window !== "undefined" ? window.XLSX : self.XLSX);
   if (!fileEntries || fileEntries.length === 0) {
     log("No eligibility files provided", "ERROR");
     return;
