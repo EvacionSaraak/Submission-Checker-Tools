@@ -381,20 +381,18 @@ async function combineEligibilities(fileEntries) {
 
   for (let entry of fileEntries) {
     log(`Reading file: ${entry.name}`);
-    const data = await entry.arrayBuffer();
+    const data = entry.buffer; // ✅ FIXED
     const wb = XLSX.read(data, { type: "array" });
     const sheet = wb.Sheets[wb.SheetNames[0]];
     let rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
 
     // Headers are on row 2 (index 1)
     if (!headerRow) {
-      headerRow = rows[1]; // row index 1
+      headerRow = rows[1];
       combinedRows.push(headerRow);
     }
 
-    // All rows after header
     const dataRows = rows.slice(2);
-
     for (let row of dataRows) {
       const key = JSON.stringify(row);
       if (!seenRows.has(key)) {
@@ -413,9 +411,8 @@ async function combineEligibilities(fileEntries) {
   const wbOut = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wbOut, ws, "Combined Eligibility");
 
-  const outputFileName = "combined_eligibility.xlsx";
-  XLSX.writeFile(wbOut, outputFileName);
-  log(`Eligibility combining complete. File saved: ${outputFileName}`);
+  // ✅ return workbook object instead of trying to write a file
+  return wbOut;
 }
 
 async function combineReportings(fileEntries, clinicianFile) {
