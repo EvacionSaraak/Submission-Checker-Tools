@@ -320,7 +320,7 @@ function renderResults(rows) {
         html += `<tr>
             <td>${claimCell}</td>
             <td>${activityCell}</td>
-            <td>${escapeHtml(r.OrderingClinician)}</td>
+            <td>${escapeHtml(r.OrderingClinician).toUpperCase()}</td>
             <td>${escapeHtml(r.Modifier)}</td>
             <td>${escapeHtml(r.VOINumber)}</td>
             <td>${buttonHtml}</td>
