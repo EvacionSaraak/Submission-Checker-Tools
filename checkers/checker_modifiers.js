@@ -280,6 +280,14 @@ function renderResults(rows) {
         return;
     }
 
+    // Filter rows for PayerID D001 or A001
+    const filteredRows = rows.filter(r => r.PayerID === "D001" || r.PayerID === "A001");
+
+    if (!filteredRows.length) {
+        container.innerHTML = '<div>No matching claims (only D001 and A001 shown)</div>';
+        return;
+    }
+
     let prevClaimId = null;
     let prevActivityId = null;
 
@@ -298,7 +306,7 @@ function renderResults(rows) {
             <tbody>
     `;
 
-    rows.forEach((r, idx) => {
+    filteredRows.forEach((r, idx) => {
         const showClaim = r.ClaimID !== prevClaimId;
         const showActivity = (r.ClaimID !== prevClaimId) || (r.ActivityID !== prevActivityId);
 
@@ -311,7 +319,6 @@ function renderResults(rows) {
         // Determine button text and existence
         let buttonHtml = '';
         if (r.EligibilityRow) {
-            // Pick a display key (for example, "EligibilityStatus") or use first key
             const keys = Object.keys(r.EligibilityRow);
             const displayValue = keys.length ? escapeHtml(r.EligibilityRow[keys[0]]) : "View";
             buttonHtml = `<button type="button" class="details-btn eligibility-details" onclick="showEligibility(${idx})">${displayValue}</button>`;
@@ -320,7 +327,7 @@ function renderResults(rows) {
         html += `<tr>
             <td>${claimCell}</td>
             <td>${activityCell}</td>
-            <td>${escapeHtml(r.OrderingClinician).toUpperCase()}</td>
+            <td>${escapeHtml(r.OrderingClinician)}</td>
             <td>${escapeHtml(r.Modifier)}</td>
             <td>${escapeHtml(r.VOINumber)}</td>
             <td>${buttonHtml}</td>
