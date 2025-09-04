@@ -452,32 +452,53 @@ function showError(err) {
 
 // Modal logic for eligibility details
 function showEligibility(index) {
-  const row = lastResults[index];
-  if (!row || !row.EligibilityRow) {
-    alert('No eligibility data found for this claim.');
-    return;
-  }
+    const row = lastResults[index];
+    if (!row || !row.EligibilityRow) {
+        alert('No eligibility data found for this claim.');
+        return;
+    }
 
-  const data = row.EligibilityRow;
-  const keys = Object.keys(data);
-  const details = keys.map(k => `<tr><th>${escapeHtml(k)}</th><td>${escapeHtml(data[k])}</td></tr>`).join('');
+    const data = row.EligibilityRow;
+    const keys = Object.keys(data);
 
-  const modalHtml = `
-    <div class="modal-overlay" onclick="closeEligibilityModal()"></div>
-    <div class="modal-box">
-      <h3>Eligibility Details</h3>
-      <table border="1" style="width:100%;border-collapse:collapse">${details}</table>
-      <button onclick="closeEligibilityModal()">Close</button>
-    </div>
-  `;
+    const details = keys.map(k => `
+        <tr>
+            <th>${escapeHtml(k)}</th>
+            <td>${escapeHtml(data[k])}</td>
+        </tr>
+    `).join('');
 
-  const modal = document.createElement('div');
-  modal.id = "eligibilityModal";
-  modal.innerHTML = modalHtml;
-  document.body.appendChild(modal);
+    const modalHtml = `
+        <div class="modal-content eligibility-modal modal-scrollable">
+            <span class="close" onclick="closeEligibilityModal()">&times;</span>
+            <h3>Eligibility Details</h3>
+            <table class="eligibility-details">
+                ${details}
+            </table>
+            <div style="text-align:right; margin-top:10px;">
+                <button class="details-btn eligibility-details" onclick="closeEligibilityModal()">Close</button>
+            </div>
+        </div>
+    `;
+
+    // Create modal container
+    const modal = document.createElement('div');
+    modal.id = "eligibilityModal";
+    modal.className = "modal"; // apply CSS modal styling
+    modal.innerHTML = modalHtml;
+
+    // Close modal when clicking outside the content
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) closeEligibilityModal();
+    });
+
+    document.body.appendChild(modal);
+
+    // Make modal visible
+    modal.style.display = "flex";
 }
 
 function closeEligibilityModal() {
-  const modal = document.getElementById('eligibilityModal');
-  if (modal) modal.remove();
+    const modal = document.getElementById('eligibilityModal');
+    if (modal) modal.remove();
 }
