@@ -37,14 +37,14 @@ async function handleRun() {
       const match = matcher.find(rec.memberId, rec.date, rec.clinician);
       const voi = match ? String(firstNonEmptyKey(match, ['_VOINumber','VOI Number','VOI','VOI_Number','VOI Number ']) || '').trim() : '';
       const expected = expectedModifierForVOI(voi);
-      const status = expected && String(rec.modifier) === String(expected) ? 'valid' : 'unknown';
+    
       return {
         ClaimID: rec.claimId || '',
         ActivityID: rec.activityId || '',
         OrderingClinician: rec.clinician || '',
         Modifier: String(rec.modifier || ''),
         VOINumber: voi || '',
-        Status: status
+        EligibilityRow: match || null   // <-- store full XLSX eligibility row
       };
     });
     lastResults = output;
@@ -290,15 +290,15 @@ function renderResults(rows) {
           <th>Claim ID</th>
           <th>Activity ID</th>
           <th>Ordering Clinician</th>
-          <th>CPT Modifier</th>
+          <th>Observation CPT Modifier</th>
           <th>VOI Number</th>
-          <th>Status</th>
+          <th>Eligibility Details</th>
         </tr>
       </thead>
       <tbody>
   `;
 
-  for (const r of rows) {
+  rows.forEach((r, idx) => {
     const showClaim = r.ClaimID !== prevClaimId;
     const showActivity = (r.ClaimID !== prevClaimId) || (r.ActivityID !== prevActivityId);
 
@@ -308,17 +308,15 @@ function renderResults(rows) {
     prevClaimId = r.ClaimID;
     prevActivityId = r.ActivityID;
 
-    const rowClass = (String(r.Status || '').toLowerCase() === 'valid') ? 'valid' : 'unknown';
-
-    html += `<tr class="${rowClass}">
+    html += `<tr>
       <td>${claimCell}</td>
       <td>${activityCell}</td>
       <td>${escapeHtml(r.OrderingClinician)}</td>
       <td>${escapeHtml(r.Modifier)}</td>
       <td>${escapeHtml(r.VOINumber)}</td>
-      <td>${escapeHtml(r.Status)}</td>
+      <td><button type="button" onclick="showEligibility(${idx})">View</button></td>
     </tr>`;
-  }
+  });
 
   html += `</tbody></table>`;
   container.innerHTML = html;
@@ -450,4 +448,36 @@ function showError(err) {
   message(err && err.message ? err.message : String(err), 'red');
   showProgress(0, '');
   toggleDownload(false);
+}
+
+// Modal logic for eligibility details
+function showEligibility(index) {
+  const row = lastResults[index];
+  if (!row || !row.EligibilityRow) {
+    alert('No eligibility data found for this claim.');
+    return;
+  }
+
+  const data = row.EligibilityRow;
+  const keys = Object.keys(data);
+  const details = keys.map(k => `<tr><th>${escapeHtml(k)}</th><td>${escapeHtml(data[k])}</td></tr>`).join('');
+
+  const modalHtml = `
+    <div class="modal-overlay" onclick="closeEligibilityModal()"></div>
+    <div class="modal-box">
+      <h3>Eligibility Details</h3>
+      <table border="1" style="width:100%;border-collapse:collapse">${details}</table>
+      <button onclick="closeEligibilityModal()">Close</button>
+    </div>
+  `;
+
+  const modal = document.createElement('div');
+  modal.id = "eligibilityModal";
+  modal.innerHTML = modalHtml;
+  document.body.appendChild(modal);
+}
+
+function closeEligibilityModal() {
+  const modal = document.getElementById('eligibilityModal');
+  if (modal) modal.remove();
 }
