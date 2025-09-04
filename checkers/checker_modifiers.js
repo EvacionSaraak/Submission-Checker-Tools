@@ -37,14 +37,15 @@ async function handleRun() {
       const match = matcher.find(rec.memberId, rec.date, rec.clinician);
       const voi = match ? String(firstNonEmptyKey(match, ['_VOINumber','VOI Number','VOI','VOI_Number','VOI Number ']) || '').trim() : '';
       const expected = expectedModifierForVOI(voi);
-    
+
       return {
         ClaimID: rec.claimId || '',
         ActivityID: rec.activityId || '',
         OrderingClinician: rec.clinician || '',
         Modifier: String(rec.modifier || ''),
         VOINumber: voi || '',
-        EligibilityRow: match || null   // <-- store full XLSX eligibility row
+        EligibilityRow: match || null,
+        PayerID: rec.payerId || ''   // <-- include PayerID so renderResults can filter
       };
     });
     lastResults = output;
@@ -112,15 +113,15 @@ function extractModifierRecords(xmlDoc) {
   const claims = Array.from(xmlDoc.getElementsByTagName('Claim'));
   for (const claim of claims) {
     const claimId = textValue(claim, 'ID');
+    const payerIdRaw = textValue(claim, 'PayerID');
+    const payerId = String(payerIdRaw || '').trim();
+
     const memberIdRaw = textValue(claim, 'MemberID');
-    const payerId = textValue(claim, 'PayerID'); // <-- capture payer
 
     // Encounter may use <Date> or <Start>
     const encNode = claim.getElementsByTagName('Encounter')[0] || claim.getElementsByTagName('Encounte')[0];
     let encDateRaw = '';
-    if (encNode) {
-      encDateRaw = textValue(encNode, 'Date') || textValue(encNode, 'Start') || textValue(encNode, 'EncounterDate') || '';
-    }
+    if (encNode) { encDateRaw = textValue(encNode, 'Date') || textValue(encNode, 'Start') || textValue(encNode, 'EncounterDate') || ''; }
     const encDate = normalizeDate(encDateRaw);
 
     const activities = Array.from(claim.getElementsByTagName('Activity'));
@@ -134,9 +135,9 @@ function extractModifierRecords(xmlDoc) {
       ]);
       const clinician = normalizeName(clinicianRaw);
 
-      // Observations
       const observations = Array.from(act.getElementsByTagName('Observation'));
       for (const obs of observations) {
+        // sequence pairing (Code -> Value) approach
         const childNodes = Array.from(obs.children || []);
         let lastCode = '';
         for (const child of childNodes) {
@@ -147,8 +148,8 @@ function extractModifierRecords(xmlDoc) {
             lastCode = txt;
             continue;
           }
-          if (tag === 'Value' || tag === 'ValueText' || tag === 'ValueType') {
-            if (lastCode === 'CPT modifier' && isModifierTarget(txt)) {
+          if ((tag === 'Value' || tag === 'ValueText' || tag === 'ValueType') && lastCode === 'CPT modifier') {
+            if (isModifierTarget(txt)) {
               records.push({
                 claimId,
                 activityId,
@@ -156,13 +157,13 @@ function extractModifierRecords(xmlDoc) {
                 date: encDate,
                 clinician,
                 modifier: String(txt).trim(),
-                payerId: payerId // <-- add payer to record
+                payerId // <-- include payerId here
               });
             }
           }
         }
 
-        // Pairwise Code/Value fallback
+        // sibling Code/Value pairing fallback
         const codes = Array.from(obs.getElementsByTagName('Code')).map(n => String(n.textContent || '').trim());
         const values = Array.from(obs.getElementsByTagName('Value')).map(n => String(n.textContent || '').trim());
         if (codes.length && values.length) {
@@ -178,14 +179,14 @@ function extractModifierRecords(xmlDoc) {
                 date: encDate,
                 clinician,
                 modifier: String(v).trim(),
-                payerId: payerId // <-- add payer to record
+                payerId
               });
             }
           }
         }
-      }
-    }
-  }
+      } // obs
+    } // activity
+  } // claim
   return records;
 }
 
@@ -466,50 +467,44 @@ function showError(err) {
 
 // Modal logic for eligibility details
 function showEligibility(index) {
-    const row = lastResults[index];
-    if (!row || !row.EligibilityRow) {
-        alert('No eligibility data found for this claim.');
-        return;
-    }
+  const row = lastResults[index];
+  if (!row || !row.EligibilityRow) {
+    alert('No eligibility data found for this claim.');
+    return;
+  }
 
-    const data = row.EligibilityRow;
-    const keys = Object.keys(data);
+  const data = row.EligibilityRow;
+  const keys = Object.keys(data);
 
-    const details = keys.map(k => `
-        <tr>
-            <th>${escapeHtml(k)}</th>
-            <td>${escapeHtml(data[k])}</td>
-        </tr>
-    `).join('');
+  const details = keys.map(k => `
+    <tr>
+      <th>${escapeHtml(k)}</th>
+      <td>${escapeHtml(data[k])}</td>
+    </tr>
+  `).join('');
 
-    const modalHtml = `
-        <div class="modal-content eligibility-modal modal-scrollable">
-            <span class="close" onclick="closeEligibilityModal()">&times;</span>
-            <h3>Eligibility Details</h3>
-            <table class="eligibility-details">
-                ${details}
-            </table>
-            <div style="text-align:right; margin-top:10px;">
-                <button class="details-btn eligibility-details" onclick="closeEligibilityModal()">Close</button>
-            </div>
-        </div>
-    `;
+  const modalHtml = `
+    <div class="modal-content eligibility-modal modal-scrollable">
+      <span class="close" onclick="closeEligibilityModal()">&times;</span>
+      <h3>Eligibility Details</h3>
+      <table class="eligibility-details">
+        ${details}
+      </table>
+      <div style="text-align:right; margin-top:10px;">
+        <button class="details-btn eligibility-details" onclick="closeEligibilityModal()">Close</button>
+      </div>
+    </div>
+  `;
 
-    // Create modal container
-    const modal = document.createElement('div');
-    modal.id = "eligibilityModal";
-    modal.className = "modal"; // apply CSS modal styling
-    modal.innerHTML = modalHtml;
-
-    // Close modal when clicking outside the content
-    modal.addEventListener('click', (e) => {
-        if (e.target === modal) closeEligibilityModal();
-    });
-
-    document.body.appendChild(modal);
-
-    // Make modal visible
-    modal.style.display = "flex";
+  const modal = document.createElement('div');
+  modal.id = "eligibilityModal";
+  modal.className = "modal";
+  modal.innerHTML = modalHtml;
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) closeEligibilityModal();
+  });
+  document.body.appendChild(modal);
+  modal.style.display = "flex";
 }
 
 function closeEligibilityModal() {
