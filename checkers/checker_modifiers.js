@@ -274,52 +274,61 @@ function expectedModifierForVOI(voi) {
 
 // ----------------- Rendering (omit repeated ClaimID/ActivityID) -----------------
 function renderResults(rows) {
-  const container = document.getElementById('outputTableContainer');
-  if (!rows || !rows.length) {
-    container.innerHTML = '<div>No results</div>';
-    return;
-  }
+    const container = document.getElementById('outputTableContainer');
+    if (!rows || !rows.length) {
+        container.innerHTML = '<div>No results</div>';
+        return;
+    }
 
-  let prevClaimId = null;
-  let prevActivityId = null;
+    let prevClaimId = null;
+    let prevActivityId = null;
 
-  let html = `
-    <table border="1" style="width:100%;border-collapse:collapse">
-      <thead>
-        <tr>
-          <th>Claim ID</th>
-          <th>Activity ID</th>
-          <th>Ordering Clinician</th>
-          <th>Observation CPT Modifier</th>
-          <th>VOI Number</th>
-          <th>Eligibility Details</th>
-        </tr>
-      </thead>
-      <tbody>
-  `;
+    let html = `
+        <table class="shared-table">
+            <thead>
+                <tr>
+                    <th>Claim ID</th>
+                    <th>Activity ID</th>
+                    <th>Ordering Clinician</th>
+                    <th>Observation CPT Modifier</th>
+                    <th>VOI Number</th>
+                    <th>Eligibility Details</th>
+                </tr>
+            </thead>
+            <tbody>
+    `;
 
-  rows.forEach((r, idx) => {
-    const showClaim = r.ClaimID !== prevClaimId;
-    const showActivity = (r.ClaimID !== prevClaimId) || (r.ActivityID !== prevActivityId);
+    rows.forEach((r, idx) => {
+        const showClaim = r.ClaimID !== prevClaimId;
+        const showActivity = (r.ClaimID !== prevClaimId) || (r.ActivityID !== prevActivityId);
 
-    const claimCell = showClaim ? escapeHtml(r.ClaimID) : '';
-    const activityCell = showActivity ? escapeHtml(r.ActivityID) : '';
+        const claimCell = showClaim ? escapeHtml(r.ClaimID) : '';
+        const activityCell = showActivity ? escapeHtml(r.ActivityID) : '';
 
-    prevClaimId = r.ClaimID;
-    prevActivityId = r.ActivityID;
+        prevClaimId = r.ClaimID;
+        prevActivityId = r.ActivityID;
 
-    html += `<tr>
-      <td>${claimCell}</td>
-      <td>${activityCell}</td>
-      <td>${escapeHtml(r.OrderingClinician)}</td>
-      <td>${escapeHtml(r.Modifier)}</td>
-      <td>${escapeHtml(r.VOINumber)}</td>
-      <td><button type="button" onclick="showEligibility(${idx})">View</button></td>
-    </tr>`;
-  });
+        // Determine button text and existence
+        let buttonHtml = '';
+        if (r.EligibilityRow) {
+            // Pick a display key (for example, "EligibilityStatus") or use first key
+            const keys = Object.keys(r.EligibilityRow);
+            const displayValue = keys.length ? escapeHtml(r.EligibilityRow[keys[0]]) : "View";
+            buttonHtml = `<button type="button" class="details-btn eligibility-details" onclick="showEligibility(${idx})">${displayValue}</button>`;
+        }
 
-  html += `</tbody></table>`;
-  container.innerHTML = html;
+        html += `<tr>
+            <td>${claimCell}</td>
+            <td>${activityCell}</td>
+            <td>${escapeHtml(r.OrderingClinician)}</td>
+            <td>${escapeHtml(r.Modifier)}</td>
+            <td>${escapeHtml(r.VOINumber)}</td>
+            <td>${buttonHtml}</td>
+        </tr>`;
+    });
+
+    html += `</tbody></table>`;
+    container.innerHTML = html;
 }
 
 // ----------------- Utilities -----------------
