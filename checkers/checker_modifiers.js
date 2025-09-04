@@ -45,7 +45,7 @@ async function handleRun() {
         Modifier: String(rec.modifier || ''),
         VOINumber: voi || '',
         EligibilityRow: match || null,
-        PayerID: rec.payerId || ''   // <-- include PayerID so renderResults can filter
+        PayerID: rec.PayerID || ''   // now matches what extractModifierRecords set
       };
     });
     lastResults = output;
@@ -179,7 +179,7 @@ function extractModifierRecords(xmlDoc) {
                 date: encDate,
                 clinician,
                 modifier: String(v).trim(),
-                payerId
+                PayerID: payerId   // use capital P consistently
               });
             }
           }
@@ -279,7 +279,10 @@ function renderResults(rows) {
   }
 
   // Filter rows for PayerID D001 or A001
-  const filteredRows = rows.filter(r => r.payerId === "D001" || r.payerId === "A001");
+  const filteredRows = rows.filter(r => {
+    const p = String(r.PayerID || '').trim();
+    return p === "D001" || p === "A001";
+  });
 
   if (!filteredRows.length) {
     container.innerHTML = '<div>No matching claims (only D001 and A001 shown)</div>';
