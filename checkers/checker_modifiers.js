@@ -34,18 +34,17 @@ async function handleRun() {
     showProgress(65, 'Matching to XLSX');
 
     const output = extracted.map(rec => {
-      const match = matcher.find(rec.memberId, rec.date, rec.clinician);
+      const match = matcher.find(rec.MemberID, rec.Date, rec.OrderingClinician);
       const voi = match ? String(firstNonEmptyKey(match, ['_VOINumber','VOI Number','VOI','VOI_Number','VOI Number ']) || '').trim() : '';
-      const expected = expectedModifierForVOI(voi);
-
+    
       return {
-        ClaimID: rec.claimId || '',
-        ActivityID: rec.activityId || '',
-        OrderingClinician: rec.clinician || '',
-        Modifier: String(rec.modifier || ''),
+        ClaimID: rec.ClaimID || '',
+        ActivityID: rec.ActivityID || '',
+        OrderingClinician: rec.OrderingClinician || '',
+        Modifier: rec.Modifier || '',
         VOINumber: voi || '',
         EligibilityRow: match || null,
-        PayerID: rec.PayerID || ''   // now matches what extractModifierRecords set
+        PayerID: rec.PayerID || ''
       };
     });
     lastResults = output;
@@ -151,13 +150,13 @@ function extractModifierRecords(xmlDoc) {
           if ((tag === 'Value' || tag === 'ValueText' || tag === 'ValueType') && lastCode === 'CPT modifier') {
             if (isModifierTarget(txt)) {
               records.push({
-                claimId,
-                activityId,
-                memberId: normalizeMemberId(memberIdRaw),
-                date: encDate,
-                clinician,
-                modifier: String(txt).trim(),
-                payerId // <-- include payerId here
+                ClaimID: claimId,
+                ActivityID: activityId,
+                MemberID: normalizeMemberId(memberIdRaw),
+                Date: encDate,
+                OrderingClinician: clinician,
+                Modifier: String(v).trim(),
+                PayerID: payerId
               });
             }
           }
@@ -173,13 +172,13 @@ function extractModifierRecords(xmlDoc) {
             const v = values[i] ?? '';
             if (c === 'CPT modifier' && isModifierTarget(v)) {
               records.push({
-                claimId,
-                activityId,
-                memberId: normalizeMemberId(memberIdRaw),
-                date: encDate,
-                clinician,
-                modifier: String(v).trim(),
-                PayerID: payerId   // use capital P consistently
+                ClaimID: claimId,
+                ActivityID: activityId,
+                MemberID: normalizeMemberId(memberIdRaw),
+                Date: encDate,
+                OrderingClinician: clinician,
+                Modifier: String(v).trim(),
+                PayerID: payerId
               });
             }
           }
