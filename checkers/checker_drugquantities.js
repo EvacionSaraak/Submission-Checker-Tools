@@ -101,16 +101,19 @@ document.getElementById('processBtn').addEventListener('click', function() {
                     errorRemark = `Drug codes must have Type 5 and not ${type}`;
                 } else if (requiredQuantity === "" || quantity === "" || isNaN(reqQ) || isNaN(xmlQ)) {
                     rowClass = "unknown";
-                    errorRemark = "Quantity validation cannot be determined";
+                    errorRemark = "Quantity validation cannot be determined.";
                 } else if (reqQ === 1.00) {
                     rowClass = "valid";
                     errorRemark = "";
                 } else if (reqQ > xmlQ) {
                     rowClass = "invalid";
-                    errorRemark = "Claimed quantity is less than the required quantity";
+                    errorRemark = "Claimed quantity is less than the required quantity.";
+                } else if (xmlQ > 1.00) {
+                    rowClass = "unknown";
+                    errorRemark = "Claimed quantity exceeds 1.00. Please Verify.";
                 } else if (reqQ !== xmlQ) {
                     rowClass = "unknown";
-                    errorRemark = "Quantity validation cannot be determined";
+                    errorRemark = "Quantity validation cannot be determined. Please Verify.";
                 } else {
                     rowClass = "valid";
                     errorRemark = "";
