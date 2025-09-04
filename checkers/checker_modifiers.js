@@ -27,7 +27,7 @@ async function handleRun() {
     showProgress(20, 'Parsing XML');
 
     const xmlDoc = parseXml(xmlText);
-    const extracted = extractModifierRecords(xmlDoc); // records found in XML
+    const extracted = extractModifierRecords(xmlDoc);
     showProgress(45, `Found ${extracted.length} modifier record(s)`);
 
     const matcher = buildXlsxMatcher(xlsxObj.rows);
@@ -36,7 +36,7 @@ async function handleRun() {
     const output = extracted.map(rec => {
       const match = matcher.find(rec.MemberID, rec.Date, rec.OrderingClinician);
       const voi = match ? String(firstNonEmptyKey(match, ['_VOINumber','VOI Number','VOI','VOI_Number','VOI Number ']) || '').trim() : '';
-    
+
       return {
         ClaimID: rec.ClaimID || '',
         ActivityID: rec.ActivityID || '',
@@ -47,6 +47,7 @@ async function handleRun() {
         PayerID: rec.PayerID || ''
       };
     });
+
     lastResults = output;
     renderResults(output);
     lastWorkbook = makeWorkbookFromJson(output, 'checker_modifiers_results');
@@ -112,15 +113,17 @@ function extractModifierRecords(xmlDoc) {
   const claims = Array.from(xmlDoc.getElementsByTagName('Claim'));
   for (const claim of claims) {
     const claimId = textValue(claim, 'ID');
-    const payerIdRaw = textValue(claim, 'PayerID');
-    const payerId = String(payerIdRaw || '').trim();
-
+    const payerId = textValue(claim, 'PayerID');
     const memberIdRaw = textValue(claim, 'MemberID');
 
     // Encounter may use <Date> or <Start>
     const encNode = claim.getElementsByTagName('Encounter')[0] || claim.getElementsByTagName('Encounte')[0];
     let encDateRaw = '';
-    if (encNode) { encDateRaw = textValue(encNode, 'Date') || textValue(encNode, 'Start') || textValue(encNode, 'EncounterDate') || ''; }
+    if (encNode) {
+      encDateRaw = textValue(encNode, 'Date') ||
+                   textValue(encNode, 'Start') ||
+                   textValue(encNode, 'EncounterDate') || '';
+    }
     const encDate = normalizeDate(encDateRaw);
 
     const activities = Array.from(claim.getElementsByTagName('Activity'));
@@ -134,9 +137,10 @@ function extractModifierRecords(xmlDoc) {
       ]);
       const clinician = normalizeName(clinicianRaw);
 
+      // Observations
       const observations = Array.from(act.getElementsByTagName('Observation'));
       for (const obs of observations) {
-        // sequence pairing (Code -> Value) approach
+        // Sequential pairing Code -> Value
         const childNodes = Array.from(obs.children || []);
         let lastCode = '';
         for (const child of childNodes) {
@@ -155,37 +159,37 @@ function extractModifierRecords(xmlDoc) {
                 MemberID: normalizeMemberId(memberIdRaw),
                 Date: encDate,
                 OrderingClinician: clinician,
-                Modifier: String(v).trim(),
+                Modifier: txt,
                 PayerID: payerId
               });
             }
           }
         }
 
-        // sibling Code/Value pairing fallback
+        // Fallback: pair Code/Value arrays
         const codes = Array.from(obs.getElementsByTagName('Code')).map(n => String(n.textContent || '').trim());
         const values = Array.from(obs.getElementsByTagName('Value')).map(n => String(n.textContent || '').trim());
         if (codes.length && values.length) {
           const count = Math.max(codes.length, values.length);
           for (let i = 0; i < count; i++) {
             const c = codes[i] ?? '';
-            const v = values[i] ?? '';
-            if (c === 'CPT modifier' && isModifierTarget(v)) {
+            const val = values[i] ?? '';
+            if (c === 'CPT modifier' && isModifierTarget(val)) {
               records.push({
                 ClaimID: claimId,
                 ActivityID: activityId,
                 MemberID: normalizeMemberId(memberIdRaw),
                 Date: encDate,
                 OrderingClinician: clinician,
-                Modifier: String(v).trim(),
+                Modifier: val,
                 PayerID: payerId
               });
             }
           }
         }
-      } // obs
-    } // activity
-  } // claim
+      }
+    }
+  }
   return records;
 }
 
