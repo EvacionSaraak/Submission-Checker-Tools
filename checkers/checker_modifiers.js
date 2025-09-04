@@ -1,362 +1,453 @@
 // checker_modifiers.js
-// Reads an XML file and an XLSX file (from checker_modifiers.html).
-// Finds Observation nodes where <Code> === 'CPT modifier' and <Value> === '24' or '52'.
-// For each such observation it records ClaimID, ActivityID, MemberID, Encounter Date, OrderingClinician, Modifier.
-// Then attempts to match each record to the XLSX by:
-//   MemberID  <-> 'Card Number' (ignore leading zeros when matching)
-//   Date      <-> 'Ordered On' (normalized to YYYY-MM-DD for comparison)
-//   Clinician <-> 'Clnician' (whitespace trimmed, case-insensitive)
-// When a match is found, reads the XLSX 'VOI Number' value and expects:
-//   'VOI_D'    => modifier must be '24'
-//   'VOI_EF1'  => modifier must be '52'
-// Output table columns: ClaimID, ActivityID, OrderingClinician, CPT Modifier, VOI Number, Status ('valid' or 'unknown').
-// Includes download button to export results to XLSX.
+// Plain script (no single enclosing function). Drop into checker_modifiers.html which must include SheetJS (XLSX).
+// Expected DOM IDs: xml-file, xlsx-file, run-button, download-button, messageBox,
+// outputTableContainer, progress-bar-container, progress-bar, progress-text
 
-(function () {
-  'use strict';
+let lastResults = [];
+let lastWorkbook = null;
 
-  // DOM elements (IDs must match checker_modifiers.html)
-  const xmlInput = document.getElementById('xml-file');
-  const xlsxInput = document.getElementById('xlsx-file');
-  const runButton = document.getElementById('run-button');
-  const downloadButton = document.getElementById('download-button');
-  const messageBox = document.getElementById('messageBox');
-  const resultsContainer = document.getElementById('outputTableContainer');
-  const progressBarContainer = document.getElementById('progress-bar-container');
-  const progressBar = document.getElementById('progress-bar');
-  const progressText = document.getElementById('progress-text');
+document.addEventListener('DOMContentLoaded', () => {
+  const runBtn = document.getElementById('run-button');
+  const dlBtn = document.getElementById('download-button');
+  if (runBtn) runBtn.addEventListener('click', handleRun);
+  if (dlBtn) dlBtn.addEventListener('click', handleDownload);
+  resetUI();
+});
 
-  let lastResults = [];
+// ----------------- Main handlers -----------------
+async function handleRun() {
+  resetUI();
+  try {
+    const xmlFile = fileEl('xml-file');
+    const xlsxFile = fileEl('xlsx-file');
+    if (!xmlFile || !xlsxFile) throw new Error('Please select both an XML file and an XLSX file.');
 
-  // ---------- Event wiring ----------
-  runButton.addEventListener('click', async () => {
-    resetUI();
-    try {
-      const xmlFile = xmlInput.files[0];
-      const xlsxFile = xlsxInput.files[0];
-      if (!xmlFile || !xlsxFile) throw new Error('Select both XML and XLSX files.');
+    showProgress(5, 'Reading files');
+    const [xmlText, xlsxObj] = await Promise.all([readFileText(xmlFile), readXlsx(xlsxFile)]);
+    showProgress(20, 'Parsing XML');
 
-      showProgress(5, 'Reading files...');
-      const [xmlText, xlsx] = await Promise.all([readFileText(xmlFile), readXlsx(xlsxFile)]);
-      showProgress(20, 'Parsing XML...');
+    const xmlDoc = parseXml(xmlText);
+    const extracted = extractModifierRecords(xmlDoc); // records found in XML
+    showProgress(45, `Found ${extracted.length} modifier record(s)`);
 
-      const xmlDoc = parseXml(xmlText);
-      const extracted = extractModifierRecords(xmlDoc); // array of records from XML
-      showProgress(45, `Found ${extracted.length} modifier record(s) in XML.`);
+    const matcher = buildXlsxMatcher(xlsxObj.rows);
+    showProgress(65, 'Matching to XLSX');
 
-      const matcher = buildXlsxMatcher(xlsx.rows);
-      showProgress(65, 'Matching against XLSX...');
-
-      const output = extracted.map(rec => {
-        const match = matcher.find(rec.memberId, rec.date, rec.clinician);
-        const voi = match ? String(match['VOI Number'] || match['VOI'] || '').trim() : '';
-        const expected = expectedModifierForVOI(voi);
-        const status = expected && String(rec.modifier) === String(expected) ? 'valid' : 'unknown';
-        return {
-          ClaimID: rec.claimId || '',
-          ActivityID: rec.activityId || '',
-          OrderingClinician: rec.clinician || '',
-          Modifier: String(rec.modifier || ''),
-          VOINumber: voi || '',
-          Status: status
-        };
-      });
-
-      lastResults = output;
-      renderResults(output);
-      showProgress(100, 'Done');
-      downloadButton.disabled = output.length === 0;
-      messageBox.style.color = 'green';
-      messageBox.textContent = `Completed — ${output.length} rows processed.`;
-    } catch (err) {
-      showError(err);
-    }
-  });
-
-  downloadButton.addEventListener('click', () => {
-    if (!lastResults || !lastResults.length) return;
-    const ws = XLSX.utils.json_to_sheet(lastResults);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'checker_modifiers_results');
-    XLSX.writeFile(wb, 'checker_modifiers_results.xlsx');
-  });
-
-  // ---------- File helpers ----------
-  function readFileText(file) {
-    return new Promise((resolve, reject) => {
-      const fr = new FileReader();
-      fr.onload = () => resolve(String(fr.result));
-      fr.onerror = () => reject(fr.error || new Error('Failed to read file'));
-      fr.readAsText(file);
+    const output = extracted.map(rec => {
+      const match = matcher.find(rec.memberId, rec.date, rec.clinician);
+      const voi = match ? String(firstNonEmptyKey(match, ['_VOINumber','VOI Number','VOI','VOI_Number','VOI Number ']) || '').trim() : '';
+      const expected = expectedModifierForVOI(voi);
+      const status = expected && String(rec.modifier) === String(expected) ? 'valid' : 'unknown';
+      return {
+        ClaimID: rec.claimId || '',
+        ActivityID: rec.activityId || '',
+        OrderingClinician: rec.clinician || '',
+        Modifier: String(rec.modifier || ''),
+        VOINumber: voi || '',
+        Status: status
+      };
     });
+    lastResults = output;
+    renderResults(output);
+    lastWorkbook = makeWorkbookFromJson(output, 'checker_modifiers_results');
+    showProgress(100, 'Completed');
+    toggleDownload(output.length > 0);
+    message(`Completed — ${output.length} rows processed.`, 'green');
+  } catch (err) {
+    showError(err);
   }
+}
 
-  async function readXlsx(file) {
-    const arrayBuffer = await file.arrayBuffer();
-    const wb = XLSX.read(arrayBuffer, { type: 'array' });
-    const sheetName = wb.SheetNames[0];
-    const ws = wb.Sheets[sheetName];
-    // Use defval:'' to avoid undefined
-    const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
-    return { rows, sheetName };
+function handleDownload() {
+  if (!lastWorkbook || !lastResults.length) {
+    showError(new Error('Nothing to download'));
+    return;
   }
-
-  // ---------- XML parsing & extraction ----------
-  function parseXml(text) {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(text, 'text/xml');
-    const pe = doc.getElementsByTagName('parsererror')[0];
-    if (pe) {
-      // parsererror text can be long; give short message
-      throw new Error('Invalid XML: ' + (pe.textContent || 'parse error').trim());
+  try {
+    XLSX.writeFile(lastWorkbook, 'checker_modifiers_results.xlsx');
+  } catch (err) {
+    // fallback: rebuild workbook then save
+    try {
+      const wb = makeWorkbookFromJson(lastResults, 'checker_modifiers_results');
+      XLSX.writeFile(wb, 'checker_modifiers_results.xlsx');
+    } catch (e) {
+      showError(e);
     }
-    return doc;
   }
+}
 
-  // Return array of records: { claimId, activityId, memberId, date (Y-M-D or original), clinician, modifier }
-  function extractModifierRecords(xmlDoc) {
-    const records = [];
-    // Find Claim elements (case-sensitive tag as per spec)
-    const claims = Array.from(xmlDoc.getElementsByTagName('Claim'));
-    for (const claim of claims) {
-      const claimId = textValue(claim, 'ID');
-      const memberId = textValue(claim, 'MemberID');
+// ----------------- File helpers -----------------
+function readFileText(file) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(String(fr.result || ''));
+    fr.onerror = () => reject(fr.error || new Error('Failed to read file'));
+    fr.readAsText(file);
+  });
+}
 
-      // encounter may be under <Encounter> or mis-typed <Encounte>
-      const encounterNode = claim.getElementsByTagName('Encounter')[0] || claim.getElementsByTagName('Encounte')[0];
-      const encounterDateRaw = encounterNode ? textValue(encounterNode, 'Date') : '';
+// IMPORTANT: sample XLSX has header row on row 2 — use range:1 so sheet_to_json uses row 2 as headers
+async function readXlsx(file) {
+  const arrayBuffer = await file.arrayBuffer();
+  const wb = XLSX.read(arrayBuffer, { type: 'array' });
+  const sheetName = wb.SheetNames[0];
+  const ws = wb.Sheets[sheetName];
+  const rows = XLSX.utils.sheet_to_json(ws, { defval: '', range: 1 });
+  return { rows, sheetName };
+}
 
-      // Normalize date for matching
-      const encounterDate = normalizeDate(encounterDateRaw);
+// ----------------- XML parsing & extraction -----------------
+function parseXml(text) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(text, 'text/xml');
+  const pe = doc.getElementsByTagName('parsererror')[0];
+  if (pe) throw new Error('Invalid XML: ' + (pe.textContent || 'parse error').trim());
+  return doc;
+}
 
-      const activities = Array.from(claim.getElementsByTagName('Activity'));
-      for (const act of activities) {
-        const activityId = textValue(act, 'ID');
+// Extract records where Observation contains Code === 'CPT modifier' and associated Value is '24' or '52'.
+// Handles Observation forms where multiple Code/Value pairs live inside a single <Observation> element.
+function extractModifierRecords(xmlDoc) {
+  const records = [];
+  const claims = Array.from(xmlDoc.getElementsByTagName('Claim'));
+  for (const claim of claims) {
+    const claimId = textValue(claim, 'ID');
+    const memberIdRaw = textValue(claim, 'MemberID');
 
-        // tolerate misspellings for ordering clinician
-        const clinician = firstNonEmpty([
-          textValue(act, 'OrderingClnician'),
-          textValue(act, 'OrderingClinician'),
-          textValue(act, 'Ordering_Clinician'),
-          textValue(act, 'OrderingClin') // in case of other variants
-        ]);
-
-        const observations = Array.from(act.getElementsByTagName('Observation'));
-        for (const obs of observations) {
-          const code = textValue(obs, 'Code');
-          const value = textValue(obs, 'Value');
-
-          // Code must be exactly 'CPT modifier' (case-sensitive) and value must be '24' or '52'
-          if (code === 'CPT modifier' && isModifierTarget(value)) {
-            records.push({
-              claimId,
-              activityId,
-              memberId,
-              date: encounterDate,
-              clinician: normalizeName(clinician),
-              modifier: String(value).trim()
-            });
-          }
-        }
-      }
-    }
-    return records;
-  }
-
-  // ---------- XLSX matcher ----------
-  // Build an index keyed by normalized member|date|clinician => rows[]
-  function buildXlsxMatcher(rows) {
-    const index = new Map();
-
-    for (const r of rows) {
-      // support a few likely column name variants
-      const memberRaw = String(r['Card Number'] ?? r['CardNumber'] ?? r['Member ID'] ?? r['MemberID'] ?? r['Card No'] ?? r['CardNo'] ?? '');
-      const orderedOnRaw = String(r['Ordered On'] ?? r['OrderedOn'] ?? r['Ordered_On'] ?? r['Order Date'] ?? r['OrderDate'] ?? '');
-      const clinicianRaw = String(r['Clnician'] ?? r['Clinician'] ?? r['Ordering Clinician'] ?? r['OrderingClinician'] ?? '');
-
-      const member = normalizeMemberId(memberRaw);
-      const date = normalizeDate(orderedOnRaw);
+    // Encounter may use <Date> or <Start>
+    const encNode = claim.getElementsByTagName('Encounter')[0] || claim.getElementsByTagName('Encounte')[0];
+    let encDateRaw = '';
+    if (encNode) { encDateRaw = textValue(encNode, 'Date') || textValue(encNode, 'Start') || textValue(encNode, 'EncounterDate') || ''; }
+    const encDate = normalizeDate(encDateRaw);
+    const activities = Array.from(claim.getElementsByTagName('Activity'));
+    for (const act of activities) {
+      const activityId = textValue(act, 'ID');
+      const clinicianRaw = firstNonEmpty([
+        textValue(act, 'OrderingClnician'),
+        textValue(act, 'OrderingClinician'),
+        textValue(act, 'Ordering_Clinician'),
+        textValue(act, 'OrderingClin')
+      ]);
       const clinician = normalizeName(clinicianRaw);
 
-      const key = [member, date, clinician].join('|');
-      if (!index.has(key)) index.set(key, []);
-      index.get(key).push(r);
-    }
+      // Observations: either multiple <Observation> elements or one with repeated child Code/Value pairs.
+      const observations = Array.from(act.getElementsByTagName('Observation'));
+      for (const obs of observations) {
+        // collect child nodes in sequence and pair Code -> Value when they appear.
+        const childNodes = Array.from(obs.children || []);
+        let lastCode = '';
+        for (const child of childNodes) {
+          const tag = child.tagName;
+          const txt = String(child.textContent || '').trim();
+          if (!txt) continue;
+          if (tag === 'Code') {
+            lastCode = txt;
+            continue;
+          }
+          if (tag === 'Value' || tag === 'ValueText' || tag === 'ValueType') {
+            // If lastCode is CPT modifier, check this value
+            if (lastCode === 'CPT modifier') {
+              // Some Observations may have multiple Value entries; check each
+              if (isModifierTarget(txt)) {
+                records.push({
+                  claimId,
+                  activityId,
+                  memberId: normalizeMemberId(memberIdRaw),
+                  date: encDate,
+                  clinician,
+                  modifier: String(txt).trim()
+                });
+                // keep searching - there might be other modifier values in same obs
+              }
+            }
+            // If child itself is Code-like (rare), it won't pair here; continue
+          }
+          // If child is a nested <Observation> (rare), we'll handle via outer loop when it appears
+        }
 
-    return {
-      // finds first matching row for given memberId, date, clinician
-      find(memberId, date, clinician) {
-        const key = [normalizeMemberId(memberId), normalizeDate(date), normalizeName(clinician)].join('|');
-        const arr = index.get(key);
-        return arr && arr.length ? arr[0] : null;
-      },
-      // for debugging or advanced usage
-      _index: index
-    };
+        // Also handle straightforward pairs where Code and Value are separate sibling elements but not in sequence:
+        // get all Code and Value elements and pair by index if lengths match
+        const codes = Array.from(obs.getElementsByTagName('Code')).map(n => String(n.textContent || '').trim());
+        const values = Array.from(obs.getElementsByTagName('Value')).map(n => String(n.textContent || '').trim());
+        if (codes.length && values.length) {
+          const count = Math.max(codes.length, values.length);
+          for (let i = 0; i < count; i++) {
+            const c = codes[i] ?? '';
+            const v = values[i] ?? '';
+            if (c === 'CPT modifier' && isModifierTarget(v)) {
+              records.push({
+                claimId,
+                activityId,
+                memberId: normalizeMemberId(memberIdRaw),
+                date: encDate,
+                clinician,
+                modifier: String(v).trim()
+              });
+            }
+          }
+        }
+      } // end for observations
+    } // end for activities
+  } // end for claims
+  return records;
+}
+
+// ----------------- XLSX matcher -----------------
+// Build map keyed by normalized member|date|clinician
+function buildXlsxMatcher(rows) {
+  const index = new Map();
+  for (const r of rows) {
+    const memberRaw = String(
+      r['Card Number / DHA Member ID'] ??
+      r['Card Number'] ??
+      r['CardNumber'] ??
+      r['Card No'] ??
+      r['CardNo'] ??
+      r['Member ID'] ??
+      r['MemberID'] ?? ''
+    );
+
+    const orderedOnRaw = String(
+      r['Ordered On'] ??
+      r['OrderedOn'] ??
+      r['Order Date'] ??
+      r['OrderDate'] ??
+      r['Ordered_On'] ??
+      r['OrderedOn Date'] ??
+      ''
+    );
+
+    const clinicianRaw = String(
+      r['Clnician'] ??
+      r['Clinician'] ??
+      r['Clinician Name'] ??
+      r['ClinicianName'] ??
+      r['Ordering Clinician'] ??
+      r['OrderingClinician'] ?? ''
+    );
+
+    const member = normalizeMemberId(memberRaw);
+    const date = normalizeDate(orderedOnRaw);
+    const clinician = normalizeName(clinicianRaw);
+
+    // normalize and store VOINumber on row under consistent key for lookup later
+    const voi = String(
+      r['VOI Number'] ??
+      r['VOI'] ??
+      r['VOI_Number'] ??
+      r['VOI Number '] ??
+      r['VOI No'] ??
+      r['VOIMessage'] ??
+      r['VOI Message'] ??
+      ''
+    ).trim();
+    r._VOINumber = voi;
+
+    const key = [member, date, clinician].join('|');
+    if (!index.has(key)) index.set(key, []);
+    index.get(key).push(r);
   }
 
-  // ---------- Business rules ----------
-  function isModifierTarget(val) {
-    const v = String(val || '').trim();
-    return v === '24' || v === '52';
+  return {
+    find(memberId, date, clinician) {
+      const key = [normalizeMemberId(memberId), normalizeDate(date), normalizeName(clinician)].join('|');
+      const arr = index.get(key);
+      return arr && arr.length ? arr[0] : null;
+    },
+    _index: index
+  };
+}
+
+// ----------------- Business rules -----------------
+function isModifierTarget(val) {
+  const v = String(val || '').trim();
+  return v === '24' || v === '52';
+}
+
+function expectedModifierForVOI(voi) {
+  if (!voi) return '';
+  const v = String(voi).trim();
+  if (v === 'VOI_D') return '24';
+  if (v === 'VOI_EF1') return '52';
+  return '';
+}
+
+// ----------------- Rendering (omit repeated ClaimID/ActivityID) -----------------
+function renderResults(rows) {
+  const container = document.getElementById('outputTableContainer');
+  if (!rows || !rows.length) {
+    container.innerHTML = '<div>No results</div>';
+    return;
   }
 
-  function expectedModifierForVOI(voi) {
-    if (!voi) return '';
-    const v = String(voi).trim();
-    if (v === 'VOI_D') return '24';
-    if (v === 'VOI_EF1') return '52';
-    return '';
+  let prevClaimId = null;
+  let prevActivityId = null;
+
+  let html = `
+    <table border="1" style="width:100%;border-collapse:collapse">
+      <thead>
+        <tr>
+          <th>Claim ID</th>
+          <th>Activity ID</th>
+          <th>Ordering Clinician</th>
+          <th>CPT Modifier</th>
+          <th>VOI Number</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+  `;
+
+  for (const r of rows) {
+    const showClaim = r.ClaimID !== prevClaimId;
+    const showActivity = (r.ClaimID !== prevClaimId) || (r.ActivityID !== prevActivityId);
+
+    const claimCell = showClaim ? escapeHtml(r.ClaimID) : '';
+    const activityCell = showActivity ? escapeHtml(r.ActivityID) : '';
+
+    prevClaimId = r.ClaimID;
+    prevActivityId = r.ActivityID;
+
+    const rowClass = (String(r.Status || '').toLowerCase() === 'valid') ? 'valid' : 'unknown';
+
+    html += `<tr class="${rowClass}">
+      <td>${claimCell}</td>
+      <td>${activityCell}</td>
+      <td>${escapeHtml(r.OrderingClinician)}</td>
+      <td>${escapeHtml(r.Modifier)}</td>
+      <td>${escapeHtml(r.VOINumber)}</td>
+      <td>${escapeHtml(r.Status)}</td>
+    </tr>`;
   }
 
-  // ---------- Rendering ----------
-  function renderResults(rows) {
-    // rows expected shape: { ClaimID, ActivityID, OrderingClinician, Modifier, VOINumber, Status }
-    if (!rows || !rows.length) {
-      resultsContainer.innerHTML = '<div>No results</div>';
-      return;
-    }
-  
-    let prevClaimId = null;
-    let prevActivityId = null;
-  
-    let html = `
-      <table border="1" style="width:100%;border-collapse:collapse">
-        <thead>
-          <tr>
-            <th>Claim ID</th>
-            <th>Activity ID</th>
-            <th>Ordering Clinician</th>
-            <th>CPT Modifier</th>
-            <th>VOI Number</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody>
-    `;
-  
-    for (const r of rows) {
-      const showClaim = r.ClaimID !== prevClaimId;
-      const showActivity = (r.ClaimID !== prevClaimId) || (r.ActivityID !== prevActivityId);
-  
-      const claimCell = showClaim ? escapeHtml(r.ClaimID) : '';
-      const activityCell = showActivity ? escapeHtml(r.ActivityID) : '';
-  
-      // update trackers after computing cells
-      prevClaimId = r.ClaimID;
-      prevActivityId = r.ActivityID;
-  
-      const rowClass = (String(r.Status || '').toLowerCase() === 'valid') ? 'valid' : 'unknown';
-  
-      html += `<tr class="${rowClass}">
-        <td>${claimCell}</td>
-        <td>${activityCell}</td>
-        <td>${escapeHtml(r.OrderingClinician)}</td>
-        <td>${escapeHtml(r.Modifier)}</td>
-        <td>${escapeHtml(r.VOINumber)}</td>
-        <td>${escapeHtml(r.Status)}</td>
-      </tr>`;
-    }
-  
-    html += `</tbody></table>`;
-    resultsContainer.innerHTML = html;
+  html += `</tbody></table>`;
+  container.innerHTML = html;
+}
+
+// ----------------- Utilities -----------------
+function textValue(node, tag) {
+  if (!node) return '';
+  const el = node.getElementsByTagName(tag)[0];
+  return el ? String(el.textContent || '').trim() : '';
+}
+
+function firstNonEmpty(arr) {
+  for (const s of arr) {
+    if (s !== undefined && s !== null && String(s).trim() !== '') return String(s).trim();
+  }
+  return '';
+}
+
+// Only remove leading zeros per requirement; keep other characters intact
+function normalizeMemberId(id) {
+  return String(id || '').replace(/^0+/, '').trim();
+}
+
+function normalizeName(name) {
+  return String(name || '').replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+// normalizeDate: try ISO parse, then D/M/Y or M/D/Y heuristics; otherwise return trimmed original
+function normalizeDate(input) {
+  const s = String(input || '').trim();
+  if (!s) return '';
+
+  // If time present, Date.parse often works for formats like "13/08/2025 15:07" => parse may fail depending on locale.
+  // Try to detect D/M/Y with optional time
+  const datePart = s.split(' ')[0];
+  // Try ISO / parseable
+  const t = Date.parse(s);
+  if (!Number.isNaN(t)) return toYMD(new Date(t));
+
+  // parse D/M/YYYY or D-M-YYYY
+  let m = datePart.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);
+  if (m) {
+    let [, d, mo, y] = m;
+    if (y.length === 2) y = String(2000 + Number(y));
+    const dt = new Date(Number(y), Number(mo) - 1, Number(d));
+    if (!Number.isNaN(dt.getTime())) return toYMD(dt);
   }
 
-  // ---------- Utilities ----------
-  function textValue(node, tagName) {
-    if (!node) return '';
-    const el = node.getElementsByTagName(tagName)[0];
-    return el ? String(el.textContent || '').trim() : '';
+  // parse M/D/YYYY (fallback)
+  m = datePart.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);
+  if (m) {
+    let [, mo, d, y] = m;
+    if (y.length === 2) y = String(2000 + Number(y));
+    const dt = new Date(Number(y), Number(mo) - 1, Number(d));
+    if (!Number.isNaN(dt.getTime())) return toYMD(dt);
   }
 
-  function firstNonEmpty(arr) {
-    for (const s of arr) {
-      if (s !== undefined && s !== null && String(s).trim() !== '') return String(s).trim();
-    }
-    return '';
+  return s;
+}
+
+function toYMD(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const da = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${da}`;
+}
+
+function escapeHtml(str) {
+  return String(str == null ? '' : str)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function firstNonEmptyKey(obj, keys) {
+  for (const k of keys) {
+    if (Object.prototype.hasOwnProperty.call(obj, k) && String(obj[k]).trim() !== '') return obj[k];
   }
+  return null;
+}
 
-  // Normalize member by removing leading zeros only (per requirements)
-  function normalizeMemberId(id) {
-    return String(id || '').replace(/^0+/, '');
-  }
+function makeWorkbookFromJson(json, sheetName) {
+  const ws = XLSX.utils.json_to_sheet(json);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, sheetName || 'Results');
+  return wb;
+}
 
-  // Normalize clinician names for comparison: collapse whitespace and lowercase
-  function normalizeName(name) {
-    return String(name || '').replace(/\s+/g, ' ').trim().toLowerCase();
-  }
+// ----------------- UI helpers -----------------
+function el(id) { return document.getElementById(id); }
+function fileEl(id) { const f = el(id); return f && f.files && f.files[0] ? f.files[0] : null; }
 
-  // Date normalization: try ISO parse, then d/m/y or m/d/y common patterns. Returns YYYY-MM-DD or original trimmed string if unparseable.
-  function normalizeDate(input) {
-    const s = String(input || '').trim();
-    if (!s) return '';
+function resetUI() {
+  const container = el('outputTableContainer');
+  if (container) container.innerHTML = '';
+  toggleDownload(false);
+  message('', '');
+  showProgress(0, '');
+  lastResults = [];
+  lastWorkbook = null;
+}
 
-    // If already in YYYY-MM-DD or ISO, Date.parse will work reliably
-    const t = Date.parse(s);
-    if (!Number.isNaN(t)) return toYMD(new Date(t));
+function toggleDownload(enabled) {
+  const dl = el('download-button');
+  if (!dl) return;
+  dl.disabled = !enabled;
+}
 
-    // try DD/MM/YYYY or D/M/YYYY or DD-MM-YYYY
-    const dmy = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);
-    if (dmy) {
-      let [, part1, part2, part3] = dmy; // part1=day or month depending on format
-      // Heuristic: if part3 length is 4 treat as year; assume format is D/M/Y
-      let day = part1, month = part2, year = part3;
-      if (year.length === 2) year = String(2000 + Number(year));
-      const dt = new Date(Number(year), Number(month) - 1, Number(day));
-      if (!Number.isNaN(dt.getTime())) return toYMD(dt);
-    }
+function showProgress(percent, text) {
+  const barContainer = el('progress-bar-container');
+  const bar = el('progress-bar');
+  const pText = el('progress-text');
+  if (barContainer) barContainer.style.display = percent > 0 ? 'block' : 'none';
+  if (bar) bar.style.width = (percent || 0) + '%';
+  if (pText) pText.textContent = text ? `${percent}% — ${text}` : `${percent}%`;
+}
 
-    // try MM/DD/YYYY (ambiguous) - only attempt if previous failed and likely US style (month <=12 && day <=31)
-    const mdy = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);
-    if (mdy) {
-      let [, m, da, y] = mdy;
-      if (y.length === 2) y = String(2000 + Number(y));
-      const dt = new Date(Number(y), Number(m) - 1, Number(da));
-      if (!Number.isNaN(dt.getTime())) return toYMD(dt);
-    }
+function message(text, color) {
+  const m = el('messageBox');
+  if (!m) return;
+  m.textContent = text || '';
+  m.style.color = color || '';
+}
 
-    // fallback: return trimmed original
-    return s;
-  }
-
-  function toYMD(d) {
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const da = String(d.getDate()).padStart(2, '0');
-    return `${y}-${m}-${da}`;
-  }
-
-  function escapeHtml(str) {
-    return String(str || '')
-      .replaceAll('&', '&amp;')
-      .replaceAll('<', '&lt;')
-      .replaceAll('>', '&gt;')
-      .replaceAll('"', '&quot;')
-      .replaceAll("'", '&#39;');
-  }
-
-  // ---------- UI helpers ----------
-  function resetUI() {
-    messageBox.textContent = '';
-    messageBox.style.color = '';
-    resultsContainer.innerHTML = '';
-    showProgress(0, '');
-    downloadButton.disabled = true;
-    lastResults = [];
-  }
-
-  function showProgress(percent = 0, text = '') {
-    if (progressBarContainer) progressBarContainer.style.display = percent > 0 ? 'block' : 'none';
-    if (progressBar) progressBar.style.width = `${percent}%`;
-    if (progressText) progressText.textContent = text ? `${percent}% — ${text}` : `${percent}%`;
-  }
-
-  function showError(err) {
-    messageBox.style.color = 'red';
-    messageBox.textContent = err && err.message ? err.message : String(err);
-    showProgress(0, '');
-    downloadButton.disabled = true;
-  }
-
-  // ---------- Expose nothing to global scope ----------
-})();
+function showError(err) {
+  message(err && err.message ? err.message : String(err), 'red');
+  showProgress(0, '');
+  toggleDownload(false);
+}
