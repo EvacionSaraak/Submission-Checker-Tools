@@ -113,12 +113,16 @@ function extractModifierRecords(xmlDoc) {
   for (const claim of claims) {
     const claimId = textValue(claim, 'ID');
     const memberIdRaw = textValue(claim, 'MemberID');
+    const payerId = textValue(claim, 'PayerID'); // <-- capture payer
 
     // Encounter may use <Date> or <Start>
     const encNode = claim.getElementsByTagName('Encounter')[0] || claim.getElementsByTagName('Encounte')[0];
     let encDateRaw = '';
-    if (encNode) { encDateRaw = textValue(encNode, 'Date') || textValue(encNode, 'Start') || textValue(encNode, 'EncounterDate') || ''; }
+    if (encNode) {
+      encDateRaw = textValue(encNode, 'Date') || textValue(encNode, 'Start') || textValue(encNode, 'EncounterDate') || '';
+    }
     const encDate = normalizeDate(encDateRaw);
+
     const activities = Array.from(claim.getElementsByTagName('Activity'));
     for (const act of activities) {
       const activityId = textValue(act, 'ID');
@@ -130,10 +134,9 @@ function extractModifierRecords(xmlDoc) {
       ]);
       const clinician = normalizeName(clinicianRaw);
 
-      // Observations: either multiple <Observation> elements or one with repeated child Code/Value pairs.
+      // Observations
       const observations = Array.from(act.getElementsByTagName('Observation'));
       for (const obs of observations) {
-        // collect child nodes in sequence and pair Code -> Value when they appear.
         const childNodes = Array.from(obs.children || []);
         let lastCode = '';
         for (const child of childNodes) {
@@ -145,28 +148,21 @@ function extractModifierRecords(xmlDoc) {
             continue;
           }
           if (tag === 'Value' || tag === 'ValueText' || tag === 'ValueType') {
-            // If lastCode is CPT modifier, check this value
-            if (lastCode === 'CPT modifier') {
-              // Some Observations may have multiple Value entries; check each
-              if (isModifierTarget(txt)) {
-                records.push({
-                  claimId,
-                  activityId,
-                  memberId: normalizeMemberId(memberIdRaw),
-                  date: encDate,
-                  clinician,
-                  modifier: String(txt).trim()
-                });
-                // keep searching - there might be other modifier values in same obs
-              }
+            if (lastCode === 'CPT modifier' && isModifierTarget(txt)) {
+              records.push({
+                claimId,
+                activityId,
+                memberId: normalizeMemberId(memberIdRaw),
+                date: encDate,
+                clinician,
+                modifier: String(txt).trim(),
+                payerId: payerId // <-- add payer to record
+              });
             }
-            // If child itself is Code-like (rare), it won't pair here; continue
           }
-          // If child is a nested <Observation> (rare), we'll handle via outer loop when it appears
         }
 
-        // Also handle straightforward pairs where Code and Value are separate sibling elements but not in sequence:
-        // get all Code and Value elements and pair by index if lengths match
+        // Pairwise Code/Value fallback
         const codes = Array.from(obs.getElementsByTagName('Code')).map(n => String(n.textContent || '').trim());
         const values = Array.from(obs.getElementsByTagName('Value')).map(n => String(n.textContent || '').trim());
         if (codes.length && values.length) {
@@ -181,14 +177,15 @@ function extractModifierRecords(xmlDoc) {
                 memberId: normalizeMemberId(memberIdRaw),
                 date: encDate,
                 clinician,
-                modifier: String(v).trim()
+                modifier: String(v).trim(),
+                payerId: payerId // <-- add payer to record
               });
             }
           }
         }
-      } // end for observations
-    } // end for activities
-  } // end for claims
+      }
+    }
+  }
   return records;
 }
 
@@ -274,68 +271,69 @@ function expectedModifierForVOI(voi) {
 
 // ----------------- Rendering (omit repeated ClaimID/ActivityID) -----------------
 function renderResults(rows) {
-    const container = document.getElementById('outputTableContainer');
-    if (!rows || !rows.length) {
-        container.innerHTML = '<div>No results</div>';
-        return;
+  const container = document.getElementById('outputTableContainer');
+  if (!rows || !rows.length) {
+    container.innerHTML = '<div>No results</div>';
+    return;
+  }
+
+  // Filter rows for PayerID D001 or A001
+  const filteredRows = rows.filter(r => r.payerId === "D001" || r.payerId === "A001");
+
+  if (!filteredRows.length) {
+    container.innerHTML = '<div>No matching claims (only D001 and A001 shown)</div>';
+    return;
+  }
+
+  let prevClaimId = null;
+  let prevActivityId = null;
+
+  let html = `
+    <table class="shared-table">
+      <thead>
+        <tr>
+          <th>Claim ID</th>
+          <th>Activity ID</th>
+          <th>Ordering Clinician</th>
+          <th>Observation CPT Modifier</th>
+          <th>VOI Number</th>
+          <th>Payer ID</th>
+          <th>Eligibility Details</th>
+        </tr>
+      </thead>
+      <tbody>
+  `;
+
+  filteredRows.forEach((r, idx) => {
+    const showClaim = r.claimId !== prevClaimId;
+    const showActivity = (r.claimId !== prevClaimId) || (r.activityId !== prevActivityId);
+
+    const claimCell = showClaim ? escapeHtml(r.claimId) : '';
+    const activityCell = showActivity ? escapeHtml(r.activityId) : '';
+
+    prevClaimId = r.claimId;
+    prevActivityId = r.activityId;
+
+    let buttonHtml = '';
+    if (r.EligibilityRow) {
+      const keys = Object.keys(r.EligibilityRow);
+      const displayValue = keys.length ? escapeHtml(r.EligibilityRow[keys[0]]) : "View";
+      buttonHtml = `<button type="button" class="details-btn eligibility-details" onclick="showEligibility(${idx})">${displayValue}</button>`;
     }
 
-    // Filter rows for PayerID D001 or A001
-    const filteredRows = rows.filter(r => r.PayerID === "D001" || r.PayerID === "A001");
+    html += `<tr>
+      <td>${claimCell}</td>
+      <td>${activityCell}</td>
+      <td>${escapeHtml(r.clinician)}</td>
+      <td>${escapeHtml(r.modifier)}</td>
+      <td>${escapeHtml(r.VOINumber)}</td>
+      <td>${escapeHtml(r.payerId)}</td>
+      <td>${buttonHtml}</td>
+    </tr>`;
+  });
 
-    if (!filteredRows.length) {
-        container.innerHTML = '<div>No matching claims (only D001 and A001 shown)</div>';
-        return;
-    }
-
-    let prevClaimId = null;
-    let prevActivityId = null;
-
-    let html = `
-        <table class="shared-table">
-            <thead>
-                <tr>
-                    <th>Claim ID</th>
-                    <th>Activity ID</th>
-                    <th>Ordering Clinician</th>
-                    <th>Observation CPT Modifier</th>
-                    <th>VOI Number</th>
-                    <th>Eligibility Details</th>
-                </tr>
-            </thead>
-            <tbody>
-    `;
-
-    filteredRows.forEach((r, idx) => {
-        const showClaim = r.ClaimID !== prevClaimId;
-        const showActivity = (r.ClaimID !== prevClaimId) || (r.ActivityID !== prevActivityId);
-
-        const claimCell = showClaim ? escapeHtml(r.ClaimID) : '';
-        const activityCell = showActivity ? escapeHtml(r.ActivityID) : '';
-
-        prevClaimId = r.ClaimID;
-        prevActivityId = r.ActivityID;
-
-        // Determine button text and existence
-        let buttonHtml = '';
-        if (r.EligibilityRow) {
-            const keys = Object.keys(r.EligibilityRow);
-            const displayValue = keys.length ? escapeHtml(r.EligibilityRow[keys[0]]) : "View";
-            buttonHtml = `<button type="button" class="details-btn eligibility-details" onclick="showEligibility(${idx})">${displayValue}</button>`;
-        }
-
-        html += `<tr>
-            <td>${claimCell}</td>
-            <td>${activityCell}</td>
-            <td>${escapeHtml(r.OrderingClinician)}</td>
-            <td>${escapeHtml(r.Modifier)}</td>
-            <td>${escapeHtml(r.VOINumber)}</td>
-            <td>${buttonHtml}</td>
-        </tr>`;
-    });
-
-    html += `</tbody></table>`;
-    container.innerHTML = html;
+  html += `</tbody></table>`;
+  container.innerHTML = html;
 }
 
 // ----------------- Utilities -----------------
