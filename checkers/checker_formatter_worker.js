@@ -368,43 +368,51 @@ function headerSignature(s) {
 }
 
 // Convert any value to Excel serial number
-function toExcelSerial(value, fileType = 1) {
-  if (value === undefined || value === null || value === '') return '';
+function toExcelSerial(value, fileType) {
+  if (value === null || value === undefined || value === '') return '';
 
-  let date;
+  // ClinicPro: numeric Excel serials, drop fractional part
+  if (fileType === 1) {
+    const num = Number(value);
+    if (!isNaN(num)) return Math.floor(num);
+    return '';
+  }
 
-  // If it's already a number (Excel serial), just floor it
-  if (typeof value === 'number') return Math.floor(value);
+  // Odoo: MDY strings or numbers
+  if (fileType === 0) {
+    const num = Number(value);
+    if (!isNaN(num)) return num; // already Excel serial
 
-  if (typeof value === 'string') {
-    const v = value.trim();
-
-    // InstaHMS: DMY parsing
-    if (fileType === 2) {
-      const dmyMatch = v.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/);
-      if (dmyMatch) {
-        const day = Number(dmyMatch[1]);
-        const month = Number(dmyMatch[2]) - 1;
-        const year = Number(dmyMatch[3]);
-        date = new Date(year, month, day, 12, 0, 0); // midday to avoid DST issues
-      } else return '';
-    } 
-    // ClinicPro/Odoo: MDY parsing
-    else {
-      const mdyMatch = v.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/);
-      if (mdyMatch) {
-        const month = Number(mdyMatch[1]) - 1;
-        const day = Number(mdyMatch[2]);
-        const year = Number(mdyMatch[3]);
-        date = new Date(year, month, day, 12, 0, 0);
-      } else return '';
+    if (typeof value === 'string') {
+      const parts = value.split(/[\/\-\.]/).map(p => parseInt(p, 10));
+      if (parts.length === 3) {
+        const [month, day, year] = parts; // MDY
+        const jsDate = new Date(year, month - 1, day);
+        const excelEpoch = new Date(1899, 11, 30);
+        return (jsDate - excelEpoch) / (1000 * 60 * 60 * 24);
+      }
     }
-  } else return '';
+    return '';
+  }
 
-  // Excel serial calculation (ignore fractional day)
-  const excelEpoch = new Date(1899, 11, 30, 12, 0, 0);
-  const diffDays = (date - excelEpoch) / (1000 * 60 * 60 * 24);
-  return Math.floor(diffDays);
+  // Insta: DMY strings
+  if (fileType === 2) {
+    const num = Number(value);
+    if (!isNaN(num)) return num;
+
+    if (typeof value === 'string') {
+      const parts = value.split(/[\/\-\.]/).map(p => parseInt(p, 10));
+      if (parts.length === 3) {
+        const [day, month, year] = parts; // DMY
+        const jsDate = new Date(year, month - 1, day);
+        const excelEpoch = new Date(1899, 11, 30);
+        return (jsDate - excelEpoch) / (1000 * 60 * 60 * 24);
+      }
+    }
+    return '';
+  }
+
+  return '';
 }
 
 function logRawToSerialMap(combinedRows, headersWithRaw) {
