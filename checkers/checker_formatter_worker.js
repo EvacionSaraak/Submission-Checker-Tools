@@ -368,28 +368,33 @@ function headerSignature(s) {
 }
 
 function toExcelSerial(dateOrNumber) {
-  let excelBaseDate = new Date(Date.UTC(1899, 11, 30)); // Excel epoch
+  const excelBaseDate = new Date(Date.UTC(1899, 11, 30)); // Excel epoch
   let serial = 0;
+
   if (dateOrNumber === null || dateOrNumber === undefined || dateOrNumber === '') return '';
+
   if (typeof dateOrNumber === 'number') {
-    // If already a number, floor it to remove fractional time
+    // Floor numeric values to remove fractional time
     serial = Math.floor(dateOrNumber);
   } else if (dateOrNumber instanceof Date) {
-    const diff = dateOrNumber.getTime() - excelBaseDate.getTime();
-    serial = Math.floor(diff / (1000 * 60 * 60 * 24));
+    // Use UTC year/month/day only to ignore time & timezone
+    const utcDate = Date.UTC(dateOrNumber.getUTCFullYear(), dateOrNumber.getUTCMonth(), dateOrNumber.getUTCDate());
+    serial = Math.floor((utcDate - excelBaseDate.getTime()) / (1000 * 60 * 60 * 24));
   } else if (typeof dateOrNumber === 'string') {
-    // Try parsing string
     const parsed = new Date(dateOrNumber);
     if (!isNaN(parsed)) {
-      const diff = parsed.getTime() - excelBaseDate.getTime();
-      serial = Math.floor(diff / (1000 * 60 * 60 * 24));
+      const utcDate = Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate());
+      serial = Math.floor((utcDate - excelBaseDate.getTime()) / (1000 * 60 * 60 * 24));
     } else {
-      // Maybe it’s a numeric string
+      // numeric string fallback
       const num = Number(dateOrNumber);
       if (!isNaN(num)) serial = Math.floor(num);
-      else return ''; // unrecognized string
+      else return '';
     }
-  } else { return ''; }
+  } else {
+    return '';
+  }
+
   return serial;
 }
 
