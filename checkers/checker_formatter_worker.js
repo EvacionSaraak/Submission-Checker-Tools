@@ -367,6 +367,24 @@ function headerSignature(s) {
     .replace(/[^a-z0-9]/g, '');              // remove non-alphanumerics
 }
 
+function toExcelSerial(value) {
+  if (value === null || value === undefined || value === '') return '';
+  
+  // If it’s already a number (Excel serial with fraction)
+  if (!isNaN(value)) return Number(value);
+
+  let date;
+  // Try parsing as JS Date
+  if (value instanceof Date) date = value;
+  else date = new Date(value);
+
+  if (isNaN(date)) return ''; // invalid date fallback
+
+  const excelEpoch = new Date(Date.UTC(1899, 11, 30)); // Excel 1900 date system
+  const diff = date - excelEpoch;
+  return diff / (1000 * 60 * 60 * 24);
+}
+
 // Must match your last working version
 function detectFileTypeFromHeaders(headers) {
   const low = headers.map(h => (h || '').toString().trim().toLowerCase());
