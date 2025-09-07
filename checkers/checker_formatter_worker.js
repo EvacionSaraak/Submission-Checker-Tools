@@ -619,7 +619,7 @@ async function combineReportings(fileEntries, clinicianFile) {
           const fb = fallbackClinicianLookupWithFacility(clinName, facilityID, fallbackExcel);
           if (fb) { clinLicense = fb.license || clinLicense; clinName = fb.name || clinName; }
         }
-        if (!clinName && !clinLicense) continue;
+        if (fileType !== 0 && !clinName && !clinLicense) continue;
 
         // --- MODIFIED RAW + NORMALIZED ENCOUNTER DATE LOGIC ---
         let rawEncounterVal = '', normalizedEncounter = '';
