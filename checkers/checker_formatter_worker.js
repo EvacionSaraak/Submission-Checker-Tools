@@ -474,7 +474,9 @@ async function combineReportings(fileEntries, clinicianFile) {
     throw new Error("No input files provided");
   }
 
-  const combinedRows = [...TARGET_HEADERS, 'Raw Encounter Date']; // add extra column
+  // Add 'Raw Encounter Date' to TARGET_HEADERS
+  const headersWithRaw = [...TARGET_HEADERS, 'Raw Encounter Date'];
+  const combinedRows = [headersWithRaw];
   log("Initialized combinedRows with headers");
 
   const clinicianMapByLicense = new Map();
@@ -534,8 +536,6 @@ async function combineReportings(fileEntries, clinicianFile) {
     if (!headerRow || headerRow.length === 0) { log(`File ${name} skipped: header row not found.`, 'WARN'); continue; }
 
     const headerRowTrimmed = headerRow.map(h => (h || '').toString().trim());
-
-    // Build normalized sourceRow keys
     const normalizedHeaders = headerRowTrimmed.map(h => headerSignature(h));
 
     // Detect file type
@@ -544,7 +544,6 @@ async function combineReportings(fileEntries, clinicianFile) {
     const isOdoo = headerRowTrimmed.some(h => h.toLowerCase() === 'pri. claim id');
     const isClinicPro = headerRowTrimmed.some(h => h.toLowerCase() === 'claimid');
 
-    // pick header map
     let headerMap = null;
     if (isClinicPro) headerMap = CLINICPRO_V2_MAP;
     else if (isInsta) headerMap = INSTAHMS_MAP;
@@ -568,7 +567,6 @@ async function combineReportings(fileEntries, clinicianFile) {
       if (!Array.isArray(row) || row.length === 0) continue;
 
       try {
-        // Build normalized sourceRow object
         const sourceRow = {};
         for (let c = 0; c < row.length; c++) {
           const key = normalizedHeaders[c] || `col${c}`;
@@ -610,30 +608,33 @@ async function combineReportings(fileEntries, clinicianFile) {
 
         if (!clinName && !clinLicense) continue;
 
-        // Encounter Date
+        // Encounter Date processing
         const rawEncounterVal = sourceRow[targetToNormalizedSource['Encounter Date']] ?? '';
         const normalizedEncounter = toExcelSerial(rawEncounterVal);
 
-        // Build target row
-        const targetRow = [...TARGET_HEADERS, 'Raw Encounter Date'].map((tgt) => {
-          if (tgt === 'Facility ID') return facilityID || '';
-          if (tgt === 'Pri. Patient Insurance Card No') {
-            return (sourceRow[targetToNormalizedSource[tgt]] ?? '') ||
-                   (sourceRow[targetToNormalizedSource[tgt]?.toLowerCase()] ?? '');
+        // Build target row with guaranteed length
+        const targetRow = [];
+        for (let col = 0; col < headersWithRaw.length; col++) {
+          const tgt = headersWithRaw[col];
+          let val = '';
+          if (tgt === 'Facility ID') val = facilityID || '';
+          else if (tgt === 'Pri. Patient Insurance Card No') {
+            val = (sourceRow[targetToNormalizedSource[tgt]] ?? '') ||
+                  (sourceRow[targetToNormalizedSource[tgt]?.toLowerCase()] ?? '');
           }
-          if (tgt === 'Patient Code') return sourceRow[targetToNormalizedSource[tgt]] ?? '';
-          if (tgt === 'Clinician License') return clinLicense || '';
-          if (tgt === 'Clinician Name') return clinName || '';
-          if (tgt === 'Opened by') {
-            if (isOdoo) return '';
-            return sourceRow[targetToNormalizedSource[tgt]] ?? sourceRow['updatedby'] ?? '';
+          else if (tgt === 'Patient Code') val = sourceRow[targetToNormalizedSource[tgt]] ?? '';
+          else if (tgt === 'Clinician License') val = clinLicense || '';
+          else if (tgt === 'Clinician Name') val = clinName || '';
+          else if (tgt === 'Opened by') {
+            if (isOdoo) val = '';
+            else val = sourceRow[targetToNormalizedSource[tgt]] ?? sourceRow['updatedby'] ?? '';
           }
-          if (tgt === 'Encounter Date') return normalizedEncounter;
-          if (tgt === 'Raw Encounter Date') return rawEncounterVal;
-          if (tgt === 'Source File') return name;
-          return sourceRow[targetToNormalizedSource[tgt]] ?? '';
-        });
-
+          else if (tgt === 'Encounter Date') val = normalizedEncounter;
+          else if (tgt === 'Raw Encounter Date') val = rawEncounterVal;
+          else if (tgt === 'Source File') val = name;
+          else val = sourceRow[targetToNormalizedSource[tgt]] ?? '';
+          targetRow.push(val);
+        }
         combinedRows.push(targetRow);
 
       } catch (err) {
@@ -644,17 +645,17 @@ async function combineReportings(fileEntries, clinicianFile) {
     self.postMessage({ type: 'progress', progress: 50 + Math.floor(((i + 1) / fileEntries.length) * 50) });
   }
 
-  // Debug: log all unique Excel serials
+  // Debug: log all different Excel serials
   const serialSet = new Set();
-  for (let i = 1; i < combinedRows.length; i++) {
-    const serial = combinedRows[i][TARGET_HEADERS.indexOf('Encounter Date')];
-    if (serial !== '') serialSet.add(serial);
-  }
-  console.log("All unique Excel serials:", Array.from(serialSet).sort((a,b)=>a-b));
+  combinedRows.slice(1).forEach(row => {
+    const val = row[headersWithRaw.indexOf('Encounter Date')];
+    if (val !== '') serialSet.add(val);
+  });
+  log(`Unique Excel serials found: ${[...serialSet].join(', ')}`);
 
   // sanity check
   for (const [idx, row] of combinedRows.entries()) {
-    if (!Array.isArray(row) || row.length !== TARGET_HEADERS.length + 1) { // +1 for Raw Encounter
+    if (!Array.isArray(row) || row.length !== headersWithRaw.length) {
       log(`Bad combined row at index ${idx}`, 'ERROR');
       throw new Error('Invalid combined rows');
     }
