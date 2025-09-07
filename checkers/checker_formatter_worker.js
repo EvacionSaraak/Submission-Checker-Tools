@@ -388,10 +388,9 @@ function toExcelSerial(value, fileType) {
         let month = parseInt(parts[1], 10) - 1;
         let year = parseInt(parts[2], 10);
 
-        // Fix 2-digit years
         if (year < 100) year += 2000;
 
-        const dt = new Date(year, month, day);
+        const dt = new Date(Date.UTC(year, month, day)); // <-- force UTC
         serial = excelDateFromJSDate(dt);
       }
     }
@@ -406,10 +405,9 @@ function toExcelSerial(value, fileType) {
         let day = parseInt(parts[1], 10);
         let year = parseInt(parts[2], 10);
 
-        // Fix 2-digit years
         if (year < 100) year += 2000;
 
-        const dt = new Date(year, month, day);
+        const dt = new Date(Date.UTC(year, month, day)); // <-- force UTC
         serial = excelDateFromJSDate(dt);
       }
     }
