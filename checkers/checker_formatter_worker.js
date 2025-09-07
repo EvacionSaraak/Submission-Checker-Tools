@@ -369,50 +369,52 @@ function headerSignature(s) {
 
 // Convert any value to Excel serial number
 function toExcelSerial(value, fileType) {
+  // fileType: 1 = ClinicPro, 2 = Insta, 0 = Odoo
   if (value === null || value === undefined || value === '') return '';
-
-  // ClinicPro: numeric Excel serials, drop fractional part
+  let serial = null;
   if (fileType === 1) {
+    // ClinicPro: numeric value, floor to remove time fraction
     const num = Number(value);
-    if (!isNaN(num)) return Math.floor(num);
-    return '';
-  }
-
-  // Odoo: MDY strings or numbers
-  if (fileType === 0) {
-    const num = Number(value);
-    if (!isNaN(num)) return num; // already Excel serial
-
-    if (typeof value === 'string') {
-      const parts = value.split(/[\/\-\.]/).map(p => parseInt(p, 10));
+    if (!isNaN(num)) serial = Math.floor(num);
+  } else if (fileType === 2) {
+    // Insta: DMY string
+    if (typeof value === 'number') {
+      serial = Math.floor(value);
+    } else {
+      // Expecting format like "6/9/2025"
+      const parts = value.toString().split(/[\/\-\.]/);
       if (parts.length === 3) {
-        const [month, day, year] = parts; // MDY
-        const jsDate = new Date(year, month - 1, day);
-        const excelEpoch = new Date(1899, 11, 30);
-        return (jsDate - excelEpoch) / (1000 * 60 * 60 * 24);
+        const day = parseInt(parts[0], 10);
+        const month = parseInt(parts[1], 10) - 1; // JS months 0-11
+        const year = parseInt(parts[2], 10);
+        const dt = new Date(year, month, day);
+        serial = excelDateFromJSDate(dt);
       }
     }
-    return '';
-  }
-
-  // Insta: DMY strings
-  if (fileType === 2) {
-    const num = Number(value);
-    if (!isNaN(num)) return num;
-
-    if (typeof value === 'string') {
-      const parts = value.split(/[\/\-\.]/).map(p => parseInt(p, 10));
+  } else {
+    // Odoo: MDY string
+    if (typeof value === 'number') {
+      serial = Math.floor(value);
+    } else {
+      const parts = value.toString().split(/[\/\-\.]/);
       if (parts.length === 3) {
-        const [day, month, year] = parts; // DMY
-        const jsDate = new Date(year, month - 1, day);
-        const excelEpoch = new Date(1899, 11, 30);
-        return (jsDate - excelEpoch) / (1000 * 60 * 60 * 24);
+        const month = parseInt(parts[0], 10) - 1;
+        const day = parseInt(parts[1], 10);
+        const year = parseInt(parts[2], 10);
+        const dt = new Date(year, month, day);
+        serial = excelDateFromJSDate(dt);
       }
     }
-    return '';
   }
 
-  return '';
+  return serial;
+}
+
+// Helper: convert JS Date to Excel serial number
+function excelDateFromJSDate(date) {
+  const epoch = new Date(Date.UTC(1899, 11, 30));
+  const diff = date - epoch;
+  return diff / (1000 * 60 * 60 * 24);
 }
 
 function logRawToSerialMap(combinedRows, headersWithRaw) {
