@@ -439,20 +439,29 @@ function logRawToSerialMap(combinedRows, headersWithRaw) {
 }
 
 // Must match your last working version
-function detectFileTypeFromHeaders(headers) {
-  const low = headers.map(h => (h || '').toString().trim().toLowerCase());
-  const has = (token) => low.some(h => h.includes(token));
+function detectFileTypeFromHeaders(normalizedHeaders) {
+  const maps = [
+    { type: 0, name: 'Odoo', map: ODOO_MAP },
+    { type: 1, name: 'ClinicPro', map: CLINICPRO_V2_MAP },
+    { type: 2, name: 'InstaHMS', map: INSTAHMS_MAP },
+  ];
 
-  // ClinicPro signature
-  if (has('claimid') && has('claimdate')) return 'clinicpro';
+  let bestMatch = { type: null, map: null, matches: -1 };
 
-  // InstaHMS signature
-  if (has('pri. claim no') && has('encounter date')) return 'instahms';
+  for (const m of maps) {
+    let matchCount = 0;
+    const mapNormalizedHeaders = Object.keys(m.map).map(h => headerSignature(h));
 
-  // Odoo signature (more strict)
-  if (has('pri. claim id') && (has('adm/reg') || has('adm/reg. date') || has('adm reg'))) return 'odoo';
+    for (const h of mapNormalizedHeaders) {
+      if (normalizedHeaders.includes(h)) matchCount++;
+    }
 
-  return 'unknown';
+    if (matchCount > bestMatch.matches) {
+      bestMatch = { type: m.type, map: m.map, matches: matchCount };
+    }
+  }
+
+  return { fileType: bestMatch.type, headerMap: bestMatch.map };
 }
 
 async function combineEligibilities(fileEntries) {
