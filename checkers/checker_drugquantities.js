@@ -43,19 +43,51 @@ document.getElementById('singleDrugCodeInput').addEventListener('paste', ()=>set
 
 // Single code lookup logic
 document.getElementById('checkSingleCodeBtn').addEventListener('click', function() {
-    const code = document.getElementById('singleDrugCodeInput').value.trim(), outDiv = document.getElementById('singleCodeResults'), statusDiv = document.getElementById('singleCodeStatus');
-    if(!_drugsLookupMap){statusDiv.innerHTML="<span style='color:red'>Please upload the Drugs Excel file first.</span>";outDiv.innerHTML="";return;}
-    if(!code){statusDiv.innerHTML="<span style='color:red'>Please enter a drug code.</span>";outDiv.innerHTML="";return;}
+    const code = document.getElementById('singleDrugCodeInput').value.trim(),
+          outDiv = document.getElementById('singleCodeResults'),
+          statusDiv = document.getElementById('singleCodeStatus');
+
+    if(!_drugsLookupMap){
+        statusDiv.innerHTML="<span style='color:red'>Please upload the Drugs Excel file first.</span>";
+        outDiv.innerHTML="";
+        return;
+    }
+    if(!code){
+        statusDiv.innerHTML="<span style='color:red'>Please enter a drug code.</span>";
+        outDiv.innerHTML="";
+        return;
+    }
+
     const drug=_drugsLookupMap[code];
-    if(!drug){statusDiv.innerHTML="<span style='color:red'>Drug code not found in uploaded file.</span>";outDiv.innerHTML="";return;}
+    if(!drug){
+        statusDiv.innerHTML="<span style='color:red'>Drug code not found in uploaded file.</span>";
+        outDiv.innerHTML="";
+        return;
+    }
+
     statusDiv.innerHTML="";
-    const packageName=drug['Package Name']||'', packageSize=drug['Package Size']||"", packagePrice=parseFloat(drug['Package Price to Public'])||0, unitPrice=parseFloat(drug['Unit Price to Public'])||0;
-    let unitPerPackage="", requiredQuantity="";
-    if(packagePrice>0&&unitPrice>0){unitPerPackage=(packagePrice/unitPrice).toFixed(2);requiredQuantity=(1/(packagePrice/unitPrice)).toFixed(2);}
+    const packageName=drug['Package Name']||'',
+          packageSize=drug['Package Size']||"",
+          packagePrice=parseFloat(drug['Package Price to Public'])||0,
+          unitPrice=parseFloat(drug['Unit Price to Public'])||0;
+
+    // Markup with fallback
+    const packageMarkup = drug['Package Markup'] !== "" ? drug['Package Markup'] : drug['Package Price to Public'];
+    const unitMarkup    = drug['Unit Markup']    !== "" ? drug['Unit Markup']    : drug['Unit Price to Public'];
+
+    let requiredQuantity="";
+    if(packagePrice>0 && unitPrice>0){
+        requiredQuantity=(1/(packagePrice/unitPrice)).toFixed(2);
+    }
+
     let table = `<table class="shared-table"><thead><tr>
-        <th>Drug Code</th><th class="wrap-col">Package Name</th><th>Package Size</th><th>Required Quantity</th>
+        <th>Drug Code</th><th class="wrap-col">Package Name</th><th>Package Size</th>
+        <th>Required Quantity</th><th>Unit Markup</th><th>Package Markup</th>
         </tr></thead><tbody>
-        <tr><td>${code}</td><td class="wrap-col">${packageName}</td><td>${packageSize}</td><td>${requiredQuantity}</td></tr>
+        <tr>
+          <td>${code}</td><td class="wrap-col">${packageName}</td><td>${packageSize}</td>
+          <td>${requiredQuantity}</td><td>${unitMarkup}</td><td>${packageMarkup}</td>
+        </tr>
         </tbody></table>`;
     outDiv.innerHTML=table;
 });
@@ -65,6 +97,7 @@ document.getElementById('processBtn').addEventListener('click', function() {
     const xmlInput = document.getElementById('xmlFile').files[0];
     if (!_drugsLookupMap) return alert('Please upload the Drugs XLSX file first.');
     if (!xmlInput) return alert('Please upload the XML file.');
+
     const readerXML = new FileReader();
     readerXML.onload = function(e2) {
         const xmlText = e2.target.result, parser = new DOMParser(), xmlDoc = parser.parseFromString(xmlText, "application/xml");
@@ -78,24 +111,31 @@ document.getElementById('processBtn').addEventListener('click', function() {
             if (!isNaN(idA)&&!isNaN(idB)) return Number(idA)-Number(idB);
             return idA.localeCompare(idB);
         });
+
         let outputRows = [];
         claims.forEach(claim=>{
             const claimId = claim.getElementsByTagName('ID')[0]?.textContent||'';
             Array.from(claim.getElementsByTagName('Activity')).forEach(act=>{
                 const code = act.getElementsByTagName('Code')[0]?.textContent?.trim()||'';
                 if(!_drugsLookupMap[code]) return;
+
                 const quantity = act.getElementsByTagName('Quantity')[0]?.textContent||'',
                       drug = _drugsLookupMap[code],
                       packageName=drug['Package Name']||'',
                       packageSize=drug['Package Size']||'',
                       packagePrice=parseFloat(drug['Package Price to Public'])||0,
                       unitPrice=parseFloat(drug['Unit Price to Public'])||0;
+
+                // Markup with fallback
+                const packageMarkup = drug['Package Markup'] !== "" ? drug['Package Markup'] : drug['Package Price to Public'];
+                const unitMarkup    = drug['Unit Markup']    !== "" ? drug['Unit Markup']    : drug['Unit Price to Public'];
+
                 let requiredQuantity="", rowClass="valid", errorRemark="";
                 if(packagePrice>0&&unitPrice>0){requiredQuantity=(1/(packagePrice/unitPrice)).toFixed(2);}
                 const type=act.getElementsByTagName('Type')[0]?.textContent||'';
                 const xmlQ = Number(quantity), reqQ = Number(requiredQuantity);
 
-                // Classification logic & professional language
+                // Classification logic
                 if (type !== "5") {
                     rowClass = "invalid";
                     errorRemark = `Drug codes must have Type 5 and not ${type}`;
@@ -120,28 +160,39 @@ document.getElementById('processBtn').addEventListener('click', function() {
                 }
 
                 outputRows.push({
-                    claimId, code, xmlQuantity: quantity, packageName, packageSize, requiredQuantity, errorRemark, rowClass
+                    claimId, code, xmlQuantity: quantity, packageName, packageSize, requiredQuantity,
+                    unitMarkup, packageMarkup,
+                    errorRemark, rowClass
                 });
             });
         });
+
         outputRows.sort((a,b)=>{
             if(!isNaN(a.claimId)&&!isNaN(b.claimId)) return Number(a.claimId)-Number(b.claimId);
             return String(a.claimId).localeCompare(String(b.claimId));
         });
+
         document.getElementById('exportErrorsBtn').disabled = !outputRows.some(r=>r.rowClass!=="valid");
         _drugQuantityOutputRows = outputRows;
+
         let table = `<table class="shared-table"><thead><tr>
-            <th>Claim ID</th><th>Drug Code</th><th>XML Quantity</th><th class="wrap-col">Package Name</th><th>Package Size</th>
-            <th>Required Quantity</th><th class="description-col">Validation Remark</th>
+            <th>Claim ID</th><th>Drug Code</th><th>XML Quantity</th>
+            <th class="wrap-col">Package Name</th><th>Package Size</th>
+            <th>Required Quantity</th><th>Unit Markup</th><th>Package Markup</th>
+            <th class="description-col">Validation Remark</th>
             </tr></thead><tbody>`;
+
         let lastClaimId = null;
         outputRows.forEach(row=>{
             table+=`<tr class="${row.rowClass}">
                 <td>${row.claimId===lastClaimId?"":row.claimId}</td>
-                <td>${row.code}</td><td>${row.xmlQuantity}</td><td class="wrap-col">${row.packageName}</td>
+                <td>${row.code}</td><td>${row.xmlQuantity}</td>
+                <td class="wrap-col">${row.packageName}</td>
                 <td>${row.packageSize}</td><td>${row.requiredQuantity}</td>
+                <td>${row.unitMarkup}</td><td>${row.packageMarkup}</td>
                 <td class="description-col">${row.errorRemark}</td>
-            </tr>`;lastClaimId=row.claimId;
+            </tr>`;
+            lastClaimId=row.claimId;
         });
         table+="</tbody></table>";
         document.getElementById('results').innerHTML=table;
@@ -154,13 +205,21 @@ document.getElementById('exportErrorsBtn').addEventListener('click', function() 
     // Only export rows that are either error (invalid) or unknown
     const errorRows = (_drugQuantityOutputRows||[]).filter(r=>r.rowClass!=="valid");
     if(errorRows.length===0) return alert("There are no errors or unknowns to export.");
+
     const header=[
-        "Claim ID","Drug Code","XML Quantity","Package Name","Package Size","Required Quantity","Validation Remark","Status"
+        "Claim ID","Drug Code","XML Quantity","Package Name","Package Size",
+        "Required Quantity","Unit Markup","Package Markup","Validation Remark","Status"
     ];
+
     const data = errorRows.map(r=>[
-        r.claimId,r.code,r.xmlQuantity,r.packageName,r.packageSize,r.requiredQuantity,r.errorRemark,
+        r.claimId,r.code,r.xmlQuantity,r.packageName,r.packageSize,r.requiredQuantity,
+        r.unitMarkup,r.packageMarkup,
+        r.errorRemark,
         r.rowClass==="invalid"?"Error / Non-compliant":(r.rowClass==="unknown"?"Unknown":"")
     ]);
-    const ws = XLSX.utils.aoa_to_sheet([header,...data]), wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Errors & Unknowns"); XLSX.writeFile(wb, "DrugQuantityErrors.xlsx");
+
+    const ws = XLSX.utils.aoa_to_sheet([header,...data]),
+          wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Errors & Unknowns");
+    XLSX.writeFile(wb, "DrugQuantityErrors.xlsx");
 });
