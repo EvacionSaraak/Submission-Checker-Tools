@@ -369,22 +369,31 @@ function headerSignature(s) {
 
 function toExcelSerial(value) {
   if (value === null || value === undefined || value === '') return '';
-  
-  // If it’s already a number (Excel serial with fraction)
-  if (!isNaN(value)) return Number(value);
-
+  // If it's already a number (Excel serial), just return it
+  if (typeof value === 'number' && !isNaN(value)) return value;
+  // Parse strings like "6/9/25" or "2025-09-06"
   let date;
-  // Try parsing as JS Date
-  if (value instanceof Date) date = value;
-  else date = new Date(value);
+  if (typeof value === 'string') {
+    // Handle formats with slashes or dashes
+    const parts = value.split(/[\/\-]/);
+    if (parts.length === 3) {
+      let [month, day, year] = parts.map(Number);
+      if (year < 100) year += 2000; // handle 2-digit years
+      date = new Date(year, month - 1, day);
+    } else {
+      date = new Date(value);
+    }
+  } else if (value instanceof Date) {
+    date = value;
+  } else {
+    return '';
+  }
 
-  if (isNaN(date)) return ''; // invalid date fallback
+  if (isNaN(date)) return '';
 
-  const excelEpoch = new Date(Date.UTC(1899, 11, 30)); // Excel 1900 date system
-  const diff = date - excelEpoch;
-  return diff / (1000 * 60 * 60 * 24);
+  const excelEpoch = new Date(Date.UTC(1899, 11, 30));
+  return (date - excelEpoch) / (1000 * 60 * 60 * 24);
 }
-
 // Must match your last working version
 function detectFileTypeFromHeaders(headers) {
   const low = headers.map(h => (h || '').toString().trim().toLowerCase());
