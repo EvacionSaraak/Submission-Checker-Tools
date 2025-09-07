@@ -609,9 +609,13 @@ async function combineReportings(fileEntries, clinicianFile) {
             return mapped ? (sourceRow[mapped] || '') : (sourceRow['opened by'] || sourceRow['opened by/registration staff name'] || sourceRow['updated by'] || '');
           }
           if (tgt === 'Encounter Date') {
-            const src = (targetToSourceLower[tgt] || '').toString();
-            const rawVal = sourceRow[src];
-            return normalizeExcelSerial(rawVal, is1904);
+            const src = targetToSourceLower[tgt];
+            let rawVal = '';
+            if (src) {
+              const normalizedSrc = src.toString().trim().toLowerCase();
+              rawVal = sourceRow[normalizedSrc] ?? sourceRow[src] ?? '';
+            }
+            return normalizeExcelSerial(rawVal);
           }
           if (tgt === 'Source File') return name;
           const key = targetToSourceLower[tgt];
