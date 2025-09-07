@@ -441,27 +441,14 @@ async function combineReportings(fileEntries, clinicianFile) {
     throw new Error("No input files provided");
   }
 
-  const combinedRows = [...TARGET_HEADERS, 'Raw Encounter Date']; // Add extra column for raw date
+  // Add extra column for raw Excel date
+  const combinedRows = [];
+  combinedRows.push([...TARGET_HEADERS, 'Raw Encounter Date']); 
   log("Initialized combinedRows with headers");
 
   const clinicianMapByLicense = new Map();
   const clinicianMapByName = new Map();
   let fallbackExcel = [];
-
-  // Helper: convert any input to Excel serial number, rounding down to day
-  function toExcelSerial(val) {
-    let d;
-    if (typeof val === 'number') {
-      return Math.floor(val); // already Excel serial, remove fraction
-    }
-    if (val instanceof Date) d = val;
-    else d = new Date(val);
-    if (isNaN(d)) return '';
-    // Excel epoch: Dec 30, 1899
-    const epoch = new Date(Date.UTC(1899, 11, 30));
-    const diff = (d - epoch) / (1000 * 60 * 60 * 24);
-    return Math.floor(diff);
-  }
 
   // Load clinician JSON
   try {
@@ -516,6 +503,8 @@ async function combineReportings(fileEntries, clinicianFile) {
     if (!headerRow || headerRow.length === 0) { log(`File ${name} skipped: header row not found.`, 'WARN'); continue; }
 
     const headerRowTrimmed = headerRow.map(h => (h || '').toString().trim());
+
+    // Build normalized sourceRow keys
     const normalizedHeaders = headerRowTrimmed.map(h => headerSignature(h));
 
     // Detect file type
@@ -524,12 +513,14 @@ async function combineReportings(fileEntries, clinicianFile) {
     const isOdoo = headerRowTrimmed.some(h => h.toLowerCase() === 'pri. claim id');
     const isClinicPro = headerRowTrimmed.some(h => h.toLowerCase() === 'claimid');
 
+    // pick header map
     let headerMap = null;
     if (isClinicPro) headerMap = CLINICPRO_V2_MAP;
     else if (isInsta) headerMap = INSTAHMS_MAP;
     else if (isOdoo) headerMap = ODOO_MAP;
     else { log(`File ${name} skipped: unrecognized header format.`, 'WARN'); continue; }
 
+    // Build target → normalized source key mapping
     const targetToNormalizedSource = {};
     for (const [src, tgt] of Object.entries(headerMap)) {
       const srcSig = headerSignature(src);
@@ -546,21 +537,25 @@ async function combineReportings(fileEntries, clinicianFile) {
       if (!Array.isArray(row) || row.length === 0) continue;
 
       try {
+        // Build normalized sourceRow object
         const sourceRow = {};
         for (let c = 0; c < row.length; c++) {
           const key = normalizedHeaders[c] || `col${c}`;
           sourceRow[key] = row[c] ?? '';
         }
 
+        // claim id dedupe
         const claimIDKey = targetToNormalizedSource['Pri. Claim No'];
         const claimID = claimIDKey ? String(sourceRow[claimIDKey] ?? '').trim() : '';
         if (!claimID || seenClaimIDs.has(claimID)) continue;
         seenClaimIDs.add(claimID);
 
+        // Facility ID
         let facilityID = '';
         if (isInsta) facilityID = String(sourceRow[targetToNormalizedSource['Facility ID']] ?? '').trim();
         else facilityID = getFacilityIDFromFileName(name);
 
+        // Clinician info
         const clinLicenseKey = targetToNormalizedSource['Clinician License'];
         const clinNameKey = targetToNormalizedSource['Clinician Name'];
         let clinLicense = clinLicenseKey ? String(sourceRow[clinLicenseKey] ?? '').trim() : '';
@@ -605,7 +600,7 @@ async function combineReportings(fileEntries, clinicianFile) {
           return sourceRow[targetToNormalizedSource[tgt]] ?? '';
         });
 
-        // Append raw encounter date as extra column
+        // Append raw date as last column
         const rawEncounterDate = sourceRow[targetToNormalizedSource['Encounter Date']] ?? '';
         targetRow.push(rawEncounterDate);
 
@@ -619,8 +614,9 @@ async function combineReportings(fileEntries, clinicianFile) {
     self.postMessage({ type: 'progress', progress: 50 + Math.floor(((i + 1) / fileEntries.length) * 50) });
   }
 
+  // sanity check
   for (const [idx, row] of combinedRows.entries()) {
-    if (!Array.isArray(row) || row.length !== TARGET_HEADERS.length + 1) { // +1 for raw date
+    if (!Array.isArray(row) || row.length !== TARGET_HEADERS.length + 1) {
       log(`Bad combined row at index ${idx}`, 'ERROR');
       throw new Error('Invalid combined rows');
     }
