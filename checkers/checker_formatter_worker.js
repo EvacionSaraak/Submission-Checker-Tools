@@ -371,43 +371,40 @@ function headerSignature(s) {
 function toExcelSerial(value, fileType = 1) {
   let date;
 
-  if (typeof value === 'number') {
-    // numeric cell (Excel serial)
-    return Math.floor(value);
-  }
+  if (typeof value === 'number') return Math.floor(value); // already serial
+  if (value instanceof Date) date = value;
 
-  if (value instanceof Date) {
-    date = value;
-  } else if (typeof value === 'string') {
+  else if (typeof value === 'string') {
     value = value.trim();
     if (fileType === 2) {
-      // Insta: DMY format
-      if (/^\d{4}-\d{2}-\d{2}T/.test(value)) {
-        // ISO string
-        date = new Date(value);
+      // Insta DMY parsing
+      const dmyMatch = value.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/);
+      if (dmyMatch) {
+        const day = Number(dmyMatch[1]);
+        const month = Number(dmyMatch[2]) - 1;
+        const year = Number(dmyMatch[3]);
+        date = new Date(year, month, day, 12, 0, 0); // midday avoids DST issues
       } else {
-        // parse DMY manually
-        const [d, m, y] = value.split(/[/.-]/).map(Number);
-        date = new Date(y, m - 1, d);
+        date = new Date(value); // fallback
       }
     } else {
-      // Odoo/ClinicPro: MDY
-      const parsed = Date.parse(value);
-      if (!isNaN(parsed)) date = new Date(parsed);
-      else {
-        // fallback: try MDY split
-        const [m, d, y] = value.split(/[/.-]/).map(Number);
-        date = new Date(y, m - 1, d);
+      // ClinicPro/Odoo: MDY or ISO
+      const mdyMatch = value.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/);
+      if (mdyMatch) {
+        const month = Number(mdyMatch[1]) - 1;
+        const day = Number(mdyMatch[2]);
+        const year = Number(mdyMatch[3]);
+        date = new Date(year, month, day, 12, 0, 0);
+      } else {
+        date = new Date(value);
       }
     }
-  } else {
-    return '';
-  }
+  } else return '';
 
-  // convert JS Date to Excel serial
-  const excelEpoch = new Date(Date.UTC(1899, 11, 30));
-  const diff = (date - excelEpoch) / (1000 * 60 * 60 * 24);
-  return Math.floor(diff);
+  // convert to Excel serial (ignore timezone)
+  const excelEpoch = new Date(1899, 11, 30, 12, 0, 0);
+  const diffDays = (date - excelEpoch) / (1000 * 60 * 60 * 24);
+  return Math.round(diffDays);
 }
 
 function logRawToSerialMap(combinedRows, headersWithRaw) {
