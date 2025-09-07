@@ -369,31 +369,41 @@ function headerSignature(s) {
 
 function toExcelSerial(value) {
   if (value === null || value === undefined || value === '') return '';
-  // If it's already a number (Excel serial), just return it
-  if (typeof value === 'number' && !isNaN(value)) return value;
-  // Parse strings like "6/9/25" or "2025-09-06"
+
   let date;
-  if (typeof value === 'string') {
-    // Handle formats with slashes or dashes
+
+  // If it's already a number (Excel serial), take floor
+  if (typeof value === 'number' && !isNaN(value)) return Math.floor(value);
+
+  // If it's a Date object
+  if (value instanceof Date && !isNaN(value)) {
+    date = value;
+  } 
+  // If it's a string
+  else if (typeof value === 'string') {
     const parts = value.split(/[\/\-]/);
     if (parts.length === 3) {
+      // Assume format MM/DD/YY or MM/DD/YYYY
       let [month, day, year] = parts.map(Number);
-      if (year < 100) year += 2000; // handle 2-digit years
+      if (year < 100) year += 2000; // two-digit year fix
       date = new Date(year, month - 1, day);
     } else {
+      // Try parsing other date formats
       date = new Date(value);
     }
-  } else if (value instanceof Date) {
-    date = value;
   } else {
     return '';
   }
 
-  if (isNaN(date)) return '';
+  if (!date || isNaN(date)) return '';
 
+  // Excel epoch
   const excelEpoch = new Date(Date.UTC(1899, 11, 30));
-  return (date - excelEpoch) / (1000 * 60 * 60 * 24);
+  const serial = Math.floor((date - excelEpoch) / (1000 * 60 * 60 * 24));
+
+  return serial;
 }
+
 // Must match your last working version
 function detectFileTypeFromHeaders(headers) {
   const low = headers.map(h => (h || '').toString().trim().toLowerCase());
@@ -456,7 +466,6 @@ async function combineEligibilities(fileEntries) {
   const wbOut = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wbOut, ws, "Combined Eligibility");
 
-  // ✅ return workbook object instead of trying to write a file
   return wbOut;
 }
 
@@ -468,10 +477,10 @@ async function combineReportings(fileEntries, clinicianFile) {
     throw new Error("No input files provided");
   }
 
-  const combinedRows = [TARGET_HEADERS];
+  // Add "Raw Encounter Date" as extra column at far right
+  const extendedHeaders = [...TARGET_HEADERS, 'Raw Encounter Date'];
+  const combinedRows = [extendedHeaders];
   log("Initialized combinedRows with headers");
-
-  const allEncounterSerials = new Set(); // <-- collect serials
 
   const clinicianMapByLicense = new Map();
   const clinicianMapByName = new Map();
@@ -514,6 +523,8 @@ async function combineReportings(fileEntries, clinicianFile) {
     }
   }
 
+  const allSerials = new Set(); // For debug logging
+
   for (let i = 0; i < fileEntries.length; i++) {
     const { name, buffer } = fileEntries[i];
     log(`Reading reporting file: ${name}`);
@@ -530,14 +541,16 @@ async function combineReportings(fileEntries, clinicianFile) {
     if (!headerRow || headerRow.length === 0) { log(`File ${name} skipped: header row not found.`, 'WARN'); continue; }
 
     const headerRowTrimmed = headerRow.map(h => (h || '').toString().trim());
+
     const normalizedHeaders = headerRowTrimmed.map(h => headerSignature(h));
 
-    let headerMap = null;
+    // Detect file type
     const isInsta = headerRowTrimmed.some(h => h.toLowerCase() === 'pri. claim no') &&
                     headerRowTrimmed.some(h => h.toLowerCase() === 'encounter date');
     const isOdoo = headerRowTrimmed.some(h => h.toLowerCase() === 'pri. claim id');
     const isClinicPro = headerRowTrimmed.some(h => h.toLowerCase() === 'claimid');
 
+    let headerMap = null;
     if (isClinicPro) headerMap = CLINICPRO_V2_MAP;
     else if (isInsta) headerMap = INSTAHMS_MAP;
     else if (isOdoo) headerMap = ODOO_MAP;
@@ -570,8 +583,9 @@ async function combineReportings(fileEntries, clinicianFile) {
         if (!claimID || seenClaimIDs.has(claimID)) continue;
         seenClaimIDs.add(claimID);
 
-        let facilityID = isInsta ? String(sourceRow[targetToNormalizedSource['Facility ID']] ?? '').trim()
-                                 : getFacilityIDFromFileName(name);
+        let facilityID = '';
+        if (isInsta) facilityID = String(sourceRow[targetToNormalizedSource['Facility ID']] ?? '').trim();
+        else facilityID = getFacilityIDFromFileName(name);
 
         const clinLicenseKey = targetToNormalizedSource['Clinician License'];
         const clinNameKey = targetToNormalizedSource['Clinician Name'];
@@ -596,11 +610,14 @@ async function combineReportings(fileEntries, clinicianFile) {
 
         if (!clinName && !clinLicense) continue;
 
+        // Raw encounter date
         const rawEncounter = sourceRow[targetToNormalizedSource['Encounter Date']] ?? '';
-        const encounterSerial = toExcelSerial(rawEncounter); // <-- convert
-        if (encounterSerial !== '') allEncounterSerials.add(encounterSerial);
 
-        const targetRow = TARGET_HEADERS.map((tgt) => {
+        // Normalized serial
+        const serialDate = toExcelSerial(rawEncounter);
+        if (serialDate !== '') allSerials.add(serialDate);
+
+        const targetRow = extendedHeaders.map((tgt) => {
           if (tgt === 'Facility ID') return facilityID || '';
           if (tgt === 'Pri. Patient Insurance Card No') {
             return (sourceRow[targetToNormalizedSource[tgt]] ?? '') ||
@@ -613,8 +630,9 @@ async function combineReportings(fileEntries, clinicianFile) {
             if (isOdoo) return '';
             return sourceRow[targetToNormalizedSource[tgt]] ?? sourceRow['updatedby'] ?? '';
           }
-          if (tgt === 'Encounter Date') return encounterSerial;
+          if (tgt === 'Encounter Date') return serialDate;
           if (tgt === 'Source File') return name;
+          if (tgt === 'Raw Encounter Date') return rawEncounter;
           return sourceRow[targetToNormalizedSource[tgt]] ?? '';
         });
 
@@ -628,12 +646,12 @@ async function combineReportings(fileEntries, clinicianFile) {
     self.postMessage({ type: 'progress', progress: 50 + Math.floor(((i + 1) / fileEntries.length) * 50) });
   }
 
-  // Log all unique encounter serials
-  log(`Unique Excel Serials for Encounter Date: ${[...allEncounterSerials].sort((a,b)=>a-b).join(', ')}`);
+  // Debug log all unique serial dates
+  log(`Unique Excel serials after combining: ${[...allSerials].join(', ')}`);
 
   // sanity check
   for (const [idx, row] of combinedRows.entries()) {
-    if (!Array.isArray(row) || row.length !== TARGET_HEADERS.length) {
+    if (!Array.isArray(row) || row.length !== extendedHeaders.length) {
       log(`Bad combined row at index ${idx}`, 'ERROR');
       throw new Error('Invalid combined rows');
     }
