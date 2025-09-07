@@ -441,8 +441,9 @@ async function combineReportings(fileEntries, clinicianFile) {
     throw new Error("No input files provided");
   }
 
-  const combinedRows = [TARGET_HEADERS];
-  log("Initialized combinedRows with headers");
+  // Add new column for Raw Encounter Date
+  const combinedRows = [TARGET_HEADERS.concat('Raw Encounter Date')];
+  log("Initialized combinedRows with headers including Raw Encounter Date");
 
   const clinicianMapByLicense = new Map();
   const clinicianMapByName = new Map();
@@ -497,12 +498,10 @@ async function combineReportings(fileEntries, clinicianFile) {
     const sheetData = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false });
     if (!sheetData || sheetData.length === 0) { log(`File ${name} skipped: no data`, 'WARN'); continue; }
 
-    const { headerRowIndex, headers: headerRow, rows: rowsAfter } = findHeaderRowFromArrays(sheetData, 10);
+    const { headerRowIndex, headers: headerRow } = findHeaderRowFromArrays(sheetData, 10);
     if (!headerRow || headerRow.length === 0) { log(`File ${name} skipped: header row not found.`, 'WARN'); continue; }
 
     const headerRowTrimmed = headerRow.map(h => (h || '').toString().trim());
-
-    // Build normalized sourceRow keys
     const normalizedHeaders = headerRowTrimmed.map(h => headerSignature(h));
 
     // Detect file type
@@ -518,7 +517,6 @@ async function combineReportings(fileEntries, clinicianFile) {
     else if (isOdoo) headerMap = ODOO_MAP;
     else { log(`File ${name} skipped: unrecognized header format.`, 'WARN'); continue; }
 
-    // Build target → normalized source key mapping
     const targetToNormalizedSource = {};
     for (const [src, tgt] of Object.entries(headerMap)) {
       const srcSig = headerSignature(src);
@@ -535,7 +533,6 @@ async function combineReportings(fileEntries, clinicianFile) {
       if (!Array.isArray(row) || row.length === 0) continue;
 
       try {
-        // Build normalized sourceRow object
         const sourceRow = {};
         for (let c = 0; c < row.length; c++) {
           const key = normalizedHeaders[c] || `col${c}`;
@@ -566,7 +563,6 @@ async function combineReportings(fileEntries, clinicianFile) {
         if (clinName && !clinLicense && clinicianMapByName.has(normalizeName(clinName))) {
           clinLicense = clinicianMapByName.get(normalizeName(clinName))['Phy Lic'];
         }
-
         if ((!clinName || !clinLicense) && clinName && facilityID) {
           const fb = fallbackClinicianLookupWithFacility(clinName, facilityID, fallbackExcel);
           if (fb) {
@@ -576,6 +572,8 @@ async function combineReportings(fileEntries, clinicianFile) {
         }
 
         if (!clinName && !clinLicense) continue;
+
+        const rawEncounter = sourceRow[targetToNormalizedSource['Encounter Date']] ?? '';
 
         // Build target row
         const targetRow = TARGET_HEADERS.map((tgt) => {
@@ -587,17 +585,14 @@ async function combineReportings(fileEntries, clinicianFile) {
           if (tgt === 'Patient Code') return sourceRow[targetToNormalizedSource[tgt]] ?? '';
           if (tgt === 'Clinician License') return clinLicense || '';
           if (tgt === 'Clinician Name') return clinName || '';
-          if (tgt === 'Opened by') {
-            if (isOdoo) return '';
-            return sourceRow[targetToNormalizedSource[tgt]] ?? sourceRow['updatedby'] ?? '';
-          }
-          if (tgt === 'Encounter Date') {
-            const rawVal = sourceRow[targetToNormalizedSource[tgt]] ?? '';
-            return normalizeExcelSerial(rawVal);
-          }
+          if (tgt === 'Opened by') return sourceRow[targetToNormalizedSource[tgt]] ?? sourceRow['updatedby'] ?? '';
+          if (tgt === 'Encounter Date') return normalizeExcelSerial(rawEncounter);
           if (tgt === 'Source File') return name;
           return sourceRow[targetToNormalizedSource[tgt]] ?? '';
         });
+
+        // Append raw encounter date at far right
+        targetRow.push(rawEncounter);
 
         combinedRows.push(targetRow);
 
@@ -607,14 +602,6 @@ async function combineReportings(fileEntries, clinicianFile) {
     }
 
     self.postMessage({ type: 'progress', progress: 50 + Math.floor(((i + 1) / fileEntries.length) * 50) });
-  }
-
-  // sanity check
-  for (const [idx, row] of combinedRows.entries()) {
-    if (!Array.isArray(row) || row.length !== TARGET_HEADERS.length) {
-      log(`Bad combined row at index ${idx}`, 'ERROR');
-      throw new Error('Invalid combined rows');
-    }
   }
 
   const wsOut = XLSX.utils.aoa_to_sheet(combinedRows);
