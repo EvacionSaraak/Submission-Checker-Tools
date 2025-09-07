@@ -368,64 +368,32 @@ function headerSignature(s) {
 }
 
 // Converts a JS Date, Excel serial number, or string into Excel serial number
-function toExcelSerial(input, sourceType = 0) {
-    if (input === null || input === undefined || input === "") return "";
-
-    // If input is already a number, return integer part
-    if (typeof input === "number") return Math.floor(input);
-
-    // If input is a Date object
-    if (input instanceof Date) {
-        const utcDate = Date.UTC(input.getFullYear(), input.getMonth(), input.getDate());
-        const excelEpoch = Date.UTC(1899, 11, 30);
-        const serial = (utcDate - excelEpoch) / (1000 * 60 * 60 * 24);
-        return Math.floor(serial);
+function toExcelSerial(value, sourceType = 0) {
+  if (value === null || value === undefined || value === '') return '';
+  let dateObj;
+  if (typeof value === 'number') return Math.floor(value);
+  if (value instanceof Date) {
+    dateObj = value;
+  } else if (typeof value === 'string') {
+    if (sourceType === 2) {
+      // Insta: parse as DMY
+      const [d, m, y] = value.split(/[\/\-\.]/).map(s => parseInt(s, 10));
+      if (!d || !m || !y) return '';
+      dateObj = new Date(y, m - 1, d);
+    } else {
+      // Odoo / ClinicPro: parse normally
+      const parsed = Date.parse(value);
+      if (isNaN(parsed)) return '';
+      dateObj = new Date(parsed);
     }
+  } else {
+    return '';
+  }
 
-    // If input is a string
-    if (typeof input === "string") {
-        const trimmed = input.trim();
-
-        // Check if string is a number (Excel serial)
-        if (!isNaN(Number(trimmed))) {
-            return Math.floor(Number(trimmed));
-        }
-
-        // Handle DMY vs MDY based on sourceType
-        let day, month, year;
-        let parts;
-
-        if (sourceType === 2) { // Insta → DMY
-            parts = trimmed.split(/[\/\-]/).map(Number);
-            if (parts.length === 3) {
-                day = parts[0]; month = parts[1]; year = parts[2];
-            }
-        } else { // Odoo or ClinicPro → MDY
-            parts = trimmed.split(/[\/\-]/).map(Number);
-            if (parts.length === 3) {
-                month = parts[0]; day = parts[1]; year = parts[2];
-            }
-        }
-
-        if (day !== undefined && month !== undefined && year !== undefined) {
-            const dt = new Date(year, month - 1, day);
-            const excelEpoch = Date.UTC(1899, 11, 30);
-            const utcDate = Date.UTC(dt.getFullYear(), dt.getMonth(), dt.getDate());
-            const serial = (utcDate - excelEpoch) / (1000 * 60 * 60 * 24);
-            return Math.floor(serial);
-        }
-
-        // Fallback
-        const parsed = Date.parse(trimmed);
-        if (!isNaN(parsed)) {
-            const dt = new Date(parsed);
-            const excelEpoch = Date.UTC(1899, 11, 30);
-            const utcDate = Date.UTC(dt.getFullYear(), dt.getMonth(), dt.getDate());
-            return Math.floor((utcDate - excelEpoch) / (1000 * 60 * 60 * 24));
-        }
-    }
-
-    return "";
+  // Excel serial number: days since 1899-12-31
+  const epoch = new Date(Date.UTC(1899, 11, 30));
+  const diff = (dateObj - epoch) / (1000 * 60 * 60 * 24);
+  return Math.floor(diff);
 }
 
 function logRawToSerialMap(combinedRows, headersWithRaw) {
