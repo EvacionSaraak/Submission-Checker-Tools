@@ -367,64 +367,30 @@ function headerSignature(s) {
     .replace(/[^a-z0-9]/g, '');              // remove non-alphanumerics
 }
 
-// toExcelSerial(value, opts = { debug: false, preferDMY: true })
-function toExcelSerial(value, opts = {}) {
-  const { debug = false, preferDMY = true } = opts;
-  if (value === null || value === undefined || value === '') { if(debug) console.log('[toExcelSerial]', {}, value); return ''; }
-
-  const rawDisplay = (typeof value === 'object' && !(value instanceof Date)) ? JSON.stringify(value) : String(value);
-
-  const d2s = (d) => {
-    const epoch = Date.UTC(1899, 11, 30);
-    const utcMid = Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
-    return Math.floor((utcMid - epoch) / (24 * 60 * 60 * 1000)); // integer only
-  };
-
-  // XLSX cell objects {t, v}
-  if (typeof value === 'object' && value !== null && value.t && ('v' in value)) {
-    if (value.t === 'n') { const s = Math.floor(Number(value.v)); if(debug) console.log('[toExcelSerial]', {[rawDisplay]: s}); return s; }
-    if (value.t === 'd' && value.v instanceof Date && !isNaN(value.v)) { const s = d2s(value.v); if(debug) console.log('[toExcelSerial]', {[rawDisplay]: s}); return s; }
-    value = value.v; // fall through
-  }
-
-  if (typeof value === 'number' && !isNaN(value)) { const s = Math.floor(value); if(debug) console.log('[toExcelSerial]', {[rawDisplay]: s}); return s; }
-  if (value instanceof Date && !isNaN(value)) { const s = d2s(value); if(debug) console.log('[toExcelSerial]', {[rawDisplay]: s}); return s; }
-  if (typeof value !== 'string') { if(debug) console.log('[toExcelSerial]', {}, rawDisplay); return ''; }
-
-  const s = value.trim();
-  if (s === '') { if(debug) console.log('[toExcelSerial]', {}, rawDisplay); return ''; }
-
-  // pure numeric string -> Excel serial
-  if (/^[0-9]+(\.[0-9]+)?$/.test(s)) { const n = Math.floor(parseFloat(s)); if(debug) console.log('[toExcelSerial]', {[rawDisplay]: n}); return n; }
-
-  // ISO YYYY-MM-DD
-  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (iso) { const out = d2s(new Date(Date.UTC(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3])))); if(debug) console.log('[toExcelSerial]', {[rawDisplay]: out}); return out; }
-
-  // Slash/Dash separated (D/M/Y or M/D/Y)
-  const parts = s.split(/[\/\-]/).map(p => p.trim()).filter(Boolean);
-  if (parts.length === 3 && parts.every(p => /^\d+$/.test(p))) {
-    let day, month, year;
-    if (parts[0].length === 4) { year = Number(parts[0]); month = Number(parts[1]); day = Number(parts[2]); } // YYYY-MM-DD
-    else {
-      let p0 = Number(parts[0]), p1 = Number(parts[1]), p2 = Number(parts[2]);
-      if (p0 > 12) { day = p0; month = p1; year = p2; }
-      else if (p1 > 12) { day = p0; month = p1; year = p2; }
-      else if (preferDMY) { day = p0; month = p1; year = p2; }
-      else { month = p0; day = p1; year = p2; }
-      if (year < 100) year += 2000;
+function toExcelSerial(dateOrNumber) {
+  let excelBaseDate = new Date(Date.UTC(1899, 11, 30)); // Excel epoch
+  let serial = 0;
+  if (dateOrNumber === null || dateOrNumber === undefined || dateOrNumber === '') return '';
+  if (typeof dateOrNumber === 'number') {
+    // If already a number, floor it to remove fractional time
+    serial = Math.floor(dateOrNumber);
+  } else if (dateOrNumber instanceof Date) {
+    const diff = dateOrNumber.getTime() - excelBaseDate.getTime();
+    serial = Math.floor(diff / (1000 * 60 * 60 * 24));
+  } else if (typeof dateOrNumber === 'string') {
+    // Try parsing string
+    const parsed = new Date(dateOrNumber);
+    if (!isNaN(parsed)) {
+      const diff = parsed.getTime() - excelBaseDate.getTime();
+      serial = Math.floor(diff / (1000 * 60 * 60 * 24));
+    } else {
+      // Maybe it’s a numeric string
+      const num = Number(dateOrNumber);
+      if (!isNaN(num)) serial = Math.floor(num);
+      else return ''; // unrecognized string
     }
-    const out = d2s(new Date(Date.UTC(year, month - 1, day)));
-    if(debug) console.log('[toExcelSerial]', {[rawDisplay]: out});
-    return out;
-  }
-
-  // Fallback: parse with Date
-  const parsed = Date.parse(s);
-  if (!isNaN(parsed)) { const out = d2s(new Date(parsed)); if(debug) console.log('[toExcelSerial]', {[rawDisplay]: out}); return out; }
-
-  if(debug) console.log('[toExcelSerial]', {}, rawDisplay);
-  return '';
+  } else { return ''; }
+  return serial;
 }
 
 function logRawToSerialMap(combinedRows, headersWithRaw) {
