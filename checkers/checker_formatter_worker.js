@@ -64,6 +64,24 @@ function log(message, level = 'INFO') {
 
 function normalizeName(name) { return (name || '').replace(/\s+/g, '').toLowerCase(); }
 
+function normalizeExcelSerial(v, is1904=false){
+  if(v==null||v==='') return '';
+  if(typeof v==='number'&&!isNaN(v)) return Math.round(v);
+  if(Object.prototype.toString.call(v)==='[object Date]'&&!isNaN(v)){
+    let b=is1904?Date.UTC(1904,0,1):Date.UTC(1899,11,30);
+    let u=Date.UTC(v.getFullYear(),v.getMonth(),v.getDate());
+    return Math.round((u-b)/86400000);
+  }
+  let s=String(v).trim(),m;
+  if(m=s.match(/^(\d{4})-(\d{2})-(\d{2})$/)) return normalizeExcelSerial(new Date(+m[1],+m[2]-1,+m[3]),is1904);
+  if(m=s.match(/^(\d{2})-(\d{2})-(\d{4})$/)) return normalizeExcelSerial(new Date(+m[3],+m[2]-1,+m[1]),is1904);
+  if(m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)) return normalizeExcelSerial(new Date(+m[3],+m[1]-1,+m[2]),is1904);
+  let d=new Date(s);
+  if(!isNaN(d)) return normalizeExcelSerial(d,is1904);
+  let n=Number(s.replace(/[^\d.]/g,'')); 
+  return !isNaN(n)&&n>0?Math.round(n):'';
+}
+
 function findHeaderRowFromArrays(sheetRows, maxScan = 10) {
   if (!Array.isArray(sheetRows) || sheetRows.length === 0) { return { headerRowIndex: -1, headers: [], rows: [] }; }
   const tokens = [
@@ -592,7 +610,8 @@ async function combineReportings(fileEntries, clinicianFile) {
           }
           if (tgt === 'Encounter Date') {
             const src = (targetToSourceLower[tgt] || '').toString();
-            return convertToExcelDateUniversal(sourceRow[src]);
+            const rawVal = sourceRow[src];
+            return normalizeExcelSerial(rawVal, is1904);
           }
           if (tgt === 'Source File') return name;
           const key = targetToSourceLower[tgt];
