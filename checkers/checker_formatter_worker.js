@@ -368,37 +368,26 @@ function headerSignature(s) {
 }
 
 // Converts a value to Excel serial, keeping numbers as-is and parsing strings consistently
-function toExcelSerial(value) {
-  if (value === null || value === undefined || value === '') return '';
-
-  // If it's already a number (Excel serial), just floor it
-  if (typeof value === 'number' && !isNaN(value)) return Math.floor(value);
-
-  // Parse strings like "6/9/25" or "2025-09-06"
-  let date;
-  if (typeof value === 'string') {
-    const parts = value.split(/[\/\-]/);
-    if (parts.length === 3) {
-      let [month, day, year] = parts.map(Number);
-      if (year < 100) year += 2000; // 2-digit year fix
-      if (value.includes('-')) { // YYYY-MM-DD
-        year = parts[0]; month = parts[1]; day = parts[2];
-      }
-      date = new Date(year, month - 1, day);
-    } else {
-      date = new Date(value);
-    }
-  } else if (value instanceof Date) {
-    date = value;
-  } else {
-    return '';
+// toExcelSerial
+function toExcelSerial(v){
+  if(v==null||v==='') return '';
+  function d2s(d){const e=Date.UTC(1899,11,30);const u=Date.UTC(d.getFullYear(),d.getMonth(),d.getDate());return Math.floor((u-e)/(24*60*60*1000));}
+  if(typeof v==='number'&&!isNaN(v)) return Math.floor(v);
+  if(v instanceof Date&&!isNaN(v)) return d2s(v);
+  if(typeof v!=='string') return '';
+  const s=v.trim(); if(s==='') return '';
+  if(/^[0-9]+(\.[0-9]+)?$/.test(s)){const n=parseFloat(s); if(!isNaN(n)) return Math.floor(n);}
+  const iso=s.match(/^(\d{4})-(\d{2})-(\d{2})$/); if(iso) return d2s(new Date(Date.UTC(Number(iso[1]),Number(iso[2])-1,Number(iso[3]))));
+  const parts=s.split(/[\/\-]/).map(p=>p.trim()).filter(Boolean);
+  if(parts.length===3 && parts.every(p=>/^\d+$/.test(p))){
+    if(parts[0].length===4){const y=Number(parts[0]),m=Number(parts[1])-1,d=Number(parts[2]);return d2s(new Date(Date.UTC(y,m,d))); }
+    let a=Number(parts[0]),b=Number(parts[1]),c=Number(parts[2]), day,month,year;
+    if(a>12){day=a;month=b;year=c;} else if(b>12){day=a;month=b;year=c;} else {day=a;month=b;year=c;}
+    if(year<100) year+=2000;
+    return d2s(new Date(Date.UTC(year,month-1,day)));
   }
-
-  if (isNaN(date)) return '';
-
-  const excelEpoch = new Date(Date.UTC(1899, 11, 30));
-  const serial = (date - excelEpoch) / (1000 * 60 * 60 * 24);
-  return Math.floor(serial); // remove fractional part
+  const parsed=Date.parse(s); if(!isNaN(parsed)) return d2s(new Date(parsed));
+  return '';
 }
 
 // Must match your last working version
@@ -466,204 +455,114 @@ async function combineEligibilities(fileEntries) {
   return wbOut;
 }
 
-async function combineReportings(fileEntries, clinicianFile) {
+// combineReportings
+async function combineReportings(fileEntries, clinicianFile){
   log("Starting combineReportings function");
+  if(!Array.isArray(fileEntries)||fileEntries.length===0){log("No input files provided","ERROR");throw new Error("No input files provided");}
 
-  if (!Array.isArray(fileEntries) || fileEntries.length === 0) {
-    log("No input files provided", "ERROR");
-    throw new Error("No input files provided");
-  }
-
-  // Add 'Raw Encounter Date' to TARGET_HEADERS
-  const headersWithRaw = [...TARGET_HEADERS, 'Raw Encounter Date'];
-  const combinedRows = [headersWithRaw];
+  const headersWithRaw=[...TARGET_HEADERS,'Raw Encounter Date'];
+  const combinedRows=[headersWithRaw];
   log("Initialized combinedRows with headers");
 
-  const clinicianMapByLicense = new Map();
-  const clinicianMapByName = new Map();
-  let fallbackExcel = [];
+  const clinicianMapByLicense=new Map(), clinicianMapByName=new Map();
+  let fallbackExcel=[];
 
-  // Load clinician JSON
-  try {
+  try{
     log("Fetching clinician_licenses.json");
-    const resp = await fetch('./clinician_licenses.json');
-    const clinicianData = await resp.json();
-    if (!Array.isArray(clinicianData)) throw new Error("Clinician data is not an array");
-
-    clinicianData.forEach(entry => {
-      const lic = entry['Phy Lic']?.toString().trim();
-      const nm = entry['Clinician Name']?.toString().trim();
-      if (lic) clinicianMapByLicense.set(lic, entry);
-      if (nm) clinicianMapByName.set(normalizeName(nm), entry);
-    });
+    const resp=await fetch('./clinician_licenses.json');
+    const clinicianData=await resp.json();
+    if(!Array.isArray(clinicianData)) throw new Error("Clinician data is not an array");
+    clinicianData.forEach(entry=>{const lic=entry['Phy Lic']?.toString().trim();const nm=entry['Clinician Name']?.toString().trim(); if(lic) clinicianMapByLicense.set(lic,entry); if(nm) clinicianMapByName.set(normalizeName(nm),entry);});
     log(`Loaded clinician licenses: ${clinicianMapByLicense.size} by license`);
-  } catch (err) {
-    log(`Failed to load clinician_licenses.json: ${err.message}`, 'ERROR');
-  }
+  }catch(err){log(`Failed to load clinician_licenses.json: ${err.message}`,'ERROR');}
 
-  // Optional fallback clinician Excel
-  if (clinicianFile) {
-    try {
+  if(clinicianFile){
+    try{
       log("Reading fallback clinician file");
-      const wbClin = XLSX.read(clinicianFile, { type: 'array' });
-      const wsClin = wbClin.Sheets[wbClin.SheetNames[0]];
-      fallbackExcel = XLSX.utils.sheet_to_json(wsClin, { defval: '' }).map(r => ({
-        lic: r['Clinician License']?.toString().trim(),
-        nm: (r['Clinician Name'] || '').trim().replace(/\s+/g, ' '),
-        facilityLicense: r['Facility License']?.toString().trim() || '',
-        raw: r
-      }));
+      const wbClin=XLSX.read(clinicianFile,{type:'array'});
+      const wsClin=wbClin.Sheets[wbClin.SheetNames[0]];
+      fallbackExcel=XLSX.utils.sheet_to_json(wsClin,{defval:''}).map(r=>({lic:r['Clinician License']?.toString().trim(),nm:(r['Clinician Name']||'').trim().replace(/\s+/g,' '),facilityLicense:r['Facility License']?.toString().trim()||'',raw:r}));
       log(`Fallback clinician entries loaded: ${fallbackExcel.length}`);
-    } catch (err) {
-      log(`Error reading fallback clinician file: ${err.message}`, 'ERROR');
-      fallbackExcel = [];
-    }
+    }catch(err){log(`Error reading fallback clinician file: ${err.message}`,'ERROR'); fallbackExcel=[];}
   }
 
-  for (let i = 0; i < fileEntries.length; i++) {
-    const { name, buffer } = fileEntries[i];
+  const allSerials=new Set();
+
+  for(let i=0;i<fileEntries.length;i++){
+    const {name,buffer}=fileEntries[i];
     log(`Reading reporting file: ${name}`);
-
     let wb;
-    try { wb = XLSX.read(buffer, { type: 'array', cellDates: true }); }
-    catch (err) { log(`Failed to read XLSX from buffer for file ${name}: ${err.message}`, 'ERROR'); continue; }
+    try{wb=XLSX.read(buffer,{type:'array',cellDates:true});}catch(err){log(`Failed to read XLSX from buffer for file ${name}: ${err.message}`,'ERROR'); continue;}
+    const ws=wb.Sheets[wb.SheetNames[0]];
+    const sheetData=XLSX.utils.sheet_to_json(ws,{header:1,defval:'',raw:false});
+    if(!sheetData||sheetData.length===0){log(`File ${name} skipped: no data`,'WARN'); continue;}
+    const {headerRowIndex,headers:headerRow}=findHeaderRowFromArrays(sheetData,10);
+    if(!headerRow||headerRow.length===0){log(`File ${name} skipped: header row not found.`,'WARN'); continue;}
+    const headerRowTrimmed=headerRow.map(h=>(h||'').toString().trim());
+    const normalizedHeaders=headerRowTrimmed.map(h=>headerSignature(h));
 
-    const ws = wb.Sheets[wb.SheetNames[0]];
-    const sheetData = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false });
-    if (!sheetData || sheetData.length === 0) { log(`File ${name} skipped: no data`, 'WARN'); continue; }
+    const isInsta=headerRowTrimmed.some(h=>h.toLowerCase()==='pri. claim no')&&headerRowTrimmed.some(h=>h.toLowerCase()==='encounter date');
+    const isOdoo=headerRowTrimmed.some(h=>h.toLowerCase()==='pri. claim id');
+    const isClinicPro=headerRowTrimmed.some(h=>h.toLowerCase()==='claimid');
+    let headerMap=null; if(isClinicPro) headerMap=CLINICPRO_V2_MAP; else if(isInsta) headerMap=INSTAHMS_MAP; else if(isOdoo) headerMap=ODOO_MAP; else {log(`File ${name} skipped: unrecognized header format.`,'WARN'); continue;}
 
-    const { headerRowIndex, headers: headerRow, rows: rowsAfter } = findHeaderRowFromArrays(sheetData, 10);
-    if (!headerRow || headerRow.length === 0) { log(`File ${name} skipped: header row not found.`, 'WARN'); continue; }
+    const targetToNormalizedSource={}; for(const [src,tgt] of Object.entries(headerMap)){const srcSig=headerSignature(src); targetToNormalizedSource[tgt]=normalizedHeaders.includes(srcSig)?srcSig:null;}
 
-    const headerRowTrimmed = headerRow.map(h => (h || '').toString().trim());
-    const normalizedHeaders = headerRowTrimmed.map(h => headerSignature(h));
+    const encounterSig=targetToNormalizedSource['Encounter Date']; const encounterColIndex=encounterSig?normalizedHeaders.indexOf(encounterSig):-1;
+    const seenClaimIDs=new Set(); const startRow=headerRowIndex+1; const totalRows=sheetData.length;
 
-    // Detect file type
-    const isInsta = headerRowTrimmed.some(h => h.toLowerCase() === 'pri. claim no') &&
-                    headerRowTrimmed.some(h => h.toLowerCase() === 'encounter date');
-    const isOdoo = headerRowTrimmed.some(h => h.toLowerCase() === 'pri. claim id');
-    const isClinicPro = headerRowTrimmed.some(h => h.toLowerCase() === 'claimid');
+    for(let r=startRow;r<totalRows;r++){
+      const row=sheetData[r]; if(!Array.isArray(row)||row.length===0) continue;
+      try{
+        const sourceRow={}; for(let c=0;c<row.length;c++){const key=normalizedHeaders[c]||`col${c}`; sourceRow[key]=row[c]??'';}
+        const claimIDKey=targetToNormalizedSource['Pri. Claim No']; const claimID=claimIDKey?String(sourceRow[claimIDKey]??'').trim():''; if(!claimID||seenClaimIDs.has(claimID)) continue; seenClaimIDs.add(claimID);
+        let facilityID=''; if(isInsta) facilityID=String(sourceRow[targetToNormalizedSource['Facility ID']]??'').trim(); else facilityID=getFacilityIDFromFileName(name);
 
-    let headerMap = null;
-    if (isClinicPro) headerMap = CLINICPRO_V2_MAP;
-    else if (isInsta) headerMap = INSTAHMS_MAP;
-    else if (isOdoo) headerMap = ODOO_MAP;
-    else { log(`File ${name} skipped: unrecognized header format.`, 'WARN'); continue; }
+        const clinLicenseKey=targetToNormalizedSource['Clinician License']; const clinNameKey=targetToNormalizedSource['Clinician Name'];
+        let clinLicense=clinLicenseKey?String(sourceRow[clinLicenseKey]??'').trim():''; let clinName=clinNameKey?String(sourceRow[clinNameKey]??'').trim():'';
+        if(!clinName&&sourceRow['orderdoctor']) clinName=String(sourceRow['orderdoctor']).trim();
+        if(clinLicense&&!clinName&&clinicianMapByLicense.has(clinLicense)) clinName=clinicianMapByLicense.get(clinLicense)['Clinician Name'];
+        if(clinName&&!clinLicense&&clinicianMapByName.has(normalizeName(clinName))) clinLicense=clinicianMapByName.get(normalizeName(clinName))['Phy Lic'];
+        if((!clinName||!clinLicense)&&clinName&&facilityID){const fb=fallbackClinicianLookupWithFacility(clinName,facilityID,fallbackExcel); if(fb){clinLicense=fb.license||clinLicense; clinName=fb.name||clinName;}}
+        if(!clinName&&!clinLicense) continue;
 
-    // Build target → normalized source key mapping
-    const targetToNormalizedSource = {};
-    for (const [src, tgt] of Object.entries(headerMap)) {
-      const srcSig = headerSignature(src);
-      const matched = normalizedHeaders.includes(srcSig) ? srcSig : null;
-      targetToNormalizedSource[tgt] = matched;
-    }
+        let rawEncounterVal=''; let normalizedEncounter='';
+        if(encounterColIndex>=0){
+          const cellAddr=XLSX.utils.encode_cell({r:r,c:encounterColIndex}); const cell=ws[cellAddr];
+          if(cell!==undefined){ rawEncounterVal=cell.v; if(cell.t==='n') normalizedEncounter=Math.floor(cell.v); else if(cell.t==='d') normalizedEncounter=toExcelSerial(cell.v); else normalizedEncounter=toExcelSerial(cell.v); }
+          else { rawEncounterVal=sourceRow[encounterSig]??''; normalizedEncounter=toExcelSerial(rawEncounterVal); }
+        } else { rawEncounterVal=''; normalizedEncounter=''; }
 
-    const seenClaimIDs = new Set();
-    const startRow = headerRowIndex + 1;
-    const totalRows = sheetData.length;
+        if(normalizedEncounter!==''&&normalizedEncounter!==null) allSerials.add(normalizedEncounter);
 
-    for (let r = startRow; r < totalRows; r++) {
-      const row = sheetData[r];
-      if (!Array.isArray(row) || row.length === 0) continue;
-
-      try {
-        const sourceRow = {};
-        for (let c = 0; c < row.length; c++) {
-          const key = normalizedHeaders[c] || `col${c}`;
-          sourceRow[key] = row[c] ?? '';
-        }
-
-        // claim id dedupe
-        const claimIDKey = targetToNormalizedSource['Pri. Claim No'];
-        const claimID = claimIDKey ? String(sourceRow[claimIDKey] ?? '').trim() : '';
-        if (!claimID || seenClaimIDs.has(claimID)) continue;
-        seenClaimIDs.add(claimID);
-
-        // Facility ID
-        let facilityID = '';
-        if (isInsta) facilityID = String(sourceRow[targetToNormalizedSource['Facility ID']] ?? '').trim();
-        else facilityID = getFacilityIDFromFileName(name);
-
-        // Clinician info
-        const clinLicenseKey = targetToNormalizedSource['Clinician License'];
-        const clinNameKey = targetToNormalizedSource['Clinician Name'];
-        let clinLicense = clinLicenseKey ? String(sourceRow[clinLicenseKey] ?? '').trim() : '';
-        let clinName = clinNameKey ? String(sourceRow[clinNameKey] ?? '').trim() : '';
-        if (!clinName && sourceRow['orderdoctor']) clinName = String(sourceRow['orderdoctor']).trim();
-
-        if (clinLicense && !clinName && clinicianMapByLicense.has(clinLicense)) {
-          clinName = clinicianMapByLicense.get(clinLicense)['Clinician Name'];
-        }
-        if (clinName && !clinLicense && clinicianMapByName.has(normalizeName(clinName))) {
-          clinLicense = clinicianMapByName.get(normalizeName(clinName))['Phy Lic'];
-        }
-
-        if ((!clinName || !clinLicense) && clinName && facilityID) {
-          const fb = fallbackClinicianLookupWithFacility(clinName, facilityID, fallbackExcel);
-          if (fb) {
-            clinLicense = fb.license || clinLicense;
-            clinName = fb.name || clinName;
-          }
-        }
-
-        if (!clinName && !clinLicense) continue;
-
-        // Encounter Date processing
-        const rawEncounterVal = sourceRow[targetToNormalizedSource['Encounter Date']] ?? '';
-        const normalizedEncounter = toExcelSerial(rawEncounterVal);
-
-        // Build target row with guaranteed length
-        const targetRow = [];
-        for (let col = 0; col < headersWithRaw.length; col++) {
-          const tgt = headersWithRaw[col];
-          let val = '';
-          if (tgt === 'Facility ID') val = facilityID || '';
-          else if (tgt === 'Pri. Patient Insurance Card No') {
-            val = (sourceRow[targetToNormalizedSource[tgt]] ?? '') ||
-                  (sourceRow[targetToNormalizedSource[tgt]?.toLowerCase()] ?? '');
-          }
-          else if (tgt === 'Patient Code') val = sourceRow[targetToNormalizedSource[tgt]] ?? '';
-          else if (tgt === 'Clinician License') val = clinLicense || '';
-          else if (tgt === 'Clinician Name') val = clinName || '';
-          else if (tgt === 'Opened by') {
-            if (isOdoo) val = '';
-            else val = sourceRow[targetToNormalizedSource[tgt]] ?? sourceRow['updatedby'] ?? '';
-          }
-          else if (tgt === 'Encounter Date') val = normalizedEncounter;
-          else if (tgt === 'Raw Encounter Date') val = rawEncounterVal;
-          else if (tgt === 'Source File') val = name;
-          else val = sourceRow[targetToNormalizedSource[tgt]] ?? '';
+        const targetRow=[];
+        for(let col=0;col<headersWithRaw.length;col++){
+          const tgt=headersWithRaw[col]; let val='';
+          if(tgt==='Facility ID') val=facilityID||'';
+          else if(tgt==='Pri. Patient Insurance Card No') val=(sourceRow[targetToNormalizedSource[tgt]]??'')||(sourceRow[targetToNormalizedSource[tgt]?.toLowerCase()]??'');
+          else if(tgt==='Patient Code') val=sourceRow[targetToNormalizedSource[tgt]]??'';
+          else if(tgt==='Clinician License') val=clinLicense||'';
+          else if(tgt==='Clinician Name') val=clinName||'';
+          else if(tgt==='Opened by') { if(isOdoo) val=''; else val=sourceRow[targetToNormalizedSource[tgt]]??sourceRow['updatedby']??''; }
+          else if(tgt==='Encounter Date') val=normalizedEncounter;
+          else if(tgt==='Raw Encounter Date') val=rawEncounterVal;
+          else if(tgt==='Source File') val=name;
+          else val=sourceRow[targetToNormalizedSource[tgt]]??'';
           targetRow.push(val);
         }
         combinedRows.push(targetRow);
-
-      } catch (err) {
-        log(`Fatal row error in file ${name}, row ${r + 1}: ${err.message}`, 'ERROR');
-      }
+      }catch(err){log(`Fatal row error in file ${name}, row ${r+1}: ${err.message}`,'ERROR');}
     }
-
-    self.postMessage({ type: 'progress', progress: 50 + Math.floor(((i + 1) / fileEntries.length) * 50) });
+    self.postMessage({type:'progress',progress:50+Math.floor(((i+1)/fileEntries.length)*50)});
   }
 
-  // Debug: log all different Excel serials
-  const serialSet = new Set();
-  combinedRows.slice(1).forEach(row => {
-    const val = row[headersWithRaw.indexOf('Encounter Date')];
-    if (val !== '') serialSet.add(val);
-  });
-  log(`Unique Excel serials found: ${[...serialSet].join(', ')}`);
+  const serialList=[...allSerials].map(s=>Number(s)).filter(n=>!isNaN(n)).sort((a,b)=>a-b);
+  log(`Unique Excel serials found: ${serialList.join(', ')}`);
 
-  // sanity check
-  for (const [idx, row] of combinedRows.entries()) {
-    if (!Array.isArray(row) || row.length !== headersWithRaw.length) {
-      log(`Bad combined row at index ${idx}`, 'ERROR');
-      throw new Error('Invalid combined rows');
-    }
-  }
+  for(const [idx,row] of combinedRows.entries()){ if(!Array.isArray(row)||row.length!==headersWithRaw.length){ log(`Bad combined row at index ${idx} (len=${Array.isArray(row)?row.length:'na'})`,'ERROR'); throw new Error('Invalid combined rows'); } }
 
-  const wsOut = XLSX.utils.aoa_to_sheet(combinedRows);
-  const wbOut = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wbOut, wsOut, 'Combined Reporting');
-  self.postMessage({ type: 'progress', progress: 100 });
+  const wsOut=XLSX.utils.aoa_to_sheet(combinedRows);
+  const wbOut=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wbOut,wsOut,'Combined Reporting');
+  self.postMessage({type:'progress',progress:100});
   return wbOut;
 }
