@@ -468,11 +468,10 @@ async function combineReportings(fileEntries, clinicianFile) {
     throw new Error("No input files provided");
   }
 
-  // Add extra column for raw Excel date
-  const combinedRows = [];
-  const ALL_HEADERS = [...TARGET_HEADERS, 'Raw Encounter Date'];
-  combinedRows.push(ALL_HEADERS); 
+  const combinedRows = [TARGET_HEADERS];
   log("Initialized combinedRows with headers");
+
+  const allEncounterSerials = new Set(); // <-- collect serials
 
   const clinicianMapByLicense = new Map();
   const clinicianMapByName = new Map();
@@ -527,19 +526,18 @@ async function combineReportings(fileEntries, clinicianFile) {
     const sheetData = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false });
     if (!sheetData || sheetData.length === 0) { log(`File ${name} skipped: no data`, 'WARN'); continue; }
 
-    const { headerRowIndex, headers: headerRow } = findHeaderRowFromArrays(sheetData, 10);
+    const { headerRowIndex, headers: headerRow, rows: rowsAfter } = findHeaderRowFromArrays(sheetData, 10);
     if (!headerRow || headerRow.length === 0) { log(`File ${name} skipped: header row not found.`, 'WARN'); continue; }
 
     const headerRowTrimmed = headerRow.map(h => (h || '').toString().trim());
     const normalizedHeaders = headerRowTrimmed.map(h => headerSignature(h));
 
-    // Detect file type
+    let headerMap = null;
     const isInsta = headerRowTrimmed.some(h => h.toLowerCase() === 'pri. claim no') &&
                     headerRowTrimmed.some(h => h.toLowerCase() === 'encounter date');
     const isOdoo = headerRowTrimmed.some(h => h.toLowerCase() === 'pri. claim id');
     const isClinicPro = headerRowTrimmed.some(h => h.toLowerCase() === 'claimid');
 
-    let headerMap = null;
     if (isClinicPro) headerMap = CLINICPRO_V2_MAP;
     else if (isInsta) headerMap = INSTAHMS_MAP;
     else if (isOdoo) headerMap = ODOO_MAP;
@@ -560,52 +558,85 @@ async function combineReportings(fileEntries, clinicianFile) {
       const row = sheetData[r];
       if (!Array.isArray(row) || row.length === 0) continue;
 
-      const sourceRow = {};
-      for (let c = 0; c < row.length; c++) {
-        const key = normalizedHeaders[c] || `col${c}`;
-        sourceRow[key] = row[c] ?? '';
+      try {
+        const sourceRow = {};
+        for (let c = 0; c < row.length; c++) {
+          const key = normalizedHeaders[c] || `col${c}`;
+          sourceRow[key] = row[c] ?? '';
+        }
+
+        const claimIDKey = targetToNormalizedSource['Pri. Claim No'];
+        const claimID = claimIDKey ? String(sourceRow[claimIDKey] ?? '').trim() : '';
+        if (!claimID || seenClaimIDs.has(claimID)) continue;
+        seenClaimIDs.add(claimID);
+
+        let facilityID = isInsta ? String(sourceRow[targetToNormalizedSource['Facility ID']] ?? '').trim()
+                                 : getFacilityIDFromFileName(name);
+
+        const clinLicenseKey = targetToNormalizedSource['Clinician License'];
+        const clinNameKey = targetToNormalizedSource['Clinician Name'];
+        let clinLicense = clinLicenseKey ? String(sourceRow[clinLicenseKey] ?? '').trim() : '';
+        let clinName = clinNameKey ? String(sourceRow[clinNameKey] ?? '').trim() : '';
+        if (!clinName && sourceRow['orderdoctor']) clinName = String(sourceRow['orderdoctor']).trim();
+
+        if (clinLicense && !clinName && clinicianMapByLicense.has(clinLicense)) {
+          clinName = clinicianMapByLicense.get(clinLicense)['Clinician Name'];
+        }
+        if (clinName && !clinLicense && clinicianMapByName.has(normalizeName(clinName))) {
+          clinLicense = clinicianMapByName.get(normalizeName(clinName))['Phy Lic'];
+        }
+
+        if ((!clinName || !clinLicense) && clinName && facilityID) {
+          const fb = fallbackClinicianLookupWithFacility(clinName, facilityID, fallbackExcel);
+          if (fb) {
+            clinLicense = fb.license || clinLicense;
+            clinName = fb.name || clinName;
+          }
+        }
+
+        if (!clinName && !clinLicense) continue;
+
+        const rawEncounter = sourceRow[targetToNormalizedSource['Encounter Date']] ?? '';
+        const encounterSerial = toExcelSerial(rawEncounter); // <-- convert
+        if (encounterSerial !== '') allEncounterSerials.add(encounterSerial);
+
+        const targetRow = TARGET_HEADERS.map((tgt) => {
+          if (tgt === 'Facility ID') return facilityID || '';
+          if (tgt === 'Pri. Patient Insurance Card No') {
+            return (sourceRow[targetToNormalizedSource[tgt]] ?? '') ||
+                   (sourceRow[targetToNormalizedSource[tgt]?.toLowerCase()] ?? '');
+          }
+          if (tgt === 'Patient Code') return sourceRow[targetToNormalizedSource[tgt]] ?? '';
+          if (tgt === 'Clinician License') return clinLicense || '';
+          if (tgt === 'Clinician Name') return clinName || '';
+          if (tgt === 'Opened by') {
+            if (isOdoo) return '';
+            return sourceRow[targetToNormalizedSource[tgt]] ?? sourceRow['updatedby'] ?? '';
+          }
+          if (tgt === 'Encounter Date') return encounterSerial;
+          if (tgt === 'Source File') return name;
+          return sourceRow[targetToNormalizedSource[tgt]] ?? '';
+        });
+
+        combinedRows.push(targetRow);
+
+      } catch (err) {
+        log(`Fatal row error in file ${name}, row ${r + 1}: ${err.message}`, 'ERROR');
       }
-
-      const claimIDKey = targetToNormalizedSource['Pri. Claim No'];
-      const claimID = claimIDKey ? String(sourceRow[claimIDKey] ?? '').trim() : '';
-      if (!claimID || seenClaimIDs.has(claimID)) continue;
-      seenClaimIDs.add(claimID);
-
-      let facilityID = isInsta ? String(sourceRow[targetToNormalizedSource['Facility ID']] ?? '').trim() : getFacilityIDFromFileName(name);
-
-      const clinLicenseKey = targetToNormalizedSource['Clinician License'];
-      const clinNameKey = targetToNormalizedSource['Clinician Name'];
-      let clinLicense = clinLicenseKey ? String(sourceRow[clinLicenseKey] ?? '').trim() : '';
-      let clinName = clinNameKey ? String(sourceRow[clinNameKey] ?? '').trim() : '';
-      if (!clinName && sourceRow['orderdoctor']) clinName = String(sourceRow['orderdoctor']).trim();
-
-      if (clinLicense && !clinName && clinicianMapByLicense.has(clinLicense)) clinName = clinicianMapByLicense.get(clinLicense)['Clinician Name'];
-      if (clinName && !clinLicense && clinicianMapByName.has(normalizeName(clinName))) clinLicense = clinicianMapByName.get(normalizeName(clinName))['Phy Lic'];
-
-      if ((!clinName || !clinLicense) && clinName && facilityID) {
-        const fb = fallbackClinicianLookupWithFacility(clinName, facilityID, fallbackExcel);
-        if (fb) { clinLicense = fb.license || clinLicense; clinName = fb.name || clinName; }
-      }
-
-      if (!clinName && !clinLicense) continue;
-
-      const targetRow = ALL_HEADERS.map((tgt) => {
-        if (tgt === 'Facility ID') return facilityID || '';
-        if (tgt === 'Pri. Patient Insurance Card No') return (sourceRow[targetToNormalizedSource[tgt]] ?? '') || (sourceRow[targetToNormalizedSource[tgt]?.toLowerCase()] ?? '');
-        if (tgt === 'Patient Code') return sourceRow[targetToNormalizedSource[tgt]] ?? '';
-        if (tgt === 'Clinician License') return clinLicense || '';
-        if (tgt === 'Clinician Name') return clinName || '';
-        if (tgt === 'Opened by') return isOdoo ? '' : sourceRow[targetToNormalizedSource[tgt]] ?? sourceRow['updatedby'] ?? '';
-        if (tgt === 'Encounter Date') return toExcelSerial(sourceRow[targetToNormalizedSource[tgt]] ?? '');
-        if (tgt === 'Source File') return name;
-        if (tgt === 'Raw Encounter Date') return sourceRow[targetToNormalizedSource['Encounter Date']] ?? '';
-        return sourceRow[targetToNormalizedSource[tgt]] ?? '';
-      });
-
-      combinedRows.push(targetRow);
     }
 
     self.postMessage({ type: 'progress', progress: 50 + Math.floor(((i + 1) / fileEntries.length) * 50) });
+  }
+
+  // Log all unique encounter serials
+  log(`Unique Excel Serials for Encounter Date: ${[...allEncounterSerials].sort((a,b)=>a-b).join(', ')}`);
+
+  // sanity check
+  for (const [idx, row] of combinedRows.entries()) {
+    if (!Array.isArray(row) || row.length !== TARGET_HEADERS.length) {
+      log(`Bad combined row at index ${idx}`, 'ERROR');
+      throw new Error('Invalid combined rows');
+    }
   }
 
   const wsOut = XLSX.utils.aoa_to_sheet(combinedRows);
