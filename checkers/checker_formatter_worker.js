@@ -369,38 +369,46 @@ function headerSignature(s) {
 
 // Convert any value to Excel serial number
 function toExcelSerial(value, fileType) {
-  // fileType: 1 = ClinicPro, 2 = Insta, 0 = Odoo
   if (value === null || value === undefined || value === '') return '';
+
   let serial = null;
+
   if (fileType === 1) {
-    // ClinicPro: numeric value, floor to remove time fraction
+    // ClinicPro: numeric serials, floor removes time fractions
     const num = Number(value);
     if (!isNaN(num)) serial = Math.floor(num);
   } else if (fileType === 2) {
-    // Insta: DMY string
+    // Insta: DMY (day/month/year)
     if (typeof value === 'number') {
       serial = Math.floor(value);
     } else {
-      // Expecting format like "6/9/2025"
       const parts = value.toString().split(/[\/\-\.]/);
       if (parts.length === 3) {
-        const day = parseInt(parts[0], 10);
-        const month = parseInt(parts[1], 10) - 1; // JS months 0-11
-        const year = parseInt(parts[2], 10);
+        let day = parseInt(parts[0], 10);
+        let month = parseInt(parts[1], 10) - 1;
+        let year = parseInt(parts[2], 10);
+
+        // Fix 2-digit years
+        if (year < 100) year += 2000;
+
         const dt = new Date(year, month, day);
         serial = excelDateFromJSDate(dt);
       }
     }
   } else {
-    // Odoo: MDY string
+    // Odoo: MDY (month/day/year)
     if (typeof value === 'number') {
       serial = Math.floor(value);
     } else {
       const parts = value.toString().split(/[\/\-\.]/);
       if (parts.length === 3) {
-        const month = parseInt(parts[0], 10) - 1;
-        const day = parseInt(parts[1], 10);
-        const year = parseInt(parts[2], 10);
+        let month = parseInt(parts[0], 10) - 1;
+        let day = parseInt(parts[1], 10);
+        let year = parseInt(parts[2], 10);
+
+        // Fix 2-digit years
+        if (year < 100) year += 2000;
+
         const dt = new Date(year, month, day);
         serial = excelDateFromJSDate(dt);
       }
@@ -410,11 +418,9 @@ function toExcelSerial(value, fileType) {
   return serial;
 }
 
-// Helper: convert JS Date to Excel serial number
 function excelDateFromJSDate(date) {
   const epoch = new Date(Date.UTC(1899, 11, 30));
-  const diff = date - epoch;
-  return diff / (1000 * 60 * 60 * 24);
+  return (date - epoch) / (1000 * 60 * 60 * 24);
 }
 
 function logRawToSerialMap(combinedRows, headersWithRaw) {
