@@ -368,9 +368,10 @@ function headerSignature(s) {
 }
 
 // toExcelSerial(value, opts = { debug: false, preferDMY: true })
+// toExcelSerial function with detailed debug
 function toExcelSerial(value, opts = {}) {
   const { debug = false, preferDMY = true } = opts;
-  if (value === null || value === undefined || value === '') { if(debug) console.log('[toExcelSerial]','',String(value)); return ''; }
+  if (value === null || value === undefined || value === '') { if(debug) console.log('[toExcelSerial]', '', String(value)); return ''; }
 
   const rawDisplay = (typeof value === 'object' && !(value instanceof Date)) ? JSON.stringify(value) : String(value);
 
@@ -380,45 +381,59 @@ function toExcelSerial(value, opts = {}) {
     return Math.floor((utcMid - epoch) / (24 * 60 * 60 * 1000));
   };
 
-  // support XLSX cell objects {t, v}
+  // XLSX cell objects {t, v}
   if (typeof value === 'object' && value !== null && value.t && ('v' in value)) {
-    if (value.t === 'n') { const s = Math.floor(Number(value.v)); if (debug) console.log('[toExcelSerial]', s, rawDisplay); return s; }
-    if (value.t === 'd' && value.v instanceof Date && !isNaN(value.v)) { const s = d2s(value.v); if (debug) console.log('[toExcelSerial]', s, rawDisplay); return s; }
-    value = value.v; // fall through to normal handling
+    if (value.t === 'n') { const s = Math.floor(Number(value.v)); if(debug) console.log('[toExcelSerial]', s, rawDisplay); return s; }
+    if (value.t === 'd' && value.v instanceof Date && !isNaN(value.v)) { const s = d2s(value.v); if(debug) console.log('[toExcelSerial]', s, rawDisplay); return s; }
+    value = value.v; // fall through
   }
 
-  if (typeof value === 'number' && !isNaN(value)) { const s = Math.floor(value); if (debug) console.log('[toExcelSerial]', s, rawDisplay); return s; }
-  if (value instanceof Date && !isNaN(value)) { const s = d2s(value); if (debug) console.log('[toExcelSerial]', s, rawDisplay); return s; }
-  if (typeof value !== 'string') { if (debug) console.log('[toExcelSerial]','',rawDisplay); return ''; }
+  if (typeof value === 'number' && !isNaN(value)) { const s = Math.floor(value); if(debug) console.log('[toExcelSerial]', s, rawDisplay); return s; }
+  if (value instanceof Date && !isNaN(value)) { const s = d2s(value); if(debug) console.log('[toExcelSerial]', s, rawDisplay); return s; }
+  if (typeof value !== 'string') { if(debug) console.log('[toExcelSerial]', '', rawDisplay); return ''; }
 
-  const s = value.trim(); if (s === '') { if (debug) console.log('[toExcelSerial]','',rawDisplay); return ''; }
+  const s = value.trim(); if (s === '') { if(debug) console.log('[toExcelSerial]', '', rawDisplay); return ''; }
 
-  // pure numeric string -> treat as Excel serial
-  if (/^[0-9]+(\.[0-9]+)?$/.test(s)) { const n = parseFloat(s); const out = Math.floor(n); if (debug) console.log('[toExcelSerial]', out, rawDisplay); return out; }
+  // numeric string
+  if (/^[0-9]+(\.[0-9]+)?$/.test(s)) { const n = parseFloat(s); const out = Math.floor(n); if(debug) console.log('[toExcelSerial]', out, rawDisplay); return out; }
 
   // ISO YYYY-MM-DD
   const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (iso) { const y = Number(iso[1]), m = Number(iso[2]) - 1, d = Number(iso[3]); const out = d2s(new Date(Date.UTC(y, m, d))); if (debug) console.log('[toExcelSerial]', out, rawDisplay); return out; }
+  if (iso) { const y = Number(iso[1]), m = Number(iso[2])-1, d = Number(iso[3]); const out = d2s(new Date(Date.UTC(y,m,d))); if(debug) console.log('[toExcelSerial]', out, rawDisplay); return out; }
 
-  // slash/dash separated; prefer D/M/Y if preferDMY, otherwise M/D/Y
-  const parts = s.split(/[\/\-]/).map(p => p.trim()).filter(Boolean);
+  // slash/dash separated
+  const parts = s.split(/[\/\-]/).map(p=>p.trim()).filter(Boolean);
   if (parts.length === 3 && parts.every(p => /^\d+$/.test(p))) {
-    if (parts[0].length === 4) { const y = Number(parts[0]), m = Number(parts[1]) - 1, d = Number(parts[2]); const out = d2s(new Date(Date.UTC(y, m, d))); if (debug) console.log('[toExcelSerial]', out, rawDisplay); return out; }
-    let p0 = Number(parts[0]), p1 = Number(parts[1]), p2 = Number(parts[2]), day, month, year;
-    if (p0 > 12) { day = p0; month = p1; year = p2; }
-    else if (p1 > 12) { day = p0; month = p1; year = p2; }
-    else if (preferDMY) { day = p0; month = p1; year = p2; }
-    else { month = p0; day = p1; year = p2; }
-    if (year < 100) year += 2000;
-    const out = d2s(new Date(Date.UTC(year, month - 1, day))); if (debug) console.log('[toExcelSerial]', out, rawDisplay); return out;
+    if (parts[0].length === 4) { const y=Number(parts[0]), m=Number(parts[1])-1, d=Number(parts[2]); const out=d2s(new Date(Date.UTC(y,m,d))); if(debug) console.log('[toExcelSerial]', out, rawDisplay); return out; }
+    let p0=Number(parts[0]), p1=Number(parts[1]), p2=Number(parts[2]), day, month, year;
+    if (p0>12) { day=p0; month=p1; year=p2; } else if (p1>12) { day=p0; month=p1; year=p2; } else if (preferDMY) { day=p0; month=p1; year=p2; } else { month=p0; day=p1; year=p2; }
+    if (year<100) year+=2000;
+    const out=d2s(new Date(Date.UTC(year,month-1,day))); if(debug) console.log('[toExcelSerial]', out, rawDisplay); return out;
   }
 
-  // fallback to Date.parse -> normalize to UTC-midnight
+  // fallback
   const parsed = Date.parse(s);
-  if (!isNaN(parsed)) { const d = new Date(parsed); const out = d2s(d); if (debug) console.log('[toExcelSerial]', out, rawDisplay); return out; }
+  if (!isNaN(parsed)) { const d = new Date(parsed); const out = d2s(d); if(debug) console.log('[toExcelSerial]', out, rawDisplay); return out; }
 
-  if (debug) console.log('[toExcelSerial]','',rawDisplay);
+  if(debug) console.log('[toExcelSerial]', '', rawDisplay);
   return '';
+}
+
+function logRawToSerialMap(combinedRows, headersWithRaw) {
+  const encIdx = headersWithRaw.indexOf('Encounter Date');
+  const rawIdx = headersWithRaw.indexOf('Raw Encounter Date');
+  const map = {};
+  for (let i = 1; i < combinedRows.length; i++) {
+    const row = combinedRows[i];
+    const raw = (row[rawIdx] !== undefined && row[rawIdx] !== null) ? String(row[rawIdx]) : '';
+    const serial = (row[encIdx] !== undefined && row[encIdx] !== null) ? String(row[encIdx]) : '';
+    if (!raw) continue;
+    if (!map[raw]) map[raw] = [];
+    if (serial && !map[raw].includes(serial)) map[raw].push(serial);
+  }
+  // sort serials numerically for each raw
+  for (const k in map) map[k] = map[k].sort((a,b)=>Number(a)-Number(b));
+  log(`Raw->Serial mapping: ${JSON.stringify(map)}`);
 }
 
 // Must match your last working version
