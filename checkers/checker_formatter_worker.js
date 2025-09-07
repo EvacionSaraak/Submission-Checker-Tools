@@ -369,42 +369,42 @@ function headerSignature(s) {
 
 // Convert any value to Excel serial number
 function toExcelSerial(value, fileType = 1) {
+  if (value === undefined || value === null || value === '') return '';
+
   let date;
 
-  if (typeof value === 'number') return Math.floor(value); // already serial
-  if (value instanceof Date) date = value;
+  // If it's already a number (Excel serial), just floor it
+  if (typeof value === 'number') return Math.floor(value);
 
-  else if (typeof value === 'string') {
-    value = value.trim();
+  if (typeof value === 'string') {
+    const v = value.trim();
+
+    // InstaHMS: DMY parsing
     if (fileType === 2) {
-      // Insta DMY parsing
-      const dmyMatch = value.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/);
+      const dmyMatch = v.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/);
       if (dmyMatch) {
         const day = Number(dmyMatch[1]);
         const month = Number(dmyMatch[2]) - 1;
         const year = Number(dmyMatch[3]);
-        date = new Date(year, month, day, 12, 0, 0); // midday avoids DST issues
-      } else {
-        date = new Date(value); // fallback
-      }
-    } else {
-      // ClinicPro/Odoo: MDY or ISO
-      const mdyMatch = value.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/);
+        date = new Date(year, month, day, 12, 0, 0); // midday to avoid DST issues
+      } else return '';
+    } 
+    // ClinicPro/Odoo: MDY parsing
+    else {
+      const mdyMatch = v.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/);
       if (mdyMatch) {
         const month = Number(mdyMatch[1]) - 1;
         const day = Number(mdyMatch[2]);
         const year = Number(mdyMatch[3]);
         date = new Date(year, month, day, 12, 0, 0);
-      } else {
-        date = new Date(value);
-      }
+      } else return '';
     }
   } else return '';
 
-  // convert to Excel serial (ignore timezone)
+  // Excel serial calculation (ignore fractional day)
   const excelEpoch = new Date(1899, 11, 30, 12, 0, 0);
   const diffDays = (date - excelEpoch) / (1000 * 60 * 60 * 24);
-  return Math.round(diffDays);
+  return Math.floor(diffDays);
 }
 
 function logRawToSerialMap(combinedRows, headersWithRaw) {
@@ -566,9 +566,6 @@ async function combineReportings(fileEntries, clinicianFile) {
 
     // Detect file type
     let fileType = 0, headerMap = null;
-    const hasPriClaim = !!headerExists(headerRowTrimmed, 'Pri. Claim No') || !!headerExists(headerRowTrimmed, 'ClaimID') || !!headerExists(headerRowTrimmed, 'Pri. Claim ID');
-    const hasEncounter = !!headerExists(headerRowTrimmed, 'Encounter Date') || !!headerExists(headerRowTrimmed, 'ClaimDate') || !!headerExists(headerRowTrimmed, 'Adm/Reg. Date');
-
     if (headerRowTrimmed.some(h => /pri\.? claim|encounter/i.test(String(h).toLowerCase()))) { fileType = 2; headerMap = INSTAHMS_MAP; }
     else if (headerRowTrimmed.some(h => /claimid|claim date/i.test(String(h).toLowerCase()))) { fileType = 1; headerMap = CLINICPRO_V2_MAP; }
     else { fileType = 0; headerMap = ODOO_MAP; }
@@ -610,15 +607,12 @@ async function combineReportings(fileEntries, clinicianFile) {
         }
         if (!clinName && !clinLicense) continue;
 
-        // Raw + normalized Encounter Date
+        // --- MODIFIED RAW + NORMALIZED ENCOUNTER DATE LOGIC ---
         let rawEncounterVal = '', normalizedEncounter = '';
         if (encounterColIndex >= 0) {
-          const cellAddr = XLSX.utils.encode_cell({ r: r, c: encounterColIndex });
-          const cell = ws[cellAddr];
-          if (cell !== undefined) { rawEncounterVal = cell.v; normalizedEncounter = toExcelSerial(cell.v, fileType); }
-          else { rawEncounterVal = sourceRow[encounterSig] ?? ''; normalizedEncounter = toExcelSerial(rawEncounterVal, fileType); }
+          rawEncounterVal = sourceRow[encounterSig] ?? '';
+          normalizedEncounter = toExcelSerial(rawEncounterVal, fileType); // safe parser
         }
-
         if (normalizedEncounter !== '' && normalizedEncounter !== null) {
           serialSet.add(Number(normalizedEncounter));
           const rawKey = (typeof rawEncounterVal === 'object') ? JSON.stringify(rawEncounterVal) : String(rawEncounterVal);
