@@ -368,71 +368,47 @@ function headerSignature(s) {
 }
 
 // toExcelSerial(value, fileType = 0, opts = { debug:false })
-function toExcelSerial(value, fileType = 0, opts = {}) {
-  const { debug = false } = opts;
-  const MS_DAY = 24*60*60*1000;
-  const EXCEL_EPOCH_UTC = Date.UTC(1899,11,30);
+function toExcelSerial(value, fileType = 1) {
+  // fileType: 0 = Odoo, 1 = ClinicPro, 2 = Insta
+  if (value === null || value === undefined || value === '') return '';
 
-  if (value === null || value === undefined || value === '') { if(debug) log(`[toExcelSerial] empty -> ''`); return ''; }
+  let dateObj;
 
-  const rawDisplay = (typeof value === 'object' && !(value instanceof Date)) ? JSON.stringify(value) : String(value);
-
-  const utcSerialFromYMD = (y,m0,d)=> Math.floor((Date.UTC(y,m0,d) - EXCEL_EPOCH_UTC)/MS_DAY);
-
-  // XLSX cell object {t,v}
-  if (typeof value === 'object' && value !== null && 't' in value && 'v' in value) {
-    const cell = value;
-    if (cell.t === 'n') { const out = Math.floor(Number(cell.v)); if(debug) log(`[toExcelSerial] ${rawDisplay} -> ${out}`); return out; }
-    if (cell.t === 'd' && cell.v instanceof Date && !isNaN(cell.v)) { const d = cell.v; const out = utcSerialFromYMD(d.getFullYear(),d.getMonth(),d.getDate()); if(debug) log(`[toExcelSerial] ${rawDisplay} -> ${out}`); return out; }
-    value = cell.v;
+  if (typeof value === 'number') {
+    // Numeric cell -> floor to get whole date
+    return Math.floor(value);
+  } else if (value instanceof Date) {
+    dateObj = value;
+  } else if (typeof value === 'string') {
+    let str = value.trim().replace(/^"|"$/g,''); // remove extra quotes
+    // ISO string
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(str)) {
+      dateObj = new Date(str);
+    } else if (str.includes('/') || str.includes('-')) {
+      let parts = str.split(/[\/\-]/).map(s=>parseInt(s,10));
+      if (parts.length >= 3) {
+        if (fileType === 2) { 
+          // Insta -> DMY
+          dateObj = new Date(parts[2], parts[1]-1, parts[0]);
+        } else {
+          // Odoo/ClinicPro -> MDY
+          dateObj = new Date(parts[2], parts[0]-1, parts[1]);
+        }
+      }
+    } else {
+      let num = parseFloat(str);
+      if (!isNaN(num)) return Math.floor(num);
+      return '';
+    }
+  } else {
+    return '';
   }
 
-  if (typeof value === 'number' && !isNaN(value)) { const out = Math.floor(value); if(debug) log(`[toExcelSerial] ${rawDisplay} -> ${out}`); return out; }
-
-  if (value instanceof Date && !isNaN(value)) {
-    const d = value; const out = utcSerialFromYMD(d.getFullYear(),d.getMonth(),d.getDate()); if(debug) log(`[toExcelSerial] ${rawDisplay} -> ${out}`); return out;
-  }
-
-  if (typeof value !== 'string') { if(debug) log(`[toExcelSerial] unsupported -> ''`, rawDisplay); return ''; }
-
-  let s = value.replace(/[\u200B-\u200D\uFEFF]/g,'').replace(/\u00A0/g,' ').trim();
-  if (s === '') { if(debug) log(`[toExcelSerial] empty-string -> ''`); return ''; }
-
-  // numeric string -> serial
-  if (/^[0-9]+(\.[0-9]+)?$/.test(s)) { const out = Math.floor(Number(s)); if(debug) log(`[toExcelSerial] ${rawDisplay} numeric-string -> ${out}`); return out; }
-
-  // ISO YYYY-MM-DD
-  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (m) { const out = utcSerialFromYMD(Number(m[1]), Number(m[2]) - 1, Number(m[3])); if(debug) log(`[toExcelSerial] ${rawDisplay} ISO -> ${out}`); return out; }
-
-  // Month-name patterns (e.g. "Mon Jun 09 2025 ..." or "June 9, 2025")
-  let mm = s.match(/([A-Za-z]{3,9})\s+(\d{1,2}),?\s+(\d{4})/) || s.match(/\b(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})/);
-  if (mm) {
-    let y, mName, d;
-    if (mm.length === 4 && isNaN(Number(mm[1]))) { mName = mm[1]; d = Number(mm[2]); y = Number(mm[3]); }
-    else { d = Number(mm[1]); mName = mm[2]; y = Number(mm[3]); }
-    const months = { jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,sept:8,oct:9,nov:10,dec:11 };
-    const m0 = months[(mName||'').toLowerCase().slice(0,3)];
-    if (!isNaN(m0)) { const out = utcSerialFromYMD(y,m0,d); if(debug) log(`[toExcelSerial] ${rawDisplay} monthname -> ${out}`); return out; }
-  }
-
-  // Slash/dash separated numeric parts (ambiguous)
-  const parts = s.split(/[\/\-\.]/).map(p=>p.trim()).filter(Boolean);
-  if (parts.length===3 && parts.every(p=>/^\d+$/.test(p))) {
-    let p0=Number(parts[0]), p1=Number(parts[1]), p2=Number(parts[2]);
-    if (p2 < 100) p2 += 2000;
-    let day, m0, year;
-    if (fileType === 2) { day = p0; m0 = p1 - 1; year = p2; } // Insta = DMY
-    else { if (p0 > 12) { day = p0; m0 = p1 - 1; year = p2; } else { m0 = p0 - 1; day = p1; year = p2; } }
-    const out = utcSerialFromYMD(year,m0,day); if(debug) log(`[toExcelSerial] ${rawDisplay} slash (ft=${fileType}) -> ${out}`); return out;
-  }
-
-  // fallback Date.parse -> use parsed Y/M/D
-  const parsed = Date.parse(s);
-  if (!isNaN(parsed)) { const dObj = new Date(parsed); const out = utcSerialFromYMD(dObj.getFullYear(), dObj.getMonth(), dObj.getDate()); if(debug) log(`[toExcelSerial] ${rawDisplay} parse -> ${out}`); return out; }
-
-  if (debug) log(`[toExcelSerial] ${rawDisplay} -> unable to parse`);
-  return '';
+  // compute Excel serial (UTC midnight)
+  const excelEpoch = new Date(Date.UTC(1899,11,30,0,0,0));
+  const diffMs = dateObj.getTime() - excelEpoch.getTime();
+  const serial = Math.floor(diffMs / (1000*60*60*24));
+  return serial;
 }
 
 function logRawToSerialMap(combinedRows, headersWithRaw) {
@@ -520,9 +496,6 @@ async function combineEligibilities(fileEntries) {
   return wbOut;
 }
 
-// combineReportings (updated to pass fileType into toExcelSerial and log Raw->Serial mapping)
-// Replace your existing combineReportings with this function.
-// combineReportings (updated detection uses headerExists tolerance & passes fileType into toExcelSerial)
 async function combineReportings(fileEntries, clinicianFile) {
   log("Starting combineReportings function");
   if (!Array.isArray(fileEntries) || fileEntries.length === 0) { log("No input files provided","ERROR"); throw new Error("No input files provided"); }
