@@ -638,7 +638,15 @@ async function combineReportings(fileEntries, clinicianFile) {
           const tgt = headersWithRaw[col];
           let val = '';
           if (tgt === 'Facility ID') val = facilityID || '';
-          else if (tgt === 'Pri. Patient Insurance Card No') val = (sourceRow[targetToNormalizedSource[tgt]] ?? '') || (sourceRow[targetToNormalizedSource[tgt]?.toLowerCase()] ?? '');
+          else if (tgt === 'Pri. Patient Insurance Card No') {
+            if (fileType === 1) {
+              // ClinicPro: prefer Member ID, then PatientCardID
+              val = sourceRow['memberid'] || sourceRow['patientcardid'] || '';
+            } else {
+              val = (sourceRow[targetToNormalizedSource[tgt]] ?? '') 
+                 || (sourceRow[targetToNormalizedSource[tgt]?.toLowerCase()] ?? '');
+            }
+          }
           else if (tgt === 'Patient Code') val = sourceRow[targetToNormalizedSource[tgt]] ?? '';
           else if (tgt === 'Clinician License') val = clinLicense || '';
           else if (tgt === 'Clinician Name') val = clinName || '';
