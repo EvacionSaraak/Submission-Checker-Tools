@@ -282,10 +282,12 @@ function renderResults(rows) {
   }
 
   // Filter rows for PayerID D001 or A001
-  const filteredRows = rows.filter(r => {
-    const p = String(r.PayerID || '').trim();
-    return p === "D001" || p === "A001";
-  });
+  const filteredRows = rows
+    .map((r, idx) => ({ ...r, _originalIndex: idx })) // store original index for modal
+    .filter(r => {
+      const p = String(r.PayerID || '').trim();
+      return p === "D001" || p === "A001";
+    });
 
   if (!filteredRows.length) {
     container.innerHTML = '<div>No matching claims (only D001 and A001 shown)</div>';
@@ -294,12 +296,14 @@ function renderResults(rows) {
 
   let prevClaimId = null;
   let prevActivityId = null;
+  let prevMemberId = null;
 
   let html = `
     <table class="shared-table">
       <thead>
         <tr>
           <th>Claim ID</th>
+          <th>Member ID</th>
           <th>Activity ID</th>
           <th>Ordering Clinician</th>
           <th>Observation CPT Modifier</th>
@@ -311,30 +315,36 @@ function renderResults(rows) {
       <tbody>
   `;
 
-  filteredRows.forEach((r, idx) => {
+  filteredRows.forEach(r => {
     const showClaim = r.ClaimID !== prevClaimId;
     const showActivity = (r.ClaimID !== prevClaimId) || (r.ActivityID !== prevActivityId);
+    const showMember = (r.MemberID !== prevMemberId) || showClaim;
 
     const claimCell = showClaim ? escapeHtml(r.ClaimID) : '';
+    const memberCell = showMember ? escapeHtml(r.MemberID) : '';
     const activityCell = showActivity ? escapeHtml(r.ActivityID) : '';
 
     prevClaimId = r.ClaimID;
     prevActivityId = r.ActivityID;
+    prevMemberId = r.MemberID;
+
+    // Capitalize Ordering Clinician
+    const clinicianName = String(r.OrderingClinician || '').toUpperCase();
 
     let buttonHtml = '';
     if (r.EligibilityRow) {
       const keys = Object.keys(r.EligibilityRow);
-      // If row has data, use first non-empty key; otherwise just label "View"
       const displayValue = keys.length
         ? firstNonEmptyKey(r.EligibilityRow, keys) || "View"
         : "View";
-      buttonHtml = `<button type="button" class="details-btn eligibility-details" onclick="showEligibility(${idx})">${escapeHtml(displayValue)}</button>`;
+      buttonHtml = `<button type="button" class="details-btn eligibility-details" onclick="showEligibility(${r._originalIndex})">${escapeHtml(displayValue)}</button>`;
     }
 
     html += `<tr>
       <td>${claimCell}</td>
+      <td>${memberCell}</td>
       <td>${activityCell}</td>
-      <td>${escapeHtml(r.OrderingClinician)}</td>
+      <td>${escapeHtml(clinicianName)}</td>
       <td>${escapeHtml(r.Modifier)}</td>
       <td>${escapeHtml(r.VOINumber)}</td>
       <td>${escapeHtml(r.PayerID)}</td>
