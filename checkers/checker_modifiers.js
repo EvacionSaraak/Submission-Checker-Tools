@@ -155,48 +155,10 @@ function buildXlsxMatcher(rows) {
   const index = new Map();
 
   rows.forEach(r => {
-    const memberRaw = String(
-      r['Card Number / DHA Member ID'] ?? 
-      r['Card Number'] ?? 
-      r['CardNumber'] ?? 
-      r['Card No'] ?? 
-      r['CardNo'] ?? 
-      r['Member ID'] ?? 
-      r['MemberID'] ?? ''
-    );
-
-    const orderedOnRaw = String(
-      r['Ordered On'] ?? 
-      r['OrderedOn'] ?? 
-      r['Order Date'] ?? 
-      r['OrderDate'] ?? 
-      r['Ordered_On'] ?? 
-      r['OrderedOn Date'] ?? ''
-    );
-
-    const clinicianRaw = String(
-      r['Clnician'] ?? 
-      r['Clinician'] ?? 
-      r['Clinician Name'] ?? 
-      r['ClinicianName'] ?? 
-      r['Ordering Clinician'] ?? 
-      r['OrderingClinician'] ?? ''
-    );
-
-    const member = normalizeMemberId(memberRaw);
-    // Only take date portion to match XML
-    const date = normalizeDate(orderedOnRaw.split(' ')[0]);
-    const clinician = normalizeName(clinicianRaw);
-
-    r._VOINumber = String(
-      r['VOI Number'] ?? 
-      r['VOI'] ?? 
-      r['VOI_Number'] ?? 
-      r['VOI Number '] ?? 
-      r['VOI No'] ?? 
-      r['VOIMessage'] ?? 
-      r['VOI Message'] ?? ''
-    ).trim();
+    const member = normalizeMemberId(String(r['Card Number / DHA Member ID'] || ''));
+    const date = normalizeDate(String(r['Ordered On'] || '').split(' ')[0]);
+    const clinician = String(r['Clinician'] || '').trim().toUpperCase();
+    r._VOINumber = String(r['VOI Number'] || '').trim();
 
     const key = [member, date, clinician].join('|');
     if (!index.has(key)) index.set(key, []);
@@ -204,8 +166,8 @@ function buildXlsxMatcher(rows) {
   });
 
   return {
-    find(memberId, date, clinician) {
-      const key = [normalizeMemberId(memberId), normalizeDate(date), normalizeName(clinician)].join('|');
+    find(memberId, date, clinicianLicense) {
+      const key = [normalizeMemberId(memberId), normalizeDate(date), String(clinicianLicense || '').trim().toUpperCase()].join('|');
       const arr = index.get(key);
       return arr && arr.length ? arr[0] : null;
     },
