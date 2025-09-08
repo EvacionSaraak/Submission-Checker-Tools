@@ -218,9 +218,14 @@ function renderResults(rows) {
     return;
   }
 
-  // Filter only A001 and E001 payer IDs
+  // Debug summary: show how many rows and which payer IDs exist (helpful when "no data" shows)
+  console.info('[DEBUG] total rows from mapping:', rows.length);
+  const payerSet = new Set(rows.map(r => String(r.PayerID || '').trim().toUpperCase()).filter(x => x));
+  console.info('[DEBUG] unique Payer IDs in results:', Array.from(payerSet).join(', ') || '(none)');
+
+  // Filter only A001 and E001 (case-insensitive)
   const filteredRows = rows.filter(r => {
-    const payer = String(r.PayerID || '').trim();
+    const payer = String(r.PayerID || '').trim().toUpperCase();
     return payer === 'A001' || payer === 'E001';
   });
 
@@ -229,8 +234,8 @@ function renderResults(rows) {
     return;
   }
 
-  // Assign original index for modal
-  filteredRows.forEach((r, idx) => r._originalIndex = idx);
+  // Ensure each filtered row carries its original index into the full results
+  filteredRows.forEach(r => { r._originalIndex = rows.indexOf(r); });
 
   let prevClaimId = null, prevMemberId = null, prevActivityId = null;
   let html = `<table class="shared-table">
@@ -253,13 +258,12 @@ function renderResults(rows) {
     const showMember = showClaim || r.MemberID !== prevMemberId;
     const showActivity = showMember || r.ActivityID !== prevActivityId;
 
-    // Determine validity: only if there’s an eligibility row
-    let isValid = false;
-    if (r.EligibilityRow) {
-      const voi = String(r.EligibilityRow['VOI Number'] || '').trim();
-      isValid = (r.Modifier === '52' && voi === 'VOI_EF1') ||
-                (r.Modifier === '24' && voi === 'VOI_D');
-    }
+    // Use the VOINumber extracted earlier in mapping (r.VOINumber) for display/validation.
+    // Only mark valid if VOINumber exists and matches CPT rules.
+    const voiForValidation = String(r.VOINumber || '').trim().toUpperCase();
+    const isValid = voiForValidation
+      ? ((r.Modifier === '52' && voiForValidation === 'VOI_EF1') || (r.Modifier === '24' && voiForValidation === 'VOI_D'))
+      : false;
 
     html += `<tr class="${isValid ? 'valid' : 'invalid'}">
       <td>${showClaim ? escapeHtml(r.ClaimID) : ''}</td>
@@ -267,7 +271,7 @@ function renderResults(rows) {
       <td>${showActivity ? escapeHtml(r.ActivityID) : ''}</td>
       <td>${escapeHtml(r.OrderingClinician)}</td>
       <td>${escapeHtml(r.Modifier)}</td>
-      <td>${escapeHtml(r.EligibilityRow ? r.EligibilityRow['VOI Number'] || '' : '')}</td>
+      <td>${escapeHtml(r.VOINumber || '')}</td>
       <td>${escapeHtml(r.PayerID)}</td>
       <td>${r.EligibilityRow ? `<button type="button" class="details-btn eligibility-details" onclick="showEligibility(${r._originalIndex})">View</button>` : ''}</td>
     </tr>`;
