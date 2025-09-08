@@ -34,14 +34,21 @@ async function handleRun() {
     showProgress(65, 'Matching to XLSX');
 
     const output = extracted.map(rec => {
-      const match = matcher.find(rec.MemberID, rec.Date, rec.OrderingClinician);
-      const voi = match ? String(firstNonEmptyKey(match, ['_VOINumber','VOI Number','VOI','VOI_Number','VOI Number ']) || '').trim() : '';
+      // Normalize the XML Encounter Start date to match XLSX "Ordered On" format
+      const xmlDate = normalizeDate(rec.Date);
+
+      // Lookup XLSX row by MemberID + OrderingClinician + Encounter Start
+      const match = matcher.find(rec.MemberID, xmlDate, rec.OrderingClinician);
+
+      const voi = match
+        ? String(firstNonEmptyKey(match, ['_VOINumber','VOI Number','VOI','VOI_Number','VOI Number ']) || '').trim()
+        : '';
 
       return {
         ClaimID: rec.ClaimID || '',
         MemberID: rec.MemberID || '',
         ActivityID: rec.ActivityID || '',
-        OrderingClinician: rec.OrderingClinician || '',
+        OrderingClinician: rec.OrderingClinician.toUpperCase() || '',
         Modifier: rec.Modifier || '',
         VOINumber: voi || '',
         EligibilityRow: match || null,
@@ -276,19 +283,16 @@ function expectedModifierForVOI(voi) {
 
 // ----------------- Rendering (omit repeated ClaimID/ActivityID) -----------------
 function renderResults(rows) {
-  const container = document.getElementById('outputTableContainer');
+  const container = el('outputTableContainer');
   if (!rows || !rows.length) {
     container.innerHTML = '<div>No results</div>';
     return;
   }
 
-  // Filter rows for PayerID D001 or A001
-  const filteredRows = rows
-    .map((r, idx) => ({ ...r, _originalIndex: idx })) // store original index for modal
-    .filter(r => {
-      const p = String(r.PayerID || '').trim();
-      return p === "D001" || p === "A001";
-    });
+  const filteredRows = rows.filter(r => {
+    const p = String(r.PayerID || '').trim();
+    return p === "D001" || p === "A001";
+  });
 
   if (!filteredRows.length) {
     container.innerHTML = '<div>No matching claims (only D001 and A001 shown)</div>';
@@ -296,8 +300,8 @@ function renderResults(rows) {
   }
 
   let prevClaimId = null;
-  let prevActivityId = null;
   let prevMemberId = null;
+  let prevActivityId = null;
 
   let html = `
     <table class="shared-table">
@@ -316,41 +320,25 @@ function renderResults(rows) {
       <tbody>
   `;
 
-  filteredRows.forEach(r => {
+  filteredRows.forEach((r, idx) => {
     const showClaim = r.ClaimID !== prevClaimId;
-    const showActivity = (r.ClaimID !== prevClaimId) || (r.ActivityID !== prevActivityId);
-    const showMember = (r.MemberID !== prevMemberId) || showClaim;
-
-    const claimCell = showClaim ? escapeHtml(r.ClaimID) : '';
-    const memberCell = showMember ? escapeHtml(r.MemberID) : '';
-    const activityCell = showActivity ? escapeHtml(r.ActivityID) : '';
-
-    prevClaimId = r.ClaimID;
-    prevActivityId = r.ActivityID;
-    prevMemberId = r.MemberID;
-
-    // Capitalize Ordering Clinician
-    const clinicianName = String(r.OrderingClinician || '').toUpperCase();
-
-    let buttonHtml = '';
-    if (r.EligibilityRow) {
-      const keys = Object.keys(r.EligibilityRow);
-      const displayValue = keys.length
-        ? firstNonEmptyKey(r.EligibilityRow, keys) || "View"
-        : "View";
-      buttonHtml = `<button type="button" class="details-btn eligibility-details" onclick="showEligibility(${r._originalIndex})">${escapeHtml(displayValue)}</button>`;
-    }
+    const showMember = showClaim || r.MemberID !== prevMemberId;
+    const showActivity = showMember || r.ActivityID !== prevActivityId;
 
     html += `<tr>
-      <td>${claimCell}</td>
-      <td>${memberCell}</td>
-      <td>${activityCell}</td>
-      <td>${escapeHtml(clinicianName)}</td>
+      <td>${showClaim ? escapeHtml(r.ClaimID) : ''}</td>
+      <td>${showMember ? escapeHtml(r.MemberID) : ''}</td>
+      <td>${showActivity ? escapeHtml(r.ActivityID) : ''}</td>
+      <td>${escapeHtml(r.OrderingClinician)}</td>
       <td>${escapeHtml(r.Modifier)}</td>
       <td>${escapeHtml(r.VOINumber)}</td>
       <td>${escapeHtml(r.PayerID)}</td>
-      <td>${buttonHtml}</td>
+      <td>${r.EligibilityRow ? `<button type="button" class="details-btn eligibility-details" onclick="showEligibility(${idx})">View</button>` : ''}</td>
     </tr>`;
+
+    prevClaimId = r.ClaimID;
+    prevMemberId = r.MemberID;
+    prevActivityId = r.ActivityID;
   });
 
   html += `</tbody></table>`;
@@ -385,15 +373,12 @@ function normalizeDate(input) {
   const s = String(input || '').trim();
   if (!s) return '';
 
-  // If time present, Date.parse often works for formats like "13/08/2025 15:07" => parse may fail depending on locale.
-  // Try to detect D/M/Y with optional time
-  const datePart = s.split(' ')[0];
-  // Try ISO / parseable
-  const t = Date.parse(s);
+  // Try ISO/parseable numeric date
+  let t = Date.parse(s);
   if (!Number.isNaN(t)) return toYMD(new Date(t));
 
-  // parse D/M/YYYY or D-M-YYYY
-  let m = datePart.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);
+  // Try D/M/YYYY or D-M-YYYY
+  let m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
   if (m) {
     let [, d, mo, y] = m;
     if (y.length === 2) y = String(2000 + Number(y));
@@ -401,16 +386,19 @@ function normalizeDate(input) {
     if (!Number.isNaN(dt.getTime())) return toYMD(dt);
   }
 
-  // parse M/D/YYYY (fallback)
-  m = datePart.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);
+  // Try textual month format e.g., 30-Aug-2024 00:00:00
+  m = s.match(/^(\d{1,2})-([A-Za-z]+)-(\d{4})/);
   if (m) {
-    let [, mo, d, y] = m;
-    if (y.length === 2) y = String(2000 + Number(y));
-    const dt = new Date(Number(y), Number(mo) - 1, Number(d));
+    let [, d, mon, y] = m;
+    const monthMap = {
+      Jan:0, Feb:1, Mar:2, Apr:3, May:4, Jun:5,
+      Jul:6, Aug:7, Sep:8, Oct:9, Nov:10, Dec:11
+    };
+    const dt = new Date(Number(y), monthMap[mon] ?? 0, Number(d));
     if (!Number.isNaN(dt.getTime())) return toYMD(dt);
   }
 
-  return s;
+  return s; // fallback
 }
 
 function toYMD(d) {
