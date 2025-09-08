@@ -218,11 +218,21 @@ function renderResults(rows) {
     return;
   }
 
-  // Keep track of original indices for modal linking
-  rows.forEach((r, idx) => r._originalIndex = idx);
+  // Filter only A001 and E001 payer IDs
+  const filteredRows = rows.filter(r => {
+    const payer = String(r.PayerID || '').trim();
+    return payer === 'A001' || payer === 'E001';
+  });
+
+  if (!filteredRows.length) {
+    container.innerHTML = '<div>No matching claims (only A001 and E001 shown)</div>';
+    return;
+  }
+
+  // Assign original index for modal
+  filteredRows.forEach((r, idx) => r._originalIndex = idx);
 
   let prevClaimId = null, prevMemberId = null, prevActivityId = null;
-
   let html = `<table class="shared-table">
     <thead>
       <tr>
@@ -238,18 +248,26 @@ function renderResults(rows) {
     </thead>
     <tbody>`;
 
-  rows.forEach(r => {
+  filteredRows.forEach(r => {
     const showClaim = r.ClaimID !== prevClaimId;
     const showMember = showClaim || r.MemberID !== prevMemberId;
     const showActivity = showMember || r.ActivityID !== prevActivityId;
 
-    html += `<tr class="${r.isValid ? 'valid' : 'invalid'}">
+    // Determine validity: only if there’s an eligibility row
+    let isValid = false;
+    if (r.EligibilityRow) {
+      const voi = String(r.EligibilityRow['VOI Number'] || '').trim();
+      isValid = (r.Modifier === '52' && voi === 'VOI_EF1') ||
+                (r.Modifier === '24' && voi === 'VOI_D');
+    }
+
+    html += `<tr class="${isValid ? 'valid' : 'invalid'}">
       <td>${showClaim ? escapeHtml(r.ClaimID) : ''}</td>
       <td>${showMember ? escapeHtml(r.MemberID) : ''}</td>
       <td>${showActivity ? escapeHtml(r.ActivityID) : ''}</td>
       <td>${escapeHtml(r.OrderingClinician)}</td>
       <td>${escapeHtml(r.Modifier)}</td>
-      <td>${escapeHtml(r.VOINumber)}</td>
+      <td>${escapeHtml(r.EligibilityRow ? r.EligibilityRow['VOI Number'] || '' : '')}</td>
       <td>${escapeHtml(r.PayerID)}</td>
       <td>${r.EligibilityRow ? `<button type="button" class="details-btn eligibility-details" onclick="showEligibility(${r._originalIndex})">View</button>` : ''}</td>
     </tr>`;
