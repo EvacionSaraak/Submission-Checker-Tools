@@ -167,9 +167,27 @@ function buildXlsxMatcher(rows) {
 
   return {
     find(memberId, date, clinicianLicense) {
-      const key = [normalizeMemberId(memberId), normalizeDate(date), String(clinicianLicense || '').trim().toUpperCase()].join('|');
-      const arr = index.get(key);
-      return arr && arr.length ? arr[0] : null;
+      const normalizedMember = normalizeMemberId(memberId);
+      const normalizedDate = normalizeDate(date);
+      const normalizedClinician = String(clinicianLicense || '').trim().toUpperCase();
+
+      const fullKey = [normalizedMember, normalizedDate, normalizedClinician].join('|');
+      const arr = index.get(fullKey);
+      if (arr && arr.length) {
+        console.log(`[MATCH] Full match found for Member: ${memberId}, Clinician: ${clinicianLicense}, Date: ${date}`);
+        return arr[0];
+      }
+
+      // Check if Member + Clinician match, but date does not
+      const partialKeyPattern = new RegExp(`^${normalizedMember}\\|.*\\|${normalizedClinician}$`);
+      for (const k of index.keys()) {
+        if (partialKeyPattern.test(k)) {
+          console.warn(`[PARTIAL MATCH] Member and Clinician matched but date mismatch. XML date: ${date}, XLSX key: ${k}`);
+          break;
+        }
+      }
+
+      return null;
     },
     _index: index
   };
