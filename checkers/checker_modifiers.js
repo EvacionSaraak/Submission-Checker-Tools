@@ -39,6 +39,7 @@ async function handleRun() {
 
       return {
         ClaimID: rec.ClaimID || '',
+        MemberID: rec.MemberID || '',
         ActivityID: rec.ActivityID || '',
         OrderingClinician: rec.OrderingClinician || '',
         Modifier: rec.Modifier || '',
