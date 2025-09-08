@@ -194,25 +194,48 @@ function buildXlsxMatcher(rows) {
 }
 
 function isModifierTarget(val) { const v = String(val || '').trim(); return v === '24' || v === '52'; }
-
 function expectedModifierForVOI(voi) { if (!voi) return ''; const v = String(voi).trim(); if (v === 'VOI_D') return '24'; if (v === 'VOI_EF1') return '52'; return ''; }
 
 function renderResults(rows) {
   const container = el('outputTableContainer');
-  if (!rows || !rows.length) { container.innerHTML = '<div>No results</div>'; return; }
+  if (!rows || !rows.length) {
+    container.innerHTML = '<div>No results</div>';
+    return;
+  }
 
-  const filteredRows = rows.filter(r => { const p = String(r.PayerID || '').trim(); return p === 'D001' || p === 'A001'; });
-  if (!filteredRows.length) { container.innerHTML = '<div>No matching claims (only D001 and A001 shown)</div>'; return; }
+  // Only show D001 and A001 payer IDs as before
+  const filteredRows = rows.filter(r => {
+    const p = String(r.PayerID || '').trim();
+    return p === 'D001' || p === 'A001';
+  });
+
+  if (!filteredRows.length) {
+    container.innerHTML = '<div>No matching claims (only D001 and A001 shown)</div>';
+    return;
+  }
 
   let prevClaimId = null, prevMemberId = null, prevActivityId = null;
-  let html = `<table class="shared-table"><thead><tr><th>Claim ID</th><th>Member ID</th><th>Activity ID</th><th>Ordering Clinician</th><th>Observation CPT Modifier</th><th>VOI Number</th><th>Payer ID</th><th>Eligibility Details</th></tr></thead><tbody>`;
+  let html = `<table class="shared-table">
+    <thead>
+      <tr>
+        <th>Claim ID</th>
+        <th>Member ID</th>
+        <th>Activity ID</th>
+        <th>Ordering Clinician</th>
+        <th>Observation CPT Modifier</th>
+        <th>VOI Number</th>
+        <th>Payer ID</th>
+        <th>Eligibility Details</th>
+      </tr>
+    </thead>
+    <tbody>`;
 
   filteredRows.forEach((r, idx) => {
     const showClaim = r.ClaimID !== prevClaimId;
     const showMember = showClaim || r.MemberID !== prevMemberId;
     const showActivity = showMember || r.ActivityID !== prevActivityId;
 
-    html += `<tr>
+    html += `<tr class="${r.isValid ? 'valid' : 'invalid'}">
       <td>${showClaim ? escapeHtml(r.ClaimID) : ''}</td>
       <td>${showMember ? escapeHtml(r.MemberID) : ''}</td>
       <td>${showActivity ? escapeHtml(r.ActivityID) : ''}</td>
