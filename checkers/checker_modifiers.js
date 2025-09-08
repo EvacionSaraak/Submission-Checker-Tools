@@ -1,20 +1,15 @@
 // checker_modifiers.js
-// Plain script (no single enclosing function). Drop into checker_modifiers.html which must include SheetJS (XLSX).
-// Expected DOM IDs: xml-file, xlsx-file, run-button, download-button, messageBox,
-// outputTableContainer, progress-bar-container, progress-bar, progress-text
-
 let lastResults = [];
 let lastWorkbook = null;
 
 document.addEventListener('DOMContentLoaded', () => {
-  const runBtn = document.getElementById('run-button');
-  const dlBtn = document.getElementById('download-button');
+  const runBtn = el('run-button');
+  const dlBtn = el('download-button');
   if (runBtn) runBtn.addEventListener('click', handleRun);
   if (dlBtn) dlBtn.addEventListener('click', handleDownload);
   resetUI();
 });
 
-// ----------------- Main handlers -----------------
 async function handleRun() {
   resetUI();
   try {
@@ -24,8 +19,8 @@ async function handleRun() {
 
     showProgress(5, 'Reading files');
     const [xmlText, xlsxObj] = await Promise.all([readFileText(xmlFile), readXlsx(xlsxFile)]);
-    showProgress(20, 'Parsing XML');
 
+    showProgress(20, 'Parsing XML');
     const xmlDoc = parseXml(xmlText);
     const extracted = extractModifierRecords(xmlDoc);
     showProgress(45, `Found ${extracted.length} modifier record(s)`);
@@ -34,15 +29,9 @@ async function handleRun() {
     showProgress(65, 'Matching to XLSX');
 
     const output = extracted.map(rec => {
-      // Normalize the XML Encounter Start date to match XLSX "Ordered On" format
       const xmlDate = normalizeDate(rec.Date);
-
-      // Lookup XLSX row by MemberID + OrderingClinician + Encounter Start
       const match = matcher.find(rec.MemberID, xmlDate, rec.OrderingClinician);
-
-      const voi = match
-        ? String(firstNonEmptyKey(match, ['_VOINumber','VOI Number','VOI','VOI_Number','VOI Number ']) || '').trim()
-        : '';
+      const voi = match ? String(firstNonEmptyKey(match, ['_VOINumber','VOI Number','VOI','VOI_Number','VOI Number ']) || '').trim() : '';
 
       return {
         ClaimID: rec.ClaimID || '',
@@ -68,24 +57,11 @@ async function handleRun() {
 }
 
 function handleDownload() {
-  if (!lastWorkbook || !lastResults.length) {
-    showError(new Error('Nothing to download'));
-    return;
-  }
-  try {
-    XLSX.writeFile(lastWorkbook, 'checker_modifiers_results.xlsx');
-  } catch (err) {
-    // fallback: rebuild workbook then save
-    try {
-      const wb = makeWorkbookFromJson(lastResults, 'checker_modifiers_results');
-      XLSX.writeFile(wb, 'checker_modifiers_results.xlsx');
-    } catch (e) {
-      showError(e);
-    }
-  }
+  if (!lastWorkbook || !lastResults.length) { showError(new Error('Nothing to download')); return; }
+  try { XLSX.writeFile(lastWorkbook, 'checker_modifiers_results.xlsx'); }
+  catch(err) { try { XLSX.writeFile(makeWorkbookFromJson(lastResults, 'checker_modifiers_results'), 'checker_modifiers_results.xlsx'); } catch(e) { showError(e); } }
 }
 
-// ----------------- File helpers -----------------
 function readFileText(file) {
   return new Promise((resolve, reject) => {
     const fr = new FileReader();
@@ -95,7 +71,6 @@ function readFileText(file) {
   });
 }
 
-// IMPORTANT: sample XLSX has header row on row 2 — use range:1 so sheet_to_json uses row 2 as headers
 async function readXlsx(file) {
   const arrayBuffer = await file.arrayBuffer();
   const wb = XLSX.read(arrayBuffer, { type: 'array' });
@@ -105,157 +80,93 @@ async function readXlsx(file) {
   return { rows, sheetName };
 }
 
-// ----------------- XML parsing & extraction -----------------
 function parseXml(text) {
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(text, 'text/xml');
+  const doc = new DOMParser().parseFromString(text, 'text/xml');
   const pe = doc.getElementsByTagName('parsererror')[0];
   if (pe) throw new Error('Invalid XML: ' + (pe.textContent || 'parse error').trim());
   return doc;
 }
 
-// Extract records where Observation contains Code === 'CPT modifier' and associated Value is '24' or '52'.
-// Handles Observation forms where multiple Code/Value pairs live inside a single <Observation> element.
 function extractModifierRecords(xmlDoc) {
   const records = [];
   const claims = Array.from(xmlDoc.getElementsByTagName('Claim'));
-  for (const claim of claims) {
+
+  claims.forEach(claim => {
     const claimId = textValue(claim, 'ID');
     const payerId = textValue(claim, 'PayerID');
     const memberIdRaw = textValue(claim, 'MemberID');
 
-    // Encounter may use <Date> or <Start>
     const encNode = claim.getElementsByTagName('Encounter')[0] || claim.getElementsByTagName('Encounte')[0];
-    let encDateRaw = '';
-    if (encNode) {
-      encDateRaw = textValue(encNode, 'Date') ||
-                   textValue(encNode, 'Start') ||
-                   textValue(encNode, 'EncounterDate') || '';
-    }
+    const encDateRaw = encNode ? textValue(encNode, 'Date') || textValue(encNode, 'Start') || textValue(encNode, 'EncounterDate') || '' : '';
     const encDate = normalizeDate(encDateRaw);
 
     const activities = Array.from(claim.getElementsByTagName('Activity'));
-    for (const act of activities) {
+    activities.forEach(act => {
       const activityId = textValue(act, 'ID');
-      const clinicianRaw = firstNonEmpty([
-        textValue(act, 'OrderingClnician'),
-        textValue(act, 'OrderingClinician'),
-        textValue(act, 'Ordering_Clinician'),
-        textValue(act, 'OrderingClin')
-      ]);
-      const clinician = normalizeName(clinicianRaw);
+      const clinician = normalizeName(firstNonEmpty([textValue(act, 'OrderingClnician'), textValue(act, 'OrderingClinician'), textValue(act, 'Ordering_Clinician'), textValue(act, 'OrderingClin')]));
 
-      // Observations
       const observations = Array.from(act.getElementsByTagName('Observation'));
-      for (const obs of observations) {
-        // Sequential pairing Code -> Value
-        const childNodes = Array.from(obs.children || []);
+      observations.forEach(obs => {
         let lastCode = '';
-        for (const child of childNodes) {
+        Array.from(obs.children || []).forEach(child => {
           const tag = child.tagName;
           const txt = String(child.textContent || '').trim();
-          if (!txt) continue;
-          if (tag === 'Code') {
-            lastCode = txt;
-            continue;
+          if (!txt) return;
+          if (tag === 'Code') { lastCode = txt; return; }
+          if ((tag === 'Value' || tag === 'ValueText' || tag === 'ValueType') && lastCode === 'CPT modifier' && isModifierTarget(txt)) {
+            records.push({
+              ClaimID: claimId,
+              ActivityID: activityId,
+              MemberID: normalizeMemberId(memberIdRaw),
+              Date: encDate,
+              OrderingClinician: clinician,
+              Modifier: txt,
+              PayerID: payerId
+            });
           }
-          if ((tag === 'Value' || tag === 'ValueText' || tag === 'ValueType') && lastCode === 'CPT modifier') {
-            if (isModifierTarget(txt)) {
-              records.push({
-                ClaimID: claimId,
-                ActivityID: activityId,
-                MemberID: normalizeMemberId(memberIdRaw),
-                Date: encDate,
-                OrderingClinician: clinician,
-                Modifier: txt,
-                PayerID: payerId
-              });
-            }
-          }
-        }
+        });
 
-        // Fallback: pair Code/Value arrays
         const codes = Array.from(obs.getElementsByTagName('Code')).map(n => String(n.textContent || '').trim());
         const values = Array.from(obs.getElementsByTagName('Value')).map(n => String(n.textContent || '').trim());
-        if (codes.length && values.length) {
-          const count = Math.max(codes.length, values.length);
-          for (let i = 0; i < count; i++) {
-            const c = codes[i] ?? '';
-            const val = values[i] ?? '';
-            if (c === 'CPT modifier' && isModifierTarget(val)) {
-              records.push({
-                ClaimID: claimId,
-                ActivityID: activityId,
-                MemberID: normalizeMemberId(memberIdRaw),
-                Date: encDate,
-                OrderingClinician: clinician,
-                Modifier: val,
-                PayerID: payerId
-              });
-            }
+        const count = Math.max(codes.length, values.length);
+        for (let i = 0; i < count; i++) {
+          const c = codes[i] ?? '';
+          const val = values[i] ?? '';
+          if (c === 'CPT modifier' && isModifierTarget(val)) {
+            records.push({
+              ClaimID: claimId,
+              ActivityID: activityId,
+              MemberID: normalizeMemberId(memberIdRaw),
+              Date: encDate,
+              OrderingClinician: clinician,
+              Modifier: val,
+              PayerID: payerId
+            });
           }
         }
-      }
-    }
-  }
+      });
+    });
+  });
+
   return records;
 }
 
-// ----------------- XLSX matcher -----------------
-// Build map keyed by normalized member|date|clinician
 function buildXlsxMatcher(rows) {
   const index = new Map();
-  for (const r of rows) {
-    const memberRaw = String(
-      r['Card Number / DHA Member ID'] ??
-      r['Card Number'] ??
-      r['CardNumber'] ??
-      r['Card No'] ??
-      r['CardNo'] ??
-      r['Member ID'] ??
-      r['MemberID'] ?? ''
-    );
-
-    const orderedOnRaw = String(
-      r['Ordered On'] ??
-      r['OrderedOn'] ??
-      r['Order Date'] ??
-      r['OrderDate'] ??
-      r['Ordered_On'] ??
-      r['OrderedOn Date'] ??
-      ''
-    );
-
-    const clinicianRaw = String(
-      r['Clnician'] ??
-      r['Clinician'] ??
-      r['Clinician Name'] ??
-      r['ClinicianName'] ??
-      r['Ordering Clinician'] ??
-      r['OrderingClinician'] ?? ''
-    );
-
+  rows.forEach(r => {
+    const memberRaw = String(r['Card Number / DHA Member ID'] ?? r['Card Number'] ?? r['CardNumber'] ?? r['Card No'] ?? r['CardNo'] ?? r['Member ID'] ?? r['MemberID'] ?? '');
+    const orderedOnRaw = String(r['Ordered On'] ?? r['OrderedOn'] ?? r['Order Date'] ?? r['OrderDate'] ?? r['Ordered_On'] ?? r['OrderedOn Date'] ?? '');
+    const clinicianRaw = String(r['Clnician'] ?? r['Clinician'] ?? r['Clinician Name'] ?? r['ClinicianName'] ?? r['Ordering Clinician'] ?? r['OrderingClinician'] ?? '');
     const member = normalizeMemberId(memberRaw);
     const date = normalizeDate(orderedOnRaw);
     const clinician = normalizeName(clinicianRaw);
 
-    // normalize and store VOINumber on row under consistent key for lookup later
-    const voi = String(
-      r['VOI Number'] ??
-      r['VOI'] ??
-      r['VOI_Number'] ??
-      r['VOI Number '] ??
-      r['VOI No'] ??
-      r['VOIMessage'] ??
-      r['VOI Message'] ??
-      ''
-    ).trim();
-    r._VOINumber = voi;
+    r._VOINumber = String(r['VOI Number'] ?? r['VOI'] ?? r['VOI_Number'] ?? r['VOI Number '] ?? r['VOI No'] ?? r['VOIMessage'] ?? r['VOI Message'] ?? '').trim();
 
     const key = [member, date, clinician].join('|');
     if (!index.has(key)) index.set(key, []);
     index.get(key).push(r);
-  }
+  });
 
   return {
     find(memberId, date, clinician) {
@@ -267,58 +178,19 @@ function buildXlsxMatcher(rows) {
   };
 }
 
-// ----------------- Business rules -----------------
-function isModifierTarget(val) {
-  const v = String(val || '').trim();
-  return v === '24' || v === '52';
-}
+function isModifierTarget(val) { const v = String(val || '').trim(); return v === '24' || v === '52'; }
 
-function expectedModifierForVOI(voi) {
-  if (!voi) return '';
-  const v = String(voi).trim();
-  if (v === 'VOI_D') return '24';
-  if (v === 'VOI_EF1') return '52';
-  return '';
-}
+function expectedModifierForVOI(voi) { if (!voi) return ''; const v = String(voi).trim(); if (v === 'VOI_D') return '24'; if (v === 'VOI_EF1') return '52'; return ''; }
 
-// ----------------- Rendering (omit repeated ClaimID/ActivityID) -----------------
 function renderResults(rows) {
   const container = el('outputTableContainer');
-  if (!rows || !rows.length) {
-    container.innerHTML = '<div>No results</div>';
-    return;
-  }
+  if (!rows || !rows.length) { container.innerHTML = '<div>No results</div>'; return; }
 
-  const filteredRows = rows.filter(r => {
-    const p = String(r.PayerID || '').trim();
-    return p === "D001" || p === "A001";
-  });
+  const filteredRows = rows.filter(r => { const p = String(r.PayerID || '').trim(); return p === 'D001' || p === 'A001'; });
+  if (!filteredRows.length) { container.innerHTML = '<div>No matching claims (only D001 and A001 shown)</div>'; return; }
 
-  if (!filteredRows.length) {
-    container.innerHTML = '<div>No matching claims (only D001 and A001 shown)</div>';
-    return;
-  }
-
-  let prevClaimId = null;
-  let prevMemberId = null;
-  let prevActivityId = null;
-
-  let html = `
-    <table class="shared-table">
-      <thead>
-        <tr>
-          <th>Claim ID</th>
-          <th>Member ID</th>
-          <th>Activity ID</th>
-          <th>Ordering Clinician</th>
-          <th>Observation CPT Modifier</th>
-          <th>VOI Number</th>
-          <th>Payer ID</th>
-          <th>Eligibility Details</th>
-        </tr>
-      </thead>
-      <tbody>
-  `;
+  let prevClaimId = null, prevMemberId = null, prevActivityId = null;
+  let html = `<table class="shared-table"><thead><tr><th>Claim ID</th><th>Member ID</th><th>Activity ID</th><th>Ordering Clinician</th><th>Observation CPT Modifier</th><th>VOI Number</th><th>Payer ID</th><th>Eligibility Details</th></tr></thead><tbody>`;
 
   filteredRows.forEach((r, idx) => {
     const showClaim = r.ClaimID !== prevClaimId;
@@ -345,177 +217,63 @@ function renderResults(rows) {
   container.innerHTML = html;
 }
 
-// ----------------- Utilities -----------------
-function textValue(node, tag) {
-  if (!node) return '';
-  const el = node.getElementsByTagName(tag)[0];
-  return el ? String(el.textContent || '').trim() : '';
-}
+// Utilities
+function textValue(node, tag) { if (!node) return ''; const el = node.getElementsByTagName(tag)[0]; return el ? String(el.textContent || '').trim() : ''; }
+function firstNonEmpty(arr) { for (const s of arr) if (s !== undefined && s !== null && String(s).trim() !== '') return String(s).trim(); return ''; }
+function normalizeMemberId(id) { return String(id || '').replace(/^0+/, '').trim(); }
+function normalizeName(name) { return String(name || '').replace(/\s+/g, ' ').trim().toLowerCase(); }
 
-function firstNonEmpty(arr) {
-  for (const s of arr) {
-    if (s !== undefined && s !== null && String(s).trim() !== '') return String(s).trim();
-  }
-  return '';
-}
-
-// Only remove leading zeros per requirement; keep other characters intact
-function normalizeMemberId(id) {
-  return String(id || '').replace(/^0+/, '').trim();
-}
-
-function normalizeName(name) {
-  return String(name || '').replace(/\s+/g, ' ').trim().toLowerCase();
-}
-
-// normalizeDate: try ISO parse, then D/M/Y or M/D/Y heuristics; otherwise return trimmed original
 function normalizeDate(input) {
-  const s = String(input || '').trim();
-  if (!s) return '';
+  const s = String(input || '').trim(); if (!s) return '';
+  let t = Date.parse(s); if (!Number.isNaN(t)) return toYMD(new Date(t));
 
-  // Try ISO/parseable numeric date
-  let t = Date.parse(s);
-  if (!Number.isNaN(t)) return toYMD(new Date(t));
+  let m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);
+  if (m) { let [, d, mo, y] = m; if (y.length === 2) y = String(2000 + Number(y)); const dt = new Date(Number(y), Number(mo) - 1, Number(d)); if (!Number.isNaN(dt.getTime())) return toYMD(dt); }
 
-  // Try D/M/YYYY or D-M-YYYY
-  let m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
-  if (m) {
-    let [, d, mo, y] = m;
-    if (y.length === 2) y = String(2000 + Number(y));
-    const dt = new Date(Number(y), Number(mo) - 1, Number(d));
-    if (!Number.isNaN(dt.getTime())) return toYMD(dt);
-  }
-
-  // Try textual month format e.g., 30-Aug-2024 00:00:00
   m = s.match(/^(\d{1,2})-([A-Za-z]+)-(\d{4})/);
-  if (m) {
-    let [, d, mon, y] = m;
-    const monthMap = {
-      Jan:0, Feb:1, Mar:2, Apr:3, May:4, Jun:5,
-      Jul:6, Aug:7, Sep:8, Oct:9, Nov:10, Dec:11
-    };
-    const dt = new Date(Number(y), monthMap[mon] ?? 0, Number(d));
-    if (!Number.isNaN(dt.getTime())) return toYMD(dt);
-  }
+  if (m) { let [, d, mon, y] = m; const monthMap = { Jan:0, Feb:1, Mar:2, Apr:3, May:4, Jun:5, Jul:6, Aug:7, Sep:8, Oct:9, Nov:10, Dec:11 }; const dt = new Date(Number(y), monthMap[mon] ?? 0, Number(d)); if (!Number.isNaN(dt.getTime())) return toYMD(dt); }
 
-  return s; // fallback
+  return s;
 }
 
-function toYMD(d) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const da = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${da}`;
-}
+function toYMD(d) { const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, '0'), da = String(d.getDate()).padStart(2, '0'); return `${y}-${m}-${da}`; }
+function escapeHtml(str) { return String(str == null ? '' : str).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'","&#39;"); }
+function firstNonEmptyKey(obj, keys) { for (const k of keys) if (Object.prototype.hasOwnProperty.call(obj,k) && String(obj[k]).trim() !== '') return obj[k]; return null; }
+function makeWorkbookFromJson(json, sheetName) { const ws = XLSX.utils.json_to_sheet(json), wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, sheetName || 'Results'); return wb; }
 
-function escapeHtml(str) {
-  return String(str == null ? '' : str)
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
-}
-
-function firstNonEmptyKey(obj, keys) {
-  for (const k of keys) {
-    if (Object.prototype.hasOwnProperty.call(obj, k) && String(obj[k]).trim() !== '') return obj[k];
-  }
-  return null;
-}
-
-function makeWorkbookFromJson(json, sheetName) {
-  const ws = XLSX.utils.json_to_sheet(json);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, sheetName || 'Results');
-  return wb;
-}
-
-// ----------------- UI helpers -----------------
+// UI helpers
 function el(id) { return document.getElementById(id); }
 function fileEl(id) { const f = el(id); return f && f.files && f.files[0] ? f.files[0] : null; }
+function resetUI() { const container = el('outputTableContainer'); if(container) container.innerHTML=''; toggleDownload(false); message('',''); showProgress(0,''); lastResults=[]; lastWorkbook=null; }
+function toggleDownload(enabled) { const dl = el('download-button'); if(!dl) return; dl.disabled = !enabled; }
+function showProgress(percent, text) { const barContainer = el('progress-bar-container'), bar = el('progress-bar'), pText = el('progress-text'); if(barContainer) barContainer.style.display = percent > 0 ? 'block' : 'none'; if(bar) bar.style.width = (percent || 0)+'%'; if(pText) pText.textContent = text ? `${percent}% — ${text}` : `${percent}%`; }
+function message(text, color) { const m = el('messageBox'); if(!m) return; m.textContent = text||''; m.style.color = color||''; }
+function showError(err) { message(err && err.message ? err.message : String(err), 'red'); showProgress(0,''); toggleDownload(false); }
 
-function resetUI() {
-  const container = el('outputTableContainer');
-  if (container) container.innerHTML = '';
-  toggleDownload(false);
-  message('', '');
-  showProgress(0, '');
-  lastResults = [];
-  lastWorkbook = null;
-}
-
-function toggleDownload(enabled) {
-  const dl = el('download-button');
-  if (!dl) return;
-  dl.disabled = !enabled;
-}
-
-function showProgress(percent, text) {
-  const barContainer = el('progress-bar-container');
-  const bar = el('progress-bar');
-  const pText = el('progress-text');
-  if (barContainer) barContainer.style.display = percent > 0 ? 'block' : 'none';
-  if (bar) bar.style.width = (percent || 0) + '%';
-  if (pText) pText.textContent = text ? `${percent}% — ${text}` : `${percent}%`;
-}
-
-function message(text, color) {
-  const m = el('messageBox');
-  if (!m) return;
-  m.textContent = text || '';
-  m.style.color = color || '';
-}
-
-function showError(err) {
-  message(err && err.message ? err.message : String(err), 'red');
-  showProgress(0, '');
-  toggleDownload(false);
-}
-
-// Modal logic for eligibility details
 function showEligibility(index) {
   const row = lastResults[index];
-  if (!row || !row.EligibilityRow) {
-    alert('No eligibility data found for this claim.');
-    return;
-  }
+  if (!row || !row.EligibilityRow) { alert('No eligibility data found for this claim.'); return; }
 
   const data = row.EligibilityRow;
   const keys = Object.keys(data);
+  const details = keys.map(k => `<tr><th>${escapeHtml(k)}</th><td>${escapeHtml(data[k])}</td></tr>`).join('');
 
-  const details = keys.map(k => `
-    <tr>
-      <th>${escapeHtml(k)}</th>
-      <td>${escapeHtml(data[k])}</td>
-    </tr>
-  `).join('');
-
-  const modalHtml = `
-    <div class="modal-content eligibility-modal modal-scrollable">
-      <span class="close" onclick="closeEligibilityModal()">&times;</span>
-      <h3>Eligibility Details</h3>
-      <table class="eligibility-details">
-        ${details}
-      </table>
-      <div style="text-align:right; margin-top:10px;">
-        <button class="details-btn eligibility-details" onclick="closeEligibilityModal()">Close</button>
-      </div>
+  const modalHtml = `<div class="modal-content eligibility-modal modal-scrollable">
+    <span class="close" onclick="closeEligibilityModal()">&times;</span>
+    <h3>Eligibility Details</h3>
+    <table class="eligibility-details">${details}</table>
+    <div style="text-align:right;margin-top:10px;">
+      <button class="details-btn eligibility-details" onclick="closeEligibilityModal()">Close</button>
     </div>
-  `;
+  </div>`;
 
   const modal = document.createElement('div');
   modal.id = "eligibilityModal";
   modal.className = "modal";
   modal.innerHTML = modalHtml;
-  modal.addEventListener('click', (e) => {
-    if (e.target === modal) closeEligibilityModal();
-  });
+  modal.addEventListener('click', e => { if(e.target === modal) closeEligibilityModal(); });
   document.body.appendChild(modal);
   modal.style.display = "flex";
 }
 
-function closeEligibilityModal() {
-    const modal = document.getElementById('eligibilityModal');
-    if (modal) modal.remove();
-}
+function closeEligibilityModal() { const modal = el('eligibilityModal'); if(modal) modal.remove(); }
