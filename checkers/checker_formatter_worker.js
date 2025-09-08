@@ -82,6 +82,44 @@ function headerSignature(s) {
     .replace(/[^a-z0-9]/g, '');              // remove non-alphanumerics
 }
 
+function findHeaderRowFromArrays(sheetRows, maxScan = 10) {
+  if (!Array.isArray(sheetRows) || sheetRows.length === 0) {
+    return { headerRowIndex: -1, headers: [], rows: [] };
+  }
+
+  const tokens = [
+    'pri. claim no', 'pri claim no', 'claimid', 'claim id', 'pri. claim id', 'pri claim id',
+    'center name', 'card number', 'card number / dha member id', 'member id', 'patientcardid',
+    'pri. patient insurance card no', 'institution', 'facility id', 'mr no.', 'pri. claim id',
+    'encounter date', 'claimdate', 'adm/reg. date', 'adm/reg date', 'adm reg'
+  ];
+
+  const limit = Math.min(maxScan, sheetRows.length);
+  let bestIndex = 0;
+  let bestScore = 0;
+
+  for (let i = 0; i < limit; i++) {
+    const row = sheetRows[i];
+    if (!Array.isArray(row)) continue;
+    const joined = row.map(c => (c === undefined || c === null) ? '' : String(c)).join(' ').toLowerCase();
+    let score = 0;
+    for (const t of tokens) {
+      if (joined.includes(t)) score++;
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      bestIndex = i;
+    }
+  }
+
+  const headerRowIndex = bestScore > 0 ? bestIndex : 0;
+  const rawHeaderRow = sheetRows[headerRowIndex] || [];
+  const headers = rawHeaderRow.map(h => (h === undefined || h === null) ? '' : String(h).trim());
+  const rowsAfterHeader = sheetRows.slice(headerRowIndex + 1);
+
+  return { headerRowIndex, headers, rows: rowsAfterHeader };
+}
+
 // tolerant header matcher (keeps existing behavior)
 function findHeaderMatch(headerRow, srcHeader) {
   if (!Array.isArray(headerRow) || !srcHeader) return null;
