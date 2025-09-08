@@ -186,7 +186,7 @@ function getFacilityIDFromCenterName(centerName) {
   if (!centerName) return '';
   const s = String(centerName).trim();
 
-  // direct MF code match
+  // direct MF code match (MFxxxx)
   const mfMatch = s.match(/\bM[Ff]\d{2,}\b/);
   if (mfMatch) return mfMatch[0].toUpperCase();
 
@@ -196,10 +196,13 @@ function getFacilityIDFromCenterName(centerName) {
     if (lower.includes(k.toLowerCase())) return facilityNameMap[k];
   }
 
-  // fallback: first token (useful if Center Name begins with code)
+  // fallback: only accept a first token that looks like a code (contains digits or MF-like)
   const firstToken = s.split(/\s+/)[0];
-  if (/^[A-Za-z0-9\-]+$/.test(firstToken) && firstToken.length <= 10) return firstToken;
+  // allow if MF code or contains a digit (e.g., "MF5357", "Center123", "C123-XYZ")
+  if (/^M[Ff]\d{2,}$/.test(firstToken)) return firstToken.toUpperCase();
+  if (/^[A-Za-z0-9\-]*\d+[A-Za-z0-9\-]*$/.test(firstToken) && firstToken.length <= 12) return firstToken;
 
+  // otherwise return empty so we don't return meaningless tokens like "New"
   return '';
 }
 
@@ -386,15 +389,16 @@ async function combineReportings(fileEntries, clinicianFile) {
     throw new Error("No input files provided");
   }
 
-  const headersWithRaw = TARGET_HEADERS; // includes Raw Encounter Date at end already
+  // Output headers (TARGET_HEADERS is expected to exist globally)
+  const headersWithRaw = [...TARGET_HEADERS, 'Raw Encounter Date'];
   const combinedRows = [headersWithRaw];
   log("Initialized combinedRows with headers");
 
-  // clinician maps
+  // Clinician lookup structures
   const clinicianMapByLicense = new Map(), clinicianMapByName = new Map();
   let fallbackExcel = [];
 
-  // Load clinician licenses JSON
+  // Load clinician licenses JSON (optional)
   try {
     log("Fetching clinician_licenses.json");
     const resp = await fetch('./clinician_licenses.json');
@@ -408,7 +412,7 @@ async function combineReportings(fileEntries, clinicianFile) {
     });
     log(`Loaded clinician licenses: ${clinicianMapByLicense.size} by license`);
   } catch (err) {
-    log(`Failed to load clinician_licenses.json: ${err.message}`, 'ERROR');
+    log(`Failed to load clinician_licenses.json: ${err.message}`, 'WARN');
   }
 
   // Load fallback clinician file if provided
@@ -430,6 +434,96 @@ async function combineReportings(fileEntries, clinicianFile) {
     }
   }
 
+  // Helpers used only inside combineReportings to keep behavior local & robust
+  const MS_PER_DAY = 24 * 60 * 60 * 1000;
+  const EXCEL_EPOCH_MS = Date.UTC(1899, 11, 30); // 1899-12-30 UTC
+
+  function parseToExcelSerial(rawValue, schemaType) {
+    // schemaType: 0 => Odoo (prefer DMY by heuristic fallback), 1 => ClinicPro (numeric/excel serial likely), 2 => Insta (DMY)
+    if (rawValue === null || rawValue === undefined || rawValue === '') return '';
+
+    // If it's already a number
+    if (typeof rawValue === 'number' && !isNaN(rawValue)) {
+      // If looks like a valid Excel serial (days)
+      if (rawValue > 20000 && rawValue < 60000) return Math.floor(rawValue);
+      // If looks like a timestamp in ms (very large)
+      if (Math.abs(rawValue) > 1e11) {
+        return Math.floor((Number(rawValue) - EXCEL_EPOCH_MS) / MS_PER_DAY);
+      }
+      // otherwise nothing sensible
+      return '';
+    }
+
+    // Convert to string
+    const sRaw = (typeof rawValue === 'string') ? rawValue.trim() : String(rawValue).trim();
+    if (!sRaw) return '';
+
+    // If numeric-string
+    if (/^[+-]?\d+(\.\d+)?$/.test(sRaw)) {
+      const n = Number(sRaw);
+      if (!isNaN(n) && n > 20000 && n < 60000) return Math.floor(n); // already excel serial
+      if (Math.abs(n) > 1e11) return Math.floor((n - EXCEL_EPOCH_MS) / MS_PER_DAY); // ms timestamp
+      // handle decimal-like excel serials e.g. "45907.48194"
+      if (!isNaN(n) && n > 0) return Math.floor(n);
+    }
+
+    // ISO date YYYY-MM-DD (unambiguous)
+    let m;
+    m = sRaw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (m) {
+      const year = Number(m[1]), month = Number(m[2]) - 1, day = Number(m[3]);
+      const ms = Date.UTC(year, month, day);
+      return Math.floor((ms - EXCEL_EPOCH_MS) / MS_PER_DAY);
+    }
+
+    // Common slash/dash separated formats like 07/09/2025 or 7/9/25
+    m = sRaw.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);
+    if (m) {
+      let p1 = Number(m[1]), p2 = Number(m[2]), p3 = Number(m[3]);
+      // normalize year
+      if (p3 < 100) p3 += 2000;
+
+      // Heuristic for ordering:
+      // - If first part > 12 => definitely day (DMY)
+      // - Else if second part > 12 => definitely MDY (first is month)
+      // - Else ambiguous -> prefer DMY (day/month) since that's typical for your locale; schemaType can override
+      let day, month, year;
+      if (p1 > 12) { day = p1; month = p2; year = p3; } // DMY
+      else if (p2 > 12) { month = p1; day = p2; year = p3; } // MDY
+      else {
+        // ambiguous: try DMY first, then MDY fallback
+        if (schemaType === 1) {
+          // For ClinicPro, many exports are numeric/date-in-excel style; prefer MDY here (historical behavior)
+          month = p1; day = p2; year = p3;
+        } else {
+          // Default prefer DMY (day/month/year)
+          day = p1; month = p2; year = p3;
+        }
+      }
+
+      // If we didn't set day/month above (because of branch), set now (for MDY branch)
+      if (typeof day === 'undefined' || typeof month === 'undefined' || typeof year === 'undefined') {
+        // fallback to DMY
+        day = p1; month = p2; year = p3;
+      }
+
+      // validate
+      if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+        const ms = Date.UTC(year, month - 1, day);
+        return Math.floor((ms - EXCEL_EPOCH_MS) / MS_PER_DAY);
+      }
+    }
+
+    // Try Date.parse fallback (handles many textual forms)
+    const parsed = Date.parse(sRaw);
+    if (!isNaN(parsed)) {
+      const ms = parsed;
+      return Math.floor((ms - EXCEL_EPOCH_MS) / MS_PER_DAY);
+    }
+
+    return '';
+  }
+
   const rawToSerialMap = {};
   const serialSet = new Set();
   const globalSeenClaimIDs = new Set();
@@ -446,103 +540,107 @@ async function combineReportings(fileEntries, clinicianFile) {
     const sheetData = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false });
     if (!sheetData || sheetData.length === 0) { log(`File ${name} skipped: no data`, 'WARN'); continue; }
 
-    const { headerRowIndex, headers: headerRow, rows: rowsAfterHeader } = findHeaderRowFromArrays(sheetData, 10);
+    // locate header row
+    const { headerRowIndex, headers: headerRow } = findHeaderRowFromArrays(sheetData, 10);
     if (!headerRow || headerRow.length === 0) { log(`File ${name} skipped: header row not found.`, 'WARN'); continue; }
 
     const trimmedHeaderRow = headerRow.map(h => (h || '').toString().trim());
-    // detect file type using header maps
-    const { fileType, headerMap } = detectFileTypeFromHeaders(trimmedHeaderRow);
-    if (!headerMap) {
-      log(`File ${name}: no header map matched, defaulting to ODOO_MAP`, 'WARN');
-    }
+    const trimmedHeaderSignatures = trimmedHeaderRow.map(h => headerSignature(h));
 
-    // Decide a normalized "schema type" for date parsing and facility handling
-    let schemaType = 0; // 0 => Odoo (MDY), 1 => ClinicPro (numeric or numeric-like), 2 => InstaHMS (DMY)
+    // detect type using header maps
+    const { fileType, headerMap } = detectFileTypeFromHeaders(trimmedHeaderRow);
+    // normalize schemaType for date parsing & facility logic
+    let schemaType = 0;
     if (fileType === 'clinicpro_v1' || fileType === 'clinicpro_v2') schemaType = 1;
     else if (fileType === 'instahms') schemaType = 2;
-    else schemaType = 0; // odoo or fallback
+    else schemaType = 0; // odoo / fallback
 
-    log(`Detected file type for ${name}: ${fileType} (schema=${schemaType})`);
+    log(`Detected file "${name}" as type="${fileType}", schema=${schemaType}`);
 
-    // for each data row after headerRowIndex
-    const startRow = headerRowIndex + 1;
-    const totalRows = sheetData.length;
-    const normalizedHeaderSignatures = trimmedHeaderRow.map(h => headerSignature(h));
-
-    // Build target->normalizedSource map for quick lookup (target is the normalized target header)
-    const targetToSourceSig = {}; // e.g. 'Encounter Date' -> 'admregdate'
+    // Build mapping: target header -> matched source header signature
+    const targetToSourceSig = {};
     if (headerMap) {
       for (const [src, tgt] of Object.entries(headerMap)) {
-        const srcSig = headerSignature(src);
-        // find actual header in file that matches src (using findHeaderMatch)
-        const matchedHdr = findHeaderMatch(trimmedHeaderRow, src);
-        const matchedSig = matchedHdr ? headerSignature(matchedHdr) : null;
+        const matched = findHeaderMatch(trimmedHeaderRow, src);
+        const matchedSig = matched ? headerSignature(matched) : null;
         targetToSourceSig[tgt] = matchedSig;
       }
+
+      // debug: show what matched (useful for troubleshooting)
+      for (const [src, tgt] of Object.entries(headerMap)) {
+        const matched = findHeaderMatch(trimmedHeaderRow, src) || 'N/A';
+        log(`${name}: mapping "${tgt}" <= "${src}" matched -> "${matched}"`);
+      }
+    } else {
+      log(`${name}: no headerMap found by detection; continuing with heuristics`, 'WARN');
     }
 
-    const seenClaimIDs = new Set(); // per-file
+    const startRow = headerRowIndex + 1;
+    const totalRows = sheetData.length;
+    const seenClaimIDs = new Set();
+
     for (let r = startRow; r < totalRows; r++) {
       const row = sheetData[r];
       if (!Array.isArray(row) || row.length === 0) continue;
 
       try {
-        // Map values into sourceRow keyed by normalized signatures of actual file headers
+        // build sourceRow keyed by headerSignature(actualHeader)
         const sourceRow = {};
         for (let c = 0; c < trimmedHeaderRow.length; c++) {
-          const sig = headerSignature(trimmedHeaderRow[c]);
+          const sig = headerSignature(trimmedHeaderRow[c] || '');
           sourceRow[sig] = row[c] ?? '';
         }
 
-        // Extract claim id using headerMap (preferred) or fallback heuristics
+        // obtain Claim ID (prefer headerMap)
         let claimID = '';
         if (headerMap) {
           const claimSrc = Object.keys(headerMap).find(k => headerMap[k] === 'Pri. Claim No');
-          if (claimSrc) {
-            const sig = headerSignature(claimSrc);
-            claimID = (sourceRow[sig] ?? '').toString().trim();
-          }
+          if (claimSrc) claimID = (sourceRow[headerSignature(claimSrc)] ?? '').toString().trim();
         }
-        // fallback: try common header signatures
         if (!claimID) {
-          claimID = (sourceRow['pri.claim.no'] || sourceRow['claimid'] || sourceRow['priclaimid'] || '')?.toString().trim();
+          // fallback common header names
+          claimID = (sourceRow['priclaimno'] || sourceRow['claimid'] || sourceRow['priclaimid'] || '')?.toString().trim();
         }
+        if (!claimID) continue; // can't work without claim key
 
-        if (!claimID) continue; // can't process without claim key
         if (seenClaimIDs.has(claimID) || globalSeenClaimIDs.has(claimID)) continue;
         seenClaimIDs.add(claimID); globalSeenClaimIDs.add(claimID);
 
-        // Determine Facility ID
+        // Determine facilityID according to schemaType and preference for filename for Odoo
         let facilityID = '';
-        if (schemaType === 2) { // InstaHMS usually contains Facility ID column
+        if (schemaType === 2) { // InstaHMS normally has facility column
           const facSrc = Object.keys(headerMap || {}).find(k => (headerMap || {})[k] === 'Facility ID');
-          if (facSrc) {
-            facilityID = (sourceRow[headerSignature(facSrc)] ?? '').toString().trim();
-          }
+          if (facSrc) facilityID = (sourceRow[headerSignature(facSrc)] ?? '').toString().trim();
           if (!facilityID) facilityID = getFacilityIDFromFileName(name);
-        } else if (schemaType === 1) { // ClinicPro: use filename + Visit Id heuristics
-          // prefer Visit Id value if present (it might embed MF code)
+        } else if (schemaType === 1) { // ClinicPro -> prefer VisitId then filename
           const visitSrc = Object.keys(headerMap || {}).find(k => (headerMap || {})[k] === 'Visit Id');
           const visitVal = visitSrc ? (sourceRow[headerSignature(visitSrc)] ?? '').toString().trim() : '';
           facilityID = getFacilityIDFromFileName(visitVal || name);
-        } else { // Odoo
-          const centerSrc = Object.keys(headerMap || {}).find(k => (headerMap || {})[k] === 'Facility ID' || (headerMap || {})[k] === 'Center Name' || k.toLowerCase().includes('center'));
-          const centerVal = centerSrc ? (sourceRow[headerSignature(centerSrc)] ?? '').toString().trim() : '';
-          facilityID = getFacilityIDFromCenterName(centerVal || name);
+        } else { // Odoo -> prefer filename mapping, then Center Name, then visitId/filename fallback
+          facilityID = getFacilityIDFromFileName(name);
+          if (!facilityID) {
+            const centerSrc = Object.keys(headerMap || {}).find(k => (headerMap || {})[k] === 'Facility ID' || (headerMap || {})[k] === 'Center Name' || k.toLowerCase().includes('center'));
+            const centerVal = centerSrc ? (sourceRow[headerSignature(centerSrc)] ?? '').toString().trim() : '';
+            if (centerVal) facilityID = getFacilityIDFromCenterName(centerVal);
+          }
+          if (!facilityID) {
+            const visitSrc = Object.keys(headerMap || {}).find(k => (headerMap || {})[k] === 'Visit Id');
+            const visitVal = visitSrc ? (sourceRow[headerSignature(visitSrc)] ?? '').toString().trim() : '';
+            facilityID = getFacilityIDFromFileName(visitVal || name);
+          }
         }
 
-        // Clinician license / name extraction & fallback logic
+        // Clinician extraction & fallback
         let clinLicense = '', clinName = '';
         const clinLicenseSrc = Object.keys(headerMap || {}).find(k => (headerMap || {})[k] === 'Clinician License');
         const clinNameSrc = Object.keys(headerMap || {}).find(k => (headerMap || {})[k] === 'Clinician Name');
-
         if (clinLicenseSrc) clinLicense = (sourceRow[headerSignature(clinLicenseSrc)] ?? '').toString().trim();
         if (clinNameSrc) clinName = (sourceRow[headerSignature(clinNameSrc)] ?? '').toString().trim();
 
-        // fallback 'orderdoctor' raw header often present
+        // fallback 'OrderDoctor' style raw header
         if (!clinName) {
-          const od = Object.keys(sourceRow).find(k => k.includes('orderdoctor') || k.includes('orderdoctor'.replace(/\./g,'')));
-          if (od) clinName = (sourceRow[od] ?? '').toString().trim();
+          const odKey = Object.keys(sourceRow).find(k => k.includes('orderdoctor'));
+          if (odKey) clinName = (sourceRow[odKey] ?? '').toString().trim();
         }
 
         if (clinLicense && !clinName && clinicianMapByLicense.has(clinLicense)) {
@@ -556,23 +654,22 @@ async function combineReportings(fileEntries, clinicianFile) {
           if (fb) { clinLicense = fb.license || clinLicense; clinName = fb.name || clinName; }
         }
 
-        // IMPORTANT: do not skip Odoo rows for missing clinician info
-        if ((fileType !== 'odoo') && !clinName && !clinLicense) {
-          // skip rows for non-odoo if no clinician info found
+        // Do not skip Odoo rows when clinician info missing
+        if (fileType && !fileType.startsWith('odoo') && !clinName && !clinLicense) {
+          // non-odoo schemas require clinician info per previous rules
           continue;
         }
 
-        // Encounter date: find which source header provides Encounter Date (from targetToSourceSig)
+        // Encounter Date normalization (robust)
         let rawEncounterVal = '', normalizedEncounter = '';
-        const encounterTgtSig = targetToSourceSig['Encounter Date'] ? targetToSourceSig['Encounter Date'] : null;
-        if (encounterTgtSig && sourceRow[encounterTgtSig] !== undefined) {
-          rawEncounterVal = sourceRow[encounterTgtSig];
-          normalizedEncounter = toExcelSerial(rawEncounterVal, schemaType);
+        const encSrc = Object.keys(headerMap || {}).find(k => (headerMap || {})[k] === 'Encounter Date');
+        if (encSrc) {
+          rawEncounterVal = sourceRow[headerSignature(encSrc)] ?? '';
+          normalizedEncounter = parseToExcelSerial(rawEncounterVal, schemaType);
         } else {
-          // fallback: try common header signatures
-          const commonEnc = sourceRow['encounterdate'] || sourceRow['claimdate'] || sourceRow['admregdate'] || sourceRow['date'] || '';
-          rawEncounterVal = commonEnc;
-          normalizedEncounter = toExcelSerial(rawEncounterVal, schemaType);
+          // fallback common header signatures
+          rawEncounterVal = sourceRow[headerSignature('Encounter Date')] ?? sourceRow[headerSignature('ClaimDate')] ?? sourceRow[headerSignature('Adm/Reg. Date')] ?? sourceRow['date'] ?? '';
+          normalizedEncounter = parseToExcelSerial(rawEncounterVal, schemaType);
         }
 
         if (normalizedEncounter !== '' && normalizedEncounter !== null) {
@@ -581,7 +678,7 @@ async function combineReportings(fileEntries, clinicianFile) {
           rawToSerialMap[rawKey] = Number(normalizedEncounter);
         }
 
-        // Build the target row in order of headersWithRaw (TARGET_HEADERS + Raw)
+        // Compose output targetRow in order of headersWithRaw
         const targetRow = [];
         for (let col = 0; col < headersWithRaw.length; col++) {
           const tgt = headersWithRaw[col];
@@ -589,36 +686,35 @@ async function combineReportings(fileEntries, clinicianFile) {
 
           if (tgt === 'Facility ID') val = facilityID || '';
           else if (tgt === 'Pri. Patient Insurance Card No') {
-            // ClinicPro special handling: prefer Member ID then PatientCardID
             if (schemaType === 1) {
-              const memSig = headerSignature(Object.keys(headerMap || {}).find(k => (headerMap || {})[k] === 'Pri. Patient Insurance Card No') || '');
-              val = (sourceRow[memSig] ?? sourceRow['memberid'] ?? sourceRow['patientcardid'] ?? '') || '';
+              // ClinicPro: prefer Member ID, then PatientCardID
+              const memSrc = Object.keys(headerMap || {}).find(k => (headerMap || {})[k] === 'Pri. Patient Insurance Card No');
+              const memSig = memSrc ? headerSignature(memSrc) : null;
+              val = (memSig ? (sourceRow[memSig] ?? '') : '') || (sourceRow['memberid'] ?? sourceRow['patientcardid'] ?? '');
             } else {
               const sig = targetToSourceSig['Pri. Patient Insurance Card No'];
-              val = (sig ? (sourceRow[sig] ?? '') : '') || (sourceRow['pripatentinsurancecardno'] ?? sourceRow['pri.member.id'] ?? '');
+              val = (sig ? (sourceRow[sig] ?? '') : '') || (sourceRow[headerSignature('Pri. Member ID')] ?? sourceRow['memberid'] ?? sourceRow['patientcardid'] ?? '');
             }
           }
           else if (tgt === 'Patient Code') {
             const sig = targetToSourceSig['Patient Code'];
-            val = sig ? (sourceRow[sig] ?? '') : (sourceRow['mrno'] ?? sourceRow['fileno'] ?? '');
+            val = sig ? (sourceRow[sig] ?? '') : ((sourceRow['mrno'] ?? sourceRow['fileno'] ?? '') || '');
           }
           else if (tgt === 'Clinician License') val = clinLicense || '';
           else if (tgt === 'Clinician Name') val = clinName || '';
           else if (tgt === 'Opened by') {
-            if (fileType === 'odoo') val = ''; // intentionally blank for Odoo
+            if (fileType && fileType.startsWith('odoo')) val = ''; // intentionally blank for Odoo
             else {
               const sig = targetToSourceSig['Opened by'];
-              val = sig ? (sourceRow[sig] ?? sourceRow['updatedby'] ?? '') : (sourceRow['openedby'] ?? sourceRow['openedby/registrationstaffname'] ?? '');
+              val = sig ? (sourceRow[sig] ?? sourceRow[headerSignature('Updated By')] ?? '') : (sourceRow[headerSignature('Opened by')] ?? sourceRow[headerSignature('Opened by/Registration Staff name')] ?? '');
             }
           }
           else if (tgt === 'Encounter Date') val = normalizedEncounter;
           else if (tgt === 'Raw Encounter Date') val = rawEncounterVal ?? '';
           else if (tgt === 'Source File') val = name;
           else {
-            // Generic mapping using headerMap targets
             const sig = targetToSourceSig[tgt] || null;
-            if (sig) val = sourceRow[sig] ?? '';
-            else val = '';
+            val = sig ? (sourceRow[sig] ?? '') : '';
           }
 
           targetRow.push(val);
@@ -629,13 +725,17 @@ async function combineReportings(fileEntries, clinicianFile) {
       } catch (err) {
         log(`Fatal row error in file ${name}, row ${r + 1}: ${err.message}`, 'ERROR');
       }
-    } // end row loop
+    } // end rows loop
 
+    // progress update
     self.postMessage({ type: 'progress', progress: 50 + Math.floor(((i + 1) / fileEntries.length) * 50) });
-  } // end file loop
+  } // end files loop
 
-  log(`Raw->Serial mapping: ${JSON.stringify(rawToSerialMap)}`);
-  log(`Unique Excel serials found: ${[...serialSet].sort((a, b) => a - b).join(', ')}`);
+  // Logging for debugging date serials and mapping
+  try {
+    log(`Raw->Serial mapping: ${JSON.stringify(rawToSerialMap)}`);
+    log(`Unique Excel serials found: ${[...serialSet].sort((a, b) => a - b).join(', ')}`);
+  } catch (e) { /* ignore stringify errors */ }
 
   // Validate combinedRows shape
   for (const [idx, row] of combinedRows.entries()) {
