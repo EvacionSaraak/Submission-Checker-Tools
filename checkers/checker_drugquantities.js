@@ -71,9 +71,12 @@ document.getElementById('checkSingleCodeBtn').addEventListener('click', function
           packagePrice=parseFloat(drug['Package Price to Public'])||0,
           unitPrice=parseFloat(drug['Unit Price to Public'])||0;
 
+    const packageMarkupRaw = drug['Package Markup'];
+    const unitMarkupRaw    = drug['Unit Markup'];
+
     // Markup with fallback
-    const packageMarkup = drug['Package Markup'] !== "" ? drug['Package Markup'] : drug['Package Price to Public'];
-    const unitMarkup    = drug['Unit Markup']    !== "" ? drug['Unit Markup']    : drug['Unit Price to Public'];
+    const packageMarkup = packageMarkupRaw !== "" ? `<b>${packageMarkupRaw}</b>` : `<b>${drug['Package Price to Public']}</b><br><span class="no-markup">No Mark Up</span>`;
+    const unitMarkup    = unitMarkupRaw    !== "" ? `<b>${unitMarkupRaw}</b>`    : `<b>${drug['Unit Price to Public']}</b><br><span class="no-markup">No Mark Up</span>`;
 
     let requiredQuantity="";
     if(packagePrice>0 && unitPrice>0){
@@ -126,9 +129,12 @@ document.getElementById('processBtn').addEventListener('click', function() {
                       packagePrice=parseFloat(drug['Package Price to Public'])||0,
                       unitPrice=parseFloat(drug['Unit Price to Public'])||0;
 
-                // Markup with fallback
-                const packageMarkup = drug['Package Markup'] !== "" ? drug['Package Markup'] : drug['Package Price to Public'];
-                const unitMarkup    = drug['Unit Markup']    !== "" ? drug['Unit Markup']    : drug['Unit Price to Public'];
+                const packageMarkupRaw = drug['Package Markup'];
+                const unitMarkupRaw    = drug['Unit Markup'];
+
+                // Markup with fallback for display
+                const packageMarkupDisp = packageMarkupRaw !== "" ? `<b>${packageMarkupRaw}</b>` : `<b>${drug['Package Price to Public']}</b><br><span class="no-markup">No Mark Up</span>`;
+                const unitMarkupDisp    = unitMarkupRaw    !== "" ? `<b>${unitMarkupRaw}</b>`    : `<b>${drug['Unit Price to Public']}</b><br><span class="no-markup">No Mark Up</span>`;
 
                 let requiredQuantity="", rowClass="valid", errorRemark="";
                 if(packagePrice>0&&unitPrice>0){requiredQuantity=(1/(packagePrice/unitPrice)).toFixed(2);}
@@ -161,7 +167,9 @@ document.getElementById('processBtn').addEventListener('click', function() {
 
                 outputRows.push({
                     claimId, code, xmlQuantity: quantity, packageName, packageSize, requiredQuantity,
-                    unitMarkup, packageMarkup,
+                    unitMarkup: unitMarkupRaw, packageMarkup: packageMarkupRaw,
+                    unitPriceToPublic: drug['Unit Price to Public'], packagePriceToPublic: drug['Package Price to Public'],
+                    unitMarkupDisp, packageMarkupDisp,
                     errorRemark, rowClass
                 });
             });
@@ -189,7 +197,7 @@ document.getElementById('processBtn').addEventListener('click', function() {
                 <td>${row.code}</td><td>${row.xmlQuantity}</td>
                 <td class="wrap-col">${row.packageName}</td>
                 <td>${row.packageSize}</td><td>${row.requiredQuantity}</td>
-                <td>${row.unitMarkup}</td><td>${row.packageMarkup}</td>
+                <td>${row.unitMarkupDisp}</td><td>${row.packageMarkupDisp}</td>
                 <td class="description-col">${row.errorRemark}</td>
             </tr>`;
             lastClaimId=row.claimId;
@@ -202,18 +210,21 @@ document.getElementById('processBtn').addEventListener('click', function() {
 
 // Export errors & unknowns
 document.getElementById('exportErrorsBtn').addEventListener('click', function() {
-    // Only export rows that are either error (invalid) or unknown
     const errorRows = (_drugQuantityOutputRows||[]).filter(r=>r.rowClass!=="valid");
     if(errorRows.length===0) return alert("There are no errors or unknowns to export.");
 
     const header=[
         "Claim ID","Drug Code","XML Quantity","Package Name","Package Size",
-        "Required Quantity","Unit Markup","Package Markup","Validation Remark","Status"
+        "Required Quantity",
+        "Unit Markup","Package Markup",
+        "Unit Price to Public (Fallback)","Package Price to Public (Fallback)",
+        "Validation Remark","Status"
     ];
 
     const data = errorRows.map(r=>[
         r.claimId,r.code,r.xmlQuantity,r.packageName,r.packageSize,r.requiredQuantity,
-        r.unitMarkup,r.packageMarkup,
+        r.unitMarkup, r.packageMarkup,
+        r.unitPriceToPublic, r.packagePriceToPublic,
         r.errorRemark,
         r.rowClass==="invalid"?"Error / Non-compliant":(r.rowClass==="unknown"?"Unknown":"")
     ]);
