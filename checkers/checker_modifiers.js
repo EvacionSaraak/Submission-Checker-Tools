@@ -312,29 +312,32 @@ function renderResults(rows) {
   `;
 
   filteredRows.forEach((r, idx) => {
-    const showClaim = r.claimId !== prevClaimId;
-    const showActivity = (r.claimId !== prevClaimId) || (r.activityId !== prevActivityId);
+    const showClaim = r.ClaimID !== prevClaimId;
+    const showActivity = (r.ClaimID !== prevClaimId) || (r.ActivityID !== prevActivityId);
 
-    const claimCell = showClaim ? escapeHtml(r.claimId) : '';
-    const activityCell = showActivity ? escapeHtml(r.activityId) : '';
+    const claimCell = showClaim ? escapeHtml(r.ClaimID) : '';
+    const activityCell = showActivity ? escapeHtml(r.ActivityID) : '';
 
-    prevClaimId = r.claimId;
-    prevActivityId = r.activityId;
+    prevClaimId = r.ClaimID;
+    prevActivityId = r.ActivityID;
 
     let buttonHtml = '';
     if (r.EligibilityRow) {
       const keys = Object.keys(r.EligibilityRow);
-      const displayValue = keys.length ? escapeHtml(r.EligibilityRow[keys[0]]) : "View";
-      buttonHtml = `<button type="button" class="details-btn eligibility-details" onclick="showEligibility(${idx})">${displayValue}</button>`;
+      // If row has data, use first non-empty key; otherwise just label "View"
+      const displayValue = keys.length
+        ? firstNonEmptyKey(r.EligibilityRow, keys) || "View"
+        : "View";
+      buttonHtml = `<button type="button" class="details-btn eligibility-details" onclick="showEligibility(${idx})">${escapeHtml(displayValue)}</button>`;
     }
 
     html += `<tr>
       <td>${claimCell}</td>
       <td>${activityCell}</td>
-      <td>${escapeHtml(r.clinician)}</td>
-      <td>${escapeHtml(r.modifier)}</td>
+      <td>${escapeHtml(r.OrderingClinician)}</td>
+      <td>${escapeHtml(r.Modifier)}</td>
       <td>${escapeHtml(r.VOINumber)}</td>
-      <td>${escapeHtml(r.payerId)}</td>
+      <td>${escapeHtml(r.PayerID)}</td>
       <td>${buttonHtml}</td>
     </tr>`;
   });
