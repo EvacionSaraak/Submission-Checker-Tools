@@ -218,18 +218,11 @@ function renderResults(rows) {
     return;
   }
 
-  // Only show D001 and A001 payer IDs as before
-  const filteredRows = rows.filter(r => {
-    const p = String(r.PayerID || '').trim();
-    return p === 'D001' || p === 'A001';
-  });
-
-  if (!filteredRows.length) {
-    container.innerHTML = '<div>No matching claims (only D001 and A001 shown)</div>';
-    return;
-  }
+  // Keep track of original indices for modal linking
+  rows.forEach((r, idx) => r._originalIndex = idx);
 
   let prevClaimId = null, prevMemberId = null, prevActivityId = null;
+
   let html = `<table class="shared-table">
     <thead>
       <tr>
@@ -245,7 +238,7 @@ function renderResults(rows) {
     </thead>
     <tbody>`;
 
-  filteredRows.forEach((r, idx) => {
+  rows.forEach(r => {
     const showClaim = r.ClaimID !== prevClaimId;
     const showMember = showClaim || r.MemberID !== prevMemberId;
     const showActivity = showMember || r.ActivityID !== prevActivityId;
@@ -258,7 +251,7 @@ function renderResults(rows) {
       <td>${escapeHtml(r.Modifier)}</td>
       <td>${escapeHtml(r.VOINumber)}</td>
       <td>${escapeHtml(r.PayerID)}</td>
-      <td>${r.EligibilityRow ? `<button type="button" class="details-btn eligibility-details" onclick="showEligibility(${idx})">View</button>` : ''}</td>
+      <td>${r.EligibilityRow ? `<button type="button" class="details-btn eligibility-details" onclick="showEligibility(${r._originalIndex})">View</button>` : ''}</td>
     </tr>`;
 
     prevClaimId = r.ClaimID;
