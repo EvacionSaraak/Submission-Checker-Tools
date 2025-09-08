@@ -75,8 +75,8 @@ document.getElementById('checkSingleCodeBtn').addEventListener('click', function
     const unitMarkupRaw    = drug['Unit Markup'];
 
     // Markup with fallback
-    const packageMarkup = packageMarkupRaw !== "" ? `<b>${packageMarkupRaw}</b>` : `<b>${drug['Package Price to Public']}</b><br><span class="no-markup">No Mark Up</span>`;
-    const unitMarkup    = unitMarkupRaw    !== "" ? `<b>${unitMarkupRaw}</b>`    : `<b>${drug['Unit Price to Public']}</b><br><span class="no-markup">No Mark Up</span>`;
+    const packageMarkup = packageMarkupRaw !== "" ? `<b>${packageMarkupRaw}</b>` : `<b>${drug['Package Price to Public']}</b>`;
+    const unitMarkup    = unitMarkupRaw    !== "" ? `<b>${unitMarkupRaw}</b>`    : `<b>${drug['Unit Price to Public']}</b>`;
 
     let requiredQuantity="";
     if(packagePrice>0 && unitPrice>0){
@@ -133,15 +133,14 @@ document.getElementById('processBtn').addEventListener('click', function() {
                 const unitMarkupRaw    = drug['Unit Markup'];
 
                 // Markup with fallback for display
-                const packageMarkupDisp = packageMarkupRaw !== "" ? `<b>${packageMarkupRaw}</b>` : `<b>${drug['Package Price to Public']}</b><br><span class="no-markup">No Mark Up</span>`;
-                const unitMarkupDisp    = unitMarkupRaw    !== "" ? `<b>${unitMarkupRaw}</b>`    : `<b>${drug['Unit Price to Public']}</b><br><span class="no-markup">No Mark Up</span>`;
+                const packageMarkupDisp = packageMarkupRaw !== "" ? `<b>${packageMarkupRaw}</b>` : `<b>${drug['Package Price to Public']}</b>`;
+                const unitMarkupDisp    = unitMarkupRaw    !== "" ? `<b>${unitMarkupRaw}</b>`    : `<b>${drug['Unit Price to Public']}</b>`;
 
                 let requiredQuantity="", rowClass="valid", errorRemark="";
                 if(packagePrice>0&&unitPrice>0){requiredQuantity=(1/(packagePrice/unitPrice)).toFixed(2);}
                 const type=act.getElementsByTagName('Type')[0]?.textContent||'';
                 const xmlQ = Number(quantity), reqQ = Number(requiredQuantity);
 
-                // Classification logic
                 if (type !== "5") {
                     rowClass = "invalid";
                     errorRemark = `Drug codes must have Type 5 and not ${type}`;
@@ -215,16 +214,12 @@ document.getElementById('exportErrorsBtn').addEventListener('click', function() 
 
     const header=[
         "Claim ID","Drug Code","XML Quantity","Package Name","Package Size",
-        "Required Quantity",
-        "Unit Markup","Package Markup",
-        "Unit Price to Public (Fallback)","Package Price to Public (Fallback)",
-        "Validation Remark","Status"
+        "Required Quantity","Unit Markup","Package Markup","Unit Price to Public","Package Price to Public","Validation Remark","Status"
     ];
 
     const data = errorRows.map(r=>[
         r.claimId,r.code,r.xmlQuantity,r.packageName,r.packageSize,r.requiredQuantity,
-        r.unitMarkup, r.packageMarkup,
-        r.unitPriceToPublic, r.packagePriceToPublic,
+        r.unitMarkup,r.packageMarkup,r.unitPriceToPublic,r.packagePriceToPublic,
         r.errorRemark,
         r.rowClass==="invalid"?"Error / Non-compliant":(r.rowClass==="unknown"?"Unknown":"")
     ]);
