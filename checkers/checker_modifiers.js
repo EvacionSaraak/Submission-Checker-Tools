@@ -244,12 +244,8 @@ function normalizeDate(input) {
   // Remove time portion if present
   const dateOnly = s.split(' ')[0];
 
-  // Try ISO/parseable numeric date
-  let t = Date.parse(dateOnly);
-  if (!Number.isNaN(t)) return toYMD(new Date(t));
-
-  // Try D/M/YYYY or D-M-YYYY
-  let m = dateOnly.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+  // Check for DD/MM/YYYY or DD-MM-YYYY
+  let m = dateOnly.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
   if (m) {
     let [, d, mo, y] = m;
     if (y.length === 2) y = String(2000 + Number(y));
@@ -257,8 +253,8 @@ function normalizeDate(input) {
     if (!Number.isNaN(dt.getTime())) return toYMD(dt);
   }
 
-  // Try textual month format e.g., 30-Aug-2024
-  m = dateOnly.match(/^(\d{1,2})-([A-Za-z]+)-(\d{4})/);
+  // Check for DD-MMM-YYYY e.g., 11-Aug-2025
+  m = dateOnly.match(/^(\d{1,2})-([A-Za-z]+)-(\d{4})$/);
   if (m) {
     let [, d, mon, y] = m;
     const monthMap = {
@@ -269,10 +265,18 @@ function normalizeDate(input) {
     if (!Number.isNaN(dt.getTime())) return toYMD(dt);
   }
 
+  // Fallback: try ISO parse
+  let t = Date.parse(dateOnly);
+  if (!Number.isNaN(t)) return toYMD(new Date(t));
+
   return dateOnly; // fallback
 }
 
-function toYMD(d) { const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, '0'), da = String(d.getDate()).padStart(2, '0'); return `${y}-${m}-${da}`; }
+function toYMD(d) {
+  const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), da = String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${da}`;
+}
+
 function escapeHtml(str) { return String(str == null ? '' : str).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'","&#39;"); }
 function firstNonEmptyKey(obj, keys) { for (const k of keys) if (Object.prototype.hasOwnProperty.call(obj,k) && String(obj[k]).trim() !== '') return obj[k]; return null; }
 function makeWorkbookFromJson(json, sheetName) { const ws = XLSX.utils.json_to_sheet(json), wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, sheetName || 'Results'); return wb; }
