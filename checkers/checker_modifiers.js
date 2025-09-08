@@ -153,15 +153,50 @@ function extractModifierRecords(xmlDoc) {
 
 function buildXlsxMatcher(rows) {
   const index = new Map();
+
   rows.forEach(r => {
-    const memberRaw = String(r['Card Number / DHA Member ID'] ?? r['Card Number'] ?? r['CardNumber'] ?? r['Card No'] ?? r['CardNo'] ?? r['Member ID'] ?? r['MemberID'] ?? '');
-    const orderedOnRaw = String(r['Ordered On'] ?? r['OrderedOn'] ?? r['Order Date'] ?? r['OrderDate'] ?? r['Ordered_On'] ?? r['OrderedOn Date'] ?? '');
-    const clinicianRaw = String(r['Clnician'] ?? r['Clinician'] ?? r['Clinician Name'] ?? r['ClinicianName'] ?? r['Ordering Clinician'] ?? r['OrderingClinician'] ?? '');
+    const memberRaw = String(
+      r['Card Number / DHA Member ID'] ?? 
+      r['Card Number'] ?? 
+      r['CardNumber'] ?? 
+      r['Card No'] ?? 
+      r['CardNo'] ?? 
+      r['Member ID'] ?? 
+      r['MemberID'] ?? ''
+    );
+
+    const orderedOnRaw = String(
+      r['Ordered On'] ?? 
+      r['OrderedOn'] ?? 
+      r['Order Date'] ?? 
+      r['OrderDate'] ?? 
+      r['Ordered_On'] ?? 
+      r['OrderedOn Date'] ?? ''
+    );
+
+    const clinicianRaw = String(
+      r['Clnician'] ?? 
+      r['Clinician'] ?? 
+      r['Clinician Name'] ?? 
+      r['ClinicianName'] ?? 
+      r['Ordering Clinician'] ?? 
+      r['OrderingClinician'] ?? ''
+    );
+
     const member = normalizeMemberId(memberRaw);
-    const date = normalizeDate(orderedOnRaw);
+    // Only take date portion to match XML
+    const date = normalizeDate(orderedOnRaw.split(' ')[0]);
     const clinician = normalizeName(clinicianRaw);
 
-    r._VOINumber = String(r['VOI Number'] ?? r['VOI'] ?? r['VOI_Number'] ?? r['VOI Number '] ?? r['VOI No'] ?? r['VOIMessage'] ?? r['VOI Message'] ?? '').trim();
+    r._VOINumber = String(
+      r['VOI Number'] ?? 
+      r['VOI'] ?? 
+      r['VOI_Number'] ?? 
+      r['VOI Number '] ?? 
+      r['VOI No'] ?? 
+      r['VOIMessage'] ?? 
+      r['VOI Message'] ?? ''
+    ).trim();
 
     const key = [member, date, clinician].join('|');
     if (!index.has(key)) index.set(key, []);
@@ -222,18 +257,39 @@ function textValue(node, tag) { if (!node) return ''; const el = node.getElement
 function firstNonEmpty(arr) { for (const s of arr) if (s !== undefined && s !== null && String(s).trim() !== '') return String(s).trim(); return ''; }
 function normalizeMemberId(id) { return String(id || '').replace(/^0+/, '').trim(); }
 function normalizeName(name) { return String(name || '').replace(/\s+/g, ' ').trim().toLowerCase(); }
-
 function normalizeDate(input) {
-  const s = String(input || '').trim(); if (!s) return '';
-  let t = Date.parse(s); if (!Number.isNaN(t)) return toYMD(new Date(t));
+  const s = String(input || '').trim();
+  if (!s) return '';
 
-  let m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);
-  if (m) { let [, d, mo, y] = m; if (y.length === 2) y = String(2000 + Number(y)); const dt = new Date(Number(y), Number(mo) - 1, Number(d)); if (!Number.isNaN(dt.getTime())) return toYMD(dt); }
+  // Remove time portion if present
+  const dateOnly = s.split(' ')[0];
 
-  m = s.match(/^(\d{1,2})-([A-Za-z]+)-(\d{4})/);
-  if (m) { let [, d, mon, y] = m; const monthMap = { Jan:0, Feb:1, Mar:2, Apr:3, May:4, Jun:5, Jul:6, Aug:7, Sep:8, Oct:9, Nov:10, Dec:11 }; const dt = new Date(Number(y), monthMap[mon] ?? 0, Number(d)); if (!Number.isNaN(dt.getTime())) return toYMD(dt); }
+  // Try ISO/parseable numeric date
+  let t = Date.parse(dateOnly);
+  if (!Number.isNaN(t)) return toYMD(new Date(t));
 
-  return s;
+  // Try D/M/YYYY or D-M-YYYY
+  let m = dateOnly.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+  if (m) {
+    let [, d, mo, y] = m;
+    if (y.length === 2) y = String(2000 + Number(y));
+    const dt = new Date(Number(y), Number(mo) - 1, Number(d));
+    if (!Number.isNaN(dt.getTime())) return toYMD(dt);
+  }
+
+  // Try textual month format e.g., 30-Aug-2024
+  m = dateOnly.match(/^(\d{1,2})-([A-Za-z]+)-(\d{4})/);
+  if (m) {
+    let [, d, mon, y] = m;
+    const monthMap = {
+      Jan:0, Feb:1, Mar:2, Apr:3, May:4, Jun:5,
+      Jul:6, Aug:7, Sep:8, Oct:9, Nov:10, Dec:11
+    };
+    const dt = new Date(Number(y), monthMap[mon] ?? 0, Number(d));
+    if (!Number.isNaN(dt.getTime())) return toYMD(dt);
+  }
+
+  return dateOnly; // fallback
 }
 
 function toYMD(d) { const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, '0'), da = String(d.getDate()).padStart(2, '0'); return `${y}-${m}-${da}`; }
