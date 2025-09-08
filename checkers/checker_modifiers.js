@@ -10,6 +10,7 @@ document.addEventListener('DOMContentLoaded', () => {
   resetUI();
 });
 
+// ----------------- Main handlers -----------------
 async function handleRun() {
   resetUI();
   try {
@@ -32,28 +33,35 @@ async function handleRun() {
       const xmlDate = normalizeDate(rec.Date);
       const match = matcher.find(rec.MemberID, xmlDate, rec.OrderingClinician);
 
+      // Use VOINumber extracted from matched XLSX row (if any)
       const voi = match ? String(match['VOI Number'] || '').trim() : '';
 
-      // Determine validity based on CPT + VOI
-      const isValid = (rec.Modifier === '52' && voi === 'VOI_EF1') ||
-                      (rec.Modifier === '24' && voi === 'VOI_D');
+      // Normalize for robust comparison (remove punctuation/underscores/spaces and uppercase)
+      const cptNorm = String(rec.Modifier || '').trim();
+      const voiNorm = normForCompare(voi);
+      const expectEF = normForCompare('VOI_EF1');
+      const expectD  = normForCompare('VOI_D');
 
-      // Log if member and clinician match but date mismatched
-      if (match === null) {
-        const partialMatch = Array.from(matcher._index.values())
-          .flat()
+      const isValid = Boolean(match) && (
+        (cptNorm === '52' && voiNorm === expectEF) ||
+        (cptNorm === '24' && voiNorm === expectD)
+      );
+
+      // Log partial matches (member+clinician but date mismatch)
+      if (!match) {
+        const partialMatch = Array.from(matcher._index.values()).flat()
           .find(r => normalizeMemberId(r['Card Number / DHA Member ID']) === normalizeMemberId(rec.MemberID) &&
-                     normalizeName(r['Clinician']) === normalizeName(rec.OrderingClinician));
-        if (partialMatch) console.log('Member and Clinician matched but date mismatch. XML date:', xmlDate, 'XLSX key:', partialMatch['Card Number / DHA Member ID'] + '|' + normalizeDate(partialMatch['Ordered On']) + '|' + partialMatch['Clinician']);
+                     String(r['Clinician'] || '').trim().toUpperCase() === String(rec.OrderingClinician || '').trim().toUpperCase());
+        if (partialMatch) console.warn('[PARTIAL MATCH] Member and Clinician matched but date mismatch. XML date:', xmlDate, 'XLSX row sample:', partialMatch);
       }
 
       return {
         ClaimID: rec.ClaimID || '',
         MemberID: rec.MemberID || '',
         ActivityID: rec.ActivityID || '',
-        OrderingClinician: rec.OrderingClinician.toUpperCase() || '',
+        OrderingClinician: rec.OrderingClinician || '', // already uppercased in extraction
         Modifier: rec.Modifier || '',
-        VOINumber: voi,
+        VOINumber: voi || '',
         EligibilityRow: match || null, // full XLSX row for modal
         PayerID: rec.PayerID || '',
         isValid
@@ -71,12 +79,14 @@ async function handleRun() {
   }
 }
 
+// ----------------- Download -----------------
 function handleDownload() {
   if (!lastWorkbook || !lastResults.length) { showError(new Error('Nothing to download')); return; }
   try { XLSX.writeFile(lastWorkbook, 'checker_modifiers_results.xlsx'); }
   catch(err) { try { XLSX.writeFile(makeWorkbookFromJson(lastResults, 'checker_modifiers_results'), 'checker_modifiers_results.xlsx'); } catch(e) { showError(e); } }
 }
 
+// ----------------- File helpers -----------------
 function readFileText(file) {
   return new Promise((resolve, reject) => {
     const fr = new FileReader();
@@ -91,10 +101,12 @@ async function readXlsx(file) {
   const wb = XLSX.read(arrayBuffer, { type: 'array' });
   const sheetName = wb.SheetNames[0];
   const ws = wb.Sheets[sheetName];
+  // header row is on row 2 in sample -> range:1
   const rows = XLSX.utils.sheet_to_json(ws, { defval: '', range: 1 });
   return { rows, sheetName };
 }
 
+// ----------------- XML parsing & extraction -----------------
 function parseXml(text) {
   const doc = new DOMParser().parseFromString(text, 'text/xml');
   const pe = doc.getElementsByTagName('parsererror')[0];
@@ -102,6 +114,7 @@ function parseXml(text) {
   return doc;
 }
 
+// Extract records where Observation contains Code === 'CPT modifier' and Value is '24' or '52'
 function extractModifierRecords(xmlDoc) {
   const records = [];
   const claims = Array.from(xmlDoc.getElementsByTagName('Claim'));
@@ -118,10 +131,19 @@ function extractModifierRecords(xmlDoc) {
     const activities = Array.from(claim.getElementsByTagName('Activity'));
     activities.forEach(act => {
       const activityId = textValue(act, 'ID');
-      const clinician = normalizeName(firstNonEmpty([textValue(act, 'OrderingClnician'), textValue(act, 'OrderingClinician'), textValue(act, 'Ordering_Clinician'), textValue(act, 'OrderingClin')]));
+
+      // Capture clinician license exactly from XML (trim + uppercase) so it matches XLSX Clinician
+      const clinicianRaw = firstNonEmpty([
+        textValue(act, 'OrderingClnician'),
+        textValue(act, 'OrderingClinician'),
+        textValue(act, 'Ordering_Clinician'),
+        textValue(act, 'OrderingClin')
+      ]);
+      const clinician = String(clinicianRaw || '').trim().toUpperCase();
 
       const observations = Array.from(act.getElementsByTagName('Observation'));
       observations.forEach(obs => {
+        // sequential pairing Code->Value where structure is mixed
         let lastCode = '';
         Array.from(obs.children || []).forEach(child => {
           const tag = child.tagName;
@@ -135,12 +157,13 @@ function extractModifierRecords(xmlDoc) {
               MemberID: normalizeMemberId(memberIdRaw),
               Date: encDate,
               OrderingClinician: clinician,
-              Modifier: txt,
+              Modifier: String(txt || '').trim(),
               PayerID: payerId
             });
           }
         });
 
+        // fallback: align Code[] and Value[] arrays
         const codes = Array.from(obs.getElementsByTagName('Code')).map(n => String(n.textContent || '').trim());
         const values = Array.from(obs.getElementsByTagName('Value')).map(n => String(n.textContent || '').trim());
         const count = Math.max(codes.length, values.length);
@@ -154,7 +177,7 @@ function extractModifierRecords(xmlDoc) {
               MemberID: normalizeMemberId(memberIdRaw),
               Date: encDate,
               OrderingClinician: clinician,
-              Modifier: val,
+              Modifier: String(val || '').trim(),
               PayerID: payerId
             });
           }
@@ -166,12 +189,13 @@ function extractModifierRecords(xmlDoc) {
   return records;
 }
 
+// ----------------- XLSX matcher -----------------
 function buildXlsxMatcher(rows) {
   const index = new Map();
 
   rows.forEach(r => {
     const member = normalizeMemberId(String(r['Card Number / DHA Member ID'] || ''));
-    const date = normalizeDate(String(r['Ordered On'] || '').split(' ')[0]);
+    const date = normalizeDate(String(r['Ordered On'] || '')); // pass whole string; normalizeDate strips time
     const clinician = String(r['Clinician'] || '').trim().toUpperCase();
     r._VOINumber = String(r['VOI Number'] || '').trim();
 
@@ -193,8 +217,8 @@ function buildXlsxMatcher(rows) {
         return arr[0];
       }
 
-      // Check if Member + Clinician match, but date does not
-      const partialKeyPattern = new RegExp(`^${normalizedMember}\\|.*\\|${normalizedClinician}$`);
+      // Check partial: Member + Clinician matched but date mismatch
+      const partialKeyPattern = new RegExp(`^${escapeRegex(normalizedMember)}\\|.*\\|${escapeRegex(normalizedClinician)}$`);
       for (const k of index.keys()) {
         if (partialKeyPattern.test(k)) {
           console.warn(`[PARTIAL MATCH] Member and Clinician matched but date mismatch. XML date: ${date}, XLSX key: ${k}`);
@@ -208,9 +232,17 @@ function buildXlsxMatcher(rows) {
   };
 }
 
+// ----------------- Validation / business rules -----------------
 function isModifierTarget(val) { const v = String(val || '').trim(); return v === '24' || v === '52'; }
 function expectedModifierForVOI(voi) { if (!voi) return ''; const v = String(voi).trim(); if (v === 'VOI_D') return '24'; if (v === 'VOI_EF1') return '52'; return ''; }
 
+// Normalize strings for robust comparisons (uppercase + remove non-alphanumeric)
+function normForCompare(s) { return String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
+
+// escape regex special characters for building partialKeyPattern
+function escapeRegex(s) { return String(s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+// ----------------- Rendering -----------------
 function renderResults(rows) {
   const container = el('outputTableContainer');
   if (!rows || !rows.length) {
@@ -218,7 +250,7 @@ function renderResults(rows) {
     return;
   }
 
-  // Debug summary: show how many rows and which payer IDs exist (helpful when "no data" shows)
+  // debug summary
   console.info('[DEBUG] total rows from mapping:', rows.length);
   const payerSet = new Set(rows.map(r => String(r.PayerID || '').trim().toUpperCase()).filter(x => x));
   console.info('[DEBUG] unique Payer IDs in results:', Array.from(payerSet).join(', ') || '(none)');
@@ -234,7 +266,7 @@ function renderResults(rows) {
     return;
   }
 
-  // Ensure each filtered row carries its original index into the full results
+  // map filtered rows back to original lastResults indices for modal linking
   filteredRows.forEach(r => { r._originalIndex = rows.indexOf(r); });
 
   let prevClaimId = null, prevMemberId = null, prevActivityId = null;
@@ -258,11 +290,11 @@ function renderResults(rows) {
     const showMember = showClaim || r.MemberID !== prevMemberId;
     const showActivity = showMember || r.ActivityID !== prevActivityId;
 
-    // Use the VOINumber extracted earlier in mapping (r.VOINumber) for display/validation.
-    // Only mark valid if VOINumber exists and matches CPT rules.
+    // Use the VOINumber extracted earlier (r.VOINumber) for display/validation
     const voiForValidation = String(r.VOINumber || '').trim().toUpperCase();
     const isValid = voiForValidation
-      ? ((r.Modifier === '52' && voiForValidation === 'VOI_EF1') || (r.Modifier === '24' && voiForValidation === 'VOI_D'))
+      ? ((r.Modifier === '52' && normForCompare(voiForValidation) === normForCompare('VOI_EF1')) ||
+         (r.Modifier === '24' && normForCompare(voiForValidation) === normForCompare('VOI_D')))
       : false;
 
     html += `<tr class="${isValid ? 'valid' : 'invalid'}">
@@ -285,19 +317,25 @@ function renderResults(rows) {
   container.innerHTML = html;
 }
 
-// Utilities
+// ----------------- Utilities -----------------
 function textValue(node, tag) { if (!node) return ''; const el = node.getElementsByTagName(tag)[0]; return el ? String(el.textContent || '').trim() : ''; }
 function firstNonEmpty(arr) { for (const s of arr) if (s !== undefined && s !== null && String(s).trim() !== '') return String(s).trim(); return ''; }
+
+// Only remove leading zeros per requirement; keep other characters intact
 function normalizeMemberId(id) { return String(id || '').replace(/^0+/, '').trim(); }
+
+// normalizeName retains spacing normalization and lowercases (used only in a few debug paths)
 function normalizeName(name) { return String(name || '').replace(/\s+/g, ' ').trim().toLowerCase(); }
+
+// normalizeDate: robust handling of common formats; returns YYYY-MM-DD
 function normalizeDate(input) {
   const s = String(input || '').trim();
   if (!s) return '';
 
   // Remove time portion if present
-  const dateOnly = s.split(' ')[0];
+  const dateOnly = s.split(' ')[0].trim();
 
-  // Check for DD/MM/YYYY or DD-MM-YYYY
+  // Check for DD/MM/YYYY or DD-MM-YYYY (day-first)
   let m = dateOnly.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
   if (m) {
     let [, d, mo, y] = m;
@@ -310,39 +348,72 @@ function normalizeDate(input) {
   m = dateOnly.match(/^(\d{1,2})-([A-Za-z]+)-(\d{4})$/);
   if (m) {
     let [, d, mon, y] = m;
-    const monthMap = {
-      Jan:0, Feb:1, Mar:2, Apr:3, May:4, Jun:5,
-      Jul:6, Aug:7, Sep:8, Oct:9, Nov:10, Dec:11
-    };
+    const monthMap = { Jan:0, Feb:1, Mar:2, Apr:3, May:4, Jun:5, Jul:6, Aug:7, Sep:8, Oct:9, Nov:10, Dec:11 };
     const dt = new Date(Number(y), monthMap[mon] ?? 0, Number(d));
     if (!Number.isNaN(dt.getTime())) return toYMD(dt);
   }
 
-  // Fallback: try ISO parse
+  // Try ISO/parseable numeric date
   let t = Date.parse(dateOnly);
   if (!Number.isNaN(t)) return toYMD(new Date(t));
 
-  return dateOnly; // fallback
+  return dateOnly; // fallback (unchanged)
 }
 
 function toYMD(d) {
-  const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), da = String(d.getDate()).padStart(2,'0');
+  const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, '0'), da = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${da}`;
 }
 
-function escapeHtml(str) { return String(str == null ? '' : str).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'","&#39;"); }
-function firstNonEmptyKey(obj, keys) { for (const k of keys) if (Object.prototype.hasOwnProperty.call(obj,k) && String(obj[k]).trim() !== '') return obj[k]; return null; }
-function makeWorkbookFromJson(json, sheetName) { const ws = XLSX.utils.json_to_sheet(json), wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, sheetName || 'Results'); return wb; }
+function escapeHtml(str) {
+  return String(str == null ? '' : str)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
 
-// UI helpers
+function firstNonEmptyKey(obj, keys) {
+  for (const k of keys) if (Object.prototype.hasOwnProperty.call(obj, k) && String(obj[k]).trim() !== '') return obj[k];
+  return null;
+}
+
+function makeWorkbookFromJson(json, sheetName) {
+  const ws = XLSX.utils.json_to_sheet(json);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, sheetName || 'Results');
+  return wb;
+}
+
+// ----------------- UI helpers -----------------
 function el(id) { return document.getElementById(id); }
 function fileEl(id) { const f = el(id); return f && f.files && f.files[0] ? f.files[0] : null; }
-function resetUI() { const container = el('outputTableContainer'); if(container) container.innerHTML=''; toggleDownload(false); message('',''); showProgress(0,''); lastResults=[]; lastWorkbook=null; }
-function toggleDownload(enabled) { const dl = el('download-button'); if(!dl) return; dl.disabled = !enabled; }
-function showProgress(percent, text) { const barContainer = el('progress-bar-container'), bar = el('progress-bar'), pText = el('progress-text'); if(barContainer) barContainer.style.display = percent > 0 ? 'block' : 'none'; if(bar) bar.style.width = (percent || 0)+'%'; if(pText) pText.textContent = text ? `${percent}% — ${text}` : `${percent}%`; }
-function message(text, color) { const m = el('messageBox'); if(!m) return; m.textContent = text||''; m.style.color = color||''; }
-function showError(err) { message(err && err.message ? err.message : String(err), 'red'); showProgress(0,''); toggleDownload(false); }
 
+function resetUI() {
+  const container = el('outputTableContainer');
+  if (container) container.innerHTML = '';
+  toggleDownload(false);
+  message('', '');
+  showProgress(0, '');
+  lastResults = [];
+  lastWorkbook = null;
+}
+
+function toggleDownload(enabled) { const dl = el('download-button'); if (!dl) return; dl.disabled = !enabled; }
+
+function showProgress(percent, text) {
+  const barContainer = el('progress-bar-container'), bar = el('progress-bar'), pText = el('progress-text');
+  if (barContainer) barContainer.style.display = percent > 0 ? 'block' : 'none';
+  if (bar) bar.style.width = (percent || 0) + '%';
+  if (pText) pText.textContent = text ? `${percent}% — ${text}` : `${percent}%`;
+}
+
+function message(text, color) { const m = el('messageBox'); if (!m) return; m.textContent = text || ''; m.style.color = color || ''; }
+
+function showError(err) { message(err && err.message ? err.message : String(err), 'red'); showProgress(0, ''); toggleDownload(false); }
+
+// ----------------- Modal logic -----------------
 function showEligibility(index) {
   const row = lastResults[index];
   if (!row || !row.EligibilityRow) { alert('No eligibility data found for this claim.'); return; }
@@ -360,13 +431,16 @@ function showEligibility(index) {
     </div>
   </div>`;
 
+  // Remove existing modal if present
+  closeEligibilityModal();
+
   const modal = document.createElement('div');
   modal.id = "eligibilityModal";
   modal.className = "modal";
   modal.innerHTML = modalHtml;
-  modal.addEventListener('click', e => { if(e.target === modal) closeEligibilityModal(); });
+  modal.addEventListener('click', e => { if (e.target === modal) closeEligibilityModal(); });
   document.body.appendChild(modal);
   modal.style.display = "flex";
 }
 
-function closeEligibilityModal() { const modal = el('eligibilityModal'); if(modal) modal.remove(); }
+function closeEligibilityModal() { const modal = el('eligibilityModal'); if (modal) modal.remove(); }
