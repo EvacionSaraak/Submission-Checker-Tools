@@ -31,7 +31,21 @@ async function handleRun() {
     const output = extracted.map(rec => {
       const xmlDate = normalizeDate(rec.Date);
       const match = matcher.find(rec.MemberID, xmlDate, rec.OrderingClinician);
-      const voi = match ? String(firstNonEmptyKey(match, ['_VOINumber','VOI Number','VOI','VOI_Number','VOI Number ']) || '').trim() : '';
+
+      const voi = match ? String(match['VOI Number'] || '').trim() : '';
+
+      // Determine validity based on CPT + VOI
+      const isValid = (rec.Modifier === '52' && voi === 'VOI_EF1') ||
+                      (rec.Modifier === '24' && voi === 'VOI_D');
+
+      // Log if member and clinician match but date mismatched
+      if (match === null) {
+        const partialMatch = Array.from(matcher._index.values())
+          .flat()
+          .find(r => normalizeMemberId(r['Card Number / DHA Member ID']) === normalizeMemberId(rec.MemberID) &&
+                     normalizeName(r['Clinician']) === normalizeName(rec.OrderingClinician));
+        if (partialMatch) console.log('Member and Clinician matched but date mismatch. XML date:', xmlDate, 'XLSX key:', partialMatch['Card Number / DHA Member ID'] + '|' + normalizeDate(partialMatch['Ordered On']) + '|' + partialMatch['Clinician']);
+      }
 
       return {
         ClaimID: rec.ClaimID || '',
@@ -39,9 +53,10 @@ async function handleRun() {
         ActivityID: rec.ActivityID || '',
         OrderingClinician: rec.OrderingClinician.toUpperCase() || '',
         Modifier: rec.Modifier || '',
-        VOINumber: voi || '',
-        EligibilityRow: match || null,
-        PayerID: rec.PayerID || ''
+        VOINumber: voi,
+        EligibilityRow: match || null, // full XLSX row for modal
+        PayerID: rec.PayerID || '',
+        isValid
       };
     });
 
