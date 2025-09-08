@@ -215,44 +215,82 @@ function excelDateFromJSDate(date) {
   return (date - epoch) / (1000 * 60 * 60 * 24);
 }
 
-function toExcelSerial(value, fileType) {
-  // fileType: 0 => Odoo (MDY), 1 => ClinicPro (numeric), 2 => Insta (DMY)
-  if (value === null || value === undefined || value === '') return '';
-  if (fileType === 1) { // ClinicPro likely already numeric/excel serial
-    const num = Number(value);
-    if (!isNaN(num)) return Math.floor(num);
+// Canonical: unified toExcelSerial
+// schemaType: 0 => Odoo (prefer MDY fallback for ambiguous; can be tuned), 
+//             1 => ClinicPro (prefer MDY for ambiguous numeric-ish rows), 
+//             2 => InstaHMS (prefer DMY)
+function toExcelSerial(rawValue, schemaType = 0) {
+  const MS_PER_DAY = 24 * 60 * 60 * 1000;
+  const EXCEL_EPOCH_MS = Date.UTC(1899, 11, 30); // Excel day 1 offset
+
+  if (rawValue === null || rawValue === undefined || rawValue === '') return '';
+
+  // 1) If it's already a number
+  if (typeof rawValue === 'number' && !isNaN(rawValue)) {
+    // Large numbers likely ms timestamps ( > ~1e11 ), convert to days
+    if (Math.abs(rawValue) > 1e11) {
+      return Math.floor((Number(rawValue) - EXCEL_EPOCH_MS) / MS_PER_DAY);
+    }
+    // If it looks like a proper Excel serial or decimal serial -> floor
+    if (rawValue > 20000 && rawValue < 60000) return Math.floor(rawValue);
+    // fallback: treat small numeric as not a date
     return '';
   }
 
-  // If it's already a Date object
-  if (Object.prototype.toString.call(value) === '[object Date]' && !isNaN(value)) {
-    return Math.floor(excelDateFromJSDate(value));
+  // 2) Normalize string
+  const sRaw = String(rawValue).trim();
+  if (!sRaw) return '';
+
+  // 3) Pure numeric string (including decimal)
+  if (/^[+-]?\d+(\.\d+)?$/.test(sRaw)) {
+    const n = Number(sRaw);
+    // ms timestamp
+    if (Math.abs(n) > 1e11) return Math.floor((n - EXCEL_EPOCH_MS) / MS_PER_DAY);
+    // treat decimal serials or integer-like excel serials
+    if (n > 20000 && n < 60000) return Math.floor(n);
+    // Some exporters give decimals like 45907.481 -> still floor
+    if (n > 0) return Math.floor(n);
+    return '';
   }
 
-  const s = String(value).trim();
-  // Pure numeric that looks like a serial
-  const n = Number(s.replace(/[^\d.]/g, ''));
-  if (!isNaN(n) && n > 20000 && n < 60000) return Math.floor(n);
+  // 4) ISO yyyy-mm-dd (unambiguous)
+  let m = sRaw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) {
+    const y = Number(m[1]), mo = Number(m[2]) - 1, d = Number(m[3]);
+    const ms = Date.UTC(y, mo, d);
+    return Math.floor((ms - EXCEL_EPOCH_MS) / MS_PER_DAY);
+  }
 
-  // Split into parts
-  const parts = s.split(/[\/\-.]/).map(p => p.trim()).filter(Boolean);
-  if (parts.length === 3) {
-    // Decide ordering based on fileType
+  // 5) Common separators: dd/mm/yyyy or mm/dd/yyyy or d/m/yy etc.
+  m = sRaw.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);
+  if (m) {
+    let p1 = Number(m[1]), p2 = Number(m[2]), p3 = Number(m[3]);
+    if (p3 < 100) p3 += 2000;
+
     let day, month, year;
-    if (fileType === 2) { // DMY
-      day = parseInt(parts[0], 10); month = parseInt(parts[1], 10) - 1; year = parseInt(parts[2], 10);
-    } else { // Odoo MDY
-      month = parseInt(parts[0], 10) - 1; day = parseInt(parts[1], 10); year = parseInt(parts[2], 10);
+    // heuristics:
+    if (p1 > 12) { day = p1; month = p2; year = p3; }        // definitely DMY
+    else if (p2 > 12) { month = p1; day = p2; year = p3; }  // definitely MDY
+    else {
+      // ambiguous -> choose based on schemaType
+      if (schemaType === 2) { day = p1; month = p2; year = p3; } // Insta -> DMY
+      else { month = p1; day = p2; year = p3; }                  // Clinic/Odoo prefer MDY
     }
-    if (year < 100) year += 2000;
-    const dt = new Date(Date.UTC(year, month, day));
-    if (!isNaN(dt)) return Math.floor(excelDateFromJSDate(dt));
+
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      const ms = Date.UTC(year, month - 1, day);
+      return Math.floor((ms - EXCEL_EPOCH_MS) / MS_PER_DAY);
+    }
   }
 
-  // Fallback: try Date.parse
-  const parsed = Date.parse(s);
-  if (!isNaN(parsed)) return Math.floor(excelDateFromJSDate(new Date(parsed)));
+  // 6) Last resort: Date.parse (handles many textual forms). Use UTC day boundary.
+  const parsedMs = Date.parse(sRaw);
+  if (!isNaN(parsedMs)) {
+    const ms = parsedMs;
+    return Math.floor((ms - EXCEL_EPOCH_MS) / MS_PER_DAY);
+  }
 
+  // else not recognized
   return '';
 }
 
@@ -437,93 +475,6 @@ async function combineReportings(fileEntries, clinicianFile) {
   // Helpers used only inside combineReportings to keep behavior local & robust
   const MS_PER_DAY = 24 * 60 * 60 * 1000;
   const EXCEL_EPOCH_MS = Date.UTC(1899, 11, 30); // 1899-12-30 UTC
-
-  function parseToExcelSerial(rawValue, schemaType) {
-    // schemaType: 0 => Odoo (prefer DMY by heuristic fallback), 1 => ClinicPro (numeric/excel serial likely), 2 => Insta (DMY)
-    if (rawValue === null || rawValue === undefined || rawValue === '') return '';
-
-    // If it's already a number
-    if (typeof rawValue === 'number' && !isNaN(rawValue)) {
-      // If looks like a valid Excel serial (days)
-      if (rawValue > 20000 && rawValue < 60000) return Math.floor(rawValue);
-      // If looks like a timestamp in ms (very large)
-      if (Math.abs(rawValue) > 1e11) {
-        return Math.floor((Number(rawValue) - EXCEL_EPOCH_MS) / MS_PER_DAY);
-      }
-      // otherwise nothing sensible
-      return '';
-    }
-
-    // Convert to string
-    const sRaw = (typeof rawValue === 'string') ? rawValue.trim() : String(rawValue).trim();
-    if (!sRaw) return '';
-
-    // If numeric-string
-    if (/^[+-]?\d+(\.\d+)?$/.test(sRaw)) {
-      const n = Number(sRaw);
-      if (!isNaN(n) && n > 20000 && n < 60000) return Math.floor(n); // already excel serial
-      if (Math.abs(n) > 1e11) return Math.floor((n - EXCEL_EPOCH_MS) / MS_PER_DAY); // ms timestamp
-      // handle decimal-like excel serials e.g. "45907.48194"
-      if (!isNaN(n) && n > 0) return Math.floor(n);
-    }
-
-    // ISO date YYYY-MM-DD (unambiguous)
-    let m;
-    m = sRaw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-    if (m) {
-      const year = Number(m[1]), month = Number(m[2]) - 1, day = Number(m[3]);
-      const ms = Date.UTC(year, month, day);
-      return Math.floor((ms - EXCEL_EPOCH_MS) / MS_PER_DAY);
-    }
-
-    // Common slash/dash separated formats like 07/09/2025 or 7/9/25
-    m = sRaw.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);
-    if (m) {
-      let p1 = Number(m[1]), p2 = Number(m[2]), p3 = Number(m[3]);
-      // normalize year
-      if (p3 < 100) p3 += 2000;
-
-      // Heuristic for ordering:
-      // - If first part > 12 => definitely day (DMY)
-      // - Else if second part > 12 => definitely MDY (first is month)
-      // - Else ambiguous -> prefer DMY (day/month) since that's typical for your locale; schemaType can override
-      let day, month, year;
-      if (p1 > 12) { day = p1; month = p2; year = p3; } // DMY
-      else if (p2 > 12) { month = p1; day = p2; year = p3; } // MDY
-      else {
-        // ambiguous: try DMY first, then MDY fallback
-        if (schemaType === 1) {
-          // For ClinicPro, many exports are numeric/date-in-excel style; prefer MDY here (historical behavior)
-          month = p1; day = p2; year = p3;
-        } else {
-          // Default prefer DMY (day/month/year)
-          day = p1; month = p2; year = p3;
-        }
-      }
-
-      // If we didn't set day/month above (because of branch), set now (for MDY branch)
-      if (typeof day === 'undefined' || typeof month === 'undefined' || typeof year === 'undefined') {
-        // fallback to DMY
-        day = p1; month = p2; year = p3;
-      }
-
-      // validate
-      if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
-        const ms = Date.UTC(year, month - 1, day);
-        return Math.floor((ms - EXCEL_EPOCH_MS) / MS_PER_DAY);
-      }
-    }
-
-    // Try Date.parse fallback (handles many textual forms)
-    const parsed = Date.parse(sRaw);
-    if (!isNaN(parsed)) {
-      const ms = parsed;
-      return Math.floor((ms - EXCEL_EPOCH_MS) / MS_PER_DAY);
-    }
-
-    return '';
-  }
-
   const rawToSerialMap = {};
   const serialSet = new Set();
   const globalSeenClaimIDs = new Set();
@@ -665,11 +616,11 @@ async function combineReportings(fileEntries, clinicianFile) {
         const encSrc = Object.keys(headerMap || {}).find(k => (headerMap || {})[k] === 'Encounter Date');
         if (encSrc) {
           rawEncounterVal = sourceRow[headerSignature(encSrc)] ?? '';
-          normalizedEncounter = parseToExcelSerial(rawEncounterVal, schemaType);
+          normalizedEncounter = toExcelSerial(rawEncounterVal, schemaType);
         } else {
           // fallback common header signatures
           rawEncounterVal = sourceRow[headerSignature('Encounter Date')] ?? sourceRow[headerSignature('ClaimDate')] ?? sourceRow[headerSignature('Adm/Reg. Date')] ?? sourceRow['date'] ?? '';
-          normalizedEncounter = parseToExcelSerial(rawEncounterVal, schemaType);
+          normalizedEncounter = toExcelSerial(rawEncounterVal, schemaType);
         }
 
         if (normalizedEncounter !== '' && normalizedEncounter !== null) {
