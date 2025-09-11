@@ -192,17 +192,6 @@ function extractModifierRecords(xmlDoc) {
       });
     });
   });
-
-  // Deduplicate rows based on ClaimID + ActivityID + MemberID + Modifier + ObsCode
-  const seen = new Set();
-  return records.filter(r => {
-    const key = [r.ClaimID, r.ActivityID, r.MemberID, r.Modifier, r.ObsCode].join('|');
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
   // Deduplicate rows based on ClaimID + ActivityID + MemberID + Modifier + ObsCode
   const seen = new Set();
   return records.filter(r => {
