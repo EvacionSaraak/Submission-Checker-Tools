@@ -673,46 +673,53 @@ function renderResults(results, eligMap) {
   initEligibilityModal(results, eligMap);
 }
 
-function initEligibilityModal(results, eligMap) {
-  const existingModal = document.getElementById('eligibilityModal');
-  if (existingModal) existingModal.remove();
-
-  const modalHTML = `
-    <div id="eligibilityModal" class="modal hidden">
-      <div class="modal-content eligibility-modal">
-        <span class="close">&times;</span>
-        <div class="modal-scrollable">
-          <h3>Eligibility Details</h3>
-          <div id="eligibilityModalContent" class="eligibility-details-container"></div>
+function initEligibilityModal() {
+  // Insert modal HTML if it doesn't already exist
+  if (!document.getElementById('eligibilityModal')) {
+    const modalHTML = `
+      <div id="eligibilityModal" class="modal hidden">
+        <div class="modal-content" id="eligibilityModalContent">
+          <span class="close">&times;</span>
         </div>
-      </div>
-    </div>
-  `;
-  document.body.insertAdjacentHTML('beforeend', modalHTML);
+      </div>`;
+    document.body.insertAdjacentHTML('beforeend', modalHTML);
+  }
 
-  const modal = document.getElementById('eligibilityModal');
-  const modalContent = document.getElementById('eligibilityModalContent');
-  const closeBtn = modal.querySelector('.close');
+  const resultsContainer = document.getElementById('outputTableContainer');
+  if (!resultsContainer) return;
 
-  // Individual eligibility match
-  document.querySelectorAll('.eligibility-details').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const index = parseInt(btn.dataset.index);
-      const record = results[index].fullEligibilityRecord;
-      const memberID = results[index].memberID;
+  // Use event delegation to handle clicks on all buttons inside resultsContainer
+  resultsContainer.addEventListener('click', (e) => {
+    const modal = document.getElementById('eligibilityModal');
+    const modalContent = document.getElementById('eligibilityModalContent');
+    if (!modal || !modalContent) return;
 
+    // Close modal
+    if (e.target.classList.contains('close') || e.target.id === 'eligibilityModal') {
+      modal.classList.add('hidden');
+      return;
+    }
+
+    // Individual eligibility details button
+    if (e.target.classList.contains('eligibility-details')) {
+      const index = parseInt(e.target.dataset.index);
+      const record = window.lastValidationResults?.[index]?.fullEligibilityRecord;
+      const memberID = window.lastValidationResults?.[index]?.memberID;
       if (record) {
         modalContent.innerHTML = formatEligibilityDetails(record, memberID);
         modal.classList.remove('hidden');
       }
-    });
-  });
+    }
 
-  // Show all eligibilities under a member ID
-  document.querySelectorAll('.show-all-eligibilities').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const memberID = btn.dataset.member;
-      const claimClinicians = btn.dataset.clinicians?.split(',').map(normalizeClinician);
+    // Show all eligibilities button
+    if (e.target.classList.contains('show-all-eligibilities')) {
+      const memberID = e.target.dataset.member;
+      const claimClinicians = e.target.dataset.clinicians
+        ?.split(',')
+        .map(normalizeClinician) || [];
+
+      // Build eligibility map if not already
+      const eligMap = prepareEligibilityMap(eligData);
       const eligibilities = [...(eligMap.get(memberID) || [])];
 
       eligibilities.sort((a, b) => {
@@ -721,38 +728,26 @@ function initEligibilityModal(results, eligMap) {
         return (dateB?.getTime() || 0) - (dateA?.getTime() || 0);
       });
 
-      const details = eligibilities.map((e, idx) => {
-        return `
-          <table class="eligibility-details">
-            <tbody>
-              <tr><th>#${idx + 1}</th><td></td></tr>
-              <tr><th>Eligibility Request Number</th><td>${e['Eligibility Request Number']}</td></tr>
-              <tr><th>Answered On</th><td>${DateHandler.format(DateHandler.parse(e['Answered On']))}</td></tr>
-              <tr><th>Ordered On</th><td>${DateHandler.format(DateHandler.parse(e['Ordered On']))}</td></tr>
-              <tr><th>Status</th><td>${e.Status}</td></tr>
-              <tr><th>Clinician</th><td>${e.Clinician}</td></tr>
-              <tr><th>Claim Clinician(s)</th><td>${claimClinicians.join(', ')}</td></tr>
-              <tr><th>Service Category</th><td>${e['Service Category']}</td></tr>
-              <tr><th>Package</th><td>${e['Package Name']}</td></tr>
-              <tr><th>Payer Name</th><td>${e['Provider Name']}</td></tr>
-            </tbody>
-          </table>
-        `;
-      }).join('<hr>');
+      const details = eligibilities.map((e, idx) => `
+        <table class="eligibility-details">
+          <tbody>
+            <tr><th>#${idx + 1}</th><td></td></tr>
+            <tr><th>Eligibility Request Number</th><td>${e['Eligibility Request Number']}</td></tr>
+            <tr><th>Answered On</th><td>${DateHandler.format(DateHandler.parse(e['Answered On']))}</td></tr>
+            <tr><th>Ordered On</th><td>${DateHandler.format(DateHandler.parse(e['Ordered On']))}</td></tr>
+            <tr><th>Status</th><td>${e.Status}</td></tr>
+            <tr><th>Clinician</th><td>${e.Clinician}</td></tr>
+            <tr><th>Claim Clinician(s)</th><td>${claimClinicians.join(', ')}</td></tr>
+            <tr><th>Service Category</th><td>${e['Service Category']}</td></tr>
+            <tr><th>Package</th><td>${e['Package Name']}</td></tr>
+            <tr><th>Payer Name</th><td>${e['Provider Name']}</td></tr>
+          </tbody>
+        </table>
+      `).join('<hr>');
 
-      modalContent.innerHTML = `
-        <div class="form-row">
-          <strong>Member ID:</strong> ${memberID}
-        </div>
-        ${details}
-      `;
+      modalContent.innerHTML = `<div class="form-row"><strong>Member ID:</strong> ${memberID}</div>${details}`;
       modal.classList.remove('hidden');
-    });
-  });
-
-  closeBtn.addEventListener('click', () => modal.classList.add('hidden'));
-  modal.addEventListener('click', e => {
-    if (e.target === modal) modal.classList.add('hidden');
+    }
   });
 }
 
