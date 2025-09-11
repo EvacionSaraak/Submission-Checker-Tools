@@ -636,7 +636,8 @@ function renderResults(results, eligMap) {
 
     let detailsCell = '<div class="source-note">N/A</div>';
     if (result.fullEligibilityRecord?.['Eligibility Request Number']) {
-      detailsCell = `<button class="details-btn eligibility-details" data-index="${index}">${result.fullEligibilityRecord['Eligibility Request Number']}</button>`;
+      const recordStr = JSON.stringify(result.fullEligibilityRecord).replace(/"/g, '&quot;');
+      detailsCell = `<button class="details-btn eligibility-details" data-record="${recordStr}" data-member="${result.memberID}">${result.fullEligibilityRecord['Eligibility Request Number']}</button>`;
     } else if (eligMap.has(result.memberID)) {
       detailsCell = `<button class="details-btn show-all-eligibilities" data-member="${result.memberID}" data-clinicians="${(result.clinicians || [result.clinician || '']).join(',')}">View All</button>`;
     }
@@ -672,23 +673,22 @@ function renderResults(results, eligMap) {
   initEligibilityModal();
 }
 
-function initEligibilityModal(resultsContainer, eligData) {
-  if (!resultsContainer) return;
-
-  const modal = document.getElementById('eligibilityModal');
-  const modalContent = document.getElementById('eligibilityModalContent');
-  if (!modal || !modalContent) return;
-
-  // Preprocess eligibility map once for efficiency
-  const eligMap = new Map();
-  eligData.forEach(e => {
-    const member = e['Member ID'] || e['PatientCardID'];
-    if (!member) return;
-    if (!eligMap.has(member)) eligMap.set(member, []);
-    eligMap.get(member).push(e);
-  });
+function initEligibilityModal() {
+  if (!document.getElementById('eligibilityModal')) {
+    const modalHTML = `
+      <div id="eligibilityModal" class="modal hidden">
+        <div class="modal-content" id="eligibilityModalContent">
+          <span class="close">&times;</span>
+        </div>
+      </div>`;
+    document.body.insertAdjacentHTML('beforeend', modalHTML);
+  }
 
   resultsContainer.addEventListener('click', (e) => {
+    const modal = document.getElementById('eligibilityModal');
+    const modalContent = document.getElementById('eligibilityModalContent');
+    if (!modal || !modalContent) return;
+
     // Close modal
     if (e.target.classList.contains('close') || e.target.id === 'eligibilityModal') {
       modal.classList.add('hidden');
@@ -697,16 +697,10 @@ function initEligibilityModal(resultsContainer, eligData) {
 
     // Individual eligibility details button
     if (e.target.classList.contains('eligibility-details')) {
-      try {
-        const record = JSON.parse(e.target.dataset.record);
-        const memberID = e.target.dataset.member;
-        if (record) {
-          modalContent.innerHTML = formatEligibilityDetails(record, memberID);
-          modal.classList.remove('hidden');
-        }
-      } catch (err) {
-        console.error('[ERROR] Parsing eligibility record:', err, e.target.dataset.record);
-      }
+      const record = JSON.parse(e.target.dataset.record);
+      const memberID = e.target.dataset.member;
+      modalContent.innerHTML = formatEligibilityDetails(record, memberID);
+      modal.classList.remove('hidden');
     }
 
     // Show all eligibilities button
@@ -714,8 +708,9 @@ function initEligibilityModal(resultsContainer, eligData) {
       const memberID = e.target.dataset.member;
       const claimClinicians = e.target.dataset.clinicians
         ?.split(',')
-        .map(c => c.trim()) || [];
+        .map(normalizeClinician) || [];
 
+      const eligMap = prepareEligibilityMap(eligData);
       const eligibilities = [...(eligMap.get(memberID) || [])];
 
       eligibilities.sort((a, b) => {
