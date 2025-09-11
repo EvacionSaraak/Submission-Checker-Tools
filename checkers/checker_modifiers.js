@@ -28,7 +28,8 @@ async function handleRun() {
       const xmlDate = normalizeDate(rec.Date);
       const match = matcher.find(rec.MemberID, xmlDate, rec.OrderingClinician);
 
-      const voi = rec.VOINumber || '';
+      // Use VOI from eligibility if matched, otherwise fallback to XML VOI
+      const voi = match ? String(match['VOI Number'] || '').trim() : (rec.VOINumber || '');
       const cptNorm = String(rec.Modifier || '').trim();
       const voiNorm = normForCompare(voi);
       const expectEF = normForCompare('VOI_EF1');
@@ -36,10 +37,12 @@ async function handleRun() {
 
       const remarks = [];
 
+      // XML observation code validation
       if (rec.ObsCode !== 'CPT modifier') {
         remarks.push(`Observation Code incorrect; expected "CPT modifier" but found "${rec.ObsCode}"`);
       }
 
+      // VOI vs modifier check (using eligibility VOI)
       if (match) {
         if ((cptNorm === '52' && voiNorm !== expectEF) ||
             (cptNorm === '24' && voiNorm !== expectD)) {
@@ -49,6 +52,7 @@ async function handleRun() {
         remarks.push('No matching eligibility found');
       }
 
+      // Partial match logging
       if (!match) {
         const partialMatch = Array.from(matcher._index.values()).flat()
           .find(r => normalizeMemberId(r['Card Number / DHA Member ID']) === normalizeMemberId(rec.MemberID) &&
@@ -62,7 +66,7 @@ async function handleRun() {
         ActivityID: rec.ActivityID || '',
         OrderingClinician: rec.OrderingClinician || '',
         Modifier: rec.Modifier || '',
-        VOINumber: voi || '',
+        VOINumber: voi,
         PayerID: rec.PayerID || '',
         EligibilityRow: match || null,
         isValid: remarks.length === 0,
@@ -147,15 +151,17 @@ function extractModifierRecords(xmlDoc) {
         const voiVal = textValue(obs, 'Value') || textValue(obs, 'ValueText') || '';
         const valueType = textValue(obs, 'ValueType') || '';
 
-        // Only accept observations with ValueType of Modifier
+        // Only accept observations with ValueType of "Modifiers"
         if (!valueType || valueType.trim().toLowerCase() !== 'modifiers') return;
 
+        // Only accept valid VOI values
         let modifier = '';
         const voiNorm = (voiVal || '').toUpperCase().replace(/[_\s]/g, '');
         if (voiNorm === 'VOI_D' || voiNorm === '24') modifier = '24';
         else if (voiNorm === 'VOI_EF1' || voiNorm === '52') modifier = '52';
         else return; // skip anything else
 
+        // Check for exact Observation Code match
         const remarks = [];
         if (code !== 'CPT modifier') {
           remarks.push(`Observation Code incorrect; expected "CPT modifier" but found "${code}"`);
