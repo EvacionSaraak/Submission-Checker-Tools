@@ -29,33 +29,16 @@ async function handleRun() {
     const matcher = buildXlsxMatcher(xlsxObj.rows);
     showProgress(65, 'Matching to XLSX');
 
+    // Map extracted records to final output rows and determine validation status/reason
     const output = extracted.map(rec => {
       const xmlDate = normalizeDate(rec.Date);
       const match = matcher.find(rec.MemberID, xmlDate, rec.OrderingClinician);
 
-      // Use VOINumber extracted from matched XLSX row (if any)
+      // VOINumber (from matched XLSX row, if any)
       const voi = match ? String(match['VOI Number'] || '').trim() : '';
 
-      // Normalize for robust comparison (remove punctuation/underscores/spaces and uppercase)
-      const cptNorm = String(rec.Modifier || '').trim();
-      const voiNorm = normForCompare(voi);
-      const expectEF = normForCompare('VOI_EF1');
-      const expectD  = normForCompare('VOI_D');
-
-      const isValid = Boolean(match) && (
-        (cptNorm === '52' && voiNorm === expectEF) ||
-        (cptNorm === '24' && voiNorm === expectD)
-      );
-
-      // Log partial matches (member+clinician but date mismatch)
-      if (!match) {
-        const partialMatch = Array.from(matcher._index.values()).flat()
-          .find(r => normalizeMemberId(r['Card Number / DHA Member ID']) === normalizeMemberId(rec.MemberID) &&
-                     String(r['Clinician'] || '').trim().toUpperCase() === String(rec.OrderingClinician || '').trim().toUpperCase());
-        if (partialMatch) console.warn('[PARTIAL MATCH] Member and Clinician matched but date mismatch. XML date:', xmlDate, 'XLSX row sample:', partialMatch);
-      }
-
-      return {
+      // default fields preserved
+      const base = {
         ClaimID: rec.ClaimID || '',
         MemberID: rec.MemberID || '',
         ActivityID: rec.ActivityID || '',
@@ -64,8 +47,56 @@ async function handleRun() {
         VOINumber: voi || '',
         EligibilityRow: match || null, // full XLSX row for modal
         PayerID: rec.PayerID || '',
-        isValid
+        ObsCode: rec.ObsCode || '' // may be undefined if older extractor used
       };
+
+      // Determine validation status + reason
+      let ValidationStatus = 'Invalid';
+      let InvalidReason = '';
+
+      if (!match) {
+        // Check partial: Member + Clinician matched but date mismatch
+        const partialMatch = Array.from(matcher._index.values()).flat()
+          .find(r => normalizeMemberId(r['Card Number / DHA Member ID']) === normalizeMemberId(rec.MemberID) &&
+                     String(r['Clinician'] || '').trim().toUpperCase() === String(rec.OrderingClinician || '').trim().toUpperCase());
+        if (partialMatch) {
+          ValidationStatus = 'Invalid';
+          InvalidReason = 'Member & Clinician matched in eligibility but date mismatch';
+          console.warn('[PARTIAL MATCH] Member and Clinician matched but date mismatch. XML date:', xmlDate, 'XLSX row sample:', partialMatch);
+        } else {
+          ValidationStatus = 'Invalid';
+          InvalidReason = 'No eligibility match';
+        }
+      } else {
+        // We have a matched eligibility row
+        // Determine expected modifier from VOI (VOI names like VOI_EF1, VOI_D)
+        const expectedModifier = expectedModifierForVOI(String(match['VOI Number'] || '').trim());
+        if (!expectedModifier) {
+          ValidationStatus = 'Invalid';
+          InvalidReason = `Unknown VOI in eligibility: ${String(match['VOI Number'] || '').trim() || '(blank)'}`;
+        } else if (String(rec.Modifier || '').trim() !== expectedModifier) {
+          ValidationStatus = 'Invalid';
+          InvalidReason = `Modifier ${String(rec.Modifier || '(blank)')} does not match VOI ${String(match['VOI Number'] || '(blank)')} (expected ${expectedModifier})`;
+        } else {
+          // Modifier matches the VOI. But apply additional caution if ObsCode is not 'CPT modifier'
+          const obsCodeStr = String(rec.ObsCode || '').trim();
+          if (obsCodeStr && obsCodeStr.toLowerCase() !== 'cpt modifier') {
+            // If the record was accepted only because of ValueType="Modifiers" or similar,
+            // we mark as Unknown to flag malformed observations while preserving the match.
+            ValidationStatus = 'Unknown';
+            InvalidReason = `Observation Code not 'CPT modifier' (found: ${obsCodeStr})`;
+          } else {
+            // Clean match: everything lines up
+            ValidationStatus = 'Valid';
+            InvalidReason = '';
+          }
+        }
+      }
+
+      // Build final object (keep isValid for backwards compatibility)
+      const isValid = ValidationStatus === 'Valid';
+
+      return Object.assign({}, base, { ValidationStatus, InvalidReason, isValid });
     });
 
     lastResults = output;
@@ -115,24 +146,20 @@ function parseXml(text) {
 }
 
 // Extract records where Observation contains Code === 'CPT modifier' and Value is '24' or '52'
-// Replace existing extractModifierRecords with this drop-in function
+// This function should be the lenient extractor you already applied (keep ObsCode if present)
 function extractModifierRecords(xmlDoc) {
   const records = [];
   const claims = Array.from(xmlDoc.getElementsByTagName('Claim'));
-
   claims.forEach(claim => {
     const claimId = textValue(claim, 'ID');
     const payerId = textValue(claim, 'PayerID');
     const memberIdRaw = textValue(claim, 'MemberID');
-
     const encNode = claim.getElementsByTagName('Encounter')[0] || claim.getElementsByTagName('Encounte')[0];
     const encDateRaw = encNode ? textValue(encNode, 'Date') || textValue(encNode, 'Start') || textValue(encNode, 'EncounterDate') || '' : '';
     const encDate = normalizeDate(encDateRaw);
-
     const activities = Array.from(claim.getElementsByTagName('Activity'));
     activities.forEach(act => {
       const activityId = textValue(act, 'ID');
-
       const clinicianRaw = firstNonEmpty([
         textValue(act, 'OrderingClnician'),
         textValue(act, 'OrderingClinician'),
@@ -140,7 +167,6 @@ function extractModifierRecords(xmlDoc) {
         textValue(act, 'OrderingClin')
       ]);
       const clinician = String(clinicianRaw || '').trim().toUpperCase();
-
       const observations = Array.from(act.getElementsByTagName('Observation'));
       observations.forEach(obs => {
         let found = false;
@@ -150,7 +176,7 @@ function extractModifierRecords(xmlDoc) {
         const vtNode = obs.getElementsByTagName('ValueType')[0];
         const obsValueType = vtNode ? String(vtNode.textContent || '').trim().toLowerCase() : '';
 
-        // --- Pass 1: sequential child scan (preferred) ---
+        // Pass 1: sequential child scan (preferred)
         const children = Array.from(obs.children || []);
         for (const child of children) {
           const tag = child.tagName;
@@ -176,11 +202,11 @@ function extractModifierRecords(xmlDoc) {
                 OrderingClinician: clinician,
                 Modifier: String(val).trim(),
                 PayerID: payerId,
-                ObsCode: lastCode || '',   // whatever was in <Code>
-                VOINumber: ''              // placeholder preserved
+                ObsCode: lastCode || '',
+                VOINumber: ''
               });
 
-              // debug note if lenient path used (optional)
+              // debug note if lenient path used
               if (lastCode !== 'CPT modifier' && obsValueType === 'modifiers') {
                 console.debug('[LENIENT MATCH] matched by ValueType="Modifiers"', { claimId, activityId, memberId: memberIdRaw, value: val, code: lastCode });
               }
@@ -190,7 +216,7 @@ function extractModifierRecords(xmlDoc) {
             }
           }
 
-          // (rare) If someone put the numeric in ValueType itself
+          // Rare: numeric in ValueType itself
           if (tag === 'ValueType') {
             if (isModifierTarget(txt) && (lastCode === 'CPT modifier' || txt.toLowerCase() === 'modifiers')) {
               records.push({
@@ -212,11 +238,11 @@ function extractModifierRecords(xmlDoc) {
 
         if (found) return; // continue to next observation
 
-        // --- Pass 2: fallback alignment (if nothing found) ---
+        // Pass 2: fallback alignment (if nothing found)
         const codes = Array.from(obs.getElementsByTagName('Code')).map(n => String(n.textContent || '').trim());
         const values = Array.from(obs.getElementsByTagName('Value')).map(n => String(n.textContent || '').trim());
         const valueTexts = Array.from(obs.getElementsByTagName('ValueText')).map(n => String(n.textContent || '').trim());
-        const valueTypes = Array.from(obs.getElementsByTagName('ValueType')).map(n => String(n.textContent || '').trim().map ? (n.textContent || '').trim() : (n.textContent || '').trim());
+        const valueTypes = Array.from(obs.getElementsByTagName('ValueType')).map(n => String(n.textContent || '').trim());
 
         const count = Math.max(codes.length, values.length, valueTexts.length, valueTypes.length);
         for (let i = 0; i < count; i++) {
@@ -253,7 +279,6 @@ function extractModifierRecords(xmlDoc) {
       }); // end observations
     }); // end activities
   }); // end claims
-
   return records;
 }
 
@@ -330,6 +355,7 @@ function renderResults(rows) {
     return;
   }
 
+  // map filtered rows back to original lastResults indices for modal linking
   filteredRows.forEach(r => { r._originalIndex = rows.indexOf(r); });
 
   let prevClaimId = null, prevMemberId = null, prevActivityId = null;
@@ -344,6 +370,8 @@ function renderResults(rows) {
         <th>Observation Code</th>
         <th>VOI Number</th>
         <th>Payer ID</th>
+        <th>Status</th>
+        <th>Reason</th>
         <th>Eligibility Details</th>
       </tr>
     </thead>
@@ -354,13 +382,13 @@ function renderResults(rows) {
     const showMember = showClaim || r.MemberID !== prevMemberId;
     const showActivity = showMember || r.ActivityID !== prevActivityId;
 
-    const voiForValidation = String(r.VOINumber || '').trim().toUpperCase();
-    const isValid = voiForValidation
-      ? ((r.Modifier === '52' && normForCompare(voiForValidation) === normForCompare('VOI_EF1')) ||
-         (r.Modifier === '24' && normForCompare(voiForValidation) === normForCompare('VOI_D')))
-      : false;
+    // Determine row class from ValidationStatus
+    const status = String(r.ValidationStatus || '').trim();
+    let rowClass = 'invalid';
+    if (status === 'Valid') rowClass = 'valid';
+    else if (status === 'Unknown') rowClass = 'unknown';
 
-    html += `<tr class="${isValid ? 'valid' : 'invalid'}">
+    html += `<tr class="${rowClass}">
       <td>${showClaim ? escapeHtml(r.ClaimID) : ''}</td>
       <td>${showMember ? escapeHtml(r.MemberID) : ''}</td>
       <td>${showActivity ? escapeHtml(r.ActivityID) : ''}</td>
@@ -369,6 +397,8 @@ function renderResults(rows) {
       <td>${escapeHtml(r.ObsCode || '')}</td>
       <td>${escapeHtml(r.VOINumber || '')}</td>
       <td>${escapeHtml(r.PayerID)}</td>
+      <td>${escapeHtml(r.ValidationStatus || '')}</td>
+      <td>${escapeHtml(r.InvalidReason || '')}</td>
       <td>${r.EligibilityRow ? `<button type="button" class="details-btn eligibility-details" onclick="showEligibility(${r._originalIndex})">View</button>` : ''}</td>
     </tr>`;
 
