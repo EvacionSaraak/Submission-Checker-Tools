@@ -118,20 +118,21 @@ function parseXml(text) {
 function extractModifierRecords(xmlDoc) {
   const records = [];
   const claims = Array.from(xmlDoc.getElementsByTagName('Claim'));
-
   claims.forEach(claim => {
     const claimId = textValue(claim, 'ID');
     const payerId = textValue(claim, 'PayerID');
     const memberIdRaw = textValue(claim, 'MemberID');
-
     const encNode = claim.getElementsByTagName('Encounter')[0] || claim.getElementsByTagName('Encounte')[0];
-    const encDateRaw = encNode ? textValue(encNode, 'Date') || textValue(encNode, 'Start') || textValue(encNode, 'EncounterDate') || '' : '';
+    const encDateRaw = encNode
+      ? textValue(encNode, 'Date') ||
+        textValue(encNode, 'Start') ||
+        textValue(encNode, 'EncounterDate') ||
+        ''
+      : '';
     const encDate = normalizeDate(encDateRaw);
-
     const activities = Array.from(claim.getElementsByTagName('Activity'));
     activities.forEach(act => {
       const activityId = textValue(act, 'ID');
-
       // Capture clinician license exactly from XML (trim + uppercase) so it matches XLSX Clinician
       const clinicianRaw = firstNonEmpty([
         textValue(act, 'OrderingClnician'),
@@ -140,38 +141,59 @@ function extractModifierRecords(xmlDoc) {
         textValue(act, 'OrderingClin')
       ]);
       const clinician = String(clinicianRaw || '').trim().toUpperCase();
-
       const observations = Array.from(act.getElementsByTagName('Observation'));
       observations.forEach(obs => {
         let found = false; // track if we already captured a modifier
         let lastCode = '';
+
+        // First: sequential scan of child nodes
         Array.from(obs.children || []).forEach(child => {
           const tag = child.tagName;
           const txt = String(child.textContent || '').trim();
           if (!txt) return;
-          if (tag === 'Code') { lastCode = txt; return; }
-          if ((tag === 'Value' || tag === 'ValueText' || tag === 'ValueType') 
-              && lastCode === 'CPT modifier' && isModifierTarget(txt)) {
-            records.push({ ... });
+          if (tag === 'Code') {
+            lastCode = txt;
+            return;
+          }
+          if ((tag === 'Value' || tag === 'ValueText' || tag === 'ValueType') && lastCode === 'CPT modifier' && isModifierTarget(txt) ) {
+            records.push({
+              ClaimID: claimId,
+              ActivityID: activityId,
+              MemberID: normalizeMemberId(memberIdRaw),
+              Date: encDate,
+              OrderingClinician: clinician,
+              Modifier: String(txt || '').trim(),
+              PayerID: payerId
+            });
             found = true; // mark captured
           }
         });
-      
-        // only run fallback if nothing was found above
+        // Second: fallback only if nothing was found
         if (!found) {
-          const codes = Array.from(obs.getElementsByTagName('Code')).map(n => String(n.textContent || '').trim());
-          const values = Array.from(obs.getElementsByTagName('Value')).map(n => String(n.textContent || '').trim());
+          const codes = Array.from(obs.getElementsByTagName('Code')).map(n =>
+            String(n.textContent || '').trim()
+          );
+          const values = Array.from(obs.getElementsByTagName('Value')).map(n =>
+            String(n.textContent || '').trim()
+          );
           const count = Math.max(codes.length, values.length);
           for (let i = 0; i < count; i++) {
             if (codes[i] === 'CPT modifier' && isModifierTarget(values[i])) {
-              records.push({ ... });
+              records.push({
+                ClaimID: claimId,
+                ActivityID: activityId,
+                MemberID: normalizeMemberId(memberIdRaw),
+                Date: encDate,
+                OrderingClinician: clinician,
+                Modifier: String(values[i] || '').trim(),
+                PayerID: payerId
+              });
             }
           }
         }
       });
     });
   });
-
   return records;
 }
 
