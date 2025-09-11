@@ -327,9 +327,23 @@ function buildXlsxMatcher(rows) {
 
 // ----------------- Validation / business rules -----------------
 function isModifierTarget(val) { const v = String(val || '').trim(); return v === '24' || v === '52'; }
-function expectedModifierForVOI(voi) { if (!voi) return ''; const v = String(voi).trim(); if (v === 'VOI_D') return '24'; if (v === 'VOI_EF1') return '52'; return ''; }
 function normForCompare(s) { return String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
 function escapeRegex(s) { return String(s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+function expectedModifierForVOI(voi) {
+  if (!voi) return '';
+  const norm = normForCompare(voi); // uppercased, non-alphanumerics removed
+
+  // canonical normalized tokens we know about:
+  const nVOI_D   = normForCompare('VOI_D');    // => "VOID"
+  const nVOI_EF1 = normForCompare('VOI_EF1');  // => "VOIEF1"
+
+  if (norm === nVOI_D) return '24';
+  if (norm === nVOI_EF1) return '52';
+  if (norm === normForCompare('EF1') || norm.endsWith('EF1')) return '52';
+  if (norm === 'D' || norm.endsWith('D')) return '24';
+
+  return '';
+}
 
 // ----------------- Rendering -----------------
 function renderResults(rows) {
