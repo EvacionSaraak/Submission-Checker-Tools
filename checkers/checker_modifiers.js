@@ -302,11 +302,11 @@ function renderResults(rows) {
 
     // Build remarks
     const remarks = [];
-    if (r.ObsCode !== 'CPT modifier') remarks.push(`Observation Code is "${r.ObsCode}", expected "CPT modifier"`);
+    if (r.ObsCode !== 'CPT modifier') remarks.push(`Observation Code is "${r.ObsCode}" (expected "CPT modifier").`);
     const voiNorm = normForCompare(r.VOINumber || '');
-    if (r.Modifier === '52' && voiNorm !== normForCompare('VOI_EF1')) remarks.push(`Modifier 52 does not match VOI; expected VOI_EF1`);
-    if (r.Modifier === '24' && voiNorm !== normForCompare('VOI_D')) remarks.push(`Modifier 24 does not match VOI; expected VOI_D`);
-    if (!r.EligibilityRow) remarks.push('No matching eligibility found');
+    if (r.Modifier === '52' && voiNorm !== normForCompare('VOI_EF1')) remarks.push(`Modifier 52 does not match VOI (expected VOI_EF1).`);
+    if (r.Modifier === '24' && voiNorm !== normForCompare('VOI_D')) remarks.push(`Modifier 24 does not match VOI (expected VOI_D).`);
+    if (!r.EligibilityRow) remarks.push('No matching eligibility found.');
 
     const isValid = remarks.length === 0;
 
