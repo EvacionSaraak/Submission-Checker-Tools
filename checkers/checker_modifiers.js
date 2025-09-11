@@ -42,12 +42,12 @@ async function handleRun() {
         ClaimID: rec.ClaimID || '',
         MemberID: rec.MemberID || '',
         ActivityID: rec.ActivityID || '',
-        OrderingClinician: rec.OrderingClinician || '', // already uppercased in extraction
+        OrderingClinician: rec.OrderingClinician || '',
         Modifier: rec.Modifier || '',
         VOINumber: voi || '',
-        EligibilityRow: match || null, // full XLSX row for modal
+        EligibilityRow: match || null,
         PayerID: rec.PayerID || '',
-        ObsCode: rec.ObsCode || '' // may be undefined if older extractor used
+        ObsCode: rec.ObsCode || ''
       };
 
       // Determine validation status + reason
@@ -69,7 +69,6 @@ async function handleRun() {
         }
       } else {
         // We have a matched eligibility row
-        // Determine expected modifier from VOI (VOI names like VOI_EF1, VOI_D)
         const expectedModifier = expectedModifierForVOI(String(match['VOI Number'] || '').trim());
         if (!expectedModifier) {
           ValidationStatus = 'Invalid';
@@ -78,24 +77,23 @@ async function handleRun() {
           ValidationStatus = 'Invalid';
           InvalidReason = `Modifier ${String(rec.Modifier || '(blank)')} does not match VOI ${String(match['VOI Number'] || '(blank)')} (expected ${expectedModifier})`;
         } else {
-          // Modifier matches the VOI. But apply additional caution if ObsCode is not 'CPT modifier'
+          // Modifier matches VOI. Now require ObsCode to be EXACTLY 'CPT modifier'
           const obsCodeStr = String(rec.ObsCode || '').trim();
-          if (obsCodeStr && obsCodeStr.toLowerCase() !== 'cpt modifier') {
-            // If the record was accepted only because of ValueType="Modifiers" or similar,
-            // we mark as Unknown to flag malformed observations while preserving the match.
+          if (obsCodeStr !== 'CPT modifier') {
             ValidationStatus = 'Unknown';
-            InvalidReason = `Observation Code not 'CPT modifier' (found: ${obsCodeStr})`;
+            if (!obsCodeStr) {
+              InvalidReason = `Observation Code missing; expected "CPT modifier"`;
+            } else {
+              InvalidReason = `Observation Code incorrect; expected "CPT modifier" but found "${obsCodeStr}"`;
+            }
           } else {
-            // Clean match: everything lines up
             ValidationStatus = 'Valid';
             InvalidReason = '';
           }
         }
       }
 
-      // Build final object (keep isValid for backwards compatibility)
       const isValid = ValidationStatus === 'Valid';
-
       return Object.assign({}, base, { ValidationStatus, InvalidReason, isValid });
     });
 
@@ -146,7 +144,7 @@ function parseXml(text) {
 }
 
 // Extract records where Observation contains Code === 'CPT modifier' and Value is '24' or '52'
-// This function should be the lenient extractor you already applied (keep ObsCode if present)
+// Lenient extractor: accepts ValueType='Modifiers' so malformed rows are detected, but validation requires exact Code
 function extractModifierRecords(xmlDoc) {
   const records = [];
   const claims = Array.from(xmlDoc.getElementsByTagName('Claim'));
@@ -327,23 +325,17 @@ function buildXlsxMatcher(rows) {
 
 // ----------------- Validation / business rules -----------------
 function isModifierTarget(val) { const v = String(val || '').trim(); return v === '24' || v === '52'; }
-function normForCompare(s) { return String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
-function escapeRegex(s) { return String(s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 function expectedModifierForVOI(voi) {
   if (!voi) return '';
-  const norm = normForCompare(voi); // uppercased, non-alphanumerics removed
-
-  // canonical normalized tokens we know about:
-  const nVOI_D   = normForCompare('VOI_D');    // => "VOID"
-  const nVOI_EF1 = normForCompare('VOI_EF1');  // => "VOIEF1"
-
-  if (norm === nVOI_D) return '24';
-  if (norm === nVOI_EF1) return '52';
+  const norm = normForCompare(voi);
+  if (norm === normForCompare('VOI_D')) return '24';
+  if (norm === normForCompare('VOI_EF1')) return '52';
   if (norm === normForCompare('EF1') || norm.endsWith('EF1')) return '52';
   if (norm === 'D' || norm.endsWith('D')) return '24';
-
   return '';
 }
+function normForCompare(s) { return String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
+function escapeRegex(s) { return String(s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
 // ----------------- Rendering -----------------
 function renderResults(rows) {
