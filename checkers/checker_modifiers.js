@@ -143,43 +143,29 @@ function extractModifierRecords(xmlDoc) {
 
       const observations = Array.from(act.getElementsByTagName('Observation'));
       observations.forEach(obs => {
-        // sequential pairing Code->Value where structure is mixed
+        let found = false; // track if we already captured a modifier
         let lastCode = '';
         Array.from(obs.children || []).forEach(child => {
           const tag = child.tagName;
           const txt = String(child.textContent || '').trim();
           if (!txt) return;
           if (tag === 'Code') { lastCode = txt; return; }
-          if ((tag === 'Value' || tag === 'ValueText' || tag === 'ValueType') && lastCode === 'CPT modifier' && isModifierTarget(txt)) {
-            records.push({
-              ClaimID: claimId,
-              ActivityID: activityId,
-              MemberID: normalizeMemberId(memberIdRaw),
-              Date: encDate,
-              OrderingClinician: clinician,
-              Modifier: String(txt || '').trim(),
-              PayerID: payerId
-            });
+          if ((tag === 'Value' || tag === 'ValueText' || tag === 'ValueType') 
+              && lastCode === 'CPT modifier' && isModifierTarget(txt)) {
+            records.push({ ... });
+            found = true; // mark captured
           }
         });
-
-        // fallback: align Code[] and Value[] arrays
-        const codes = Array.from(obs.getElementsByTagName('Code')).map(n => String(n.textContent || '').trim());
-        const values = Array.from(obs.getElementsByTagName('Value')).map(n => String(n.textContent || '').trim());
-        const count = Math.max(codes.length, values.length);
-        for (let i = 0; i < count; i++) {
-          const c = codes[i] ?? '';
-          const val = values[i] ?? '';
-          if (c === 'CPT modifier' && isModifierTarget(val)) {
-            records.push({
-              ClaimID: claimId,
-              ActivityID: activityId,
-              MemberID: normalizeMemberId(memberIdRaw),
-              Date: encDate,
-              OrderingClinician: clinician,
-              Modifier: String(val || '').trim(),
-              PayerID: payerId
-            });
+      
+        // only run fallback if nothing was found above
+        if (!found) {
+          const codes = Array.from(obs.getElementsByTagName('Code')).map(n => String(n.textContent || '').trim());
+          const values = Array.from(obs.getElementsByTagName('Value')).map(n => String(n.textContent || '').trim());
+          const count = Math.max(codes.length, values.length);
+          for (let i = 0; i < count; i++) {
+            if (codes[i] === 'CPT modifier' && isModifierTarget(values[i])) {
+              records.push({ ... });
+            }
           }
         }
       });
