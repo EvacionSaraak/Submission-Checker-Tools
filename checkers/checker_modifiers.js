@@ -28,7 +28,7 @@ async function handleRun() {
       const xmlDate = normalizeDate(rec.Date);
       const match = matcher.find(rec.MemberID, xmlDate, rec.OrderingClinician);
 
-      // Use VOI from eligibility if matched, otherwise fallback to XML VOI
+      // VOI number comes from eligibility if matched, else fallback to XML
       const voi = match ? String(match['VOI Number'] || '').trim() : (rec.VOINumber || '');
       const cptNorm = String(rec.Modifier || '').trim();
       const voiNorm = normForCompare(voi);
@@ -37,12 +37,12 @@ async function handleRun() {
 
       const remarks = [];
 
-      // XML observation code validation
+      // Validate the observation <Code> exactly
       if (rec.ObsCode !== 'CPT modifier') {
         remarks.push(`Observation Code incorrect; expected "CPT modifier" but found "${rec.ObsCode}"`);
       }
 
-      // VOI vs modifier check (using eligibility VOI)
+      // VOI vs modifier check using eligibility VOI
       if (match) {
         if ((cptNorm === '52' && voiNorm !== expectEF) ||
             (cptNorm === '24' && voiNorm !== expectD)) {
@@ -66,6 +66,7 @@ async function handleRun() {
         ActivityID: rec.ActivityID || '',
         OrderingClinician: rec.OrderingClinician || '',
         Modifier: rec.Modifier || '',
+        ObsCode: rec.ObsCode || '',      // display XML <Code> in final table
         VOINumber: voi,
         PayerID: rec.PayerID || '',
         EligibilityRow: match || null,
@@ -84,6 +85,7 @@ async function handleRun() {
     showError(err);
   }
 }
+
 
 // ----------------- Download -----------------
 function handleDownload() {
