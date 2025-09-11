@@ -34,10 +34,10 @@ const xlsRadio = document.querySelector('input[name="reportSource"][value="xls"]
  *************************/
 function handleReportSourceChange() {
   const isXmlMode = xmlRadio.checked;
-  
+
   xmlGroup.style.display = isXmlMode ? 'block' : 'none';
   reportGroup.style.display = isXmlMode ? 'none' : 'block';
-  
+
   if (isXmlMode) {
     xlsData = null;
     reportInput.value = '';
@@ -45,7 +45,7 @@ function handleReportSourceChange() {
     xmlData = null;
     xmlInput.value = '';
   }
-  
+
   updateStatus();
 }
 
@@ -92,7 +92,7 @@ const DateHandler = {
     const utcDays = Math.floor(serial) - 25569; // 25569 = days between 1899-12-30 and 1970-01-01
     const ms = utcDays * 86400 * 1000;
     const date = new Date(ms);
-  
+
     // Manually extract date parts from UTC (avoid local time shift)
     return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
   },
@@ -296,46 +296,41 @@ function isServiceCategoryValid(serviceCategory, consultationStatus, rawPackage)
   return { valid: true };
 }
 
-function validateXmlClaims(xmlText, eligibilityData) {
-  const parser = new DOMParser();
-  const xmlDoc = parser.parseFromString(xmlText, "application/xml");
-  const claimNodes = xmlDoc.querySelectorAll("Claim");
+function validateXmlClaims(xmlClaims, eligMap) {
+  console.log(`Validating ${xmlClaims.length} XML claims`);
+  return xmlClaims.map(claim => {
+    const claimDate = DateHandler.parse(claim.encounterStart);
+    const formattedDate = DateHandler.format(claimDate);
+    const memberID = claim.memberID;
+    const eligibility = findEligibilityForClaim(eligMap, claimDate, memberID, claim.clinicians);
 
-  const results = [];
+    let status = 'invalid';
+    const remarks = [];
 
-  claimNodes.forEach(claim => {
-    const claimID = claim.querySelector("ID")?.textContent || "";
-    const memberID = claim.querySelector("MemberID")?.textContent || "";
-    const encounterStart = claim.querySelector("Encounter > Start")?.textContent || "";
-    const packageName = claim.querySelector("Contract > PackageName")?.textContent || "";
-    const provider = claim.querySelector("ProviderID")?.textContent || "";
+    if (!eligibility) {
+      remarks.push(`No matching eligibility found for ${memberID} on ${formattedDate}`);
+    } else if (eligibility.Status?.toLowerCase() !== 'eligible') {
+      remarks.push(`Eligibility status: ${eligibility.Status}`);
+    } else if (!checkClinicianMatch(claim.clinicians, eligibility.Clinician)) {
+      status = 'unknown';
+      remarks.push('Clinician mismatch');
+    } else {
+      status = 'valid';
+    }
 
-    // Take the first clinician found in Activities
-    const clinician = claim.querySelector("Activity > Clinician")?.textContent?.trim() || "";
-
-    // For service category, you might want first Activity code or custom logic
-    const serviceCategory = claim.querySelector("Activity > Code")?.textContent || "";
-
-    // Lookup eligibility by memberID (leading zeroes not stripped)
-    const fullEligibilityRecord = eligibilityData[memberID] || null;
-    const status = fullEligibilityRecord ? "Eligible" : "Unknown";
-
-    results.push({
-      claimID,
-      memberID,
-      encounterStart,
-      packageName,
-      provider,
-      clinician,
-      serviceCategory,
-      status,
-      finalStatus: status.toLowerCase(),
-      remarks: [],
-      fullEligibilityRecord
-    });
+    return {
+      claimID: claim.claimID,
+      memberID: claim.memberID,
+      encounterStart: formattedDate,
+      clinician: eligibility?.['Clinician'] || '',
+      serviceCategory: eligibility?.['Service Category'] || '',
+      consultationStatus: eligibility?.['Consultation Status'] || '',
+      status: eligibility?.Status || '',
+      remarks,
+      finalStatus: status,
+      fullEligibilityRecord: eligibility
+    };
   });
-
-  return results;
 }
 
 function validateReportClaims(reportData, eligMap) {
@@ -417,7 +412,7 @@ async function parseXmlFile(file) {
   console.log(`Parsing XML file: ${file.name}`);
   const text = await file.text();
   const xmlDoc = new DOMParser().parseFromString(text, "application/xml");
-  
+
   const claims = Array.from(xmlDoc.querySelectorAll("Claim")).map(claim => ({
     claimID: claim.querySelector("ID")?.textContent.trim() || '',
     memberID: claim.querySelector("MemberID")?.textContent.trim() || '',
@@ -441,32 +436,32 @@ async function parseExcelFile(file) {
         // Dynamic header row detection
         let headerRow = 0;
         let foundHeaders = false;
-        
+
         while (headerRow < allRows.length && !foundHeaders) {
           const currentRow = allRows[headerRow];
-          
+
           // Check for Insta report headers (row 4)
           if (currentRow.some(cell => String(cell).includes('Pri. Claim No'))) {
             foundHeaders = true;
             break;
           }
-          
+
           // Check for eligibility headers (row 2)
           if (currentRow.some(cell => String(cell).includes('Card Number / DHA Member ID'))) {
             foundHeaders = true;
             break;
           }
-          
+
           headerRow++;
         }
 
         // Fallback to first row if no headers found
         if (!foundHeaders) headerRow = 0;
-        
+
         const headers = allRows[headerRow].map(h => h.trim());
         console.log(`Headers: ${headers}`);
         const dataRows = allRows.slice(headerRow + 1);
-        
+
         const jsonData = dataRows.map(row => {
           const obj = {};
           headers.forEach((header, index) => {
@@ -589,7 +584,8 @@ function normalizeReportData(rawData) {
 /********************
  * UI RENDERING FUNCTIONS *
  ********************/
-function renderResults(results) {
+// renderResults: no normalization of memberID in button data attributes
+function renderResults(results, eligMap) {
   resultsContainer.innerHTML = '';
 
   if (!results || results.length === 0) {
@@ -624,7 +620,7 @@ function renderResults(results) {
   const tbody = document.createElement('tbody');
   const statusCounts = { valid: 0, invalid: 0, unknown: 0 };
 
-  results.forEach((result) => {
+  results.forEach((result, index) => {
     statusCounts[result.finalStatus]++;
 
     const row = document.createElement('tr');
@@ -638,15 +634,12 @@ function renderResults(results) {
       ? result.remarks.map(r => `<div>${r}</div>`).join('')
       : '<div class="source-note">No remarks</div>';
 
-    // Only single eligibility modal button, safe encoding
     let detailsCell = '<div class="source-note">N/A</div>';
     if (result.fullEligibilityRecord?.['Eligibility Request Number']) {
-      const recordStr = encodeURIComponent(JSON.stringify(result.fullEligibilityRecord));
-      detailsCell = `<button class="details-btn eligibility-details" 
-                       data-record="${recordStr}" 
-                       data-member="${result.memberID}">
-                       ${result.fullEligibilityRecord['Eligibility Request Number']}
-                     </button>`;
+      detailsCell = `<button class="details-btn eligibility-details" data-index="${index}">${result.fullEligibilityRecord['Eligibility Request Number']}</button>`;
+    } else if (eligMap.has(result.memberID)) {
+      // Use raw memberID here directly
+      detailsCell = `<button class="details-btn show-all-eligibilities" data-member="${result.memberID}" data-clinicians="${(result.clinicians || [result.clinician || '']).join(',')}">View All</button>`;
     }
 
     row.innerHTML = `
@@ -677,49 +670,89 @@ function renderResults(results) {
   `;
   resultsContainer.prepend(summary);
 
-  initEligibilityModal();
+  initEligibilityModal(results, eligMap);
 }
 
-function initEligibilityModal() {
-  if (!document.getElementById('eligibilityModal')) {
-    const modalHTML = `
-      <div id="eligibilityModal" class="modal hidden">
-        <div class="modal-content" id="eligibilityModalContent">
-          <span class="close">&times;</span>
+function initEligibilityModal(results, eligMap) {
+  const existingModal = document.getElementById('eligibilityModal');
+  if (existingModal) existingModal.remove();
+
+  const modalHTML = `
+    <div id="eligibilityModal" class="modal hidden">
+      <div class="modal-content eligibility-modal">
+        <span class="close">&times;</span>
+        <div class="modal-scrollable">
+          <h3>Eligibility Details</h3>
+          <div id="eligibilityModalContent" class="eligibility-details-container"></div>
         </div>
-      </div>`;
-    document.body.insertAdjacentHTML('beforeend', modalHTML);
-  }
+      </div>
+    </div>
+  `;
+  document.body.insertAdjacentHTML('beforeend', modalHTML);
 
-  resultsContainer.addEventListener('click', (e) => {
-    const modal = document.getElementById('eligibilityModal');
-    const modalContent = document.getElementById('eligibilityModalContent');
-    if (!modal || !modalContent) return;
+  const modal = document.getElementById('eligibilityModal');
+  const modalContent = document.getElementById('eligibilityModalContent');
+  const closeBtn = modal.querySelector('.close');
 
-    // Close modal
-    if (e.target.classList.contains('close') || e.target.id === 'eligibilityModal') {
-      modal.classList.add('hidden');
-      return;
-    }
+  // Individual eligibility match
+  document.querySelectorAll('.eligibility-details').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const index = parseInt(btn.dataset.index);
+      const record = results[index].fullEligibilityRecord;
+      const memberID = results[index].memberID;
 
-    // Individual eligibility details button
-    if (e.target.classList.contains('eligibility-details')) {
-      const encodedRecord = e.target.dataset.record || '{}';
-
-      let record;
-      try {
-        record = JSON.parse(decodeURIComponent(encodedRecord));
-      } catch (err) {
-        console.error('Failed to parse eligibility record:', encodedRecord, err);
-        return;
+      if (record) {
+        modalContent.innerHTML = formatEligibilityDetails(record, memberID);
+        modal.classList.remove('hidden');
       }
+    });
+  });
 
-      const memberID = e.target.dataset.member;
+  // Show all eligibilities under a member ID
+  document.querySelectorAll('.show-all-eligibilities').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const memberID = btn.dataset.member;
+      const claimClinicians = btn.dataset.clinicians?.split(',').map(normalizeClinician);
+      const eligibilities = [...(eligMap.get(memberID) || [])];
 
-      // reset + render
-      modalContent.innerHTML = '<span class="close">&times;</span>' + formatEligibilityDetails(record, memberID);
+      eligibilities.sort((a, b) => {
+        const dateA = DateHandler.parse(a['Answered On'] || a['Ordered On']);
+        const dateB = DateHandler.parse(b['Answered On'] || b['Ordered On']);
+        return (dateB?.getTime() || 0) - (dateA?.getTime() || 0);
+      });
+
+      const details = eligibilities.map((e, idx) => {
+        return `
+          <table class="eligibility-details">
+            <tbody>
+              <tr><th>#${idx + 1}</th><td></td></tr>
+              <tr><th>Eligibility Request Number</th><td>${e['Eligibility Request Number']}</td></tr>
+              <tr><th>Answered On</th><td>${DateHandler.format(DateHandler.parse(e['Answered On']))}</td></tr>
+              <tr><th>Ordered On</th><td>${DateHandler.format(DateHandler.parse(e['Ordered On']))}</td></tr>
+              <tr><th>Status</th><td>${e.Status}</td></tr>
+              <tr><th>Clinician</th><td>${e.Clinician}</td></tr>
+              <tr><th>Claim Clinician(s)</th><td>${claimClinicians.join(', ')}</td></tr>
+              <tr><th>Service Category</th><td>${e['Service Category']}</td></tr>
+              <tr><th>Package</th><td>${e['Package Name']}</td></tr>
+              <tr><th>Payer Name</th><td>${e['Provider Name']}</td></tr>
+            </tbody>
+          </table>
+        `;
+      }).join('<hr>');
+
+      modalContent.innerHTML = `
+        <div class="form-row">
+          <strong>Member ID:</strong> ${memberID}
+        </div>
+        ${details}
+      `;
       modal.classList.remove('hidden');
-    }
+    });
+  });
+
+  closeBtn.addEventListener('click', () => modal.classList.add('hidden'));
+  modal.addEventListener('click', e => {
+    if (e.target === modal) modal.classList.add('hidden');
   });
 }
 
@@ -738,12 +771,12 @@ function formatEligibilityDetails(record, memberID) {
 
   Object.entries(record).forEach(([key, value]) => {
     if (!value && value !== 0) return;
-    
+
     // Format dates using existing date-value class
     if (key.includes('Date') || key.includes('On')) {
       value = `<span class="date-value">${DateHandler.format(DateHandler.parse(value)) || value}</span>`;
     }
-    
+
     html += `
       <tr>
         <th>${key}</th>
@@ -751,12 +784,12 @@ function formatEligibilityDetails(record, memberID) {
       </tr>
     `;
   });
-  
+
   html += `
       </tbody>
     </table>
   `;
-  
+
   return html;
 }
 
@@ -819,7 +852,7 @@ async function handleFileUpload(event, type) {
 
   try {
     updateStatus(`Loading ${type} file...`);
-    
+
     if (type === 'xml') {
       xmlData = await parseXmlFile(file);
       updateStatus(`Loaded ${xmlData.claims.length} XML claims`);
@@ -838,7 +871,7 @@ async function handleFileUpload(event, type) {
       console.log(xlsData);
       updateStatus(`Loaded ${xlsData.length} report rows`);
     }
-    
+
     updateProcessButtonState();
   } catch (error) {
     console.error(`${type} file error:`, error);
