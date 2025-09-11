@@ -28,8 +28,7 @@ async function handleRun() {
       const xmlDate = normalizeDate(rec.Date);
       const match = matcher.find(rec.MemberID, xmlDate, rec.OrderingClinician);
 
-      // VOI number comes from eligibility if matched, else fallback to XML
-      const voi = match ? String(match['VOI Number'] || '').trim() : (rec.VOINumber || '');
+      const voi = rec.VOINumber || '';
       const cptNorm = String(rec.Modifier || '').trim();
       const voiNorm = normForCompare(voi);
       const expectEF = normForCompare('VOI_EF1');
@@ -37,12 +36,10 @@ async function handleRun() {
 
       const remarks = [];
 
-      // Validate the observation <Code> exactly
       if (rec.ObsCode !== 'CPT modifier') {
         remarks.push(`Observation Code incorrect; expected "CPT modifier" but found "${rec.ObsCode}"`);
       }
 
-      // VOI vs modifier check using eligibility VOI
       if (match) {
         if ((cptNorm === '52' && voiNorm !== expectEF) ||
             (cptNorm === '24' && voiNorm !== expectD)) {
@@ -52,7 +49,6 @@ async function handleRun() {
         remarks.push('No matching eligibility found');
       }
 
-      // Partial match logging
       if (!match) {
         const partialMatch = Array.from(matcher._index.values()).flat()
           .find(r => normalizeMemberId(r['Card Number / DHA Member ID']) === normalizeMemberId(rec.MemberID) &&
@@ -66,8 +62,8 @@ async function handleRun() {
         ActivityID: rec.ActivityID || '',
         OrderingClinician: rec.OrderingClinician || '',
         Modifier: rec.Modifier || '',
-        ObsCode: rec.ObsCode || '',      // display XML <Code> in final table
-        VOINumber: voi,
+        VOINumber: voi || '',
+        ObsCode: rec.ObsCode || '',
         PayerID: rec.PayerID || '',
         EligibilityRow: match || null,
         isValid: remarks.length === 0,
@@ -79,13 +75,15 @@ async function handleRun() {
     renderResults(output);
     lastWorkbook = makeWorkbookFromJson(output, 'checker_modifiers_results');
     toggleDownload(output.length > 0);
-    message(`Completed — ${output.length} rows processed.`, 'green');
+
+    const totalRows = output.length;
+    const correctRows = output.filter(r => r.isValid).length;
+    message(`Completed — ${correctRows}/${totalRows} rows correct`, 'green');
 
   } catch (err) {
     showError(err);
   }
 }
-
 
 // ----------------- Download -----------------
 function handleDownload() {
