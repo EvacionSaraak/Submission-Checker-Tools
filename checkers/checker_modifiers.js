@@ -154,8 +154,6 @@ function extractModifierRecords(xmlDoc) {
       const clinician = String(clinicianRaw || '').trim().toUpperCase();
       const observations = Array.from(act.getElementsByTagName('Observation'));
 
-      let activityHasValidObs = false;
-
       observations.forEach(obs => {
         let lastCode = '';
         Array.from(obs.children || []).forEach(child => {
@@ -168,32 +166,42 @@ function extractModifierRecords(xmlDoc) {
             return;
           }
 
-          if ((tag === 'Value' || tag === 'ValueText' || tag === 'ValueType')) {
+          if (tag === 'Value' || tag === 'ValueText' || tag === 'ValueType') {
             const isCPT = lastCode === 'CPT modifier';
-            const isModifierValue = isModifierTarget(txt); // 24 or 52
+            const voiVal = txt;
 
-            // Only include rows that are CPT modifier, optionally 24/52
             if (isCPT) {
-              activityHasValidObs = true;
-              records.push({
-                ClaimID: claimId,
-                ActivityID: activityId,
-                MemberID: normalizeMemberId(memberIdRaw),
-                Date: encDate,
-                OrderingClinician: clinician,
-                Modifier: String(txt),
-                PayerID: payerId,
-                ObsCode: lastCode,
-                VOINumber: '',
-              });
+              // Only include rows where VOI matches VOI_D or VOI_EF1
+              const expectedModifier = expectedModifierForVOI(voiVal); // '24' or '52' or ''
+              if (expectedModifier) {
+                records.push({
+                  ClaimID: claimId,
+                  ActivityID: activityId,
+                  MemberID: normalizeMemberId(memberIdRaw),
+                  Date: encDate,
+                  OrderingClinician: clinician,
+                  Modifier: expectedModifier,
+                  PayerID: payerId,
+                  ObsCode: lastCode,
+                  VOINumber: voiVal,
+                });
+              }
             }
           }
         });
       });
-
-      // If no valid observation found, skip the activity entirely
     });
   });
+
+  // Deduplicate rows based on ClaimID + ActivityID + MemberID + Modifier + ObsCode
+  const seen = new Set();
+  return records.filter(r => {
+    const key = [r.ClaimID, r.ActivityID, r.MemberID, r.Modifier, r.ObsCode].join('|');
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
 
   // Deduplicate rows based on ClaimID + ActivityID + MemberID + Modifier + ObsCode
   const seen = new Set();
