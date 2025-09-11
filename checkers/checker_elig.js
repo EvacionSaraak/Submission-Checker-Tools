@@ -585,7 +585,7 @@ function normalizeReportData(rawData) {
  * UI RENDERING FUNCTIONS *
  ********************/
 // renderResults: no normalization of memberID in button data attributes
-function renderResults(results, eligMap) {
+function renderResults(results) {
   resultsContainer.innerHTML = '';
 
   if (!results || results.length === 0) {
@@ -620,7 +620,7 @@ function renderResults(results, eligMap) {
   const tbody = document.createElement('tbody');
   const statusCounts = { valid: 0, invalid: 0, unknown: 0 };
 
-  results.forEach((result, index) => {
+  results.forEach((result) => {
     statusCounts[result.finalStatus]++;
 
     const row = document.createElement('tr');
@@ -634,12 +634,11 @@ function renderResults(results, eligMap) {
       ? result.remarks.map(r => `<div>${r}</div>`).join('')
       : '<div class="source-note">No remarks</div>';
 
+    // Only single eligibility modal button
     let detailsCell = '<div class="source-note">N/A</div>';
     if (result.fullEligibilityRecord?.['Eligibility Request Number']) {
       const recordStr = JSON.stringify(result.fullEligibilityRecord).replace(/"/g, '&quot;');
       detailsCell = `<button class="details-btn eligibility-details" data-record="${recordStr}" data-member="${result.memberID}">${result.fullEligibilityRecord['Eligibility Request Number']}</button>`;
-    } else if (eligMap.has(result.memberID)) {
-      detailsCell = `<button class="details-btn show-all-eligibilities" data-member="${result.memberID}" data-clinicians="${(result.clinicians || [result.clinician || '']).join(',')}">View All</button>`;
     }
 
     row.innerHTML = `
@@ -713,43 +712,6 @@ function initEligibilityModal() {
 
       const memberID = e.target.dataset.member;
       modalContent.innerHTML = formatEligibilityDetails(record, memberID);
-      modal.classList.remove('hidden');
-    }
-
-    // Show all eligibilities button
-    if (e.target.classList.contains('show-all-eligibilities')) {
-      const memberID = e.target.dataset.member;
-      const claimClinicians = e.target.dataset.clinicians
-        ?.split(',')
-        .map(normalizeClinician) || [];
-
-      const eligMap = prepareEligibilityMap(eligData);
-      const eligibilities = [...(eligMap.get(memberID) || [])];
-
-      eligibilities.sort((a, b) => {
-        const dateA = DateHandler.parse(a['Answered On'] || a['Ordered On']);
-        const dateB = DateHandler.parse(b['Answered On'] || b['Ordered On']);
-        return (dateB?.getTime() || 0) - (dateA?.getTime() || 0);
-      });
-
-      const details = eligibilities.map((e, idx) => `
-        <table class="eligibility-details">
-          <tbody>
-            <tr><th>#${idx + 1}</th><td></td></tr>
-            <tr><th>Eligibility Request Number</th><td>${e['Eligibility Request Number']}</td></tr>
-            <tr><th>Answered On</th><td>${DateHandler.format(DateHandler.parse(e['Answered On']))}</td></tr>
-            <tr><th>Ordered On</th><td>${DateHandler.format(DateHandler.parse(e['Ordered On']))}</td></tr>
-            <tr><th>Status</th><td>${e.Status}</td></tr>
-            <tr><th>Clinician</th><td>${e.Clinician}</td></tr>
-            <tr><th>Claim Clinician(s)</th><td>${claimClinicians.join(', ')}</td></tr>
-            <tr><th>Service Category</th><td>${e['Service Category']}</td></tr>
-            <tr><th>Package</th><td>${e['Package Name']}</td></tr>
-            <tr><th>Payer Name</th><td>${e['Payer Name'] || e['Provider Name']}</td></tr>
-          </tbody>
-        </table>
-      `).join('<hr>');
-
-      modalContent.innerHTML = `<div class="form-row"><strong>Member ID:</strong> ${memberID}</div>${details}`;
       modal.classList.remove('hidden');
     }
   });
