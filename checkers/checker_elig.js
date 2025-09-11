@@ -296,39 +296,54 @@ function isServiceCategoryValid(serviceCategory, consultationStatus, rawPackage)
   return { valid: true };
 }
 
-function validateXmlClaims(xmlClaims, eligMap) {
-  console.log(`Validating ${xmlClaims.length} XML claims`);
-  return xmlClaims.map(claim => {
-    const claimDate = DateHandler.parse(claim.encounterStart);
-    const formattedDate = DateHandler.format(claimDate);
-    const memberID = claim.memberID;
-    const eligibility = findEligibilityForClaim(eligMap, claimDate, memberID, claim.clinicians);
+function validateXmlClaims(claims, eligMap) {
+  usedEligibilities.clear();
 
-    let status = 'invalid';
+  return claims.map(claim => {
+    const claimID = claim.querySelector("ID")?.textContent.trim() || "";
+    const memberID = normalizeMemberID(claim.querySelector("MemberID")?.textContent.trim() || '');
+    const encounterStart = claim.querySelector("Encounter > Start")?.textContent.trim() || '';
+    const clinician = claim.querySelector("Activity > Clinician")?.textContent.trim() || '';
+    const packageName = claim.querySelector("Contract > PackageName")?.textContent.trim() || '';
+
+    // These don’t exist in your XML – leave blank or derive
+    const serviceCategory = claim.querySelector("ServiceCategory")?.textContent.trim() || '';
+    const consultationStatus = claim.querySelector("ConsultationStatus")?.textContent.trim() || '';
+
+    const eligibilities = eligMap.get(memberID) || [];
+    let matchedEligibility = null;
+
+    for (const elig of eligibilities) {
+      if (usedEligibilities.has(elig['Eligibility Request Number'])) continue;
+      if (!isServiceCategoryAllowedForDepartment(serviceCategory, consultationStatus, '')) continue;
+
+      matchedEligibility = elig;
+      usedEligibilities.add(elig['Eligibility Request Number']);
+      break;
+    }
+
     const remarks = [];
-
-    if (!eligibility) {
-      remarks.push(`No matching eligibility found for ${memberID} on ${formattedDate}`);
-    } else if (eligibility.Status?.toLowerCase() !== 'eligible') {
-      remarks.push(`Eligibility status: ${eligibility.Status}`);
-    } else if (!checkClinicianMatch(claim.clinicians, eligibility.Clinician)) {
-      status = 'unknown';
-      remarks.push('Clinician mismatch');
+    let finalStatus = 'unknown';
+    if (matchedEligibility) {
+      finalStatus = matchedEligibility.Status?.toLowerCase() === 'eligible' ? 'valid' : 'invalid';
+      remarks.push(`Matched to eligibility ${matchedEligibility['Eligibility Request Number']}`);
     } else {
-      status = 'valid';
+      remarks.push('No matching eligibility found');
     }
 
     return {
-      claimID: claim.claimID,
-      memberID: claim.memberID,
-      encounterStart: formattedDate,
-      clinician: eligibility?.['Clinician'] || '',
-      serviceCategory: eligibility?.['Service Category'] || '',
-      consultationStatus: eligibility?.['Consultation Status'] || '',
-      status: eligibility?.Status || '',
+      claimID,
+      memberID,
+      encounterStart,
+      clinician,
+      serviceCategory,
+      consultationStatus,
+      packageName: matchedEligibility?.['Package Name'] || packageName,
+      provider: matchedEligibility?.['Payer Name'] || '',
+      status: matchedEligibility?.Status || '',
+      finalStatus,
       remarks,
-      finalStatus: status,
-      fullEligibilityRecord: eligibility
+      fullEligibilityRecord: matchedEligibility
     };
   });
 }
@@ -584,7 +599,6 @@ function normalizeReportData(rawData) {
 /********************
  * UI RENDERING FUNCTIONS *
  ********************/
-// renderResults: no normalization of memberID in button data attributes
 function renderResults(results) {
   resultsContainer.innerHTML = '';
 
@@ -634,11 +648,15 @@ function renderResults(results) {
       ? result.remarks.map(r => `<div>${r}</div>`).join('')
       : '<div class="source-note">No remarks</div>';
 
-    // Only single eligibility modal button
+    // Only single eligibility modal button, safe encoding
     let detailsCell = '<div class="source-note">N/A</div>';
     if (result.fullEligibilityRecord?.['Eligibility Request Number']) {
-      const recordStr = JSON.stringify(result.fullEligibilityRecord).replace(/"/g, '&quot;');
-      detailsCell = `<button class="details-btn eligibility-details" data-record="${recordStr}" data-member="${result.memberID}">${result.fullEligibilityRecord['Eligibility Request Number']}</button>`;
+      const recordStr = encodeURIComponent(JSON.stringify(result.fullEligibilityRecord));
+      detailsCell = `<button class="details-btn eligibility-details" 
+                       data-record="${recordStr}" 
+                       data-member="${result.memberID}">
+                       ${result.fullEligibilityRecord['Eligibility Request Number']}
+                     </button>`;
     }
 
     row.innerHTML = `
@@ -698,20 +716,18 @@ function initEligibilityModal() {
     if (e.target.classList.contains('eligibility-details')) {
       const encodedRecord = e.target.dataset.record || '{}';
 
-      // Decode HTML entities
-      const parser = new DOMParser();
-      const decodedStr = parser.parseFromString(encodedRecord, 'text/html').documentElement.textContent;
-
       let record;
       try {
-        record = JSON.parse(decodedStr);
+        record = JSON.parse(decodeURIComponent(encodedRecord));
       } catch (err) {
-        console.error('Failed to parse eligibility record:', decodedStr, err);
+        console.error('Failed to parse eligibility record:', encodedRecord, err);
         return;
       }
 
       const memberID = e.target.dataset.member;
-      modalContent.innerHTML = formatEligibilityDetails(record, memberID);
+
+      // reset + render
+      modalContent.innerHTML = '<span class="close">&times;</span>' + formatEligibilityDetails(record, memberID);
       modal.classList.remove('hidden');
     }
   });
