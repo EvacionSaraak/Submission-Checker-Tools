@@ -713,6 +713,8 @@ function initEligibilityModal(results, eligMap) {
     btn.addEventListener('click', () => {
       const memberID = btn.dataset.member;
       const claimClinicians = btn.dataset.clinicians?.split(',').map(normalizeClinician);
+      
+      // Use the passed eligMap parameter to get eligibility data
       const eligibilities = [...(eligMap.get(memberID) || [])];
 
       eligibilities.sort((a, b) => {
@@ -734,7 +736,7 @@ function initEligibilityModal(results, eligMap) {
               <tr><th>Claim Clinician(s)</th><td>${claimClinicians.join(', ')}</td></tr>
               <tr><th>Service Category</th><td>${e['Service Category']}</td></tr>
               <tr><th>Package</th><td>${e['Package Name']}</td></tr>
-              <tr><th>Payer Name</th><td>${e['Provider Name']}</td></tr>
+              <tr><th>Payer Name</th><td>${e['Payer Name']}</td></tr>
             </tbody>
           </table>
         `;
@@ -753,6 +755,13 @@ function initEligibilityModal(results, eligMap) {
   closeBtn.addEventListener('click', () => modal.classList.add('hidden'));
   modal.addEventListener('click', e => {
     if (e.target === modal) modal.classList.add('hidden');
+  });
+  
+  // Add keyboard support
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && !modal.classList.contains('hidden')) {
+      modal.classList.add('hidden');
+    }
   });
 }
 
