@@ -115,24 +115,22 @@ function parseXml(text) {
 }
 
 // Extract records where Observation contains Code === 'CPT modifier' and Value is '24' or '52'
+// ----------------- XML parsing & extraction -----------------
 function extractModifierRecords(xmlDoc) {
   const records = [];
   const claims = Array.from(xmlDoc.getElementsByTagName('Claim'));
-
+  
   claims.forEach(claim => {
     const claimId = textValue(claim, 'ID');
     const payerId = textValue(claim, 'PayerID');
     const memberIdRaw = textValue(claim, 'MemberID');
-
     const encNode = claim.getElementsByTagName('Encounter')[0] || claim.getElementsByTagName('Encounte')[0];
     const encDateRaw = encNode ? textValue(encNode, 'Date') || textValue(encNode, 'Start') || textValue(encNode, 'EncounterDate') || '' : '';
     const encDate = normalizeDate(encDateRaw);
-
     const activities = Array.from(claim.getElementsByTagName('Activity'));
+
     activities.forEach(act => {
       const activityId = textValue(act, 'ID');
-
-      // Capture clinician license exactly from XML (trim + uppercase) so it matches XLSX Clinician
       const clinicianRaw = firstNonEmpty([
         textValue(act, 'OrderingClnician'),
         textValue(act, 'OrderingClinician'),
@@ -140,53 +138,66 @@ function extractModifierRecords(xmlDoc) {
         textValue(act, 'OrderingClin')
       ]);
       const clinician = String(clinicianRaw || '').trim().toUpperCase();
-
       const observations = Array.from(act.getElementsByTagName('Observation'));
+
       observations.forEach(obs => {
-        // sequential pairing Code->Value where structure is mixed
+        // Track last CPT modifier Code within this Observation
         let lastCode = '';
         Array.from(obs.children || []).forEach(child => {
           const tag = child.tagName;
           const txt = String(child.textContent || '').trim();
           if (!txt) return;
-          if (tag === 'Code') { lastCode = txt; return; }
-          if ((tag === 'Value' || tag === 'ValueText' || tag === 'ValueType') && lastCode === 'CPT modifier' && isModifierTarget(txt)) {
-            records.push({
-              ClaimID: claimId,
-              ActivityID: activityId,
-              MemberID: normalizeMemberId(memberIdRaw),
-              Date: encDate,
-              OrderingClinician: clinician,
-              Modifier: String(txt || '').trim(),
-              PayerID: payerId
-            });
+
+          if (tag === 'Code') {
+            lastCode = txt;
+            return;
+          }
+
+          if ((tag === 'Value' || tag === 'ValueText' || tag === 'ValueType')) {
+            // Only record if lastCode is exactly "CPT modifier" and value is 24 or 52
+            const isValidModifier = lastCode === 'CPT modifier' && isModifierTarget(txt);
+            if (isValidModifier) {
+              records.push({
+                ClaimID: claimId,
+                ActivityID: activityId,
+                MemberID: normalizeMemberId(memberIdRaw),
+                Date: encDate,
+                OrderingClinician: clinician,
+                Modifier: String(txt || '').trim(),
+                PayerID: payerId,
+                ObsCode: lastCode,
+                VOINumber: '', // placeholder if needed later
+              });
+            } else if (lastCode !== 'CPT modifier') {
+              // Still log a row so we can mark invalid with remark
+              records.push({
+                ClaimID: claimId,
+                ActivityID: activityId,
+                MemberID: normalizeMemberId(memberIdRaw),
+                Date: encDate,
+                OrderingClinician: clinician,
+                Modifier: String(txt || '').trim(),
+                PayerID: payerId,
+                ObsCode: lastCode || 'false',
+                VOINumber: '',
+              });
+            }
           }
         });
-
-        // fallback: align Code[] and Value[] arrays
-        const codes = Array.from(obs.getElementsByTagName('Code')).map(n => String(n.textContent || '').trim());
-        const values = Array.from(obs.getElementsByTagName('Value')).map(n => String(n.textContent || '').trim());
-        const count = Math.max(codes.length, values.length);
-        for (let i = 0; i < count; i++) {
-          const c = codes[i] ?? '';
-          const val = values[i] ?? '';
-          if (c === 'CPT modifier' && isModifierTarget(val)) {
-            records.push({
-              ClaimID: claimId,
-              ActivityID: activityId,
-              MemberID: normalizeMemberId(memberIdRaw),
-              Date: encDate,
-              OrderingClinician: clinician,
-              Modifier: String(val || '').trim(),
-              PayerID: payerId
-            });
-          }
-        }
       });
     });
   });
 
-  return records;
+  // Deduplicate rows based on ClaimID + ActivityID + MemberID + Modifier + ObsCode
+  const seen = new Set();
+  const deduped = records.filter(r => {
+    const key = [r.ClaimID, r.ActivityID, r.MemberID, r.Modifier, r.ObsCode].join('|');
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  return deduped;
 }
 
 // ----------------- XLSX matcher -----------------
