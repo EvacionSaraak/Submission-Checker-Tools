@@ -158,41 +158,26 @@ function extractModifierRecords(xmlDoc) {
         const code = textValue(obs, 'Code').trim();
         const voiVal = textValue(obs, 'Value') || textValue(obs, 'ValueText') || '';
 
-        // Flexible CPT modifier matching
-        if (code && code.toUpperCase().includes('CPT MOD')) {
-          const voiNorm = String(voiVal || '').toUpperCase().replace(/[\s_]/g, '');
-          let modifier = '';
-
-          if (voiNorm === 'VOID' || voiNorm === 'VOI_D') modifier = '24';
-          else if (voiNorm === 'VOIEF1' || voiNorm === 'VOI_EF1') modifier = '52';
-
-          if (modifier) {
-            console.log(`[XML] ClaimID: ${claimId}, Member: ${memberIdRaw}, Activity: ${activityId}, CPT: ${code}, VOI: ${voiVal}, Modifier: ${modifier}`);
-            records.push({
-              ClaimID: claimId,
-              ActivityID: activityId,
-              MemberID: normalizeMemberId(memberIdRaw),
-              Date: encDate,
-              OrderingClinician: clinician,
-              Modifier: modifier,
-              PayerID: payerId,
-              ObsCode: code,
-              VOINumber: voiVal
-            });
-          }
+        // **Extract all CPT modifier observations, don’t skip anything**
+        if (code && code.toUpperCase().includes('CPT')) {
+          records.push({
+            ClaimID: claimId,
+            ActivityID: activityId,
+            MemberID: normalizeMemberId(memberIdRaw),
+            Date: encDate,
+            OrderingClinician: clinician,
+            Modifier: '',          // Fill later
+            PayerID: payerId,
+            ObsCode: code,
+            VOINumber: voiVal
+          });
         }
       });
     });
   });
 
-  // Deduplicate rows
-  const seen = new Set();
-  return records.filter(r => {
-    const key = [r.ClaimID, r.ActivityID, r.MemberID, r.Modifier, r.ObsCode].join('|');
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  console.info('[DEBUG] Extracted XML rows:', records.length);
+  return records;
 }
 
 // ----------------- XLSX matcher -----------------
