@@ -138,61 +138,51 @@ function extractModifierRecords(xmlDoc) {
     const claimId = textValue(claim, 'ID');
     const payerId = textValue(claim, 'PayerID');
     const memberIdRaw = textValue(claim, 'MemberID');
-    const encNode = claim.getElementsByTagName('Encounter')[0] || claim.getElementsByTagName('Encounte')[0];
-    const encDateRaw = encNode ? textValue(encNode, 'Date') || textValue(encNode, 'Start') || textValue(encNode, 'EncounterDate') || '' : '';
-    const encDate = normalizeDate(encDateRaw);
-    const activities = Array.from(claim.getElementsByTagName('Activity'));
 
+    const encNode = claim.getElementsByTagName('Encounter')[0] || claim.getElementsByTagName('Encounte')[0];
+    const encDateRaw = encNode ? (textValue(encNode, 'Date') || textValue(encNode, 'Start') || textValue(encNode, 'EncounterDate') || '') : '';
+    const encDate = normalizeDate(encDateRaw);
+
+    const activities = Array.from(claim.getElementsByTagName('Activity'));
     activities.forEach(act => {
       const activityId = textValue(act, 'ID');
-      const clinicianRaw = firstNonEmpty([
+      const clinician = firstNonEmpty([
         textValue(act, 'OrderingClnician'),
         textValue(act, 'OrderingClinician'),
         textValue(act, 'Ordering_Clinician'),
         textValue(act, 'OrderingClin')
-      ]);
-      const clinician = String(clinicianRaw || '').trim().toUpperCase();
+      ]).trim().toUpperCase();
+
       const observations = Array.from(act.getElementsByTagName('Observation'));
-
       observations.forEach(obs => {
-        let lastCode = '';
-        Array.from(obs.children || []).forEach(child => {
-          const tag = child.tagName;
-          const txt = String(child.textContent || '').trim();
-          if (!txt) return;
+        const code = textValue(obs, 'Code').trim();
+        const voiVal = textValue(obs, 'Value') || textValue(obs, 'ValueText') || '';
 
-          if (tag === 'Code') {
-            lastCode = txt;
-            return;
+        if (code.toUpperCase() === 'CPT MODIFIER') {
+          const voiNorm = voiVal.toUpperCase().replace(/_/g, '');
+          let modifier = '';
+          if (voiNorm === 'VOID') modifier = '24';
+          else if (voiNorm === 'VOIEF1') modifier = '52';
+
+          if (modifier) {
+            records.push({
+              ClaimID: claimId,
+              ActivityID: activityId,
+              MemberID: normalizeMemberId(memberIdRaw),
+              Date: encDate,
+              OrderingClinician: clinician,
+              Modifier: modifier,
+              PayerID: payerId,
+              ObsCode: code,
+              VOINumber: voiVal
+            });
           }
-
-          if (tag === 'Value' || tag === 'ValueText' || tag === 'ValueType') {
-            const isCPT = lastCode === 'CPT modifier';
-            const voiVal = txt;
-
-            if (isCPT) {
-              // Only include rows where VOI matches VOI_D or VOI_EF1
-              const expectedModifier = expectedModifierForVOI(voiVal); // '24' or '52' or ''
-              if (expectedModifier) {
-                records.push({
-                  ClaimID: claimId,
-                  ActivityID: activityId,
-                  MemberID: normalizeMemberId(memberIdRaw),
-                  Date: encDate,
-                  OrderingClinician: clinician,
-                  Modifier: expectedModifier,
-                  PayerID: payerId,
-                  ObsCode: lastCode,
-                  VOINumber: voiVal,
-                });
-              }
-            }
-          }
-        });
+        }
       });
     });
   });
-  // Deduplicate rows based on ClaimID + ActivityID + MemberID + Modifier + ObsCode
+
+  // Deduplicate rows
   const seen = new Set();
   return records.filter(r => {
     const key = [r.ClaimID, r.ActivityID, r.MemberID, r.Modifier, r.ObsCode].join('|');
