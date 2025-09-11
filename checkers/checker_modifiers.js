@@ -115,19 +115,24 @@ function parseXml(text) {
 }
 
 // Extract records where Observation contains Code === 'CPT modifier' and Value is '24' or '52'
+// Replace existing extractModifierRecords with this drop-in function
 function extractModifierRecords(xmlDoc) {
   const records = [];
   const claims = Array.from(xmlDoc.getElementsByTagName('Claim'));
+
   claims.forEach(claim => {
     const claimId = textValue(claim, 'ID');
     const payerId = textValue(claim, 'PayerID');
     const memberIdRaw = textValue(claim, 'MemberID');
+
     const encNode = claim.getElementsByTagName('Encounter')[0] || claim.getElementsByTagName('Encounte')[0];
     const encDateRaw = encNode ? textValue(encNode, 'Date') || textValue(encNode, 'Start') || textValue(encNode, 'EncounterDate') || '' : '';
     const encDate = normalizeDate(encDateRaw);
+
     const activities = Array.from(claim.getElementsByTagName('Activity'));
     activities.forEach(act => {
       const activityId = textValue(act, 'ID');
+
       const clinicianRaw = firstNonEmpty([
         textValue(act, 'OrderingClnician'),
         textValue(act, 'OrderingClinician'),
@@ -135,57 +140,120 @@ function extractModifierRecords(xmlDoc) {
         textValue(act, 'OrderingClin')
       ]);
       const clinician = String(clinicianRaw || '').trim().toUpperCase();
+
       const observations = Array.from(act.getElementsByTagName('Observation'));
       observations.forEach(obs => {
-        let found = false; // track if we already captured a modifier
+        let found = false;
         let lastCode = '';
-        Array.from(obs.children || []).forEach(child => {
+
+        // get obs-level ValueType (if present) for lenient matching
+        const vtNode = obs.getElementsByTagName('ValueType')[0];
+        const obsValueType = vtNode ? String(vtNode.textContent || '').trim().toLowerCase() : '';
+
+        // --- Pass 1: sequential child scan (preferred) ---
+        const children = Array.from(obs.children || []);
+        for (const child of children) {
           const tag = child.tagName;
           const txt = String(child.textContent || '').trim();
-          if (!txt) return;
-          if (tag === 'Code') { lastCode = txt; return; }
-          if ((tag === 'Value' || tag === 'ValueText' || tag === 'ValueType') &&
-              lastCode === 'CPT modifier' && isModifierTarget(txt)) {
-            records.push({
-              ClaimID: claimId,
-              ActivityID: activityId,
-              MemberID: normalizeMemberId(memberIdRaw),
-              Date: encDate,
-              OrderingClinician: clinician,
-              Modifier: String(txt || '').trim(),
-              PayerID: payerId,
-              ObsCode: lastCode || '',
-              VOINumber: '', // placeholder if needed later
-            });
-            found = true;
+          if (!txt) continue;
+
+          if (tag === 'Code') {
+            lastCode = txt;
+            continue;
           }
-        });
-        // fallback only if nothing found above
-        if (!found) {
-          const codes = Array.from(obs.getElementsByTagName('Code')).map(n => String(n.textContent || '').trim());
-          const values = Array.from(obs.getElementsByTagName('Value')).map(n => String(n.textContent || '').trim());
-          const count = Math.max(codes.length, values.length);
-          for (let i = 0; i < count; i++) {
-            const c = codes[i] ?? '';
-            const val = values[i] ?? '';
-            if (c === 'CPT modifier' && isModifierTarget(val)) {
+
+          if (tag === 'Value' || tag === 'ValueText') {
+            const val = txt;
+            if (!isModifierTarget(val)) continue;
+
+            // Accept when Code == 'CPT modifier' OR Observation-level ValueType == 'Modifiers'
+            if (lastCode === 'CPT modifier' || obsValueType === 'modifiers') {
               records.push({
                 ClaimID: claimId,
                 ActivityID: activityId,
                 MemberID: normalizeMemberId(memberIdRaw),
                 Date: encDate,
                 OrderingClinician: clinician,
-                Modifier: String(val || '').trim(),
+                Modifier: String(val).trim(),
                 PayerID: payerId,
-                ObsCode: c || '',
-                VOINumber: '', // placeholder if needed later
+                ObsCode: lastCode || '',   // whatever was in <Code>
+                VOINumber: ''              // placeholder preserved
               });
+
+              // debug note if lenient path used (optional)
+              if (lastCode !== 'CPT modifier' && obsValueType === 'modifiers') {
+                console.debug('[LENIENT MATCH] matched by ValueType="Modifiers"', { claimId, activityId, memberId: memberIdRaw, value: val, code: lastCode });
+              }
+
+              found = true;
+              break; // one record per observation
             }
           }
-        }
-      });
-    });
-  });
+
+          // (rare) If someone put the numeric in ValueType itself
+          if (tag === 'ValueType') {
+            if (isModifierTarget(txt) && (lastCode === 'CPT modifier' || txt.toLowerCase() === 'modifiers')) {
+              records.push({
+                ClaimID: claimId,
+                ActivityID: activityId,
+                MemberID: normalizeMemberId(memberIdRaw),
+                Date: encDate,
+                OrderingClinician: clinician,
+                Modifier: String(txt).trim(),
+                PayerID: payerId,
+                ObsCode: lastCode || '',
+                VOINumber: ''
+              });
+              found = true;
+              break;
+            }
+          }
+        } // end children loop
+
+        if (found) return; // continue to next observation
+
+        // --- Pass 2: fallback alignment (if nothing found) ---
+        const codes = Array.from(obs.getElementsByTagName('Code')).map(n => String(n.textContent || '').trim());
+        const values = Array.from(obs.getElementsByTagName('Value')).map(n => String(n.textContent || '').trim());
+        const valueTexts = Array.from(obs.getElementsByTagName('ValueText')).map(n => String(n.textContent || '').trim());
+        const valueTypes = Array.from(obs.getElementsByTagName('ValueType')).map(n => String(n.textContent || '').trim().map ? (n.textContent || '').trim() : (n.textContent || '').trim());
+
+        const count = Math.max(codes.length, values.length, valueTexts.length, valueTypes.length);
+        for (let i = 0; i < count; i++) {
+          const candidateValue = values[i] ?? valueTexts[i] ?? values[0] ?? valueTexts[0] ?? '';
+          if (!candidateValue) continue;
+          if (!isModifierTarget(candidateValue)) continue;
+
+          const candidateCode = (codes[i] ?? codes[0] ?? '') || '';
+          const candidateVT = ((valueTypes[i] ?? valueTypes[0] ?? '') || '').toLowerCase();
+
+          if (candidateCode === 'CPT modifier' || candidateVT === 'modifiers') {
+            records.push({
+              ClaimID: claimId,
+              ActivityID: activityId,
+              MemberID: normalizeMemberId(memberIdRaw),
+              Date: encDate,
+              OrderingClinician: clinician,
+              Modifier: String(candidateValue).trim(),
+              PayerID: payerId,
+              ObsCode: candidateCode || '',
+              VOINumber: ''
+            });
+
+            if (candidateCode !== 'CPT modifier' && candidateVT === 'modifiers') {
+              console.debug('[LENIENT FALLBACK] matched by ValueType="Modifiers" (fallback)', { claimId, activityId, memberId: memberIdRaw, value: candidateValue, code: candidateCode });
+            }
+
+            found = true;
+            break;
+          }
+        } // end fallback loop
+
+        // if not found, we simply skip this observation
+      }); // end observations
+    }); // end activities
+  }); // end claims
+
   return records;
 }
 
