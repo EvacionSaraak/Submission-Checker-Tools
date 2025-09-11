@@ -27,35 +27,29 @@ async function handleRun() {
     const output = extracted.map(rec => {
       const xmlDate = normalizeDate(rec.Date);
       const match = matcher.find(rec.MemberID, xmlDate, rec.OrderingClinician);
-
-      const voi = rec.VOINumber || '';
-      const cptNorm = String(rec.Modifier || '').trim();
-      const voiNorm = normForCompare(voi);
-      const expectEF = normForCompare('VOI_EF1');
-      const expectD  = normForCompare('VOI_D');
-
+    
       const remarks = [];
-
+    
+      // Determine VOI number: prefer matched eligibility, fallback to XML
+      let voiNumber = '';
+      if (match) {
+        voiNumber = String(match['VOI Number'] || '').trim(); // <-- VOI from eligibility
+      } else {
+        voiNumber = rec.VOINumber || ''; // fallback to XML
+      }
+    
+      // Check Observation Code
       if (rec.ObsCode !== 'CPT modifier') {
         remarks.push(`Observation Code incorrect; expected "CPT modifier" but found "${rec.ObsCode}"`);
       }
-
-      if (match) {
-        if ((cptNorm === '52' && voiNorm !== expectEF) ||
-            (cptNorm === '24' && voiNorm !== expectD)) {
-          remarks.push(`VOI does not match modifier: ${cptNorm} expected ${cptNorm === '52' ? 'VOI_EF1' : 'VOI_D'}, found ${voi || 'none'}`);
-        }
-      } else {
-        remarks.push('No matching eligibility found');
-      }
-
-      if (!match) {
-        const partialMatch = Array.from(matcher._index.values()).flat()
-          .find(r => normalizeMemberId(r['Card Number / DHA Member ID']) === normalizeMemberId(rec.MemberID) &&
-                     String(r['Clinician'] || '').trim().toUpperCase() === rec.OrderingClinician);
-        if (partialMatch) remarks.push('Partial match found: Member and Clinician matched but date mismatch');
-      }
-
+    
+      // Check VOI against modifier
+      const voiNorm = normForCompare(voiNumber);
+      if (rec.Modifier === '52' && voiNorm !== normForCompare('VOI_EF1')) remarks.push(`Modifier 52 does not match VOI (expected VOI_EF1).`);
+      if (rec.Modifier === '24' && voiNorm !== normForCompare('VOI_D')) remarks.push(`Modifier 24 does not match VOI (expected VOI_D).`);
+    
+      if (!match) remarks.push('No matching eligibility found');
+    
       return {
         ClaimID: rec.ClaimID || '',
         MemberID: rec.MemberID || '',
@@ -63,7 +57,7 @@ async function handleRun() {
         OrderingClinician: rec.OrderingClinician || '',
         Modifier: rec.Modifier || '',
         ObsCode: rec.ObsCode || '',
-        VOINumber: voi || '',
+        VOINumber: voiNumber,
         PayerID: rec.PayerID || '',
         EligibilityRow: match || null,
         isValid: remarks.length === 0,
