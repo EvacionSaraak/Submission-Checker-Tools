@@ -29,75 +29,44 @@ async function handleRun() {
     const matcher = buildXlsxMatcher(xlsxObj.rows);
     showProgress(65, 'Matching to XLSX');
 
-    // ----------------- MAPPING & VALIDATION -----------------
     const output = extracted.map(rec => {
       const xmlDate = normalizeDate(rec.Date);
       const match = matcher.find(rec.MemberID, xmlDate, rec.OrderingClinician);
 
-      // VOINumber (from matched XLSX row, if any)
+      // Use VOINumber extracted from matched XLSX row (if any)
       const voi = match ? String(match['VOI Number'] || '').trim() : '';
 
-      // base fields preserved
-      const base = {
-        ClaimID: rec.ClaimID || '',
-        MemberID: rec.MemberID || '',
-        ActivityID: rec.ActivityID || '',
-        OrderingClinician: rec.OrderingClinician || '',
-        Modifier: rec.Modifier || '',
-        VOINumber: voi || '',
-        EligibilityRow: match || null,
-        PayerID: rec.PayerID || '',
-        ObsCode: rec.ObsCode || ''
-      };
+      // Normalize for robust comparison (remove punctuation/underscores/spaces and uppercase)
+      const cptNorm = String(rec.Modifier || '').trim();
+      const voiNorm = normForCompare(voi);
+      const expectEF = normForCompare('VOI_EF1');
+      const expectD  = normForCompare('VOI_D');
 
-      // Collect reasons; any entry => Invalid
-      const reasons = [];
+      const isValid = Boolean(match) && (
+        (cptNorm === '52' && voiNorm === expectEF) ||
+        (cptNorm === '24' && voiNorm === expectD)
+      );
 
+      // Log partial matches (member+clinician but date mismatch)
       if (!match) {
-        // Check partial: Member + Clinician matched but date mismatch
         const partialMatch = Array.from(matcher._index.values()).flat()
           .find(r => normalizeMemberId(r['Card Number / DHA Member ID']) === normalizeMemberId(rec.MemberID) &&
                      String(r['Clinician'] || '').trim().toUpperCase() === String(rec.OrderingClinician || '').trim().toUpperCase());
-        if (partialMatch) {
-          reasons.push('Member & Clinician matched in eligibility but date mismatch');
-          console.warn('[PARTIAL MATCH] Member and Clinician matched but date mismatch. XML date:', xmlDate, 'XLSX row sample:', partialMatch);
-        } else {
-          reasons.push('No eligibility match');
-        }
-      } else {
-        // We have a matched eligibility row — validate VOI -> expected modifier -> obs code
-        const expectedModifier = expectedModifierForVOI(String(match['VOI Number'] || '').trim());
-
-        if (!expectedModifier) {
-          reasons.push(`Unknown VOI in eligibility: ${String(match['VOI Number'] || '').trim() || '(blank)'}`);
-        }
-
-        // Check modifier value presence and correctness
-        const recMod = String(rec.Modifier || '').trim();
-        if (!recMod) {
-          reasons.push('Observation modifier missing');
-        } else if (expectedModifier && recMod !== expectedModifier) {
-          reasons.push(`Modifier ${recMod} does not match VOI ${String(match['VOI Number'] || '(blank)')} (expected ${expectedModifier})`);
-        }
-
-        // Enforce exact ObsCode = 'CPT modifier' (case- and punctuation-sensitive)
-        const obsCodeStr = rec.ObsCode == null ? '' : String(rec.ObsCode).trim();
-        if (obsCodeStr === '') {
-          reasons.push('Observation Code missing; expected "CPT modifier"');
-        } else if (obsCodeStr !== 'CPT modifier') {
-          // treat any non-exact code (including "false", "CPT Modifier", etc.) as INVALID
-          reasons.push(`Observation Code incorrect; expected "CPT modifier" but found "${obsCodeStr}"`);
-        }
+        if (partialMatch) console.warn('[PARTIAL MATCH] Member and Clinician matched but date mismatch. XML date:', xmlDate, 'XLSX row sample:', partialMatch);
       }
 
-      const ValidationStatus = reasons.length ? 'Invalid' : 'Valid';
-      const InvalidReason = reasons.join('; ');
-      const isValid = ValidationStatus === 'Valid';
-
-      return Object.assign({}, base, { ValidationStatus, InvalidReason, isValid });
+      return {
+        ClaimID: rec.ClaimID || '',
+        MemberID: rec.MemberID || '',
+        ActivityID: rec.ActivityID || '',
+        OrderingClinician: rec.OrderingClinician || '', // already uppercased in extraction
+        Modifier: rec.Modifier || '',
+        VOINumber: voi || '',
+        EligibilityRow: match || null, // full XLSX row for modal
+        PayerID: rec.PayerID || '',
+        isValid
+      };
     });
-
-    // ----------------- END MAPPING & VALIDATION -----------------
 
     lastResults = output;
     renderResults(output);
@@ -146,20 +115,24 @@ function parseXml(text) {
 }
 
 // Extract records where Observation contains Code === 'CPT modifier' and Value is '24' or '52'
-// Lenient extractor: accepts ValueType='Modifiers' so malformed rows are detected, but validation requires exact Code
 function extractModifierRecords(xmlDoc) {
   const records = [];
   const claims = Array.from(xmlDoc.getElementsByTagName('Claim'));
+
   claims.forEach(claim => {
     const claimId = textValue(claim, 'ID');
     const payerId = textValue(claim, 'PayerID');
     const memberIdRaw = textValue(claim, 'MemberID');
+
     const encNode = claim.getElementsByTagName('Encounter')[0] || claim.getElementsByTagName('Encounte')[0];
     const encDateRaw = encNode ? textValue(encNode, 'Date') || textValue(encNode, 'Start') || textValue(encNode, 'EncounterDate') || '' : '';
     const encDate = normalizeDate(encDateRaw);
+
     const activities = Array.from(claim.getElementsByTagName('Activity'));
     activities.forEach(act => {
       const activityId = textValue(act, 'ID');
+
+      // Capture clinician license exactly from XML (trim + uppercase) so it matches XLSX Clinician
       const clinicianRaw = firstNonEmpty([
         textValue(act, 'OrderingClnician'),
         textValue(act, 'OrderingClinician'),
@@ -167,118 +140,52 @@ function extractModifierRecords(xmlDoc) {
         textValue(act, 'OrderingClin')
       ]);
       const clinician = String(clinicianRaw || '').trim().toUpperCase();
+
       const observations = Array.from(act.getElementsByTagName('Observation'));
       observations.forEach(obs => {
-        let found = false;
+        // sequential pairing Code->Value where structure is mixed
         let lastCode = '';
-
-        // get obs-level ValueType (if present) for lenient matching
-        const vtNode = obs.getElementsByTagName('ValueType')[0];
-        const obsValueType = vtNode ? String(vtNode.textContent || '').trim().toLowerCase() : '';
-
-        // Pass 1: sequential child scan (preferred)
-        const children = Array.from(obs.children || []);
-        for (const child of children) {
+        Array.from(obs.children || []).forEach(child => {
           const tag = child.tagName;
           const txt = String(child.textContent || '').trim();
-          if (!txt) continue;
-
-          if (tag === 'Code') {
-            lastCode = txt;
-            continue;
-          }
-
-          if (tag === 'Value' || tag === 'ValueText') {
-            const val = txt;
-            if (!isModifierTarget(val)) continue;
-
-            // Accept when Code == 'CPT modifier' OR Observation-level ValueType == 'Modifiers'
-            if (lastCode === 'CPT modifier' || obsValueType === 'modifiers') {
-              records.push({
-                ClaimID: claimId,
-                ActivityID: activityId,
-                MemberID: normalizeMemberId(memberIdRaw),
-                Date: encDate,
-                OrderingClinician: clinician,
-                Modifier: String(val).trim(),
-                PayerID: payerId,
-                ObsCode: lastCode || '',
-                VOINumber: ''
-              });
-
-              // debug note if lenient path used
-              if (lastCode !== 'CPT modifier' && obsValueType === 'modifiers') {
-                console.debug('[LENIENT MATCH] matched by ValueType="Modifiers"', { claimId, activityId, memberId: memberIdRaw, value: val, code: lastCode });
-              }
-
-              found = true;
-              break; // one record per observation
-            }
-          }
-
-          // Rare: numeric in ValueType itself
-          if (tag === 'ValueType') {
-            if (isModifierTarget(txt) && (lastCode === 'CPT modifier' || txt.toLowerCase() === 'modifiers')) {
-              records.push({
-                ClaimID: claimId,
-                ActivityID: activityId,
-                MemberID: normalizeMemberId(memberIdRaw),
-                Date: encDate,
-                OrderingClinician: clinician,
-                Modifier: String(txt).trim(),
-                PayerID: payerId,
-                ObsCode: lastCode || '',
-                VOINumber: ''
-              });
-              found = true;
-              break;
-            }
-          }
-        } // end children loop
-
-        if (found) return; // continue to next observation
-
-        // Pass 2: fallback alignment (if nothing found)
-        const codes = Array.from(obs.getElementsByTagName('Code')).map(n => String(n.textContent || '').trim());
-        const values = Array.from(obs.getElementsByTagName('Value')).map(n => String(n.textContent || '').trim());
-        const valueTexts = Array.from(obs.getElementsByTagName('ValueText')).map(n => String(n.textContent || '').trim());
-        const valueTypes = Array.from(obs.getElementsByTagName('ValueType')).map(n => String(n.textContent || '').trim());
-
-        const count = Math.max(codes.length, values.length, valueTexts.length, valueTypes.length);
-        for (let i = 0; i < count; i++) {
-          const candidateValue = values[i] ?? valueTexts[i] ?? values[0] ?? valueTexts[0] ?? '';
-          if (!candidateValue) continue;
-          if (!isModifierTarget(candidateValue)) continue;
-
-          const candidateCode = (codes[i] ?? codes[0] ?? '') || '';
-          const candidateVT = ((valueTypes[i] ?? valueTypes[0] ?? '') || '').toLowerCase();
-
-          if (candidateCode === 'CPT modifier' || candidateVT === 'modifiers') {
+          if (!txt) return;
+          if (tag === 'Code') { lastCode = txt; return; }
+          if ((tag === 'Value' || tag === 'ValueText' || tag === 'ValueType') && lastCode === 'CPT modifier' && isModifierTarget(txt)) {
             records.push({
               ClaimID: claimId,
               ActivityID: activityId,
               MemberID: normalizeMemberId(memberIdRaw),
               Date: encDate,
               OrderingClinician: clinician,
-              Modifier: String(candidateValue).trim(),
-              PayerID: payerId,
-              ObsCode: candidateCode || '',
-              VOINumber: ''
+              Modifier: String(txt || '').trim(),
+              PayerID: payerId
             });
-
-            if (candidateCode !== 'CPT modifier' && candidateVT === 'modifiers') {
-              console.debug('[LENIENT FALLBACK] matched by ValueType="Modifiers" (fallback)', { claimId, activityId, memberId: memberIdRaw, value: candidateValue, code: candidateCode });
-            }
-
-            found = true;
-            break;
           }
-        } // end fallback loop
+        });
 
-        // if not found, we simply skip this observation
-      }); // end observations
-    }); // end activities
-  }); // end claims
+        // fallback: align Code[] and Value[] arrays
+        const codes = Array.from(obs.getElementsByTagName('Code')).map(n => String(n.textContent || '').trim());
+        const values = Array.from(obs.getElementsByTagName('Value')).map(n => String(n.textContent || '').trim());
+        const count = Math.max(codes.length, values.length);
+        for (let i = 0; i < count; i++) {
+          const c = codes[i] ?? '';
+          const val = values[i] ?? '';
+          if (c === 'CPT modifier' && isModifierTarget(val)) {
+            records.push({
+              ClaimID: claimId,
+              ActivityID: activityId,
+              MemberID: normalizeMemberId(memberIdRaw),
+              Date: encDate,
+              OrderingClinician: clinician,
+              Modifier: String(val || '').trim(),
+              PayerID: payerId
+            });
+          }
+        }
+      });
+    });
+  });
+
   return records;
 }
 
@@ -327,16 +234,12 @@ function buildXlsxMatcher(rows) {
 
 // ----------------- Validation / business rules -----------------
 function isModifierTarget(val) { const v = String(val || '').trim(); return v === '24' || v === '52'; }
-function expectedModifierForVOI(voi) {
-  if (!voi) return '';
-  const norm = normForCompare(voi);
-  if (norm === normForCompare('VOI_D')) return '24';
-  if (norm === normForCompare('VOI_EF1')) return '52';
-  if (norm === normForCompare('EF1') || norm.endsWith('EF1')) return '52';
-  if (norm === 'D' || norm.endsWith('D')) return '24';
-  return '';
-}
+function expectedModifierForVOI(voi) { if (!voi) return ''; const v = String(voi).trim(); if (v === 'VOI_D') return '24'; if (v === 'VOI_EF1') return '52'; return ''; }
+
+// Normalize strings for robust comparisons (uppercase + remove non-alphanumeric)
 function normForCompare(s) { return String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
+
+// escape regex special characters for building partialKeyPattern
 function escapeRegex(s) { return String(s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
 // ----------------- Rendering -----------------
@@ -375,11 +278,8 @@ function renderResults(rows) {
         <th>Activity ID</th>
         <th>Ordering Clinician</th>
         <th>Observation CPT Modifier</th>
-        <th>Observation Code</th>
         <th>VOI Number</th>
         <th>Payer ID</th>
-        <th>Status</th>
-        <th>Reason</th>
         <th>Eligibility Details</th>
       </tr>
     </thead>
@@ -390,23 +290,21 @@ function renderResults(rows) {
     const showMember = showClaim || r.MemberID !== prevMemberId;
     const showActivity = showMember || r.ActivityID !== prevActivityId;
 
-    // Determine row class from ValidationStatus
-    const status = String(r.ValidationStatus || '').trim();
-    let rowClass = 'invalid';
-    if (status === 'Valid') rowClass = 'valid';
-    else if (status === 'Unknown') rowClass = 'unknown';
+    // Use the VOINumber extracted earlier (r.VOINumber) for display/validation
+    const voiForValidation = String(r.VOINumber || '').trim().toUpperCase();
+    const isValid = voiForValidation
+      ? ((r.Modifier === '52' && normForCompare(voiForValidation) === normForCompare('VOI_EF1')) ||
+         (r.Modifier === '24' && normForCompare(voiForValidation) === normForCompare('VOI_D')))
+      : false;
 
-    html += `<tr class="${rowClass}">
+    html += `<tr class="${isValid ? 'valid' : 'invalid'}">
       <td>${showClaim ? escapeHtml(r.ClaimID) : ''}</td>
       <td>${showMember ? escapeHtml(r.MemberID) : ''}</td>
       <td>${showActivity ? escapeHtml(r.ActivityID) : ''}</td>
       <td>${escapeHtml(r.OrderingClinician)}</td>
       <td>${escapeHtml(r.Modifier)}</td>
-      <td>${escapeHtml(r.ObsCode || '')}</td>
       <td>${escapeHtml(r.VOINumber || '')}</td>
       <td>${escapeHtml(r.PayerID)}</td>
-      <td>${escapeHtml(r.ValidationStatus || '')}</td>
-      <td>${escapeHtml(r.InvalidReason || '')}</td>
       <td>${r.EligibilityRow ? `<button type="button" class="details-btn eligibility-details" onclick="showEligibility(${r._originalIndex})">View</button>` : ''}</td>
     </tr>`;
 
@@ -428,81 +326,6 @@ function normalizeMemberId(id) { return String(id || '').replace(/^0+/, '').trim
 
 // normalizeName retains spacing normalization and lowercases (used only in a few debug paths)
 function normalizeName(name) { return String(name || '').replace(/\s+/g, ' ').trim().toLowerCase(); }
-
-// ----------------- PROGRESS (uses existing tables.css classes) -----------------
-
-// Create progress DOM if not present (re-uses .loaded-count and .status-badge)
-function ensureProgressElements() {
-  if (el('progress-root')) return;
-
-  const anchor = el('outputTableContainer') || document.body;
-
-  const root = document.createElement('div');
-  root.id = 'progress-root';
-  root.style.margin = '8px 0 14px';
-  root.innerHTML = `
-    <div class="progress-row" style="display:flex;align-items:center;gap:10px;">
-      <div id="progress-bar-container" role="progressbar" aria-valuemin="0" aria-valuemax="100"
-           style="flex:1;height:14px;background:#ececec;border-radius:9px;overflow:hidden;position:relative;">
-        <div id="progress-bar" style="height:100%; width:0%; background: linear-gradient(90deg,#4CAF50 0%, #2E7D32 100%); transition: width 420ms cubic-bezier(.2,.9,.3,1);"></div>
-      </div>
-      <div id="progress-text" class="loaded-count" style="min-width:120px;text-align:right;"></div>
-      <div id="progress-badge" class="status-badge" style="display:inline-block; margin-left:6px;"></div>
-    </div>
-  `;
-
-  anchor.parentNode.insertBefore(root, anchor);
-}
-
-// showProgress(percent, text)
-// - percent: integer 0..100 for determinate, null or -1 for indeterminate (we display "Processing...")
-// - text: optional string shown to the right of the percent
-function showProgress(percent, text) {
-  ensureProgressElements();
-  const root = el('progress-root');
-  const barContainer = el('progress-bar-container');
-  const bar = el('progress-bar');
-  const pText = el('progress-text');
-  const badge = el('progress-badge');
-
-  if (!root || !barContainer || !bar || !pText || !badge) return;
-
-  const isIndeterminate = percent == null || Number(percent) < 0;
-  const shouldShow = isIndeterminate || (Number(percent) > 0);
-
-  // Hide when percent === 0 (keeps compatibility with previous reset behaviour)
-  root.style.display = shouldShow ? 'block' : 'none';
-
-  if (!shouldShow) {
-    // reset
-    bar.style.width = '0%';
-    barContainer.removeAttribute('aria-valuenow');
-    pText.textContent = '';
-    badge.textContent = '';
-    return;
-  }
-
-  if (isIndeterminate) {
-    // Simple indeterminate presentation: animate by toggling width with JS (no extra CSS required)
-    // We'll show a pulsing style by toggling a small animation using setTimeout
-    bar.style.transition = 'none';
-    bar.style.width = '30%';
-    bar.style.transform = 'translateX(-10%)';
-    // Use CSS transition to move it slightly for indeterminate feel
-    setTimeout(() => { bar.style.transition = 'transform 1s linear'; bar.style.transform = 'translateX(80%)'; }, 50);
-    pText.textContent = text ? String(text) : 'Processing...';
-    badge.textContent = ''; // no percent badge when indeterminate
-    barContainer.removeAttribute('aria-valuenow');
-  } else {
-    const pct = Math.max(0, Math.min(100, Math.round(Number(percent))));
-    // determinate: set width (animated by CSS)
-    bar.style.transition = 'width 420ms cubic-bezier(.2,.9,.3,1)';
-    requestAnimationFrame(() => { bar.style.width = `${pct}%`; bar.style.transform = 'none'; });
-    barContainer.setAttribute('aria-valuenow', String(pct));
-    pText.textContent = text ? `${pct}% — ${String(text)}` : `${pct}%`;
-    badge.textContent = `${pct}%`;
-  }
-}
 
 // normalizeDate: robust handling of common formats; returns YYYY-MM-DD
 function normalizeDate(input) {
@@ -567,7 +390,24 @@ function makeWorkbookFromJson(json, sheetName) {
 function el(id) { return document.getElementById(id); }
 function fileEl(id) { const f = el(id); return f && f.files && f.files[0] ? f.files[0] : null; }
 
+function resetUI() {
+  const container = el('outputTableContainer');
+  if (container) container.innerHTML = '';
+  toggleDownload(false);
+  message('', '');
+  showProgress(0, '');
+  lastResults = [];
+  lastWorkbook = null;
+}
+
 function toggleDownload(enabled) { const dl = el('download-button'); if (!dl) return; dl.disabled = !enabled; }
+
+function showProgress(percent, text) {
+  const barContainer = el('progress-bar-container'), bar = el('progress-bar'), pText = el('progress-text');
+  if (barContainer) barContainer.style.display = percent > 0 ? 'block' : 'none';
+  if (bar) bar.style.width = (percent || 0) + '%';
+  if (pText) pText.textContent = text ? `${percent}% — ${text}` : `${percent}%`;
+}
 
 function message(text, color) { const m = el('messageBox'); if (!m) return; m.textContent = text || ''; m.style.color = color || ''; }
 
@@ -604,16 +444,3 @@ function showEligibility(index) {
 }
 
 function closeEligibilityModal() { const modal = el('eligibilityModal'); if (modal) modal.remove(); }
-
-// ----------------- resetUI (keeps progress integration) -----------------
-// resetUI() — keep previous behavior but hide/reset progress using showProgress(0)
-function resetUI() {
-  const container = el('outputTableContainer');
-  if (container) container.innerHTML = '';
-  toggleDownload(false);
-  message('', '');
-  // hide and reset progress bar (use showProgress(0) to hide)
-  showProgress(0, '');
-  lastResults = [];
-  lastWorkbook = null;
-}
