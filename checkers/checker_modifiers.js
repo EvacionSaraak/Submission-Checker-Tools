@@ -289,6 +289,7 @@ function renderResults(rows) {
         <th>Observation CPT Modifier</th>
         <th>VOI Number</th>
         <th>Payer ID</th>
+        <th>Remarks</th>
         <th>Eligibility Details</th>
       </tr>
     </thead>
@@ -299,14 +300,15 @@ function renderResults(rows) {
     const showMember = showClaim || r.MemberID !== prevMemberId;
     const showActivity = showMember || r.ActivityID !== prevActivityId;
 
-    // Determine validity
-    const voiForValidation = String(r.VOINumber || '').trim().toUpperCase();
-    const obsCodeValid = r.ObsCode === 'CPT modifier';
-    const voiValid = voiForValidation
-      ? ((r.Modifier === '52' && normForCompare(voiForValidation) === normForCompare('VOI_EF1')) ||
-         (r.Modifier === '24' && normForCompare(voiForValidation) === normForCompare('VOI_D')))
-      : false;
-    const isValid = obsCodeValid && voiValid && r.EligibilityRow;
+    // Build remarks
+    const remarks = [];
+    if (r.ObsCode !== 'CPT modifier') remarks.push(`Observation Code is "${r.ObsCode}", expected "CPT modifier"`);
+    const voiNorm = normForCompare(r.VOINumber || '');
+    if (r.Modifier === '52' && voiNorm !== normForCompare('VOI_EF1')) remarks.push(`Modifier 52 does not match VOI; expected VOI_EF1`);
+    if (r.Modifier === '24' && voiNorm !== normForCompare('VOI_D')) remarks.push(`Modifier 24 does not match VOI; expected VOI_D`);
+    if (!r.EligibilityRow) remarks.push('No matching eligibility found');
+
+    const isValid = remarks.length === 0;
 
     html += `<tr class="${isValid ? 'valid' : 'invalid'}">
       <td>${showClaim ? escapeHtml(r.ClaimID) : ''}</td>
@@ -317,6 +319,7 @@ function renderResults(rows) {
       <td>${escapeHtml(r.Modifier)}</td>
       <td>${escapeHtml(r.VOINumber || '')}</td>
       <td>${escapeHtml(r.PayerID)}</td>
+      <td>${escapeHtml(remarks.join('; ') || 'OK')}</td>
       <td>${r.EligibilityRow ? `<button type="button" class="details-btn eligibility-details" onclick="showEligibility(${r._originalIndex})">View</button>` : ''}</td>
     </tr>`;
 
