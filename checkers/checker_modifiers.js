@@ -115,94 +115,77 @@ function parseXml(text) {
 }
 
 // Extract records where Observation contains Code === 'CPT modifier' and Value is '24' or '52'
-function extractModifierRecords(claimNode) {
-  const claimId = getNodeText(claimNode, 'ID');
-  const memberIdRaw = getNodeText(claimNode, 'MemberID');
-  const payerId = getNodeText(claimNode, 'PayerID');
-  const encDate = normalizeDate(getNodeText(claimNode, 'Encounter > Start'));
+function extractModifierRecords(xmlDoc) {
   const records = [];
-
-  const activities = claimNode.getElementsByTagName('Activity');
-  for (let a of activities) {
-    const activityId = getNodeText(a, 'ID');
-    const clinician = normalizeString(getNodeText(a, 'OrderingClinician'));
-    const observations = a.getElementsByTagName('Observation');
-
-    let found = false;
-
-    // Pass 1: sequential scan
-    for (let obs of observations) {
-      let lastCode = null;
-      const children = obs.children || [];
-      for (let child of children) {
-        const tag = child.tagName;
-        const txt = (child.textContent || '').trim();
-
-        if (tag === 'Code') {
-          lastCode = txt;
-        } else if ((tag === 'Value' || tag === 'ValueText') && isModifierTarget(txt)) {
-          // Normal path: Code == CPT modifier
-          if (lastCode === 'CPT modifier') {
+  const claims = Array.from(xmlDoc.getElementsByTagName('Claim'));
+  claims.forEach(claim => {
+    const claimId = textValue(claim, 'ID');
+    const payerId = textValue(claim, 'PayerID');
+    const memberIdRaw = textValue(claim, 'MemberID');
+    const encNode = claim.getElementsByTagName('Encounter')[0] || claim.getElementsByTagName('Encounte')[0];
+    const encDateRaw = encNode ? textValue(encNode, 'Date') || textValue(encNode, 'Start') || textValue(encNode, 'EncounterDate') || '' : '';
+    const encDate = normalizeDate(encDateRaw);
+    const activities = Array.from(claim.getElementsByTagName('Activity'));
+    activities.forEach(act => {
+      const activityId = textValue(act, 'ID');
+      const clinicianRaw = firstNonEmpty([
+        textValue(act, 'OrderingClnician'),
+        textValue(act, 'OrderingClinician'),
+        textValue(act, 'Ordering_Clinician'),
+        textValue(act, 'OrderingClin')
+      ]);
+      const clinician = String(clinicianRaw || '').trim().toUpperCase();
+      const observations = Array.from(act.getElementsByTagName('Observation'));
+      observations.forEach(obs => {
+        let found = false; // track if we already captured a modifier
+        let lastCode = '';
+        Array.from(obs.children || []).forEach(child => {
+          const tag = child.tagName;
+          const txt = String(child.textContent || '').trim();
+          if (!txt) return;
+          if (tag === 'Code') { lastCode = txt; return; }
+          if ((tag === 'Value' || tag === 'ValueText' || tag === 'ValueType') &&
+              lastCode === 'CPT modifier' && isModifierTarget(txt)) {
             records.push({
               ClaimID: claimId,
               ActivityID: activityId,
               MemberID: normalizeMemberId(memberIdRaw),
               Date: encDate,
               OrderingClinician: clinician,
-              Modifier: String(txt).trim(),
-              PayerID: payerId
+              Modifier: String(txt || '').trim(),
+              PayerID: payerId,
+              ObsCode: lastCode || '',
+              VOINumber: '', // placeholder if needed later
             });
             found = true;
           }
-          // Lenient path: ValueType == Modifiers
-          else {
-            const valueType = getNodeText(obs, 'ValueType');
-            if (valueType && valueType.toLowerCase() === 'modifiers') {
+        });
+        // fallback only if nothing found above
+        if (!found) {
+          const codes = Array.from(obs.getElementsByTagName('Code')).map(n => String(n.textContent || '').trim());
+          const values = Array.from(obs.getElementsByTagName('Value')).map(n => String(n.textContent || '').trim());
+          const count = Math.max(codes.length, values.length);
+          for (let i = 0; i < count; i++) {
+            const c = codes[i] ?? '';
+            const val = values[i] ?? '';
+            if (c === 'CPT modifier' && isModifierTarget(val)) {
               records.push({
                 ClaimID: claimId,
                 ActivityID: activityId,
                 MemberID: normalizeMemberId(memberIdRaw),
                 Date: encDate,
                 OrderingClinician: clinician,
-                Modifier: String(txt).trim(),
-                PayerID: payerId
+                Modifier: String(val || '').trim(),
+                PayerID: payerId,
+                ObsCode: c || '',
+                VOINumber: '', // placeholder if needed later
               });
-              found = true;
             }
           }
         }
-      }
-    }
-
-    // Pass 2: fallback array alignment if nothing found
-    if (!found && observations.length > 0) {
-      for (let obs of observations) {
-        const codes = Array.from(obs.getElementsByTagName('Code')).map(n => (n.textContent || '').trim());
-        const values = Array.from(obs.getElementsByTagName('Value')).map(n => (n.textContent || '').trim());
-        const valueTypes = Array.from(obs.getElementsByTagName('ValueType')).map(n => (n.textContent || '').trim());
-
-        for (let i = 0; i < values.length; i++) {
-          const v = values[i];
-          if (isModifierTarget(v)) {
-            const c = codes[i] || codes[0] || '';
-            const vt = valueTypes[i] || valueTypes[0] || '';
-            if (c === 'CPT modifier' || (vt && vt.toLowerCase() === 'modifiers')) {
-              records.push({
-                ClaimID: claimId,
-                ActivityID: activityId,
-                MemberID: normalizeMemberId(memberIdRaw),
-                Date: encDate,
-                OrderingClinician: clinician,
-                Modifier: String(v).trim(),
-                PayerID: payerId
-              });
-              found = true;
-            }
-          }
-        }
-      }
-    }
-  }
+      });
+    });
+  });
   return records;
 }
 
@@ -252,11 +235,7 @@ function buildXlsxMatcher(rows) {
 // ----------------- Validation / business rules -----------------
 function isModifierTarget(val) { const v = String(val || '').trim(); return v === '24' || v === '52'; }
 function expectedModifierForVOI(voi) { if (!voi) return ''; const v = String(voi).trim(); if (v === 'VOI_D') return '24'; if (v === 'VOI_EF1') return '52'; return ''; }
-
-// Normalize strings for robust comparisons (uppercase + remove non-alphanumeric)
 function normForCompare(s) { return String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
-
-// escape regex special characters for building partialKeyPattern
 function escapeRegex(s) { return String(s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
 // ----------------- Rendering -----------------
@@ -283,7 +262,6 @@ function renderResults(rows) {
     return;
   }
 
-  // map filtered rows back to original lastResults indices for modal linking
   filteredRows.forEach(r => { r._originalIndex = rows.indexOf(r); });
 
   let prevClaimId = null, prevMemberId = null, prevActivityId = null;
@@ -295,6 +273,7 @@ function renderResults(rows) {
         <th>Activity ID</th>
         <th>Ordering Clinician</th>
         <th>Observation CPT Modifier</th>
+        <th>Observation Code</th>
         <th>VOI Number</th>
         <th>Payer ID</th>
         <th>Eligibility Details</th>
@@ -307,7 +286,6 @@ function renderResults(rows) {
     const showMember = showClaim || r.MemberID !== prevMemberId;
     const showActivity = showMember || r.ActivityID !== prevActivityId;
 
-    // Use the VOINumber extracted earlier (r.VOINumber) for display/validation
     const voiForValidation = String(r.VOINumber || '').trim().toUpperCase();
     const isValid = voiForValidation
       ? ((r.Modifier === '52' && normForCompare(voiForValidation) === normForCompare('VOI_EF1')) ||
@@ -320,6 +298,7 @@ function renderResults(rows) {
       <td>${showActivity ? escapeHtml(r.ActivityID) : ''}</td>
       <td>${escapeHtml(r.OrderingClinician)}</td>
       <td>${escapeHtml(r.Modifier)}</td>
+      <td>${escapeHtml(r.ObsCode || '')}</td>
       <td>${escapeHtml(r.VOINumber || '')}</td>
       <td>${escapeHtml(r.PayerID)}</td>
       <td>${r.EligibilityRow ? `<button type="button" class="details-btn eligibility-details" onclick="showEligibility(${r._originalIndex})">View</button>` : ''}</td>
