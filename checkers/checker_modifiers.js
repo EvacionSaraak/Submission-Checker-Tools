@@ -200,11 +200,13 @@ function extractModifierRecords(xmlDoc) {
 function buildXlsxMatcher(rows) {
   const index = new Map();
 
+  // Build index
   rows.forEach(r => {
     const member = normalizeMemberId(String(r['Card Number / DHA Member ID'] || ''));
-    const date = normalizeDate(String(r['Ordered On'] || '')); // pass whole string; normalizeDate strips time
+    const date = normalizeDate(String(r['Ordered On'] || ''));
     const clinician = String(r['Clinician'] || '').trim().toUpperCase();
     r._VOINumber = String(r['VOI Number'] || '').trim();
+    r._used = false; // add used flag
 
     const key = [member, date, clinician].join('|');
     if (!index.has(key)) index.set(key, []);
@@ -219,12 +221,18 @@ function buildXlsxMatcher(rows) {
 
       const fullKey = [normalizedMember, normalizedDate, normalizedClinician].join('|');
       const arr = index.get(fullKey);
+
       if (arr && arr.length) {
-        console.log(`[MATCH] Full match found for Member: ${memberId}, Clinician: ${clinicianLicense}, Date: ${date}`);
-        return arr[0];
+        // find first unused eligibility
+        const eligibleRow = arr.find(r => !r._used);
+        if (eligibleRow) {
+          eligibleRow._used = true; // mark as used
+          console.log(`[MATCH] Full match found for Member: ${memberId}, Clinician: ${clinicianLicense}, Date: ${date}`);
+          return eligibleRow;
+        }
       }
 
-      // Check partial: Member + Clinician matched but date mismatch
+      // Partial match logging (member+clinician, date mismatch)
       const partialKeyPattern = new RegExp(`^${escapeRegex(normalizedMember)}\\|.*\\|${escapeRegex(normalizedClinician)}$`);
       for (const k of index.keys()) {
         if (partialKeyPattern.test(k)) {
@@ -235,7 +243,8 @@ function buildXlsxMatcher(rows) {
 
       return null;
     },
-    _index: index
+
+    _index: index // expose index for debugging
   };
 }
 
