@@ -713,8 +713,6 @@ function initEligibilityModal(results, eligMap) {
     btn.addEventListener('click', () => {
       const memberID = btn.dataset.member;
       const claimClinicians = btn.dataset.clinicians?.split(',').map(normalizeClinician);
-      
-      // Use the passed eligMap parameter to get eligibility data
       const eligibilities = [...(eligMap.get(memberID) || [])];
 
       eligibilities.sort((a, b) => {
