@@ -638,7 +638,6 @@ function renderResults(results, eligMap) {
     if (result.fullEligibilityRecord?.['Eligibility Request Number']) {
       detailsCell = `<button class="details-btn eligibility-details" data-index="${index}">${result.fullEligibilityRecord['Eligibility Request Number']}</button>`;
     } else if (eligMap.has(result.memberID)) {
-      // Use raw memberID here directly
       detailsCell = `<button class="details-btn show-all-eligibilities" data-member="${result.memberID}" data-clinicians="${(result.clinicians || [result.clinician || '']).join(',')}">View All</button>`;
     }
 
@@ -670,11 +669,10 @@ function renderResults(results, eligMap) {
   `;
   resultsContainer.prepend(summary);
 
-  initEligibilityModal(results, eligMap);
+  initEligibilityModal();
 }
 
 function initEligibilityModal() {
-  // Insert modal HTML if it doesn't already exist
   if (!document.getElementById('eligibilityModal')) {
     const modalHTML = `
       <div id="eligibilityModal" class="modal hidden">
@@ -685,10 +683,6 @@ function initEligibilityModal() {
     document.body.insertAdjacentHTML('beforeend', modalHTML);
   }
 
-  const resultsContainer = document.getElementById('outputTableContainer');
-  if (!resultsContainer) return;
-
-  // Use event delegation to handle clicks on all buttons inside resultsContainer
   resultsContainer.addEventListener('click', (e) => {
     const modal = document.getElementById('eligibilityModal');
     const modalContent = document.getElementById('eligibilityModalContent');
@@ -718,7 +712,6 @@ function initEligibilityModal() {
         ?.split(',')
         .map(normalizeClinician) || [];
 
-      // Build eligibility map if not already
       const eligMap = prepareEligibilityMap(eligData);
       const eligibilities = [...(eligMap.get(memberID) || [])];
 
@@ -740,7 +733,7 @@ function initEligibilityModal() {
             <tr><th>Claim Clinician(s)</th><td>${claimClinicians.join(', ')}</td></tr>
             <tr><th>Service Category</th><td>${e['Service Category']}</td></tr>
             <tr><th>Package</th><td>${e['Package Name']}</td></tr>
-            <tr><th>Payer Name</th><td>${e['Provider Name']}</td></tr>
+            <tr><th>Payer Name</th><td>${e['Payer Name'] || e['Provider Name']}</td></tr>
           </tbody>
         </table>
       `).join('<hr>');
