@@ -27,19 +27,21 @@ async function handleRun() {
     const output = extracted.map(rec => {
       const xmlDate = normalizeDate(rec.Date);
       const match = matcher.find(rec.MemberID, xmlDate, rec.OrderingClinician);
-
-      const voi = rec.VOINumber || '';
+    
+      // Grab VOI from eligibility if a match exists, else empty
+      const voi = match ? String(match['VOI Number'] || '') : '';
+    
       const cptNorm = String(rec.Modifier || '').trim();
       const voiNorm = normForCompare(voi);
       const expectEF = normForCompare('VOI_EF1');
       const expectD  = normForCompare('VOI_D');
-
+    
       const remarks = [];
-
+    
       if (rec.ObsCode !== 'CPT modifier') {
         remarks.push(`Observation Code incorrect; expected "CPT modifier" but found "${rec.ObsCode}"`);
       }
-
+    
       if (match) {
         if ((cptNorm === '52' && voiNorm !== expectEF) ||
             (cptNorm === '24' && voiNorm !== expectD)) {
@@ -48,21 +50,22 @@ async function handleRun() {
       } else {
         remarks.push('No matching eligibility found');
       }
-
+    
+      // Partial match logging
       if (!match) {
         const partialMatch = Array.from(matcher._index.values()).flat()
           .find(r => normalizeMemberId(r['Card Number / DHA Member ID']) === normalizeMemberId(rec.MemberID) &&
                      String(r['Clinician'] || '').trim().toUpperCase() === rec.OrderingClinician);
         if (partialMatch) remarks.push('Partial match found: Member and Clinician matched but date mismatch');
       }
-
+    
       return {
         ClaimID: rec.ClaimID || '',
         MemberID: rec.MemberID || '',
         ActivityID: rec.ActivityID || '',
         OrderingClinician: rec.OrderingClinician || '',
         Modifier: rec.Modifier || '',
-        VOINumber: voi || '',
+        VOINumber: voi,
         ObsCode: rec.ObsCode || '',
         PayerID: rec.PayerID || '',
         EligibilityRow: match || null,
