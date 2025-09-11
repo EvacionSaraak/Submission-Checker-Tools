@@ -158,13 +158,16 @@ function extractModifierRecords(xmlDoc) {
         const code = textValue(obs, 'Code').trim();
         const voiVal = textValue(obs, 'Value') || textValue(obs, 'ValueText') || '';
 
-        if (code.toUpperCase() === 'CPT MODIFIER') {
-          const voiNorm = voiVal.toUpperCase().replace(/_/g, '');
+        // Flexible CPT modifier matching
+        if (code && code.toUpperCase().includes('CPT MOD')) {
+          const voiNorm = String(voiVal || '').toUpperCase().replace(/[\s_]/g, '');
           let modifier = '';
-          if (voiNorm === 'VOID') modifier = '24';
-          else if (voiNorm === 'VOIEF1') modifier = '52';
+
+          if (voiNorm === 'VOID' || voiNorm === 'VOI_D') modifier = '24';
+          else if (voiNorm === 'VOIEF1' || voiNorm === 'VOI_EF1') modifier = '52';
 
           if (modifier) {
+            console.log(`[XML] ClaimID: ${claimId}, Member: ${memberIdRaw}, Activity: ${activityId}, CPT: ${code}, VOI: ${voiVal}, Modifier: ${modifier}`);
             records.push({
               ClaimID: claimId,
               ActivityID: activityId,
