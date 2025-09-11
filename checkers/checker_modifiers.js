@@ -133,7 +133,7 @@ function parseXml(text) {
 function extractModifierRecords(xmlDoc) {
   const records = [];
   const claims = Array.from(xmlDoc.getElementsByTagName('Claim'));
-  
+
   claims.forEach(claim => {
     const claimId = textValue(claim, 'ID');
     const payerId = textValue(claim, 'PayerID');
@@ -154,8 +154,9 @@ function extractModifierRecords(xmlDoc) {
       const clinician = String(clinicianRaw || '').trim().toUpperCase();
       const observations = Array.from(act.getElementsByTagName('Observation'));
 
+      let activityHasValidObs = false;
+
       observations.forEach(obs => {
-        // Track last CPT modifier Code within this Observation
         let lastCode = '';
         Array.from(obs.children || []).forEach(child => {
           const tag = child.tagName;
@@ -168,50 +169,40 @@ function extractModifierRecords(xmlDoc) {
           }
 
           if ((tag === 'Value' || tag === 'ValueText' || tag === 'ValueType')) {
-            // Only record if lastCode is exactly "CPT modifier" and value is 24 or 52
-            const isValidModifier = lastCode === 'CPT modifier' && isModifierTarget(txt);
-            if (isValidModifier) {
+            const isCPT = lastCode === 'CPT modifier';
+            const isModifierValue = isModifierTarget(txt); // 24 or 52
+
+            // Only include rows that are CPT modifier, optionally 24/52
+            if (isCPT) {
+              activityHasValidObs = true;
               records.push({
                 ClaimID: claimId,
                 ActivityID: activityId,
                 MemberID: normalizeMemberId(memberIdRaw),
                 Date: encDate,
                 OrderingClinician: clinician,
-                Modifier: String(txt || '').trim(),
+                Modifier: String(txt),
                 PayerID: payerId,
                 ObsCode: lastCode,
-                VOINumber: '', // placeholder if needed later
-              });
-            } else if (lastCode !== 'CPT modifier') {
-              // Still log a row so we can mark invalid with remark
-              records.push({
-                ClaimID: claimId,
-                ActivityID: activityId,
-                MemberID: normalizeMemberId(memberIdRaw),
-                Date: encDate,
-                OrderingClinician: clinician,
-                Modifier: String(txt || '').trim(),
-                PayerID: payerId,
-                ObsCode: lastCode || 'false',
                 VOINumber: '',
               });
             }
           }
         });
       });
+
+      // If no valid observation found, skip the activity entirely
     });
   });
 
   // Deduplicate rows based on ClaimID + ActivityID + MemberID + Modifier + ObsCode
   const seen = new Set();
-  const deduped = records.filter(r => {
+  return records.filter(r => {
     const key = [r.ClaimID, r.ActivityID, r.MemberID, r.Modifier, r.ObsCode].join('|');
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
-
-  return deduped;
 }
 
 // ----------------- XLSX matcher -----------------
