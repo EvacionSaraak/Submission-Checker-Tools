@@ -319,9 +319,11 @@ function renderResults(rows) {
     if (r.Modifier === '52' && voiNorm !== normForCompare('VOI_EF1')) remarks.push(`Modifier 52 does not match VOI (expected VOI_EF1).`);
     if (r.Modifier === '24' && voiNorm !== normForCompare('VOI_D')) remarks.push(`Modifier 24 does not match VOI (expected VOI_D).`);
     if (!r.EligibilityRow) remarks.push('No matching eligibility found.');
-    if (remarks.length === 0) validCount++;
 
-    html += `<tr class="${(remarks.length === 0) ? 'valid' : 'invalid'}">
+    const isValid = remarks.length === 0;
+    if (isValid) validCount++;
+
+    html += `<tr class="${isValid ? 'valid' : 'invalid'}">
       <td>${showClaim ? escapeHtml(r.ClaimID) : ''}</td>
       <td>${showMember ? escapeHtml(r.MemberID) : ''}</td>
       <td>${showActivity ? escapeHtml(r.ActivityID) : ''}</td>
