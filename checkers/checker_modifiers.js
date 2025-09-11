@@ -29,7 +29,7 @@ async function handleRun() {
     const matcher = buildXlsxMatcher(xlsxObj.rows);
     showProgress(65, 'Matching to XLSX');
 
-    // Map extracted records to final output rows and determine validation status/reason
+    // ----------------- MAPPING & VALIDATION -----------------
     const output = extracted.map(rec => {
       const xmlDate = normalizeDate(rec.Date);
       const match = matcher.find(rec.MemberID, xmlDate, rec.OrderingClinician);
@@ -37,7 +37,7 @@ async function handleRun() {
       // VOINumber (from matched XLSX row, if any)
       const voi = match ? String(match['VOI Number'] || '').trim() : '';
 
-      // default fields preserved
+      // base fields preserved
       const base = {
         ClaimID: rec.ClaimID || '',
         MemberID: rec.MemberID || '',
@@ -50,9 +50,8 @@ async function handleRun() {
         ObsCode: rec.ObsCode || ''
       };
 
-      // Determine validation status + reason
-      let ValidationStatus = 'Invalid';
-      let InvalidReason = '';
+      // Collect reasons; any entry => Invalid
+      const reasons = [];
 
       if (!match) {
         // Check partial: Member + Clinician matched but date mismatch
@@ -60,42 +59,45 @@ async function handleRun() {
           .find(r => normalizeMemberId(r['Card Number / DHA Member ID']) === normalizeMemberId(rec.MemberID) &&
                      String(r['Clinician'] || '').trim().toUpperCase() === String(rec.OrderingClinician || '').trim().toUpperCase());
         if (partialMatch) {
-          ValidationStatus = 'Invalid';
-          InvalidReason = 'Member & Clinician matched in eligibility but date mismatch';
+          reasons.push('Member & Clinician matched in eligibility but date mismatch');
           console.warn('[PARTIAL MATCH] Member and Clinician matched but date mismatch. XML date:', xmlDate, 'XLSX row sample:', partialMatch);
         } else {
-          ValidationStatus = 'Invalid';
-          InvalidReason = 'No eligibility match';
+          reasons.push('No eligibility match');
         }
       } else {
-        // We have a matched eligibility row
+        // We have a matched eligibility row — validate VOI -> expected modifier -> obs code
         const expectedModifier = expectedModifierForVOI(String(match['VOI Number'] || '').trim());
+
         if (!expectedModifier) {
-          ValidationStatus = 'Invalid';
-          InvalidReason = `Unknown VOI in eligibility: ${String(match['VOI Number'] || '').trim() || '(blank)'}`;
-        } else if (String(rec.Modifier || '').trim() !== expectedModifier) {
-          ValidationStatus = 'Invalid';
-          InvalidReason = `Modifier ${String(rec.Modifier || '(blank)')} does not match VOI ${String(match['VOI Number'] || '(blank)')} (expected ${expectedModifier})`;
-        } else {
-          // Modifier matches VOI. Now require ObsCode to be EXACTLY 'CPT modifier'
-          const obsCodeStr = String(rec.ObsCode || '').trim();
-          if (obsCodeStr !== 'CPT modifier') {
-            ValidationStatus = 'Unknown';
-            if (!obsCodeStr) {
-              InvalidReason = `Observation Code missing; expected "CPT modifier"`;
-            } else {
-              InvalidReason = `Observation Code incorrect; expected "CPT modifier" but found "${obsCodeStr}"`;
-            }
-          } else {
-            ValidationStatus = 'Valid';
-            InvalidReason = '';
-          }
+          reasons.push(`Unknown VOI in eligibility: ${String(match['VOI Number'] || '').trim() || '(blank)'}`);
+        }
+
+        // Check modifier value presence and correctness
+        const recMod = String(rec.Modifier || '').trim();
+        if (!recMod) {
+          reasons.push('Observation modifier missing');
+        } else if (expectedModifier && recMod !== expectedModifier) {
+          reasons.push(`Modifier ${recMod} does not match VOI ${String(match['VOI Number'] || '(blank)')} (expected ${expectedModifier})`);
+        }
+
+        // Enforce exact ObsCode = 'CPT modifier' (case- and punctuation-sensitive)
+        const obsCodeStr = rec.ObsCode == null ? '' : String(rec.ObsCode).trim();
+        if (obsCodeStr === '') {
+          reasons.push('Observation Code missing; expected "CPT modifier"');
+        } else if (obsCodeStr !== 'CPT modifier') {
+          // treat any non-exact code (including "false", "CPT Modifier", etc.) as INVALID
+          reasons.push(`Observation Code incorrect; expected "CPT modifier" but found "${obsCodeStr}"`);
         }
       }
 
+      const ValidationStatus = reasons.length ? 'Invalid' : 'Valid';
+      const InvalidReason = reasons.join('; ');
       const isValid = ValidationStatus === 'Valid';
+
       return Object.assign({}, base, { ValidationStatus, InvalidReason, isValid });
     });
+
+    // ----------------- END MAPPING & VALIDATION -----------------
 
     lastResults = output;
     renderResults(output);
@@ -427,6 +429,81 @@ function normalizeMemberId(id) { return String(id || '').replace(/^0+/, '').trim
 // normalizeName retains spacing normalization and lowercases (used only in a few debug paths)
 function normalizeName(name) { return String(name || '').replace(/\s+/g, ' ').trim().toLowerCase(); }
 
+// ----------------- PROGRESS (uses existing tables.css classes) -----------------
+
+// Create progress DOM if not present (re-uses .loaded-count and .status-badge)
+function ensureProgressElements() {
+  if (el('progress-root')) return;
+
+  const anchor = el('outputTableContainer') || document.body;
+
+  const root = document.createElement('div');
+  root.id = 'progress-root';
+  root.style.margin = '8px 0 14px';
+  root.innerHTML = `
+    <div class="progress-row" style="display:flex;align-items:center;gap:10px;">
+      <div id="progress-bar-container" role="progressbar" aria-valuemin="0" aria-valuemax="100"
+           style="flex:1;height:14px;background:#ececec;border-radius:9px;overflow:hidden;position:relative;">
+        <div id="progress-bar" style="height:100%; width:0%; background: linear-gradient(90deg,#4CAF50 0%, #2E7D32 100%); transition: width 420ms cubic-bezier(.2,.9,.3,1);"></div>
+      </div>
+      <div id="progress-text" class="loaded-count" style="min-width:120px;text-align:right;"></div>
+      <div id="progress-badge" class="status-badge" style="display:inline-block; margin-left:6px;"></div>
+    </div>
+  `;
+
+  anchor.parentNode.insertBefore(root, anchor);
+}
+
+// showProgress(percent, text)
+// - percent: integer 0..100 for determinate, null or -1 for indeterminate (we display "Processing...")
+// - text: optional string shown to the right of the percent
+function showProgress(percent, text) {
+  ensureProgressElements();
+  const root = el('progress-root');
+  const barContainer = el('progress-bar-container');
+  const bar = el('progress-bar');
+  const pText = el('progress-text');
+  const badge = el('progress-badge');
+
+  if (!root || !barContainer || !bar || !pText || !badge) return;
+
+  const isIndeterminate = percent == null || Number(percent) < 0;
+  const shouldShow = isIndeterminate || (Number(percent) > 0);
+
+  // Hide when percent === 0 (keeps compatibility with previous reset behaviour)
+  root.style.display = shouldShow ? 'block' : 'none';
+
+  if (!shouldShow) {
+    // reset
+    bar.style.width = '0%';
+    barContainer.removeAttribute('aria-valuenow');
+    pText.textContent = '';
+    badge.textContent = '';
+    return;
+  }
+
+  if (isIndeterminate) {
+    // Simple indeterminate presentation: animate by toggling width with JS (no extra CSS required)
+    // We'll show a pulsing style by toggling a small animation using setTimeout
+    bar.style.transition = 'none';
+    bar.style.width = '30%';
+    bar.style.transform = 'translateX(-10%)';
+    // Use CSS transition to move it slightly for indeterminate feel
+    setTimeout(() => { bar.style.transition = 'transform 1s linear'; bar.style.transform = 'translateX(80%)'; }, 50);
+    pText.textContent = text ? String(text) : 'Processing...';
+    badge.textContent = ''; // no percent badge when indeterminate
+    barContainer.removeAttribute('aria-valuenow');
+  } else {
+    const pct = Math.max(0, Math.min(100, Math.round(Number(percent))));
+    // determinate: set width (animated by CSS)
+    bar.style.transition = 'width 420ms cubic-bezier(.2,.9,.3,1)';
+    requestAnimationFrame(() => { bar.style.width = `${pct}%`; bar.style.transform = 'none'; });
+    barContainer.setAttribute('aria-valuenow', String(pct));
+    pText.textContent = text ? `${pct}% — ${String(text)}` : `${pct}%`;
+    badge.textContent = `${pct}%`;
+  }
+}
+
 // normalizeDate: robust handling of common formats; returns YYYY-MM-DD
 function normalizeDate(input) {
   const s = String(input || '').trim();
@@ -490,24 +567,7 @@ function makeWorkbookFromJson(json, sheetName) {
 function el(id) { return document.getElementById(id); }
 function fileEl(id) { const f = el(id); return f && f.files && f.files[0] ? f.files[0] : null; }
 
-function resetUI() {
-  const container = el('outputTableContainer');
-  if (container) container.innerHTML = '';
-  toggleDownload(false);
-  message('', '');
-  showProgress(0, '');
-  lastResults = [];
-  lastWorkbook = null;
-}
-
 function toggleDownload(enabled) { const dl = el('download-button'); if (!dl) return; dl.disabled = !enabled; }
-
-function showProgress(percent, text) {
-  const barContainer = el('progress-bar-container'), bar = el('progress-bar'), pText = el('progress-text');
-  if (barContainer) barContainer.style.display = percent > 0 ? 'block' : 'none';
-  if (bar) bar.style.width = (percent || 0) + '%';
-  if (pText) pText.textContent = text ? `${percent}% — ${text}` : `${percent}%`;
-}
 
 function message(text, color) { const m = el('messageBox'); if (!m) return; m.textContent = text || ''; m.style.color = color || ''; }
 
@@ -544,3 +604,16 @@ function showEligibility(index) {
 }
 
 function closeEligibilityModal() { const modal = el('eligibilityModal'); if (modal) modal.remove(); }
+
+// ----------------- resetUI (keeps progress integration) -----------------
+// resetUI() — keep previous behavior but hide/reset progress using showProgress(0)
+function resetUI() {
+  const container = el('outputTableContainer');
+  if (container) container.innerHTML = '';
+  toggleDownload(false);
+  message('', '');
+  // hide and reset progress bar (use showProgress(0) to hide)
+  showProgress(0, '');
+  lastResults = [];
+  lastWorkbook = null;
+}
