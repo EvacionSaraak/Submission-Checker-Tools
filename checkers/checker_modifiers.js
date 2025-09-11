@@ -23,8 +23,6 @@ async function handleRun() {
     const xmlDoc = parseXml(xmlText);
     const extracted = extractModifierRecords(xmlDoc);
 
-    console.info('[DEBUG] First 5 extracted XML records:', extracted.slice(0, 5));
-
     const matcher = buildXlsxMatcher(xlsxObj.rows);
 
     const output = extracted.map(rec => {
@@ -121,7 +119,6 @@ function parseXml(text) {
 
 // Extract records where Observation contains Code === 'CPT modifier' and Value is '24' or '52'
 // ----------------- XML parsing & extraction -----------------
-// ----------------- XML parsing & extraction -----------------
 function extractModifierRecords(xmlDoc) {
   const records = [];
   const claims = Array.from(xmlDoc.getElementsByTagName('Claim'));
@@ -147,15 +144,24 @@ function extractModifierRecords(xmlDoc) {
 
       const observations = Array.from(act.getElementsByTagName('Observation'));
       observations.forEach(obs => {
-        const code = textValue(obs, 'Code').trim();
+        const code = textValue(obs, 'Code');
         const voiVal = textValue(obs, 'Value') || textValue(obs, 'ValueText') || '';
+        const valueType = textValue(obs, 'ValueType') || '';
+
+        // Only accept observations with ValueType of Modifier
+        if (valueType !== 'Modifier') return;
 
         let modifier = '';
         const voiNorm = (voiVal || '').toUpperCase().replace(/[_\s]/g, '');
-        if (voiNorm === 'VOID' || voiNorm === 'VOI_D') modifier = '24';
-        else if (voiNorm === 'VOIEF1') modifier = '52';
+        if (voiNorm === 'VOI_D' || voiNorm === '24') modifier = '24';
+        else if (voiNorm === 'VOI_EF1' || voiNorm === '52') modifier = '52';
+        else return; // skip anything else
 
-        // Keep all observations, even if modifier is blank
+        const remarks = [];
+        if (code !== 'CPT modifier') {
+          remarks.push(`Observation Code incorrect; expected "CPT modifier" but found "${code}"`);
+        }
+
         records.push({
           ClaimID: claimId,
           ActivityID: activityId,
@@ -165,13 +171,14 @@ function extractModifierRecords(xmlDoc) {
           Modifier: modifier,
           PayerID: payerId,
           ObsCode: code,
-          VOINumber: voiVal
+          VOINumber: voiVal,
+          Remarks: remarks.join('; ')
         });
       });
     });
   });
 
-  // Deduplicate rows
+  // Deduplicate rows based on key
   const seen = new Set();
   return records.filter(r => {
     const key = [r.ClaimID, r.ActivityID, r.MemberID, r.Modifier, r.ObsCode].join('|');
