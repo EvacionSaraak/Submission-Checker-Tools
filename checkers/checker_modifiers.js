@@ -27,21 +27,19 @@ async function handleRun() {
     const output = extracted.map(rec => {
       const xmlDate = normalizeDate(rec.Date);
       const match = matcher.find(rec.MemberID, xmlDate, rec.OrderingClinician);
-    
-      // Grab VOI from eligibility if a match exists, else empty
-      const voi = match ? String(match['VOI Number'] || '') : '';
-    
+
+      const voi = rec.VOINumber || '';
       const cptNorm = String(rec.Modifier || '').trim();
       const voiNorm = normForCompare(voi);
       const expectEF = normForCompare('VOI_EF1');
       const expectD  = normForCompare('VOI_D');
-    
+
       const remarks = [];
-    
+
       if (rec.ObsCode !== 'CPT modifier') {
         remarks.push(`Observation Code incorrect; expected "CPT modifier" but found "${rec.ObsCode}"`);
       }
-    
+
       if (match) {
         if ((cptNorm === '52' && voiNorm !== expectEF) ||
             (cptNorm === '24' && voiNorm !== expectD)) {
@@ -50,23 +48,22 @@ async function handleRun() {
       } else {
         remarks.push('No matching eligibility found');
       }
-    
-      // Partial match logging
+
       if (!match) {
         const partialMatch = Array.from(matcher._index.values()).flat()
           .find(r => normalizeMemberId(r['Card Number / DHA Member ID']) === normalizeMemberId(rec.MemberID) &&
                      String(r['Clinician'] || '').trim().toUpperCase() === rec.OrderingClinician);
         if (partialMatch) remarks.push('Partial match found: Member and Clinician matched but date mismatch');
       }
-    
+
       return {
         ClaimID: rec.ClaimID || '',
         MemberID: rec.MemberID || '',
         ActivityID: rec.ActivityID || '',
         OrderingClinician: rec.OrderingClinician || '',
         Modifier: rec.Modifier || '',
-        VOINumber: voi,
         ObsCode: rec.ObsCode || '',
+        VOINumber: voi || '',
         PayerID: rec.PayerID || '',
         EligibilityRow: match || null,
         isValid: remarks.length === 0,
@@ -79,9 +76,11 @@ async function handleRun() {
     lastWorkbook = makeWorkbookFromJson(output, 'checker_modifiers_results');
     toggleDownload(output.length > 0);
 
-    const totalRows = output.length;
-    const correctRows = output.filter(r => r.isValid).length;
-    message(`Completed — ${correctRows}/${totalRows} rows correct`, 'green');
+    // Count valid rows and display percentage
+    const validCount = output.filter(r => r.isValid).length;
+    const totalCount = output.length;
+    const percent = totalCount ? Math.round((validCount / totalCount) * 100) : 0;
+    message(`Completed — ${validCount}/${totalCount} rows correct (${percent}%)`, percent === 100 ? 'green' : 'orange');
 
   } catch (err) {
     showError(err);
@@ -321,8 +320,6 @@ function renderResults(rows) {
     if (!r.EligibilityRow) remarks.push('No matching eligibility found.');
 
     const isValid = remarks.length === 0;
-    if (isValid) validCount++;
-
     html += `<tr class="${isValid ? 'valid' : 'invalid'}">
       <td>${showClaim ? escapeHtml(r.ClaimID) : ''}</td>
       <td>${showMember ? escapeHtml(r.MemberID) : ''}</td>
@@ -343,11 +340,6 @@ function renderResults(rows) {
 
   html += `</tbody></table>`;
   container.innerHTML = html;
-
-  // Display summary with valid count and percentage
-  const total = filteredRows.length;
-  const percent = total ? Math.round((validCount / total) * 100) : 0;
-  message(`Completed — ${validCount}/${total} valid rows (${percent}%)`, percent === 100 ? 'green' : 'orange');
 }
 
 // ----------------- Utilities -----------------
