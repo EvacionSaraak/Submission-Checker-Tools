@@ -247,10 +247,15 @@ function buildXlsxMatcher(rows) {
 
 // ----------------- Validation / business rules -----------------
 function isModifierTarget(val) { const v = String(val || '').trim(); return v === '24' || v === '52'; }
-function expectedModifierForVOI(voi) { if (!voi) return ''; const v = String(voi).trim(); if (v === 'VOI_D') return '24'; if (v === 'VOI_EF1') return '52'; return ''; }
-
 function normForCompare(s) { return String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
 function escapeRegex(s) { return String(s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+function expectedModifierForVOI(voi) {
+  if (!voi) return '';
+  const v = String(voi || '').toUpperCase().replace(/[_\s]/g, '');
+  if (v === 'VOID') return '24';      // VOI_D
+  if (v === 'VOIEF1') return '52';    // VOI_EF1
+  return '';
+}
 
 // ----------------- Rendering -----------------
 function renderResults(rows) {
