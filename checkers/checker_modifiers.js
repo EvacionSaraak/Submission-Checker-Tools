@@ -268,7 +268,6 @@ function renderResults(rows) {
     return;
   }
 
-  // debug summary
   console.info('[DEBUG] total rows from mapping:', rows.length);
   const payerSet = new Set(rows.map(r => String(r.PayerID || '').trim().toUpperCase()).filter(x => x));
   console.info('[DEBUG] unique Payer IDs in results:', Array.from(payerSet).join(', ') || '(none)');
@@ -284,10 +283,12 @@ function renderResults(rows) {
     return;
   }
 
-  // map filtered rows back to original lastResults indices for modal linking
+  // Map filtered rows back to original lastResults indices for modal linking
   filteredRows.forEach(r => { r._originalIndex = rows.indexOf(r); });
 
   let prevClaimId = null, prevMemberId = null, prevActivityId = null;
+  let validCount = 0;
+
   let html = `<table class="shared-table">
     <thead>
       <tr>
@@ -313,14 +314,14 @@ function renderResults(rows) {
     // Build remarks
     const remarks = [];
     if (r.ObsCode !== 'CPT modifier') remarks.push(`Observation Code is "${r.ObsCode}" (expected "CPT modifier").`);
+
     const voiNorm = normForCompare(r.VOINumber || '');
     if (r.Modifier === '52' && voiNorm !== normForCompare('VOI_EF1')) remarks.push(`Modifier 52 does not match VOI (expected VOI_EF1).`);
     if (r.Modifier === '24' && voiNorm !== normForCompare('VOI_D')) remarks.push(`Modifier 24 does not match VOI (expected VOI_D).`);
     if (!r.EligibilityRow) remarks.push('No matching eligibility found.');
+    if (remarks.length === 0) validCount++;
 
-    const isValid = remarks.length === 0;
-
-    html += `<tr class="${isValid ? 'valid' : 'invalid'}">
+    html += `<tr class="${(remarks.length === 0) ? 'valid' : 'invalid'}">
       <td>${showClaim ? escapeHtml(r.ClaimID) : ''}</td>
       <td>${showMember ? escapeHtml(r.MemberID) : ''}</td>
       <td>${showActivity ? escapeHtml(r.ActivityID) : ''}</td>
@@ -340,6 +341,11 @@ function renderResults(rows) {
 
   html += `</tbody></table>`;
   container.innerHTML = html;
+
+  // Display summary with valid count and percentage
+  const total = filteredRows.length;
+  const percent = total ? Math.round((validCount / total) * 100) : 0;
+  message(`Completed — ${validCount}/${total} valid rows (${percent}%)`, percent === 100 ? 'green' : 'orange');
 }
 
 // ----------------- Utilities -----------------
