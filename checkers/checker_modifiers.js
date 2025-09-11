@@ -11,6 +11,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ----------------- Main handlers -----------------
+// ----------------- Main run handler -----------------
 async function handleRun() {
   resetUI();
   try {
@@ -18,36 +19,30 @@ async function handleRun() {
     const xlsxFile = fileEl('xlsx-file');
     if (!xmlFile || !xlsxFile) throw new Error('Please select both an XML file and an XLSX file.');
 
-    showProgress(5, 'Reading files');
     const [xmlText, xlsxObj] = await Promise.all([readFileText(xmlFile), readXlsx(xlsxFile)]);
-
-    showProgress(20, 'Parsing XML');
     const xmlDoc = parseXml(xmlText);
     const extracted = extractModifierRecords(xmlDoc);
-    showProgress(45, `Found ${extracted.length} modifier record(s)`);
+
+    console.info('[DEBUG] First 5 extracted XML records:', extracted.slice(0, 5));
 
     const matcher = buildXlsxMatcher(xlsxObj.rows);
-    showProgress(65, 'Matching to XLSX');
 
     const output = extracted.map(rec => {
       const xmlDate = normalizeDate(rec.Date);
       const match = matcher.find(rec.MemberID, xmlDate, rec.OrderingClinician);
 
-      const voi = match ? String(match['VOI Number'] || '').trim() : '';
+      const voi = rec.VOINumber || '';
       const cptNorm = String(rec.Modifier || '').trim();
       const voiNorm = normForCompare(voi);
       const expectEF = normForCompare('VOI_EF1');
       const expectD  = normForCompare('VOI_D');
 
-      let isValid = false;
       const remarks = [];
 
-      // CPT modifier must be exact
       if (rec.ObsCode !== 'CPT modifier') {
         remarks.push(`Observation Code incorrect; expected "CPT modifier" but found "${rec.ObsCode}"`);
       }
 
-      // Modifier must match VOI in eligibility if a match exists
       if (match) {
         if ((cptNorm === '52' && voiNorm !== expectEF) ||
             (cptNorm === '24' && voiNorm !== expectD)) {
@@ -57,16 +52,12 @@ async function handleRun() {
         remarks.push('No matching eligibility found');
       }
 
-      // Log partial matches (member+clinician but date mismatch)
       if (!match) {
         const partialMatch = Array.from(matcher._index.values()).flat()
           .find(r => normalizeMemberId(r['Card Number / DHA Member ID']) === normalizeMemberId(rec.MemberID) &&
-                     String(r['Clinician'] || '').trim().toUpperCase() === String(rec.OrderingClinician || '').trim().toUpperCase());
+                     String(r['Clinician'] || '').trim().toUpperCase() === rec.OrderingClinician);
         if (partialMatch) remarks.push('Partial match found: Member and Clinician matched but date mismatch');
       }
-
-      // Final validity
-      isValid = remarks.length === 0;
 
       return {
         ClaimID: rec.ClaimID || '',
@@ -77,7 +68,7 @@ async function handleRun() {
         VOINumber: voi || '',
         PayerID: rec.PayerID || '',
         EligibilityRow: match || null,
-        isValid,
+        isValid: remarks.length === 0,
         Remarks: remarks.join('; ')
       };
     });
@@ -85,9 +76,9 @@ async function handleRun() {
     lastResults = output;
     renderResults(output);
     lastWorkbook = makeWorkbookFromJson(output, 'checker_modifiers_results');
-    showProgress(100, 'Completed');
     toggleDownload(output.length > 0);
     message(`Completed — ${output.length} rows processed.`, 'green');
+
   } catch (err) {
     showError(err);
   }
@@ -130,6 +121,7 @@ function parseXml(text) {
 
 // Extract records where Observation contains Code === 'CPT modifier' and Value is '24' or '52'
 // ----------------- XML parsing & extraction -----------------
+// ----------------- XML parsing & extraction -----------------
 function extractModifierRecords(xmlDoc) {
   const records = [];
   const claims = Array.from(xmlDoc.getElementsByTagName('Claim'));
@@ -158,26 +150,35 @@ function extractModifierRecords(xmlDoc) {
         const code = textValue(obs, 'Code').trim();
         const voiVal = textValue(obs, 'Value') || textValue(obs, 'ValueText') || '';
 
-        // **Extract all CPT modifier observations, don’t skip anything**
-        if (code && code.toUpperCase().includes('CPT')) {
-          records.push({
-            ClaimID: claimId,
-            ActivityID: activityId,
-            MemberID: normalizeMemberId(memberIdRaw),
-            Date: encDate,
-            OrderingClinician: clinician,
-            Modifier: '',          // Fill later
-            PayerID: payerId,
-            ObsCode: code,
-            VOINumber: voiVal
-          });
-        }
+        let modifier = '';
+        const voiNorm = (voiVal || '').toUpperCase().replace(/[_\s]/g, '');
+        if (voiNorm === 'VOID' || voiNorm === 'VOI_D') modifier = '24';
+        else if (voiNorm === 'VOIEF1') modifier = '52';
+
+        // Keep all observations, even if modifier is blank
+        records.push({
+          ClaimID: claimId,
+          ActivityID: activityId,
+          MemberID: normalizeMemberId(memberIdRaw),
+          Date: encDate,
+          OrderingClinician: clinician,
+          Modifier: modifier,
+          PayerID: payerId,
+          ObsCode: code,
+          VOINumber: voiVal
+        });
       });
     });
   });
 
-  console.info('[DEBUG] Extracted XML rows:', records.length);
-  return records;
+  // Deduplicate rows
+  const seen = new Set();
+  return records.filter(r => {
+    const key = [r.ClaimID, r.ActivityID, r.MemberID, r.Modifier, r.ObsCode].join('|');
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 // ----------------- XLSX matcher -----------------
