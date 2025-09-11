@@ -33,38 +33,52 @@ async function handleRun() {
       const xmlDate = normalizeDate(rec.Date);
       const match = matcher.find(rec.MemberID, xmlDate, rec.OrderingClinician);
 
-      // Use VOINumber extracted from matched XLSX row (if any)
       const voi = match ? String(match['VOI Number'] || '').trim() : '';
-
-      // Normalize for robust comparison (remove punctuation/underscores/spaces and uppercase)
       const cptNorm = String(rec.Modifier || '').trim();
       const voiNorm = normForCompare(voi);
       const expectEF = normForCompare('VOI_EF1');
       const expectD  = normForCompare('VOI_D');
 
-      const isValid = Boolean(match) && (
-        (cptNorm === '52' && voiNorm === expectEF) ||
-        (cptNorm === '24' && voiNorm === expectD)
-      );
+      let isValid = false;
+      const remarks = [];
+
+      // CPT modifier must be exact
+      if (rec.ObsCode !== 'CPT modifier') {
+        remarks.push(`Observation Code incorrect; expected "CPT modifier" but found "${rec.ObsCode}"`);
+      }
+
+      // Modifier must match VOI in eligibility if a match exists
+      if (match) {
+        if ((cptNorm === '52' && voiNorm !== expectEF) ||
+            (cptNorm === '24' && voiNorm !== expectD)) {
+          remarks.push(`VOI does not match modifier: ${cptNorm} expected ${cptNorm === '52' ? 'VOI_EF1' : 'VOI_D'}, found ${voi || 'none'}`);
+        }
+      } else {
+        remarks.push('No matching eligibility found');
+      }
 
       // Log partial matches (member+clinician but date mismatch)
       if (!match) {
         const partialMatch = Array.from(matcher._index.values()).flat()
           .find(r => normalizeMemberId(r['Card Number / DHA Member ID']) === normalizeMemberId(rec.MemberID) &&
                      String(r['Clinician'] || '').trim().toUpperCase() === String(rec.OrderingClinician || '').trim().toUpperCase());
-        if (partialMatch) console.warn('[PARTIAL MATCH] Member and Clinician matched but date mismatch. XML date:', xmlDate, 'XLSX row sample:', partialMatch);
+        if (partialMatch) remarks.push('Partial match found: Member and Clinician matched but date mismatch');
       }
+
+      // Final validity
+      isValid = remarks.length === 0;
 
       return {
         ClaimID: rec.ClaimID || '',
         MemberID: rec.MemberID || '',
         ActivityID: rec.ActivityID || '',
-        OrderingClinician: rec.OrderingClinician || '', // already uppercased in extraction
+        OrderingClinician: rec.OrderingClinician || '',
         Modifier: rec.Modifier || '',
         VOINumber: voi || '',
-        EligibilityRow: match || null, // full XLSX row for modal
         PayerID: rec.PayerID || '',
-        isValid
+        EligibilityRow: match || null,
+        isValid,
+        Remarks: remarks.join('; ')
       };
     });
 
@@ -247,10 +261,7 @@ function buildXlsxMatcher(rows) {
 function isModifierTarget(val) { const v = String(val || '').trim(); return v === '24' || v === '52'; }
 function expectedModifierForVOI(voi) { if (!voi) return ''; const v = String(voi).trim(); if (v === 'VOI_D') return '24'; if (v === 'VOI_EF1') return '52'; return ''; }
 
-// Normalize strings for robust comparisons (uppercase + remove non-alphanumeric)
 function normForCompare(s) { return String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
-
-// escape regex special characters for building partialKeyPattern
 function escapeRegex(s) { return String(s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
 // ----------------- Rendering -----------------
