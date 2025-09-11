@@ -672,22 +672,23 @@ function renderResults(results, eligMap) {
   initEligibilityModal();
 }
 
-function initEligibilityModal() {
-  if (!document.getElementById('eligibilityModal')) {
-    const modalHTML = `
-      <div id="eligibilityModal" class="modal hidden">
-        <div class="modal-content" id="eligibilityModalContent">
-          <span class="close">&times;</span>
-        </div>
-      </div>`;
-    document.body.insertAdjacentHTML('beforeend', modalHTML);
-  }
+function initEligibilityModal(resultsContainer, eligData) {
+  if (!resultsContainer) return;
+
+  const modal = document.getElementById('eligibilityModal');
+  const modalContent = document.getElementById('eligibilityModalContent');
+  if (!modal || !modalContent) return;
+
+  // Preprocess eligibility map once for efficiency
+  const eligMap = new Map();
+  eligData.forEach(e => {
+    const member = e['Member ID'] || e['PatientCardID'];
+    if (!member) return;
+    if (!eligMap.has(member)) eligMap.set(member, []);
+    eligMap.get(member).push(e);
+  });
 
   resultsContainer.addEventListener('click', (e) => {
-    const modal = document.getElementById('eligibilityModal');
-    const modalContent = document.getElementById('eligibilityModalContent');
-    if (!modal || !modalContent) return;
-
     // Close modal
     if (e.target.classList.contains('close') || e.target.id === 'eligibilityModal') {
       modal.classList.add('hidden');
@@ -696,12 +697,15 @@ function initEligibilityModal() {
 
     // Individual eligibility details button
     if (e.target.classList.contains('eligibility-details')) {
-      const index = parseInt(e.target.dataset.index);
-      const record = window.lastValidationResults?.[index]?.fullEligibilityRecord;
-      const memberID = window.lastValidationResults?.[index]?.memberID;
-      if (record) {
-        modalContent.innerHTML = formatEligibilityDetails(record, memberID);
-        modal.classList.remove('hidden');
+      try {
+        const record = JSON.parse(e.target.dataset.record);
+        const memberID = e.target.dataset.member;
+        if (record) {
+          modalContent.innerHTML = formatEligibilityDetails(record, memberID);
+          modal.classList.remove('hidden');
+        }
+      } catch (err) {
+        console.error('[ERROR] Parsing eligibility record:', err, e.target.dataset.record);
       }
     }
 
@@ -710,9 +714,8 @@ function initEligibilityModal() {
       const memberID = e.target.dataset.member;
       const claimClinicians = e.target.dataset.clinicians
         ?.split(',')
-        .map(normalizeClinician) || [];
+        .map(c => c.trim()) || [];
 
-      const eligMap = prepareEligibilityMap(eligData);
       const eligibilities = [...(eligMap.get(memberID) || [])];
 
       eligibilities.sort((a, b) => {
