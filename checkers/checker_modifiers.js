@@ -285,6 +285,7 @@ function renderResults(rows) {
         <th>Member ID</th>
         <th>Activity ID</th>
         <th>Ordering Clinician</th>
+        <th>Observation Code</th>
         <th>Observation CPT Modifier</th>
         <th>VOI Number</th>
         <th>Payer ID</th>
@@ -298,18 +299,21 @@ function renderResults(rows) {
     const showMember = showClaim || r.MemberID !== prevMemberId;
     const showActivity = showMember || r.ActivityID !== prevActivityId;
 
-    // Use the VOINumber extracted earlier (r.VOINumber) for display/validation
+    // Determine validity
     const voiForValidation = String(r.VOINumber || '').trim().toUpperCase();
-    const isValid = voiForValidation
+    const obsCodeValid = r.ObsCode === 'CPT modifier';
+    const voiValid = voiForValidation
       ? ((r.Modifier === '52' && normForCompare(voiForValidation) === normForCompare('VOI_EF1')) ||
          (r.Modifier === '24' && normForCompare(voiForValidation) === normForCompare('VOI_D')))
       : false;
+    const isValid = obsCodeValid && voiValid && r.EligibilityRow;
 
     html += `<tr class="${isValid ? 'valid' : 'invalid'}">
       <td>${showClaim ? escapeHtml(r.ClaimID) : ''}</td>
       <td>${showMember ? escapeHtml(r.MemberID) : ''}</td>
       <td>${showActivity ? escapeHtml(r.ActivityID) : ''}</td>
       <td>${escapeHtml(r.OrderingClinician)}</td>
+      <td>${escapeHtml(r.ObsCode || '')}</td>
       <td>${escapeHtml(r.Modifier)}</td>
       <td>${escapeHtml(r.VOINumber || '')}</td>
       <td>${escapeHtml(r.PayerID)}</td>
