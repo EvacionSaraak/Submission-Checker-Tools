@@ -10,7 +10,6 @@ document.addEventListener('DOMContentLoaded', () => {
   resetUI();
 });
 
-// ----------------- Main handlers -----------------
 // ----------------- Main run handler -----------------
 async function handleRun() {
   resetUI();
@@ -149,7 +148,7 @@ function extractModifierRecords(xmlDoc) {
         const valueType = textValue(obs, 'ValueType') || '';
 
         // Only accept observations with ValueType of Modifier
-        if (valueType !== 'Modifier') return;
+        if (!valueType || valueType.trim().toLowerCase() !== 'modifiers') return;
 
         let modifier = '';
         const voiNorm = (voiVal || '').toUpperCase().replace(/[_\s]/g, '');
