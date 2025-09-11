@@ -697,7 +697,20 @@ function initEligibilityModal() {
 
     // Individual eligibility details button
     if (e.target.classList.contains('eligibility-details')) {
-      const record = JSON.parse(e.target.dataset.record);
+      const encodedRecord = e.target.dataset.record || '{}';
+
+      // Decode HTML entities
+      const parser = new DOMParser();
+      const decodedStr = parser.parseFromString(encodedRecord, 'text/html').documentElement.textContent;
+
+      let record;
+      try {
+        record = JSON.parse(decodedStr);
+      } catch (err) {
+        console.error('Failed to parse eligibility record:', decodedStr, err);
+        return;
+      }
+
       const memberID = e.target.dataset.member;
       modalContent.innerHTML = formatEligibilityDetails(record, memberID);
       modal.classList.remove('hidden');
