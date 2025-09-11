@@ -296,56 +296,44 @@ function isServiceCategoryValid(serviceCategory, consultationStatus, rawPackage)
   return { valid: true };
 }
 
-function validateXmlClaims(claims, eligMap) {
-  usedEligibilities.clear();
+function validateXmlClaims(xmlText, eligibilityData) {
+  const parser = new DOMParser();
+  const xmlDoc = parser.parseFromString(xmlText, "application/xml");
+  const claimNodes = xmlDoc.querySelectorAll("Claim");
 
-  return claims.map(claim => {
-    const claimID = claim.querySelector("ID")?.textContent.trim() || "";
-    const memberID = normalizeMemberID(claim.querySelector("MemberID")?.textContent.trim() || '');
-    const encounterStart = claim.querySelector("Encounter > Start")?.textContent.trim() || '';
-    const clinician = claim.querySelector("Activity > Clinician")?.textContent.trim() || '';
-    const packageName = claim.querySelector("Contract > PackageName")?.textContent.trim() || '';
+  const results = [];
 
-    // These don’t exist in your XML – leave blank or derive
-    const serviceCategory = claim.querySelector("ServiceCategory")?.textContent.trim() || '';
-    const consultationStatus = claim.querySelector("ConsultationStatus")?.textContent.trim() || '';
+  claimNodes.forEach(claim => {
+    const claimID = claim.querySelector("ID")?.textContent || "";
+    const memberID = claim.querySelector("MemberID")?.textContent || "";
+    const encounterStart = claim.querySelector("Encounter > Start")?.textContent || "";
+    const packageName = claim.querySelector("Contract > PackageName")?.textContent || "";
+    const provider = claim.querySelector("ProviderID")?.textContent || "";
+    const clinician = claim.querySelector("Activity > Clinician")?.textContent?.trim() || "";
+    
+    // Example: determine service category (replace with your real logic)
+    const serviceCategory = claim.querySelector("Activity > Code")?.textContent || "";
+    
+    // Example: lookup eligibility
+    const fullEligibilityRecord = eligibilityData[memberID] || null;
+    const status = fullEligibilityRecord ? "Eligible" : "Unknown";
 
-    const eligibilities = eligMap.get(memberID) || [];
-    let matchedEligibility = null;
-
-    for (const elig of eligibilities) {
-      if (usedEligibilities.has(elig['Eligibility Request Number'])) continue;
-      if (!isServiceCategoryAllowedForDepartment(serviceCategory, consultationStatus, '')) continue;
-
-      matchedEligibility = elig;
-      usedEligibilities.add(elig['Eligibility Request Number']);
-      break;
-    }
-
-    const remarks = [];
-    let finalStatus = 'unknown';
-    if (matchedEligibility) {
-      finalStatus = matchedEligibility.Status?.toLowerCase() === 'eligible' ? 'valid' : 'invalid';
-      remarks.push(`Matched to eligibility ${matchedEligibility['Eligibility Request Number']}`);
-    } else {
-      remarks.push('No matching eligibility found');
-    }
-
-    return {
+    results.push({
       claimID,
       memberID,
       encounterStart,
+      packageName,
+      provider,
       clinician,
       serviceCategory,
-      consultationStatus,
-      packageName: matchedEligibility?.['Package Name'] || packageName,
-      provider: matchedEligibility?.['Payer Name'] || '',
-      status: matchedEligibility?.Status || '',
-      finalStatus,
-      remarks,
-      fullEligibilityRecord: matchedEligibility
-    };
+      status,
+      finalStatus: status.toLowerCase(),
+      remarks: [],
+      fullEligibilityRecord
+    });
   });
+
+  return results;
 }
 
 function validateReportClaims(reportData, eligMap) {
