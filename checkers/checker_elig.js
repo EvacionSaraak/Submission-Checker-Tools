@@ -309,12 +309,14 @@ function validateXmlClaims(xmlText, eligibilityData) {
     const encounterStart = claim.querySelector("Encounter > Start")?.textContent || "";
     const packageName = claim.querySelector("Contract > PackageName")?.textContent || "";
     const provider = claim.querySelector("ProviderID")?.textContent || "";
+
+    // Take the first clinician found in Activities
     const clinician = claim.querySelector("Activity > Clinician")?.textContent?.trim() || "";
-    
-    // Example: determine service category (replace with your real logic)
+
+    // For service category, you might want first Activity code or custom logic
     const serviceCategory = claim.querySelector("Activity > Code")?.textContent || "";
-    
-    // Example: lookup eligibility
+
+    // Lookup eligibility by memberID (leading zeroes not stripped)
     const fullEligibilityRecord = eligibilityData[memberID] || null;
     const status = fullEligibilityRecord ? "Eligible" : "Unknown";
 
