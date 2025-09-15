@@ -70,12 +70,11 @@ function validateXmlSchema() {
 
 // 🔎 Helper: check if any element has text "false"
 function checkForFalseValues(parent, invalidFields, prefix = "") {
-  const allElements = parent.getElementsByTagName("*");
-  for (const el of allElements) {
+  for (const el of parent.children) {
     const val = (el.textContent || "").trim().toLowerCase();
-    if (val === "false") {
-      invalidFields.push(`${prefix}${el.nodeName} (value is 'false')`);
-    }
+    const path = prefix ? `${prefix}.${el.nodeName}` : el.nodeName;
+    if (!el.children.length && val === "false") { invalidFields.push(`${path} (value is 'false')`); }
+    if (el.children.length) { checkForFalseValues(el, invalidFields, path); }
   }
 }
 
