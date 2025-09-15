@@ -329,6 +329,13 @@ function claimToHtmlTable(xmlString) {
 function renderResults(results, container, schemaType) {
   container.innerHTML = "";
 
+  // Export XLSX button above the table
+  const exportBtn = document.createElement("button");
+  exportBtn.textContent = "Export XLSX";
+  exportBtn.style.marginBottom = "10px";
+  exportBtn.onclick = () => exportToXLSX(results, schemaType);
+  container.appendChild(exportBtn);
+
   const table = document.createElement("table");
   table.className = "table";
   table.style.borderCollapse = "collapse";
@@ -375,13 +382,6 @@ function renderResults(results, container, schemaType) {
   });
   table.appendChild(tbody);
   container.appendChild(table);
-
-  // Export XLSX button
-  const exportBtn = document.createElement("button");
-  exportBtn.textContent = "Export XLSX";
-  exportBtn.style.marginTop = "10px";
-  exportBtn.onclick = () => exportToXLSX(results, schemaType);
-  container.appendChild(exportBtn);
 }
 
 function exportToXLSX(data, schemaType) {
