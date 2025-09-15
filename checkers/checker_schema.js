@@ -79,115 +79,80 @@ function checkForFalseValues(parent, invalidFields, prefix = "") {
 function validateClaimSchema(xmlDoc) {
   const results = [];
   const claims = xmlDoc.getElementsByTagName("Claim");
-  for (const claim of claims) {
-    let missingFields = [];
-    let invalidFields = [];
-    let principalCount = 0;
-    let diagnosisCodes = [];
-    let remarks = [];
 
-    function present(tag, parent = claim) { return parent.getElementsByTagName(tag).length > 0; }
-    function text(tag, parent = claim) {
+  for (const claim of claims) {
+    let missingFields = [], invalidFields = [], principalCount = 0, diagnosisCodes = [], remarks = [];
+
+    const present = (tag, parent = claim) => parent.getElementsByTagName(tag).length > 0;
+    const text = (tag, parent = claim) => {
       const el = parent.getElementsByTagName(tag)[0];
       return el && el.textContent ? el.textContent.trim() : "";
-    }
-    function invalidIfNull(tag, parent = claim, prefix = "") {
+    };
+    const invalidIfNull = (tag, parent = claim, prefix = "") => {
       const val = text(tag, parent);
       if (!val) invalidFields.push(prefix + tag + " (null/empty)");
-    }
+    };
 
-    [
-      "ID", "MemberID", "PayerID", "ProviderID", "EmiratesIDNumber",
-      "Gross", "PatientShare", "Net"
-    ].forEach(tag => invalidIfNull(tag, claim));
+    // Required fields
+    ["ID", "MemberID", "PayerID", "ProviderID", "EmiratesIDNumber", "Gross", "PatientShare", "Net"].forEach(tag => invalidIfNull(tag, claim));
 
-    // EmiratesIDNumber format and Medical Tourism/National without EID detection
+    // EmiratesIDNumber checks
     if (present("EmiratesIDNumber")) {
-      const eid = text("EmiratesIDNumber");
-      const p = eid.split("-");
+      const eid = text("EmiratesIDNumber"), p = eid.split("-");
       if (p.length !== 4 || p[0] !== "784" || !/^\d{4}$/.test(p[1]) || !/^\d{7}$/.test(p[2]) || !/^\d{1}$/.test(p[3]))
         invalidFields.push("EmiratesIDNumber (invalid format)");
       const eidDigits = eid.replace(/-/g, "");
-      if (/^[129]+$/.test(eidDigits)) {
-        remarks.push("EmiratesIDNumber (Medical Tourism: all digits 1/2/9)");
-      } else if (/^0+$/.test(eidDigits)) {
-        remarks.push("EmiratesIDNumber (National without EID: all digits 0)");
-      }
+      if (/^[129]+$/.test(eidDigits)) remarks.push("EmiratesIDNumber (Medical Tourism: all digits 1/2/9)");
+      else if (/^0+$/.test(eidDigits)) remarks.push("EmiratesIDNumber (National without EID: all digits 0)");
     }
 
-    // Encounter & subfields
+    // Encounter
     const encounter = claim.getElementsByTagName("Encounter")[0];
-    if (!encounter) {
-      missingFields.push("Encounter");
-    } else {
-      ["FacilityID", "Type", "PatientID", "Start", "End", "StartType", "EndType"].forEach(
-        tag => invalidIfNull(tag, encounter, "Encounter.")
-      );
-    }
+    !encounter ? missingFields.push("Encounter") : ["FacilityID","Type","PatientID","Start","End","StartType","EndType"].forEach(tag => invalidIfNull(tag, encounter, "Encounter."));
 
-    // Diagnoses
+    // Diagnosis
     const diagnoses = claim.getElementsByTagName("Diagnosis");
-    if (!diagnoses.length) {
-      missingFields.push("Diagnosis");
-    } else {
+    if (!diagnoses.length) missingFields.push("Diagnosis");
+    else {
+      let principalCode = null, typeCodeMap = {};
       Array.from(diagnoses).forEach((diag, i) => {
-        const prefix = `Diagnosis[${i}].`;
-        if (!present("Type", diag)) missingFields.push(prefix + "Type");
-        else if (text("Type", diag) === "Principal") principalCount++;
-        invalidIfNull("Type", diag, prefix);
-        invalidIfNull("Code", diag, prefix);
+        const typeVal = text("Type", diag), codeVal = text("Code", diag), prefix = `Diagnosis[${i}].`;
+        !typeVal && missingFields.push(prefix + "Type");
+        !codeVal && missingFields.push(prefix + "Code");
 
-        // Collect diagnosis codes for uniqueness check
-        const codeVal = text("Code", diag);
-        if (codeVal) diagnosisCodes.push(codeVal);
+        if (typeVal === "Principal") { principalCode ? invalidFields.push("Principal Diagnosis (multiple found)") : principalCode = codeVal; }
+
+        if (typeVal !== "Principal" && codeVal) {
+          if (!typeCodeMap[typeVal]) typeCodeMap[typeVal] = new Set();
+          typeCodeMap[typeVal].has(codeVal) ? invalidFields.push(`Duplicate Diagnosis Code within Type '${typeVal}': ${codeVal}`) : typeCodeMap[typeVal].add(codeVal);
+          principalCode && codeVal === principalCode ? invalidFields.push(`Diagnosis Code ${codeVal} duplicates Principal`) : null;
+        }
       });
-
-      if (principalCount === 0)
-        invalidFields.push("Principal Diagnosis (none found)");
-      else if (principalCount > 1)
-        invalidFields.push("Principal Diagnosis (multiple found)");
-
-      // Check for duplicate diagnosis codes
-      const codeSet = new Set(diagnosisCodes);
-      if (diagnosisCodes.length !== codeSet.size) {
-        const duplicates = diagnosisCodes.filter((item, idx) => diagnosisCodes.indexOf(item) !== idx);
-        const uniqueDuplicates = [...new Set(duplicates)];
-        invalidFields.push(
-          "Diagnosis Code(s) duplicated: " + uniqueDuplicates.join(", ")
-        );
-      }
+      !principalCode && invalidFields.push("Principal Diagnosis (none found)");
     }
 
-    // Activities & subfields
+    // Activities
     const activities = claim.getElementsByTagName("Activity");
-    if (!activities.length) {
-      missingFields.push("Activity");
-    } else {
-      Array.from(activities).forEach((act, i) => {
-        const prefix = `Activity[${i}].`;
-        ["Start", "Type", "Code", "Quantity", "Net", "Clinician"].forEach(
-          tag => invalidIfNull(tag, act, prefix)
-        );
-        Array.from(act.getElementsByTagName("Observation")).forEach(
-          (obs, j) => {
-            const oprefix = `${prefix}Observation[${j}].`;
-            ["Type", "Code"].forEach(tag => invalidIfNull(tag, obs, oprefix));
-          }
-        );
+    if (!activities.length) missingFields.push("Activity");
+    else Array.from(activities).forEach((act, i) => {
+      const prefix = `Activity[${i}].`;
+      ["Start","Type","Code","Quantity","Net","Clinician"].forEach(tag => invalidIfNull(tag, act, prefix));
+      Array.from(act.getElementsByTagName("Observation")).forEach((obs,j) => {
+        const oprefix = `${prefix}Observation[${j}].`;
+        ["Type","Code"].forEach(tag => invalidIfNull(tag, obs, oprefix));
       });
-    }
+    });
 
-    // Contract (optional)
+    // Contract optional
     const contract = claim.getElementsByTagName("Contract")[0];
-    if (contract && !text("PackageName", contract))
-      invalidFields.push("Contract.PackageName (null/empty)");
+    contract && !text("PackageName", contract) ? invalidFields.push("Contract.PackageName (null/empty)") : null;
 
-    // ✅ Check for "false" values (NO prefix passed)
-    checkForFalseValues(claim, invalidFields);
+    // Check for false values
+    checkForFalseValues(claim, invalidFields, "Claim.");
 
-    if (missingFields.length) remarks.push("Missing: " + missingFields.join(", "));
-    if (invalidFields.length) remarks.push("Invalid: " + invalidFields.join(", "));
-    if (!remarks.length) remarks.push("OK");
+    missingFields.length ? remarks.push("Missing: " + missingFields.join(", ")) : null;
+    invalidFields.length ? remarks.push("Invalid: " + invalidFields.join(", ")) : null;
+    !remarks.length ? remarks.push("OK") : null;
 
     results.push({
       ClaimID: text("ID") || "Unknown",
@@ -197,8 +162,10 @@ function validateClaimSchema(xmlDoc) {
       SchemaType: "claim"
     });
   }
+
   return results;
 }
+
 
 function validatePersonSchema(xmlDoc) {
   const results = [];
