@@ -70,8 +70,16 @@ function validateXmlSchema() {
 
 function checkForFalseValues(parent, invalidFields, prefix = "") {
   for (const el of parent.children) {
-    if (!el.children.length && (el.textContent || "").trim().toLowerCase() === "false")
-      invalidFields.push(`The element ${ (prefix ? `${prefix} → ${el.nodeName}` : el.nodeName).replace(/^Claim(?:[.\s→]*)/, "").replace(/^Person(?:[.\s→]*)/, "") } has an invalid value 'false'.`);
+    const val = (el.textContent || "").trim().toLowerCase();
+    if (!el.children.length && val === "false" && el.nodeName !== "MiddleNameEn") {
+      invalidFields.push(
+        `The element ${
+          (prefix ? `${prefix} → ${el.nodeName}` : el.nodeName)
+            .replace(/^Claim(?:[.\s→]*)/, "")
+            .replace(/^Person(?:[.\s→]*)/, "")
+        } has an invalid value 'false'.`
+      );
+    }
     if (el.children.length) checkForFalseValues(el, invalidFields, prefix ? `${prefix} → ${el.nodeName}` : el.nodeName);
   }
 }
