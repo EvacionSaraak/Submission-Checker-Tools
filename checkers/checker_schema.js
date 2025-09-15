@@ -72,9 +72,10 @@ function validateXmlSchema() {
 function checkForFalseValues(parent, invalidFields, prefix = "") {
   for (const el of parent.children) {
     const val = (el.textContent || "").trim().toLowerCase();
-    const path = prefix ? `${prefix}.${el.nodeName}` : el.nodeName;
-    if (!el.children.length && val === "false") { invalidFields.push(`${path} (value is 'false')`); }
-    if (el.children.length) { checkForFalseValues(el, invalidFields, path); }
+    const path = prefix ? `${prefix} → ${el.nodeName}` : el.nodeName;
+    const cleanPath = path.replace(/^Claim → /, "").replace(/^Claim$/, "");
+    if (!el.children.length && val === "false") invalidFields.push(`The element ${cleanPath} has an invalid value 'false'.`);
+    if (el.children.length) checkForFalseValues(el, invalidFields, path);
   }
 }
 
