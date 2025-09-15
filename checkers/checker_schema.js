@@ -68,14 +68,11 @@ function validateXmlSchema() {
   reader.readAsText(file);
 }
 
-// 🔎 Helper: check if any element has text "false"
 function checkForFalseValues(parent, invalidFields, prefix = "") {
   for (const el of parent.children) {
-    const val = (el.textContent || "").trim().toLowerCase();
-    const path = prefix ? `${prefix} → ${el.nodeName}` : el.nodeName;
-    const cleanPath = path.replace(/^Claim → /, "").replace(/^Claim$/, "");
-    if (!el.children.length && val === "false") invalidFields.push(`The element ${cleanPath} has an invalid value 'false'.`);
-    if (el.children.length) checkForFalseValues(el, invalidFields, path);
+    if (!el.children.length && (el.textContent || "").trim().toLowerCase() === "false")
+      invalidFields.push(`The element ${ (prefix ? `${prefix} → ${el.nodeName}` : el.nodeName).replace(/^Claim(?:[.\s→]*)/, "").replace(/^Person(?:[.\s→]*)/, "") } has an invalid value 'false'.`);
+    if (el.children.length) checkForFalseValues(el, invalidFields, prefix ? `${prefix} → ${el.nodeName}` : el.nodeName);
   }
 }
 
@@ -185,8 +182,8 @@ function validateClaimSchema(xmlDoc) {
     if (contract && !text("PackageName", contract))
       invalidFields.push("Contract.PackageName (null/empty)");
 
-    // ✅ Check for "false" values
-    checkForFalseValues(claim, invalidFields, "Claim.");
+    // ✅ Check for "false" values (NO prefix passed)
+    checkForFalseValues(claim, invalidFields);
 
     if (missingFields.length) remarks.push("Missing: " + missingFields.join(", "));
     if (invalidFields.length) remarks.push("Invalid: " + invalidFields.join(", "));
@@ -211,9 +208,7 @@ function validatePersonSchema(xmlDoc) {
     let invalidFields = [];
     let remarks = [];
 
-    function present(tag, parent = person) {
-      return parent.getElementsByTagName(tag).length > 0;
-    }
+    function present(tag, parent = person) { return parent.getElementsByTagName(tag).length > 0; }
 
     function text(tag, parent = person) {
       const el = parent.getElementsByTagName(tag)[0];
@@ -234,9 +229,7 @@ function validatePersonSchema(xmlDoc) {
     if (present("EmiratesIDNumber")) {
       const eid = text("EmiratesIDNumber");
       const p = eid.split("-");
-      if (p.length !== 4 || p[0] !== "784" || !/^\d{4}$/.test(p[1]) || !/^\d{7}$/.test(p[2]) || !/^\d{1}$/.test(p[3])) {
-        invalidFields.push("EmiratesIDNumber (invalid format)");
-      }
+      if (p.length !== 4 || p[0] !== "784" || !/^\d{4}$/.test(p[1]) || !/^\d{7}$/.test(p[2]) || !/^\d{1}$/.test(p[3])) { invalidFields.push("EmiratesIDNumber (invalid format)"); }
       const eidDigits = eid.replace(/-/g, "");
       if (/^[129]+$/.test(eidDigits)) {
         remarks.push("EmiratesIDNumber (Medical Tourism: all digits 1/2/9)");
@@ -250,8 +243,7 @@ function validatePersonSchema(xmlDoc) {
     const memberID = member ? text("ID", member) : "Unknown";
     if (!member || !memberID) invalidFields.push("Member.ID (null/empty)");
 
-    // ✅ Check for "false" values
-    checkForFalseValues(person, invalidFields, "Person.");
+    checkForFalseValues(person, invalidFields);
 
     if (missingFields.length) remarks.push("Missing: " + missingFields.join(", "));
     if (invalidFields.length) remarks.push("Invalid: " + invalidFields.join(", "));
@@ -267,7 +259,6 @@ function validatePersonSchema(xmlDoc) {
   }
   return results;
 }
-
 
 // Insert a modal dialog (if not already present)
 function ensureModal() {
@@ -326,14 +317,18 @@ function claimToHtmlTable(xmlString) {
   return html;
 }
 
+// renderResults (stores last results on window and places export button above table)
 function renderResults(results, container, schemaType) {
+  // keep a global reference so export works even if scopes change
+  window._lastValidationResults = Array.isArray(results) ? results.slice() : [];
+  window._lastValidationSchema = schemaType || "claim";
   container.innerHTML = "";
 
   // Export XLSX button above the table
   const exportBtn = document.createElement("button");
   exportBtn.textContent = "Export XLSX";
   exportBtn.style.marginBottom = "10px";
-  exportBtn.onclick = () => exportToXLSX(results, schemaType);
+  exportBtn.onclick = () => exportErrorsToXLSX(); // uses global last results
   container.appendChild(exportBtn);
 
   const table = document.createElement("table");
@@ -359,7 +354,7 @@ function renderResults(results, container, schemaType) {
 
   // Body
   const tbody = document.createElement("tbody");
-  results.forEach(row => {
+  (results || []).forEach(row => {
     const tr = document.createElement("tr");
     tr.style.backgroundColor = row.Valid ? "#d4edda" : "#f8d7da";
     [row.ClaimID, row.Remark, row.Valid ? "Yes" : "No"].forEach(text => {
@@ -369,13 +364,10 @@ function renderResults(results, container, schemaType) {
       td.style.border = "1px solid #ccc";
       tr.appendChild(td);
     });
-    // View Full Entry button
     const btnTd = document.createElement("td");
     const viewBtn = document.createElement("button");
     viewBtn.textContent = "View";
-    viewBtn.onclick = () => {
-      showModal(claimToHtmlTable(row.ClaimXML));
-    };
+    viewBtn.onclick = () => showModal(claimToHtmlTable(row.ClaimXML));
     btnTd.appendChild(viewBtn);
     tr.appendChild(btnTd);
     tbody.appendChild(tr);
@@ -385,18 +377,39 @@ function renderResults(results, container, schemaType) {
 }
 
 function exportErrorsToXLSX(data, schemaType) {
-  const fileInput = document.getElementById("xmlFile");
-  if (!fileInput.files.length) return alert("No XML file uploaded.");
-  const errorRows = data.filter(r => r.Remark !== "OK");
+  const rows = Array.isArray(data) ? data : (Array.isArray(window._lastValidationResults) ? window._lastValidationResults : []);
+  const schema = schemaType || window._lastValidationSchema || "claim";
+  if (!rows.length) {
+    alert("No results available to export.");
+    return;
+  }
+  if (typeof XLSX === "undefined") {
+    console.error("SheetJS (XLSX) is not loaded.");
+    return alert("Export failed: XLSX library not loaded. Include xlsx.full.min.js before this script.");
+  }
+
+  const errorRows = rows.filter(r => r.Remark !== "OK");
   if (!errorRows.length) return alert("No errors to export.");
   const exportData = errorRows.map(row => ({
-    [schemaType === "person" ? "UnifiedNumber" : "ClaimID"]: row.ClaimID,
+    [schema === "person" ? "UnifiedNumber" : "ClaimID"]: row.ClaimID,
     Remark: row.Remark
   }));
-  const xmlName = fileInput.files[0].name.replace(/\.[^/.]+$/, ""); // remove extension
-  const fileName = xmlName + "_errors.xlsx";
-  const ws = XLSX.utils.json_to_sheet(exportData);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Errors");
-  XLSX.writeFile(wb, fileName);
+
+  let fileName = null;
+  const fileInput = document.getElementById("xmlFile");
+  if (fileInput && fileInput.files && fileInput.files[0] && fileInput.files[0].name) {
+    fileName = fileInput.files[0].name.replace(/\.[^/.]+$/, "") + "_errors.xlsx";
+  } else {
+    const ts = new Date().toISOString().replace(/[:.]/g, "-");
+    fileName = (schema === "person" ? "person" : "claim") + "_errors_" + ts + ".xlsx";
+  }
+  try {
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Errors");
+    XLSX.writeFile(wb, fileName);
+  } catch (err) {
+    console.error("Export failed:", err);
+    alert("Export failed. See console for details.");
+  }
 }
