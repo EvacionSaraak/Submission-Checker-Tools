@@ -336,7 +336,7 @@ function validateKnownCode({
   // Special handling for codes 17999 and 0232T
   if (code === "17999" || code === "0232T") {
     if (obsCodes.length === 0) {
-      remarks.push(`${code} requires at least one observation code, but none were provided.`);
+      remarks.push(`${code} requires at least one observation code but none were provided.`);
     } else {
       const nonPDFObs = obsCodes.filter(oc => !isDrugPatientShareOrPDF(oc));
       const toothCodesUsed = nonPDFObs.filter(oc => ALL_TEETH.has(oc));
@@ -361,7 +361,7 @@ function validateKnownCode({
 
   // Mark as invalid if no observations
   if (obsCodes.length === 0) {
-    remarks.push(`${code} requires at least one observation, but none were provided.`);
+    remarks.push(`${code} requires at least one observation but none were provided.`);
   }
 
   const details = obsCodes.length === 0
