@@ -68,6 +68,17 @@ function validateXmlSchema() {
   reader.readAsText(file);
 }
 
+// 🔎 Helper: check if any element has text "false"
+function checkForFalseValues(parent, invalidFields, prefix = "") {
+  const allElements = parent.getElementsByTagName("*");
+  for (const el of allElements) {
+    const val = (el.textContent || "").trim().toLowerCase();
+    if (val === "false") {
+      invalidFields.push(`${prefix}${el.nodeName} (value is 'false')`);
+    }
+  }
+}
+
 function validateClaimSchema(xmlDoc) {
   const results = [];
   const claims = xmlDoc.getElementsByTagName("Claim");
@@ -164,9 +175,6 @@ function validateClaimSchema(xmlDoc) {
           (obs, j) => {
             const oprefix = `${prefix}Observation[${j}].`;
             ["Type", "Code"].forEach(tag => invalidIfNull(tag, obs, oprefix));
-            // DO NOT check for Value or ValueType being empty - allow empty!
-            // if (present("Value", obs)) invalidIfNull("Value", obs, oprefix);
-            // if (present("ValueType", obs)) invalidIfNull("ValueType", obs, oprefix);
           }
         );
       });
@@ -176,6 +184,9 @@ function validateClaimSchema(xmlDoc) {
     const contract = claim.getElementsByTagName("Contract")[0];
     if (contract && !text("PackageName", contract))
       invalidFields.push("Contract.PackageName (null/empty)");
+
+    // ✅ Check for "false" values
+    checkForFalseValues(claim, invalidFields, "Claim.");
 
     if (missingFields.length) remarks.push("Missing: " + missingFields.join(", "));
     if (invalidFields.length) remarks.push("Invalid: " + invalidFields.join(", "));
@@ -238,6 +249,9 @@ function validatePersonSchema(xmlDoc) {
     const member = person.getElementsByTagName("Member")[0];
     const memberID = member ? text("ID", member) : "Unknown";
     if (!member || !memberID) invalidFields.push("Member.ID (null/empty)");
+
+    // ✅ Check for "false" values
+    checkForFalseValues(person, invalidFields, "Person.");
 
     if (missingFields.length) remarks.push("Missing: " + missingFields.join(", "));
     if (invalidFields.length) remarks.push("Invalid: " + invalidFields.join(", "));
@@ -369,7 +383,6 @@ function renderResults(results, container, schemaType) {
   exportBtn.onclick = () => exportToXLSX(results, schemaType);
   container.appendChild(exportBtn);
 }
-
 
 function exportToXLSX(data, schemaType) {
   const exportData = data.map(row => ({
