@@ -384,14 +384,19 @@ function renderResults(results, container, schemaType) {
   container.appendChild(table);
 }
 
-function exportToXLSX(data, schemaType) {
-  const exportData = data.map(row => ({
+function exportErrorsToXLSX(data, schemaType) {
+  const fileInput = document.getElementById("xmlFile");
+  if (!fileInput.files.length) return alert("No XML file uploaded.");
+  const errorRows = data.filter(r => r.Remark !== "OK");
+  if (!errorRows.length) return alert("No errors to export.");
+  const exportData = errorRows.map(row => ({
     [schemaType === "person" ? "UnifiedNumber" : "ClaimID"]: row.ClaimID,
-    Remark: row.Remark,
-    Valid: row.Valid ? "Yes" : "No"
+    Remark: row.Remark
   }));
+  const xmlName = fileInput.files[0].name.replace(/\.[^/.]+$/, ""); // remove extension
+  const fileName = xmlName + "_errors.xlsx";
   const ws = XLSX.utils.json_to_sheet(exportData);
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Validation Results");
-  XLSX.writeFile(wb, (schemaType === "person" ? "person" : "claim") + "_schema_validation.xlsx");
+  XLSX.utils.book_append_sheet(wb, ws, "Errors");
+  XLSX.writeFile(wb, fileName);
 }
