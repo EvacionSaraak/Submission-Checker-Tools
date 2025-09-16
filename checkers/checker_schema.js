@@ -105,11 +105,17 @@ function validateClaimSchema(xmlDoc) {
     const memberID = text("MemberID");
     if (memberID && /^0/.test(memberID)) invalidFields.push("MemberID (starts with 0)");
 
-    // EmiratesIDNumber checks
+    // EmiratesIDNumber checks (improved messages)
     if (present("EmiratesIDNumber")) {
       const eid = text("EmiratesIDNumber"), p = eid.split("-");
-      if (p.length !== 4 || p[0] !== "784" || !/^\d{4}$/.test(p[1]) || !/^\d{7}$/.test(p[2]) || !/^\d{1}$/.test(p[3]))
-        invalidFields.push("EmiratesIDNumber (invalid format)");
+      if (p.length !== 4) {
+        invalidFields.push(`EmiratesIDNumber '${eid}' (must have 4 parts separated by dashes)`);
+      } else {
+        if (p[0] !== "784") invalidFields.push(`EmiratesIDNumber '${eid}' (first part must be 784)`);
+        if (!/^\d{4}$/.test(p[1])) invalidFields.push(`EmiratesIDNumber '${eid}' (second part must be 4 digits for year)`);
+        if (!/^\d{7}$/.test(p[2])) invalidFields.push(`EmiratesIDNumber '${eid}' (third part must be 7 digits)`);
+        if (!/^\d{1}$/.test(p[3])) invalidFields.push(`EmiratesIDNumber '${eid}' (fourth part must be 1 digit)`);
+      }
       const eidDigits = eid.replace(/-/g, "");
       if (/^[129]+$/.test(eidDigits)) remarks.push("EmiratesIDNumber (Medical Tourism: all digits 1/2/9)");
       else if (/^0+$/.test(eidDigits)) remarks.push("EmiratesIDNumber (National without EID: all digits 0)");
@@ -177,38 +183,34 @@ function validatePersonSchema(xmlDoc) {
   const results = [];
   const persons = xmlDoc.getElementsByTagName("Person");
   for (const person of persons) {
-    let missingFields = [];
-    let invalidFields = [];
-    let remarks = [];
+    let missingFields = [], invalidFields = [], remarks = [];
 
-    function present(tag, parent = person) { return parent.getElementsByTagName(tag).length > 0; }
-
-    function text(tag, parent = person) {
+    const present = (tag, parent = person) => parent.getElementsByTagName(tag).length > 0;
+    const text = (tag, parent = person) => {
       const el = parent.getElementsByTagName(tag)[0];
       return el && el.textContent ? el.textContent.trim() : "";
-    }
-
-    function invalidIfNull(tag, parent = person, prefix = "") {
-      const val = text(tag, parent);
-      if (!val) invalidFields.push(prefix + tag + " (null/empty)");
-    }
+    };
+    const invalidIfNull = (tag, parent = person, prefix = "") => !text(tag, parent) ? invalidFields.push(prefix + tag + " (null/empty)") : null;
 
     [
       "UnifiedNumber", "FirstName", "FirstNameEn", "LastNameEn", "ContactNumber",
       "BirthDate", "Gender", "Nationality", "City", "CountryOfResidence", "EmirateOfResidence", "EmiratesIDNumber"
     ].forEach(tag => invalidIfNull(tag, person));
 
-    // EmiratesIDNumber checks
+    // EmiratesIDNumber checks (detailed)
     if (present("EmiratesIDNumber")) {
-      const eid = text("EmiratesIDNumber");
-      const p = eid.split("-");
-      if (p.length !== 4 || p[0] !== "784" || !/^\d{4}$/.test(p[1]) || !/^\d{7}$/.test(p[2]) || !/^\d{1}$/.test(p[3])) { invalidFields.push("EmiratesIDNumber (invalid format)"); }
-      const eidDigits = eid.replace(/-/g, "");
-      if (/^[129]+$/.test(eidDigits)) {
-        remarks.push("EmiratesIDNumber (Medical Tourism: all digits 1/2/9)");
-      } else if (/^0+$/.test(eidDigits)) {
-        remarks.push("EmiratesIDNumber (National without EID: all digits 0)");
+      const eid = text("EmiratesIDNumber"), p = eid.split("-");
+      if (p.length !== 4) {
+        invalidFields.push(`EmiratesIDNumber '${eid}' (must have 4 parts separated by dashes)`);
+      } else {
+        if (p[0] !== "784") invalidFields.push(`EmiratesIDNumber '${eid}' (first part must be 784)`);
+        if (!/^\d{4}$/.test(p[1])) invalidFields.push(`EmiratesIDNumber '${eid}' (second part must be 4 digits for year)`);
+        if (!/^\d{7}$/.test(p[2])) invalidFields.push(`EmiratesIDNumber '${eid}' (third part must be 7 digits)`);
+        if (!/^\d{1}$/.test(p[3])) invalidFields.push(`EmiratesIDNumber '${eid}' (fourth part must be 1 digit)`);
       }
+      const eidDigits = eid.replace(/-/g, "");
+      if (/^[129]+$/.test(eidDigits)) remarks.push("EmiratesIDNumber (Medical Tourism: all digits 1/2/9)");
+      else if (/^0+$/.test(eidDigits)) remarks.push("EmiratesIDNumber (National without EID: all digits 0)");
     }
 
     // Member.ID check
@@ -216,11 +218,13 @@ function validatePersonSchema(xmlDoc) {
     const memberID = member ? text("ID", member) : "Unknown";
     if (!member || !memberID) invalidFields.push("Member.ID (null/empty)");
 
+    // False value check
     checkForFalseValues(person, invalidFields);
 
-    if (missingFields.length) remarks.push("Missing: " + missingFields.join(", "));
-    if (invalidFields.length) remarks.push("Invalid: " + invalidFields.join(", "));
-    if (!remarks.length) remarks.push("OK");
+    // Compile remarks
+    missingFields.length && remarks.push("Missing: " + missingFields.join(", "));
+    invalidFields.length && remarks.push("Invalid: " + invalidFields.join(", "));
+    !remarks.length && remarks.push("OK");
 
     results.push({
       ClaimID: memberID,
