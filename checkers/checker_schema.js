@@ -92,25 +92,20 @@ function validateClaimSchema(xmlDoc) {
     let missingFields = [], invalidFields = [], remarks = [];
 
     const present = (tag, parent = claim) => parent.getElementsByTagName(tag).length > 0;
-    const text = (tag, parent = claim) => {
-      const el = parent.getElementsByTagName(tag)[0];
-      return el && el.textContent ? el.textContent.trim() : "";
-    };
+    const text = (tag, parent = claim) => { const el = parent.getElementsByTagName(tag)[0]; return el && el.textContent ? el.textContent.trim() : ""; };
     const invalidIfNull = (tag, parent = claim, prefix = "") => !text(tag, parent) ? invalidFields.push(prefix + tag + " (null/empty)") : null;
 
     // Required fields
     ["ID", "MemberID", "PayerID", "ProviderID", "EmiratesIDNumber", "Gross", "PatientShare", "Net"].forEach(tag => invalidIfNull(tag, claim));
 
     // MemberID check
-    const memberID = text("MemberID");
-    if (memberID && /^0/.test(memberID)) invalidFields.push("MemberID (starts with 0)");
+    const memberID = text("MemberID"); if (memberID && /^0/.test(memberID)) invalidFields.push("MemberID (starts with 0)");
 
     // EmiratesIDNumber checks (improved messages)
     if (present("EmiratesIDNumber")) {
       const eid = text("EmiratesIDNumber"), p = eid.split("-");
-      if (p.length !== 4) {
-        invalidFields.push(`EmiratesIDNumber '${eid}' (must have 4 parts separated by dashes)`);
-      } else {
+      if (p.length !== 4) invalidFields.push(`EmiratesIDNumber '${eid}' (must have 4 parts separated by dashes)`);
+      else {
         if (p[0] !== "784") invalidFields.push(`EmiratesIDNumber '${eid}' (first part must be 784)`);
         if (!/^\d{4}$/.test(p[1])) invalidFields.push(`EmiratesIDNumber '${eid}' (second part must be 4 digits for year)`);
         if (!/^\d{7}$/.test(p[2])) invalidFields.push(`EmiratesIDNumber '${eid}' (third part must be 7 digits)`);
@@ -132,11 +127,8 @@ function validateClaimSchema(xmlDoc) {
       let principalCode = null, typeCodeMap = {};
       Array.from(diagnoses).forEach((diag, i) => {
         const typeVal = text("Type", diag), codeVal = text("Code", diag), prefix = `Diagnosis[${i}].`;
-        !typeVal && missingFields.push(prefix + "Type");
-        !codeVal && missingFields.push(prefix + "Code");
-
+        !typeVal && missingFields.push(prefix + "Type"); !codeVal && missingFields.push(prefix + "Code");
         if (typeVal === "Principal") principalCode ? invalidFields.push("Principal Diagnosis (multiple found)") : principalCode = codeVal;
-
         if (typeVal !== "Principal" && codeVal) {
           if (!typeCodeMap[typeVal]) typeCodeMap[typeVal] = new Set();
           typeCodeMap[typeVal].has(codeVal) ? invalidFields.push(`Duplicate Diagnosis Code within Type '${typeVal}': ${codeVal}`) : typeCodeMap[typeVal].add(codeVal);
@@ -152,12 +144,12 @@ function validateClaimSchema(xmlDoc) {
     else Array.from(activities).forEach((act, i) => {
       const prefix = `Activity[${i}].`;
       ["Start","Type","Code","Quantity","Net","Clinician"].forEach(tag => invalidIfNull(tag, act, prefix));
+      const qty = text("Quantity", act); if (qty && (isNaN(parseFloat(qty)) || parseFloat(qty) === 0)) invalidFields.push(`${prefix}Quantity (must be greater than 0, found '${qty}')`);
       Array.from(act.getElementsByTagName("Observation")).forEach((obs,j) => ["Type","Code"].forEach(tag => invalidIfNull(tag, obs, `${prefix}Observation[${j}].`)));
     });
 
     // Contract optional
-    const contract = claim.getElementsByTagName("Contract")[0];
-    contract && !text("PackageName", contract) ? invalidFields.push("Contract.PackageName (null/empty)") : null;
+    const contract = claim.getElementsByTagName("Contract")[0]; contract && !text("PackageName", contract) ? invalidFields.push("Contract.PackageName (null/empty)") : null;
 
     // Check for false values
     checkForFalseValues(claim, invalidFields, "Claim.");
@@ -175,7 +167,6 @@ function validateClaimSchema(xmlDoc) {
       SchemaType: "claim"
     });
   }
-
   return results;
 }
 
