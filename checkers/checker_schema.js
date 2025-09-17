@@ -92,14 +92,18 @@ function validateClaimSchema(xmlDoc) {
     let missingFields = [], invalidFields = [], remarks = [];
 
     const present = (tag, parent = claim) => parent.getElementsByTagName(tag).length > 0;
-    const text = (tag, parent = claim) => { const el = parent.getElementsByTagName(tag)[0]; return el && el.textContent ? el.textContent.trim() : ""; };
+    const text = (tag, parent = claim) => {
+      const el = parent.getElementsByTagName(tag)[0];
+      return el && el.textContent ? el.textContent.trim() : "";
+    };
     const invalidIfNull = (tag, parent = claim, prefix = "") => !text(tag, parent) ? invalidFields.push(prefix + tag + " (null/empty)") : null;
 
     // Required fields
     ["ID", "MemberID", "PayerID", "ProviderID", "EmiratesIDNumber", "Gross", "PatientShare", "Net"].forEach(tag => invalidIfNull(tag, claim));
 
     // MemberID check
-    const memberID = text("MemberID"); if (memberID && /^0/.test(memberID)) invalidFields.push("MemberID (starts with 0)");
+    const memberID = text("MemberID");
+    if (memberID && /^0/.test(memberID)) invalidFields.push("MemberID (starts with 0)");
 
     // EmiratesIDNumber checks (improved messages)
     if (present("EmiratesIDNumber")) {
@@ -127,8 +131,11 @@ function validateClaimSchema(xmlDoc) {
       let principalCode = null, typeCodeMap = {};
       Array.from(diagnoses).forEach((diag, i) => {
         const typeVal = text("Type", diag), codeVal = text("Code", diag), prefix = `Diagnosis[${i}].`;
-        !typeVal && missingFields.push(prefix + "Type"); !codeVal && missingFields.push(prefix + "Code");
+        !typeVal && missingFields.push(prefix + "Type");
+        !codeVal && missingFields.push(prefix + "Code");
+
         if (typeVal === "Principal") principalCode ? invalidFields.push("Principal Diagnosis (multiple found)") : principalCode = codeVal;
+
         if (typeVal !== "Principal" && codeVal) {
           if (!typeCodeMap[typeVal]) typeCodeMap[typeVal] = new Set();
           typeCodeMap[typeVal].has(codeVal) ? invalidFields.push(`Duplicate Diagnosis Code within Type '${typeVal}': ${codeVal}`) : typeCodeMap[typeVal].add(codeVal);
@@ -142,14 +149,15 @@ function validateClaimSchema(xmlDoc) {
     const activities = claim.getElementsByTagName("Activity");
     if (!activities.length) missingFields.push("Activity");
     else Array.from(activities).forEach((act, i) => {
-      const prefix = `Activity[${i}].`;
+      const prefix = `Activity[${i}].`, code = text("Code", act), qty = text("Quantity", act);
       ["Start","Type","Code","Quantity","Net","Clinician"].forEach(tag => invalidIfNull(tag, act, prefix));
-      const qty = text("Quantity", act); if (qty && (isNaN(parseFloat(qty)) || parseFloat(qty) === 0)) invalidFields.push(`${prefix}Quantity (must be greater than 0, found '${qty}')`);
+      if (qty === "0") invalidFields.push(`Activity Code ${code || "(unknown)"} has invalid Quantity (0)`);
       Array.from(act.getElementsByTagName("Observation")).forEach((obs,j) => ["Type","Code"].forEach(tag => invalidIfNull(tag, obs, `${prefix}Observation[${j}].`)));
     });
 
     // Contract optional
-    const contract = claim.getElementsByTagName("Contract")[0]; contract && !text("PackageName", contract) ? invalidFields.push("Contract.PackageName (null/empty)") : null;
+    const contract = claim.getElementsByTagName("Contract")[0];
+    contract && !text("PackageName", contract) ? invalidFields.push("Contract.PackageName (null/empty)") : null;
 
     // Check for false values
     checkForFalseValues(claim, invalidFields, "Claim.");
@@ -167,6 +175,7 @@ function validateClaimSchema(xmlDoc) {
       SchemaType: "claim"
     });
   }
+
   return results;
 }
 
