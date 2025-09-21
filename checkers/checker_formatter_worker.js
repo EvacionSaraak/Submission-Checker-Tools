@@ -368,52 +368,38 @@ function mapSourceRowWithHeaderMap(headerRow, dataRow, headerMap) {
 // ==============================
 async function combineEligibilities(fileEntries) {
   log("Starting eligibility combining");
-
   const XLSX = (typeof window !== "undefined" ? window.XLSX : self.XLSX);
-  if (!fileEntries || fileEntries.length === 0) {
-    log("No eligibility files provided", "ERROR");
-    return;
-  }
+  if (!fileEntries || !fileEntries.length) return log("No eligibility files provided", "ERROR");
 
-  let combinedRows = [];
-  let headerRow = null;
-  const seenRows = new Set();
+  let combinedRows = [], headerRow = null, seenRows = new Set(), emptyFiles = [];
 
   for (let entry of fileEntries) {
     log(`Reading file: ${entry.name}`);
-    const data = entry.buffer; // buffer from File/Upload
-    const wb = XLSX.read(data, { type: "array" });
-    const sheet = wb.Sheets[wb.SheetNames[0]];
-    let rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+    let wb; try { wb = XLSX.read(entry.buffer, { type: "array" }); } 
+    catch (err) { log(`Failed to parse ${entry.name}: ${err.message}`, "ERROR"); continue; }
 
-    // Headers are on row 2 (index 1)
-    if (!headerRow) {
-      headerRow = rows[1];
-      combinedRows.push(headerRow);
-      log(`Header row set: ${headerRow.join(", ")}`);
-    }
+    if (!wb.SheetNames?.length) { log(`File ${entry.name} has no sheets`, "WARN"); emptyFiles.push(entry.name); continue; }
+    const sheet = wb.Sheets[wb.SheetNames[0]]; 
+    if (!sheet) { log(`File ${entry.name} has an empty sheet`, "WARN"); emptyFiles.push(entry.name); continue; }
 
-    const dataRows = rows.slice(2);
-    for (let row of dataRows) {
-      const key = JSON.stringify(row);
-      if (!seenRows.has(key)) {
-        combinedRows.push(row);
-        seenRows.add(key);
-      }
-    }
-    log(`Processed ${dataRows.length} data rows from ${entry.name}`);
+    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+    if (!rows || rows.length < 2) { log(`File ${entry.name} has no entries`, "WARN"); emptyFiles.push(entry.name); continue; }
+
+    if (!headerRow) { headerRow = rows[1] || []; combinedRows.push(headerRow); log(`Header row set: ${headerRow.join(", ")}`); }
+    for (let row of rows.slice(2)) { let key = JSON.stringify(row); if (!seenRows.has(key)) { combinedRows.push(row); seenRows.add(key); } }
+    log(`Processed ${rows.length - 2} data rows from ${entry.name}`);
   }
 
-  if (!headerRow) {
-    log("No header row found in any file", "ERROR");
-    return;
+  if (!headerRow) { 
+    log("No header row found in any file", "ERROR"); 
+    emptyFiles.forEach(f => log(`File ${f} has no entries`, "WARN")); 
+    return; 
   }
 
-  const ws = XLSX.utils.aoa_to_sheet(combinedRows);
-  const wbOut = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(combinedRows), wbOut = XLSX.utils.book_new(); 
   XLSX.utils.book_append_sheet(wbOut, ws, "Combined Eligibility");
   log(`Combined eligibility workbook created with ${combinedRows.length - 1} data rows`);
-
+  emptyFiles.forEach(f => log(`File ${f} has no entries`, "WARN"));
   return wbOut;
 }
 
