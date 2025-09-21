@@ -334,7 +334,7 @@ function validateKnownCode({
   // END PATCH
 
   // Special handling for codes 17999 and 0232T
-  if (code === "17999" || code === "0232T") {
+  if (code === "17999" || code === "0232T" || code === "J3490") {
     if (obsCodes.length === 0) {
       remarks.push(`${code} requires at least one observation code but none were provided.`);
     } else {
