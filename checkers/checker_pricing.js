@@ -153,7 +153,7 @@ function buildPricingMatcher(rows) {
   };
 }
 
-// ----------------- Rendering -----------------
+// ----------------- Modified: renderResults (hide repeated Claim ID) -----------------
 function renderResults(rows) {
   const container = el('outputTableContainer');
   if (!rows || !rows.length) { container.innerHTML = '<div>No results</div>'; return; }
@@ -162,6 +162,7 @@ function renderResults(rows) {
   rows.forEach((r, i) => r._originalIndex = i);
   lastResults = rows.slice(); // ensure modal access
 
+  let prevClaimId = null;
   let html = `<table class="shared-table"><thead><tr>
     <th>Claim ID</th><th>Activity ID</th><th>Code</th><th>Claimed Net</th><th>Quantity</th>
     <th>Reference Net Price</th><th>Status</th><th>Remarks</th><th>Compare</th>
@@ -169,8 +170,9 @@ function renderResults(rows) {
 
   for (const r of rows) {
     const cls = String(r.status || 'Invalid').toLowerCase();
+    const showClaim = r.ClaimID !== prevClaimId;
     html += `<tr class="${cls}">
-      <td>${escapeHtml(r.ClaimID)}</td>
+      <td>${showClaim ? escapeHtml(r.ClaimID) : ''}</td>
       <td>${escapeHtml(r.ActivityID)}</td>
       <td>${escapeHtml(r.CPT)}</td>
       <td>${escapeHtml(r.ClaimedNet)}</td>
@@ -180,6 +182,7 @@ function renderResults(rows) {
       <td>${escapeHtml(r.Remarks || 'OK')}</td>
       <td>${r.PricingRow ? `<button type="button" class="details-btn" onclick="showComparisonModal(${r._originalIndex})">View</button>` : ''}</td>
     </tr>`;
+    prevClaimId = r.ClaimID;
   }
 
   html += `</tbody></table>`;
