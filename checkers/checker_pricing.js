@@ -28,35 +28,48 @@ async function handleRun() {
 
     showProgress(50, 'Comparing records');
 
-    // ----------------- Main run (only relevant change: matcher call) -----------------
     const output = extracted.map(rec => {
-      const remarks = []; let status = 'Invalid';
-      const match = matcher.find(rec.CPT, rec.FacilityID);
-      const refPrice = match ? String(match.price || '').trim() : '';
-      const xmlNet = Number(rec.Net || 0), xmlQty = Number(rec.Quantity || 0), ref = Number(refPrice || 0);
-    
-      if (xmlNet === 0) status = 'Unknown', remarks.push('Claimed Net is 0 (treated as Unknown)');
-      else {
-        if (xmlQty <= 0) remarks.push(xmlQty === 0 ? 'Quantity is 0 (invalid)' : 'Quantity is less than 0 (invalid)');
-        if (!match) remarks.push('No pricing match found');
-        if (match && Number.isNaN(ref)) remarks.push('Reference Net Price is not a number');
-        if (match && !Number.isNaN(ref) && xmlQty > 0) (xmlNet === ref || (xmlNet / xmlQty) === ref) ? status = 'Valid' : remarks.push(`Claimed Net ${xmlNet} does not match Reference ${ref}`);
+    const remarks = []; let status = 'Invalid';
+    const match = matcher.find(rec.CPT);
+    const xmlNet = Number(rec.Net || 0), xmlQty = Number(rec.Quantity || 0);
+  
+    // Determine reference price based on Facility ID
+    let refPrice = '';
+    if (match) {
+      const facility = rec.FacilityID || '';
+      refPrice = (facility === 'MF5357' || facility === 'MF7231' || facility === 'MF232') ?
+        match._secondaryPrice : match._primaryPrice;
+    }
+    const ref = Number(refPrice || 0);
+  
+    // Claimed net 0 -> Unknown
+    if (xmlNet === 0) status = 'Unknown', remarks.push('Claimed Net is 0 (treated as Unknown)');
+    else {
+      if (xmlQty <= 0) remarks.push(xmlQty === 0 ? 'Quantity is 0 (invalid)' : 'Quantity is less than 0 (invalid)');
+      if (!match) remarks.push('No pricing match found');
+      if (match && Number.isNaN(ref)) remarks.push('Reference Net Price is not a number');
+  
+      if (match && !Number.isNaN(ref) && xmlQty > 0) {
+        if (xmlNet === ref) status = 'Valid';
+        else if ((xmlNet / xmlQty) === ref) status = 'Valid';
+        else remarks.push(`Claimed Net ${xmlNet} does not match Reference ${ref}`);
       }
-    
-      return {
-        ClaimID: rec.ClaimID || '',
-        ActivityID: rec.ActivityID || '',
-        CPT: rec.CPT || '',
-        ClaimedNet: rec.Net || '',
-        ClaimedQty: rec.Quantity || '',
-        ReferenceNetPrice: refPrice || '',
-        PricingRow: match ? match.row : null,
-        XmlRow: rec,
-        isValid: status === 'Valid',
-        status,
-        Remarks: remarks.join('; ')
-      };
-    });
+    }
+  
+    return {
+      ClaimID: rec.ClaimID || '',
+      ActivityID: rec.ActivityID || '',
+      CPT: rec.CPT || '',
+      ClaimedNet: rec.Net || '',
+      ClaimedQty: rec.Quantity || '',
+      ReferenceNetPrice: refPrice || '',
+      PricingRow: match || null,
+      XmlRow: rec,
+      isValid: status === 'Valid',
+      status,
+      Remarks: remarks.join('; ')
+    };
+  });
 
     lastResults = output;
     renderResults(output);
