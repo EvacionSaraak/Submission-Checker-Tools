@@ -1,88 +1,259 @@
-let xmlData, xlsxData;
+// checker_pricing.js
+// Merged structure from checker_modifiers.js, adapted for pricing checks.
+// Uses primarily single-line if statements as requested.
 
-document.getElementById("xmlFile").addEventListener("change", e => {
-  const reader = new FileReader();
-  reader.onload = evt => xmlData = new DOMParser().parseFromString(evt.target.result, "text/xml");
-  reader.readAsText(e.target.files[0]);
+let lastResults = [];
+let lastWorkbook = null;
+
+document.addEventListener('DOMContentLoaded', () => {
+  const runBtn = el('run-button'), dlBtn = el('download-button');
+  if (runBtn) runBtn.addEventListener('click', handleRun);
+  if (dlBtn) dlBtn.addEventListener('click', handleDownload);
+  resetUI();
 });
 
-document.getElementById("xlsxFile").addEventListener("change", e => {
-  const reader = new FileReader();
-  reader.onload = evt => {
-    const workbook = XLSX.read(new Uint8Array(evt.target.result), { type: "array" });
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    xlsxData = XLSX.utils.sheet_to_json(sheet, { defval: "" });
-  };
-  reader.readAsArrayBuffer(e.target.files[0]);
-});
+// ----------------- Main run handler -----------------
+async function handleRun() {
+  resetUI();
+  try {
+    const xmlFile = fileEl('xml-file'), xlsxFile = fileEl('xlsx-file');
+    if (!xmlFile || !xlsxFile) throw new Error('Please select both an XML file and an XLSX file.');
 
-// modified: process button handler
-document.getElementById("processBtn").addEventListener("click", () => {
-  if (!xmlData || !xlsxData) return alert("Upload both XML and XLSX first.");
-  const results = []; const activities = xmlData.getElementsByTagName("Activity");
-  for (let act of activities) {
-    const code = act.getElementsByTagName("ActivityCode")[0]?.textContent?.trim() || '';
-    const net = parseFloat(act.getElementsByTagName("Net")[0]?.textContent || "0");
-    const qty = parseFloat(act.getElementsByTagName("Quantity")[0]?.textContent || "0");
-    const xlsxMatch = xlsxData.find(r => String(r["Code"]||r["CPT"]||'').trim() === code);
-    let status = "Invalid", remark = "No matching code found";
-    if (qty <= 0) status = "Invalid", remark = qty === 0 ? "Quantity is 0 (invalid)" : "Quantity is less than 0 (invalid)";
-    else if (xlsxMatch) {
-      const xPrice = parseFloat(String(xlsxMatch["Net Price"]||xlsxMatch["NetPrice"]||"0"));
-      if (Number.isNaN(xPrice)) status = "Invalid", remark = "Reference Net Price is not a number";
-      else if (xPrice === net) status = "Valid", remark = "Exact price match";
-      else if ((net / qty) === xPrice) status = "Valid", remark = "Unit price matches";
-      else status = "Invalid", remark = `Mismatch: XML Net ${net}, XLSX Price ${xPrice}`;
-    }
-    results.push({ code, net, qty, status, remark, xlsxPrice: xlsxMatch?.["Net Price"]||xlsxMatch?.["NetPrice"]||"N/A" });
+    showProgress(5, 'Reading files');
+
+    const [xmlText, xlsxObj] = await Promise.all([readFileText(xmlFile), readXlsx(xlsxFile)]);
+    showProgress(25, 'Parsing XML & XLSX');
+
+    const xmlDoc = parseXml(xmlText);
+    const extracted = extractPricingRecords(xmlDoc);
+    const matcher = buildPricingMatcher(xlsxObj.rows);
+
+    showProgress(50, 'Comparing records');
+
+    const output = extracted.map(rec => {
+      const remarks = []; let isValid = false;
+      const match = matcher.find(rec.CPT);
+      let refPrice = match ? String(firstNonEmptyKey(match, ['Net Price','NetPrice','Price','Unit Price']) || '').trim() : '';
+
+      // Parse numeric values
+      const xmlNet = Number(rec.Net || 0), xmlQty = Number(rec.Quantity || 0), ref = Number(refPrice || 0);
+      if (xmlQty <= 0) remarks.push(xmlQty === 0 ? 'Quantity is 0 (invalid)' : 'Quantity is less than 0 (invalid)');
+      if (!match) remarks.push('No pricing match found');
+      if (match && Number.isNaN(ref)) remarks.push('Reference Net Price is not a number');
+
+      // Only run numeric comparisons if we have a numeric ref and qty > 0 or direct compare
+      if (match && !Number.isNaN(ref) && xmlQty > 0) {
+        if (xmlNet === ref) isValid = true;
+        else if ((xmlNet / xmlQty) === ref) isValid = true;
+        else remarks.push(`Claimed Net ${xmlNet} does not match Reference ${ref}`);
+      }
+
+      // If match exists but xmlQty <= 0 we still want invalid (remarks already contains)
+      return {
+        ClaimID: rec.ClaimID || '',
+        ActivityID: rec.ActivityID || '',
+        CPT: rec.CPT || '',
+        ClaimedNet: rec.Net || '',
+        ClaimedQty: rec.Quantity || '',
+        ReferenceNetPrice: refPrice || '',
+        PricingRow: match || null,
+        XmlRow: rec,
+        isValid,
+        Remarks: remarks.join('; ')
+      };
+    });
+
+    lastResults = output;
+    renderResults(output);
+    lastWorkbook = makeWorkbookFromJson(output, 'checker_pricing_results');
+    toggleDownload(output.length > 0);
+
+    const validCount = output.filter(r => r.isValid).length, totalCount = output.length;
+    const percent = totalCount ? Math.round((validCount / totalCount) * 100) : 0;
+    message(`Completed — ${validCount}/${totalCount} rows correct (${percent}%)`, percent === 100 ? 'green' : 'orange');
+    showProgress(100, 'Done');
+
+  } catch (err) {
+    showError(err);
   }
-  renderResults(results);
-  window.comparisonResults = results;
-});
+}
 
-function renderResults(results) {
-  const container = document.getElementById("outputTableContainer");
-  if (!results.length) return container.innerHTML = "<p>No results.</p>";
+// ----------------- Download -----------------
+function handleDownload() {
+  if (!lastWorkbook || !lastResults.length) { showError(new Error('Nothing to download')); return; }
+  try { XLSX.writeFile(lastWorkbook, 'checker_pricing_results.xlsx'); }
+  catch(err) { try { XLSX.writeFile(makeWorkbookFromJson(lastResults, 'checker_pricing_results'), 'checker_pricing_results.xlsx'); } catch(e) { showError(e); } }
+}
 
-  let html = `<table class="results-table">
-    <thead>
-      <tr>
-        <th>Activity Code</th>
-        <th>XML Net</th>
-        <th>Quantity</th>
-        <th>XLSX Net Price</th>
-        <th>Status</th>
-        <th>Remark</th>
-        <th>Compare</th>
-      </tr>
-    </thead><tbody>`;
+// ----------------- File helpers -----------------
+function readFileText(file) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(String(fr.result || ''));
+    fr.onerror = () => reject(fr.error || new Error('Failed to read file'));
+    fr.readAsText(file);
+  });
+}
 
-  for (const r of results) {
-    const rowClass = r.status === "Valid" ? "valid" : "invalid";
-    html += `<tr class="${rowClass}">
-      <td>${r.code}</td>
-      <td>${r.net}</td>
-      <td>${r.qty}</td>
-      <td>${r.xlsxPrice}</td>
-      <td>${r.status}</td>
-      <td>${r.remark}</td>
-      <td><button onclick="showComparisonModal('${r.code}', '${r.net}', '${r.qty}', '${r.xlsxPrice}')">View</button></td>
+async function readXlsx(file) {
+  const arrayBuffer = await file.arrayBuffer();
+  const wb = XLSX.read(arrayBuffer, { type: 'array' });
+  const sheetName = wb.SheetNames[0];
+  const ws = wb.Sheets[sheetName];
+  const rows = XLSX.utils.sheet_to_json(ws, { defval: '', range: 1 }); // header on row 2
+  return { rows, sheetName };
+}
+
+// ----------------- XML parsing & extraction -----------------
+function parseXml(text) {
+  const doc = new DOMParser().parseFromString(text, 'text/xml');
+  const pe = doc.getElementsByTagName('parsererror')[0];
+  if (pe) throw new Error('Invalid XML: ' + (pe.textContent || 'parse error').trim());
+  return doc;
+}
+
+// Extract pricing-related records (ActivityCode / Code) and Net/Quantity
+function extractPricingRecords(xmlDoc) {
+  const records = [];
+  const claims = Array.from(xmlDoc.getElementsByTagName('Claim'));
+  for (const claim of claims) {
+    const claimId = textValue(claim, 'ID') || '';
+    const activities = Array.from(claim.getElementsByTagName('Activity'));
+    for (const act of activities) {
+      const activityId = textValue(act, 'ID') || '';
+      const cpt = firstNonEmpty([ textValue(act,'ActivityCode'), textValue(act,'CPTCode'), textValue(act,'Code') ]).trim();
+      const net = firstNonEmpty([ textValue(act,'Net'), textValue(act,'GrossAmount'), textValue(act,'Price') ]).trim();
+      const qty = firstNonEmpty([ textValue(act,'Quantity'), textValue(act,'Qty') ]).trim() || '0';
+      records.push({ ClaimID: claimId, ActivityID: activityId, CPT: cpt, Net: net, Quantity: qty });
+    }
+  }
+  return records;
+}
+
+// ----------------- XLSX matcher -----------------
+function buildPricingMatcher(rows) {
+  const index = new Map();
+  rows.forEach(r => {
+    const code = String(firstNonEmptyKey(r, ['Code','CPT','Procedure Code','Item Code']) || '').trim();
+    if (!code) return;
+    if (!index.has(code)) index.set(code, []);
+    index.get(code).push(r);
+  });
+  return {
+    find(code) {
+      const arr = index.get(String(code || '').trim());
+      return arr && arr.length ? arr[0] : null;
+    },
+    _index: index
+  };
+}
+
+// ----------------- Rendering -----------------
+function renderResults(rows) {
+  const container = el('outputTableContainer');
+  if (!rows || !rows.length) { container.innerHTML = '<div>No results</div>'; return; }
+
+  // Map rows to index for modal linking
+  rows.forEach((r, i) => r._originalIndex = i);
+
+  let html = `<table class="shared-table"><thead><tr>
+    <th>Claim ID</th><th>Activity ID</th><th>Code</th><th>Claimed Net</th><th>Quantity</th>
+    <th>Reference Net Price</th><th>Status</th><th>Remarks</th><th>Compare</th>
+  </tr></thead><tbody>`;
+
+  for (const r of rows) {
+    const cls = r.isValid ? 'valid' : 'invalid';
+    html += `<tr class="${cls}">
+      <td>${escapeHtml(r.ClaimID)}</td>
+      <td>${escapeHtml(r.ActivityID)}</td>
+      <td>${escapeHtml(r.CPT)}</td>
+      <td>${escapeHtml(r.ClaimedNet)}</td>
+      <td>${escapeHtml(r.ClaimedQty)}</td>
+      <td>${escapeHtml(r.ReferenceNetPrice)}</td>
+      <td>${r.isValid ? 'Valid' : 'Invalid'}</td>
+      <td>${escapeHtml(r.Remarks || 'OK')}</td>
+      <td>${r.PricingRow ? `<button type="button" class="details-btn" onclick="showComparisonModal(${r._originalIndex})">View</button>` : ''}</td>
     </tr>`;
   }
 
-  html += "</tbody></table>";
+  html += `</tbody></table>`;
   container.innerHTML = html;
 }
 
-function showModal(index) {
-  const r = window.comparisonResults[index];
-  document.getElementById("modalBody").innerHTML = `
-    <div style="display:flex;justify-content:space-between">
-      <div><h3>XML</h3><p>Code: ${r.code}</p><p>Net: ${r.net}</p><p>Quantity: ${r.qty}</p></div>
-      <div><h3>XLSX</h3><p>Code: ${r.code}</p><p>Net Price: ${r.xlsxPrice}</p></div>
+// ----------------- Modal comparison -----------------
+function showComparisonModal(index) {
+  const row = lastResults[index];
+  if (!row) { alert('Row not found'); return; }
+  const xml = row.XmlRow || {};
+  const xlsx = row.PricingRow || {};
+  const refPrice = String(row.ReferenceNetPrice || '');
+  const xmlNet = Number(xml.Net || 0), xmlQty = Number(xml.Quantity || 0);
+  const unitCalc = xmlQty > 0 ? (xmlNet / xmlQty) : null;
+  const unitCalcText = unitCalc !== null ? String(unitCalc) : 'N/A';
+
+  const xmlTable = `<table class="compare-table">
+    <tr><th colspan="2">XML (Claim)</th></tr>
+    <tr><th>Code</th><td>${escapeHtml(xml.CPT || row.CPT)}</td></tr>
+    <tr><th>Net</th><td>${escapeHtml(String(xml.Net || row.ClaimedNet || ''))}</td></tr>
+    <tr><th>Quantity</th><td>${escapeHtml(String(xml.Quantity || row.ClaimedQty || ''))}</td></tr>
+    <tr><th>Net ÷ Qty</th><td>${escapeHtml(unitCalcText)}</td></tr>
+  </table>`;
+
+  const xlsxTable = `<table class="compare-table">
+    <tr><th colspan="2">XLSX (Pricing)</th></tr>
+    <tr><th>Code</th><td>${escapeHtml(String(firstNonEmptyKey(xlsx, ['Code','CPT']) || ''))}</td></tr>
+    <tr><th>Net Price</th><td>${escapeHtml(refPrice)}</td></tr>
+  </table>`;
+
+  const modalHtml = `<div class="modal-content pricing-modal modal-scrollable">
+    <span class="close" onclick="closeComparisonModal()">&times;</span>
+    <h3>Price Comparison</h3>
+    <div style="display:flex;gap:20px;align-items:flex-start;">${xmlTable}${xlsxTable}</div>
+    <div style="text-align:right;margin-top:10px;">
+      <button class="details-btn" onclick="closeComparisonModal()">Close</button>
     </div>
-  `;
-  document.getElementById("modal").style.display = "block";
+  </div>`;
+
+  closeComparisonModal();
+  const modal = document.createElement('div');
+  modal.id = "comparisonModal";
+  modal.className = "modal";
+  modal.innerHTML = modalHtml;
+  modal.addEventListener('click', e => { if (e.target === modal) closeComparisonModal(); });
+  document.body.appendChild(modal);
+  modal.style.display = "flex";
 }
 
-function closeModal() { document.getElementById("modal").style.display = "none"; }
+function closeComparisonModal() { const modal = el('comparisonModal'); if (modal) modal.remove(); }
+
+// ----------------- Utilities -----------------
+function textValue(node, tag) { if (!node) return ''; const eln = node.getElementsByTagName(tag)[0]; return eln ? String(eln.textContent || '').trim() : ''; }
+function firstNonEmpty(arr) { for (const s of arr) if (s !== undefined && s !== null && String(s).trim() !== '') return String(s).trim(); return ''; }
+function firstNonEmptyKey(obj, keys) { for (const k of keys) if (Object.prototype.hasOwnProperty.call(obj, k) && String(obj[k]).trim() !== '') return obj[k]; return null; }
+
+function makeWorkbookFromJson(json, sheetName) { const ws = XLSX.utils.json_to_sheet(json); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, sheetName || 'Results'); return wb; }
+
+// ----------------- UI helpers -----------------
+function el(id) { return document.getElementById(id); }
+function fileEl(id) { const f = el(id); return f && f.files && f.files[0] ? f.files[0] : null; }
+
+function resetUI() {
+  const container = el('outputTableContainer'); if (container) container.innerHTML = '';
+  toggleDownload(false); message('', ''); showProgress(0, ''); lastResults = []; lastWorkbook = null;
+}
+
+function toggleDownload(enabled) { const dl = el('download-button'); if (!dl) return; dl.disabled = !enabled; }
+
+function showProgress(percent, text) {
+  const barContainer = el('progress-bar-container'), bar = el('progress-bar'), pText = el('progress-text');
+  if (barContainer) barContainer.style.display = percent > 0 ? 'block' : 'none';
+  if (bar) bar.style.width = (percent || 0) + '%';
+  if (pText) pText.textContent = text ? `${percent}% — ${text}` : `${percent}%`;
+}
+
+function message(text, color) { const m = el('messageBox'); if (!m) return; m.textContent = text || ''; m.style.color = color || ''; }
+
+function showError(err) { message(err && err.message ? err.message : String(err), 'red'); showProgress(0, ''); toggleDownload(false); }
+
+// ----------------- Helpers: escaping -----------------
+function escapeHtml(str) { return String(str == null ? '' : str).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;'); }
