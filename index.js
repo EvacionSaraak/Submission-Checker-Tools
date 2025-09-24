@@ -7,6 +7,7 @@ document.addEventListener('DOMContentLoaded', () => {
     { label: "Timings", file: "checkers/checker_timings.html" },
     { label: "Teeth", file: "checkers/checker_tooths.html" },
     { label: "Schema", file: "checkers/checker_schema.html" },
+    { label: "Prices", file: "checkers/checker_pricing.html" },
     { label: "UPP", file: "checkers/checker_drugs.html" },
     { label: "Drugs", file: "checkers/checker_drugquantities.html" },
     { label: "Modifiers", file: "checkers/checker_modifiers.html" }
