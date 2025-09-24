@@ -120,16 +120,18 @@ function extractPricingRecords(xmlDoc) {
   for (const claim of claims) {
     const claimId = textValue(claim, 'ID') || '';
     const activities = Array.from(claim.getElementsByTagName('Activity'));
+    const facilityId = textValue(claim.getElementsByTagName('Encounter')[0], 'FacilityID') || '';
     for (const act of activities) {
       const activityId = textValue(act, 'ID') || '';
       const cpt = firstNonEmpty([ textValue(act,'ActivityCode'), textValue(act,'CPTCode'), textValue(act,'Code') ]).trim();
       const net = firstNonEmpty([ textValue(act,'Net'), textValue(act,'GrossAmount'), textValue(act,'Price') ]).trim();
       const qty = firstNonEmpty([ textValue(act,'Quantity'), textValue(act,'Qty') ]).trim() || '0';
-      records.push({ ClaimID: claimId, ActivityID: activityId, CPT: cpt, Net: net, Quantity: qty });
+      records.push({ ClaimID: claimId, ActivityID: activityId, CPT: cpt, Net: net, Quantity: qty, FacilityID: facilityId });
     }
   }
   return records;
 }
+
 
 // ----------------- Normalization / Matcher -----------------
 function normalizeCode(c) { return String(c || '').trim().replace(/^0+/, ''); }
