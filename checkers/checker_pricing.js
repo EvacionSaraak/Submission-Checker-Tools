@@ -10,7 +10,6 @@ document.addEventListener('DOMContentLoaded', () => {
   resetUI();
 });
 
-// ----------------- Main run handler -----------------
 // ----------------- Main run handler (modified to treat Unknown as valid for the summary) -----------------
 async function handleRun() {
   resetUI();
@@ -69,13 +68,13 @@ async function handleRun() {
     lastWorkbook = makeWorkbookFromJson(output, 'checker_pricing_results');
     toggleDownload(output.length > 0);
 
-    // Treat Unknown as valid for the summary/percentage
-    const validCount = output.filter(r => r.isValid || String(r.status || '').toLowerCase() === 'unknown').length;
-    const totalCount = output.length;
-    const percent = totalCount ? Math.round((validCount / totalCount) * 100) : 0;
-    message(`Completed — ${validCount}/${totalCount} rows correct (${percent}%)`, percent === 100 ? 'green' : 'orange');
-    showProgress(100, 'Done');
-
+   // Treat Unknown as valid and show percentage with 2 decimals
+  const validCount = output.filter(r => r.isValid || String(r.status || '').toLowerCase() === 'unknown').length;
+  const totalCount = output.length;
+  const numericPercent = totalCount ? (validCount / totalCount) * 100 : 0;
+  const percentText = totalCount ? numericPercent.toFixed(2) : '0.00';
+  const color = numericPercent === 100 ? 'green' : 'orange';
+  message(`Completed — ${validCount}/${totalCount} rows correct (${percentText}%)`, color);
   } catch (err) { showError(err); }
 }
 
