@@ -100,7 +100,7 @@ async function readXlsx(file) {
   const wb = XLSX.read(arrayBuffer, { type: 'array' });
   const sheetName = wb.SheetNames[0];
   const ws = wb.Sheets[sheetName];
-  const rows = XLSX.utils.sheet_to_json(ws, { defval: '', range: 1 }); // header on row 2
+  const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
   return { rows, sheetName };
 }
 
