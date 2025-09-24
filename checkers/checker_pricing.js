@@ -11,6 +11,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ----------------- Main run handler -----------------
+// ----------------- Main run handler (modified to treat Unknown as valid for the summary) -----------------
 async function handleRun() {
   resetUI();
   try {
@@ -68,7 +69,9 @@ async function handleRun() {
     lastWorkbook = makeWorkbookFromJson(output, 'checker_pricing_results');
     toggleDownload(output.length > 0);
 
-    const validCount = output.filter(r => r.isValid).length, totalCount = output.length;
+    // Treat Unknown as valid for the summary/percentage
+    const validCount = output.filter(r => r.isValid || String(r.status || '').toLowerCase() === 'unknown').length;
+    const totalCount = output.length;
     const percent = totalCount ? Math.round((validCount / totalCount) * 100) : 0;
     message(`Completed — ${validCount}/${totalCount} rows correct (${percent}%)`, percent === 100 ? 'green' : 'orange');
     showProgress(100, 'Done');
