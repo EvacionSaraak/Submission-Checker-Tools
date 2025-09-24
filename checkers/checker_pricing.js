@@ -1,6 +1,4 @@
 // checker_pricing.js
-// Merged structure from checker_modifiers.js, adapted for pricing checks.
-// Uses primarily single-line if statements as requested.
 
 let lastResults = [];
 let lastWorkbook = null;
@@ -31,24 +29,25 @@ async function handleRun() {
     showProgress(50, 'Comparing records');
 
     const output = extracted.map(rec => {
-      const remarks = []; let isValid = false;
+      const remarks = []; let status = 'Invalid';
       const match = matcher.find(rec.CPT);
-      let refPrice = match ? String(firstNonEmptyKey(match, ['Net Price','NetPrice','Price','Unit Price']) || '').trim() : '';
-
-      // Parse numeric values
+      const refPrice = match ? String(firstNonEmptyKey(match, ['Net Price','NetPrice','Price','Unit Price']) || '').trim() : '';
       const xmlNet = Number(rec.Net || 0), xmlQty = Number(rec.Quantity || 0), ref = Number(refPrice || 0);
-      if (xmlQty <= 0) remarks.push(xmlQty === 0 ? 'Quantity is 0 (invalid)' : 'Quantity is less than 0 (invalid)');
-      if (!match) remarks.push('No pricing match found');
-      if (match && Number.isNaN(ref)) remarks.push('Reference Net Price is not a number');
 
-      // Only run numeric comparisons if we have a numeric ref and qty > 0 or direct compare
-      if (match && !Number.isNaN(ref) && xmlQty > 0) {
-        if (xmlNet === ref) isValid = true;
-        else if ((xmlNet / xmlQty) === ref) isValid = true;
-        else remarks.push(`Claimed Net ${xmlNet} does not match Reference ${ref}`);
+      // Claimed net 0 -> Unknown
+      if (xmlNet === 0) status = 'Unknown', remarks.push('Claimed Net is 0 (treated as Unknown)');
+      else {
+        if (xmlQty <= 0) remarks.push(xmlQty === 0 ? 'Quantity is 0 (invalid)' : 'Quantity is less than 0 (invalid)');
+        if (!match) remarks.push('No pricing match found');
+        if (match && Number.isNaN(ref)) remarks.push('Reference Net Price is not a number');
+
+        if (match && !Number.isNaN(ref) && xmlQty > 0) {
+          if (xmlNet === ref) status = 'Valid';
+          else if ((xmlNet / xmlQty) === ref) status = 'Valid';
+          else remarks.push(`Claimed Net ${xmlNet} does not match Reference ${ref}`);
+        }
       }
 
-      // If match exists but xmlQty <= 0 we still want invalid (remarks already contains)
       return {
         ClaimID: rec.ClaimID || '',
         ActivityID: rec.ActivityID || '',
@@ -58,7 +57,8 @@ async function handleRun() {
         ReferenceNetPrice: refPrice || '',
         PricingRow: match || null,
         XmlRow: rec,
-        isValid,
+        isValid: status === 'Valid',
+        status,
         Remarks: remarks.join('; ')
       };
     });
@@ -73,9 +73,7 @@ async function handleRun() {
     message(`Completed — ${validCount}/${totalCount} rows correct (${percent}%)`, percent === 100 ? 'green' : 'orange');
     showProgress(100, 'Done');
 
-  } catch (err) {
-    showError(err);
-  }
+  } catch (err) { showError(err); }
 }
 
 // ----------------- Download -----------------
@@ -100,6 +98,7 @@ async function readXlsx(file) {
   const wb = XLSX.read(arrayBuffer, { type: 'array' });
   const sheetName = wb.SheetNames[0];
   const ws = wb.Sheets[sheetName];
+  // Header on row 1 for your sample -> no range
   const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
   return { rows, sheetName };
 }
@@ -130,18 +129,22 @@ function extractPricingRecords(xmlDoc) {
   return records;
 }
 
-// ----------------- XLSX matcher -----------------
+// ----------------- Normalization / Matcher -----------------
+function normalizeCode(c) { return String(c || '').trim().replace(/^0+/, ''); }
+
 function buildPricingMatcher(rows) {
   const index = new Map();
   rows.forEach(r => {
-    const code = String(firstNonEmptyKey(r, ['Code','CPT','Procedure Code','Item Code']) || '').trim();
+    const raw = String(firstNonEmptyKey(r, ['Code','CPT','Procedure Code','Item Code']) || '').trim();
+    const code = normalizeCode(raw);
     if (!code) return;
     if (!index.has(code)) index.set(code, []);
     index.get(code).push(r);
   });
   return {
     find(code) {
-      const arr = index.get(String(code || '').trim());
+      const key = normalizeCode(String(code || ''));
+      const arr = index.get(key);
       return arr && arr.length ? arr[0] : null;
     },
     _index: index
@@ -155,6 +158,7 @@ function renderResults(rows) {
 
   // Map rows to index for modal linking
   rows.forEach((r, i) => r._originalIndex = i);
+  lastResults = rows.slice(); // ensure modal access
 
   let html = `<table class="shared-table"><thead><tr>
     <th>Claim ID</th><th>Activity ID</th><th>Code</th><th>Claimed Net</th><th>Quantity</th>
@@ -162,7 +166,7 @@ function renderResults(rows) {
   </tr></thead><tbody>`;
 
   for (const r of rows) {
-    const cls = r.isValid ? 'valid' : 'invalid';
+    const cls = String(r.status || 'Invalid').toLowerCase();
     html += `<tr class="${cls}">
       <td>${escapeHtml(r.ClaimID)}</td>
       <td>${escapeHtml(r.ActivityID)}</td>
@@ -170,7 +174,7 @@ function renderResults(rows) {
       <td>${escapeHtml(r.ClaimedNet)}</td>
       <td>${escapeHtml(r.ClaimedQty)}</td>
       <td>${escapeHtml(r.ReferenceNetPrice)}</td>
-      <td>${r.isValid ? 'Valid' : 'Invalid'}</td>
+      <td>${escapeHtml(r.status)}</td>
       <td>${escapeHtml(r.Remarks || 'OK')}</td>
       <td>${r.PricingRow ? `<button type="button" class="details-btn" onclick="showComparisonModal(${r._originalIndex})">View</button>` : ''}</td>
     </tr>`;
