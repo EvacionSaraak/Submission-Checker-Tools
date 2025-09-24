@@ -134,22 +134,28 @@ function normalizeCode(c) { return String(c || '').trim().replace(/^0+/, ''); }
 // ----------------- Facility-aware matcher -----------------
 function buildPricingMatcher(rows) {
   const index = new Map();
-  const SPECIAL = new Set(['MF5357','MF7231','MF232']);
   rows.forEach(r => {
-    const code = String(firstNonEmptyKey(r, ['Code','CPT','Procedure Code','Item Code']) || '').trim().replace(/^0+/, '');
+    const rawCode = firstNonEmptyKey(r, Object.keys(r)) || '';
+    const code = normalizeCode(rawCode);
     if (!code) return;
-    r._primaryPrice = Number(String(r['Other Facilities'] || '').replace(/[^0-9.\-]/g,'')) || null;
-    r._secondaryPrice = Number(String(r['Alyahar, Emirates, Al Wagan'] || '').replace(/[^0-9.\-]/g,'')) || null;
+
+    // Normalize headers and pick prices
+    const keys = Object.keys(r).map(k => k.trim().replace(/\n/g,''));
+    const primaryKey = keys.find(k => k === 'Other Facilities');
+    const secondaryKey = keys.find(k => k === 'Alyahar, Emirates, Al Wagan');
+
+    r._primaryPrice = primaryKey ? Number(String(r[primaryKey]).replace(/[^0-9.\-]/g,'')) : null;
+    r._secondaryPrice = secondaryKey ? Number(String(r[secondaryKey]).replace(/[^0-9.\-]/g,'')) : null;
+
     if (!index.has(code)) index.set(code, []);
     index.get(code).push(r);
   });
+
   return {
-    find(code, facilityId) {
-      const key = String(code || '').trim().replace(/^0+/, '');
-      const arr = index.get(key); if (!arr || !arr.length) return null;
-      const obj = arr[0], useSec = SPECIAL.has(String(facilityId || '').trim().toUpperCase());
-      const price = useSec ? obj._secondaryPrice : obj._primaryPrice;
-      return price != null ? { price, row: obj } : null;
+    find(code) {
+      const key = normalizeCode(String(code || ''));
+      const arr = index.get(key);
+      return arr && arr.length ? arr[0] : null;
     },
     _index: index
   };
