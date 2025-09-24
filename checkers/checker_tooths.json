@@ -4094,5 +4094,13 @@
         "description": "No idea, it's a Medical thingy. Bababooey.",
         "dentition_type": "all",
         "affiliated_teeth": "all"
+    },
+    {
+        "code": [
+            "72611"
+        ],
+        "description": "Transplantation of Erupted Tooth First tooth.",
+        "dentition_type": "all",
+        "affiliated_teeth": "all"
     }
 ]
