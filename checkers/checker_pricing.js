@@ -28,26 +28,21 @@ async function handleRun() {
 
     showProgress(50, 'Comparing records');
 
+    // ----------------- Main run (only relevant change: matcher call) -----------------
     const output = extracted.map(rec => {
       const remarks = []; let status = 'Invalid';
-      const match = matcher.find(rec.CPT);
-      const refPrice = match ? String(firstNonEmptyKey(match, ['Net Price','NetPrice','Price','Unit Price']) || '').trim() : '';
+      const match = matcher.find(rec.CPT, rec.FacilityID);
+      const refPrice = match ? String(match.price || '').trim() : '';
       const xmlNet = Number(rec.Net || 0), xmlQty = Number(rec.Quantity || 0), ref = Number(refPrice || 0);
-
-      // Claimed net 0 -> Unknown
+    
       if (xmlNet === 0) status = 'Unknown', remarks.push('Claimed Net is 0 (treated as Unknown)');
       else {
         if (xmlQty <= 0) remarks.push(xmlQty === 0 ? 'Quantity is 0 (invalid)' : 'Quantity is less than 0 (invalid)');
         if (!match) remarks.push('No pricing match found');
         if (match && Number.isNaN(ref)) remarks.push('Reference Net Price is not a number');
-
-        if (match && !Number.isNaN(ref) && xmlQty > 0) {
-          if (xmlNet === ref) status = 'Valid';
-          else if ((xmlNet / xmlQty) === ref) status = 'Valid';
-          else remarks.push(`Claimed Net ${xmlNet} does not match Reference ${ref}`);
-        }
+        if (match && !Number.isNaN(ref) && xmlQty > 0) (xmlNet === ref || (xmlNet / xmlQty) === ref) ? status = 'Valid' : remarks.push(`Claimed Net ${xmlNet} does not match Reference ${ref}`);
       }
-
+    
       return {
         ClaimID: rec.ClaimID || '',
         ActivityID: rec.ActivityID || '',
@@ -55,7 +50,7 @@ async function handleRun() {
         ClaimedNet: rec.Net || '',
         ClaimedQty: rec.Quantity || '',
         ReferenceNetPrice: refPrice || '',
-        PricingRow: match || null,
+        PricingRow: match ? match.row : null,
         XmlRow: rec,
         isValid: status === 'Valid',
         status,
@@ -136,20 +131,25 @@ function extractPricingRecords(xmlDoc) {
 // ----------------- Normalization / Matcher -----------------
 function normalizeCode(c) { return String(c || '').trim().replace(/^0+/, ''); }
 
+// ----------------- Facility-aware matcher -----------------
 function buildPricingMatcher(rows) {
   const index = new Map();
+  const SPECIAL = new Set(['MF5357','MF7231','MF232']);
   rows.forEach(r => {
-    const raw = String(firstNonEmptyKey(r, ['Code','CPT','Procedure Code','Item Code']) || '').trim();
-    const code = normalizeCode(raw);
+    const code = String(firstNonEmptyKey(r, ['Code','CPT','Procedure Code','Item Code']) || '').trim().replace(/^0+/, '');
     if (!code) return;
+    r._primaryPrice = Number(String(r['Other Facilities'] || '').replace(/[^0-9.\-]/g,'')) || null;
+    r._secondaryPrice = Number(String(r['Alyahar, Emirates, Al Wagan'] || '').replace(/[^0-9.\-]/g,'')) || null;
     if (!index.has(code)) index.set(code, []);
     index.get(code).push(r);
   });
   return {
-    find(code) {
-      const key = normalizeCode(String(code || ''));
-      const arr = index.get(key);
-      return arr && arr.length ? arr[0] : null;
+    find(code, facilityId) {
+      const key = String(code || '').trim().replace(/^0+/, '');
+      const arr = index.get(key); if (!arr || !arr.length) return null;
+      const obj = arr[0], useSec = SPECIAL.has(String(facilityId || '').trim().toUpperCase());
+      const price = useSec ? obj._secondaryPrice : obj._primaryPrice;
+      return price != null ? { price, row: obj } : null;
     },
     _index: index
   };
