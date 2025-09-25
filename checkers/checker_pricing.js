@@ -150,8 +150,18 @@ function buildPricingMatcher(rows) {
   rows.forEach(r => {
     const code = normalizeCode(r["Code"] || ""); if (!code) return;
 
-    r._primaryPrice = r.hasOwnProperty("Other Facilities") ? Number(String(r["Other Facilities"]).replace(/[^0-9.\-]/g,'')) : null;
-    r._secondaryPrice = r.hasOwnProperty("Alyahar, Emirates, Al Wagan") ? Number(String(r["Alyahar, Emirates, Al Wagan"]).replace(/[^0-9.\-]/g,'')) : null;
+    // Normalize headers: trim, collapse whitespace/newlines
+    const keys = Object.keys(r).reduce((map, k) => {
+      const norm = k.replace(/\s+/g, " ").trim().toLowerCase();
+      map[norm] = k;
+      return map;
+    }, {});
+
+    const primaryKey = keys["other facilities"];
+    const secondaryKey = keys["alyahar, emirates, al wagan"];
+
+    r._primaryPrice = primaryKey ? Number(String(r[primaryKey]).replace(/[^0-9.\-]/g,'')) : null;
+    r._secondaryPrice = secondaryKey ? Number(String(r[secondaryKey]).replace(/[^0-9.\-]/g,'')) : null;
 
     if (!index.has(code)) index.set(code, []); index.get(code).push(r);
   });
