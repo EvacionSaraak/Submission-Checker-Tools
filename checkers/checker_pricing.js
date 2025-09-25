@@ -148,28 +148,16 @@ function normalizeCode(c) { return String(c || '').trim().replace(/^0+/, ''); }
 function buildPricingMatcher(rows) {
   const index = new Map();
   rows.forEach(r => {
-    const rawCode = firstNonEmptyKey(r, Object.keys(r)) || '';
-    const code = normalizeCode(rawCode);
-    if (!code) return;
+    const code = normalizeCode(r["Code"] || ""); if (!code) return;
 
-    // Normalize headers and pick prices
-    const keys = Object.keys(r).map(k => k.trim().replace(/\n/g,''));
-    const primaryKey = keys.find(k => k === 'Other Facilities');
-    const secondaryKey = keys.find(k => k === 'Alyahar, Emirates, Al Wagan');
+    r._primaryPrice = r.hasOwnProperty("Other Facilities") ? Number(String(r["Other Facilities"]).replace(/[^0-9.\-]/g,'')) : null;
+    r._secondaryPrice = r.hasOwnProperty("Alyahar, Emirates, Al Wagan") ? Number(String(r["Alyahar, Emirates, Al Wagan"]).replace(/[^0-9.\-]/g,'')) : null;
 
-    r._primaryPrice = primaryKey ? Number(String(r[primaryKey]).replace(/[^0-9.\-]/g,'')) : null;
-    r._secondaryPrice = secondaryKey ? Number(String(r[secondaryKey]).replace(/[^0-9.\-]/g,'')) : null;
-
-    if (!index.has(code)) index.set(code, []);
-    index.get(code).push(r);
+    if (!index.has(code)) index.set(code, []); index.get(code).push(r);
   });
 
   return {
-    find(code) {
-      const key = normalizeCode(String(code || ''));
-      const arr = index.get(key);
-      return arr && arr.length ? arr[0] : null;
-    },
+    find(code) { const key = normalizeCode(code); const arr = index.get(key); return arr && arr.length ? arr[0] : null; },
     _index: index
   };
 }
