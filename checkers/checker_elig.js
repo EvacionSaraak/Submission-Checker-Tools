@@ -651,27 +651,29 @@ function renderResults(results, eligMap) {
   const statusCounts = { valid: 0, invalid: 0, unknown: 0 };
 
   results.forEach((result, index) => {
+    // Skip rows where Member ID is missing/empty
+    if (!result.memberID || result.memberID.trim() === '') return;
+  
     statusCounts[result.finalStatus]++;
-
+  
     const row = document.createElement('tr');
     row.className = result.finalStatus;
-
+  
     const statusBadge = result.status 
       ? `<span class="status-badge ${result.status.toLowerCase() === 'eligible' ? 'eligible' : 'ineligible'}">${result.status}</span>`
       : '';
-
+  
     const remarksHTML = result.remarks.length > 0
       ? result.remarks.map(r => `<div>${r}</div>`).join('')
       : '<div class="source-note">No remarks</div>';
-
+  
     let detailsCell = '<div class="source-note">N/A</div>';
     if (result.fullEligibilityRecord?.['Eligibility Request Number']) {
       detailsCell = `<button class="details-btn eligibility-details" data-index="${index}">${result.fullEligibilityRecord['Eligibility Request Number']}</button>`;
     } else if (eligMap.has(result.memberID)) {
-      // Use raw memberID here directly
       detailsCell = `<button class="details-btn show-all-eligibilities" data-member="${result.memberID}" data-clinicians="${(result.clinicians || [result.clinician || '']).join(',')}">View All</button>`;
     }
-
+  
     row.innerHTML = `
       <td>${result.claimID}</td>
       <td>${result.memberID}</td>
