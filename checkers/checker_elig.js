@@ -363,7 +363,6 @@ function validateReportClaims(reportData, eligMap) {
 
     // VVIP IDs: mark as valid with a special remark, but do NOT skip
     const isVVIP = memberID.startsWith('(VVIP)');
-
     if (isVVIP) {
       return {
         claimID: row.claimID,
@@ -384,22 +383,39 @@ function validateReportClaims(reportData, eligMap) {
 
     // Proceed with normal eligibility lookup
     const eligibility = findEligibilityForClaim(eligMap, claimDate, memberID, [row.clinician]);
-
     let status = 'invalid';
     const remarks = [];
     const department = (row.department || row.clinic || '').toLowerCase();
 
-    if (!eligibility) remarks.push(`No matching eligibility found for ${memberID} on ${formattedDate}`);
-    else if (eligibility.Status?.toLowerCase() !== 'eligible') remarks.push(`Eligibility status: ${eligibility.Status}`);
-    else {
+    if (!eligibility) {
+      remarks.push(`No matching eligibility found for ${memberID} on ${formattedDate}`);
+      logNoEligibilityMatch(
+        'REPORT',
+        {
+          claimID: row.claimID,
+          memberID,
+          claimDateRaw,
+          department: row.department || row.clinic,
+          clinician: row.clinician,
+          packageName: row.packageName
+        },
+        memberID,
+        claimDate,
+        [row.clinician],
+        eligMap
+      );
+    } else if (eligibility.Status?.toLowerCase() !== 'eligible') {
+      remarks.push(`Eligibility status: ${eligibility.Status}`);
+    } else {
       const serviceCategory = eligibility['Service Category']?.trim() || '';
       const consultationStatus = eligibility['Consultation Status']?.trim()?.toLowerCase() || '';
-      const dept = department;
-
       const matchesCategory = isServiceCategoryValid(serviceCategory, consultationStatus, department).valid;
 
-      if (!matchesCategory) remarks.push(`Invalid for category: ${serviceCategory}, department: ${row.department || row.clinic}`);
-      else status = 'valid';
+      if (!matchesCategory) {
+        remarks.push(`Invalid for category: ${serviceCategory}, department: ${row.department || row.clinic}`);
+      } else {
+        status = 'valid';
+      }
     }
 
     return {
@@ -421,6 +437,45 @@ function validateReportClaims(reportData, eligMap) {
 
   return results.filter(r => r); // Remove null entries from blank Claim ID rows
 }
+
+// --- Put this helper above validateXmlClaims / validateReportClaims ---
+function logNoEligibilityMatch(sourceType, claimSummary, memberID, parsedClaimDate, claimClinicians, eligMap) {
+  try {
+    const normalizedID = normalizeMemberID(memberID);
+    const eligList = eligMap && eligMap.get ? (eligMap.get(normalizedID) || []) : [];
+
+    console.groupCollapsed(`[Diagnostics] No eligibility match (${sourceType}) — member: "${memberID}" (normalized: "${normalizedID}")`);
+    console.log('Claim / row summary:', claimSummary);
+    console.log('Parsed claim date object:', parsedClaimDate, 'Formatted:', DateHandler.format(parsedClaimDate));
+    console.log('Claim clinicians:', claimClinicians || []);
+
+    if (!eligList || eligList.length === 0) {
+      console.warn('No eligibility records found for this member ID in eligMap.');
+    } else {
+      console.log(`Found ${eligList.length} eligibility record(s) for member "${memberID}":`);
+      eligList.forEach((e, i) => {
+        const answeredOnRaw = e['Answered On'] || e['Ordered On'] || '';
+        const answeredOnParsed = DateHandler.parse(answeredOnRaw);
+        console.log(`#${i+1}`, {
+          'Eligibility Request Number': e['Eligibility Request Number'],
+          'Answered On (raw)': answeredOnRaw,
+          'Answered On (parsed)': answeredOnParsed,
+          'Ordered On': e['Ordered On'],
+          'Status': e['Status'],
+          'Clinician': e['Clinician'],
+          'Payer Name': e['Payer Name'],
+          'Service Category': e['Service Category'],
+          'Package Name': e['Package Name'],
+          'Used': usedEligibilities.has(e['Eligibility Request Number'])
+        });
+      });
+    }
+    console.groupEnd();
+  } catch (err) {
+    console.error('Error in logNoEligibilityMatch diagnostic logger:', err);
+  }
+}
+
 
 /*********************
  * FILE PARSING FUNCTIONS *
