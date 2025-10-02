@@ -584,48 +584,46 @@ async function parseCsvFile(file) {
 }
 
 function normalizeReportData(rawData) {
-  // Check if data is from InstaHMS (has 'Pri. Claim No' header)
-  const isInsta = rawData[0]?.hasOwnProperty('Pri. Claim No');
-  const isOdoo = rawData[0]?.hasOwnProperty('Pri. Claim ID');
-
   return rawData.map(row => {
-    if (isInsta) {
-      // InstaHMS report format
+    if (rawData[0]?.hasOwnProperty('Pri. Claim No')) {
+      const rawClaimDate = row['Encounter Date'];
+      // Use flipDM=true to correct Insta's day/month swapped serials/strings
+      const parsed = DateHandler.parse(rawClaimDate, true);
       return {
         claimID: row['Pri. Claim No'] || '',
         memberID: row['Pri. Patient Insurance Card No'] || '',
-        claimDate: row['Encounter Date'] || '',
+        claimDate: parsed || '',        // Date object when parsed, else raw
         clinician: row['Clinician License'] || '',
         department: row['Department'] || '',
-        packageName: row['Pri. Payer Name'] || '', // ✅ shown in table as "Package"
+        packageName: row['Pri. Payer Name'] || '',
         insuranceCompany: row['Pri. Payer Name'] || ''
       };
-    } else if (isOdoo) {
-      // InstaHMS report format
+    } else if (rawData[0]?.hasOwnProperty('Pri. Claim ID')) {
+      const rawClaimDate = row['Adm/Reg. Date'];
+      const parsed = DateHandler.parse(rawClaimDate); // no flip
       return {
         claimID: row['Pri. Claim ID'] || '',
         memberID: row['Pri. Member ID'] || '',
-        claimDate: row['Adm/Reg. Date'] || '',
+        claimDate: parsed || '',
         clinician: row['Admitting License'] || '',
         department: row['Admitting Department'] || '',
-        //packageName: row['Pri. Sponsor'] || '',
         insuranceCompany: row['Pri. Plan Type'] || ''
       };
     } else {
-      // ClinicPro report format (starts from row 1)
+      const rawClaimDate = row['ClaimDate'] || row['Date'] || '';
+      const parsed = DateHandler.parse(rawClaimDate);
       return {
         claimID: row['ClaimID'] || '',
-        memberID: row['PatientCardID'] || '', // patient ID for eligibility match
-        claimDate: row['ClaimDate'] || '',
+        memberID: row['PatientCardID'] || '',
+        claimDate: parsed || '',
         clinician: row['Clinician License'] || '',
-        packageName: row['Insurance Company'] || '', // ✅ shown in table as "Package"
+        packageName: row['Insurance Company'] || '',
         insuranceCompany: row['Insurance Company'] || '',
         department: row['Clinic'] || ''
       };
     }
   });
 }
-
 /********************
  * UI RENDERING FUNCTIONS *
  ********************/
