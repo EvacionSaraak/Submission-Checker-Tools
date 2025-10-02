@@ -59,27 +59,13 @@ function initializeRadioButtons() {
  * DATE HANDLING UTILITIES *
  *************************/
 const DateHandler = {
-  parse: function(input, flipDM = false) {
-    if (!input && input !== 0) return null;
+  parse: function(input) {
+    if (!input) return null;
     if (input instanceof Date) return isNaN(input) ? null : input;
+    if (typeof input === 'number') return this._parseExcelDate(input);
 
-    // If it's a numeric string like "45667.00", treat as number (Excel serial)
-    if (typeof input === 'string' && /^\s*\d+(\.\d+)?\s*$/.test(input)) input = Number(input);
-
-    // Numbers -> Excel serial parser (respect flipDM)
-    if (typeof input === 'number') return this._parseExcelDate(input, flipDM);
-
-    let cleanStr = input.toString().trim().replace(/[,.]/g, '');
-    let parsed = this._parseStringDate(cleanStr);
-    if (parsed && flipDM) {
-      // Swap day and month for ambiguous string dates when requested
-      const d = parsed.getDate();
-      const m = parsed.getMonth();
-      parsed.setDate(1); // temporary to avoid month overflow
-      parsed.setMonth(d - 1);
-      parsed.setDate(m + 1);
-    }
-    if (!parsed) parsed = new Date(cleanStr);
+    const cleanStr = input.toString().trim().replace(/[,.]/g, '');
+    const parsed = this._parseStringDate(cleanStr) || new Date(cleanStr);
     if (isNaN(parsed)) {
       console.warn('Unrecognized date:', input);
       return null;
@@ -97,50 +83,35 @@ const DateHandler = {
 
   isSameDay: function(date1, date2) {
     if (!date1 || !date2) return false;
-    return date1.getDate() === date2.getDate() &&
-           date1.getMonth() === date2.getMonth() &&
+    return date1.getDate() === date2.getDate() && 
+           date1.getMonth() === date2.getMonth() && 
            date1.getFullYear() === date2.getFullYear();
   },
 
-  // Accept flipDM flag so Excel serials can be optionally day/month-swapped
-  _parseExcelDate: function(serial, flipDM = false) {
-    if (serial === null || serial === undefined || Number.isNaN(Number(serial))) return null;
-    serial = Number(serial);
-
-    // Excel 1900 leap-year bug adjustment
-    let adj = serial;
-    if (adj >= 60) adj -= 1; // remove Excel's phantom 1900-02-29
-
-    const utcDays = Math.floor(adj) - 25569; // days between 1899-12-30 and 1970-01-01
+  _parseExcelDate: function(serial) {
+    const utcDays = Math.floor(serial) - 25569; // 25569 = days between 1899-12-30 and 1970-01-01
     const ms = utcDays * 86400 * 1000;
-    const dt = new Date(ms);
+    const date = new Date(ms);
 
-    // Extract UTC parts to avoid local timezone shifts
-    const y = dt.getUTCFullYear();
-    const origM = dt.getUTCMonth(); // 0-11
-    const origD = dt.getUTCDate();  // 1-31
-
-    if (!flipDM) return new Date(Date.UTC(y, origM, origD));
-
-    // flipDM === true: swap day/month (InstaHMS known issue)
-    // intendedMonth = origD (1-31) -> zero-based month = origD - 1
-    // intendedDay   = origM + 1 (since origM is 0-11)
-    const swappedMonthIndex = Math.max(0, origD - 1);
-    const swappedDay = Math.max(1, origM + 1);
-
-    return new Date(Date.UTC(y, swappedMonthIndex, swappedDay));
+    // Manually extract date parts from UTC (avoid local time shift)
+    return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
   },
 
   _parseStringDate: function(dateStr) {
-    if (!dateStr) return null;
-    if (dateStr.includes(' ')) dateStr = dateStr.split(' ')[0];
+    if (dateStr.includes(' ')) {
+      dateStr = dateStr.split(' ')[0];
+    }
 
-    // Matches DD/MM/YYYY or DD-MM-YYYY (prefer DMY)
-    let dmyMatch = dateStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+    // Matches DD/MM/YYYY or DD-MM-YYYY
+    const dmyMatch = dateStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
     if (dmyMatch) return new Date(dmyMatch[3], dmyMatch[2] - 1, dmyMatch[1]);
 
+    // Matches MM/DD/YYYY
+    const mdyMatch = dateStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+    if (mdyMatch) return new Date(mdyMatch[3], mdyMatch[1] - 1, mdyMatch[2]);
+
     // Matches 30-Jun-2025 or 30 Jun 2025
-    let textMatch = dateStr.match(/^(\d{1,2})[\/\- ]([a-z]{3,})[\/\- ](\d{2,4})$/i);
+    const textMatch = dateStr.match(/^(\d{1,2})[\/\- ]([a-z]{3,})[\/\- ](\d{2,4})$/i);
     if (textMatch) {
       const monthIndex = MONTHS.indexOf(textMatch[2].toLowerCase().substr(0, 3));
       if (monthIndex >= 0) return new Date(textMatch[3], monthIndex, textMatch[1]);
@@ -149,7 +120,6 @@ const DateHandler = {
     // ISO: 2025-07-01
     const isoMatch = dateStr.match(/^(\d{4})[\/\-](\d{2})[\/\-](\d{2})$/);
     if (isoMatch) return new Date(isoMatch[1], isoMatch[2] - 1, isoMatch[3]);
-
     return null;
   }
 };
@@ -599,50 +569,41 @@ async function parseCsvFile(file) {
 }
 
 function normalizeReportData(rawData) {
-  if (!Array.isArray(rawData) || rawData.length === 0) return [];
-
-  // robust Insta detection: look for headers containing 'pri' tokens
-  const firstRowKeys = Object.keys(rawData[0] || {}).map(k => String(k || '').toLowerCase());
-  const isInsta = firstRowKeys.some(k =>
-    k.includes('pri. claim') || k.includes('pri claim') ||
-    k.includes('pri. patient') || k.includes('pri patient') ||
-    k.includes('pri. payer') || k.includes('pri payer')
-  );
-  const isOdoo = firstRowKeys.some(k => k.includes('pri. claim id') || k.includes('pri claim id'));
+  // Check if data is from InstaHMS (has 'Pri. Claim No' header)
+  const isInsta = rawData[0]?.hasOwnProperty('Pri. Claim No');
+  const isOdoo = rawData[0]?.hasOwnProperty('Pri. Claim ID');
 
   return rawData.map(row => {
     if (isInsta) {
-      const rawClaimDate = row['Encounter Date'];
-      const parsed = DateHandler.parse(rawClaimDate, true); // flipDM = true for Insta
+      // InstaHMS report format
       return {
         claimID: row['Pri. Claim No'] || '',
         memberID: row['Pri. Patient Insurance Card No'] || '',
-        claimDate: parsed || '',
+        claimDate: row['Encounter Date'] || '',
         clinician: row['Clinician License'] || '',
         department: row['Department'] || '',
-        packageName: row['Pri. Payer Name'] || '',
+        packageName: row['Pri. Payer Name'] || '', // ✅ shown in table as "Package"
         insuranceCompany: row['Pri. Payer Name'] || ''
       };
     } else if (isOdoo) {
-      const rawClaimDate = row['Adm/Reg. Date'];
-      const parsed = DateHandler.parse(rawClaimDate, false);
+      // InstaHMS report format
       return {
         claimID: row['Pri. Claim ID'] || '',
         memberID: row['Pri. Member ID'] || '',
-        claimDate: parsed || '',
+        claimDate: row['Adm/Reg. Date'] || '',
         clinician: row['Admitting License'] || '',
         department: row['Admitting Department'] || '',
+        //packageName: row['Pri. Sponsor'] || '',
         insuranceCompany: row['Pri. Plan Type'] || ''
       };
     } else {
-      const rawClaimDate = row['ClaimDate'] || row['Date'] || '';
-      const parsed = DateHandler.parse(rawClaimDate, false);
+      // ClinicPro report format (starts from row 1)
       return {
         claimID: row['ClaimID'] || '',
-        memberID: row['PatientCardID'] || '',
-        claimDate: parsed || '',
+        memberID: row['PatientCardID'] || '', // patient ID for eligibility match
+        claimDate: row['ClaimDate'] || '',
         clinician: row['Clinician License'] || '',
-        packageName: row['Insurance Company'] || '',
+        packageName: row['Insurance Company'] || '', // ✅ shown in table as "Package"
         insuranceCompany: row['Insurance Company'] || '',
         department: row['Clinic'] || ''
       };
