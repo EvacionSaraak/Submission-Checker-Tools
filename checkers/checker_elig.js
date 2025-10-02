@@ -553,6 +553,7 @@ async function parseCsvFile(file) {
 function normalizeReportData(rawData) {
   // Check if data is from InstaHMS (has 'Pri. Claim No' header)
   const isInsta = rawData[0]?.hasOwnProperty('Pri. Claim No');
+  const isOdoo = rawData[0]?.hasOwnProperty('Pri. Claim ID');
 
   return rawData.map(row => {
     if (isInsta) {
@@ -564,7 +565,18 @@ function normalizeReportData(rawData) {
         clinician: row['Clinician License'] || '',
         department: row['Department'] || '',
         packageName: row['Pri. Payer Name'] || '', // ✅ shown in table as "Package"
-        insuranceCompany: row['Pri. Payer Name'] || '', // not used in XML but useful for ClinicPro
+        insuranceCompany: row['Pri. Payer Name'] || ''
+      };
+    } else if (isInsta) {
+      // InstaHMS report format
+      return {
+        claimID: row['Pri. Claim ID'] || '',
+        memberID: row['Pri. Member ID'] || '',
+        claimDate: row['Adm/Reg. Date'] || '',
+        clinician: row['Admitting License'] || '',
+        department: row['Admitting Department'] || '',
+        packageName: row['Pri. Sponsor'] || '',
+        insuranceCompany: row['Pri. Plan Type'] || ''
       };
     } else {
       // ClinicPro report format (starts from row 1)
