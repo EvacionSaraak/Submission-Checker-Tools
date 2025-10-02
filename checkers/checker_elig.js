@@ -77,32 +77,32 @@ const DateHandler = {
 
   format: function(date) {
     if (!(date instanceof Date) || isNaN(date)) return '';
-    const d = date.getDate().toString().padStart(2, '0');
-    const m = (date.getMonth() + 1).toString().padStart(2, '0');
-    const y = date.getFullYear();
+    const d = date.getUTCDate().toString().padStart(2, '0');
+    const m = (date.getUTCMonth() + 1).toString().padStart(2, '0');
+    const y = date.getUTCFullYear();
     return `${d}/${m}/${y}`;
   },
 
   isSameDay: function(date1, date2) {
     if (!date1 || !date2) return false;
-    return date1.getDate() === date2.getDate() &&
-           date1.getMonth() === date2.getMonth() &&
-           date1.getFullYear() === date2.getFullYear();
+    return date1.getUTCDate() === date2.getUTCDate() &&
+           date1.getUTCMonth() === date2.getUTCMonth() &&
+           date1.getUTCFullYear() === date2.getUTCFullYear();
   },
 
   _parseExcelDate: function(serial) {
     const utcDays = Math.floor(serial) - 25569;
     const ms = utcDays * 86400 * 1000;
     const date = new Date(ms);
+    // Return UTC midnight
     return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
   },
 
-  // updated: accepts preferMDY boolean
+  // PATCHED: Always parse string dates as UTC
   _parseStringDate: function(dateStr, preferMDY = false) {
     if (dateStr.includes(' ')) {
       dateStr = dateStr.split(' ')[0];
     }
-
     // Matches DD/MM/YYYY or MM/DD/YYYY (ambiguous). We'll disambiguate using preferMDY flag
     const dmyMdyMatch = dateStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
     if (dmyMdyMatch) {
@@ -110,17 +110,15 @@ const DateHandler = {
       const part2 = parseInt(dmyMdyMatch[2], 10);
       const year = parseInt(dmyMdyMatch[3], 10);
 
-      // If one part >12, it's unambiguous: the >12 part is the day.
       if (part1 > 12 && part2 <= 12) {
-        return new Date(year, part2 - 1, part1); // dmy
+        return new Date(Date.UTC(year, part2 - 1, part1)); // dmy
       } else if (part2 > 12 && part1 <= 12) {
-        return new Date(year, part1 - 1, part2); // mdy (rare)
+        return new Date(Date.UTC(year, part1 - 1, part2)); // mdy (rare)
       } else {
-        // Ambiguous (both <= 12). Use preferMDY to decide.
         if (preferMDY) {
-          return new Date(year, part1 - 1, part2); // interpret as MM/DD/YYYY
+          return new Date(Date.UTC(year, part1 - 1, part2)); // MM/DD/YYYY UTC
         } else {
-          return new Date(year, part2 - 1, part1); // interpret as DD/MM/YYYY
+          return new Date(Date.UTC(year, part2 - 1, part1)); // DD/MM/YYYY UTC
         }
       }
     }
@@ -129,12 +127,12 @@ const DateHandler = {
     const textMatch = dateStr.match(/^(\d{1,2})[\/\- ]([a-z]{3,})[\/\- ](\d{2,4})$/i);
     if (textMatch) {
       const monthIndex = MONTHS.indexOf(textMatch[2].toLowerCase().substr(0, 3));
-      if (monthIndex >= 0) return new Date(textMatch[3], monthIndex, textMatch[1]);
+      if (monthIndex >= 0) return new Date(Date.UTC(textMatch[3], monthIndex, textMatch[1]));
     }
 
     // ISO: 2025-07-01
     const isoMatch = dateStr.match(/^(\d{4})[\/\-](\d{2})[\/\-](\d{2})$/);
-    if (isoMatch) return new Date(isoMatch[1], isoMatch[2] - 1, isoMatch[3]);
+    if (isoMatch) return new Date(Date.UTC(isoMatch[1], isoMatch[2] - 1, isoMatch[3]));
     return null;
   }
 };
@@ -245,34 +243,29 @@ function prepareEligibilityMap(eligData) {
 
 function findEligibilityForClaim(eligMap, claimDate, memberID, claimClinicians = []) {
   const normalizedID = String(memberID || '').trim();
-  const eligList = eligMap.get(normalizedID) || [];
+  const eligList = eligMap.get(normalizedID) || []; // PATCHED: use Map.get
+
   if (!eligList.length) return null;
 
   console.log(`[Diagnostics] Searching eligibilities for member "${memberID}" (normalized: "${normalizedID}")`);
   console.log(`[Diagnostics] Claim date: ${claimDate} (${DateHandler.format(claimDate)}), Claim clinicians: ${JSON.stringify(claimClinicians)}`);
 
-  const claimYMD = claimDate ? [claimDate.getFullYear(), claimDate.getMonth(), claimDate.getDate()] : null;
-
   for (const elig of eligList) {
     console.log(`[Diagnostics] Checking eligibility ${elig["Eligibility Request Number"] || "(unknown)"}:`);
 
-    const eligDate = elig["Answered On (parsed)"];
-    const eligYMD = eligDate ? [eligDate.getFullYear(), eligDate.getMonth(), eligDate.getDate()] : null;
-
-    // --- Date check (ignore time) ---
-    if (!claimYMD || !eligYMD || (claimYMD[0] !== eligYMD[0] || claimYMD[1] !== eligYMD[1] || claimYMD[2] !== eligYMD[2])) {
+    const eligDate = DateHandler.parse(elig["Answered On"]);
+    // PATCHED: use isSameDay, which now compares UTC days
+    if (!DateHandler.isSameDay(claimDate, eligDate)) {
       console.log(`  ❌ Date mismatch: claim ${DateHandler.format(claimDate)} vs elig ${DateHandler.format(eligDate)}`);
       continue;
     }
 
-    // --- Clinician check (only if both sides have data) ---
     const eligClinician = (elig.Clinician || '').trim();
     if (eligClinician && claimClinicians.length && !claimClinicians.includes(eligClinician)) {
       console.log(`  ❌ Clinician mismatch: claim clinicians ${JSON.stringify(claimClinicians)} vs elig clinician "${eligClinician}"`);
       continue;
     }
 
-    // --- Service category / dept check ---
     const serviceCategory = (elig['Service Category'] || '').trim();
     const consultationStatus = (elig['Consultation Status'] || '').trim();
     const department = (elig.Department || elig.Clinic || '').toLowerCase();
@@ -283,7 +276,6 @@ function findEligibilityForClaim(eligMap, claimDate, memberID, claimClinicians =
       continue;
     }
 
-    // --- Status check ---
     if ((elig.Status || '').toLowerCase() !== 'eligible') {
       console.log(`  ❌ Status mismatch: expected Eligible, got "${elig.Status}"`);
       continue;
@@ -472,7 +464,7 @@ function validateReportClaims(reportData, eligMap) {
 function logNoEligibilityMatch(sourceType, claimSummary, memberID, parsedClaimDate, claimClinicians, eligMap) {
   try {
     const normalizedID = normalizeMemberID(memberID);
-    const eligList = eligMap && eligMap.get ? (eligMap.get(normalizedID) || []) : [];
+    const eligList = eligMap.get(normalizedID) || []; // PATCHED: use Map.get
 
     console.groupCollapsed(`[Diagnostics] No eligibility match (${sourceType}) — member: "${memberID}" (normalized: "${normalizedID}")`);
     console.log('Claim / row summary:', claimSummary);
@@ -505,7 +497,6 @@ function logNoEligibilityMatch(sourceType, claimSummary, memberID, parsedClaimDa
     console.error('Error in logNoEligibilityMatch diagnostic logger:', err);
   }
 }
-
 
 /*********************
  * FILE PARSING FUNCTIONS *
