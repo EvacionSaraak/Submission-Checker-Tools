@@ -705,62 +705,49 @@ function renderResults(results, eligMap) {
   initEligibilityModal(results, eligMap);
 }
 
-function initEligibilityModal(results, eligMap) {
-  // Create modal if it doesn't exist
+function initEligibilityModal(results) {
+  // Create the modal container if it doesn't exist
   let modal = document.getElementById('eligibility-modal');
   if (!modal) {
     modal = document.createElement('div');
     modal.id = 'eligibility-modal';
-    modal.className = 'modal';
     modal.style.display = 'none';
-
-    const content = document.createElement('div');
-    content.className = 'modal-content';
-
-    const closeBtn = document.createElement('span');
-    closeBtn.className = 'close-modal';
-    closeBtn.innerHTML = '&times;';
-    closeBtn.style.cursor = 'pointer';
-    closeBtn.onclick = () => modal.style.display = 'none';
-
-    const detailsDiv = document.createElement('div');
-    detailsDiv.className = 'modal-details';
-
-    content.appendChild(closeBtn);
-    content.appendChild(detailsDiv);
-    modal.appendChild(content);
+    modal.style.position = 'fixed';
+    modal.style.top = '50%';
+    modal.style.left = '50%';
+    modal.style.transform = 'translate(-50%, -50%)';
+    modal.style.background = '#fff';
+    modal.style.border = '1px solid #333';
+    modal.style.padding = '20px';
+    modal.style.zIndex = '1000';
+    modal.innerHTML = `
+      <button id="modal-close">Close</button>
+      <div id="modal-content"></div>
+    `;
     document.body.appendChild(modal);
+
+    document.getElementById('modal-close').addEventListener('click', () => {
+      modal.style.display = 'none';
+    });
   }
 
-  // Event delegation: listen on the table container
+  // Delegate click event from results container
   resultsContainer.addEventListener('click', e => {
-    const btn = e.target.closest('.show-all-eligibilities');
+    const btn = e.target.closest('.eligibility-details');
     if (!btn) return;
 
-    const memberId = btn.dataset.member;
-    const clinicians = btn.dataset.clinicians ? btn.dataset.clinicians.split(',') : [];
-    const eligibilities = eligMap.get(memberId) || [];
+    const index = btn.dataset.index;
+    const result = results[index];
+    if (!result) return;
 
     console.log('Modal button clicked!');
-    console.log('Member ID:', memberId);
-    console.log('Clinicians:', clinicians);
-    console.log('Eligibilities:', eligibilities);
+    console.log('Result data:', result);
 
-    const detailsDiv = modal.querySelector('.modal-details');
-    detailsDiv.innerHTML = `<h3>Eligibilities for ${memberId}</h3>` +
-      eligibilities.map(e => `
-        <div>
-          <strong>Request #:</strong> ${e['Eligibility Request Number'] || 'N/A'}<br>
-          <strong>Clinician:</strong> ${clinicians.join(', ')}<br>
-          <strong>Package:</strong> ${e['Package Name'] || 'N/A'}
-        </div>
-      `).join('<hr>');
-
+    // Populate and show modal
+    const content = document.getElementById('modal-content');
+    content.innerHTML = `<pre>${JSON.stringify(result, null, 2)}</pre>`;
     modal.style.display = 'block';
   });
-
-  // Close modal by clicking outside
-  window.onclick = e => { if (e.target === modal) modal.style.display = 'none'; };
 }
 
 function formatEligibilityDetails(record, memberID) {
