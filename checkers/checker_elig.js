@@ -2,7 +2,7 @@
  * GLOBAL VARIABLES & CONSTANTS *
  *******************************/
 const SERVICE_PACKAGE_RULES = {
-  'Dental Services': ['dental'],
+  'Dental Services': ['dental', 'orthodontic'],
   'Physiotherapy': ['physio'],
   'Other OP Services': ['physio', 'diet', 'occupational', 'speech'],
   'Consultation': []  // Special handling below
