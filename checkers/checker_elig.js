@@ -583,7 +583,8 @@ function normalizeReportData(rawData) {
         clinician: row['Clinician License'] || '',
         department: row['Department'] || '',
         packageName: row['Pri. Payer Name'] || '', // ✅ shown in table as "Package"
-        insuranceCompany: row['Pri. Payer Name'] || ''
+        insuranceCompany: row['Pri. Payer Name'] || '',
+        claimStatus: row['Codification Status'] || ''
       };
     } else if (isOdoo) {
       // InstaHMS report format
@@ -594,7 +595,8 @@ function normalizeReportData(rawData) {
         clinician: row['Admitting License'] || '',
         department: row['Admitting Department'] || '',
         //packageName: row['Pri. Sponsor'] || '',
-        insuranceCompany: row['Pri. Plan Type'] || ''
+        insuranceCompany: row['Pri. Plan Type'] || '',
+        claimStatus: row['Codification Status'] || ''
       };
     } else {
       // ClinicPro report format (starts from row 1)
@@ -605,7 +607,8 @@ function normalizeReportData(rawData) {
         clinician: row['Clinician License'] || '',
         packageName: row['Insurance Company'] || '', // ✅ shown in table as "Package"
         insuranceCompany: row['Insurance Company'] || '',
-        department: row['Clinic'] || ''
+        department: row['Clinic'] || '',
+        claimStatus: row['VisitStatus'] || ''
       };
     }
   });
@@ -653,6 +656,7 @@ function renderResults(results, eligMap) {
   results.forEach((result, index) => {
     // Skip rows where Member ID is missing/empty
     if (!result.memberID || result.memberID.trim() === '') return;
+    if (result.claimStatus === 'Not Seen' || result.claimStatus === 'Not Seen') return;
   
     statusCounts[result.finalStatus]++;
   
