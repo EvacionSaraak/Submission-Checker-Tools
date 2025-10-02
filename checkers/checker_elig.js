@@ -433,35 +433,53 @@ async function parseExcelFile(file) {
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
         const allRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
 
-        // Dynamic header row detection
+        // Helper: detect likely title rows
+        function isLikelyTitleRow(row) {
+          const emptyCount = row.filter(c => String(c).trim() === '').length;
+          return emptyCount > 4; // skip if more than 4 empty cells
+        }
+
+        // Detect header row dynamically
         let headerRow = 0;
         let foundHeaders = false;
 
         while (headerRow < allRows.length && !foundHeaders) {
-          const currentRow = allRows[headerRow];
+          const currentRow = allRows[headerRow].map(c => String(c).trim());
 
-          // Check for Insta report headers (row 4)
-          if (currentRow.some(cell => String(cell).includes('Pri. Claim No'))) {
+          // Skip likely title rows
+          if (isLikelyTitleRow(currentRow)) {
+            headerRow++;
+            continue;
+          }
+
+          // Check for known headers
+          if (currentRow.some(cell => cell.includes('Pri. Claim No')) ||
+              currentRow.some(cell => cell.includes('Pri. Claim ID'))) ||
+              currentRow.some(cell => cell.includes('Card Number / DHA Member ID'))) {
             foundHeaders = true;
             break;
           }
 
-          // Check for eligibility headers (row 2)
-          if (currentRow.some(cell => String(cell).includes('Card Number / DHA Member ID'))) {
+          // Fallback: treat row with >= 3 non-empty cells as header
+          const nonEmptyCells = currentRow.filter(c => c !== '');
+          if (nonEmptyCells.length >= 3) {
             foundHeaders = true;
             break;
           }
-
           headerRow++;
         }
 
-        // Fallback to first row if no headers found
+        // Default to first row if none detected
         if (!foundHeaders) headerRow = 0;
 
-        const headers = allRows[headerRow].map(h => h.trim());
+        // Trim headers
+        const headers = allRows[headerRow].map(h => String(h).trim());
         console.log(`Headers: ${headers}`);
+
+        // Extract data rows
         const dataRows = allRows.slice(headerRow + 1);
 
+        // Map rows to objects
         const jsonData = dataRows.map(row => {
           const obj = {};
           headers.forEach((header, index) => {
