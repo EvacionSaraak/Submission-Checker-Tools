@@ -59,13 +59,22 @@ function initializeRadioButtons() {
  * DATE HANDLING UTILITIES *
  *************************/
 const DateHandler = {
-  parse: function(input) {
+  parse: function(input, flipDM = false) {
     if (!input) return null;
     if (input instanceof Date) return isNaN(input) ? null : input;
     if (typeof input === 'number') return this._parseExcelDate(input);
 
-    const cleanStr = input.toString().trim().replace(/[,.]/g, '');
-    const parsed = this._parseStringDate(cleanStr) || new Date(cleanStr);
+    let cleanStr = input.toString().trim().replace(/[,.]/g, '');
+    let parsed = this._parseStringDate(cleanStr);
+    if (parsed && flipDM) {
+      // Swap day and month
+      const d = parsed.getDate();
+      const m = parsed.getMonth();
+      parsed.setDate(1); // temporary to avoid month overflow
+      parsed.setMonth(d - 1);
+      parsed.setDate(m + 1);
+    }
+    if (!parsed) parsed = new Date(cleanStr);
     if (isNaN(parsed)) {
       console.warn('Unrecognized date:', input);
       return null;
@@ -83,35 +92,40 @@ const DateHandler = {
 
   isSameDay: function(date1, date2) {
     if (!date1 || !date2) return false;
-    return date1.getDate() === date2.getDate() && 
-           date1.getMonth() === date2.getMonth() && 
+    return date1.getDate() === date2.getDate() &&
+           date1.getMonth() === date2.getMonth() &&
            date1.getFullYear() === date2.getFullYear();
   },
 
   _parseExcelDate: function(serial) {
     const utcDays = Math.floor(serial) - 25569; // 25569 = days between 1899-12-30 and 1970-01-01
     const ms = utcDays * 86400 * 1000;
-    const date = new Date(ms);
+    let date = new Date(ms);
 
-    // Manually extract date parts from UTC (avoid local time shift)
-    return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+    // Extract UTC parts
+    let y = date.getUTCFullYear();
+    let m = date.getUTCMonth();
+    let d = date.getUTCDate();
+
+    // FLIP day/month for InstaHMS known issue
+    if (m > 0 && d <= 12) {
+      const tmp = d;
+      d = m + 1;
+      m = tmp - 1;
+    }
+
+    return new Date(Date.UTC(y, m, d));
   },
 
   _parseStringDate: function(dateStr) {
-    if (dateStr.includes(' ')) {
-      dateStr = dateStr.split(' ')[0];
-    }
+    if (dateStr.includes(' ')) dateStr = dateStr.split(' ')[0];
 
     // Matches DD/MM/YYYY or DD-MM-YYYY
-    const dmyMatch = dateStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+    let dmyMatch = dateStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
     if (dmyMatch) return new Date(dmyMatch[3], dmyMatch[2] - 1, dmyMatch[1]);
 
-    // Matches MM/DD/YYYY
-    const mdyMatch = dateStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
-    if (mdyMatch) return new Date(mdyMatch[3], mdyMatch[1] - 1, mdyMatch[2]);
-
     // Matches 30-Jun-2025 or 30 Jun 2025
-    const textMatch = dateStr.match(/^(\d{1,2})[\/\- ]([a-z]{3,})[\/\- ](\d{2,4})$/i);
+    let textMatch = dateStr.match(/^(\d{1,2})[\/\- ]([a-z]{3,})[\/\- ](\d{2,4})$/i);
     if (textMatch) {
       const monthIndex = MONTHS.indexOf(textMatch[2].toLowerCase().substr(0, 3));
       if (monthIndex >= 0) return new Date(textMatch[3], monthIndex, textMatch[1]);
@@ -120,6 +134,7 @@ const DateHandler = {
     // ISO: 2025-07-01
     const isoMatch = dateStr.match(/^(\d{4})[\/\-](\d{2})[\/\-](\d{2})$/);
     if (isoMatch) return new Date(isoMatch[1], isoMatch[2] - 1, isoMatch[3]);
+
     return null;
   }
 };
