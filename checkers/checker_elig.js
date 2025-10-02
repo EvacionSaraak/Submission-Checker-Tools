@@ -593,7 +593,7 @@ function normalizeReportData(rawData) {
         claimDate: row['Adm/Reg. Date'] || '',
         clinician: row['Admitting License'] || '',
         department: row['Admitting Department'] || '',
-        packageName: row['Pri. Sponsor'] || '',
+        //packageName: row['Pri. Sponsor'] || '',
         insuranceCompany: row['Pri. Plan Type'] || ''
       };
     } else {
