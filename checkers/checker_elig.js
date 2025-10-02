@@ -705,49 +705,49 @@ function renderResults(results, eligMap) {
   initEligibilityModal(results, eligMap);
 }
 
-function initEligibilityModal(results) {
-  // Create the modal container if it doesn't exist
-  let modal = document.getElementById('eligibility-modal');
-  if (!modal) {
-    modal = document.createElement('div');
-    modal.id = 'eligibility-modal';
-    modal.style.display = 'none';
-    modal.style.position = 'fixed';
-    modal.style.top = '50%';
-    modal.style.left = '50%';
-    modal.style.transform = 'translate(-50%, -50%)';
-    modal.style.background = '#fff';
-    modal.style.border = '1px solid #333';
-    modal.style.padding = '20px';
-    modal.style.zIndex = '1000';
-    modal.innerHTML = `
-      <button id="modal-close">Close</button>
-      <div id="modal-content"></div>
+function initEligibilityModal(results, eligMap) {
+  // Ensure modal exists
+  if (!document.getElementById("modalOverlay")) {
+    const modalHtml = `
+      <div id="modalOverlay" style="display:none;position:fixed;z-index:9999;left:0;top:0;width:100vw;height:100vh;background:rgba(0,0,0,0.35);">
+        <div id="modalContent" style="background:#fff;max-width:800px;max-height:85vh;overflow:auto;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);padding:20px;border-radius:8px;box-shadow:0 4px 24px rgba(0,0,0,0.2);">
+          <button id="modalCloseBtn" style="float:right;font-size:18px;padding:2px 10px;cursor:pointer;" aria-label="Close">&times;</button>
+          <div id="modalTable"></div>
+        </div>
+      </div>
     `;
-    document.body.appendChild(modal);
+    document.body.insertAdjacentHTML("beforeend", modalHtml);
 
-    document.getElementById('modal-close').addEventListener('click', () => {
-      modal.style.display = 'none';
-    });
+    // Close handlers
+    document.getElementById("modalCloseBtn").onclick = hideModal;
+    document.getElementById("modalOverlay").onclick = function(e) {
+      if (e.target.id === "modalOverlay") hideModal();
+    };
   }
 
-  // Delegate click event from results container
-  resultsContainer.addEventListener('click', e => {
-    const btn = e.target.closest('.eligibility-details');
-    if (!btn) return;
+  // Attach click handlers to all eligibility-details buttons
+  document.querySelectorAll(".eligibility-details").forEach(btn => {
+    btn.onclick = function() {
+      const index = parseInt(this.dataset.index, 10);
+      const result = results[index];
+      console.log("Clicked eligibility data:", result); // Debug log
 
-    const index = btn.dataset.index;
-    const result = results[index];
-    if (!result) return;
+      // Fill modal
+      const tableDiv = document.getElementById("modalTable");
+      tableDiv.innerHTML = `
+        <h3>Eligibility Details</h3>
+        <pre style="white-space:pre-wrap;">${JSON.stringify(result.fullEligibilityRecord || {}, null, 2)}</pre>
+      `;
 
-    console.log('Modal button clicked!');
-    console.log('Result data:', result);
-
-    // Populate and show modal
-    const content = document.getElementById('modal-content');
-    content.innerHTML = `<pre>${JSON.stringify(result, null, 2)}</pre>`;
-    modal.style.display = 'block';
+      // Show modal
+      document.getElementById("modalOverlay").style.display = "block";
+    };
   });
+}
+
+function hideModal() {
+  const overlay = document.getElementById("modalOverlay");
+  if (overlay) overlay.style.display = "none";
 }
 
 function formatEligibilityDetails(record, memberID) {
