@@ -60,14 +60,19 @@ function initializeRadioButtons() {
  *************************/
 const DateHandler = {
   parse: function(input, flipDM = false) {
-    if (!input) return null;
+    if (!input && input !== 0) return null;
     if (input instanceof Date) return isNaN(input) ? null : input;
-    if (typeof input === 'number') return this._parseExcelDate(input);
+
+    // If it's a numeric string like "45667.00", treat as number (Excel serial)
+    if (typeof input === 'string' && /^\s*\d+(\.\d+)?\s*$/.test(input)) input = Number(input);
+
+    // Numbers -> Excel serial parser (respect flipDM)
+    if (typeof input === 'number') return this._parseExcelDate(input, flipDM);
 
     let cleanStr = input.toString().trim().replace(/[,.]/g, '');
     let parsed = this._parseStringDate(cleanStr);
     if (parsed && flipDM) {
-      // Swap day and month
+      // Swap day and month for ambiguous string dates when requested
       const d = parsed.getDate();
       const m = parsed.getMonth();
       parsed.setDate(1); // temporary to avoid month overflow
@@ -97,30 +102,40 @@ const DateHandler = {
            date1.getFullYear() === date2.getFullYear();
   },
 
-  _parseExcelDate: function(serial) {
-    const utcDays = Math.floor(serial) - 25569; // 25569 = days between 1899-12-30 and 1970-01-01
+  // Accept flipDM flag so Excel serials can be optionally day/month-swapped
+  _parseExcelDate: function(serial, flipDM = false) {
+    if (serial === null || serial === undefined || Number.isNaN(Number(serial))) return null;
+    serial = Number(serial);
+
+    // Excel 1900 leap-year bug adjustment
+    let adj = serial;
+    if (adj >= 60) adj -= 1; // remove Excel's phantom 1900-02-29
+
+    const utcDays = Math.floor(adj) - 25569; // days between 1899-12-30 and 1970-01-01
     const ms = utcDays * 86400 * 1000;
-    let date = new Date(ms);
+    const dt = new Date(ms);
 
-    // Extract UTC parts
-    let y = date.getUTCFullYear();
-    let m = date.getUTCMonth();
-    let d = date.getUTCDate();
+    // Extract UTC parts to avoid local timezone shifts
+    const y = dt.getUTCFullYear();
+    const origM = dt.getUTCMonth(); // 0-11
+    const origD = dt.getUTCDate();  // 1-31
 
-    // FLIP day/month for InstaHMS known issue
-    if (m > 0 && d <= 12) {
-      const tmp = d;
-      d = m + 1;
-      m = tmp - 1;
-    }
+    if (!flipDM) return new Date(Date.UTC(y, origM, origD));
 
-    return new Date(Date.UTC(y, m, d));
+    // flipDM === true: swap day/month (InstaHMS known issue)
+    // intendedMonth = origD (1-31) -> zero-based month = origD - 1
+    // intendedDay   = origM + 1 (since origM is 0-11)
+    const swappedMonthIndex = Math.max(0, origD - 1);
+    const swappedDay = Math.max(1, origM + 1);
+
+    return new Date(Date.UTC(y, swappedMonthIndex, swappedDay));
   },
 
   _parseStringDate: function(dateStr) {
+    if (!dateStr) return null;
     if (dateStr.includes(' ')) dateStr = dateStr.split(' ')[0];
 
-    // Matches DD/MM/YYYY or DD-MM-YYYY
+    // Matches DD/MM/YYYY or DD-MM-YYYY (prefer DMY)
     let dmyMatch = dateStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
     if (dmyMatch) return new Date(dmyMatch[3], dmyMatch[2] - 1, dmyMatch[1]);
 
@@ -584,23 +599,33 @@ async function parseCsvFile(file) {
 }
 
 function normalizeReportData(rawData) {
+  if (!Array.isArray(rawData) || rawData.length === 0) return [];
+
+  // robust Insta detection: look for headers containing 'pri' tokens
+  const firstRowKeys = Object.keys(rawData[0] || {}).map(k => String(k || '').toLowerCase());
+  const isInsta = firstRowKeys.some(k =>
+    k.includes('pri. claim') || k.includes('pri claim') ||
+    k.includes('pri. patient') || k.includes('pri patient') ||
+    k.includes('pri. payer') || k.includes('pri payer')
+  );
+  const isOdoo = firstRowKeys.some(k => k.includes('pri. claim id') || k.includes('pri claim id'));
+
   return rawData.map(row => {
-    if (rawData[0]?.hasOwnProperty('Pri. Claim No')) {
+    if (isInsta) {
       const rawClaimDate = row['Encounter Date'];
-      // Use flipDM=true to correct Insta's day/month swapped serials/strings
-      const parsed = DateHandler.parse(rawClaimDate, true);
+      const parsed = DateHandler.parse(rawClaimDate, true); // flipDM = true for Insta
       return {
         claimID: row['Pri. Claim No'] || '',
         memberID: row['Pri. Patient Insurance Card No'] || '',
-        claimDate: parsed || '',        // Date object when parsed, else raw
+        claimDate: parsed || '',
         clinician: row['Clinician License'] || '',
         department: row['Department'] || '',
         packageName: row['Pri. Payer Name'] || '',
         insuranceCompany: row['Pri. Payer Name'] || ''
       };
-    } else if (rawData[0]?.hasOwnProperty('Pri. Claim ID')) {
+    } else if (isOdoo) {
       const rawClaimDate = row['Adm/Reg. Date'];
-      const parsed = DateHandler.parse(rawClaimDate); // no flip
+      const parsed = DateHandler.parse(rawClaimDate, false);
       return {
         claimID: row['Pri. Claim ID'] || '',
         memberID: row['Pri. Member ID'] || '',
@@ -611,7 +636,7 @@ function normalizeReportData(rawData) {
       };
     } else {
       const rawClaimDate = row['ClaimDate'] || row['Date'] || '';
-      const parsed = DateHandler.parse(rawClaimDate, true);
+      const parsed = DateHandler.parse(rawClaimDate, false);
       return {
         claimID: row['ClaimID'] || '',
         memberID: row['PatientCardID'] || '',
@@ -624,6 +649,7 @@ function normalizeReportData(rawData) {
     }
   });
 }
+
 /********************
  * UI RENDERING FUNCTIONS *
  ********************/
