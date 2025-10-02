@@ -705,7 +705,7 @@ function renderResults(results, eligMap) {
   initEligibilityModal(results, eligMap);
 }
 
-function initEligibilityModal(results, eligMap) {
+function initEligibilityModal(results) {
   // Ensure modal exists
   if (!document.getElementById("modalOverlay")) {
     const modalHtml = `
@@ -718,7 +718,6 @@ function initEligibilityModal(results, eligMap) {
     `;
     document.body.insertAdjacentHTML("beforeend", modalHtml);
 
-    // Close handlers
     document.getElementById("modalCloseBtn").onclick = hideModal;
     document.getElementById("modalOverlay").onclick = function(e) {
       if (e.target.id === "modalOverlay") hideModal();
@@ -730,16 +729,27 @@ function initEligibilityModal(results, eligMap) {
     btn.onclick = function() {
       const index = parseInt(this.dataset.index, 10);
       const result = results[index];
-      console.log("Clicked eligibility data:", result); // Debug log
+      if (!result?.fullEligibilityRecord) return;
 
-      // Fill modal
-      const tableDiv = document.getElementById("modalTable");
-      tableDiv.innerHTML = `
+      console.log("Clicked eligibility data:", result.fullEligibilityRecord); // Debug log
+
+      const record = result.fullEligibilityRecord;
+      const tableHtml = `
         <h3>Eligibility Details</h3>
-        <pre style="white-space:pre-wrap;">${JSON.stringify(result.fullEligibilityRecord || {}, null, 2)}</pre>
+        <table style="width:100%;border-collapse:collapse;">
+          <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Eligibility Request Number</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Eligibility Request Number"] || ''}</td></tr>
+          <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Card Number / DHA Member ID</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Card Number / DHA Member ID"] || ''}</td></tr>
+          <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Answered On</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Answered On"] || ''}</td></tr>
+          <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Ordered On</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Ordered On"] || ''}</td></tr>
+          <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Status</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Status"] || ''}</td></tr>
+          <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Clinician</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Clinician"] || ''}</td></tr>
+          <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Payer Name</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Payer Name"] || ''}</td></tr>
+          <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Service Category</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Service Category"] || ''}</td></tr>
+          <tr><th style="text-align:left;padding:6px;">Package Name</th><td style="padding:6px;">${record["Package Name"] || ''}</td></tr>
+        </table>
       `;
 
-      // Show modal
+      document.getElementById("modalTable").innerHTML = tableHtml;
       document.getElementById("modalOverlay").style.display = "block";
     };
   });
