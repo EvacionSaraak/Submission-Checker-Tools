@@ -58,14 +58,16 @@ function initializeRadioButtons() {
 /*************************
  * DATE HANDLING UTILITIES *
  *************************/
+let lastReportWasCSV = false;
 const DateHandler = {
-  parse: function(input) {
+  parse: function(input, options = {}) {
+    const preferMDY = !!options.preferMDY;
     if (!input) return null;
     if (input instanceof Date) return isNaN(input) ? null : input;
     if (typeof input === 'number') return this._parseExcelDate(input);
 
     const cleanStr = input.toString().trim().replace(/[,.]/g, '');
-    const parsed = this._parseStringDate(cleanStr) || new Date(cleanStr);
+    const parsed = this._parseStringDate(cleanStr, preferMDY) || new Date(cleanStr);
     if (isNaN(parsed)) {
       console.warn('Unrecognized date:', input);
       return null;
@@ -83,32 +85,45 @@ const DateHandler = {
 
   isSameDay: function(date1, date2) {
     if (!date1 || !date2) return false;
-    return date1.getDate() === date2.getDate() && 
-           date1.getMonth() === date2.getMonth() && 
+    return date1.getDate() === date2.getDate() &&
+           date1.getMonth() === date2.getMonth() &&
            date1.getFullYear() === date2.getFullYear();
   },
 
   _parseExcelDate: function(serial) {
-    const utcDays = Math.floor(serial) - 25569; // 25569 = days between 1899-12-30 and 1970-01-01
+    const utcDays = Math.floor(serial) - 25569;
     const ms = utcDays * 86400 * 1000;
     const date = new Date(ms);
-
-    // Manually extract date parts from UTC (avoid local time shift)
     return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
   },
 
-  _parseStringDate: function(dateStr) {
+  // updated: accepts preferMDY boolean
+  _parseStringDate: function(dateStr, preferMDY = false) {
     if (dateStr.includes(' ')) {
       dateStr = dateStr.split(' ')[0];
     }
 
-    // Matches DD/MM/YYYY or DD-MM-YYYY
-    const dmyMatch = dateStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
-    if (dmyMatch) return new Date(dmyMatch[3], dmyMatch[2] - 1, dmyMatch[1]);
+    // Matches DD/MM/YYYY or MM/DD/YYYY (ambiguous). We'll disambiguate using preferMDY flag
+    const dmyMdyMatch = dateStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+    if (dmyMdyMatch) {
+      const part1 = parseInt(dmyMdyMatch[1], 10);
+      const part2 = parseInt(dmyMdyMatch[2], 10);
+      const year = parseInt(dmyMdyMatch[3], 10);
 
-    // Matches MM/DD/YYYY
-    const mdyMatch = dateStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
-    if (mdyMatch) return new Date(mdyMatch[3], mdyMatch[1] - 1, mdyMatch[2]);
+      // If one part >12, it's unambiguous: the >12 part is the day.
+      if (part1 > 12 && part2 <= 12) {
+        return new Date(year, part2 - 1, part1); // dmy
+      } else if (part2 > 12 && part1 <= 12) {
+        return new Date(year, part1 - 1, part2); // mdy (rare)
+      } else {
+        // Ambiguous (both <= 12). Use preferMDY to decide.
+        if (preferMDY) {
+          return new Date(year, part1 - 1, part2); // interpret as MM/DD/YYYY
+        } else {
+          return new Date(year, part2 - 1, part1); // interpret as DD/MM/YYYY
+        }
+      }
+    }
 
     // Matches 30-Jun-2025 or 30 Jun 2025
     const textMatch = dateStr.match(/^(\d{1,2})[\/\- ]([a-z]{3,})[\/\- ](\d{2,4})$/i);
@@ -342,8 +357,8 @@ function validateReportClaims(reportData, eligMap) {
     const memberID = String(row.memberID || '').trim();
     const claimDateRaw = row.claimDate;
 
-    // Parse and format the claimDate for display, regardless of source
-    const claimDate = DateHandler.parse(claimDateRaw);
+    // Parse and format the claimDate for display, pass preferMDY when CSV
+    const claimDate = DateHandler.parse(claimDateRaw, { preferMDY: lastReportWasCSV });
     const formattedDate = DateHandler.format(claimDate);
 
     // VVIP IDs: mark as valid with a special remark, but do NOT skip
@@ -353,14 +368,14 @@ function validateReportClaims(reportData, eligMap) {
       return {
         claimID: row.claimID,
         memberID,
-        encounterStart: formattedDate,  // use formatted date here
+        encounterStart: formattedDate,
         packageName: row.packageName || '',
         provider: row.provider || '',
         clinician: row.clinician || '',
         serviceCategory: '',
         consultationStatus: '',
         status: 'VVIP',
-        claimStatus: row.claimStatus || '',          // <-- pass original report status
+        claimStatus: row.claimStatus || '',
         remarks: ['VVIP member, eligibility check bypassed'],
         finalStatus: 'valid',
         fullEligibilityRecord: null
@@ -397,7 +412,7 @@ function validateReportClaims(reportData, eligMap) {
       serviceCategory: eligibility?.['Service Category'] || '',
       consultationStatus: eligibility?.['Consultation Status'] || '',
       status: eligibility?.Status || '',
-      claimStatus: row.claimStatus || '',          // <-- pass original report status
+      claimStatus: row.claimStatus || '',
       remarks,
       finalStatus: status,
       fullEligibilityRecord: eligibility
@@ -897,15 +912,21 @@ async function handleFileUpload(event, type) {
     if (type === 'xml') {
       xmlData = await parseXmlFile(file);
       updateStatus(`Loaded ${xmlData.claims.length} XML claims`);
+      lastReportWasCSV = false;
     } 
     else if (type === 'eligibility') {
       eligData = await parseExcelFile(file);
       updateStatus(`Loaded ${eligData.length} eligibility records`);
+      lastReportWasCSV = false;
     }
     else {
-      const rawData = file.name.endsWith('.csv') 
-        ? await parseCsvFile(file) 
-        : await parseExcelFile(file);
+      // if report is CSV, mark the global flag so downstream parsing prefers MDY
+      lastReportWasCSV = file.name.toLowerCase().endsWith('.csv');
+
+      const rawData = lastReportWasCSV
+        ? await parseCsvFile(file)
+        : (file.name.toLowerCase().endsWith('.csv') ? await parseCsvFile(file) : await parseExcelFile(file));
+
       xlsData = normalizeReportData(rawData).filter(r => {
         return r.claimID !== null && r.claimID !== undefined && String(r.claimID).trim() !== '';
       });
@@ -919,7 +940,6 @@ async function handleFileUpload(event, type) {
     updateStatus(`Error loading ${type} file`);
   }
 }
-
 async function handleProcessClick() {
   if (!eligData) {
     updateStatus('Error: Missing eligibility file');
