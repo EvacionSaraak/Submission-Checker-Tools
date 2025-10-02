@@ -585,7 +585,7 @@ function normalizeReportData(rawData) {
         packageName: row['Pri. Payer Name'] || '', // ✅ shown in table as "Package"
         insuranceCompany: row['Pri. Payer Name'] || ''
       };
-    } else if (isInsta) {
+    } else if (isOdoo) {
       // InstaHMS report format
       return {
         claimID: row['Pri. Claim ID'] || '',
