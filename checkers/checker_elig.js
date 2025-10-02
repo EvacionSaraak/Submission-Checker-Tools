@@ -360,6 +360,7 @@ function validateReportClaims(reportData, eligMap) {
         serviceCategory: '',
         consultationStatus: '',
         status: 'VVIP',
+        claimStatus: row.claimStatus || '',          // <-- pass original report status
         remarks: ['VVIP member, eligibility check bypassed'],
         finalStatus: 'valid',
         fullEligibilityRecord: null
@@ -396,6 +397,7 @@ function validateReportClaims(reportData, eligMap) {
       serviceCategory: eligibility?.['Service Category'] || '',
       consultationStatus: eligibility?.['Consultation Status'] || '',
       status: eligibility?.Status || '',
+      claimStatus: row.claimStatus || '',          // <-- pass original report status
       remarks,
       finalStatus: status,
       fullEligibilityRecord: eligibility
@@ -656,28 +658,39 @@ function renderResults(results, eligMap) {
   results.forEach((result, index) => {
     // Skip rows where Member ID is missing/empty
     if (!result.memberID || result.memberID.trim() === '') return;
-    if (result.claimStatus === 'Not Seen' || result.claimStatus === 'Not Seen') return;
-  
-    statusCounts[result.finalStatus]++;
-  
+
+    // Ignore claims whose status is "Not Seen" (check report status, eligibility status, or general status)
+    // (trim + lowercase so " Not Seen " / "not seen" also match)
+    const statusToCheck = (result.claimStatus || result.status || result.fullEligibilityRecord?.Status || '')
+      .toString()
+      .trim()
+      .toLowerCase();
+
+    if (statusToCheck === 'not seen') return;
+
+    // Count statuses safely
+    if (result.finalStatus && statusCounts.hasOwnProperty(result.finalStatus)) {
+      statusCounts[result.finalStatus]++;
+    }
+
     const row = document.createElement('tr');
     row.className = result.finalStatus;
-  
+
     const statusBadge = result.status 
       ? `<span class="status-badge ${result.status.toLowerCase() === 'eligible' ? 'eligible' : 'ineligible'}">${result.status}</span>`
       : '';
-  
-    const remarksHTML = result.remarks.length > 0
+
+    const remarksHTML = result.remarks && result.remarks.length > 0
       ? result.remarks.map(r => `<div>${r}</div>`).join('')
       : '<div class="source-note">No remarks</div>';
-  
+
     let detailsCell = '<div class="source-note">N/A</div>';
     if (result.fullEligibilityRecord?.['Eligibility Request Number']) {
       detailsCell = `<button class="details-btn eligibility-details" data-index="${index}">${result.fullEligibilityRecord['Eligibility Request Number']}</button>`;
-    } else if (eligMap.has(result.memberID)) {
+    } else if (eligMap && eligMap.has && eligMap.has(result.memberID)) {
       detailsCell = `<button class="details-btn show-all-eligibilities" data-member="${result.memberID}" data-clinicians="${(result.clinicians || [result.clinician || '']).join(',')}">View All</button>`;
     }
-  
+
     row.innerHTML = `
       <td>${result.claimID}</td>
       <td>${result.memberID}</td>
