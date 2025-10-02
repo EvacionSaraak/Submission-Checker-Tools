@@ -454,7 +454,7 @@ async function parseExcelFile(file) {
 
           // Check for known headers
           if (currentRow.some(cell => cell.includes('Pri. Claim No')) ||
-              currentRow.some(cell => cell.includes('Pri. Claim ID'))) ||
+              currentRow.some(cell => cell.includes('Pri. Claim ID')) ||
               currentRow.some(cell => cell.includes('Card Number / DHA Member ID'))) {
             foundHeaders = true;
             break;
