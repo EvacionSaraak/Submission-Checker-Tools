@@ -1016,6 +1016,7 @@ async function handleFileUpload(event, type) {
     updateStatus(`Error loading ${type} file`);
   }
 }
+
 async function handleProcessClick() {
   if (!eligData) {
     updateStatus('Error: Missing eligibility file');
@@ -1031,10 +1032,22 @@ async function handleProcessClick() {
       ? validateXmlClaims(xmlData.claims, eligMap)
       : validateReportClaims(xlsData, eligMap);
 
-    window.lastValidationResults = results;  // <-- Save here
+    // Inline filter: Only show Daman or Thiqa claims
+    const filteredResults = results.filter(r => {
+      const provider = (
+        r.provider ||
+        r.insuranceCompany ||
+        r.packageName ||
+        r['Payer Name'] ||
+        r['Insurance Company'] ||
+        ''
+      ).toString().toLowerCase();
+      return provider.includes('daman') || provider.includes('thiqa');
+    });
 
-    renderResults(results, eligMap);  // ✅ Pass eligMap here
-    updateStatus(`Processed ${results.length} claims`);
+    window.lastValidationResults = filteredResults;
+    renderResults(filteredResults, eligMap);
+    updateStatus(`Processed ${filteredResults.length} claims`);
   } catch (error) {
     console.error('Processing error:', error);
     updateStatus('Processing failed');
