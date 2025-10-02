@@ -380,7 +380,7 @@ function validateReportClaims(reportData, eligMap) {
       const consultationStatus = eligibility['Consultation Status']?.trim()?.toLowerCase() || '';
       const dept = department;
 
-      const matchesCategory = isServiceCategoryAllowedForDepartment(serviceCategory, consultationStatus, department);
+      const matchesCategory = isServiceCategoryValid(serviceCategory, consultationStatus, department).valid;
 
       if (!matchesCategory) remarks.push(`Invalid for category: ${serviceCategory}, department: ${row.department || row.clinic}`);
       else status = 'valid';
