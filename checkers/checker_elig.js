@@ -251,19 +251,23 @@ function findEligibilityForClaim(eligMap, claimDate, memberID, claimClinicians =
   console.log(`[Diagnostics] Searching eligibilities for member "${memberID}" (normalized: "${normalizedID}")`);
   console.log(`[Diagnostics] Claim date: ${claimDate} (${DateHandler.format(claimDate)}), Claim clinicians: ${JSON.stringify(claimClinicians)}`);
 
-  for (const elig of eligList) {
-    console.log(`[Diagnostics] Checking eligibility ${elig["Eligibility Request Number"] || "(unknown)"}:`, elig);
+  const claimYMD = claimDate ? [claimDate.getFullYear(), claimDate.getMonth(), claimDate.getDate()] : null;
 
-    // --- Date check ---
+  for (const elig of eligList) {
+    console.log(`[Diagnostics] Checking eligibility ${elig["Eligibility Request Number"] || "(unknown)"}:`);
+
     const eligDate = elig["Answered On (parsed)"];
-    if (!DateHandler.sameDay(claimDate, eligDate)) {
+    const eligYMD = eligDate ? [eligDate.getFullYear(), eligDate.getMonth(), eligDate.getDate()] : null;
+
+    // --- Date check (ignore time) ---
+    if (!claimYMD || !eligYMD || (claimYMD[0] !== eligYMD[0] || claimYMD[1] !== eligYMD[1] || claimYMD[2] !== eligYMD[2])) {
       console.log(`  ❌ Date mismatch: claim ${DateHandler.format(claimDate)} vs elig ${DateHandler.format(eligDate)}`);
       continue;
     }
 
-    // --- Clinician check ---
+    // --- Clinician check (only if both sides have data) ---
     const eligClinician = (elig.Clinician || '').trim();
-    if (claimClinicians.length && eligClinician && !claimClinicians.includes(eligClinician)) {
+    if (eligClinician && claimClinicians.length && !claimClinicians.includes(eligClinician)) {
       console.log(`  ❌ Clinician mismatch: claim clinicians ${JSON.stringify(claimClinicians)} vs elig clinician "${eligClinician}"`);
       continue;
     }
