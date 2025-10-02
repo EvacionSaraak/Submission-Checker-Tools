@@ -245,7 +245,7 @@ function prepareEligibilityMap(eligData) {
 
 function findEligibilityForClaim(eligMap, claimDate, memberID, claimClinicians = []) {
   const normalizedID = String(memberID || '').trim();
-  const eligList = eligMap[normalizedID] || [];
+  const eligList = eligMap.get(normalizedID) || [];
   if (!eligList.length) return null;
 
   console.log(`[Diagnostics] Searching eligibilities for member "${memberID}" (normalized: "${normalizedID}")`);
