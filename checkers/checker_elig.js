@@ -712,7 +712,7 @@ function initEligibilityModal(results, eligMap) {
     modal = document.createElement('div');
     modal.id = 'eligibility-modal';
     modal.className = 'modal';
-    modal.style.display = 'none'; // hidden initially
+    modal.style.display = 'none';
 
     const content = document.createElement('div');
     content.className = 'modal-content';
@@ -732,30 +732,31 @@ function initEligibilityModal(results, eligMap) {
     document.body.appendChild(modal);
   }
 
-  // Attach click events
-  document.querySelectorAll('.show-all-eligibilities').forEach(btn => {
-    btn.onclick = () => {
-      const memberId = btn.dataset.member;
-      const clinicians = btn.dataset.clinicians ? btn.dataset.clinicians.split(',') : [];
-      const eligibilities = eligMap.get(memberId) || [];
+  // Event delegation: listen on the table container
+  resultsContainer.addEventListener('click', e => {
+    const btn = e.target.closest('.show-all-eligibilities');
+    if (!btn) return;
 
-      console.log('Modal button clicked!');
-      console.log('Member ID:', memberId);
-      console.log('Clinicians:', clinicians);
-      console.log('Eligibilities:', eligibilities);
+    const memberId = btn.dataset.member;
+    const clinicians = btn.dataset.clinicians ? btn.dataset.clinicians.split(',') : [];
+    const eligibilities = eligMap.get(memberId) || [];
 
-      const detailsDiv = modal.querySelector('.modal-details');
-      detailsDiv.innerHTML = `<h3>Eligibilities for ${memberId}</h3>` +
-        eligibilities.map(e => `
-          <div>
-            <strong>Request #:</strong> ${e['Eligibility Request Number'] || 'N/A'}<br>
-            <strong>Clinician:</strong> ${clinicians.join(', ')}<br>
-            <strong>Package:</strong> ${e['Package Name'] || 'N/A'}
-          </div>
-        `).join('<hr>');
+    console.log('Modal button clicked!');
+    console.log('Member ID:', memberId);
+    console.log('Clinicians:', clinicians);
+    console.log('Eligibilities:', eligibilities);
 
-      modal.style.display = 'block';
-    };
+    const detailsDiv = modal.querySelector('.modal-details');
+    detailsDiv.innerHTML = `<h3>Eligibilities for ${memberId}</h3>` +
+      eligibilities.map(e => `
+        <div>
+          <strong>Request #:</strong> ${e['Eligibility Request Number'] || 'N/A'}<br>
+          <strong>Clinician:</strong> ${clinicians.join(', ')}<br>
+          <strong>Package:</strong> ${e['Package Name'] || 'N/A'}
+        </div>
+      `).join('<hr>');
+
+    modal.style.display = 'block';
   });
 
   // Close modal by clicking outside
