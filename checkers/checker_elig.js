@@ -706,92 +706,49 @@ function renderResults(results, eligMap) {
 }
 
 function initEligibilityModal(results, eligMap) {
-  const existingModal = document.getElementById('eligibilityModal');
-  if (existingModal) existingModal.remove();
+  const modal = document.getElementById('eligibility-modal');
+  const modalContent = modal.querySelector('.modal-content');
+  const closeBtn = modal.querySelector('.close-modal');
 
-  const modalHTML = `
-    <div id="eligibilityModal" class="modal hidden">
-      <div class="modal-content eligibility-modal">
-        <span class="close">&times;</span>
-        <div class="modal-scrollable">
-          <h3>Eligibility Details</h3>
-          <div id="eligibilityModalContent" class="eligibility-details-container"></div>
-        </div>
-      </div>
-    </div>
-  `;
-  document.body.insertAdjacentHTML('beforeend', modalHTML);
-
-  const modal = document.getElementById('eligibilityModal');
-  const modalContent = document.getElementById('eligibilityModalContent');
-  const closeBtn = modal.querySelector('.close');
-
-  // Individual eligibility match
-  document.querySelectorAll('.eligibility-details').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const index = parseInt(btn.dataset.index);
-      const record = results[index].fullEligibilityRecord;
-      const memberID = results[index].memberID;
-
-      if (record) {
-        modalContent.innerHTML = formatEligibilityDetails(record, memberID);
-        modal.classList.remove('hidden');
-      }
-    });
-  });
-
-  // Show all eligibilities under a member ID
-  document.querySelectorAll('.show-all-eligibilities').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const memberID = btn.dataset.member;
-      const claimClinicians = btn.dataset.clinicians?.split(',').map(normalizeClinician);
-      const eligibilities = [...(eligMap.get(memberID) || [])];
-
-      eligibilities.sort((a, b) => {
-        const dateA = DateHandler.parse(a['Answered On'] || a['Ordered On']);
-        const dateB = DateHandler.parse(b['Answered On'] || b['Ordered On']);
-        return (dateB?.getTime() || 0) - (dateA?.getTime() || 0);
-      });
-
-      const details = eligibilities.map((e, idx) => {
-        return `
-          <table class="eligibility-details">
-            <tbody>
-              <tr><th>#${idx + 1}</th><td></td></tr>
-              <tr><th>Eligibility Request Number</th><td>${e['Eligibility Request Number']}</td></tr>
-              <tr><th>Answered On</th><td>${DateHandler.format(DateHandler.parse(e['Answered On']))}</td></tr>
-              <tr><th>Ordered On</th><td>${DateHandler.format(DateHandler.parse(e['Ordered On']))}</td></tr>
-              <tr><th>Status</th><td>${e.Status}</td></tr>
-              <tr><th>Clinician</th><td>${e.Clinician}</td></tr>
-              <tr><th>Claim Clinician(s)</th><td>${claimClinicians.join(', ')}</td></tr>
-              <tr><th>Service Category</th><td>${e['Service Category']}</td></tr>
-              <tr><th>Package</th><td>${e['Package Name']}</td></tr>
-              <tr><th>Payer Name</th><td>${e['Payer Name']}</td></tr>
-            </tbody>
-          </table>
-        `;
-      }).join('<hr>');
-
-      modalContent.innerHTML = `
-        <div class="form-row">
-          <strong>Member ID:</strong> ${memberID}
-        </div>
-        ${details}
-      `;
-      modal.classList.remove('hidden');
-    });
-  });
-
-  closeBtn.addEventListener('click', () => modal.classList.add('hidden'));
+  // Close modal when clicking X or outside content
+  closeBtn.addEventListener('click', () => modal.classList.remove('open'));
   modal.addEventListener('click', e => {
-    if (e.target === modal) modal.classList.add('hidden');
+    if (e.target === modal) modal.classList.remove('open');
   });
-  
-  // Add keyboard support
-  document.addEventListener('keydown', e => {
-    if (e.key === 'Escape' && !modal.classList.contains('hidden')) {
-      modal.classList.add('hidden');
+
+  // Event delegation: listen on the results container
+  resultsContainer.addEventListener('click', e => {
+    const detailBtn = e.target.closest('.details-btn');
+    if (!detailBtn) return;
+
+    let contentHTML = '';
+
+    if (detailBtn.classList.contains('eligibility-details')) {
+      const index = parseInt(detailBtn.dataset.index, 10);
+      const record = results[index]?.fullEligibilityRecord;
+      if (record) {
+        contentHTML = `<h3>Eligibility Record</h3><pre>${JSON.stringify(record, null, 2)}</pre>`;
+      } else {
+        contentHTML = '<div>No eligibility data found for this record.</div>';
+      }
     }
+
+    else if (detailBtn.classList.contains('show-all-eligibilities')) {
+      const memberID = detailBtn.dataset.member;
+      if (eligMap.has(memberID)) {
+        const eligibilities = eligMap.get(memberID);
+        contentHTML = `<h3>All Eligibilities for Member ID: ${memberID}</h3>`;
+        eligibilities.forEach((elig, i) => {
+          const clinicians = elig.clinicians?.join(', ') || '';
+          contentHTML += `<div><strong>${i + 1}.</strong> Request#: ${elig['Eligibility Request Number'] || 'N/A'} | Clinicians: ${clinicians}</div>`;
+        });
+      } else {
+        contentHTML = '<div>No eligibilities found for this member ID.</div>';
+      }
+    }
+
+    modalContent.innerHTML = contentHTML;
+    modal.classList.add('open');
   });
 }
 
