@@ -710,8 +710,26 @@ function initEligibilityModal(results) {
   if (!document.getElementById("modalOverlay")) {
     const modalHtml = `
       <div id="modalOverlay" style="display:none;position:fixed;z-index:9999;left:0;top:0;width:100vw;height:100vh;background:rgba(0,0,0,0.35);">
-        <div id="modalContent" style="background:#fff;max-width:800px;max-height:85vh;overflow:auto;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);padding:20px;border-radius:8px;box-shadow:0 4px 24px rgba(0,0,0,0.2);">
-          <button id="modalCloseBtn" style="float:right;font-size:18px;padding:2px 10px;cursor:pointer;" aria-label="Close">&times;</button>
+        <div id="modalContent" style="
+          background:#fff;
+          width:90%;
+          max-width:1200px;
+          max-height:90vh;
+          overflow:auto;
+          position:absolute;
+          left:50%;
+          top:50%;
+          transform:translate(-50%,-50%);
+          padding:20px;
+          border-radius:8px;
+          box-shadow:0 4px 24px rgba(0,0,0,0.2);
+        ">
+          <button id="modalCloseBtn" style="
+            float:right;
+            font-size:18px;
+            padding:2px 10px;
+            cursor:pointer;
+          " aria-label="Close">&times;</button>
           <div id="modalTable"></div>
         </div>
       </div>
@@ -724,29 +742,31 @@ function initEligibilityModal(results) {
     };
   }
 
-  // Attach click handlers to all eligibility-details buttons
+  // Attach click handlers
   document.querySelectorAll(".eligibility-details").forEach(btn => {
     btn.onclick = function() {
       const index = parseInt(this.dataset.index, 10);
       const result = results[index];
       if (!result?.fullEligibilityRecord) return;
 
-      console.log("Clicked eligibility data:", result.fullEligibilityRecord); // Debug log
+      console.log("Clicked eligibility data:", result.fullEligibilityRecord);
 
       const record = result.fullEligibilityRecord;
       const tableHtml = `
         <h3>Eligibility Details</h3>
-        <table style="width:100%;border-collapse:collapse;">
-          <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Eligibility Request Number</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Eligibility Request Number"] || ''}</td></tr>
-          <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Card Number / DHA Member ID</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Card Number / DHA Member ID"] || ''}</td></tr>
-          <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Answered On</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Answered On"] || ''}</td></tr>
-          <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Ordered On</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Ordered On"] || ''}</td></tr>
-          <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Status</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Status"] || ''}</td></tr>
-          <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Clinician</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Clinician"] || ''}</td></tr>
-          <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Payer Name</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Payer Name"] || ''}</td></tr>
-          <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Service Category</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Service Category"] || ''}</td></tr>
-          <tr><th style="text-align:left;padding:6px;">Package Name</th><td style="padding:6px;">${record["Package Name"] || ''}</td></tr>
-        </table>
+        <div style="overflow-x:auto;">
+          <table style="width:100%;border-collapse:collapse;">
+            <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Eligibility Request Number</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Eligibility Request Number"] || ''}</td></tr>
+            <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Card Number / DHA Member ID</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Card Number / DHA Member ID"] || ''}</td></tr>
+            <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Answered On</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Answered On"] || ''}</td></tr>
+            <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Ordered On</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Ordered On"] || ''}</td></tr>
+            <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Status</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Status"] || ''}</td></tr>
+            <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Clinician</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Clinician"] || ''}</td></tr>
+            <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Payer Name</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Payer Name"] || ''}</td></tr>
+            <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Service Category</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Service Category"] || ''}</td></tr>
+            <tr><th style="text-align:left;padding:6px;">Package Name</th><td style="padding:6px;">${record["Package Name"] || ''}</td></tr>
+          </table>
+        </div>
       `;
 
       document.getElementById("modalTable").innerHTML = tableHtml;
