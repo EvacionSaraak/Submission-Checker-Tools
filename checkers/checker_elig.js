@@ -611,7 +611,7 @@ function normalizeReportData(rawData) {
       };
     } else {
       const rawClaimDate = row['ClaimDate'] || row['Date'] || '';
-      const parsed = DateHandler.parse(rawClaimDate);
+      const parsed = DateHandler.parse(rawClaimDate, true);
       return {
         claimID: row['ClaimID'] || '',
         memberID: row['PatientCardID'] || '',
