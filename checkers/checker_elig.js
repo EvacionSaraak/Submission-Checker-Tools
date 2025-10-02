@@ -706,50 +706,59 @@ function renderResults(results, eligMap) {
 }
 
 function initEligibilityModal(results, eligMap) {
-  const modal = document.getElementById('eligibility-modal');
-  const modalContent = modal.querySelector('.modal-content');
-  const closeBtn = modal.querySelector('.close-modal');
+  // Check if modal already exists
+  let modal = document.getElementById('eligibility-modal');
+  if (!modal) {
+    // Create modal container
+    modal = document.createElement('div');
+    modal.id = 'eligibility-modal';
+    modal.className = 'modal';
 
-  // Close modal when clicking X or outside content
-  closeBtn.addEventListener('click', () => modal.classList.remove('open'));
-  modal.addEventListener('click', e => {
-    if (e.target === modal) modal.classList.remove('open');
+    // Create modal content wrapper
+    const content = document.createElement('div');
+    content.className = 'modal-content';
+
+    // Create close button
+    const closeBtn = document.createElement('span');
+    closeBtn.className = 'close-modal';
+    closeBtn.innerHTML = '&times;';
+    closeBtn.style.cursor = 'pointer';
+    closeBtn.onclick = () => modal.style.display = 'none';
+
+    // Content area for details
+    const detailsDiv = document.createElement('div');
+    detailsDiv.className = 'modal-details';
+
+    // Append elements
+    content.appendChild(closeBtn);
+    content.appendChild(detailsDiv);
+    modal.appendChild(content);
+    document.body.appendChild(modal);
+  }
+
+  // Event delegation for all "View All" buttons
+  document.querySelectorAll('.show-all-eligibilities').forEach(btn => {
+    btn.onclick = () => {
+      const memberId = btn.dataset.member;
+      const clinicians = btn.dataset.clinicians.split(',');
+      const eligibilities = eligMap.get(memberId) || [];
+
+      const detailsDiv = modal.querySelector('.modal-details');
+      detailsDiv.innerHTML = `<h3>Eligibilities for ${memberId}</h3>` +
+        eligibilities.map(e => `
+          <div>
+            <strong>Request #:</strong> ${e['Eligibility Request Number'] || 'N/A'}<br>
+            <strong>Clinician:</strong> ${clinicians.join(', ')}<br>
+            <strong>Package:</strong> ${e['Package Name'] || 'N/A'}
+          </div>
+        `).join('<hr>');
+
+      modal.style.display = 'block';
+    };
   });
 
-  // Event delegation: listen on the results container
-  resultsContainer.addEventListener('click', e => {
-    const detailBtn = e.target.closest('.details-btn');
-    if (!detailBtn) return;
-
-    let contentHTML = '';
-
-    if (detailBtn.classList.contains('eligibility-details')) {
-      const index = parseInt(detailBtn.dataset.index, 10);
-      const record = results[index]?.fullEligibilityRecord;
-      if (record) {
-        contentHTML = `<h3>Eligibility Record</h3><pre>${JSON.stringify(record, null, 2)}</pre>`;
-      } else {
-        contentHTML = '<div>No eligibility data found for this record.</div>';
-      }
-    }
-
-    else if (detailBtn.classList.contains('show-all-eligibilities')) {
-      const memberID = detailBtn.dataset.member;
-      if (eligMap.has(memberID)) {
-        const eligibilities = eligMap.get(memberID);
-        contentHTML = `<h3>All Eligibilities for Member ID: ${memberID}</h3>`;
-        eligibilities.forEach((elig, i) => {
-          const clinicians = elig.clinicians?.join(', ') || '';
-          contentHTML += `<div><strong>${i + 1}.</strong> Request#: ${elig['Eligibility Request Number'] || 'N/A'} | Clinicians: ${clinicians}</div>`;
-        });
-      } else {
-        contentHTML = '<div>No eligibilities found for this member ID.</div>';
-      }
-    }
-
-    modalContent.innerHTML = contentHTML;
-    modal.classList.add('open');
-  });
+  // Clicking outside closes modal
+  window.onclick = e => { if (e.target === modal) modal.style.display = 'none'; };
 }
 
 function formatEligibilityDetails(record, memberID) {
