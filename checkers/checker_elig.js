@@ -1033,17 +1033,17 @@ async function handleProcessClick() {
       : validateReportClaims(xlsData, eligMap);
 
     // Inline filter: Only show Daman or Thiqa claims
-    const filteredResults = results.filter(r => {
-      const provider = (
-        r.provider ||
-        r.insuranceCompany ||
-        r.packageName ||
-        r['Payer Name'] ||
-        r['Insurance Company'] ||
-        ''
-      ).toString().toLowerCase();
-      return provider.includes('daman') || provider.includes('thiqa');
-    });
+    // const filteredResults = results.filter(r => {
+    //   const provider = (
+    //     r.provider ||
+    //     r.insuranceCompany ||
+    //     r.packageName ||
+    //     r['Payer Name'] ||
+    //     r['Insurance Company'] ||
+    //     ''
+    //   ).toString().toLowerCase();
+    //   return provider.includes('daman') || provider.includes('thiqa');
+    // });
 
     window.lastValidationResults = filteredResults;
     renderResults(filteredResults, eligMap);
