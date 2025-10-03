@@ -1028,22 +1028,16 @@ async function handleProcessClick() {
     usedEligibilities.clear();
 
     const eligMap = prepareEligibilityMap(eligData);
-    const results = xmlRadio.checked
-      ? validateXmlClaims(xmlData.claims, eligMap)
-      : validateReportClaims(xlsData, eligMap);
+    const results = xmlRadio.checked ? validateXmlClaims(xmlData.claims, eligMap) : validateReportClaims(xlsData, eligMap);
 
-    // Inline filter: Only show Daman or Thiqa claims
-    // const filteredResults = results.filter(r => {
-    //   const provider = (
-    //     r.provider ||
-    //     r.insuranceCompany ||
-    //     r.packageName ||
-    //     r['Payer Name'] ||
-    //     r['Insurance Company'] ||
-    //     ''
-    //   ).toString().toLowerCase();
-    //   return provider.includes('daman') || provider.includes('thiqa');
-    // });
+    // Only filter for Daman/Thiqa if report mode
+    let filteredResults = results;
+    if (!xmlRadio.checked) {
+      filteredResults = results.filter(r => {
+        const provider = (r.provider || r.insuranceCompany || r.packageName || r['Payer Name'] || r['Insurance Company'] || '').toString().toLowerCase();
+        return provider.includes('daman') || provider.includes('thiqa');
+      });
+    }
 
     window.lastValidationResults = filteredResults;
     renderResults(filteredResults, eligMap);
