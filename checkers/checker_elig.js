@@ -339,10 +339,18 @@ function validateXmlClaims(xmlClaims, eligMap) {
     const claimDate = DateHandler.parse(claim.encounterStart);
     const formattedDate = DateHandler.format(claimDate);
     const memberID = claim.memberID;
+
+    // Check for leading zero in original memberID
+    const hasLeadingZero = memberID.match(/^0+\d+$/);
+
     const eligibility = findEligibilityForClaim(eligMap, claimDate, memberID, claim.clinicians);
 
     let status = 'invalid';
     const remarks = [];
+
+    if (hasLeadingZero) {
+      remarks.push('Member ID has a leading zero; claim marked as invalid.');
+    }
 
     if (!eligibility) {
       remarks.push(`No matching eligibility found for ${memberID} on ${formattedDate}`);
@@ -351,9 +359,11 @@ function validateXmlClaims(xmlClaims, eligMap) {
     } else if (!checkClinicianMatch(claim.clinicians, eligibility.Clinician)) {
       status = 'unknown';
       remarks.push('Clinician mismatch');
-    } else {
+    } else if (!hasLeadingZero) {
+      // Only mark as valid if there is no leading zero
       status = 'valid';
     }
+    // If hasLeadingZero, status remains 'invalid'
 
     return {
       claimID: claim.claimID,
@@ -374,16 +384,14 @@ function validateReportClaims(reportData, eligMap) {
   console.log(`Validating ${reportData.length} report rows`);
 
   const results = reportData.map(row => {
-    if (!row.claimID || String(row.claimID).trim() === '') return null; // Skip blank Claim ID
+    if (!row.claimID || String(row.claimID).trim() === '') return null;
 
     const memberID = String(row.memberID || '').trim();
     const claimDateRaw = row.claimDate;
-
-    // Parse and format the claimDate for display, pass preferMDY when CSV
     const claimDate = DateHandler.parse(claimDateRaw, { preferMDY: lastReportWasCSV });
     const formattedDate = DateHandler.format(claimDate);
 
-    // VVIP IDs: mark as valid with a special remark, but do NOT skip
+    // VVIP IDs: mark as valid with a special remark
     const isVVIP = memberID.startsWith('(VVIP)');
     if (isVVIP) {
       return {
@@ -403,11 +411,19 @@ function validateReportClaims(reportData, eligMap) {
       };
     }
 
+    // Check for leading zero in original memberID
+    const hasLeadingZero = memberID.match(/^0+\d+$/);
+
     // Proceed with normal eligibility lookup
     const eligibility = findEligibilityForClaim(eligMap, claimDate, memberID, [row.clinician]);
     let status = 'invalid';
     const remarks = [];
     const department = (row.department || row.clinic || '').toLowerCase();
+
+    // If leading zero, mark invalid and add remark
+    if (hasLeadingZero) {
+      remarks.push('Member ID has a leading zero; claim marked as invalid.');
+    }
 
     if (!eligibility) {
       remarks.push(`No matching eligibility found for ${memberID} on ${formattedDate}`);
@@ -435,9 +451,11 @@ function validateReportClaims(reportData, eligMap) {
 
       if (!matchesCategory) {
         remarks.push(`Invalid for category: ${serviceCategory}, department: ${row.department || row.clinic}`);
-      } else {
+      } else if (!hasLeadingZero) {
+        // Only mark as valid if there is no leading zero
         status = 'valid';
       }
+      // If hasLeadingZero, status remains 'invalid'
     }
 
     return {
@@ -457,7 +475,7 @@ function validateReportClaims(reportData, eligMap) {
     };
   });
 
-  return results.filter(r => r); // Remove null entries from blank Claim ID rows
+  return results.filter(r => r);
 }
 
 // --- Put this helper above validateXmlClaims / validateReportClaims ---
