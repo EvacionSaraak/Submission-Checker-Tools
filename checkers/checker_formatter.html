@@ -1,35 +1,48 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>Checker Formatter</title>
-  <link rel="stylesheet" href="tables.css" />
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <script defer src="checker_formatter.js"></script>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Checker Formatter</title>
+<link rel="stylesheet" href="tables.css" />
 </head>
 <body>
-  <div id="mode-selector" class="form-row">
-    <label><input type="radio" name="mode" value="eligibility" checked /> Eligibility</label>
-    <label><input type="radio" name="mode" value="report" /> Report</label>
-  </div>
 
-  <div id="eligibility-section" class="form-row">
-    <label>Upload Eligibility XLSX files:</label>
+<div id="mode-selector" class="form-row">
+  <label><input type="radio" name="mode" value="eligibility" checked> Eligibility</label>
+  <label><input type="radio" name="mode" value="reporting"> Reporting</label>
+</div>
+
+<div id="eligibility-panel">
+  <div class="form-row">
+    <label for="eligibility-files">Upload Eligibility XLSX files:</label>
     <input type="file" id="eligibility-files" multiple accept=".xlsx" />
   </div>
+</div>
 
-  <div id="report-section" class="form-row hidden">
-    <label>Upload Report files (XLS/XLSX/CSV):</label>
-    <input type="file" id="report-files" multiple accept=".xls,.xlsx,.csv" />
-  </div>
-
+<div id="reporting-panel" class="hidden">
   <div class="form-row">
-    <button id="combine-button">Combine</button>
-    <button id="download-button" disabled style="margin-left:10px;">Download Results</button>
-    <div id="progress-bar-container" style="margin-top:10px; width: 100%; max-width: 400px; height: 18px; background: #eee; border-radius: 9px; overflow: hidden; display:none;">
-      <div id="progress-bar" style="height: 100%; width: 0%; background: #1890ff; transition: width 0.3s;"></div>
-    </div>
-    <div id="messageBox" style="margin-top:10px; color: red;"></div>
+    <label for="reporting-files">Upload Reporting XLS or CSV files:</label>
+    <input type="file" id="reporting-files" multiple accept=".xls,.xlsx,.csv" />
   </div>
+</div>
+
+<div class="form-row">
+  <button id="combine-button">Combine</button>
+  <button id="download-button" disabled style="margin-left:10px;">Download Results</button>
+</div>
+
+<div class="form-row" style="width: 100%; max-width: 400px; margin-top:10px;">
+  <div id="progress-bar-container" style="width: 100%; height: 18px; background: #eee; border-radius: 9px; overflow: hidden; display:none; position: relative;">
+    <div id="progress-bar" style="height: 100%; width: 0%; background: #1890ff; transition: width 0.3s;"></div>
+    <div id="progress-text" style="position: absolute; width: 100%; text-align: center; top: 0; left: 0; font-weight: bold; color: #fff; user-select:none;">0%</div>
+  </div>
+</div>
+
+<div id="messageBox" style="margin-top:10px; color: red; font-weight: bold;"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="checker_formatter.js"></script>
+
 </body>
 </html>
