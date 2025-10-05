@@ -2,35 +2,34 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Tooth Validity Checker</title>
+  <title>Checker Formatter</title>
   <link rel="stylesheet" href="tables.css" />
-  <!-- Use SheetJS FULL build from Cloudflare CDN (recommended/stable) -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.20.0/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script defer src="checker_formatter.js"></script>
 </head>
 <body>
-  <h2>Tooth Validity Checker</h2>
-  <div id="explanationBox">
-    <strong>What this tool does:</strong>
-    <p>
-      This tool validates that the dental procedure codes in a Claim Submission XML file are correctly matched to the associated tooth numbers.
-      It ensures the procedures are assigned only to appropriate tooth regions (anterior, premolar, molar).
-      Upload your XML to begin validation.
-    </p>
-    <p>
-      REMINDER: This tool will only show Claims and Codes that require Tooth Numbers.
-    </p>
+  <div id="mode-selector" class="form-row">
+    <label><input type="radio" name="mode" value="eligibility" checked /> Eligibility</label>
+    <label><input type="radio" name="mode" value="report" /> Report</label>
   </div>
-  <label>
-    Upload XML:
-    <input type="file" id="xmlFile" accept=".xml" />
-    <button id="exportBtn" style="margin:10px;display:none">Export Invalid Activities</button>
-  </label>
-  <div id="messageBox" style="color: red; font-weight: bold;"></div>
-  <div id="resultsSummary" style="margin:10px;font-weight:bold;"></div>
-  <div id="results"></div>
-  <!-- SheetJS must come BEFORE your JS! -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.20.0/xlsx.full.min.js"></script>
-  <script src="checker_tooths.js"></script>
-  <script src="table_clipboard.js"></script>
+
+  <div id="eligibility-section" class="form-row">
+    <label>Upload Eligibility XLSX files:</label>
+    <input type="file" id="eligibility-files" multiple accept=".xlsx" />
+  </div>
+
+  <div id="report-section" class="form-row hidden">
+    <label>Upload Report files (XLS/XLSX/CSV):</label>
+    <input type="file" id="report-files" multiple accept=".xls,.xlsx,.csv" />
+  </div>
+
+  <div class="form-row">
+    <button id="combine-button">Combine</button>
+    <button id="download-button" disabled style="margin-left:10px;">Download Results</button>
+    <div id="progress-bar-container" style="margin-top:10px; width: 100%; max-width: 400px; height: 18px; background: #eee; border-radius: 9px; overflow: hidden; display:none;">
+      <div id="progress-bar" style="height: 100%; width: 0%; background: #1890ff; transition: width 0.3s;"></div>
+    </div>
+    <div id="messageBox" style="margin-top:10px; color: red;"></div>
+  </div>
 </body>
 </html>
