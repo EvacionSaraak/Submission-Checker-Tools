@@ -1,51 +1,40 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Checker Formatter</title>
-<link rel="stylesheet" href="tables.css" />
+  <meta charset="UTF-8" />
+  <title>Tooth Validity Checker</title>
+  <link rel="stylesheet" href="tables.css" />
+  <!-- SheetJS FULL build from cdnjs (recommended for compatibility) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
+  <h2>Tooth Validity Checker</h2>
 
-<div id="mode-selector" class="form-row">
-  <label><input type="radio" name="mode" value="eligibility" checked> Eligibility</label>
-  <label><input type="radio" name="mode" value="reporting"> Reporting</label>
-</div>
-
-<div id="eligibility-panel">
-  <div class="form-row">
-    <label for="eligibility-files">Upload Eligibility XLSX files:</label>
-    <input type="file" id="eligibility-files" multiple accept=".xlsx" />
+  <div id="explanationBox">
+    <strong>What this tool does:</strong>
+    <p>
+      This tool validates that the dental procedure codes in a Claim Submission XML file are correctly matched to the associated tooth numbers.
+      It ensures the procedures are assigned only to appropriate tooth regions (anterior, premolar, molar).
+      Upload your XML to begin validation.
+    </p>
+    <p>
+      REMINDER: This tool will only show Claims and Codes that require Tooth Numbers.
+    </p>
   </div>
-</div>
 
-<div id="reporting-panel" class="hidden">
-  <div class="form-row">
-    <label for="reporting-files">Upload Reporting XLS or CSV files:</label>
-    <input type="file" id="reporting-files" multiple accept=".xls,.xlsx,.csv" />
-  </div>
-  <div class="form-row">
-    <label for="clinician-files">Upload Clinician Licenses Excel (XLSX):</label>
-    <input type="file" id="clinician-files" accept=".xlsx" />
-  </div>
-</div>
+  <label>
+    Upload XML:
+    <input type="file" id="xmlFile" accept=".xml" />
+    <button id="exportBtn" style="margin:10px;display:none">Export Invalid Activities</button>
+  </label>
 
-<div class="form-row">
-  <button id="combine-button">Combine</button>
-  <button id="download-button" disabled style="margin-left:10px;">Download Results</button>
-</div>
+  <div id="messageBox" style="color: red; font-weight: bold;"></div>
+  <div id="resultsSummary" style="margin:10px;font-weight:bold;"></div>
+  <div id="results"></div>
 
-<div class="form-row" style="width: 100%; max-width: 400px; margin-top:10px;">
-  <div id="progress-bar-container" style="width: 100%; height: 18px; background: #eee; border-radius: 9px; overflow: hidden; display:none; position: relative;">
-    <div id="progress-bar" style="height: 100%; width: 0%; background: #1890ff; transition: width 0.3s;"></div>
-    <div id="progress-text" style="position: absolute; width: 100%; text-align: center; top: 0; left: 0; font-weight: bold; color: #fff; user-select:none;">0%</div>
-  </div>
-</div>
-
-<div id="messageBox" style="margin-top:10px; color: red; font-weight: bold;"></div>
-<div id="outputTableContainer"></div>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="checker_formatter.js"></script>
+  <!-- SheetJS must come BEFORE your JS! -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="checker_tooths.js"></script>
+  <script src="table_clipboard.js"></script>
 </body>
 </html>
