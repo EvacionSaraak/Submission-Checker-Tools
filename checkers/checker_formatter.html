@@ -25,6 +25,10 @@
     <label for="reporting-files">Upload Reporting XLS or CSV files:</label>
     <input type="file" id="reporting-files" multiple accept=".xls,.xlsx,.csv" />
   </div>
+  <div class="form-row">
+    <label for="clinician-files">Upload Clinician Licenses Excel (XLSX):</label>
+    <input type="file" id="clinician-files" accept=".xlsx" />
+  </div>
 </div>
 
 <div class="form-row">
@@ -40,9 +44,8 @@
 </div>
 
 <div id="messageBox" style="margin-top:10px; color: red; font-weight: bold;"></div>
-
+<div id="outputTableContainer"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="checker_formatter.js"></script>
-
 </body>
 </html>
