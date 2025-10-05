@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <title>Tooth Validity Checker</title>
   <link rel="stylesheet" href="tables.css" />
-  <!-- Fixed: Use the FULL SheetJS build (xlsx.full.min.js) -->
-  <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/xlsx.full.min.js"></script>
+  <!-- Use the FULL SheetJS build from jsdelivr (most reliable CDN) -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.20.0/dist/xlsx.full.min.js"></script>
 </head>
 <body>
   <h2>Tooth Validity Checker</h2>
@@ -32,6 +32,9 @@
   <div id="resultsSummary" style="margin:10px;font-weight:bold;"></div>
   <div id="results"></div>
 
+  <!-- Make sure SheetJS loads FIRST -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.20.0/dist/xlsx.full.min.js"></script>
+  <!-- Then load your checker JS -->
   <script src="checker_tooths.js"></script>
   <script src="table_clipboard.js"></script>
 </body>
