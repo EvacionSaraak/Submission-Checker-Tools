@@ -4,12 +4,11 @@
   <meta charset="UTF-8" />
   <title>Tooth Validity Checker</title>
   <link rel="stylesheet" href="tables.css" />
-  <!-- SheetJS FULL build from cdnjs (recommended for compatibility) -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <!-- Use SheetJS FULL build from Cloudflare CDN (recommended/stable) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.20.0/xlsx.full.min.js"></script>
 </head>
 <body>
   <h2>Tooth Validity Checker</h2>
-
   <div id="explanationBox">
     <strong>What this tool does:</strong>
     <p>
@@ -21,19 +20,14 @@
       REMINDER: This tool will only show Claims and Codes that require Tooth Numbers.
     </p>
   </div>
-
   <label>
     Upload XML:
     <input type="file" id="xmlFile" accept=".xml" />
     <button id="exportBtn" style="margin:10px;display:none">Export Invalid Activities</button>
   </label>
-
   <div id="messageBox" style="color: red; font-weight: bold;"></div>
   <div id="resultsSummary" style="margin:10px;font-weight:bold;"></div>
   <div id="results"></div>
-
-  <!-- SheetJS must come BEFORE your JS! -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="checker_tooths.js"></script>
   <script src="table_clipboard.js"></script>
 </body>
