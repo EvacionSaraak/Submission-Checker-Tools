@@ -451,7 +451,21 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions) {
         rows.push(row);
         return; // Skip further validation for this activity
       }
-      // --- END ADDED
+      
+      // --- ADDED: Check for invalid code length ---
+      if (code.length !== 5) {
+        const row = buildActivityRow({
+          claimId,
+          activityId,
+          code,
+          description: '(invalid code length)',
+          details: 'N/A',
+          remarks: [`Code "${code}" is invalid: it must have exactly 5 characters.`]
+        });
+        claimHasInvalid = true;
+        rows.push(row);
+        return; // Skip further validation for this activity
+      }
 
       let meta = codeToMeta[code];
       let fallback = fallbackDescriptions?.[code];
