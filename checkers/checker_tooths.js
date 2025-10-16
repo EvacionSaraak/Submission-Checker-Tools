@@ -120,6 +120,7 @@ function getSpecialMedicalCodeDescription(code) {
 function hasValidActivityDescription(obsList) {
   return Array.from(obsList).some(obs => {
     const desc = obs.querySelector('Description')?.textContent?.trim()?.toUpperCase();
+    console.log('Checking observation description:', desc);
     return desc === "ACTIVITY DESCRIPTION";
   });
 }
