@@ -118,11 +118,10 @@ function getSpecialMedicalCodeDescription(code) {
 }
 
 function hasValidActivityDescription(obsList) {
-  return Array.from(obsList).some(obs => {
-    const desc = obs.querySelector('Description')?.textContent?.trim()?.toUpperCase();
-    console.log('Checking observation description:', desc);
-    return desc === "ACTIVITY DESCRIPTION";
-  });
+  const descs = Array.from(obsList)
+    .map(obs => obs.querySelector('Description')?.textContent?.trim()?.toUpperCase())
+    .filter(Boolean); // drop missing descriptions
+  return descs.length > 0 && descs.every(d => d === "ACTIVITY DESCRIPTION");
 }
 
 // Special code handler
