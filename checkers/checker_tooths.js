@@ -118,10 +118,20 @@ function getSpecialMedicalCodeDescription(code) {
 }
 
 function hasValidActivityDescription(obsList) {
-  const descs = Array.from(obsList)
-    .map(obs => obs.querySelector('Description')?.textContent?.trim()?.toUpperCase())
-    .filter(Boolean); // drop missing descriptions
-  return descs.length > 0 && descs.every(d => d === "ACTIVITY DESCRIPTION");
+  function normalizeDesc(s) {
+    if (!s) return '';
+    // normalize unicode, collapse whitespace, trim and uppercase
+    return s.normalize('NFKC').replace(/\s+/g, ' ').trim().toUpperCase();
+  }
+
+  return Array.from(obsList).some(obs => {
+    const rawDesc = obs.querySelector('Description')?.textContent;
+    const rawCode = obs.querySelector('Code')?.textContent;
+    const desc = normalizeDesc(rawDesc);
+    const code = normalizeDesc(rawCode);
+    console.log('hasValidActivityDescription check -> Description:', JSON.stringify(rawDesc), 'Code:', JSON.stringify(rawCode), '=>', desc, code);
+    return desc === "ACTIVITY DESCRIPTION" || code === "ACTIVITY DESCRIPTION";
+  });
 }
 
 // Special code handler
@@ -129,7 +139,25 @@ function handleSpecialMedicalCode({claimId, activityId, code, obsCodes, obsList}
   const remarks = [];
   let details = "";
 
-  if (hasValidActivityDescription(obsList)) {
+  // Keep existing exception: if ALL observations are PDF or Drug Patient Share, accept.
+  const allDrugShareOrPDF = obsCodes.length > 0 && obsCodes.every(isDrugPatientShareOrPDF);
+  if (allDrugShareOrPDF) {
+    details = obsCodes.map(oc =>
+      oc === 'Drug Patient Share' ? 'Drug Patient Share (valid - no validation)' : 'PDF (valid - no validation)'
+    ).join('<br>');
+    return buildActivityRow({
+      claimId,
+      activityId,
+      code,
+      description: getSpecialMedicalCodeDescription(code),
+      details,
+      remarks: []
+    });
+  }
+
+  // Require exact ACTIVITY DESCRIPTION (in either Description or Code)
+  const hasExactActivityDescription = hasValidActivityDescription(obsList);
+  if (hasExactActivityDescription) {
     details = 'Valid: ACTIVITY DESCRIPTION observation present';
     return buildActivityRow({
       claimId,
@@ -141,23 +169,25 @@ function handleSpecialMedicalCode({claimId, activityId, code, obsCodes, obsList}
     });
   }
 
+  // Not valid: build appropriate remarks and details
   if (obsCodes.length === 0) {
     remarks.push(`${code} requires at least one observation code but none were provided.`);
+    details = 'None provided';
   } else {
+    // Show observations (mark PDF / Drug Patient Share specially)
+    details = obsCodes.map(oc =>
+      isDrugPatientShareOrPDF(oc) ? (oc === 'Drug Patient Share' ? 'Drug Patient Share (valid - no validation)' : 'PDF (valid - no validation)') : oc
+    ).join('<br>');
+
     const nonPDFObs = obsCodes.filter(oc => !isDrugPatientShareOrPDF(oc));
     const toothCodesUsed = nonPDFObs.filter(oc => ALL_TEETH.has(oc));
     if (toothCodesUsed.length > 0) {
       remarks.push(`${code} cannot be used with tooth codes: ${toothCodesUsed.join(", ")}`);
     }
-  }
 
-  details = obsCodes.length
-    ? obsCodes.map(oc =>
-        isDrugPatientShareOrPDF(oc)
-          ? `${oc} (valid - no validation)`
-          : oc
-      ).join('<br>')
-    : 'None provided';
+    // Always require the exact phrase for special medical codes (unless all-DRUG/PDF)
+    remarks.push(`${code} requires an Observation with Description or Code exactly "ACTIVITY DESCRIPTION".`);
+  }
 
   return buildActivityRow({
     claimId,
