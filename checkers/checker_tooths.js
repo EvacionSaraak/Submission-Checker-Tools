@@ -48,7 +48,8 @@ const ALL_TEETH = new Set([...ANTERIOR_TEETH, ...BICUSPID_TEETH, ...POSTERIOR_TE
 const SPECIAL_MEDICAL_CODES = [
   { code: "17999", description: "Unlisted procedure, skin, mucous membrane, and subcutaneous tissue" },
   { code: "0232T", description: "Injection(s), platelet-rich plasma, any site, including image guidance, harvesting and preparation when performed" },
-  { code: "J3490", description: "Unclassified drugs" }
+  { code: "J3490", description: "Unclassified drugs" },
+  { code: "81479", description: "Unlisted molecular pathology procedure" }
   // { code: "69090", description: "Biopsy of external ear" },
   // { code: "11950", description: "Subcutaneous injection of filling material (e.g., collagen); 1 to 5 cc" },
   // { code: "11951", description: "Subcutaneous injection of filling material (e.g., collagen); 6 to 10 cc" },
