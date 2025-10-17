@@ -445,7 +445,7 @@ function renderRow(r, lastClaimId, idx, codeGroup) {
   } else {
     remarksTd.textContent = "";
   }
-  remarksTd.className = "wrap-col remarks-col";
+  remarksTd.className = "wrap-col description-col";
   tr.appendChild(remarksTd);
 
   // Details button (opens modal)
