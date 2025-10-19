@@ -459,7 +459,7 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions) {
       }
       
       // --- ADDED: Check for invalid code length ---
-      if (code.length !== 5) {
+      if (code.length !== 5 && !code.includes(`-`)) {
         const row = buildActivityRow({
           claimId,
           activityId,
