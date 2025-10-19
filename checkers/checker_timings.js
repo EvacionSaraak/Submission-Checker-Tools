@@ -63,7 +63,8 @@ function parseXML(xmlString) {
 
 // --- Type 5 Code Format Checker ---
 function isValidType5Code(code) {
-  return /^[A-Z][0-9]{2}-[0-9]{4}-[0-9]{5}-[0-9]{2}$/.test(code);
+  const parts = code.split("-");
+  return (parts.length === 4 && parts[0].length === 3 && parts[1].length === 4 && parts[2].length === 5 && parts[3].length === 2);
 }
 
 // --- Claims Extraction/Validation ---
