@@ -39,7 +39,7 @@ const INSTAHMS_MAP = {
   'Pri. Plan Type': 'Pri. Plan Type', 'Facility ID': 'Facility ID',
   'Patient Code': 'Patient Code', 'Clinician Name': 'Clinician Name',
   'Opened by': 'Opened by',
-  'Total Sponsor Amt': 'Total Amount'
+  'Gross Amount': 'Total Amount'
 };
 
 const ODOO_MAP = {
