@@ -648,12 +648,21 @@ async function combineReportings(fileEntries, clinicianFile) {
             if (fileType && fileType.startsWith('odoo')) val = ''; // intentionally blank for Odoo
             else {
               const sig = targetToSourceSig['Opened by'];
-              val = sig ? (sourceRow[sig] ?? sourceRow[headerSignature('Updated By')] ?? '') : (sourceRow[headerSignature('Opened by')] ?? sourceRow[headerSignature('Opened by/Registration Staff name')] ?? '');
+              if (sig) {
+                val = sourceRow[sig] ?? sourceRow[headerSignature('Updated By')] ?? sourceRow[headerSignature('Opened by')] ?? sourceRow[headerSignature('Opened by/Registration Staff name')] ?? '';
+              } else {
+                val = sourceRow[headerSignature('Opened by')] ?? sourceRow[headerSignature('Opened by/Registration Staff name')] ?? sourceRow[headerSignature('Updated By')] ?? '';
+              }
             }
           }
           else if (tgt === 'Encounter Date') val = normalizedEncounter;
           else if (tgt === 'Raw Encounter Date') val = rawEncounterVal ?? '';
           else if (tgt === 'Source File') val = name;
+          else if (tgt === 'Total Amount') {
+            // ensure Total Amount is captured: prefer mapped header, else common variants
+            const sig = targetToSourceSig['Total Amount'];
+            val = sig ? (sourceRow[sig] ?? '') : (sourceRow['totalsponsoramt'] ?? sourceRow['invoiceamount'] ?? sourceRow['totalamount'] ?? '');
+          }
           else {
             const sig = targetToSourceSig[tgt] || null;
             val = sig ? (sourceRow[sig] ?? '') : '';
