@@ -419,7 +419,7 @@ async function combineReportings(fileEntries, clinicianFile) {
   }
 
   // Output headers (TARGET_HEADERS is expected to exist globally)
-  const headersWithRaw = [...TARGET_HEADERS, 'Raw Encounter Date'];
+  const headersWithRaw = [...TARGET_HEADERS]; // don't append 'Raw Encounter Date' again (it's already in TARGET_HEADERS)
   const combinedRows = [headersWithRaw];
   log("Initialized combinedRows with headers");
 
