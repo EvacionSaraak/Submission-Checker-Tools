@@ -6,7 +6,8 @@ importScripts('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.
 const TARGET_HEADERS = [
   'Pri. Claim No', 'Clinician License', 'Encounter Date', 'Pri. Patient Insurance Card No',
   'Department', 'Visit Id', 'Pri. Plan Type', 'Facility ID',
-  'Patient Code', 'Clinician Name', 'Opened by', 'Source File', 'Raw Encounter Date'
+  'Patient Code', 'Clinician Name', 'Opened by', 'Source File', 'Raw Encounter Date',
+  'Total Amount'
 ];
 
 // === Header maps (unchanged) ===
@@ -16,7 +17,8 @@ const CLINICPRO_V1_MAP = {
   'PatientCardID': 'Pri. Patient Insurance Card No', 'Clinic': 'Department',
   'Visit Id': 'Visit Id', 'Clinician Name': 'Clinician Name',
   'Opened by/Registration Staff name': 'Opened by', 'Opened by': 'Opened by',
-  'FileNo': 'Patient Code'
+  'FileNo': 'Patient Code',
+  'InvoiceAmount': 'Total Amount'
 };
 
 const CLINICPRO_V2_MAP = {
@@ -26,7 +28,8 @@ const CLINICPRO_V2_MAP = {
   'Visit Id': 'Visit Id', 'Clinician Name': 'Clinician Name',
   'OrderDoctor': 'Clinician Name', 'Updated By': 'Opened by',
   'Opened by/Registration Staff name': 'Opened by', 'Opened by': 'Opened by',
-  'FileNo': 'Patient Code'
+  'FileNo': 'Patient Code',
+  'InvoiceAmount': 'Total Amount'
 };
 
 const INSTAHMS_MAP = {
@@ -35,7 +38,8 @@ const INSTAHMS_MAP = {
   'Department': 'Department', 'Visit Id': 'Visit Id',
   'Pri. Plan Type': 'Pri. Plan Type', 'Facility ID': 'Facility ID',
   'Patient Code': 'Patient Code', 'Clinician Name': 'Clinician Name',
-  'Opened by': 'Opened by'
+  'Opened by': 'Opened by',
+  'Total Sponsor Amt': 'Total Amount'
 };
 
 const ODOO_MAP = {
@@ -48,7 +52,8 @@ const ODOO_MAP = {
   'Pri. Plan Type': 'Pri. Plan Type',
   'Center Name': 'Facility ID',
   'MR No.': 'Patient Code',
-  'Admitting Doctor': 'Clinician Name'
+  'Admitting Doctor': 'Clinician Name',
+  'Total Sponsor Amt': 'Total Amount'
   // Note: 'Opened by' intentionally not included for Odoo (should be blank)
 };
 
