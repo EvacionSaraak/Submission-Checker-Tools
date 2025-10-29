@@ -112,10 +112,30 @@ function parseXLSXFile(file) {
 }
 
 function mapXLSXData(rows) {
+  // Map rows by trimmed AuthorizationID for reliable lookups, but keep original raw value on each row
   return rows.reduce((map, row) => {
-    const id = row.AuthorizationID || "";
+    const rawId = String(row.AuthorizationID || "");
+    const id = rawId.trim();
+    // keep the original raw value for detection of leading/trailing whitespace
+    row._rawAuthorizationID = rawId;
+
+    if (!id && !rawId) {
+      // no auth ID present; still add under empty key to preserve behavior
+      map[""] = map[""] || [];
+      map[""].push(row);
+      return map;
+    }
+
+    // Primary lookup key: trimmed ID
     map[id] = map[id] || [];
     map[id].push(row);
+
+    // Also map the raw (untrimmed) key if different so we don't lose rows that may be looked up by raw values
+    if (rawId && rawId !== id) {
+      map[rawId] = map[rawId] || [];
+      map[rawId].push(row);
+    }
+
     return map;
   }, {});
 }
@@ -197,7 +217,12 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId) {
   const netTotal = getText(activityEl, "Net") || getText(activityEl, "NetTotal");
   const qty      = getText(activityEl, "Quantity") || "1";
   const ordering = getText(activityEl, "OrderingClinician");
-  const authID   = getText(activityEl, "PriorAuthorizationID") || getText(activityEl, "PriorAuthorization");
+
+  // Capture raw XML Authorization value (do not trim) so we can detect leading whitespace
+  const rawAuthEl = activityEl.querySelector("PriorAuthorizationID") || activityEl.querySelector("PriorAuthorization");
+  const rawAuthText = rawAuthEl && rawAuthEl.textContent ? rawAuthEl.textContent : "";
+  const authID   = rawAuthText.trim();
+
   const rule     = authRules[code] || {};
   const needsAuth= !/NOT\s+REQUIRED/i.test(rule.approval_details || "");
 
@@ -241,6 +266,7 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId) {
     };
   }
 
+  // Try to find rows for this authID; mapXLSXData maps by trimmed AuthorizationID as primary key.
   const rows = xlsxMap[authID] || [];
   const matchedRow = rows.find(r =>
     String(r["Item Code"] || "").trim() === code &&
@@ -252,6 +278,11 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId) {
 
   const remarks = [];
 
+  // If XML contained leading whitespace before the auth, flag it but continue other checks
+  if (rawAuthText && rawAuthText.trim() && /^\s+/.test(rawAuthText)) {
+    remarks.push("Leading whitespace in AuthorizationID");
+  }
+
   if (matchedRow.AuthorizationID && (matchedRow.Status || matchedRow.status || "").toLowerCase().includes("rejected")) {
     remarks.push("Has authID but status is rejected");
   }
@@ -262,7 +293,8 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId) {
   if (!matchedRow.AuthorizationID) {
     remarks.push(`${authID} has no authorization for ${code}.`);
   } else {
-    ["Item Code", "Card Number / DHA Member ID", "Ordering Clinician", "Payer Share"].forEach(field => {
+    // Check for extra whitespace in common fields (including AuthorizationID on the XLSX row)
+    ["Item Code", "Card Number / DHA Member ID", "Ordering Clinician", "Payer Share", "AuthorizationID"].forEach(field => {
       const v = String(matchedRow[field] || "");
       if (v !== v.trim()) {
         remarks.push(`Extra whitespace in field: "${field}"`);
