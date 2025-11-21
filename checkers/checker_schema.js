@@ -84,6 +84,50 @@ function checkForFalseValues(parent, invalidFields, prefix = "") {
   }
 }
 
+/**
+ * Supplemental check extracted to its own function:
+ * If any Activity Code is one of the special dental codes (11111, 11119, 11101, 11109)
+ * then the claim must include Diagnosis code(s) K05.10 and K03.6.
+ *
+ * Parameters:
+ *  - activities: HTMLCollection/array of Activity elements for this claim
+ *  - diagnoses: HTMLCollection/array of Diagnosis elements for this claim
+ *  - getText: function(tag, parent) -> returns text content for tag within parent (same signature used in validateClaimSchema)
+ *  - invalidFields: array to append any validation messages to
+ *
+ * The function catches and logs exceptions so it doesn't break the main validation flow.
+ */
+function checkSpecialActivityDiagnosis(activities, diagnoses, getText, invalidFields) {
+  try {
+    const specialActivityCodes = new Set(["11111", "11119", "11101", "11109"]);
+    const requiredDiagnosisCodes = new Set(["K05.10", "K03.6"]);
+
+    // find special activity codes present in this claim
+    const foundSpecialActivityCodes = Array.from(activities || [])
+      .map(a => (getText("Code", a) || "").trim())
+      .filter(c => c && specialActivityCodes.has(c));
+
+    if (foundSpecialActivityCodes.length > 0) {
+      // collect diagnosis codes (uppercased)
+      const diagCodesSet = new Set(
+        Array.from(diagnoses || []).map(d => (getText("Code", d) || "").toUpperCase())
+      );
+
+      // determine which required diagnosis codes are missing
+      const missingRequiredDiag = Array.from(requiredDiagnosisCodes).filter(req => !diagCodesSet.has(req));
+
+      if (missingRequiredDiag.length > 0) {
+        invalidFields.push(
+          `Activity code(s) ${Array.from(new Set(foundSpecialActivityCodes)).join(", ")} require Diagnosis code(s): ${missingRequiredDiag.join(", ")}`
+        );
+      }
+    }
+  } catch (err) {
+    // Do not break validation on unexpected errors in this supplemental check
+    console.error("Special activity -> diagnosis check error:", err);
+  }
+}
+
 function validateClaimSchema(xmlDoc) {
   const results = [];
   const claims = xmlDoc.getElementsByTagName("Claim");
@@ -154,6 +198,9 @@ function validateClaimSchema(xmlDoc) {
       if (qty === "0") invalidFields.push(`Activity Code ${code || "(unknown)"} has invalid Quantity (0)`);
       Array.from(act.getElementsByTagName("Observation")).forEach((obs,j) => ["Type","Code"].forEach(tag => invalidIfNull(tag, obs, `${prefix}Observation[${j}].`)));
     });
+
+    // NEW CHECK: use the extracted function for clarity/debugging
+    checkSpecialActivityDiagnosis(activities, diagnoses, text, invalidFields);
 
     // Contract optional
     const contract = claim.getElementsByTagName("Contract")[0];
@@ -242,7 +289,7 @@ function ensureModal() {
   if (document.getElementById("modalOverlay")) return;
   const modalHtml = `
     <div id="modalOverlay" style="display:none;position:fixed;z-index:9999;left:0;top:0;width:100vw;height:100vh;background:rgba(0,0,0,0.35);">
-      <div id="modalContent" style="background:#fff;max-width:800px;max-height:85vh;overflow:auto;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);padding:20px;border-radius:8px;box-shadow:0 4px 24px rgba(0,0,0,0.2);">
+      <div id="modalContent" style="background:#fff;max-width:800px;max-height:85vh;overflow:auto;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);padding:20px;border-radius:8px;box-shadow:0 10px 30px rgba(0,0,0,0.2);">
         <button id="modalCloseBtn" style="float:right;font-size:18px;padding:2px 10px;cursor:pointer;" aria-label="Close">&times;</button>
         <div id="modalTable"></div>
       </div>
