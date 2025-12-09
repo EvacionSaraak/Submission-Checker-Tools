@@ -128,6 +128,50 @@ function checkSpecialActivityDiagnosis(activities, diagnoses, getText, invalidFi
   }
 }
 
+/**
+ * New supplemental validation:
+ * If any Activity Code matches implant codes (79931, 79932, 79933, 79934)
+ * then the claim MUST include at least one of the listed K08.* diagnosis codes.
+ *
+ * The diagnosis comparison is case-insensitive and ignores dots, so K08.131 and K08131 both match.
+ */
+function checkImplantActivityDiagnosis(activities, diagnoses, getText, invalidFields) {
+  try {
+    const implantActivityCodes = new Set(["79931", "79932", "79933", "79934"]);
+    const requiredDiagnosisList = [
+      "K08.131", "K08.401", "K08.402", "K08.403", "K08.404",
+      "K08.411", "K08.412", "K08.413", "K08.414",
+      "K08.421", "K08.422", "K08.423", "K08.424",
+      "K08.431", "K08.432", "K08.433", "K08.434"
+    ];
+
+    // normalized required codes (remove dots and uppercase)
+    const requiredNormalized = new Set(requiredDiagnosisList.map(c => c.replace(/\./g, "").toUpperCase()));
+
+    const foundImplantCodes = Array.from(activities || [])
+      .map(a => (getText("Code", a) || "").trim())
+      .filter(c => c && implantActivityCodes.has(c));
+
+    if (foundImplantCodes.length > 0) {
+      // normalize diagnosis codes present in claim
+      const diagNormalizedSet = new Set(
+        Array.from(diagnoses || []).map(d => (getText("Code", d) || "").replace(/\./g, "").toUpperCase())
+      );
+
+      // check if at least one required diagnosis is present
+      const hasAnyRequired = Array.from(requiredNormalized).some(req => diagNormalizedSet.has(req));
+
+      if (!hasAnyRequired) {
+        invalidFields.push(
+          `Activity code(s) ${Array.from(new Set(foundImplantCodes)).join(", ")} require at least one Diagnosis code from: ${requiredDiagnosisList.join(", ")}`
+        );
+      }
+    }
+  } catch (err) {
+    console.error("Implant activity -> diagnosis check error:", err);
+  }
+}
+
 function validateClaimSchema(xmlDoc) {
   const results = [];
   const claims = xmlDoc.getElementsByTagName("Claim");
@@ -201,6 +245,9 @@ function validateClaimSchema(xmlDoc) {
 
     // NEW CHECK: use the extracted function for clarity/debugging
     checkSpecialActivityDiagnosis(activities, diagnoses, text, invalidFields);
+
+    // NEW CHECK: implant-specific codes requiring certain diagnosis codes
+    checkImplantActivityDiagnosis(activities, diagnoses, text, invalidFields);
 
     // Contract optional
     const contract = claim.getElementsByTagName("Contract")[0];
@@ -289,7 +336,7 @@ function ensureModal() {
   if (document.getElementById("modalOverlay")) return;
   const modalHtml = `
     <div id="modalOverlay" style="display:none;position:fixed;z-index:9999;left:0;top:0;width:100vw;height:100vh;background:rgba(0,0,0,0.35);">
-      <div id="modalContent" style="background:#fff;max-width:800px;max-height:85vh;overflow:auto;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);padding:20px;border-radius:8px;box-shadow:0 10px 30px rgba(0,0,0,0.2);">
+      <div id="modalContent" style="background:#fff;max-width:900px;max-height:85vh;overflow:auto;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);padding:20px;border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,0.2);">
         <button id="modalCloseBtn" style="float:right;font-size:18px;padding:2px 10px;cursor:pointer;" aria-label="Close">&times;</button>
         <div id="modalTable"></div>
       </div>
