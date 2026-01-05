@@ -185,28 +185,36 @@
   }
 
   async function runChecker(checkerName) {
+    console.log(`[DEBUG] runChecker called with: ${checkerName}`);
+    console.log(`[DEBUG] Files available:`, Object.keys(files).filter(k => files[k]));
+    
     try {
       elements.uploadStatus.innerHTML = `<div class="status-message info">Running ${checkerName} checker...</div>`;
       
       setActiveButton(checkerName);
       activeChecker = checkerName;
 
+      console.log(`[DEBUG] Creating ${checkerName} interface...`);
       // Create minimal checker interface
       createCheckerInterface(checkerName);
 
       // Sync global claim type with timings checker if applicable
       if (checkerName === 'timings') {
+        console.log('[DEBUG] Syncing claim type for timings');
         syncClaimType();
       }
 
       // Load and run the checker script
+      console.log(`[DEBUG] Loading and executing ${checkerName} checker...`);
       await loadAndExecuteChecker(checkerName);
 
       elements.uploadStatus.innerHTML = `<div class="status-message success">${checkerName.charAt(0).toUpperCase() + checkerName.slice(1)} checker ready.</div>`;
       elements.exportBtn.disabled = false;
+      console.log(`[DEBUG] ${checkerName} checker completed successfully`);
 
     } catch (error) {
-      console.error('Error running checker:', error);
+      console.error('[DEBUG] Error running checker:', error);
+      console.error(error.stack);
       elements.uploadStatus.innerHTML = `<div class="status-message error">Error: ${error.message}</div>`;
       elements.resultsContainer.innerHTML = `<div class="alert alert-danger" role="alert"><strong>Error:</strong> ${error.message}</div>`;
     }
@@ -247,8 +255,17 @@
         <div id="results"></div>
       `,
       elig: `
-        <input type="file" id="xmlFileInput" accept=".xml" style="display:none" />
+        <div id="xmlReportInputGroup" style="display:block;">
+          <input type="file" id="xmlFileInput" accept=".xml" style="display:none" />
+        </div>
+        <div id="reportInputGroup" style="display:none;">
+          <input type="file" id="reportFileInput" accept=".xlsx" style="display:none" />
+        </div>
         <input type="file" id="eligibilityFileInput" accept=".xlsx" style="display:none" />
+        <div style="display:none;">
+          <label><input type="radio" name="reportSource" value="xml" checked> XML</label>
+          <label><input type="radio" name="reportSource" value="xls"> XLS</label>
+        </div>
         <button id="processBtn" class="btn btn-primary" style="display:none;">Process</button>
         <button id="exportInvalidBtn" class="btn btn-secondary" style="display:none;">Export Invalid Rows</button>
         <div id="uploadStatus" style="margin-top:12px; color:#0074D9;"></div>
@@ -342,6 +359,8 @@
   }
 
   function setFilesAndTrigger(checkerName) {
+    console.log(`[DEBUG] setFilesAndTrigger called for: ${checkerName}`);
+    
     const fileInputMap = {
       clinician: { xmlFileInput: 'xml', clinicianFileInput: 'clinician', statusFileInput: 'status' },
       elig: { xmlFileInput: 'xml', eligibilityFileInput: 'eligibility' },
@@ -354,15 +373,22 @@
     };
 
     const inputMap = fileInputMap[checkerName];
-    if (!inputMap) return;
+    if (!inputMap) {
+      console.warn(`[DEBUG] No input map found for: ${checkerName}`);
+      return;
+    }
 
     // Set files in hidden inputs
+    console.log(`[DEBUG] Setting files for ${checkerName}:`, inputMap);
     for (const [inputId, fileKey] of Object.entries(inputMap)) {
       const input = elements.resultsContainer.querySelector(`#${inputId}`);
+      console.log(`[DEBUG] Looking for input #${inputId}, found:`, !!input, 'File key:', fileKey, 'Has file:', !!files[fileKey]);
+      
       if (input && files[fileKey]) {
         const dataTransfer = new DataTransfer();
         dataTransfer.items.add(files[fileKey]);
         input.files = dataTransfer.files;
+        console.log(`[DEBUG] Set file for #${inputId}:`, input.files[0]?.name);
         
         // Trigger change event
         const event = new Event('change', { bubbles: true });
@@ -374,20 +400,23 @@
     // since DOMContentLoaded has already fired
     setTimeout(() => {
       try {
+        console.log(`[DEBUG] Attempting to trigger ${checkerName} processing...`);
+        
         if (checkerName === 'schema' && typeof validateXmlSchema === 'function') {
+          console.log('[DEBUG] Calling validateXmlSchema()');
           validateXmlSchema();
         } else if (checkerName === 'timings' && typeof onFileChange === 'function') {
           const xmlInput = elements.resultsContainer.querySelector('#xmlFileInput');
           if (xmlInput && xmlInput.files.length > 0) {
+            console.log('[DEBUG] Calling onFileChange() for timings');
             onFileChange({ target: xmlInput });
           }
         } else if (checkerName === 'teeth' && typeof parseXML === 'function') {
-          // Teeth checker has parseXML function
+          console.log('[DEBUG] Calling parseXML() for teeth');
           parseXML();
         } else if (checkerName === 'clinician') {
-          // Clinician checker: set up event listeners and call validateClinicians
           if (typeof validateClinicians === 'function') {
-            // Manually set up required elements if they exist globally
+            console.log('[DEBUG] Setting up clinician globals and calling validateClinicians()');
             const setupGlobals = () => {
               window.xmlInput = elements.resultsContainer.querySelector('#xmlFileInput');
               window.clinicianInput = elements.resultsContainer.querySelector('#clinicianFileInput');
@@ -399,37 +428,53 @@
             };
             setupGlobals();
             validateClinicians();
+          } else {
+            console.error('[DEBUG] validateClinicians function not found!');
           }
         } else if (checkerName === 'elig') {
-          // Elig checker needs to initialize first then process
           if (typeof initializeEventListeners === 'function') {
+            console.log('[DEBUG] Setting up elig globals and calling initializeEventListeners()');
             // Set up global elements first
             window.xmlInput = elements.resultsContainer.querySelector('#xmlFileInput');
             window.reportInput = elements.resultsContainer.querySelector('#reportFileInput');
             window.eligInput = elements.resultsContainer.querySelector('#eligibilityFileInput');
             window.processBtn = elements.resultsContainer.querySelector('#processBtn');
             window.exportInvalidBtn = elements.resultsContainer.querySelector('#exportInvalidBtn');
-            window.resultsDiv = elements.resultsContainer.querySelector('#results');
-            window.statusDiv = elements.resultsContainer.querySelector('#status');
+            window.resultsContainer = elements.resultsContainer.querySelector('#results');
+            window.status = elements.resultsContainer.querySelector('#uploadStatus');
+            
+            console.log('[DEBUG] Elig globals:', {
+              xmlInput: !!window.xmlInput,
+              eligInput: !!window.eligInput,
+              processBtn: !!window.processBtn,
+              resultsContainer: !!window.resultsContainer,
+              status: !!window.status
+            });
             
             initializeEventListeners();
             setTimeout(() => {
               const processBtn = elements.resultsContainer.querySelector('#processBtn');
+              console.log('[DEBUG] Clicking elig processBtn:', !!processBtn);
               if (processBtn) processBtn.click();
             }, 100);
+          } else {
+            console.error('[DEBUG] initializeEventListeners function not found for elig!');
           }
         } else if (checkerName === 'auths' && typeof handleRun === 'function') {
-          // Auth checker has handleRun function
+          console.log('[DEBUG] Calling handleRun() for auths');
           handleRun();
         } else if (checkerName === 'pricing' && typeof handleRun === 'function') {
-          // Pricing checker has handleRun function
+          console.log('[DEBUG] Calling handleRun() for pricing');
           handleRun();
         } else if (checkerName === 'modifiers' && typeof handleRun === 'function') {
-          // Modifiers checker has handleRun function
+          console.log('[DEBUG] Calling handleRun() for modifiers');
           handleRun();
+        } else {
+          console.warn(`[DEBUG] No trigger function found for ${checkerName}`);
         }
       } catch (error) {
-        console.error(`Error triggering ${checkerName}:`, error);
+        console.error(`[DEBUG] Error triggering ${checkerName}:`, error);
+        console.error(error.stack);
       }
     }, 200);
   }
