@@ -240,7 +240,9 @@ xmlUpload.addEventListener('change', e => {
   reader.onload = function(ev) {
     try {
       const parser = new DOMParser();
-      const xmlDoc = parser.parseFromString(ev.target.result, "application/xml");
+      // Preprocess XML to replace unescaped & with "and" for parseability
+      const xmlContent = ev.target.result.replace(/&(?!(amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;))/g, "and");
+      const xmlDoc = parser.parseFromString(xmlContent, "application/xml");
       if (xmlDoc.getElementsByTagName("parsererror").length) throw new Error("Invalid XML");
       xmlData = xmlDoc;
       xmlClaimCount.textContent = `Loaded XML with ${xmlDoc.querySelectorAll('Claim').length} claims.`;

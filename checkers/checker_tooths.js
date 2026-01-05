@@ -614,7 +614,9 @@ function parseXML() {
   .then(([xmlText, toothJson, authJson]) => {
     const toothMap = buildCodeMeta(toothJson);
     const authMap  = buildAuthMap(authJson);
-    const xmlDoc   = new DOMParser().parseFromString(xmlText, 'application/xml');
+    // Preprocess XML to replace unescaped & with "and" for parseability
+    const xmlContent = xmlText.replace(/&(?!(amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;))/g, "and");
+    const xmlDoc   = new DOMParser().parseFromString(xmlContent, 'application/xml');
     if (xmlDoc.querySelector('parsererror')) throw new Error('Invalid XML file');
     const rows     = validateActivities(xmlDoc, toothMap, authMap);
     renderResults(resultsDiv, rows);

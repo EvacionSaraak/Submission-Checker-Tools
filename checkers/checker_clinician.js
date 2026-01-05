@@ -96,7 +96,9 @@
     }
     file.text().then(text => {
       try {
-        xmlDoc = new DOMParser().parseFromString(text, 'application/xml');
+        // Preprocess XML to replace unescaped & with "and" for parseability
+        const xmlContent = text.replace(/&(?!(amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;))/g, "and");
+        xmlDoc = new DOMParser().parseFromString(xmlContent, 'application/xml');
         claimCount = xmlDoc.getElementsByTagName('Claim').length;
         console.log('[XML] Claims loaded:', claimCount);
         updateUploadStatus();
