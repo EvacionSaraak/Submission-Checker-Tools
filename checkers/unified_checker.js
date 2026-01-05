@@ -3,6 +3,22 @@
 (function() {
   'use strict';
 
+  // Initialize session counter immediately
+  (function initSessionCounter() {
+    let sessionCount = sessionStorage.getItem('checkerSessionCount');
+    sessionCount = sessionCount ? parseInt(sessionCount) + 1 : 1;
+    sessionStorage.setItem('checkerSessionCount', sessionCount);
+    console.log(`[INIT] Unified Checker v1.0.0 - Session #${sessionCount}`);
+    
+    // Update DOM when ready
+    document.addEventListener('DOMContentLoaded', () => {
+      const sessionElement = document.getElementById('sessionCount');
+      if (sessionElement) {
+        sessionElement.textContent = `| Session #${sessionCount}`;
+      }
+    });
+  })();
+
   // File storage
   const files = {
     xml: null,
@@ -110,9 +126,12 @@
     elements.exportBtn.addEventListener('click', exportResults);
 
     // Restore file information from localStorage
+    console.log('[INIT] Restoring file states from localStorage...');
     restoreFileStates();
 
+    console.log('[INIT] Performing initial button state update...');
     updateButtonStates();
+    console.log('[INIT] ✓ Initialization complete! Ready for file uploads.');
   }
 
   function restoreFileStates() {
@@ -146,12 +165,17 @@
       statusElement.style.backgroundColor = '#d1e7dd';
       statusElement.style.fontWeight = 'bold';
       
+      // Console log
+      console.log(`[FILE] Uploaded: ${fileKey} = "${file.name}" (${(file.size / 1024).toFixed(1)} KB, type: ${file.type})`);
+      
       // Save to localStorage
       saveFileInfo(fileKey, file.name);
     } else {
       files[fileKey] = null;
       statusElement.textContent = '';
       statusElement.style.backgroundColor = '';
+      
+      console.log(`[FILE] Cleared: ${fileKey}`);
       
       // Clear from localStorage
       clearFileInfo(fileKey);
@@ -160,6 +184,8 @@
   }
 
   function updateButtonStates() {
+    console.log('[BUTTON] Updating button states based on available files...');
+    
     const requirements = {
       clinician: ['xml', 'clinician', 'status'],
       elig: ['xml', 'eligibility'],
@@ -175,13 +201,28 @@
       const btnName = `btn${checker.charAt(0).toUpperCase() + checker.slice(1)}`;
       const button = elements[btnName];
       if (button) {
-        button.disabled = !reqs.every(req => files[req] !== null);
+        const hasAll = reqs.every(req => files[req] !== null);
+        button.disabled = !hasAll;
+        
+        const missingFiles = reqs.filter(req => !files[req]);
+        if (hasAll) {
+          console.log(`[BUTTON] ${checker}: ENABLED (has all required: ${reqs.join(', ')})`);
+        } else {
+          console.log(`[BUTTON] ${checker}: DISABLED (missing: ${missingFiles.join(', ')})`);
+        }
       }
     }
 
     if (elements.btnCheckAll) {
       elements.btnCheckAll.disabled = !files.xml;
+      if (files.xml) {
+        console.log('[BUTTON] Check All: ENABLED (has XML file)');
+      } else {
+        console.log('[BUTTON] Check All: DISABLED (missing XML file)');
+      }
     }
+    
+    console.log('[BUTTON] Button state update complete');
   }
 
   async function runChecker(checkerName) {

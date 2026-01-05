@@ -17,8 +17,33 @@
   <!-- Common Utilities -->
   <script src="common_table_renderer.js"></script>
   <script src="file_cache.js"></script>
+  
+  <style>
+    .version-badge {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      background: #2c3e50;
+      color: white;
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 14px;
+      font-weight: 600;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      z-index: 9999;
+    }
+    .session-count {
+      color: #3498db;
+      margin-left: 10px;
+    }
+  </style>
 </head>
 <body>
+  <!-- Version Badge -->
+  <div class="version-badge">
+    <span>v1.0.0</span>
+    <span class="session-count" id="sessionCount"></span>
+  </div>
   <div class="container-fluid py-4">
     <h2 class="mb-4">Unified Checker Tool</h2>
     
