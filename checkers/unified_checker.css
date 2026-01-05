@@ -1,0 +1,57 @@
+/* unified_checker.css - Styles for the unified checker interface */
+
+/* File Input Section */
+.file-input-group {
+  margin-bottom: 1rem;
+}
+
+.file-input-group label {
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+.file-status {
+  margin-left: 0.5rem;
+  font-weight: bold;
+}
+
+/* Checker Buttons */
+.checker-buttons .btn {
+  margin-bottom: 0.5rem;
+}
+
+/* Experimental Badge */
+.experimental-badge {
+  background-color: #ff9800;
+  color: white;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  margin-left: 5px;
+  vertical-align: super;
+}
+
+/* Status Messages */
+.status-message {
+  padding: 0.75rem;
+  border-radius: 0.375rem;
+  margin-bottom: 1rem;
+}
+
+.status-message.info {
+  background-color: #cfe2ff;
+  color: #084298;
+  border: 1px solid #b6d4fe;
+}
+
+.status-message.success {
+  background-color: #d1e7dd;
+  color: #0f5132;
+  border: 1px solid #badbcc;
+}
+
+.status-message.error {
+  background-color: #f8d7da;
+  color: #842029;
+  border: 1px solid #f5c2c7;
+}

@@ -98,11 +98,13 @@
     if (file) {
       files[fileKey] = file;
       statusElement.textContent = `✓ ${file.name}`;
-      statusElement.style.color = 'green';
+      statusElement.style.color = '#0f5132';
+      statusElement.style.backgroundColor = '#d1e7dd';
       statusElement.style.fontWeight = 'bold';
     } else {
       files[fileKey] = null;
       statusElement.textContent = '';
+      statusElement.style.backgroundColor = '';
     }
     updateButtonStates();
   }
@@ -135,14 +137,13 @@
 
   async function runChecker(checkerName) {
     try {
-      elements.uploadStatus.textContent = `Running ${checkerName} checker...`;
-      elements.uploadStatus.style.color = '#0074D9';
+      elements.uploadStatus.innerHTML = `<div class="status-message info">Running ${checkerName} checker...</div>`;
       
       setActiveButton(checkerName);
       activeChecker = checkerName;
 
       // Clear previous results
-      elements.resultsContainer.innerHTML = '<div style="padding: 20px; text-align: center;">Processing...</div>';
+      elements.resultsContainer.innerHTML = '<div class="text-center p-5"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div><p class="mt-2">Processing...</p></div>';
 
       // Load the checker HTML content
       const response = await fetch(`checker_${getCheckerFileName(checkerName)}.html`);
@@ -175,15 +176,13 @@
       // Trigger processing if there's a button
       triggerProcessing(checkerName);
 
-      elements.uploadStatus.textContent = `${checkerName} checker completed.`;
-      elements.uploadStatus.style.color = 'green';
+      elements.uploadStatus.innerHTML = `<div class="status-message success">${checkerName.charAt(0).toUpperCase() + checkerName.slice(1)} checker completed successfully.</div>`;
       elements.exportBtn.disabled = false;
 
     } catch (error) {
       console.error('Error running checker:', error);
-      elements.uploadStatus.textContent = `Error: ${error.message}`;
-      elements.uploadStatus.style.color = 'red';
-      elements.resultsContainer.innerHTML = `<div style="color: red; padding: 20px;">Error: ${error.message}</div>`;
+      elements.uploadStatus.innerHTML = `<div class="status-message error">Error: ${error.message}</div>`;
+      elements.resultsContainer.innerHTML = `<div class="alert alert-danger" role="alert"><strong>Error:</strong> ${error.message}</div>`;
     }
   }
 
@@ -288,8 +287,7 @@
 
   async function runAllCheckers() {
     try {
-      elements.uploadStatus.textContent = 'Running all available checkers...';
-      elements.uploadStatus.style.color = '#0074D9';
+      elements.uploadStatus.innerHTML = '<div class="status-message info">Running all available checkers...</div>';
       setActiveButton('checkAll');
 
       const checkers = ['timings', 'teeth', 'schema'];
@@ -300,26 +298,21 @@
       if (files.drugs) checkers.push('drugs');
       if (files.eligibility) checkers.push('modifiers');
 
-      let allResultsHTML = '<h3>Combined Results from All Checkers</h3>';
+      let allResultsHTML = '<div class="card"><div class="card-header bg-info text-white"><h4 class="mb-0">Combined Results from All Checkers</h4></div><div class="card-body">';
 
       for (const checker of checkers) {
-        elements.uploadStatus.textContent = `Running ${checker}...`;
-        
-        // This is a simplified version - for a full implementation,
-        // we would need to run each checker and collect results
-        allResultsHTML += `<div class="checker-section">
-          <h4>${checker.charAt(0).toUpperCase() + checker.slice(1)} Checker</h4>
-          <p>Processing ${checker}... (Full implementation pending)</p>
-        </div><hr>`;
+        allResultsHTML += `<div class="alert alert-secondary">
+          <h5>${checker.charAt(0).toUpperCase() + checker.slice(1)} Checker</h5>
+          <p class="mb-0">Processing ${checker}... (Full implementation pending)</p>
+        </div>`;
       }
 
+      allResultsHTML += '</div></div>';
       elements.resultsContainer.innerHTML = allResultsHTML;
-      elements.uploadStatus.textContent = 'All checkers completed (experimental mode).';
-      elements.uploadStatus.style.color = 'green';
+      elements.uploadStatus.innerHTML = '<div class="status-message success">All checkers completed (experimental mode).</div>';
 
     } catch (error) {
-      elements.uploadStatus.textContent = `Error: ${error.message}`;
-      elements.uploadStatus.style.color = 'red';
+      elements.uploadStatus.innerHTML = `<div class="status-message error">Error: ${error.message}</div>`;
     }
   }
 

@@ -4,185 +4,168 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Unified Checker</title>
+  
+  <!-- Bootstrap 5 CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" />
+  
+  <!-- Custom CSS -->
   <link rel="stylesheet" href="tables.css" />
-  <style>
-    .file-inputs-section {
-      background-color: #f8f8fa;
-      border: 1px solid #ccc;
-      border-radius: 6px;
-      padding: 16px;
-      margin-bottom: 20px;
-    }
-    
-    .file-input-group {
-      margin-bottom: 12px;
-    }
-    
-    .file-input-group label {
-      display: inline-block;
-      min-width: 200px;
-      font-weight: bold;
-    }
-    
-    .checker-buttons {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      margin-bottom: 20px;
-    }
-    
-    .checker-buttons button {
-      padding: 10px 20px;
-      font-size: 14px;
-      background-color: #f0f0f0;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-    
-    .checker-buttons button:hover:not(:disabled) {
-      background-color: #e0e0e0;
-      transform: translateY(-1px);
-    }
-    
-    .checker-buttons button:disabled {
-      background-color: #eee;
-      color: #999;
-      cursor: not-allowed;
-    }
-    
-    .checker-buttons button.active {
-      background-color: #1890ff;
-      color: white;
-      border-color: #1890ff;
-    }
-    
-    .filter-options {
-      margin-bottom: 15px;
-      padding: 10px;
-      background-color: #f0f8ff;
-      border: 1px solid #91d5ff;
-      border-radius: 4px;
-    }
-    
-    .export-section {
-      margin-bottom: 15px;
-    }
-    
-    .export-section button {
-      padding: 8px 16px;
-      margin-right: 10px;
-    }
-    
-    #results-container {
-      margin-top: 20px;
-    }
-    
-    .experimental-badge {
-      background-color: #ff9800;
-      color: white;
-      font-size: 10px;
-      padding: 2px 6px;
-      border-radius: 3px;
-      margin-left: 5px;
-      vertical-align: super;
-    }
-  </style>
+  <link rel="stylesheet" href="unified_checker.css" />
 </head>
 <body>
-  <h2>Unified Checker Tool</h2>
-  
-  <div id="explanationBox">
-    <strong>What this tool does:</strong>
-    <p>
-      This unified interface allows you to run multiple checker validations using shared file inputs.
-      Upload the required files below, then click on any checker button to run that specific validation.
-      The results will be displayed in the table below.
-    </p>
-  </div>
+  <div class="container-fluid py-4">
+    <h2 class="mb-4">Unified Checker Tool</h2>
+    
+    <div class="alert alert-info" role="alert">
+      <strong>What this tool does:</strong>
+      <p class="mb-0">
+        This unified interface allows you to run multiple checker validations using shared file inputs. 
+        Upload the required files below, then click on any checker button to run that specific validation. 
+        The results will be displayed in the table below.
+      </p>
+    </div>
 
-  <!-- File Inputs Section -->
-  <div class="file-inputs-section">
-    <h3>File Inputs</h3>
-    
-    <div class="file-input-group">
-      <label for="xmlFileInput">XML Claim File:</label>
-      <input type="file" id="xmlFileInput" accept=".xml" />
-      <span id="xmlStatus"></span>
+    <!-- File Inputs Section -->
+    <div class="card mb-4">
+      <div class="card-header bg-primary text-white">
+        <h5 class="mb-0">File Inputs</h5>
+      </div>
+      <div class="card-body">
+        <div class="row">
+          <div class="col-md-6">
+            <div class="file-input-group">
+              <label for="xmlFileInput" class="form-label">XML Claim File:</label>
+              <div class="input-group">
+                <input type="file" class="form-control" id="xmlFileInput" accept=".xml" />
+                <span class="input-group-text file-status" id="xmlStatus"></span>
+              </div>
+            </div>
+            
+            <div class="file-input-group">
+              <label for="clinicianFileInput" class="form-label">Clinician List (XLSX):</label>
+              <div class="input-group">
+                <input type="file" class="form-control" id="clinicianFileInput" accept=".xlsx" />
+                <span class="input-group-text file-status" id="clinicianStatus"></span>
+              </div>
+            </div>
+            
+            <div class="file-input-group">
+              <label for="eligibilityFileInput" class="form-label">Eligibility XLSX:</label>
+              <div class="input-group">
+                <input type="file" class="form-control" id="eligibilityFileInput" accept=".xlsx" />
+                <span class="input-group-text file-status" id="eligibilityStatus"></span>
+              </div>
+            </div>
+            
+            <div class="file-input-group">
+              <label for="authFileInput" class="form-label">Authorization Export (XLSX):</label>
+              <div class="input-group">
+                <input type="file" class="form-control" id="authFileInput" accept=".xlsx" />
+                <span class="input-group-text file-status" id="authStatus"></span>
+              </div>
+            </div>
+          </div>
+          
+          <div class="col-md-6">
+            <div class="file-input-group">
+              <label for="statusFileInput" class="form-label">License Status (XLSX):</label>
+              <div class="input-group">
+                <input type="file" class="form-control" id="statusFileInput" accept=".xlsx" />
+                <span class="input-group-text file-status" id="statusStatus"></span>
+              </div>
+            </div>
+            
+            <div class="file-input-group">
+              <label for="pricingFileInput" class="form-label">Pricing XLSX:</label>
+              <div class="input-group">
+                <input type="file" class="form-control" id="pricingFileInput" accept=".xlsx" />
+                <span class="input-group-text file-status" id="pricingStatus"></span>
+              </div>
+            </div>
+            
+            <div class="file-input-group">
+              <label for="drugsFileInput" class="form-label">Drugs List (XLSX):</label>
+              <div class="input-group">
+                <input type="file" class="form-control" id="drugsFileInput" accept=".xlsx" />
+                <span class="input-group-text file-status" id="drugsStatus"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
-    
-    <div class="file-input-group">
-      <label for="clinicianFileInput">Clinician List (XLSX):</label>
-      <input type="file" id="clinicianFileInput" accept=".xlsx" />
-      <span id="clinicianStatus"></span>
-    </div>
-    
-    <div class="file-input-group">
-      <label for="eligibilityFileInput">Eligibility XLSX:</label>
-      <input type="file" id="eligibilityFileInput" accept=".xlsx" />
-      <span id="eligibilityStatus"></span>
-    </div>
-    
-    <div class="file-input-group">
-      <label for="authFileInput">Authorization Export (XLSX):</label>
-      <input type="file" id="authFileInput" accept=".xlsx" />
-      <span id="authStatus"></span>
-    </div>
-    
-    <div class="file-input-group">
-      <label for="statusFileInput">License Status (XLSX):</label>
-      <input type="file" id="statusFileInput" accept=".xlsx" />
-      <span id="statusStatus"></span>
-    </div>
-    
-    <div class="file-input-group">
-      <label for="pricingFileInput">Pricing XLSX:</label>
-      <input type="file" id="pricingFileInput" accept=".xlsx" />
-      <span id="pricingStatus"></span>
-    </div>
-    
-    <div class="file-input-group">
-      <label for="drugsFileInput">Drugs List (XLSX):</label>
-      <input type="file" id="drugsFileInput" accept=".xlsx" />
-      <span id="drugsStatus"></span>
-    </div>
-  </div>
 
-  <!-- Checker Buttons -->
-  <div class="checker-buttons">
-    <button id="btn-clinician" title="Requires: XML, Clinician List, License Status">Clinicians</button>
-    <button id="btn-elig" title="Requires: XML, Eligibility">Eligibility</button>
-    <button id="btn-auths" title="Requires: XML, Authorization Export">Authorizations</button>
-    <button id="btn-timings" title="Requires: XML">Timings</button>
-    <button id="btn-teeth" title="Requires: XML">Teeth</button>
-    <button id="btn-schema" title="Requires: XML">Schema</button>
-    <button id="btn-pricing" title="Requires: XML, Pricing">Pricing</button>
-    <button id="btn-drugs" title="Requires: XML, Drugs">Drug Quantities</button>
-    <button id="btn-modifiers" title="Requires: XML, Eligibility">Modifiers</button>
-    <button id="btn-check-all" title="Runs all available checkers">
-      Check All<span class="experimental-badge">EXP</span>
-    </button>
-  </div>
+    <!-- Checker Buttons -->
+    <div class="card mb-4">
+      <div class="card-header bg-secondary text-white">
+        <h5 class="mb-0">Run Checkers</h5>
+      </div>
+      <div class="card-body">
+        <div class="checker-buttons d-flex flex-wrap gap-2">
+          <button class="btn btn-outline-primary" id="btn-clinician" title="Requires: XML, Clinician List, License Status" disabled>
+            <i class="bi bi-person-check"></i> Clinicians
+          </button>
+          <button class="btn btn-outline-primary" id="btn-elig" title="Requires: XML, Eligibility" disabled>
+            <i class="bi bi-card-checklist"></i> Eligibility
+          </button>
+          <button class="btn btn-outline-primary" id="btn-auths" title="Requires: XML, Authorization Export" disabled>
+            <i class="bi bi-shield-check"></i> Authorizations
+          </button>
+          <button class="btn btn-outline-primary" id="btn-timings" title="Requires: XML" disabled>
+            <i class="bi bi-clock"></i> Timings
+          </button>
+          <button class="btn btn-outline-primary" id="btn-teeth" title="Requires: XML" disabled>
+            <i class="bi bi-heart-pulse"></i> Teeth
+          </button>
+          <button class="btn btn-outline-primary" id="btn-schema" title="Requires: XML" disabled>
+            <i class="bi bi-file-code"></i> Schema
+          </button>
+          <button class="btn btn-outline-primary" id="btn-pricing" title="Requires: XML, Pricing" disabled>
+            <i class="bi bi-currency-dollar"></i> Pricing
+          </button>
+          <button class="btn btn-outline-primary" id="btn-drugs" title="Requires: XML, Drugs" disabled>
+            <i class="bi bi-capsule"></i> Drug Quantities
+          </button>
+          <button class="btn btn-outline-primary" id="btn-modifiers" title="Requires: XML, Eligibility" disabled>
+            <i class="bi bi-sliders"></i> Modifiers
+          </button>
+          <button class="btn btn-warning" id="btn-check-all" title="Runs all available checkers" disabled>
+            <i class="bi bi-list-check"></i> Check All<span class="experimental-badge">EXP</span>
+          </button>
+        </div>
+      </div>
+    </div>
 
-  <!-- Filter Options -->
-  <div class="filter-options">
-    <label>
-      <input type="checkbox" id="filterInvalid" />
-      Show only files with invalid fields
-    </label>
-  </div>
+    <!-- Filter and Export Options -->
+    <div class="card mb-4">
+      <div class="card-body">
+        <div class="row align-items-center">
+          <div class="col-md-6">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="filterInvalid" />
+              <label class="form-check-label" for="filterInvalid">
+                Show only files with invalid fields
+              </label>
+            </div>
+          </div>
+          <div class="col-md-6 text-end">
+            <button class="btn btn-success" id="exportBtn" disabled>
+              <i class="bi bi-download"></i> Export Results
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
 
-  <!-- Export Section -->
-  <div class="export-section">
-    <button id="exportBtn" disabled>Export Results</button>
-  </div>
+    <!-- Status Message -->
+    <div id="uploadStatus" aria-live="polite"></div>
 
-  <!-- Results Container -->
-  <div id="uploadStatus" aria-live="polite"></div>
-  <div id="results-container"></div>
+    <!-- Results Container -->
+    <div id="results-container"></div>
+  </div>
 
   <!-- Include required libraries -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="table_clipboard.js"></script>
   
