@@ -34,16 +34,10 @@ function validateXmlSchema() {
 
   const reader = new FileReader();
   reader.onload = function (e) {
-    let xmlContent = e.target.result;
-    
-    // Track if we replaced unescaped ampersands
-    let ampersandReplaced = false;
+    const originalXmlContent = e.target.result;
     
     // Replace unescaped & with "and" (but preserve valid XML entities like &amp; &lt; &gt; &quot; &apos;)
-    xmlContent = xmlContent.replace(/&(?!(amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;))/g, function(match) {
-      ampersandReplaced = true;
-      return "and";
-    });
+    const xmlContent = originalXmlContent.replace(/&(?!(amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;))/g, "and");
     
     const parser = new DOMParser();
     const xmlDoc = parser.parseFromString(xmlContent, "application/xml");
@@ -59,10 +53,10 @@ function validateXmlSchema() {
     let schemaType = "";
     if (xmlDoc.documentElement.nodeName === "Claim.Submission") {
       schemaType = "claim";
-      results = validateClaimSchema(xmlDoc, ampersandReplaced);
+      results = validateClaimSchema(xmlDoc, originalXmlContent);
     } else if (xmlDoc.documentElement.nodeName === "Person.Register") {
       schemaType = "person";
-      results = validatePersonSchema(xmlDoc, ampersandReplaced);
+      results = validatePersonSchema(xmlDoc, originalXmlContent);
     } else {
       status.textContent = "Unknown schema: " + xmlDoc.documentElement.nodeName;
       return;
@@ -185,7 +179,7 @@ function checkImplantActivityDiagnosis(activities, diagnoses, getText, invalidFi
   }
 }
 
-function validateClaimSchema(xmlDoc, ampersandReplaced = false) {
+function validateClaimSchema(xmlDoc, originalXmlContent = "") {
   const results = [];
   const claims = xmlDoc.getElementsByTagName("Claim");
 
@@ -198,6 +192,27 @@ function validateClaimSchema(xmlDoc, ampersandReplaced = false) {
       return el && el.textContent ? el.textContent.trim() : "";
     };
     const invalidIfNull = (tag, parent = claim, prefix = "") => !text(tag, parent) ? invalidFields.push(prefix + tag + " (null/empty)") : null;
+
+    // Check if this specific claim had ampersands by comparing with original content
+    const claimID = text("ID");
+    let claimHadAmpersand = false;
+    if (originalXmlContent && claimID) {
+      // Find this claim in the original XML by locating its ID tag
+      const idTag = `<ID>${claimID}</ID>`;
+      const idPos = originalXmlContent.indexOf(idTag);
+      
+      if (idPos !== -1) {
+        // Search backwards for the <Claim> tag and forwards for </Claim>
+        const claimStartPos = originalXmlContent.lastIndexOf('<Claim', idPos);
+        const claimEndPos = originalXmlContent.indexOf('</Claim>', idPos);
+        
+        if (claimStartPos !== -1 && claimEndPos !== -1) {
+          const originalClaimContent = originalXmlContent.substring(claimStartPos, claimEndPos + '</Claim>'.length);
+          // Check if this specific claim had unescaped ampersands
+          claimHadAmpersand = /&(?!(amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;))/.test(originalClaimContent);
+        }
+      }
+    }
 
     // Required fields
     ["ID", "MemberID", "PayerID", "ProviderID", "EmiratesIDNumber", "Gross", "PatientShare", "Net"].forEach(tag => invalidIfNull(tag, claim));
@@ -273,8 +288,8 @@ function validateClaimSchema(xmlDoc, ampersandReplaced = false) {
     missingFields.length && remarks.push("Missing: " + missingFields.join(", "));
     invalidFields.length && remarks.push("Invalid: " + invalidFields.join(", "));
     
-    // Add ampersand replacement notification as a remark (not as invalid field)
-    if (ampersandReplaced) {
+    // Add ampersand replacement notification as a remark only for this specific claim
+    if (claimHadAmpersand) {
       remarks.push(AMPERSAND_REPLACEMENT_ERROR);
     }
     
@@ -292,7 +307,7 @@ function validateClaimSchema(xmlDoc, ampersandReplaced = false) {
   return results;
 }
 
-function validatePersonSchema(xmlDoc, ampersandReplaced = false) {
+function validatePersonSchema(xmlDoc, originalXmlContent = "") {
   const results = [];
   const persons = xmlDoc.getElementsByTagName("Person");
   for (const person of persons) {
@@ -304,6 +319,27 @@ function validatePersonSchema(xmlDoc, ampersandReplaced = false) {
       return el && el.textContent ? el.textContent.trim() : "";
     };
     const invalidIfNull = (tag, parent = person, prefix = "") => !text(tag, parent) ? invalidFields.push(prefix + tag + " (null/empty)") : null;
+
+    // Check if this specific person had ampersands by comparing with original content
+    const unifiedNumber = text("UnifiedNumber");
+    let personHadAmpersand = false;
+    if (originalXmlContent && unifiedNumber) {
+      // Find this person in the original XML by locating its UnifiedNumber tag
+      const unTag = `<UnifiedNumber>${unifiedNumber}</UnifiedNumber>`;
+      const unPos = originalXmlContent.indexOf(unTag);
+      
+      if (unPos !== -1) {
+        // Search backwards for the <Person> tag and forwards for </Person>
+        const personStartPos = originalXmlContent.lastIndexOf('<Person', unPos);
+        const personEndPos = originalXmlContent.indexOf('</Person>', unPos);
+        
+        if (personStartPos !== -1 && personEndPos !== -1) {
+          const originalPersonContent = originalXmlContent.substring(personStartPos, personEndPos + '</Person>'.length);
+          // Check if this specific person had unescaped ampersands
+          personHadAmpersand = /&(?!(amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;))/.test(originalPersonContent);
+        }
+      }
+    }
 
     [
       "UnifiedNumber", "FirstName", "FirstNameEn", "LastNameEn", "ContactNumber",
@@ -338,8 +374,8 @@ function validatePersonSchema(xmlDoc, ampersandReplaced = false) {
     missingFields.length && remarks.push("Missing: " + missingFields.join(", "));
     invalidFields.length && remarks.push("Invalid: " + invalidFields.join(", "));
     
-    // Add ampersand replacement notification as a remark (not as invalid field)
-    if (ampersandReplaced) {
+    // Add ampersand replacement notification as a remark only for this specific person
+    if (personHadAmpersand) {
       remarks.push(AMPERSAND_REPLACEMENT_ERROR);
     }
     
