@@ -42,6 +42,24 @@
             </div>
             
             <div class="file-input-group">
+              <label class="form-label">Claim Type (for Timings checker):</label>
+              <div>
+                <div class="form-check form-check-inline">
+                  <input class="form-check-input" type="radio" name="claimTypeGlobal" id="claimTypeDental" value="DENTAL" checked>
+                  <label class="form-check-label" for="claimTypeDental">
+                    Dental
+                  </label>
+                </div>
+                <div class="form-check form-check-inline">
+                  <input class="form-check-input" type="radio" name="claimTypeGlobal" id="claimTypeMedical" value="MEDICAL">
+                  <label class="form-check-label" for="claimTypeMedical">
+                    Medical
+                  </label>
+                </div>
+              </div>
+            </div>
+            
+            <div class="file-input-group">
               <label for="eligibilityFileInput" class="form-label">Elig (XLSX):</label>
               <div class="input-group">
                 <input type="file" class="form-control" id="eligibilityFileInput" accept=".xlsx" />
@@ -82,14 +100,6 @@
                 <span class="input-group-text file-status" id="statusStatus"></span>
               </div>
             </div>
-            
-            <div class="file-input-group">
-              <label for="drugsFileInput" class="form-label">Drugs List (XLSX):</label>
-              <div class="input-group">
-                <input type="file" class="form-control" id="drugsFileInput" accept=".xlsx" />
-                <span class="input-group-text file-status" id="drugsStatus"></span>
-              </div>
-            </div>
           </div>
         </div>
       </div>
@@ -122,9 +132,6 @@
           </button>
           <button type="button" class="btn btn-outline-primary" id="btn-pricing" title="Requires: XML, Pricing" disabled>
             Pricing
-          </button>
-          <button type="button" class="btn btn-outline-primary" id="btn-drugs" title="Requires: XML, Drugs" disabled>
-            Drug Quantities
           </button>
           <button type="button" class="btn btn-outline-primary" id="btn-modifiers" title="Requires: XML, Eligibility" disabled>
             Modifiers

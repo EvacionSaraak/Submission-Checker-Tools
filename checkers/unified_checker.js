@@ -10,8 +10,7 @@
     eligibility: null,
     auth: null,
     status: null,
-    pricing: null,
-    drugs: null
+    pricing: null
   };
 
   let activeChecker = null;
@@ -30,7 +29,6 @@
       authInput: document.getElementById('authFileInput'),
       statusInput: document.getElementById('statusFileInput'),
       pricingInput: document.getElementById('pricingFileInput'),
-      drugsInput: document.getElementById('drugsFileInput'),
       
       // Status spans
       xmlStatus: document.getElementById('xmlStatus'),
@@ -39,7 +37,6 @@
       authStatus: document.getElementById('authStatus'),
       statusStatus: document.getElementById('statusStatus'),
       pricingStatus: document.getElementById('pricingStatus'),
-      drugsStatus: document.getElementById('drugsStatus'),
       
       // Buttons
       btnClinician: document.getElementById('btn-clinician'),
@@ -49,7 +46,6 @@
       btnTeeth: document.getElementById('btn-teeth'),
       btnSchema: document.getElementById('btn-schema'),
       btnPricing: document.getElementById('btn-pricing'),
-      btnDrugs: document.getElementById('btn-drugs'),
       btnModifiers: document.getElementById('btn-modifiers'),
       btnCheckAll: document.getElementById('btn-check-all'),
       
@@ -69,7 +65,6 @@
     elements.authInput.addEventListener('change', (e) => handleFileChange(e, 'auth', elements.authStatus));
     elements.statusInput.addEventListener('change', (e) => handleFileChange(e, 'status', elements.statusStatus));
     elements.pricingInput.addEventListener('change', (e) => handleFileChange(e, 'pricing', elements.pricingStatus));
-    elements.drugsInput.addEventListener('change', (e) => handleFileChange(e, 'drugs', elements.drugsStatus));
 
     // Checker button event listeners
     elements.btnTimings.addEventListener('click', () => runChecker('timings'));
@@ -79,7 +74,6 @@
     elements.btnElig.addEventListener('click', () => runChecker('elig'));
     elements.btnAuths.addEventListener('click', () => runChecker('auths'));
     elements.btnPricing.addEventListener('click', () => runChecker('pricing'));
-    elements.btnDrugs.addEventListener('click', () => runChecker('drugs'));
     elements.btnModifiers.addEventListener('click', () => runChecker('modifiers'));
     elements.btnCheckAll.addEventListener('click', runAllCheckers);
 
@@ -117,7 +111,6 @@
       teeth: ['xml'],
       schema: ['xml'],
       pricing: ['xml', 'pricing'],
-      drugs: ['xml', 'drugs'],
       modifiers: ['xml', 'eligibility']
     };
 
@@ -144,6 +137,11 @@
       // Create minimal checker interface
       createCheckerInterface(checkerName);
 
+      // Sync global claim type with timings checker if applicable
+      if (checkerName === 'timings') {
+        syncClaimType();
+      }
+
       // Load and run the checker script
       await loadAndExecuteChecker(checkerName);
 
@@ -161,7 +159,7 @@
     // Create a simple interface for the checker with necessary DOM elements
     const interfaces = {
       timings: `
-        <div id="typeSelector" style="margin-bottom: 1em;">
+        <div id="typeSelector" style="display:none;">
           <label><input type="radio" name="claimType" value="DENTAL" checked> Dental</label>
           <label><input type="radio" name="claimType" value="MEDICAL"> Medical</label>
         </div>
@@ -216,14 +214,6 @@
         <div id="messageBox" class="message-box" aria-live="polite"></div>
         <div id="outputTableContainer" class="results-container"></div>
       `,
-      drugs: `
-        <input type="file" id="xmlFile" accept=".xml" style="display:none" />
-        <input type="file" id="xlsxFile" accept=".xlsx" style="display:none" />
-        <button id="processBtn" class="btn btn-primary" style="display:none;">Process</button>
-        <button id="exportErrorsBtn" class="btn btn-secondary" style="display:none;">Export Errors</button>
-        <div id="uploadStatus" aria-live="polite"></div>
-        <div id="results"></div>
-      `,
       modifiers: `
         <input type="file" id="xml-file" accept=".xml" style="display:none" />
         <input type="file" id="xlsx-file" accept=".xlsx" style="display:none" />
@@ -237,6 +227,22 @@
     elements.resultsContainer.innerHTML = interfaces[checkerName] || '<div id="results"></div>';
   }
 
+  function syncClaimType() {
+    // Get the global claim type selection
+    const globalDental = document.getElementById('claimTypeDental');
+    const globalMedical = document.getElementById('claimTypeMedical');
+    
+    if (!globalDental || !globalMedical) return;
+    
+    const selectedType = globalDental.checked ? 'DENTAL' : 'MEDICAL';
+    
+    // Set the hidden radio buttons in the timings checker to match
+    const timingsRadios = elements.resultsContainer.querySelectorAll('input[name="claimType"]');
+    timingsRadios.forEach(radio => {
+      radio.checked = (radio.value === selectedType);
+    });
+  }
+
   async function loadAndExecuteChecker(checkerName) {
     const fileMap = {
       clinician: 'clinician',
@@ -246,7 +252,6 @@
       teeth: 'tooths',
       schema: 'schema',
       pricing: 'pricing',
-      drugs: 'drugquantities',
       modifiers: 'modifiers'
     };
 
@@ -284,7 +289,6 @@
       teeth: { xmlFile: 'xml' },
       schema: { xmlFile: 'xml' },
       pricing: { 'xml-file': 'xml', 'xlsx-file': 'pricing' },
-      drugs: { xmlFile: 'xml', xlsxFile: 'drugs' },
       modifiers: { 'xml-file': 'xml', 'xlsx-file': 'eligibility' }
     };
 
@@ -316,22 +320,35 @@
           if (xmlInput && xmlInput.files.length > 0) {
             onFileChange({ target: xmlInput });
           }
-        } else if (checkerName === 'teeth') {
-          // Teeth checker processes automatically on file load via event listener
-          // Trigger the file change event again to ensure it's processed
-          const xmlFile = elements.resultsContainer.querySelector('#xmlFile');
-          if (xmlFile && xmlFile.files.length > 0) {
-            const event = new Event('change', { bubbles: true });
-            xmlFile.dispatchEvent(event);
-          }
+        } else if (checkerName === 'teeth' && typeof parseXML === 'function') {
+          // Teeth checker has parseXML function
+          parseXML();
+        } else if (checkerName === 'clinician' && typeof validateClinicians === 'function') {
+          // Clinician checker has validateClinicians function
+          validateClinicians();
+        } else if (checkerName === 'elig' && typeof initializeEventListeners === 'function') {
+          // Elig checker needs to initialize first then process
+          initializeEventListeners();
+          setTimeout(() => {
+            const processBtn = elements.resultsContainer.querySelector('#processBtn');
+            if (processBtn) processBtn.click();
+          }, 100);
+        } else if (checkerName === 'auths' && typeof processFiles === 'function') {
+          // Auth checker has processFiles function
+          processFiles();
+        } else if (checkerName === 'pricing' && typeof runCheck === 'function') {
+          // Pricing checker has runCheck function
+          runCheck();
+        } else if (checkerName === 'modifiers' && typeof runCheck === 'function') {
+          // Modifiers checker has runCheck function
+          runCheck();
         } else {
-          // For other checkers, trigger process button if exists
+          // Fallback: try clicking the process button
           const buttonSelectors = {
             clinician: '#processBtn',
             elig: '#processBtn',
             auths: '#processBtn',
             pricing: '#run-button',
-            drugs: '#processBtn',
             modifiers: '#run-button'
           };
 
@@ -353,7 +370,7 @@
     const allButtons = [
       elements.btnClinician, elements.btnElig, elements.btnAuths,
       elements.btnTimings, elements.btnTeeth, elements.btnSchema,
-      elements.btnPricing, elements.btnDrugs, elements.btnModifiers,
+      elements.btnPricing, elements.btnModifiers,
       elements.btnCheckAll
     ];
     
