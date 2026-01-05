@@ -199,11 +199,6 @@ function validateClaimSchema(xmlDoc, ampersandReplaced = false) {
     };
     const invalidIfNull = (tag, parent = claim, prefix = "") => !text(tag, parent) ? invalidFields.push(prefix + tag + " (null/empty)") : null;
 
-    // Add ampersand replacement notification if it occurred
-    if (ampersandReplaced) {
-      invalidFields.push(AMPERSAND_REPLACEMENT_ERROR);
-    }
-
     // Required fields
     ["ID", "MemberID", "PayerID", "ProviderID", "EmiratesIDNumber", "Gross", "PatientShare", "Net"].forEach(tag => invalidIfNull(tag, claim));
 
@@ -277,6 +272,12 @@ function validateClaimSchema(xmlDoc, ampersandReplaced = false) {
     // Compile remarks
     missingFields.length && remarks.push("Missing: " + missingFields.join(", "));
     invalidFields.length && remarks.push("Invalid: " + invalidFields.join(", "));
+    
+    // Add ampersand replacement notification as a remark (not as invalid field)
+    if (ampersandReplaced) {
+      remarks.push(AMPERSAND_REPLACEMENT_ERROR);
+    }
+    
     !remarks.length && remarks.push("OK");
 
     results.push({
@@ -303,11 +304,6 @@ function validatePersonSchema(xmlDoc, ampersandReplaced = false) {
       return el && el.textContent ? el.textContent.trim() : "";
     };
     const invalidIfNull = (tag, parent = person, prefix = "") => !text(tag, parent) ? invalidFields.push(prefix + tag + " (null/empty)") : null;
-
-    // Add ampersand replacement notification if it occurred
-    if (ampersandReplaced) {
-      invalidFields.push(AMPERSAND_REPLACEMENT_ERROR);
-    }
 
     [
       "UnifiedNumber", "FirstName", "FirstNameEn", "LastNameEn", "ContactNumber",
@@ -341,6 +337,12 @@ function validatePersonSchema(xmlDoc, ampersandReplaced = false) {
     // Compile remarks
     missingFields.length && remarks.push("Missing: " + missingFields.join(", "));
     invalidFields.length && remarks.push("Invalid: " + invalidFields.join(", "));
+    
+    // Add ampersand replacement notification as a remark (not as invalid field)
+    if (ampersandReplaced) {
+      remarks.push(AMPERSAND_REPLACEMENT_ERROR);
+    }
+    
     !remarks.length && remarks.push("OK");
 
     results.push({
