@@ -1,4 +1,4 @@
-// unified_checker.js - Simple no-iframe controller
+// unified_checker.js - Simplified controller that works with existing checker scripts
 
 (function() {
   'use strict';
@@ -15,7 +15,6 @@
   };
 
   let activeChecker = null;
-  let currentResults = null;
 
   // DOM elements
   let elements = {};
@@ -142,41 +141,13 @@
       setActiveButton(checkerName);
       activeChecker = checkerName;
 
-      // Clear previous results
-      elements.resultsContainer.innerHTML = '<div class="text-center p-5"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div><p class="mt-2">Processing...</p></div>';
+      // Create minimal checker interface
+      createCheckerInterface(checkerName);
 
-      // Load the checker HTML content
-      const response = await fetch(`checker_${getCheckerFileName(checkerName)}.html`);
-      if (!response.ok) {
-        throw new Error(`Failed to load checker: ${response.status}`);
-      }
-      
-      const html = await response.text();
-      
-      // Parse HTML to extract body content
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(html, 'text/html');
-      
-      // Get the body content and inject it
-      const content = doc.body.innerHTML;
-      elements.resultsContainer.innerHTML = content;
+      // Load and run the checker script
+      await loadAndExecuteChecker(checkerName);
 
-      // Load the checker script dynamically
-      await loadScript(`checker_${getCheckerFileName(checkerName)}.js`);
-
-      // Wait for initialization
-      await new Promise(resolve => setTimeout(resolve, 500));
-
-      // Set files programmatically
-      setFilesInPage(checkerName);
-
-      // Wait a bit more for file handlers to process
-      await new Promise(resolve => setTimeout(resolve, 500));
-
-      // Trigger processing if there's a button
-      triggerProcessing(checkerName);
-
-      elements.uploadStatus.innerHTML = `<div class="status-message success">${checkerName.charAt(0).toUpperCase() + checkerName.slice(1)} checker completed successfully.</div>`;
+      elements.uploadStatus.innerHTML = `<div class="status-message success">${checkerName.charAt(0).toUpperCase() + checkerName.slice(1)} checker ready.</div>`;
       elements.exportBtn.disabled = false;
 
     } catch (error) {
@@ -186,7 +157,87 @@
     }
   }
 
-  function getCheckerFileName(checkerName) {
+  function createCheckerInterface(checkerName) {
+    // Create a simple interface for the checker with necessary DOM elements
+    const interfaces = {
+      timings: `
+        <div id="typeSelector" style="margin-bottom: 1em;">
+          <label><input type="radio" name="claimType" value="DENTAL" checked> Dental</label>
+          <label><input type="radio" name="claimType" value="MEDICAL"> Medical</label>
+        </div>
+        <input type="file" id="xmlFileInput" accept=".xml" style="display:none" />
+        <button id="exportBtn" class="btn btn-secondary" style="display:none;">Export Invalid Entries</button>
+        <div id="resultsSummary" style="margin:10px;font-weight:bold;"></div>
+        <div id="results"></div>
+      `,
+      teeth: `
+        <input type="file" id="xmlFile" accept=".xml" style="display:none" />
+        <button id="exportBtn" class="btn btn-secondary" style="display:none;">Export Invalid Activities</button>
+        <div id="messageBox" style="color: red; font-weight: bold;"></div>
+        <div id="resultsSummary" style="margin:10px;font-weight:bold;"></div>
+        <div id="results"></div>
+      `,
+      schema: `
+        <input type="file" id="xmlFile" accept=".xml" style="display:none" />
+        <div id="uploadStatus" aria-live="polite"></div>
+        <div id="results"></div>
+      `,
+      clinician: `
+        <input type="file" id="xmlFileInput" accept=".xml" style="display:none" />
+        <input type="file" id="clinicianFileInput" accept=".xlsx" style="display:none" />
+        <input type="file" id="statusFileInput" accept=".xlsx" style="display:none" />
+        <button id="processBtn" class="btn btn-primary" style="display:none;">Validate</button>
+        <button id="exportCsvBtn" class="btn btn-secondary" style="display:none;">Export to Excel</button>
+        <div id="uploadStatus" aria-live="polite"></div>
+        <div id="results"></div>
+      `,
+      elig: `
+        <input type="file" id="xmlFileInput" accept=".xml" style="display:none" />
+        <input type="file" id="eligibilityFileInput" accept=".xlsx" style="display:none" />
+        <button id="processBtn" class="btn btn-primary" style="display:none;">Process</button>
+        <button id="exportInvalidBtn" class="btn btn-secondary" style="display:none;">Export Invalid Rows</button>
+        <div id="uploadStatus" style="margin-top:12px; color:#0074D9;"></div>
+        <div id="results" style="margin-top:20px;"></div>
+      `,
+      auths: `
+        <input type="file" id="xmlInput" accept=".xml" style="display:none" />
+        <input type="file" id="xlsxInput" accept=".xlsx" style="display:none" />
+        <button id="processBtn" class="btn btn-primary" style="display:none;">Run Checker</button>
+        <div id="file-status"></div>
+        <div id="results-container"></div>
+        <div id="results"></div>
+      `,
+      pricing: `
+        <input type="file" id="xml-file" accept=".xml" style="display:none" />
+        <input type="file" id="xlsx-file" accept=".xlsx" style="display:none" />
+        <button id="run-button" class="btn btn-primary" style="display:none;">Run Check</button>
+        <button id="download-button" class="btn btn-secondary" style="display:none;">Download Results</button>
+        <div id="progress-bar-container" class="progress-bar-container"></div>
+        <div id="messageBox" class="message-box" aria-live="polite"></div>
+        <div id="outputTableContainer" class="results-container"></div>
+      `,
+      drugs: `
+        <input type="file" id="xmlFile" accept=".xml" style="display:none" />
+        <input type="file" id="xlsxFile" accept=".xlsx" style="display:none" />
+        <button id="processBtn" class="btn btn-primary" style="display:none;">Process</button>
+        <button id="exportErrorsBtn" class="btn btn-secondary" style="display:none;">Export Errors</button>
+        <div id="uploadStatus" aria-live="polite"></div>
+        <div id="results"></div>
+      `,
+      modifiers: `
+        <input type="file" id="xml-file" accept=".xml" style="display:none" />
+        <input type="file" id="xlsx-file" accept=".xlsx" style="display:none" />
+        <button id="run-button" class="btn btn-primary" style="display:none;">Run Check</button>
+        <button id="download-button" class="btn btn-secondary" style="display:none;">Download Results</button>
+        <div id="messageBox" class="message-box" aria-live="polite"></div>
+        <div id="outputTableContainer" class="results-container"></div>
+      `
+    };
+
+    elements.resultsContainer.innerHTML = interfaces[checkerName] || '<div id="results"></div>';
+  }
+
+  async function loadAndExecuteChecker(checkerName) {
     const fileMap = {
       clinician: 'clinician',
       elig: 'elig',
@@ -198,27 +249,33 @@
       drugs: 'drugquantities',
       modifiers: 'modifiers'
     };
-    return fileMap[checkerName] || checkerName;
-  }
 
-  async function loadScript(scriptName) {
+    const scriptName = `checker_${fileMap[checkerName]}.js`;
+
+    // Remove any existing checker script
+    const existing = document.getElementById('dynamic-checker-script');
+    if (existing) {
+      existing.remove();
+    }
+
+    // Load the checker script
     return new Promise((resolve, reject) => {
-      // Remove any existing dynamic script
-      const existing = document.getElementById('dynamic-checker-script');
-      if (existing) {
-        existing.remove();
-      }
-
       const script = document.createElement('script');
       script.id = 'dynamic-checker-script';
       script.src = scriptName;
-      script.onload = resolve;
+      script.onload = () => {
+        // After script loads, set files and trigger processing
+        setTimeout(() => {
+          setFilesAndTrigger(checkerName);
+          resolve();
+        }, 500);
+      };
       script.onerror = () => reject(new Error(`Failed to load ${scriptName}`));
       document.body.appendChild(script);
     });
   }
 
-  function setFilesInPage(checkerName) {
+  function setFilesAndTrigger(checkerName) {
     const fileInputMap = {
       clinician: { xmlFileInput: 'xml', clinicianFileInput: 'clinician', statusFileInput: 'status' },
       elig: { xmlFileInput: 'xml', eligibilityFileInput: 'eligibility' },
@@ -234,6 +291,7 @@
     const inputMap = fileInputMap[checkerName];
     if (!inputMap) return;
 
+    // Set files in hidden inputs
     for (const [inputId, fileKey] of Object.entries(inputMap)) {
       const input = elements.resultsContainer.querySelector(`#${inputId}`);
       if (input && files[fileKey]) {
@@ -241,31 +299,31 @@
         dataTransfer.items.add(files[fileKey]);
         input.files = dataTransfer.files;
         
+        // Trigger change event
         const event = new Event('change', { bubbles: true });
         input.dispatchEvent(event);
       }
     }
-  }
 
-  function triggerProcessing(checkerName) {
-    const buttonSelectors = {
-      clinician: '#processBtn',
-      elig: '#processBtn',
-      auths: '#processBtn',
-      pricing: '#run-button',
-      drugs: '#processBtn',
-      modifiers: '#run-button'
-    };
+    // Trigger process button if exists
+    setTimeout(() => {
+      const buttonSelectors = {
+        clinician: '#processBtn',
+        elig: '#processBtn',
+        auths: '#processBtn',
+        pricing: '#run-button',
+        drugs: '#processBtn',
+        modifiers: '#run-button'
+      };
 
-    const selector = buttonSelectors[checkerName];
-    if (selector) {
-      setTimeout(() => {
+      const selector = buttonSelectors[checkerName];
+      if (selector) {
         const button = elements.resultsContainer.querySelector(selector);
-        if (button && !button.disabled) {
+        if (button) {
           button.click();
         }
-      }, 100);
-    }
+      }
+    }, 100);
   }
 
   function setActiveButton(checkerName) {
@@ -286,34 +344,7 @@
   }
 
   async function runAllCheckers() {
-    try {
-      elements.uploadStatus.innerHTML = '<div class="status-message info">Running all available checkers...</div>';
-      setActiveButton('checkAll');
-
-      const checkers = ['timings', 'teeth', 'schema'];
-      if (files.clinician && files.status) checkers.push('clinician');
-      if (files.eligibility) checkers.push('elig');
-      if (files.auth) checkers.push('auths');
-      if (files.pricing) checkers.push('pricing');
-      if (files.drugs) checkers.push('drugs');
-      if (files.eligibility) checkers.push('modifiers');
-
-      let allResultsHTML = '<div class="card"><div class="card-header bg-info text-white"><h4 class="mb-0">Combined Results from All Checkers</h4></div><div class="card-body">';
-
-      for (const checker of checkers) {
-        allResultsHTML += `<div class="alert alert-secondary">
-          <h5>${checker.charAt(0).toUpperCase() + checker.slice(1)} Checker</h5>
-          <p class="mb-0">Processing ${checker}... (Full implementation pending)</p>
-        </div>`;
-      }
-
-      allResultsHTML += '</div></div>';
-      elements.resultsContainer.innerHTML = allResultsHTML;
-      elements.uploadStatus.innerHTML = '<div class="status-message success">All checkers completed (experimental mode).</div>';
-
-    } catch (error) {
-      elements.uploadStatus.innerHTML = `<div class="status-message error">Error: ${error.message}</div>`;
-    }
+    elements.uploadStatus.innerHTML = '<div class="status-message info">Check All functionality is experimental and coming soon!</div>';
   }
 
   function applyFilter() {

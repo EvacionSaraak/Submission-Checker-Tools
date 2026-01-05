@@ -1,7 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
   const pages = [
-    { label: "Unified", file: "checkers/unified_checker.html" },
-    { label: "Formatting", file: "checkers/checker_formatter.html" }
+    { label: "Formatting", file: "checkers/checker_formatter.html" },
+    { label: "Unified", file: "checkers/unified_checker.html" }
   ];
 
   const navLeft = document.getElementById("navLeft");
