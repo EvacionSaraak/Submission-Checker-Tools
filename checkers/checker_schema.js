@@ -2,6 +2,9 @@
 // Requires SheetJS for Excel export: 
 // <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
 
+// Error message constants
+const AMPERSAND_REPLACEMENT_ERROR = "Ampersand (&) characters were replaced with 'and' to parse the XML";
+
 // Automatically validate when file is uploaded
 document.addEventListener("DOMContentLoaded", function () {
   const fileInput = document.getElementById("xmlFile");
@@ -37,7 +40,6 @@ function validateXmlSchema() {
     let ampersandReplaced = false;
     
     // Replace unescaped & with "and" (but preserve valid XML entities like &amp; &lt; &gt; &quot; &apos;)
-    const originalContent = xmlContent;
     xmlContent = xmlContent.replace(/&(?!(amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;))/g, function(match) {
       ampersandReplaced = true;
       return "and";
@@ -199,7 +201,7 @@ function validateClaimSchema(xmlDoc, ampersandReplaced = false) {
 
     // Add ampersand replacement notification if it occurred
     if (ampersandReplaced) {
-      invalidFields.push("Ampersand (&) characters were replaced with 'and' to parse the XML");
+      invalidFields.push(AMPERSAND_REPLACEMENT_ERROR);
     }
 
     // Required fields
@@ -304,7 +306,7 @@ function validatePersonSchema(xmlDoc, ampersandReplaced = false) {
 
     // Add ampersand replacement notification if it occurred
     if (ampersandReplaced) {
-      invalidFields.push("Ampersand (&) characters were replaced with 'and' to parse the XML");
+      invalidFields.push(AMPERSAND_REPLACEMENT_ERROR);
     }
 
     [
