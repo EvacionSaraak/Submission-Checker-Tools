@@ -202,8 +202,12 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
       const idPos = originalXmlContent.indexOf(idTag);
       
       if (idPos !== -1) {
-        // Search backwards for the <Claim> tag and forwards for </Claim>
-        const claimStartPos = originalXmlContent.lastIndexOf('<Claim', idPos);
+        // Search backwards for the <Claim> or <Claim > tag (to avoid matching within text)
+        let claimStartPos = originalXmlContent.lastIndexOf('<Claim>', idPos);
+        if (claimStartPos === -1) {
+          claimStartPos = originalXmlContent.lastIndexOf('<Claim ', idPos);
+        }
+        // Search forwards for the </Claim> tag
         const claimEndPos = originalXmlContent.indexOf('</Claim>', idPos);
         
         if (claimStartPos !== -1 && claimEndPos !== -1) {
@@ -284,15 +288,14 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
     // Check for false values
     checkForFalseValues(claim, invalidFields, "Claim.");
 
+    // Mark claim as invalid if it had ampersands
+    if (claimHadAmpersand) {
+      invalidFields.push(AMPERSAND_REPLACEMENT_ERROR);
+    }
+
     // Compile remarks
     missingFields.length && remarks.push("Missing: " + missingFields.join(", "));
     invalidFields.length && remarks.push("Invalid: " + invalidFields.join(", "));
-    
-    // Add ampersand replacement notification as a remark only for this specific claim
-    if (claimHadAmpersand) {
-      remarks.push(AMPERSAND_REPLACEMENT_ERROR);
-    }
-    
     !remarks.length && remarks.push("OK");
 
     results.push({
@@ -329,8 +332,12 @@ function validatePersonSchema(xmlDoc, originalXmlContent = "") {
       const unPos = originalXmlContent.indexOf(unTag);
       
       if (unPos !== -1) {
-        // Search backwards for the <Person> tag and forwards for </Person>
-        const personStartPos = originalXmlContent.lastIndexOf('<Person', unPos);
+        // Search backwards for the <Person> or <Person > tag (to avoid matching within text)
+        let personStartPos = originalXmlContent.lastIndexOf('<Person>', unPos);
+        if (personStartPos === -1) {
+          personStartPos = originalXmlContent.lastIndexOf('<Person ', unPos);
+        }
+        // Search forwards for the </Person> tag
         const personEndPos = originalXmlContent.indexOf('</Person>', unPos);
         
         if (personStartPos !== -1 && personEndPos !== -1) {
@@ -370,15 +377,14 @@ function validatePersonSchema(xmlDoc, originalXmlContent = "") {
     // False value check
     checkForFalseValues(person, invalidFields);
 
+    // Mark person as invalid if it had ampersands
+    if (personHadAmpersand) {
+      invalidFields.push(AMPERSAND_REPLACEMENT_ERROR);
+    }
+
     // Compile remarks
     missingFields.length && remarks.push("Missing: " + missingFields.join(", "));
     invalidFields.length && remarks.push("Invalid: " + invalidFields.join(", "));
-    
-    // Add ampersand replacement notification as a remark only for this specific person
-    if (personHadAmpersand) {
-      remarks.push(AMPERSAND_REPLACEMENT_ERROR);
-    }
-    
     !remarks.length && remarks.push("OK");
 
     results.push({
