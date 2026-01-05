@@ -18,7 +18,13 @@
   // DOM elements
   let elements = {};
 
-  document.addEventListener('DOMContentLoaded', init);
+  console.log('[SCRIPT] unified_checker.js loaded');
+  console.log('[SCRIPT] Waiting for DOMContentLoaded event...');
+  
+  document.addEventListener('DOMContentLoaded', () => {
+    console.log('[SCRIPT] ✓ DOMContentLoaded event fired!');
+    init();
+  });
 
   // LocalStorage helpers for file persistence
   function saveFileInfo(key, fileName) {
@@ -47,6 +53,8 @@
   }
 
   function init() {
+    console.log('[INIT] Initializing unified checker...');
+    
     elements = {
       // File inputs
       xmlInput: document.getElementById('xmlFileInput'),
@@ -84,15 +92,45 @@
       resultsContainer: document.getElementById('results-container')
     };
 
+    // Verify all file inputs were found
+    console.log('[INIT] File input elements:', {
+      xmlInput: !!elements.xmlInput,
+      clinicianInput: !!elements.clinicianInput,
+      eligibilityInput: !!elements.eligibilityInput,
+      authInput: !!elements.authInput,
+      statusInput: !!elements.statusInput,
+      pricingInput: !!elements.pricingInput
+    });
+
+    // Check for any missing elements
+    const missingInputs = [];
+    if (!elements.xmlInput) missingInputs.push('xmlFileInput');
+    if (!elements.clinicianInput) missingInputs.push('clinicianFileInput');
+    if (!elements.eligibilityInput) missingInputs.push('eligibilityFileInput');
+    if (!elements.authInput) missingInputs.push('authFileInput');
+    if (!elements.statusInput) missingInputs.push('statusFileInput');
+    if (!elements.pricingInput) missingInputs.push('pricingFileInput');
+    
+    if (missingInputs.length > 0) {
+      console.error('[INIT] ✗ Missing file input elements:', missingInputs);
+      console.error('[INIT] Cannot attach event listeners to missing elements!');
+      return;
+    }
+    
+    console.log('[INIT] ✓ All file input elements found successfully');
+
     // File input event listeners
+    console.log('[INIT] Attaching change event listeners to file inputs...');
     elements.xmlInput.addEventListener('change', (e) => handleFileChange(e, 'xml', elements.xmlStatus));
     elements.clinicianInput.addEventListener('change', (e) => handleFileChange(e, 'clinician', elements.clinicianStatus));
     elements.eligibilityInput.addEventListener('change', (e) => handleFileChange(e, 'eligibility', elements.eligibilityStatus));
     elements.authInput.addEventListener('change', (e) => handleFileChange(e, 'auth', elements.authStatus));
     elements.statusInput.addEventListener('change', (e) => handleFileChange(e, 'status', elements.statusStatus));
     elements.pricingInput.addEventListener('change', (e) => handleFileChange(e, 'pricing', elements.pricingStatus));
+    console.log('[INIT] ✓ Change event listeners attached to all file inputs');
 
     // Checker button event listeners
+    console.log('[INIT] Attaching click event listeners to checker buttons...');
     elements.btnTimings.addEventListener('click', () => runChecker('timings'));
     elements.btnTeeth.addEventListener('click', () => runChecker('teeth'));
     elements.btnSchema.addEventListener('click', () => runChecker('schema'));
@@ -102,6 +140,7 @@
     elements.btnPricing.addEventListener('click', () => runChecker('pricing'));
     elements.btnModifiers.addEventListener('click', () => runChecker('modifiers'));
     elements.btnCheckAll.addEventListener('click', runAllCheckers);
+    console.log('[INIT] ✓ Click event listeners attached to all checker buttons');
 
     // Filter checkbox
     elements.filterInvalid.addEventListener('change', applyFilter);
@@ -110,9 +149,13 @@
     elements.exportBtn.addEventListener('click', exportResults);
 
     // Restore file information from localStorage
+    console.log('[INIT] Restoring file states from localStorage...');
     restoreFileStates();
 
+    console.log('[INIT] Updating button states...');
     updateButtonStates();
+    
+    console.log('[INIT] ✓✓✓ Initialization complete! Ready for file uploads.');
   }
 
   function restoreFileStates() {
