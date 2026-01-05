@@ -18,13 +18,7 @@
   // DOM elements
   let elements = {};
 
-  console.log('[SCRIPT] unified_checker.js loaded');
-  console.log('[SCRIPT] Waiting for DOMContentLoaded event...');
-  
-  document.addEventListener('DOMContentLoaded', () => {
-    console.log('[SCRIPT] ✓ DOMContentLoaded event fired!');
-    init();
-  });
+  document.addEventListener('DOMContentLoaded', init);
 
   // LocalStorage helpers for file persistence
   function saveFileInfo(key, fileName) {
@@ -53,8 +47,6 @@
   }
 
   function init() {
-    console.log('[INIT] Initializing unified checker...');
-    
     elements = {
       // File inputs
       xmlInput: document.getElementById('xmlFileInput'),
@@ -92,45 +84,15 @@
       resultsContainer: document.getElementById('results-container')
     };
 
-    // Verify all file inputs were found
-    console.log('[INIT] File input elements:', {
-      xmlInput: !!elements.xmlInput,
-      clinicianInput: !!elements.clinicianInput,
-      eligibilityInput: !!elements.eligibilityInput,
-      authInput: !!elements.authInput,
-      statusInput: !!elements.statusInput,
-      pricingInput: !!elements.pricingInput
-    });
-
-    // Check for any missing elements
-    const missingInputs = [];
-    if (!elements.xmlInput) missingInputs.push('xmlFileInput');
-    if (!elements.clinicianInput) missingInputs.push('clinicianFileInput');
-    if (!elements.eligibilityInput) missingInputs.push('eligibilityFileInput');
-    if (!elements.authInput) missingInputs.push('authFileInput');
-    if (!elements.statusInput) missingInputs.push('statusFileInput');
-    if (!elements.pricingInput) missingInputs.push('pricingFileInput');
-    
-    if (missingInputs.length > 0) {
-      console.error('[INIT] ✗ Missing file input elements:', missingInputs);
-      console.error('[INIT] Cannot attach event listeners to missing elements!');
-      return;
-    }
-    
-    console.log('[INIT] ✓ All file input elements found successfully');
-
     // File input event listeners
-    console.log('[INIT] Attaching change event listeners to file inputs...');
     elements.xmlInput.addEventListener('change', (e) => handleFileChange(e, 'xml', elements.xmlStatus));
     elements.clinicianInput.addEventListener('change', (e) => handleFileChange(e, 'clinician', elements.clinicianStatus));
     elements.eligibilityInput.addEventListener('change', (e) => handleFileChange(e, 'eligibility', elements.eligibilityStatus));
     elements.authInput.addEventListener('change', (e) => handleFileChange(e, 'auth', elements.authStatus));
     elements.statusInput.addEventListener('change', (e) => handleFileChange(e, 'status', elements.statusStatus));
     elements.pricingInput.addEventListener('change', (e) => handleFileChange(e, 'pricing', elements.pricingStatus));
-    console.log('[INIT] ✓ Change event listeners attached to all file inputs');
 
     // Checker button event listeners
-    console.log('[INIT] Attaching click event listeners to checker buttons...');
     elements.btnTimings.addEventListener('click', () => runChecker('timings'));
     elements.btnTeeth.addEventListener('click', () => runChecker('teeth'));
     elements.btnSchema.addEventListener('click', () => runChecker('schema'));
@@ -140,7 +102,6 @@
     elements.btnPricing.addEventListener('click', () => runChecker('pricing'));
     elements.btnModifiers.addEventListener('click', () => runChecker('modifiers'));
     elements.btnCheckAll.addEventListener('click', runAllCheckers);
-    console.log('[INIT] ✓ Click event listeners attached to all checker buttons');
 
     // Filter checkbox
     elements.filterInvalid.addEventListener('change', applyFilter);
@@ -149,13 +110,9 @@
     elements.exportBtn.addEventListener('click', exportResults);
 
     // Restore file information from localStorage
-    console.log('[INIT] Restoring file states from localStorage...');
     restoreFileStates();
 
-    console.log('[INIT] Updating button states...');
     updateButtonStates();
-    
-    console.log('[INIT] ✓✓✓ Initialization complete! Ready for file uploads.');
   }
 
   function restoreFileStates() {
@@ -182,17 +139,7 @@
 
   function handleFileChange(event, fileKey, statusElement) {
     const file = event.target.files[0];
-    
-    console.log(`[FILE UPLOAD] File upload detected for '${fileKey}'`);
-    
     if (file) {
-      console.log(`[FILE UPLOAD] ✓ Successfully uploaded '${fileKey}':`, {
-        name: file.name,
-        size: `${(file.size / 1024).toFixed(2)} KB`,
-        type: file.type,
-        lastModified: new Date(file.lastModified).toISOString()
-      });
-      
       files[fileKey] = file;
       statusElement.textContent = `✓ ${file.name}`;
       statusElement.style.color = '#0f5132';
@@ -201,23 +148,15 @@
       
       // Save to localStorage
       saveFileInfo(fileKey, file.name);
-      console.log(`[FILE UPLOAD] Saved '${fileKey}' filename to localStorage`);
     } else {
-      console.log(`[FILE UPLOAD] ✗ File cleared for '${fileKey}'`);
       files[fileKey] = null;
       statusElement.textContent = '';
       statusElement.style.backgroundColor = '';
       
       // Clear from localStorage
       clearFileInfo(fileKey);
-      console.log(`[FILE UPLOAD] Removed '${fileKey}' from localStorage`);
     }
-    
     updateButtonStates();
-    console.log(`[FILE UPLOAD] Current file state:`, Object.keys(files).reduce((acc, key) => {
-      acc[key] = files[key] ? `✓ ${files[key].name}` : '✗ not uploaded';
-      return acc;
-    }, {}));
   }
 
   function updateButtonStates() {
@@ -232,33 +171,16 @@
       modifiers: ['xml', 'eligibility']
     };
 
-    console.log('[BUTTON STATE] Updating button states based on available files');
-    
     for (const [checker, reqs] of Object.entries(requirements)) {
       const btnName = `btn${checker.charAt(0).toUpperCase() + checker.slice(1)}`;
       const button = elements[btnName];
       if (button) {
-        const allFilesPresent = reqs.every(req => files[req] !== null);
-        const missingFiles = reqs.filter(req => files[req] === null);
-        
-        button.disabled = !allFilesPresent;
-        
-        console.log(`[BUTTON STATE] ${checker}:`, {
-          enabled: allFilesPresent,
-          required: reqs,
-          missing: missingFiles.length > 0 ? missingFiles : 'none'
-        });
+        button.disabled = !reqs.every(req => files[req] !== null);
       }
     }
 
     if (elements.btnCheckAll) {
-      const checkAllEnabled = !!files.xml;
-      elements.btnCheckAll.disabled = !checkAllEnabled;
-      console.log(`[BUTTON STATE] Check All:`, {
-        enabled: checkAllEnabled,
-        required: ['xml'],
-        missing: checkAllEnabled ? 'none' : ['xml']
-      });
+      elements.btnCheckAll.disabled = !files.xml;
     }
   }
 
@@ -457,42 +379,22 @@
     }
 
     // Set files in hidden inputs
-    console.log(`[FILE TRANSFER] Starting file transfer for ${checkerName}:`, inputMap);
+    console.log(`[DEBUG] Setting files for ${checkerName}:`, inputMap);
     for (const [inputId, fileKey] of Object.entries(inputMap)) {
       const input = elements.resultsContainer.querySelector(`#${inputId}`);
-      console.log(`[FILE TRANSFER] Looking for input #${inputId}:`, {
-        found: !!input,
-        fileKey: fileKey,
-        hasFile: !!files[fileKey],
-        fileName: files[fileKey]?.name || 'N/A'
-      });
+      console.log(`[DEBUG] Looking for input #${inputId}, found:`, !!input, 'File key:', fileKey, 'Has file:', !!files[fileKey]);
       
       if (input && files[fileKey]) {
-        console.log(`[FILE TRANSFER] Transferring '${files[fileKey].name}' to #${inputId}...`);
-        
         const dataTransfer = new DataTransfer();
         dataTransfer.items.add(files[fileKey]);
         input.files = dataTransfer.files;
-        
-        console.log(`[FILE TRANSFER] ✓ Successfully transferred to #${inputId}:`, {
-          fileName: input.files[0]?.name,
-          fileSize: input.files[0] ? `${(input.files[0].size / 1024).toFixed(2)} KB` : 'N/A',
-          fileCount: input.files.length
-        });
+        console.log(`[DEBUG] Set file for #${inputId}:`, input.files[0]?.name);
         
         // Trigger change event
         const event = new Event('change', { bubbles: true });
         input.dispatchEvent(event);
-        console.log(`[FILE TRANSFER] Dispatched 'change' event for #${inputId}`);
-      } else {
-        if (!input) {
-          console.warn(`[FILE TRANSFER] ✗ Input element #${inputId} not found in DOM`);
-        } else if (!files[fileKey]) {
-          console.warn(`[FILE TRANSFER] ✗ No file available for key '${fileKey}'`);
-        }
       }
     }
-    console.log(`[FILE TRANSFER] File transfer complete for ${checkerName}`);
 
     // For checkers that auto-process on file change, manually call their processing functions
     // since DOMContentLoaded has already fired
