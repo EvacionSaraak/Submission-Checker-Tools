@@ -42,6 +42,22 @@
             </div>
             
             <div class="file-input-group">
+              <label for="eligibilityFileInput" class="form-label">Elig (XLSX):</label>
+              <div class="input-group">
+                <input type="file" class="form-control" id="eligibilityFileInput" accept=".xlsx" />
+                <span class="input-group-text file-status" id="eligibilityStatus"></span>
+              </div>
+            </div>
+            
+            <div class="file-input-group">
+              <label for="authFileInput" class="form-label">Auth (XLSX):</label>
+              <div class="input-group">
+                <input type="file" class="form-control" id="authFileInput" accept=".xlsx" />
+                <span class="input-group-text file-status" id="authStatus"></span>
+              </div>
+            </div>
+            
+            <div class="file-input-group">
               <label class="form-label">Claim Type (for Timings checker):</label>
               <div>
                 <div class="form-check form-check-inline">
@@ -56,22 +72,6 @@
                     Medical
                   </label>
                 </div>
-              </div>
-            </div>
-            
-            <div class="file-input-group">
-              <label for="eligibilityFileInput" class="form-label">Elig (XLSX):</label>
-              <div class="input-group">
-                <input type="file" class="form-control" id="eligibilityFileInput" accept=".xlsx" />
-                <span class="input-group-text file-status" id="eligibilityStatus"></span>
-              </div>
-            </div>
-            
-            <div class="file-input-group">
-              <label for="authFileInput" class="form-label">Auth (XLSX):</label>
-              <div class="input-group">
-                <input type="file" class="form-control" id="authFileInput" accept=".xlsx" />
-                <span class="input-group-text file-status" id="authStatus"></span>
               </div>
             </div>
           </div>
@@ -102,43 +102,39 @@
             </div>
           </div>
         </div>
-      </div>
-    </div>
-
-    <!-- Checker Buttons -->
-    <div class="card mb-4">
-      <div class="card-header bg-secondary text-white">
-        <h5 class="mb-0">Run Checkers</h5>
-      </div>
-      <div class="card-body">
-        <div class="btn-group checker-buttons" role="group" aria-label="Checker buttons">
-          <button type="button" class="btn btn-outline-primary" id="btn-clinician" title="Requires: XML, Clinician List, License Status" disabled>
-            Clinicians
-          </button>
-          <button type="button" class="btn btn-outline-primary" id="btn-elig" title="Requires: XML, Eligibility" disabled>
-            Eligibility
-          </button>
-          <button type="button" class="btn btn-outline-primary" id="btn-auths" title="Requires: XML, Authorization Export" disabled>
-            Authorizations
-          </button>
-          <button type="button" class="btn btn-outline-primary" id="btn-timings" title="Requires: XML" disabled>
-            Timings
-          </button>
-          <button type="button" class="btn btn-outline-primary" id="btn-teeth" title="Requires: XML" disabled>
-            Teeth
-          </button>
-          <button type="button" class="btn btn-outline-primary" id="btn-schema" title="Requires: XML" disabled>
-            Schema
-          </button>
-          <button type="button" class="btn btn-outline-primary" id="btn-pricing" title="Requires: XML, Pricing" disabled>
-            Pricing
-          </button>
-          <button type="button" class="btn btn-outline-primary" id="btn-modifiers" title="Requires: XML, Eligibility" disabled>
-            Modifiers
-          </button>
-          <button type="button" class="btn btn-warning" id="btn-check-all" title="Runs all available checkers" disabled>
-            Check All<span class="experimental-badge">EXP</span>
-          </button>
+        
+        <!-- Run Checkers buttons at bottom of inputs card -->
+        <div class="mt-4 pt-3 border-top">
+          <h6 class="mb-3">Run Checkers</h6>
+          <div class="btn-group checker-buttons" role="group" aria-label="Checker buttons">
+            <button type="button" class="btn btn-outline-primary" id="btn-clinician" title="Requires: XML, Clinician List, License Status" disabled>
+              Clinicians
+            </button>
+            <button type="button" class="btn btn-outline-primary" id="btn-elig" title="Requires: XML, Eligibility" disabled>
+              Eligibility
+            </button>
+            <button type="button" class="btn btn-outline-primary" id="btn-auths" title="Requires: XML, Authorization Export" disabled>
+              Authorizations
+            </button>
+            <button type="button" class="btn btn-outline-primary" id="btn-timings" title="Requires: XML" disabled>
+              Timings
+            </button>
+            <button type="button" class="btn btn-outline-primary" id="btn-teeth" title="Requires: XML" disabled>
+              Teeth
+            </button>
+            <button type="button" class="btn btn-outline-primary" id="btn-schema" title="Requires: XML" disabled>
+              Schema
+            </button>
+            <button type="button" class="btn btn-outline-primary" id="btn-pricing" title="Requires: XML, Pricing" disabled>
+              Pricing
+            </button>
+            <button type="button" class="btn btn-outline-primary" id="btn-modifiers" title="Requires: XML, Eligibility" disabled>
+              Modifiers
+            </button>
+            <button type="button" class="btn btn-warning" id="btn-check-all" title="Runs all available checkers" disabled>
+              Check All<span class="experimental-badge">EXP</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>

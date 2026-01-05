@@ -20,6 +20,32 @@
 
   document.addEventListener('DOMContentLoaded', init);
 
+  // LocalStorage helpers for file persistence
+  function saveFileInfo(key, fileName) {
+    try {
+      localStorage.setItem(`checker_file_${key}`, fileName);
+    } catch (e) {
+      console.error('Failed to save to localStorage:', e);
+    }
+  }
+
+  function loadFileInfo(key) {
+    try {
+      return localStorage.getItem(`checker_file_${key}`);
+    } catch (e) {
+      console.error('Failed to load from localStorage:', e);
+      return null;
+    }
+  }
+
+  function clearFileInfo(key) {
+    try {
+      localStorage.removeItem(`checker_file_${key}`);
+    } catch (e) {
+      console.error('Failed to clear from localStorage:', e);
+    }
+  }
+
   function init() {
     elements = {
       // File inputs
@@ -83,7 +109,32 @@
     // Export button
     elements.exportBtn.addEventListener('click', exportResults);
 
+    // Restore file information from localStorage
+    restoreFileStates();
+
     updateButtonStates();
+  }
+
+  function restoreFileStates() {
+    const fileKeys = ['xml', 'clinician', 'eligibility', 'auth', 'status', 'pricing'];
+    const statusElements = {
+      xml: elements.xmlStatus,
+      clinician: elements.clinicianStatus,
+      eligibility: elements.eligibilityStatus,
+      auth: elements.authStatus,
+      status: elements.statusStatus,
+      pricing: elements.pricingStatus
+    };
+
+    fileKeys.forEach(key => {
+      const fileName = loadFileInfo(key);
+      if (fileName) {
+        statusElements[key].textContent = `✓ ${fileName}`;
+        statusElements[key].style.color = 'green';
+        // Note: We can't restore actual File objects, but we show the filename
+        // User will need to re-upload if they want to process again
+      }
+    });
   }
 
   function handleFileChange(event, fileKey, statusElement) {
@@ -94,10 +145,16 @@
       statusElement.style.color = '#0f5132';
       statusElement.style.backgroundColor = '#d1e7dd';
       statusElement.style.fontWeight = 'bold';
+      
+      // Save to localStorage
+      saveFileInfo(fileKey, file.name);
     } else {
       files[fileKey] = null;
       statusElement.textContent = '';
       statusElement.style.backgroundColor = '';
+      
+      // Clear from localStorage
+      clearFileInfo(fileKey);
     }
     updateButtonStates();
   }
@@ -323,42 +380,49 @@
         } else if (checkerName === 'teeth' && typeof parseXML === 'function') {
           // Teeth checker has parseXML function
           parseXML();
-        } else if (checkerName === 'clinician' && typeof validateClinicians === 'function') {
-          // Clinician checker has validateClinicians function
-          validateClinicians();
-        } else if (checkerName === 'elig' && typeof initializeEventListeners === 'function') {
+        } else if (checkerName === 'clinician') {
+          // Clinician checker: set up event listeners and call validateClinicians
+          if (typeof validateClinicians === 'function') {
+            // Manually set up required elements if they exist globally
+            const setupGlobals = () => {
+              window.xmlInput = elements.resultsContainer.querySelector('#xmlFileInput');
+              window.clinicianInput = elements.resultsContainer.querySelector('#clinicianFileInput');
+              window.statusInput = elements.resultsContainer.querySelector('#statusFileInput');
+              window.processBtn = elements.resultsContainer.querySelector('#processBtn');
+              window.csvBtn = elements.resultsContainer.querySelector('#csvBtn');
+              window.resultsDiv = elements.resultsContainer.querySelector('#results');
+              window.uploadDiv = elements.resultsContainer.querySelector('#uploadStatus');
+            };
+            setupGlobals();
+            validateClinicians();
+          }
+        } else if (checkerName === 'elig') {
           // Elig checker needs to initialize first then process
-          initializeEventListeners();
-          setTimeout(() => {
-            const processBtn = elements.resultsContainer.querySelector('#processBtn');
-            if (processBtn) processBtn.click();
-          }, 100);
-        } else if (checkerName === 'auths' && typeof processFiles === 'function') {
-          // Auth checker has processFiles function
-          processFiles();
+          if (typeof initializeEventListeners === 'function') {
+            // Set up global elements first
+            window.xmlInput = elements.resultsContainer.querySelector('#xmlFileInput');
+            window.reportInput = elements.resultsContainer.querySelector('#reportFileInput');
+            window.eligInput = elements.resultsContainer.querySelector('#eligibilityFileInput');
+            window.processBtn = elements.resultsContainer.querySelector('#processBtn');
+            window.exportInvalidBtn = elements.resultsContainer.querySelector('#exportInvalidBtn');
+            window.resultsDiv = elements.resultsContainer.querySelector('#results');
+            window.statusDiv = elements.resultsContainer.querySelector('#status');
+            
+            initializeEventListeners();
+            setTimeout(() => {
+              const processBtn = elements.resultsContainer.querySelector('#processBtn');
+              if (processBtn) processBtn.click();
+            }, 100);
+          }
+        } else if (checkerName === 'auths' && typeof handleRun === 'function') {
+          // Auth checker has handleRun function
+          handleRun();
         } else if (checkerName === 'pricing' && typeof runCheck === 'function') {
           // Pricing checker has runCheck function
           runCheck();
         } else if (checkerName === 'modifiers' && typeof runCheck === 'function') {
           // Modifiers checker has runCheck function
           runCheck();
-        } else {
-          // Fallback: try clicking the process button
-          const buttonSelectors = {
-            clinician: '#processBtn',
-            elig: '#processBtn',
-            auths: '#processBtn',
-            pricing: '#run-button',
-            modifiers: '#run-button'
-          };
-
-          const selector = buttonSelectors[checkerName];
-          if (selector) {
-            const button = elements.resultsContainer.querySelector(selector);
-            if (button) {
-              button.click();
-            }
-          }
         }
       } catch (error) {
         console.error(`Error triggering ${checkerName}:`, error);

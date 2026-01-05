@@ -470,7 +470,7 @@ function renderResults(results, container, schemaType) {
   container.appendChild(exportBtn);
 
   const table = document.createElement("table");
-  table.className = "table";
+  table.className = "table table-striped table-bordered";
   table.style.borderCollapse = "collapse";
   table.style.width = "100%";
 
