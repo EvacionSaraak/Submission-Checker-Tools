@@ -439,7 +439,7 @@
 
     // For checkers that auto-process on file change, manually call their processing functions
     // since DOMContentLoaded has already fired
-    setTimeout(() => {
+    setTimeout(async () => {
       try {
         console.log(`[DEBUG] Attempting to trigger ${checkerName} processing...`);
         
