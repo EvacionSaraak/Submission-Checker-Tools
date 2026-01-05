@@ -389,8 +389,8 @@
       script.src = scriptName;
       script.onload = () => {
         // After script loads, set files and trigger processing
-        setTimeout(() => {
-          setFilesAndTrigger(checkerName);
+        setTimeout(async () => {
+          await setFilesAndTrigger(checkerName);
           resolve();
         }, 500);
       };
@@ -399,7 +399,7 @@
     });
   }
 
-  function setFilesAndTrigger(checkerName) {
+  async function setFilesAndTrigger(checkerName) {
     console.log(`[DEBUG] setFilesAndTrigger called for: ${checkerName}`);
     
     const fileInputMap = {
