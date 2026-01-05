@@ -110,7 +110,9 @@ async function readXlsx(file) {
 
 // ----------------- XML parsing & extraction -----------------
 function parseXml(text) {
-  const doc = new DOMParser().parseFromString(text, 'text/xml');
+  // Preprocess XML to replace unescaped & with "and" for parseability
+  const xmlContent = text.replace(/&(?!(amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;))/g, "and");
+  const doc = new DOMParser().parseFromString(xmlContent, 'text/xml');
   const pe = doc.getElementsByTagName('parsererror')[0];
   if (pe) throw new Error('Invalid XML: ' + (pe.textContent || 'parse error').trim());
   return doc;

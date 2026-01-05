@@ -522,7 +522,9 @@ function logNoEligibilityMatch(sourceType, claimSummary, memberID, parsedClaimDa
 async function parseXmlFile(file) {
   console.log(`Parsing XML file: ${file.name}`);
   const text = await file.text();
-  const xmlDoc = new DOMParser().parseFromString(text, "application/xml");
+  // Preprocess XML to replace unescaped & with "and" for parseability
+  const xmlContent = text.replace(/&(?!(amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;))/g, "and");
+  const xmlDoc = new DOMParser().parseFromString(xmlContent, "application/xml");
 
   const claims = Array.from(xmlDoc.querySelectorAll("Claim")).map(claim => ({
     claimID: claim.querySelector("ID")?.textContent.trim() || '',

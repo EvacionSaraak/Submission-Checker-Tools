@@ -56,7 +56,9 @@ function validateXMLString(str) {
   if (typeof str !== 'string' || !str.trim().startsWith('<')) throw new Error('File does not appear to be valid XML.');
 }
 function parseXML(xmlString) {
-  const doc = new DOMParser().parseFromString(xmlString, 'application/xml');
+  // Preprocess XML to replace unescaped & with "and" for parseability
+  const xmlContent = xmlString.replace(/&(?!(amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;))/g, "and");
+  const doc = new DOMParser().parseFromString(xmlContent, 'application/xml');
   if (doc.querySelector('parsererror')) throw new Error('Invalid XML format.');
   return doc;
 }

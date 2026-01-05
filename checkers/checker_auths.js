@@ -61,7 +61,9 @@ function parseXMLFile(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = e => {
-      const doc = new DOMParser().parseFromString(e.target.result, "application/xml");
+      // Preprocess XML to replace unescaped & with "and" for parseability
+      const xmlContent = e.target.result.replace(/&(?!(amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;))/g, "and");
+      const doc = new DOMParser().parseFromString(xmlContent, "application/xml");
       const err = doc.querySelector("parsererror");
       if (err) {
         xmlClaimCount = 0;

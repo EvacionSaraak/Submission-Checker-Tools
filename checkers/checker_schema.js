@@ -2,6 +2,9 @@
 // Requires SheetJS for Excel export: 
 // <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
 
+// Error message constants
+const AMPERSAND_REPLACEMENT_ERROR = "Please replace `&` to `and` because this will cause an error.";
+
 // Automatically validate when file is uploaded
 document.addEventListener("DOMContentLoaded", function () {
   const fileInput = document.getElementById("xmlFile");
@@ -31,7 +34,11 @@ function validateXmlSchema() {
 
   const reader = new FileReader();
   reader.onload = function (e) {
-    const xmlContent = e.target.result;
+    const originalXmlContent = e.target.result;
+    
+    // Replace unescaped & with "and" (but preserve valid XML entities like &amp; &lt; &gt; &quot; &apos;)
+    const xmlContent = originalXmlContent.replace(/&(?!(amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;))/g, "and");
+    
     const parser = new DOMParser();
     const xmlDoc = parser.parseFromString(xmlContent, "application/xml");
     const parseErrors = xmlDoc.getElementsByTagName("parsererror");
@@ -46,10 +53,10 @@ function validateXmlSchema() {
     let schemaType = "";
     if (xmlDoc.documentElement.nodeName === "Claim.Submission") {
       schemaType = "claim";
-      results = validateClaimSchema(xmlDoc);
+      results = validateClaimSchema(xmlDoc, originalXmlContent);
     } else if (xmlDoc.documentElement.nodeName === "Person.Register") {
       schemaType = "person";
-      results = validatePersonSchema(xmlDoc);
+      results = validatePersonSchema(xmlDoc, originalXmlContent);
     } else {
       status.textContent = "Unknown schema: " + xmlDoc.documentElement.nodeName;
       return;
@@ -172,7 +179,7 @@ function checkImplantActivityDiagnosis(activities, diagnoses, getText, invalidFi
   }
 }
 
-function validateClaimSchema(xmlDoc) {
+function validateClaimSchema(xmlDoc, originalXmlContent = "") {
   const results = [];
   const claims = xmlDoc.getElementsByTagName("Claim");
 
@@ -185,6 +192,31 @@ function validateClaimSchema(xmlDoc) {
       return el && el.textContent ? el.textContent.trim() : "";
     };
     const invalidIfNull = (tag, parent = claim, prefix = "") => !text(tag, parent) ? invalidFields.push(prefix + tag + " (null/empty)") : null;
+
+    // Check if this specific claim had ampersands by comparing with original content
+    const claimID = text("ID");
+    let claimHadAmpersand = false;
+    if (originalXmlContent && claimID) {
+      // Find this claim in the original XML by locating its ID tag
+      const idTag = `<ID>${claimID}</ID>`;
+      const idPos = originalXmlContent.indexOf(idTag);
+      
+      if (idPos !== -1) {
+        // Search backwards for the <Claim> or <Claim > tag (to avoid matching within text)
+        let claimStartPos = originalXmlContent.lastIndexOf('<Claim>', idPos);
+        if (claimStartPos === -1) {
+          claimStartPos = originalXmlContent.lastIndexOf('<Claim ', idPos);
+        }
+        // Search forwards for the </Claim> tag
+        const claimEndPos = originalXmlContent.indexOf('</Claim>', idPos);
+        
+        if (claimStartPos !== -1 && claimEndPos !== -1) {
+          const originalClaimContent = originalXmlContent.substring(claimStartPos, claimEndPos + '</Claim>'.length);
+          // Check if this specific claim had unescaped ampersands
+          claimHadAmpersand = /&(?!(amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;))/.test(originalClaimContent);
+        }
+      }
+    }
 
     // Required fields
     ["ID", "MemberID", "PayerID", "ProviderID", "EmiratesIDNumber", "Gross", "PatientShare", "Net"].forEach(tag => invalidIfNull(tag, claim));
@@ -256,6 +288,11 @@ function validateClaimSchema(xmlDoc) {
     // Check for false values
     checkForFalseValues(claim, invalidFields, "Claim.");
 
+    // Mark claim as invalid if it had ampersands
+    if (claimHadAmpersand) {
+      invalidFields.push(AMPERSAND_REPLACEMENT_ERROR);
+    }
+
     // Compile remarks
     missingFields.length && remarks.push("Missing: " + missingFields.join(", "));
     invalidFields.length && remarks.push("Invalid: " + invalidFields.join(", "));
@@ -273,7 +310,7 @@ function validateClaimSchema(xmlDoc) {
   return results;
 }
 
-function validatePersonSchema(xmlDoc) {
+function validatePersonSchema(xmlDoc, originalXmlContent = "") {
   const results = [];
   const persons = xmlDoc.getElementsByTagName("Person");
   for (const person of persons) {
@@ -285,6 +322,31 @@ function validatePersonSchema(xmlDoc) {
       return el && el.textContent ? el.textContent.trim() : "";
     };
     const invalidIfNull = (tag, parent = person, prefix = "") => !text(tag, parent) ? invalidFields.push(prefix + tag + " (null/empty)") : null;
+
+    // Check if this specific person had ampersands by comparing with original content
+    const unifiedNumber = text("UnifiedNumber");
+    let personHadAmpersand = false;
+    if (originalXmlContent && unifiedNumber) {
+      // Find this person in the original XML by locating its UnifiedNumber tag
+      const unTag = `<UnifiedNumber>${unifiedNumber}</UnifiedNumber>`;
+      const unPos = originalXmlContent.indexOf(unTag);
+      
+      if (unPos !== -1) {
+        // Search backwards for the <Person> or <Person > tag (to avoid matching within text)
+        let personStartPos = originalXmlContent.lastIndexOf('<Person>', unPos);
+        if (personStartPos === -1) {
+          personStartPos = originalXmlContent.lastIndexOf('<Person ', unPos);
+        }
+        // Search forwards for the </Person> tag
+        const personEndPos = originalXmlContent.indexOf('</Person>', unPos);
+        
+        if (personStartPos !== -1 && personEndPos !== -1) {
+          const originalPersonContent = originalXmlContent.substring(personStartPos, personEndPos + '</Person>'.length);
+          // Check if this specific person had unescaped ampersands
+          personHadAmpersand = /&(?!(amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;))/.test(originalPersonContent);
+        }
+      }
+    }
 
     [
       "UnifiedNumber", "FirstName", "FirstNameEn", "LastNameEn", "ContactNumber",
@@ -314,6 +376,11 @@ function validatePersonSchema(xmlDoc) {
 
     // False value check
     checkForFalseValues(person, invalidFields);
+
+    // Mark person as invalid if it had ampersands
+    if (personHadAmpersand) {
+      invalidFields.push(AMPERSAND_REPLACEMENT_ERROR);
+    }
 
     // Compile remarks
     missingFields.length && remarks.push("Missing: " + missingFields.join(", "));

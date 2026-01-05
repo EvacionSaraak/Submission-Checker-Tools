@@ -103,7 +103,9 @@ document.getElementById('processBtn').addEventListener('click', function() {
 
     const readerXML = new FileReader();
     readerXML.onload = function(e2) {
-        const xmlText = e2.target.result, parser = new DOMParser(), xmlDoc = parser.parseFromString(xmlText, "application/xml");
+        // Preprocess XML to replace unescaped & with "and" for parseability
+        const xmlText = e2.target.result.replace(/&(?!(amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;))/g, "and");
+        const parser = new DOMParser(), xmlDoc = parser.parseFromString(xmlText, "application/xml");
         if (xmlDoc.getElementsByTagName('parsererror').length>0) {
             document.getElementById('results').innerHTML = "<p style='color:red'>Error parsing XML file.</p>";
             document.getElementById('exportErrorsBtn').disabled = true; return;
