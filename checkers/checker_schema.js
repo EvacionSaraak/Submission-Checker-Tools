@@ -3,7 +3,7 @@
 // <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
 
 // Error message constants
-const AMPERSAND_REPLACEMENT_ERROR = "Please replace `&` to `and` because this will cause error.";
+const AMPERSAND_REPLACEMENT_ERROR = "Please replace `&` to `and` because this will cause an error.";
 
 // Automatically validate when file is uploaded
 document.addEventListener("DOMContentLoaded", function () {
