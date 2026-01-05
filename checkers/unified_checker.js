@@ -139,7 +139,17 @@
 
   function handleFileChange(event, fileKey, statusElement) {
     const file = event.target.files[0];
+    
+    console.log(`[FILE UPLOAD] File upload detected for '${fileKey}'`);
+    
     if (file) {
+      console.log(`[FILE UPLOAD] ✓ Successfully uploaded '${fileKey}':`, {
+        name: file.name,
+        size: `${(file.size / 1024).toFixed(2)} KB`,
+        type: file.type,
+        lastModified: new Date(file.lastModified).toISOString()
+      });
+      
       files[fileKey] = file;
       statusElement.textContent = `✓ ${file.name}`;
       statusElement.style.color = '#0f5132';
@@ -148,15 +158,23 @@
       
       // Save to localStorage
       saveFileInfo(fileKey, file.name);
+      console.log(`[FILE UPLOAD] Saved '${fileKey}' filename to localStorage`);
     } else {
+      console.log(`[FILE UPLOAD] ✗ File cleared for '${fileKey}'`);
       files[fileKey] = null;
       statusElement.textContent = '';
       statusElement.style.backgroundColor = '';
       
       // Clear from localStorage
       clearFileInfo(fileKey);
+      console.log(`[FILE UPLOAD] Removed '${fileKey}' from localStorage`);
     }
+    
     updateButtonStates();
+    console.log(`[FILE UPLOAD] Current file state:`, Object.keys(files).reduce((acc, key) => {
+      acc[key] = files[key] ? `✓ ${files[key].name}` : '✗ not uploaded';
+      return acc;
+    }, {}));
   }
 
   function updateButtonStates() {
@@ -171,16 +189,33 @@
       modifiers: ['xml', 'eligibility']
     };
 
+    console.log('[BUTTON STATE] Updating button states based on available files');
+    
     for (const [checker, reqs] of Object.entries(requirements)) {
       const btnName = `btn${checker.charAt(0).toUpperCase() + checker.slice(1)}`;
       const button = elements[btnName];
       if (button) {
-        button.disabled = !reqs.every(req => files[req] !== null);
+        const allFilesPresent = reqs.every(req => files[req] !== null);
+        const missingFiles = reqs.filter(req => files[req] === null);
+        
+        button.disabled = !allFilesPresent;
+        
+        console.log(`[BUTTON STATE] ${checker}:`, {
+          enabled: allFilesPresent,
+          required: reqs,
+          missing: missingFiles.length > 0 ? missingFiles : 'none'
+        });
       }
     }
 
     if (elements.btnCheckAll) {
-      elements.btnCheckAll.disabled = !files.xml;
+      const checkAllEnabled = !!files.xml;
+      elements.btnCheckAll.disabled = !checkAllEnabled;
+      console.log(`[BUTTON STATE] Check All:`, {
+        enabled: checkAllEnabled,
+        required: ['xml'],
+        missing: checkAllEnabled ? 'none' : ['xml']
+      });
     }
   }
 
@@ -379,22 +414,42 @@
     }
 
     // Set files in hidden inputs
-    console.log(`[DEBUG] Setting files for ${checkerName}:`, inputMap);
+    console.log(`[FILE TRANSFER] Starting file transfer for ${checkerName}:`, inputMap);
     for (const [inputId, fileKey] of Object.entries(inputMap)) {
       const input = elements.resultsContainer.querySelector(`#${inputId}`);
-      console.log(`[DEBUG] Looking for input #${inputId}, found:`, !!input, 'File key:', fileKey, 'Has file:', !!files[fileKey]);
+      console.log(`[FILE TRANSFER] Looking for input #${inputId}:`, {
+        found: !!input,
+        fileKey: fileKey,
+        hasFile: !!files[fileKey],
+        fileName: files[fileKey]?.name || 'N/A'
+      });
       
       if (input && files[fileKey]) {
+        console.log(`[FILE TRANSFER] Transferring '${files[fileKey].name}' to #${inputId}...`);
+        
         const dataTransfer = new DataTransfer();
         dataTransfer.items.add(files[fileKey]);
         input.files = dataTransfer.files;
-        console.log(`[DEBUG] Set file for #${inputId}:`, input.files[0]?.name);
+        
+        console.log(`[FILE TRANSFER] ✓ Successfully transferred to #${inputId}:`, {
+          fileName: input.files[0]?.name,
+          fileSize: input.files[0] ? `${(input.files[0].size / 1024).toFixed(2)} KB` : 'N/A',
+          fileCount: input.files.length
+        });
         
         // Trigger change event
         const event = new Event('change', { bubbles: true });
         input.dispatchEvent(event);
+        console.log(`[FILE TRANSFER] Dispatched 'change' event for #${inputId}`);
+      } else {
+        if (!input) {
+          console.warn(`[FILE TRANSFER] ✗ Input element #${inputId} not found in DOM`);
+        } else if (!files[fileKey]) {
+          console.warn(`[FILE TRANSFER] ✗ No file available for key '${fileKey}'`);
+        }
       }
     }
+    console.log(`[FILE TRANSFER] File transfer complete for ${checkerName}`);
 
     // For checkers that auto-process on file change, manually call their processing functions
     // since DOMContentLoaded has already fired
