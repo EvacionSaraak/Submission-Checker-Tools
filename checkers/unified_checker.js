@@ -269,7 +269,9 @@
         <button id="download-button" class="btn btn-secondary" style="display:none;">Download Results</button>
         <div id="progress-bar-container" class="progress-bar-container"></div>
         <div id="messageBox" class="message-box" aria-live="polite"></div>
-        <div id="outputTableContainer" class="results-container"></div>
+        <div id="results">
+          <div id="outputTableContainer" class="results-container"></div>
+        </div>
       `,
       modifiers: `
         <input type="file" id="xml-file" accept=".xml" style="display:none" />
@@ -277,7 +279,9 @@
         <button id="run-button" class="btn btn-primary" style="display:none;">Run Check</button>
         <button id="download-button" class="btn btn-secondary" style="display:none;">Download Results</button>
         <div id="messageBox" class="message-box" aria-live="polite"></div>
-        <div id="outputTableContainer" class="results-container"></div>
+        <div id="results">
+          <div id="outputTableContainer" class="results-container"></div>
+        </div>
       `
     };
 
@@ -417,12 +421,12 @@
         } else if (checkerName === 'auths' && typeof handleRun === 'function') {
           // Auth checker has handleRun function
           handleRun();
-        } else if (checkerName === 'pricing' && typeof runCheck === 'function') {
-          // Pricing checker has runCheck function
-          runCheck();
-        } else if (checkerName === 'modifiers' && typeof runCheck === 'function') {
-          // Modifiers checker has runCheck function
-          runCheck();
+        } else if (checkerName === 'pricing' && typeof handleRun === 'function') {
+          // Pricing checker has handleRun function
+          handleRun();
+        } else if (checkerName === 'modifiers' && typeof handleRun === 'function') {
+          // Modifiers checker has handleRun function
+          handleRun();
         }
       } catch (error) {
         console.error(`Error triggering ${checkerName}:`, error);

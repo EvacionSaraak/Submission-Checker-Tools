@@ -455,19 +455,14 @@ function claimToHtmlTable(xmlString) {
   return html;
 }
 
-// renderResults (stores last results on window and places export button above table)
+// renderResults (stores last results on window - button removed for unified interface)
 function renderResults(results, container, schemaType) {
   // keep a global reference so export works even if scopes change
   window._lastValidationResults = Array.isArray(results) ? results.slice() : [];
   window._lastValidationSchema = schemaType || "claim";
   container.innerHTML = "";
 
-  // Export XLSX button above the table
-  const exportBtn = document.createElement("button");
-  exportBtn.textContent = "Export XLSX";
-  exportBtn.style.marginBottom = "10px";
-  exportBtn.onclick = () => exportErrorsToXLSX(); // uses global last results
-  container.appendChild(exportBtn);
+  // Export button removed - unified interface handles export
 
   const table = document.createElement("table");
   table.className = "table table-striped table-bordered";

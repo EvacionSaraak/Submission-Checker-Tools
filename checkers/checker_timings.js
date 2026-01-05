@@ -2,34 +2,27 @@
 
 // --- DOM Handlers ---
 document.addEventListener('DOMContentLoaded', () => {
-  if (!document.getElementById('typeSelector')) {
-    const selectorHTML = `
-      <div id="typeSelector" style="margin-bottom: 1em;">
-        <label><input type="radio" name="claimType" value="DENTAL" checked> Dental</label>
-        <label><input type="radio" name="claimType" value="MEDICAL"> Medical</label>
-      </div>`;
-    const fileInput = document.getElementById('xmlFileInput');
-    if (fileInput && fileInput.parentNode) {
-      fileInput.parentNode.insertBefore(
-        document.createRange().createContextualFragment(selectorHTML), fileInput
-      );
-    }
-  }
+  // Radio button generation removed - unified interface provides claim type selector
   const fileInput = document.getElementById('xmlFileInput');
   if (fileInput) fileInput.addEventListener('change', onFileChange);
-});
-document.getElementById('exportBtn').addEventListener('click', () => {
-  if (!window.invalidRows?.length) return;
-  const wb = XLSX.utils.book_new();
-  const wsData = [
-    ['Claim ID', 'Activity ID', 'Encounter Start', 'Encounter End', 'Activity Start', 'Duration', 'Excess', 'Remarks'],
-    ...window.invalidRows.map(r => [
-      r.claimId, r.activityId, r.encounterStart, r.encounterEnd,
-      r.start, r.duration, r.excess, r.remarks.join('; ')
-    ])
-  ];
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(wsData), 'Invalid Timings');
-  XLSX.writeFile(wb, 'invalid_timings.xlsx');
+  
+  // Export button handler (if button exists in DOM)
+  const exportBtn = document.getElementById('exportBtn');
+  if (exportBtn) {
+    exportBtn.addEventListener('click', () => {
+      if (!window.invalidRows?.length) return;
+      const wb = XLSX.utils.book_new();
+      const wsData = [
+        ['Claim ID', 'Activity ID', 'Encounter Start', 'Encounter End', 'Activity Start', 'Duration', 'Excess', 'Remarks'],
+        ...window.invalidRows.map(r => [
+          r.claimId, r.activityId, r.encounterStart, r.encounterEnd,
+          r.start, r.duration, r.excess, r.remarks.join('; ')
+        ])
+      ];
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(wsData), 'Invalid Timings');
+      XLSX.writeFile(wb, 'invalid_timings.xlsx');
+    });
+  }
 });
 
 // --- Main Handler ---
