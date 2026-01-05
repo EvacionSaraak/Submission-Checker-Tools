@@ -31,7 +31,18 @@ function validateXmlSchema() {
 
   const reader = new FileReader();
   reader.onload = function (e) {
-    const xmlContent = e.target.result;
+    let xmlContent = e.target.result;
+    
+    // Track if we replaced unescaped ampersands
+    let ampersandReplaced = false;
+    
+    // Replace unescaped & with "and" (but preserve valid XML entities like &amp; &lt; &gt; &quot; &apos;)
+    const originalContent = xmlContent;
+    xmlContent = xmlContent.replace(/&(?!(amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;))/g, function(match) {
+      ampersandReplaced = true;
+      return "and";
+    });
+    
     const parser = new DOMParser();
     const xmlDoc = parser.parseFromString(xmlContent, "application/xml");
     const parseErrors = xmlDoc.getElementsByTagName("parsererror");
@@ -46,10 +57,10 @@ function validateXmlSchema() {
     let schemaType = "";
     if (xmlDoc.documentElement.nodeName === "Claim.Submission") {
       schemaType = "claim";
-      results = validateClaimSchema(xmlDoc);
+      results = validateClaimSchema(xmlDoc, ampersandReplaced);
     } else if (xmlDoc.documentElement.nodeName === "Person.Register") {
       schemaType = "person";
-      results = validatePersonSchema(xmlDoc);
+      results = validatePersonSchema(xmlDoc, ampersandReplaced);
     } else {
       status.textContent = "Unknown schema: " + xmlDoc.documentElement.nodeName;
       return;
@@ -172,7 +183,7 @@ function checkImplantActivityDiagnosis(activities, diagnoses, getText, invalidFi
   }
 }
 
-function validateClaimSchema(xmlDoc) {
+function validateClaimSchema(xmlDoc, ampersandReplaced = false) {
   const results = [];
   const claims = xmlDoc.getElementsByTagName("Claim");
 
@@ -185,6 +196,11 @@ function validateClaimSchema(xmlDoc) {
       return el && el.textContent ? el.textContent.trim() : "";
     };
     const invalidIfNull = (tag, parent = claim, prefix = "") => !text(tag, parent) ? invalidFields.push(prefix + tag + " (null/empty)") : null;
+
+    // Add ampersand replacement notification if it occurred
+    if (ampersandReplaced) {
+      invalidFields.push("Ampersand (&) characters were replaced with 'and' to parse the XML");
+    }
 
     // Required fields
     ["ID", "MemberID", "PayerID", "ProviderID", "EmiratesIDNumber", "Gross", "PatientShare", "Net"].forEach(tag => invalidIfNull(tag, claim));
@@ -273,7 +289,7 @@ function validateClaimSchema(xmlDoc) {
   return results;
 }
 
-function validatePersonSchema(xmlDoc) {
+function validatePersonSchema(xmlDoc, ampersandReplaced = false) {
   const results = [];
   const persons = xmlDoc.getElementsByTagName("Person");
   for (const person of persons) {
@@ -285,6 +301,11 @@ function validatePersonSchema(xmlDoc) {
       return el && el.textContent ? el.textContent.trim() : "";
     };
     const invalidIfNull = (tag, parent = person, prefix = "") => !text(tag, parent) ? invalidFields.push(prefix + tag + " (null/empty)") : null;
+
+    // Add ampersand replacement notification if it occurred
+    if (ampersandReplaced) {
+      invalidFields.push("Ampersand (&) characters were replaced with 'and' to parse the XML");
+    }
 
     [
       "UnifiedNumber", "FirstName", "FirstNameEn", "LastNameEn", "ContactNumber",
