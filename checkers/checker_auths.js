@@ -648,7 +648,7 @@ function setupDetailsModal(results, claimCodeSums) {
 
 // === MAIN PROCESSING ===
 function postProcessResults(results) {
-  const container = document.getElementById("results-container");
+  const container = document.getElementById("results");
   container.innerHTML = "";
 
   const total = results.length;

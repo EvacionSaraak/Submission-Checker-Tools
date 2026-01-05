@@ -452,17 +452,48 @@
             });
             
             initializeEventListeners();
+            // Wait for file parsing to complete before clicking process button
             setTimeout(() => {
               const processBtn = elements.resultsContainer.querySelector('#processBtn');
-              console.log('[DEBUG] Clicking elig processBtn:', !!processBtn);
-              if (processBtn) processBtn.click();
-            }, 100);
+              console.log('[DEBUG] Checking elig data state:', {
+                processBtn: !!processBtn,
+                xmlData: typeof xmlData !== 'undefined' ? !!xmlData : 'undefined',
+                eligData: typeof eligData !== 'undefined' ? !!eligData : 'undefined'
+              });
+              if (processBtn && typeof xmlData !== 'undefined' && typeof eligData !== 'undefined') {
+                console.log('[DEBUG] Clicking elig processBtn');
+                processBtn.click();
+              } else {
+                console.error('[DEBUG] Elig data not ready yet, retrying...');
+                setTimeout(() => {
+                  if (processBtn) processBtn.click();
+                }, 500);
+              }
+            }, 300);
           } else {
             console.error('[DEBUG] initializeEventListeners function not found for elig!');
           }
-        } else if (checkerName === 'auths' && typeof handleRun === 'function') {
-          console.log('[DEBUG] Calling handleRun() for auths');
-          handleRun();
+        } else if (checkerName === 'auths') {
+          if (typeof handleRun === 'function') {
+            console.log('[DEBUG] Waiting for auths file parsing...');
+            // Give time for the async file parsing from change events to complete
+            setTimeout(() => {
+              console.log('[DEBUG] Calling handleRun() for auths');
+              console.log('[DEBUG] Auths checker state:', {
+                handleRun: typeof handleRun,
+                parsedXmlDoc: typeof parsedXmlDoc !== 'undefined' ? !!parsedXmlDoc : 'undefined',
+                parsedXlsxData: typeof parsedXlsxData !== 'undefined' ? !!parsedXlsxData : 'undefined'
+              });
+              if (typeof parsedXmlDoc !== 'undefined' && typeof parsedXlsxData !== 'undefined') {
+                handleRun();
+              } else {
+                console.error('[DEBUG] Auths data not parsed yet, retrying...');
+                setTimeout(() => handleRun(), 500);
+              }
+            }, 300);
+          } else {
+            console.error('[DEBUG] handleRun function not found for auths!');
+          }
         } else if (checkerName === 'pricing' && typeof handleRun === 'function') {
           console.log('[DEBUG] Calling handleRun() for pricing');
           handleRun();
