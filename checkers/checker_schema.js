@@ -489,7 +489,12 @@ function renderResults(results, container, schemaType) {
   const tbody = document.createElement("tbody");
   (results || []).forEach(row => {
     const tr = document.createElement("tr");
-    tr.style.backgroundColor = row.Valid ? "#d4edda" : "#f8d7da";
+    // Add Bootstrap classes for consistent styling with other checkers
+    if (row.Valid) {
+      tr.classList.add('table-success'); // Green for valid
+    } else {
+      tr.classList.add('table-danger'); // Red for invalid
+    }
     [row.ClaimID, row.Remark, row.Valid ? "Yes" : "No"].forEach(text => {
       const td = document.createElement("td");
       td.textContent = text;

@@ -432,67 +432,77 @@
             console.error('[DEBUG] validateClinicians function not found!');
           }
         } else if (checkerName === 'elig') {
-          if (typeof initializeEventListeners === 'function') {
-            console.log('[DEBUG] Setting up elig globals and calling initializeEventListeners()');
-            // Set up global elements first
-            window.xmlInput = elements.resultsContainer.querySelector('#xmlFileInput');
-            window.reportInput = elements.resultsContainer.querySelector('#reportFileInput');
-            window.eligInput = elements.resultsContainer.querySelector('#eligibilityFileInput');
-            window.processBtn = elements.resultsContainer.querySelector('#processBtn');
-            window.exportInvalidBtn = elements.resultsContainer.querySelector('#exportInvalidBtn');
-            window.resultsContainer = elements.resultsContainer.querySelector('#results');
-            window.status = elements.resultsContainer.querySelector('#uploadStatus');
-            
-            console.log('[DEBUG] Elig globals:', {
-              xmlInput: !!window.xmlInput,
-              eligInput: !!window.eligInput,
-              processBtn: !!window.processBtn,
-              resultsContainer: !!window.resultsContainer,
-              status: !!window.status
-            });
-            
-            initializeEventListeners();
-            // Wait for file parsing to complete before clicking process button
-            setTimeout(() => {
-              const processBtn = elements.resultsContainer.querySelector('#processBtn');
-              console.log('[DEBUG] Checking elig data state:', {
-                processBtn: !!processBtn,
-                xmlData: typeof xmlData !== 'undefined' ? !!xmlData : 'undefined',
-                eligData: typeof eligData !== 'undefined' ? !!eligData : 'undefined'
+          console.log('[DEBUG] Processing elig checker');
+          // Parse files directly instead of relying on change events
+          if (typeof parseXmlFile === 'function' && typeof parseXLSXFile === 'function' && files.xml && files.eligibility) {
+            console.log('[DEBUG] Parsing elig files directly...');
+            try {
+              // Parse both files
+              const xmlResult = await parseXmlFile(files.xml);
+              const eligResult = await parseXLSXFile(files.eligibility);
+              
+              // Set global variables that the checker expects
+              window.xmlData = xmlResult;
+              window.eligData = eligResult;
+              
+              console.log('[DEBUG] Elig data parsed:', {
+                xmlData: !!window.xmlData,
+                eligData: !!window.eligData,
+                xmlLength: Array.isArray(xmlResult) ? xmlResult.length : 'not array',
+                eligLength: Array.isArray(eligResult) ? eligResult.length : 'not array'
               });
-              if (processBtn && typeof xmlData !== 'undefined' && typeof eligData !== 'undefined') {
-                console.log('[DEBUG] Clicking elig processBtn');
-                processBtn.click();
-              } else {
-                console.error('[DEBUG] Elig data not ready yet, retrying...');
-                setTimeout(() => {
-                  if (processBtn) processBtn.click();
-                }, 500);
+              
+              // Set up UI elements
+              window.resultsContainer = elements.resultsContainer.querySelector('#results');
+              window.status = elements.resultsContainer.querySelector('#uploadStatus');
+              
+              // Now trigger processing
+              if (typeof initializeEventListeners === 'function') {
+                initializeEventListeners();
               }
-            }, 300);
+              
+              // Click process button to validate
+              const processBtn = elements.resultsContainer.querySelector('#processBtn');
+              if (processBtn) {
+                console.log('[DEBUG] Clicking elig processBtn with parsed data');
+                processBtn.click();
+              }
+            } catch (error) {
+              console.error('[DEBUG] Error parsing elig files:', error);
+            }
           } else {
-            console.error('[DEBUG] initializeEventListeners function not found for elig!');
+            console.error('[DEBUG] Missing parse functions or files for elig');
           }
         } else if (checkerName === 'auths') {
-          if (typeof handleRun === 'function') {
-            console.log('[DEBUG] Waiting for auths file parsing...');
-            // Give time for the async file parsing from change events to complete
-            setTimeout(() => {
-              console.log('[DEBUG] Calling handleRun() for auths');
-              console.log('[DEBUG] Auths checker state:', {
-                handleRun: typeof handleRun,
-                parsedXmlDoc: typeof parsedXmlDoc !== 'undefined' ? !!parsedXmlDoc : 'undefined',
-                parsedXlsxData: typeof parsedXlsxData !== 'undefined' ? !!parsedXlsxData : 'undefined'
+          console.log('[DEBUG] Processing auths checker');
+          // Parse files directly instead of relying on change events
+          if (typeof parseXMLFile === 'function' && typeof parseXLSXFile === 'function' && files.xml && files.auth) {
+            console.log('[DEBUG] Parsing auths files directly...');
+            try {
+              // Parse both files
+              window.parsedXmlDoc = await parseXMLFile(files.xml);
+              const authRows = await parseXLSXFile(files.auth);
+              window.parsedXlsxData = mapXLSXData ? mapXLSXData(authRows) : authRows;
+              
+              console.log('[DEBUG] Auths data parsed:', {
+                parsedXmlDoc: !!window.parsedXmlDoc,
+                parsedXlsxData: !!window.parsedXlsxData,
+                xmlClaimCount: window.parsedXmlDoc?.querySelectorAll('Claim').length,
+                authRowCount: Array.isArray(authRows) ? authRows.length : Object.keys(window.parsedXlsxData || {}).length
               });
-              if (typeof parsedXmlDoc !== 'undefined' && typeof parsedXlsxData !== 'undefined') {
-                handleRun();
+              
+              // Call handleRun now that data is ready
+              if (typeof handleRun === 'function') {
+                console.log('[DEBUG] Calling handleRun() with parsed data');
+                await handleRun();
               } else {
-                console.error('[DEBUG] Auths data not parsed yet, retrying...');
-                setTimeout(() => handleRun(), 500);
+                console.error('[DEBUG] handleRun function not found for auths!');
               }
-            }, 300);
+            } catch (error) {
+              console.error('[DEBUG] Error parsing auths files:', error);
+            }
           } else {
-            console.error('[DEBUG] handleRun function not found for auths!');
+            console.error('[DEBUG] Missing parse functions or files for auths');
           }
         } else if (checkerName === 'pricing' && typeof handleRun === 'function') {
           console.log('[DEBUG] Calling handleRun() for pricing');
