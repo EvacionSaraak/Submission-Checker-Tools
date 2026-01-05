@@ -34,7 +34,7 @@
         <div class="row">
           <div class="col-md-6">
             <div class="file-input-group">
-              <label for="xmlFileInput" class="form-label">XML Claim File:</label>
+              <label for="xmlFileInput" class="form-label">Claim (XML):</label>
               <div class="input-group">
                 <input type="file" class="form-control" id="xmlFileInput" accept=".xml" />
                 <span class="input-group-text file-status" id="xmlStatus"></span>
@@ -42,15 +42,7 @@
             </div>
             
             <div class="file-input-group">
-              <label for="clinicianFileInput" class="form-label">Clinician List (XLSX):</label>
-              <div class="input-group">
-                <input type="file" class="form-control" id="clinicianFileInput" accept=".xlsx" />
-                <span class="input-group-text file-status" id="clinicianStatus"></span>
-              </div>
-            </div>
-            
-            <div class="file-input-group">
-              <label for="eligibilityFileInput" class="form-label">Eligibility XLSX:</label>
+              <label for="eligibilityFileInput" class="form-label">Elig (XLSX):</label>
               <div class="input-group">
                 <input type="file" class="form-control" id="eligibilityFileInput" accept=".xlsx" />
                 <span class="input-group-text file-status" id="eligibilityStatus"></span>
@@ -58,7 +50,7 @@
             </div>
             
             <div class="file-input-group">
-              <label for="authFileInput" class="form-label">Authorization Export (XLSX):</label>
+              <label for="authFileInput" class="form-label">Auth (XLSX):</label>
               <div class="input-group">
                 <input type="file" class="form-control" id="authFileInput" accept=".xlsx" />
                 <span class="input-group-text file-status" id="authStatus"></span>
@@ -68,18 +60,26 @@
           
           <div class="col-md-6">
             <div class="file-input-group">
-              <label for="statusFileInput" class="form-label">License Status (XLSX):</label>
+              <label for="pricingFileInput" class="form-label">Pricing (XLSX):</label>
               <div class="input-group">
-                <input type="file" class="form-control" id="statusFileInput" accept=".xlsx" />
-                <span class="input-group-text file-status" id="statusStatus"></span>
+                <input type="file" class="form-control" id="pricingFileInput" accept=".xlsx" />
+                <span class="input-group-text file-status" id="pricingStatus"></span>
               </div>
             </div>
             
             <div class="file-input-group">
-              <label for="pricingFileInput" class="form-label">Pricing XLSX:</label>
+              <label for="clinicianFileInput" class="form-label">Clinician (XLSX):</label>
               <div class="input-group">
-                <input type="file" class="form-control" id="pricingFileInput" accept=".xlsx" />
-                <span class="input-group-text file-status" id="pricingStatus"></span>
+                <input type="file" class="form-control" id="clinicianFileInput" accept=".xlsx" />
+                <span class="input-group-text file-status" id="clinicianStatus"></span>
+              </div>
+            </div>
+            
+            <div class="file-input-group">
+              <label for="statusFileInput" class="form-label">License Status (XLSX):</label>
+              <div class="input-group">
+                <input type="file" class="form-control" id="statusFileInput" accept=".xlsx" />
+                <span class="input-group-text file-status" id="statusStatus"></span>
               </div>
             </div>
             
@@ -101,36 +101,36 @@
         <h5 class="mb-0">Run Checkers</h5>
       </div>
       <div class="card-body">
-        <div class="checker-buttons d-flex flex-wrap gap-2">
-          <button class="btn btn-outline-primary" id="btn-clinician" title="Requires: XML, Clinician List, License Status" disabled>
-            <i class="bi bi-person-check"></i> Clinicians
+        <div class="btn-group checker-buttons" role="group" aria-label="Checker buttons">
+          <button type="button" class="btn btn-outline-primary" id="btn-clinician" title="Requires: XML, Clinician List, License Status" disabled>
+            Clinicians
           </button>
-          <button class="btn btn-outline-primary" id="btn-elig" title="Requires: XML, Eligibility" disabled>
-            <i class="bi bi-card-checklist"></i> Eligibility
+          <button type="button" class="btn btn-outline-primary" id="btn-elig" title="Requires: XML, Eligibility" disabled>
+            Eligibility
           </button>
-          <button class="btn btn-outline-primary" id="btn-auths" title="Requires: XML, Authorization Export" disabled>
-            <i class="bi bi-shield-check"></i> Authorizations
+          <button type="button" class="btn btn-outline-primary" id="btn-auths" title="Requires: XML, Authorization Export" disabled>
+            Authorizations
           </button>
-          <button class="btn btn-outline-primary" id="btn-timings" title="Requires: XML" disabled>
-            <i class="bi bi-clock"></i> Timings
+          <button type="button" class="btn btn-outline-primary" id="btn-timings" title="Requires: XML" disabled>
+            Timings
           </button>
-          <button class="btn btn-outline-primary" id="btn-teeth" title="Requires: XML" disabled>
-            <i class="bi bi-heart-pulse"></i> Teeth
+          <button type="button" class="btn btn-outline-primary" id="btn-teeth" title="Requires: XML" disabled>
+            Teeth
           </button>
-          <button class="btn btn-outline-primary" id="btn-schema" title="Requires: XML" disabled>
-            <i class="bi bi-file-code"></i> Schema
+          <button type="button" class="btn btn-outline-primary" id="btn-schema" title="Requires: XML" disabled>
+            Schema
           </button>
-          <button class="btn btn-outline-primary" id="btn-pricing" title="Requires: XML, Pricing" disabled>
-            <i class="bi bi-currency-dollar"></i> Pricing
+          <button type="button" class="btn btn-outline-primary" id="btn-pricing" title="Requires: XML, Pricing" disabled>
+            Pricing
           </button>
-          <button class="btn btn-outline-primary" id="btn-drugs" title="Requires: XML, Drugs" disabled>
-            <i class="bi bi-capsule"></i> Drug Quantities
+          <button type="button" class="btn btn-outline-primary" id="btn-drugs" title="Requires: XML, Drugs" disabled>
+            Drug Quantities
           </button>
-          <button class="btn btn-outline-primary" id="btn-modifiers" title="Requires: XML, Eligibility" disabled>
-            <i class="bi bi-sliders"></i> Modifiers
+          <button type="button" class="btn btn-outline-primary" id="btn-modifiers" title="Requires: XML, Eligibility" disabled>
+            Modifiers
           </button>
-          <button class="btn btn-warning" id="btn-check-all" title="Runs all available checkers" disabled>
-            <i class="bi bi-list-check"></i> Check All<span class="experimental-badge">EXP</span>
+          <button type="button" class="btn btn-warning" id="btn-check-all" title="Runs all available checkers" disabled>
+            Check All<span class="experimental-badge">EXP</span>
           </button>
         </div>
       </div>

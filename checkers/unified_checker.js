@@ -305,25 +305,48 @@
       }
     }
 
-    // Trigger process button if exists
+    // For checkers that auto-process on file change, manually call their processing functions
+    // since DOMContentLoaded has already fired
     setTimeout(() => {
-      const buttonSelectors = {
-        clinician: '#processBtn',
-        elig: '#processBtn',
-        auths: '#processBtn',
-        pricing: '#run-button',
-        drugs: '#processBtn',
-        modifiers: '#run-button'
-      };
+      try {
+        if (checkerName === 'schema' && typeof validateXmlSchema === 'function') {
+          validateXmlSchema();
+        } else if (checkerName === 'timings' && typeof onFileChange === 'function') {
+          const xmlInput = elements.resultsContainer.querySelector('#xmlFileInput');
+          if (xmlInput && xmlInput.files.length > 0) {
+            onFileChange({ target: xmlInput });
+          }
+        } else if (checkerName === 'teeth') {
+          // Teeth checker processes automatically on file load via event listener
+          // Trigger the file change event again to ensure it's processed
+          const xmlFile = elements.resultsContainer.querySelector('#xmlFile');
+          if (xmlFile && xmlFile.files.length > 0) {
+            const event = new Event('change', { bubbles: true });
+            xmlFile.dispatchEvent(event);
+          }
+        } else {
+          // For other checkers, trigger process button if exists
+          const buttonSelectors = {
+            clinician: '#processBtn',
+            elig: '#processBtn',
+            auths: '#processBtn',
+            pricing: '#run-button',
+            drugs: '#processBtn',
+            modifiers: '#run-button'
+          };
 
-      const selector = buttonSelectors[checkerName];
-      if (selector) {
-        const button = elements.resultsContainer.querySelector(selector);
-        if (button) {
-          button.click();
+          const selector = buttonSelectors[checkerName];
+          if (selector) {
+            const button = elements.resultsContainer.querySelector(selector);
+            if (button) {
+              button.click();
+            }
+          }
         }
+      } catch (error) {
+        console.error(`Error triggering ${checkerName}:`, error);
       }
-    }, 100);
+    }, 200);
   }
 
   function setActiveButton(checkerName) {

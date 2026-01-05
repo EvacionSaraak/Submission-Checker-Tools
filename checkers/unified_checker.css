@@ -16,8 +16,52 @@
 }
 
 /* Checker Buttons */
+.checker-buttons {
+  display: flex;
+  flex-wrap: wrap;
+}
+
 .checker-buttons .btn {
   margin-bottom: 0.5rem;
+}
+
+/* Make enabled buttons more visible */
+.checker-buttons .btn:not(:disabled) {
+  background-color: #0d6efd;
+  color: white;
+  border-color: #0d6efd;
+  font-weight: 600;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.checker-buttons .btn:not(:disabled):hover {
+  background-color: #0b5ed7;
+  border-color: #0a58ca;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+  transform: translateY(-1px);
+  transition: all 0.2s;
+}
+
+/* Active button styling */
+.checker-buttons .btn.active {
+  background-color: #198754 !important;
+  border-color: #198754 !important;
+  color: white !important;
+  font-weight: 700;
+  box-shadow: 0 4px 12px rgba(25, 135, 84, 0.4);
+}
+
+/* Warning button (Check All) when enabled */
+.checker-buttons .btn-warning:not(:disabled) {
+  background-color: #ffc107;
+  border-color: #ffc107;
+  color: #000;
+  font-weight: 600;
+}
+
+.checker-buttons .btn-warning:not(:disabled):hover {
+  background-color: #ffca2c;
+  border-color: #ffc720;
 }
 
 /* Experimental Badge */
