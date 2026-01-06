@@ -537,7 +537,31 @@
               if (typeof handleProcessClick === 'function') {
                 console.log('[DEBUG] Calling handleProcessClick() with validated data');
                 await handleProcessClick();
-                console.log('[DEBUG] handleProcessClick() completed - table should be rendered');
+                console.log('[DEBUG] handleProcessClick() completed - checking table display...');
+                
+                // Log detailed table display status
+                const resultsDiv = document.getElementById('results');
+                console.log('[DEBUG] Table display status:', {
+                  resultsDivFound: !!resultsDiv,
+                  resultsDivHTML: resultsDiv ? resultsDiv.innerHTML.substring(0, 200) + '...' : 'N/A',
+                  resultsDivChildren: resultsDiv ? resultsDiv.children.length : 0,
+                  hasTable: resultsDiv ? resultsDiv.querySelector('table') !== null : false,
+                  tableCount: resultsDiv ? resultsDiv.querySelectorAll('table').length : 0
+                });
+                
+                // If table exists, log its structure
+                const table = resultsDiv?.querySelector('table');
+                if (table) {
+                  console.log('[DEBUG] Table found! Structure:', {
+                    rows: table.rows.length,
+                    columns: table.rows[0]?.cells.length || 0,
+                    hasTheadAndTbody: !!table.querySelector('thead') && !!table.querySelector('tbody'),
+                    tableHTML: table.outerHTML.substring(0, 300) + '...'
+                  });
+                } else {
+                  console.error('[DEBUG] No table found in #results div after handleProcessClick()');
+                  console.error('[DEBUG] Full #results innerHTML:', resultsDiv?.innerHTML || 'N/A');
+                }
               } else {
                 throw new Error('handleProcessClick function not found');
               }
