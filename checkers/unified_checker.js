@@ -317,7 +317,6 @@
         <input type="file" id="xlsxInput" accept=".xlsx" style="display:none" />
         <button id="processBtn" class="btn btn-primary" style="display:none;">Run Checker</button>
         <div id="file-status"></div>
-        <div id="results-container"></div>
         <div id="results"></div>
       `,
       pricing: `
@@ -493,12 +492,16 @@
                 eligLength: Array.isArray(eligResult) ? eligResult.length : 'not array'
               });
               
-              // Set up UI elements
+              // Set up UI elements - MUST set resultsContainer before init
               window.resultsContainer = elements.resultsContainer.querySelector('#results');
               window.status = elements.resultsContainer.querySelector('#uploadStatus');
               
+              console.log('[DEBUG] Elig resultsContainer assigned:', !!window.resultsContainer);
+              console.log('[DEBUG] Elig status element assigned:', !!window.status);
+              
               // Now trigger processing
               if (typeof initializeEventListeners === 'function') {
+                console.log('[DEBUG] Calling initializeEventListeners for elig');
                 initializeEventListeners();
               }
               
@@ -507,6 +510,8 @@
               if (processBtn) {
                 console.log('[DEBUG] Clicking elig processBtn with parsed data');
                 processBtn.click();
+              } else {
+                console.error('[DEBUG] Process button not found for elig!');
               }
             } catch (error) {
               console.error('[DEBUG] Error parsing elig files:', error);
@@ -528,14 +533,19 @@
               console.log('[DEBUG] Auths data parsed:', {
                 parsedXmlDoc: !!window.parsedXmlDoc,
                 parsedXlsxData: !!window.parsedXlsxData,
-                xmlClaimCount: window.parsedXmlDoc?.querySelectorAll('Claim').length,
+                xmlClaimCount: window.parsedXmlDoc?.querySelectorAll('Claim').length || 0,
                 authRowCount: Array.isArray(authRows) ? authRows.length : Object.keys(window.parsedXlsxData || {}).length
               });
               
+              console.log('[DEBUG] Looking for #results div for auths...');
+              const resultsDiv = document.getElementById('results');
+              console.log('[DEBUG] Auths #results div found:', !!resultsDiv);
+              
               // Call handleRun now that data is ready
               if (typeof handleRun === 'function') {
-                console.log('[DEBUG] Calling handleRun() with parsed data');
+                console.log('[DEBUG] Calling handleRun() for auths with parsed data');
                 await handleRun();
+                console.log('[DEBUG] handleRun() completed for auths');
               } else {
                 console.error('[DEBUG] handleRun function not found for auths!');
               }
