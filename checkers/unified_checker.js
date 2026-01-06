@@ -495,6 +495,14 @@
               // Parse XLSX file - returns array of eligibility rows
               const eligResult = await parseXLSXFile(files.eligibility);
               
+              // Validate parsed data structure
+              if (!xmlResult || !xmlResult.claims || !Array.isArray(xmlResult.claims)) {
+                throw new Error('Invalid XML data structure - expected {claims: []}');
+              }
+              if (!Array.isArray(eligResult)) {
+                throw new Error('Invalid eligibility data - expected array');
+              }
+              
               // Set global variables that the checker expects
               window.xmlData = xmlResult;
               window.eligData = eligResult;
@@ -506,10 +514,18 @@
                 claimCount: xmlResult?.claims?.length || 0,
                 eligRowCount: Array.isArray(eligResult) ? eligResult.length : 0
               });
+              console.log('[DEBUG] Elig xmlData structure:', { claims: window.xmlData.claims?.constructor?.name + `(${window.xmlData.claims?.length})` });
               
-              // Set up UI elements
-              window.resultsContainer = elements.resultsContainer.querySelector('#results');
-              window.status = elements.resultsContainer.querySelector('#uploadStatus');
+              // Set up UI elements - use getElementById for reliability
+              console.log('[DEBUG] Setting resultsContainer to #results div');
+              window.resultsContainer = document.getElementById('results');
+              window.status = document.getElementById('uploadStatus') || elements.resultsContainer.querySelector('#uploadStatus');
+              
+              console.log('[DEBUG] resultsContainer element found:', !!window.resultsContainer);
+              
+              if (!window.resultsContainer) {
+                throw new Error('#results div not found in DOM');
+              }
               
               // Ensure XML radio is checked
               const xmlRadio = elements.resultsContainer.querySelector('input[name="reportSource"][value="xml"]');
@@ -519,21 +535,29 @@
               
               // Now directly call handleProcessClick instead of relying on button click
               if (typeof handleProcessClick === 'function') {
-                console.log('[DEBUG] Calling handleProcessClick() directly with parsed data');
+                console.log('[DEBUG] Calling handleProcessClick() with validated data');
                 await handleProcessClick();
-                console.log('[DEBUG] handleProcessClick() completed for elig');
+                console.log('[DEBUG] handleProcessClick() completed - table should be rendered');
               } else {
-                console.error('[DEBUG] handleProcessClick function not found for elig!');
+                throw new Error('handleProcessClick function not found');
               }
             } catch (error) {
               console.error('[DEBUG] Error in elig checker:', error);
-              const resultsDiv = elements.resultsContainer.querySelector('#results');
+              console.error('[DEBUG] Error stack:', error.stack);
+              const resultsDiv = document.getElementById('results');
               if (resultsDiv) {
-                resultsDiv.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+                resultsDiv.innerHTML = `<div class="error" style="color: red; padding: 20px; border: 1px solid red; margin: 10px;">
+                  <strong>Eligibility Checker Error:</strong><br>${error.message}
+                </div>`;
               }
             }
           } else {
-            console.error('[DEBUG] Missing parse functions or files for elig');
+            console.error('[DEBUG] Missing parse functions or files for elig:', {
+              parseXmlFile: typeof parseXmlFile,
+              parseXLSXFile: typeof parseXLSXFile,
+              hasXml: !!files.xml,
+              hasEligibility: !!files.eligibility
+            });
           }
         } else if (checkerName === 'auths') {
           console.log('[DEBUG] Processing auths checker');
@@ -548,6 +572,13 @@
               // Map XLSX data if mapping function exists
               window.parsedXlsxData = typeof mapXLSXData === 'function' ? mapXLSXData(authRows) : authRows;
               
+              if (!window.parsedXmlDoc) {
+                throw new Error('Failed to parse XML file');
+              }
+              if (!window.parsedXlsxData) {
+                throw new Error('Failed to parse authorization XLSX file');
+              }
+              
               console.log('[DEBUG] Auths data parsed:', {
                 parsedXmlDoc: !!window.parsedXmlDoc,
                 parsedXlsxData: !!window.parsedXlsxData,
@@ -558,28 +589,35 @@
               // Verify results container exists
               const resultsDiv = document.getElementById('results');
               if (!resultsDiv) {
-                console.error('[DEBUG] #results div not found for auths!');
-                return;
+                throw new Error('#results div not found in DOM');
               }
-              console.log('[DEBUG] Auths #results div found');
+              console.log('[DEBUG] Auths #results div found: true');
               
               // Call handleRun now that data is ready - MUST await this
               if (typeof handleRun === 'function') {
-                console.log('[DEBUG] Awaiting handleRun() for auths with parsed data');
+                console.log('[DEBUG] Awaiting handleRun() with parsed data');
                 await handleRun();
-                console.log('[DEBUG] handleRun() completed for auths - table should be visible');
+                console.log('[DEBUG] handleRun() completed successfully - table should be visible');
               } else {
-                console.error('[DEBUG] handleRun function not found for auths!');
+                throw new Error('handleRun function not found');
               }
             } catch (error) {
               console.error('[DEBUG] Error in auths checker:', error);
+              console.error('[DEBUG] Error stack:', error.stack);
               const resultsDiv = document.getElementById('results');
               if (resultsDiv) {
-                resultsDiv.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+                resultsDiv.innerHTML = `<div class="error" style="color: red; padding: 20px; border: 1px solid red; margin: 10px;">
+                  <strong>Authorization Checker Error:</strong><br>${error.message}
+                </div>`;
               }
             }
           } else {
-            console.error('[DEBUG] Missing parse functions or files for auths');
+            console.error('[DEBUG] Missing parse functions or files for auths:', {
+              parseXMLFile: typeof parseXMLFile,
+              parseXLSXFile: typeof parseXLSXFile,
+              hasXml: !!files.xml,
+              hasAuth: !!files.auth
+            });
           }
         } else if (checkerName === 'pricing' && typeof handleRun === 'function') {
           console.log('[DEBUG] Calling handleRun() for pricing');
