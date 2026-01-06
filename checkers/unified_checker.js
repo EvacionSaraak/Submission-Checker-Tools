@@ -581,13 +581,6 @@
           } else {
             console.error('[DEBUG] Missing parse functions or files for auths');
           }
-              }
-            } catch (error) {
-              console.error('[DEBUG] Error parsing auths files:', error);
-            }
-          } else {
-            console.error('[DEBUG] Missing parse functions or files for auths');
-          }
         } else if (checkerName === 'pricing' && typeof handleRun === 'function') {
           console.log('[DEBUG] Calling handleRun() for pricing');
           handleRun();
