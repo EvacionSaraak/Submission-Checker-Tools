@@ -487,13 +487,14 @@
         } else if (checkerName === 'elig') {
           console.log('[DEBUG] Processing elig checker');
           // Parse files directly and call handleProcessClick
-          if (typeof parseXmlFile === 'function' && typeof parseXLSXFile === 'function' && files.xml && files.eligibility) {
+          // NOTE: elig checker uses parseExcelFile, not parseXLSXFile
+          if (typeof parseXmlFile === 'function' && typeof parseExcelFile === 'function' && files.xml && files.eligibility) {
             console.log('[DEBUG] Parsing elig files directly...');
             try {
               // Parse XML file - returns {claims: [...]} object
               const xmlResult = await parseXmlFile(files.xml);
               // Parse XLSX file - returns array of eligibility rows
-              const eligResult = await parseXLSXFile(files.eligibility);
+              const eligResult = await parseExcelFile(files.eligibility);
               
               // Validate parsed data structure
               if (!xmlResult || !xmlResult.claims || !Array.isArray(xmlResult.claims)) {
@@ -578,7 +579,7 @@
           } else {
             console.error('[DEBUG] Missing parse functions or files for elig:', {
               parseXmlFile: typeof parseXmlFile,
-              parseXLSXFile: typeof parseXLSXFile,
+              parseExcelFile: typeof parseExcelFile,
               hasXml: !!files.xml,
               hasEligibility: !!files.eligibility
             });
