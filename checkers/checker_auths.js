@@ -675,7 +675,7 @@ function setupDetailsModal(results, claimCodeSums) {
 // === MAIN PROCESSING ===
 function postProcessResults(results) {
   const container = document.getElementById("results");
-  container.innerHTML = "";
+  // DON'T clear container - table is already rendered by renderResults()
 
   const total = results.length;
   const invalidEntries = results.filter(r => !r.unknown && r.remarks.length > 0);
@@ -683,18 +683,19 @@ function postProcessResults(results) {
   const validCount   = total - invalidCount;
   const pctValid     = total ? ((validCount / total) * 100).toFixed(1) : "0.0";
 
-  // 1) Show summary
+  // 1) Show summary at the top (prepend before table)
   const summary = document.createElement("div");
-  summary.textContent = `Valid: ${validCount} / ${total} (${pctValid}% valid)`;
-  container.appendChild(summary);
+  summary.className = "alert alert-info mb-3";
+  summary.innerHTML = `<strong>Validation Summary:</strong> ${validCount} valid / ${total} total (${pctValid}% valid)`;
+  container.insertBefore(summary, container.firstChild);
 
-  // 2) If any invalid, show export button
+  // 2) If any invalid, show export button (add to summary)
   if (invalidCount > 0) {
     const btn = document.createElement("button");
     btn.textContent = `Export ${invalidCount} Invalid Entries`;
     btn.id = "exportInvalidBtn";
-    btn.className = "btn btn-sm btn-outline-danger mt-2";
-    container.appendChild(btn);
+    btn.className = "btn btn-sm btn-danger ms-3";
+    summary.appendChild(btn);
 
     btn.addEventListener("click", () => {
       // Build array of objects matching your table headers
