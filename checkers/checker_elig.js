@@ -732,6 +732,15 @@ function normalizeReportData(rawData) {
  ********************/
 // renderResults: no normalization of memberID in button data attributes
 function renderResults(results, eligMap) {
+  // Query for fresh DOM elements each time to avoid stale references
+  const resultsContainer = document.getElementById('results');
+  const xmlRadio = document.querySelector('input[name="reportSource"][value="xml"]');
+  
+  if (!resultsContainer) {
+    console.error('Results container not found');
+    return;
+  }
+  
   resultsContainer.innerHTML = '';
 
   if (!results || results.length === 0) {
@@ -746,7 +755,7 @@ function renderResults(results, eligMap) {
   const table = document.createElement('table');
   table.className = 'shared-table';
 
-  const isXmlMode = xmlRadio.checked;
+  const isXmlMode = xmlRadio ? xmlRadio.checked : true;
   const thead = document.createElement('thead');
   thead.innerHTML = `
     <tr>

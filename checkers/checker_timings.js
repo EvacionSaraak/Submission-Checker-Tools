@@ -187,6 +187,12 @@ function renderResults(container, rows) {
   container.innerHTML = buildResultsTable(rows);
 }
 function buildResultsTable(rows) {
+  // Defensive check: ensure rows is an array
+  if (!Array.isArray(rows)) {
+    console.error('buildResultsTable: rows is not an array:', rows);
+    return '<div class="alert alert-danger">Error: Invalid data structure for results table</div>';
+  }
+  
   let prevClaimId = null, html = `
     <table border="1" style="width:100%;border-collapse:collapse">
       <thead><tr>

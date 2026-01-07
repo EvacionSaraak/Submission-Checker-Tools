@@ -367,7 +367,20 @@ function validateClaims(xmlDoc, xlsxData) {
 // === RENDERERS ===
 function renderResults(results) {
   const container = document.getElementById("results");
+  
+  if (!container) {
+    console.error('Results container not found');
+    return;
+  }
+  
   container.innerHTML = "";
+
+  // Validate results is an array
+  if (!Array.isArray(results)) {
+    console.error('renderResults: results is not an array:', results);
+    container.innerHTML = '<div class="alert alert-danger">Error: Invalid results data structure</div>';
+    return;
+  }
 
   // Show "X loaded" count at the top
   const loadedMsg = document.createElement("div");
