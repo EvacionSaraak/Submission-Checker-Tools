@@ -161,9 +161,13 @@
       const fileName = loadFileInfo(key);
       if (fileName) {
         statusElements[key].textContent = `✓ ${fileName}`;
-        statusElements[key].style.color = 'green';
-        // Note: We can't restore actual File objects, but we show the filename
-        // User will need to re-upload if they want to process again
+        statusElements[key].style.color = '#0f5132';
+        statusElements[key].style.backgroundColor = '#d1e7dd';
+        statusElements[key].style.fontWeight = 'bold';
+        // Mark file as "available" with placeholder object
+        // Actual file will need to be re-uploaded to run checkers
+        files[key] = { name: fileName, _restored: true };
+        console.log(`[INIT] Restored file reference: ${key} = "${fileName}"`);
       }
     });
   }
@@ -240,6 +244,28 @@
   async function runChecker(checkerName) {
     console.log(`[DEBUG] runChecker called with: ${checkerName}`);
     console.log(`[DEBUG] Files available:`, Object.keys(files).filter(k => files[k]));
+    
+    // Check if any required files are restored placeholders (need re-upload)
+    const requirements = {
+      clinician: ['xml', 'clinician', 'status'],
+      elig: ['xml', 'eligibility'],
+      auths: ['xml', 'auth'],
+      timings: ['xml'],
+      teeth: ['xml'],
+      schema: ['xml'],
+      pricing: ['xml', 'pricing'],
+      modifiers: ['xml', 'eligibility']
+    };
+    
+    const required = requirements[checkerName] || [];
+    const restoredFiles = required.filter(req => files[req] && files[req]._restored);
+    
+    if (restoredFiles.length > 0) {
+      const fileList = restoredFiles.map(f => f.charAt(0).toUpperCase() + f.slice(1)).join(', ');
+      elements.uploadStatus.innerHTML = `<div class="alert alert-warning"><strong>Files need to be re-uploaded:</strong> ${fileList}<br>File references were restored from your previous session, but the actual files need to be selected again to run the checker.</div>`;
+      console.warn(`[WARN] Cannot run ${checkerName} checker - restored files need re-upload:`, restoredFiles);
+      return;
+    }
     
     try {
       elements.uploadStatus.innerHTML = `<div class="status-message info">Running ${checkerName} checker...</div>`;
