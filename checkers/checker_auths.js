@@ -708,6 +708,68 @@ function postProcessResults(results) {
   }
 }
 
+/********************
+ * UNIFIED ENTRY POINT *
+ ********************/
+// Simplified entry point for unified checker - reads files, validates, renders
+async function runAuthsCheck() {
+  const xmlFileInput = document.getElementById('xmlInput');
+  const xlsxFileInput = document.getElementById('xlsxInput');
+  const resultsDiv = document.getElementById('results');
+  const statusDiv = document.getElementById('uploadStatus');
+  
+  // Clear previous results
+  if (resultsDiv) resultsDiv.innerHTML = '';
+  if (statusDiv) statusDiv.textContent = '';
+  
+  // Validate files are uploaded
+  if (!xmlFileInput || !xmlFileInput.files || !xmlFileInput.files.length) {
+    if (statusDiv) statusDiv.textContent = 'Please select an XML file first.';
+    return;
+  }
+  if (!xlsxFileInput || !xlsxFileInput.files || !xlsxFileInput.files.length) {
+    if (statusDiv) statusDiv.textContent = 'Please select an authorization XLSX file first.';
+    return;
+  }
+  
+  const xmlFile = xmlFileInput.files[0];
+  const xlsxFile = xlsxFileInput.files[0];
+  
+  try {
+    if (statusDiv) statusDiv.textContent = 'Processing...';
+    
+    // Load authorization rules
+    await loadAuthRules();
+    
+    // Parse XML file
+    const xmlDoc = await parseXMLFile(xmlFile);
+    if (!xmlDoc) {
+      throw new Error('Failed to parse XML file');
+    }
+    
+    // Parse XLSX file
+    const xlsxData = await parseXLSXFile(xlsxFile);
+    if (!Array.isArray(xlsxData)) {
+      throw new Error('Invalid authorization file structure - expected array of rows');
+    }
+    
+    // Validate claims against authorizations
+    const results = validateClaims(xmlDoc, xlsxData, authRules);
+    
+    // Render results to resultsDiv
+    renderResults(results);
+    postProcessResults(results);
+    
+    if (statusDiv) statusDiv.textContent = `Processed ${results.length} authorization entries`;
+  } catch (error) {
+    console.error('Authorization check error:', error);
+    if (statusDiv) statusDiv.textContent = 'Processing failed: ' + error.message;
+    if (resultsDiv) resultsDiv.innerHTML = `<div class="error" style="color: red; padding: 20px; border: 1px solid red; margin: 10px;">
+      <strong>Authorization Checker Error:</strong><br>${error.message}
+    </div>`;
+  }
+}
+
 // Finally, modify your handleRun() to call postProcessResults after renderResults:
 async function handleRun() {
   try {

@@ -465,19 +465,11 @@
           }
         } else if (checkerName === 'teeth') {
           console.log('[DEBUG] Processing teeth checker');
-          // Verify file exists and parseXML function is available
-          if (files.xml && typeof parseXML === 'function') {
-            console.log('[DEBUG] Calling parseXML() for teeth with file:', files.xml.name);
-            // parseXML reads from the file input element, so ensure it's populated
-            const xmlInput = elements.resultsContainer.querySelector('#xmlFile'); // Fixed: teeth interface uses #xmlFile not #xmlFileInput
-            if (xmlInput && xmlInput.files && xmlInput.files.length > 0) {
-              console.log('[DEBUG] XML file input verified, calling parseXML()');
-              parseXML();
-            } else {
-              console.error('[DEBUG] XML file input not properly set for teeth checker');
-            }
+          if (typeof parseXML === 'function') {
+            console.log('[DEBUG] Calling parseXML() for teeth');
+            parseXML();
           } else {
-            console.error('[DEBUG] Missing XML file or parseXML function for teeth checker');
+            console.error('[DEBUG] parseXML function not found for teeth checker');
           }
         } else if (checkerName === 'clinician') {
           if (typeof validateClinicians === 'function') {
@@ -498,163 +490,21 @@
           }
         } else if (checkerName === 'elig') {
           console.log('[DEBUG] Processing elig checker');
-          // Parse files directly and call handleProcessClick
-          // NOTE: elig checker uses parseExcelFile, not parseXLSXFile
-          if (typeof parseXmlFile === 'function' && typeof parseExcelFile === 'function' && files.xml && files.eligibility) {
-            console.log('[DEBUG] Parsing elig files directly...');
-            try {
-              // Parse XML file - returns {claims: [...]} object
-              const xmlResult = await parseXmlFile(files.xml);
-              // Parse XLSX file - returns array of eligibility rows
-              const eligResult = await parseExcelFile(files.eligibility);
-              
-              // Validate parsed data structure
-              if (!xmlResult || !xmlResult.claims || !Array.isArray(xmlResult.claims)) {
-                throw new Error('Invalid XML data structure - expected {claims: []}');
-              }
-              if (!Array.isArray(eligResult)) {
-                throw new Error('Invalid eligibility data - expected array');
-              }
-              
-              // Set global variables that the checker expects
-              window.xmlData = xmlResult;
-              window.eligData = eligResult;
-              
-              console.log('[DEBUG] Elig data parsed:', {
-                xmlData: !!window.xmlData,
-                eligData: !!window.eligData,
-                hasClaims: !!xmlResult?.claims,
-                claimCount: xmlResult?.claims?.length || 0,
-                eligRowCount: Array.isArray(eligResult) ? eligResult.length : 0
-              });
-              console.log('[DEBUG] Elig xmlData structure:', { claims: window.xmlData.claims?.constructor?.name + `(${window.xmlData.claims?.length})` });
-              
-              // Set up UI elements - use querySelector for reliability after dynamic innerHTML
-              console.log('[DEBUG] Setting resultsContainer to #results div');
-              window.resultsContainer = elements.resultsContainer.querySelector('#results'); // Fixed: use querySelector after innerHTML update
-              window.status = elements.resultsContainer.querySelector('#uploadStatus');
-              
-              console.log('[DEBUG] resultsContainer element found:', !!window.resultsContainer);
-              
-              if (!window.resultsContainer) {
-                throw new Error('#results div not found in DOM');
-              }
-              
-              // Ensure XML radio is checked
-              const xmlRadio = elements.resultsContainer.querySelector('input[name="reportSource"][value="xml"]');
-              if (xmlRadio) {
-                xmlRadio.checked = true;
-              }
-              
-              // Now directly call handleProcessClick instead of relying on button click
-              if (typeof handleProcessClick === 'function') {
-                console.log('[DEBUG] Calling handleProcessClick() with validated data');
-                await handleProcessClick();
-                console.log('[DEBUG] handleProcessClick() completed - checking table display...');
-                
-                // Log detailed table display status
-                const resultsDiv = elements.resultsContainer.querySelector('#results'); // Fixed: use querySelector for dynamic elements
-                console.log('[DEBUG] Table display status:', {
-                  resultsDivFound: !!resultsDiv,
-                  resultsDivHTML: resultsDiv ? resultsDiv.innerHTML.substring(0, 200) + '...' : 'N/A',
-                  resultsDivChildren: resultsDiv ? resultsDiv.children.length : 0,
-                  hasTable: resultsDiv ? resultsDiv.querySelector('table') !== null : false,
-                  tableCount: resultsDiv ? resultsDiv.querySelectorAll('table').length : 0
-                });
-                
-                // If table exists, log its structure
-                const table = resultsDiv?.querySelector('table');
-                if (table) {
-                  console.log('[DEBUG] Table found! Structure:', {
-                    rows: table.rows.length,
-                    columns: table.rows[0]?.cells.length || 0,
-                    hasTheadAndTbody: !!table.querySelector('thead') && !!table.querySelector('tbody'),
-                    tableHTML: table.outerHTML.substring(0, 300) + '...'
-                  });
-                } else {
-                  console.error('[DEBUG] No table found in #results div after handleProcessClick()');
-                  console.error('[DEBUG] Full #results innerHTML:', resultsDiv?.innerHTML || 'N/A');
-                }
-              } else {
-                throw new Error('handleProcessClick function not found');
-              }
-            } catch (error) {
-              console.error('[DEBUG] Error in elig checker:', error);
-              console.error('[DEBUG] Error stack:', error.stack);
-              const resultsDiv = elements.resultsContainer.querySelector('#results'); // Fixed: use querySelector for dynamic elements
-              if (resultsDiv) {
-                resultsDiv.innerHTML = `<div class="error" style="color: red; padding: 20px; border: 1px solid red; margin: 10px;">
-                  <strong>Eligibility Checker Error:</strong><br>${error.message}
-                </div>`;
-              }
-            }
+          if (typeof runEligCheck === 'function') {
+            console.log('[DEBUG] Calling runEligCheck()');
+            await runEligCheck();
+            console.log('[DEBUG] runEligCheck() completed');
           } else {
-            console.error('[DEBUG] Missing parse functions or files for elig:', {
-              parseXmlFile: typeof parseXmlFile,
-              parseExcelFile: typeof parseExcelFile,
-              hasXml: !!files.xml,
-              hasEligibility: !!files.eligibility
-            });
+            console.error('[DEBUG] runEligCheck function not found');
           }
         } else if (checkerName === 'auths') {
           console.log('[DEBUG] Processing auths checker');
-          // Parse files directly and call handleRun
-          if (typeof parseXMLFile === 'function' && typeof parseXLSXFile === 'function' && files.xml && files.auth) {
-            console.log('[DEBUG] Parsing auths files directly...');
-            try {
-              // Parse XML file - returns DOM document
-              window.parsedXmlDoc = await parseXMLFile(files.xml);
-              // Parse XLSX file - returns array of rows
-              const authRows = await parseXLSXFile(files.auth);
-              // Map XLSX data if mapping function exists
-              window.parsedXlsxData = typeof mapXLSXData === 'function' ? mapXLSXData(authRows) : authRows;
-              
-              if (!window.parsedXmlDoc) {
-                throw new Error('Failed to parse XML file');
-              }
-              if (!window.parsedXlsxData) {
-                throw new Error('Failed to parse authorization XLSX file');
-              }
-              
-              console.log('[DEBUG] Auths data parsed:', {
-                parsedXmlDoc: !!window.parsedXmlDoc,
-                parsedXlsxData: !!window.parsedXlsxData,
-                xmlClaimCount: window.parsedXmlDoc?.querySelectorAll('Claim').length || 0,
-                authRowCount: Array.isArray(authRows) ? authRows.length : Object.keys(window.parsedXlsxData || {}).length
-              });
-              
-              // Verify results container exists
-              const resultsDiv = elements.resultsContainer.querySelector('#results'); // Fixed: use querySelector for dynamic elements
-              if (!resultsDiv) {
-                throw new Error('#results div not found in DOM');
-              }
-              console.log('[DEBUG] Auths #results div found: true');
-              
-              // Call handleRun now that data is ready - MUST await this
-              if (typeof handleRun === 'function') {
-                console.log('[DEBUG] Awaiting handleRun() with parsed data');
-                await handleRun();
-                console.log('[DEBUG] handleRun() completed successfully - table should be visible');
-              } else {
-                throw new Error('handleRun function not found');
-              }
-            } catch (error) {
-              console.error('[DEBUG] Error in auths checker:', error);
-              console.error('[DEBUG] Error stack:', error.stack);
-              const resultsDiv = elements.resultsContainer.querySelector('#results'); // Fixed: use querySelector for dynamic elements
-              if (resultsDiv) {
-                resultsDiv.innerHTML = `<div class="error" style="color: red; padding: 20px; border: 1px solid red; margin: 10px;">
-                  <strong>Authorization Checker Error:</strong><br>${error.message}
-                </div>`;
-              }
-            }
+          if (typeof runAuthsCheck === 'function') {
+            console.log('[DEBUG] Calling runAuthsCheck()');
+            await runAuthsCheck();
+            console.log('[DEBUG] runAuthsCheck() completed');
           } else {
-            console.error('[DEBUG] Missing parse functions or files for auths:', {
-              parseXMLFile: typeof parseXMLFile,
-              parseXLSXFile: typeof parseXLSXFile,
-              hasXml: !!files.xml,
-              hasAuth: !!files.auth
-            });
+            console.error('[DEBUG] runAuthsCheck function not found');
           }
         } else if (checkerName === 'pricing' && typeof handleRun === 'function') {
           console.log('[DEBUG] Calling handleRun() for pricing');

@@ -1078,6 +1078,69 @@ function handleExportInvalidClick() {
 }
 
 /********************
+ * UNIFIED ENTRY POINT *
+ ********************/
+// Simplified entry point for unified checker - reads files, validates, renders
+async function runEligCheck() {
+  const xmlFileInput = document.getElementById('xmlFileInput');
+  const eligFileInput = document.getElementById('eligibilityFileInput');
+  const resultsDiv = document.getElementById('results');
+  const statusDiv = document.getElementById('uploadStatus');
+  
+  // Clear previous results
+  if (resultsDiv) resultsDiv.innerHTML = '';
+  if (statusDiv) statusDiv.textContent = '';
+  
+  // Validate files are uploaded
+  if (!xmlFileInput || !xmlFileInput.files || !xmlFileInput.files.length) {
+    if (statusDiv) statusDiv.textContent = 'Please select an XML file first.';
+    return;
+  }
+  if (!eligFileInput || !eligFileInput.files || !eligFileInput.files.length) {
+    if (statusDiv) statusDiv.textContent = 'Please select an eligibility XLSX file first.';
+    return;
+  }
+  
+  const xmlFile = xmlFileInput.files[0];
+  const eligFile = eligFileInput.files[0];
+  
+  try {
+    if (statusDiv) statusDiv.textContent = 'Processing...';
+    usedEligibilities.clear();
+    
+    // Parse XML file
+    const xmlResult = await parseXmlFile(xmlFile);
+    if (!xmlResult || !xmlResult.claims || !Array.isArray(xmlResult.claims)) {
+      throw new Error('Invalid XML file structure - expected claims array');
+    }
+    
+    // Parse eligibility XLSX file
+    const eligResult = await parseExcelFile(eligFile);
+    if (!Array.isArray(eligResult)) {
+      throw new Error('Invalid eligibility file structure - expected array of rows');
+    }
+    
+    // Prepare eligibility map
+    const eligMap = prepareEligibilityMap(eligResult);
+    
+    // Validate claims against eligibility
+    const results = validateXmlClaims(xmlResult.claims, eligMap);
+    
+    // Render results to resultsDiv
+    window.lastValidationResults = results;
+    renderResults(results, eligMap);
+    
+    if (statusDiv) statusDiv.textContent = `Processed ${results.length} claims`;
+  } catch (error) {
+    console.error('Eligibility check error:', error);
+    if (statusDiv) statusDiv.textContent = 'Processing failed: ' + error.message;
+    if (resultsDiv) resultsDiv.innerHTML = `<div class="error" style="color: red; padding: 20px; border: 1px solid red; margin: 10px;">
+      <strong>Eligibility Checker Error:</strong><br>${error.message}
+    </div>`;
+  }
+}
+
+/********************
  * INITIALIZATION *
  ********************/
 function initializeEventListeners() {
