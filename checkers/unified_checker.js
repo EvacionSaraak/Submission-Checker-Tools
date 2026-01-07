@@ -205,7 +205,9 @@
       await loadAndExecuteChecker(checkerName);
 
       elements.uploadStatus.innerHTML = `<div class="status-message success">${checkerName.charAt(0).toUpperCase() + checkerName.slice(1)} checker ready.</div>`;
-      elements.exportBtn.disabled = false;
+      if (elements.exportBtn) {
+        elements.exportBtn.disabled = false;
+      }
       console.log(`[DEBUG] ${checkerName} checker completed successfully`);
 
       // Apply filter if checkbox is checked (works on already-rendered tables)
