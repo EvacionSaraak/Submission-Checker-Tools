@@ -386,11 +386,24 @@ function renderResults(results) {
   const loadedMsg = document.createElement("div");
   loadedMsg.id = "loaded-count";
   loadedMsg.style.marginBottom = "10px";
-  loadedMsg.textContent = `${results.length} loaded`;
+  loadedMsg.style.fontWeight = "bold";
+  loadedMsg.textContent = `${results.length} authorization activities loaded`;
   container.appendChild(loadedMsg);
 
   if (!results.length) {
-    container.textContent = "✅ No activities to validate.";
+    const noResultsMsg = document.createElement("div");
+    noResultsMsg.className = "alert alert-info";
+    noResultsMsg.style.marginTop = "10px";
+    noResultsMsg.innerHTML = `
+      <strong>No authorization activities found.</strong><br>
+      This could mean:<br>
+      • The XML file contains no claims with activities requiring authorization checks<br>
+      • All activities in the XML are for codes that don't require authorization<br>
+      <br>
+      Claims loaded from XML: ${xmlClaimCount}<br>
+      Authorization rows loaded from XLSX: ${xlsxAuthCount}
+    `;
+    container.appendChild(noResultsMsg);
     return;
   }
 
@@ -768,12 +781,18 @@ async function runAuthsCheck() {
     
     // Validate claims against authorizations
     const results = validateClaims(xmlDoc, xlsxData, authRules);
+    console.log('[DEBUG] Auth validation complete:', {
+      resultsCount: results.length,
+      xmlClaimCount,
+      xlsxAuthCount,
+      hasAuthRules: Object.keys(authRules).length > 0
+    });
     
     // Render results to resultsDiv
     renderResults(results);
     postProcessResults(results);
     
-    if (statusDiv) statusDiv.textContent = `Processed ${results.length} authorization entries`;
+    if (statusDiv) statusDiv.textContent = `Processed ${results.length} authorization activities`;
   } catch (error) {
     console.error('Authorization check error:', error);
     if (statusDiv) statusDiv.textContent = 'Processing failed: ' + error.message;
