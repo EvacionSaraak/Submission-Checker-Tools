@@ -136,7 +136,15 @@
         
         <!-- Run Checkers buttons at bottom of inputs card -->
         <div class="mt-4 pt-3 border-top">
-          <h6 class="mb-3">Run Checkers</h6>
+          <div class="d-flex justify-content-between align-items-start mb-3">
+            <h6 class="mb-0">Run Checkers</h6>
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="filterInvalid" />
+              <label class="form-check-label" for="filterInvalid">
+                Show invalid only
+              </label>
+            </div>
+          </div>
           <div class="btn-group checker-buttons" role="group" aria-label="Checker buttons">
             <button type="button" class="btn btn-outline-primary" id="btn-clinician" title="Requires: XML, Clinician List, License Status" disabled>
               Clinicians
@@ -164,27 +172,6 @@
             </button>
             <button type="button" class="btn btn-warning" id="btn-check-all" title="Runs all available checkers" disabled>
               Check All<span class="experimental-badge">EXP</span>
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Filter and Export Options -->
-    <div class="card mb-4">
-      <div class="card-body">
-        <div class="row align-items-center">
-          <div class="col-md-6">
-            <div class="form-check">
-              <input class="form-check-input" type="checkbox" id="filterInvalid" />
-              <label class="form-check-label" for="filterInvalid">
-                Show only files with invalid fields
-              </label>
-            </div>
-          </div>
-          <div class="col-md-6 text-end">
-            <button class="btn btn-success" id="exportBtn" disabled>
-              <i class="bi bi-download"></i> Export Results
             </button>
           </div>
         </div>

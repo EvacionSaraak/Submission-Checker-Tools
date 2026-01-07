@@ -208,6 +208,11 @@
       elements.exportBtn.disabled = false;
       console.log(`[DEBUG] ${checkerName} checker completed successfully`);
 
+      // Apply filter if checkbox is checked (works on already-rendered tables)
+      if (elements.filterInvalid.checked) {
+        setTimeout(() => applyFilter(), 100); // Small delay to ensure table is fully rendered
+      }
+
     } catch (error) {
       console.error('[DEBUG] Error running checker:', error);
       console.error(error.stack);
@@ -491,19 +496,29 @@
     const filterEnabled = elements.filterInvalid.checked;
     const tables = elements.resultsContainer.querySelectorAll('table');
 
+    console.log('[FILTER] Applying filter, enabled:', filterEnabled);
+
     tables.forEach(table => {
       const rows = table.querySelectorAll('tbody tr');
       rows.forEach(row => {
         if (filterEnabled) {
-          const hasInvalid = row.classList.contains('invalid') ||
+          // Check for invalid/error indicators:
+          // 1. Bootstrap danger class (red rows)
+          // 2. Old 'invalid' class (backward compatibility)
+          // 3. Text contains "invalid" or "error"
+          const hasInvalid = row.classList.contains('table-danger') ||
+                            row.classList.contains('invalid') ||
                             row.innerHTML.toLowerCase().includes('invalid') ||
-                            row.innerHTML.toLowerCase().includes('error');
+                            row.innerHTML.toLowerCase().includes('error') ||
+                            row.innerHTML.includes('❌');
           row.style.display = hasInvalid ? '' : 'none';
         } else {
           row.style.display = '';
         }
       });
     });
+
+    console.log('[FILTER] Filter applied to', tables.length, 'tables');
   }
 
   function exportResults() {
