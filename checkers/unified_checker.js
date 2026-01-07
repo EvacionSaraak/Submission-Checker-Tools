@@ -100,13 +100,25 @@
       resultsContainer: document.getElementById('results-container')
     };
 
-    // File input event listeners
-    elements.xmlInput.addEventListener('change', (e) => handleFileChange(e, 'xml', elements.xmlStatus));
-    elements.clinicianInput.addEventListener('change', (e) => handleFileChange(e, 'clinician', elements.clinicianStatus));
-    elements.eligibilityInput.addEventListener('change', (e) => handleFileChange(e, 'eligibility', elements.eligibilityStatus));
-    elements.authInput.addEventListener('change', (e) => handleFileChange(e, 'auth', elements.authStatus));
-    elements.statusInput.addEventListener('change', (e) => handleFileChange(e, 'status', elements.statusStatus));
-    elements.pricingInput.addEventListener('change', (e) => handleFileChange(e, 'pricing', elements.pricingStatus));
+    // File input event listeners - add null checks to prevent crashes
+    if (elements.xmlInput) {
+      elements.xmlInput.addEventListener('change', (e) => handleFileChange(e, 'xml', elements.xmlStatus));
+    }
+    if (elements.clinicianInput) {
+      elements.clinicianInput.addEventListener('change', (e) => handleFileChange(e, 'clinician', elements.clinicianStatus));
+    }
+    if (elements.eligibilityInput) {
+      elements.eligibilityInput.addEventListener('change', (e) => handleFileChange(e, 'eligibility', elements.eligibilityStatus));
+    }
+    if (elements.authInput) {
+      elements.authInput.addEventListener('change', (e) => handleFileChange(e, 'auth', elements.authStatus));
+    }
+    if (elements.statusInput) {
+      elements.statusInput.addEventListener('change', (e) => handleFileChange(e, 'status', elements.statusStatus));
+    }
+    if (elements.pricingInput) {
+      elements.pricingInput.addEventListener('change', (e) => handleFileChange(e, 'pricing', elements.pricingStatus));
+    }
 
     // Checker button event listeners
     elements.btnTimings.addEventListener('click', () => runChecker('timings'));
@@ -457,7 +469,7 @@
           if (files.xml && typeof parseXML === 'function') {
             console.log('[DEBUG] Calling parseXML() for teeth with file:', files.xml.name);
             // parseXML reads from the file input element, so ensure it's populated
-            const xmlInput = elements.resultsContainer.querySelector('#xmlFileInput');
+            const xmlInput = elements.resultsContainer.querySelector('#xmlFile'); // Fixed: teeth interface uses #xmlFile not #xmlFileInput
             if (xmlInput && xmlInput.files && xmlInput.files.length > 0) {
               console.log('[DEBUG] XML file input verified, calling parseXML()');
               parseXML();
@@ -517,10 +529,10 @@
               });
               console.log('[DEBUG] Elig xmlData structure:', { claims: window.xmlData.claims?.constructor?.name + `(${window.xmlData.claims?.length})` });
               
-              // Set up UI elements - use getElementById for reliability
+              // Set up UI elements - use querySelector for reliability after dynamic innerHTML
               console.log('[DEBUG] Setting resultsContainer to #results div');
-              window.resultsContainer = document.getElementById('results');
-              window.status = document.getElementById('uploadStatus') || elements.resultsContainer.querySelector('#uploadStatus');
+              window.resultsContainer = elements.resultsContainer.querySelector('#results'); // Fixed: use querySelector after innerHTML update
+              window.status = elements.resultsContainer.querySelector('#uploadStatus');
               
               console.log('[DEBUG] resultsContainer element found:', !!window.resultsContainer);
               
@@ -541,7 +553,7 @@
                 console.log('[DEBUG] handleProcessClick() completed - checking table display...');
                 
                 // Log detailed table display status
-                const resultsDiv = document.getElementById('results');
+                const resultsDiv = elements.resultsContainer.querySelector('#results'); // Fixed: use querySelector for dynamic elements
                 console.log('[DEBUG] Table display status:', {
                   resultsDivFound: !!resultsDiv,
                   resultsDivHTML: resultsDiv ? resultsDiv.innerHTML.substring(0, 200) + '...' : 'N/A',
@@ -569,7 +581,7 @@
             } catch (error) {
               console.error('[DEBUG] Error in elig checker:', error);
               console.error('[DEBUG] Error stack:', error.stack);
-              const resultsDiv = document.getElementById('results');
+              const resultsDiv = elements.resultsContainer.querySelector('#results'); // Fixed: use querySelector for dynamic elements
               if (resultsDiv) {
                 resultsDiv.innerHTML = `<div class="error" style="color: red; padding: 20px; border: 1px solid red; margin: 10px;">
                   <strong>Eligibility Checker Error:</strong><br>${error.message}
@@ -612,7 +624,7 @@
               });
               
               // Verify results container exists
-              const resultsDiv = document.getElementById('results');
+              const resultsDiv = elements.resultsContainer.querySelector('#results'); // Fixed: use querySelector for dynamic elements
               if (!resultsDiv) {
                 throw new Error('#results div not found in DOM');
               }
@@ -629,7 +641,7 @@
             } catch (error) {
               console.error('[DEBUG] Error in auths checker:', error);
               console.error('[DEBUG] Error stack:', error.stack);
-              const resultsDiv = document.getElementById('results');
+              const resultsDiv = elements.resultsContainer.querySelector('#results'); // Fixed: use querySelector for dynamic elements
               if (resultsDiv) {
                 resultsDiv.innerHTML = `<div class="error" style="color: red; padding: 20px; border: 1px solid red; margin: 10px;">
                   <strong>Authorization Checker Error:</strong><br>${error.message}
@@ -657,7 +669,7 @@
         console.error(`[DEBUG] Error triggering ${checkerName}:`, error);
         console.error(error.stack);
       }
-    }, 200);
+    }, 500); // Fixed: increased delay from 200ms to 500ms for consistency
   }
 
   function setActiveButton(checkerName) {
