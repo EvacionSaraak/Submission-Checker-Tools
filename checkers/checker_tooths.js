@@ -539,9 +539,9 @@ function renderResults(container, rows) {
         ${rows.map(r => {
           const showClaimId = r.claimId !== lastClaimId;
           lastClaimId = r.claimId;
-          const invalidClass = r.remarks && r.remarks.length > 0 ? 'invalid' : 'valid';
+          const rowClass = r.remarks && r.remarks.length > 0 ? 'table-danger' : 'table-success';
           return `
-            <tr class="${invalidClass}">
+            <tr class="${rowClass}">
               <td style="padding:6px;border:1px solid #ccc">${showClaimId ? r.claimId : ''}</td>
               <td style="padding:6px;border:1px solid #ccc">${r.activityId}</td>
               <td style="padding:6px;border:1px solid #ccc">${r.code}</td>

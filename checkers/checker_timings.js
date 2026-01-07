@@ -210,7 +210,7 @@ function buildResultsTable(rows) {
     const claimCell = (r.claimId !== prevClaimId) ? r.claimId : '';
     prevClaimId = r.claimId;
     const remarkLines = (r.remarks || []).map(line => `<div>${sanitize(line)}</div>`).join('');
-    html += `<tr class="${r.isValid ? 'valid' : 'invalid'}">
+    html += `<tr class="${r.isValid ? 'table-success' : 'table-danger'}">
       <td style="padding:6px;border:1px solid #ccc">${sanitize(claimCell)}</td>
       <td style="padding:6px;border:1px solid #ccc">${sanitize(r.activityId)}</td>
       <td style="padding:6px;border:1px solid #ccc">${sanitize(r.encounterStart)}</td>

@@ -450,7 +450,14 @@ function renderResults(results) {
 // MODIFIED: set class to unknown if r.unknown
 function renderRow(r, lastClaimId, idx, codeGroup) {
   const tr = document.createElement("tr");
-  tr.className = r.unknown ? 'unknown' : (r.remarks.length ? 'invalid' : 'valid');
+  // Use Bootstrap classes for row coloring
+  if (r.unknown) {
+    tr.classList.add('table-warning'); // Yellow for unknown
+  } else if (r.remarks && r.remarks.length > 0) {
+    tr.classList.add('table-danger'); // Red for invalid
+  } else {
+    tr.classList.add('table-success'); // Green for valid
+  }
 
   const xls = r.xlsRow || {};
 

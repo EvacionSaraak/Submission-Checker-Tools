@@ -197,7 +197,9 @@ function renderResults(rows) {
   </tr></thead><tbody>`;
 
   for (const r of rows) {
-    const cls = String(r.status || 'Invalid').toLowerCase();
+    const status = String(r.status || 'Invalid').toLowerCase();
+    // Map status to Bootstrap classes
+    const cls = status === 'ok' || status === 'valid' ? 'table-success' : 'table-danger';
     const showClaim = r.ClaimID !== prevClaimId;
     html += `<tr class="${cls}">
       <td style="padding:6px;border:1px solid #ccc">${showClaim ? escapeHtml(r.ClaimID) : ''}</td>

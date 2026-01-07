@@ -316,7 +316,7 @@ function renderResults(rows) {
     if (!r.EligibilityRow) remarks.push('No matching eligibility found.');
 
     const isValid = remarks.length === 0;
-    html += `<tr class="${isValid ? 'valid' : 'invalid'}">
+    html += `<tr class="${isValid ? 'table-success' : 'table-danger'}">
       <td style="padding:6px;border:1px solid #ccc">${showClaim ? escapeHtml(r.ClaimID) : ''}</td>
       <td style="padding:6px;border:1px solid #ccc">${showMember ? escapeHtml(r.MemberID) : ''}</td>
       <td style="padding:6px;border:1px solid #ccc">${showActivity ? escapeHtml(r.ActivityID) : ''}</td>

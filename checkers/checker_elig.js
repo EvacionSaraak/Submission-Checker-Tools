@@ -796,7 +796,14 @@ function renderResults(results, eligMap) {
     }
 
     const row = document.createElement('tr');
-    row.className = result.finalStatus;
+    // Use Bootstrap classes for row coloring
+    if (result.finalStatus === 'valid') {
+      row.classList.add('table-success'); // Green for valid
+    } else if (result.finalStatus === 'invalid') {
+      row.classList.add('table-danger'); // Red for invalid
+    } else {
+      row.classList.add('table-warning'); // Yellow for unknown/other
+    }
 
     const statusBadge = result.status 
       ? `<span class="status-badge ${result.status.toLowerCase() === 'eligible' ? 'eligible' : 'ineligible'}">${result.status}</span>`
