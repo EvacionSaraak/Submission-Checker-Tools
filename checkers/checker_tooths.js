@@ -504,6 +504,17 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions) {
 }
 
 function renderResults(container, rows) {
+  // Defensive check: ensure rows is an array
+  if (!Array.isArray(rows)) {
+    console.error('[TEETH] Invalid results - expected array, got:', typeof rows, rows);
+    container.innerHTML = '<div class="alert alert-danger">Error: Invalid data structure for results table</div>';
+    const summaryBox = document.getElementById('resultsSummary');
+    if (summaryBox) summaryBox.textContent = '';
+    const exportBtn = document.getElementById('exportBtn');
+    if (exportBtn) exportBtn.style.display = 'none';
+    return;
+  }
+  
   const summaryBox = document.getElementById('resultsSummary');
   if (!rows.length) {
     container.innerHTML = '<p>No activities found.</p>';
