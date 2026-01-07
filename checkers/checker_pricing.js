@@ -286,3 +286,12 @@ function showError(err) { message(err && err.message ? err.message : String(err)
 
 // ----------------- Helpers: escaping -----------------
 function escapeHtml(str) { return String(str == null ? '' : str).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;'); }
+
+// Unified checker entry point
+window.runPricingCheck = async function() {
+  if (typeof handleRun === 'function') {
+    await handleRun();
+  } else {
+    console.error('handleRun function not found');
+  }
+};

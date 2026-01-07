@@ -547,4 +547,21 @@
     uploadDiv.textContent = messages.join(', ');
     processBtn.disabled = !(claimCount && clinicianCount && historyCount && facilitiesLoaded && affiliatedLicenses.size);
   }
+
+  // Unified checker entry point
+  window.runClinicianCheck = async function() {
+    xmlInput = document.getElementById('xmlFileInput');
+    clinicianInput = document.getElementById('clinicianFileInput');
+    statusInput = document.getElementById('statusFileInput');
+    processBtn = document.getElementById('processBtn');
+    csvBtn = document.getElementById('csvBtn');
+    resultsDiv = document.getElementById('results');
+    uploadDiv = document.getElementById('uploadStatus');
+    
+    if (typeof validateClinicians === 'function') {
+      validateClinicians();
+    } else {
+      console.error('validateClinicians function not found');
+    }
+  };
 })();

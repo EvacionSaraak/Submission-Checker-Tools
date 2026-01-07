@@ -465,3 +465,12 @@ function showEligibility(index) {
 }
 
 function closeEligibilityModal() { const modal = el('eligibilityModal'); if (modal) modal.remove(); }
+
+// Unified checker entry point
+window.runModifiersCheck = async function() {
+  if (typeof handleRun === 'function') {
+    await handleRun();
+  } else {
+    console.error('handleRun function not found');
+  }
+};

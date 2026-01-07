@@ -37,31 +37,6 @@
   document.addEventListener('DOMContentLoaded', init);
 
   // LocalStorage helpers for file persistence
-  function saveFileInfo(key, fileName) {
-    try {
-      localStorage.setItem(`checker_file_${key}`, fileName);
-    } catch (e) {
-      console.error('Failed to save to localStorage:', e);
-    }
-  }
-
-  function loadFileInfo(key) {
-    try {
-      return localStorage.getItem(`checker_file_${key}`);
-    } catch (e) {
-      console.error('Failed to load from localStorage:', e);
-      return null;
-    }
-  }
-
-  function clearFileInfo(key) {
-    try {
-      localStorage.removeItem(`checker_file_${key}`);
-    } catch (e) {
-      console.error('Failed to clear from localStorage:', e);
-    }
-  }
-
   function init() {
     elements = {
       // File inputs
@@ -137,35 +112,9 @@
     // Export button
     elements.exportBtn.addEventListener('click', exportResults);
 
-    // Restore file information from localStorage
-    console.log('[INIT] Restoring file states from localStorage...');
-    restoreFileStates();
-
     console.log('[INIT] Performing initial button state update...');
     updateButtonStates();
     console.log('[INIT] ✓ Initialization complete! Ready for file uploads.');
-  }
-
-  function restoreFileStates() {
-    const fileKeys = ['xml', 'clinician', 'eligibility', 'auth', 'status', 'pricing'];
-    const statusElements = {
-      xml: elements.xmlStatus,
-      clinician: elements.clinicianStatus,
-      eligibility: elements.eligibilityStatus,
-      auth: elements.authStatus,
-      status: elements.statusStatus,
-      pricing: elements.pricingStatus
-    };
-
-    fileKeys.forEach(key => {
-      const fileName = loadFileInfo(key);
-      if (fileName) {
-        statusElements[key].textContent = `✓ ${fileName}`;
-        statusElements[key].style.color = 'green';
-        // Note: We can't restore actual File objects, but we show the filename
-        // User will need to re-upload if they want to process again
-      }
-    });
   }
 
   function handleFileChange(event, fileKey, statusElement) {
@@ -179,18 +128,12 @@
       
       // Console log
       console.log(`[FILE] Uploaded: ${fileKey} = "${file.name}" (${(file.size / 1024).toFixed(1)} KB, type: ${file.type})`);
-      
-      // Save to localStorage
-      saveFileInfo(fileKey, file.name);
     } else {
       files[fileKey] = null;
       statusElement.textContent = '';
       statusElement.style.backgroundColor = '';
       
       console.log(`[FILE] Cleared: ${fileKey}`);
-      
-      // Clear from localStorage
-      clearFileInfo(fileKey);
     }
     updateButtonStates();
   }
@@ -472,21 +415,12 @@
             console.error('[DEBUG] parseXML function not found for teeth checker');
           }
         } else if (checkerName === 'clinician') {
-          if (typeof validateClinicians === 'function') {
-            console.log('[DEBUG] Setting up clinician globals and calling validateClinicians()');
-            const setupGlobals = () => {
-              window.xmlInput = elements.resultsContainer.querySelector('#xmlFileInput');
-              window.clinicianInput = elements.resultsContainer.querySelector('#clinicianFileInput');
-              window.statusInput = elements.resultsContainer.querySelector('#statusFileInput');
-              window.processBtn = elements.resultsContainer.querySelector('#processBtn');
-              window.csvBtn = elements.resultsContainer.querySelector('#csvBtn');
-              window.resultsDiv = elements.resultsContainer.querySelector('#results');
-              window.uploadDiv = elements.resultsContainer.querySelector('#uploadStatus');
-            };
-            setupGlobals();
-            validateClinicians();
+          if (typeof runClinicianCheck === 'function') {
+            console.log('[DEBUG] Calling runClinicianCheck()');
+            await runClinicianCheck();
+            console.log('[DEBUG] runClinicianCheck() completed');
           } else {
-            console.error('[DEBUG] validateClinicians function not found!');
+            console.error('[DEBUG] runClinicianCheck function not found');
           }
         } else if (checkerName === 'elig') {
           console.log('[DEBUG] Processing elig checker');
@@ -506,12 +440,22 @@
           } else {
             console.error('[DEBUG] runAuthsCheck function not found');
           }
-        } else if (checkerName === 'pricing' && typeof handleRun === 'function') {
-          console.log('[DEBUG] Calling handleRun() for pricing');
-          handleRun();
-        } else if (checkerName === 'modifiers' && typeof handleRun === 'function') {
-          console.log('[DEBUG] Calling handleRun() for modifiers');
-          handleRun();
+        } else if (checkerName === 'pricing') {
+          if (typeof runPricingCheck === 'function') {
+            console.log('[DEBUG] Calling runPricingCheck()');
+            await runPricingCheck();
+            console.log('[DEBUG] runPricingCheck() completed');
+          } else {
+            console.error('[DEBUG] runPricingCheck function not found');
+          }
+        } else if (checkerName === 'modifiers') {
+          if (typeof runModifiersCheck === 'function') {
+            console.log('[DEBUG] Calling runModifiersCheck()');
+            await runModifiersCheck();
+            console.log('[DEBUG] runModifiersCheck() completed');
+          } else {
+            console.error('[DEBUG] runModifiersCheck function not found');
+          }
         } else {
           console.warn(`[DEBUG] No trigger function found for ${checkerName}`);
         }
