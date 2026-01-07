@@ -524,15 +524,15 @@ function renderResults(container, rows) {
   summaryBox.textContent = `Valid claims: ${validClaims} / ${totalClaims} (${percentage}%)`;
 
   const html = `
-    <table border="1" style="width:100%;border-collapse:collapse">
+    <table class="table table-striped table-bordered" style="width:100%;border-collapse:collapse">
       <thead>
         <tr>
-          <th>Claim ID</th>
-          <th>Activity ID</th>
-          <th>Code</th>
-          <th class="description-col">Description</th>
-          <th>Observations</th>
-          <th class="description-col">Remarks</th>
+          <th style="padding:8px;border:1px solid #ccc">Claim ID</th>
+          <th style="padding:8px;border:1px solid #ccc">Activity ID</th>
+          <th style="padding:8px;border:1px solid #ccc">Code</th>
+          <th class="description-col" style="padding:8px;border:1px solid #ccc">Description</th>
+          <th style="padding:8px;border:1px solid #ccc">Observations</th>
+          <th class="description-col" style="padding:8px;border:1px solid #ccc">Remarks</th>
         </tr>
       </thead>
       <tbody>
@@ -542,12 +542,12 @@ function renderResults(container, rows) {
           const invalidClass = r.remarks && r.remarks.length > 0 ? 'invalid' : 'valid';
           return `
             <tr class="${invalidClass}">
-              <td>${showClaimId ? r.claimId : ''}</td>
-              <td>${r.activityId}</td>
-              <td>${r.code}</td>
-              <td class="description-col">${r.description}</td>
-              <td>${r.details}</td>
-              <td class="description-col">${r.remarks.join('<br>')}</td>
+              <td style="padding:6px;border:1px solid #ccc">${showClaimId ? r.claimId : ''}</td>
+              <td style="padding:6px;border:1px solid #ccc">${r.activityId}</td>
+              <td style="padding:6px;border:1px solid #ccc">${r.code}</td>
+              <td class="description-col" style="padding:6px;border:1px solid #ccc">${r.description}</td>
+              <td style="padding:6px;border:1px solid #ccc">${r.details}</td>
+              <td class="description-col" style="padding:6px;border:1px solid #ccc">${r.remarks.join('<br>')}</td>
             </tr>`;
         }).join('')}
       </tbody>

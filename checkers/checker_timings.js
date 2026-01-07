@@ -194,11 +194,16 @@ function buildResultsTable(rows) {
   }
   
   let prevClaimId = null, html = `
-    <table border="1" style="width:100%;border-collapse:collapse">
+    <table class="table table-striped table-bordered" style="width:100%;border-collapse:collapse">
       <thead><tr>
-        <th>Claim ID</th><th>Activity ID</th><th>Encounter Start</th>
-        <th>Encounter End</th><th>Activity Start</th>
-        <th>Duration</th><th>Excess</th><th>Remarks</th>
+        <th style="padding:8px;border:1px solid #ccc">Claim ID</th>
+        <th style="padding:8px;border:1px solid #ccc">Activity ID</th>
+        <th style="padding:8px;border:1px solid #ccc">Encounter Start</th>
+        <th style="padding:8px;border:1px solid #ccc">Encounter End</th>
+        <th style="padding:8px;border:1px solid #ccc">Activity Start</th>
+        <th style="padding:8px;border:1px solid #ccc">Duration</th>
+        <th style="padding:8px;border:1px solid #ccc">Excess</th>
+        <th style="padding:8px;border:1px solid #ccc">Remarks</th>
       </tr></thead><tbody>
   `;
   rows.forEach(r => {
@@ -206,14 +211,14 @@ function buildResultsTable(rows) {
     prevClaimId = r.claimId;
     const remarkLines = (r.remarks || []).map(line => `<div>${sanitize(line)}</div>`).join('');
     html += `<tr class="${r.isValid ? 'valid' : 'invalid'}">
-      <td>${sanitize(claimCell)}</td>
-      <td>${sanitize(r.activityId)}</td>
-      <td>${sanitize(r.encounterStart)}</td>
-      <td>${sanitize(r.encounterEnd)}</td>
-      <td>${sanitize(r.start)}</td>
-      <td>${sanitize(r.duration)}</td>
-      <td>${sanitize(r.excess)}</td>
-      <td>${remarkLines}</td>
+      <td style="padding:6px;border:1px solid #ccc">${sanitize(claimCell)}</td>
+      <td style="padding:6px;border:1px solid #ccc">${sanitize(r.activityId)}</td>
+      <td style="padding:6px;border:1px solid #ccc">${sanitize(r.encounterStart)}</td>
+      <td style="padding:6px;border:1px solid #ccc">${sanitize(r.encounterEnd)}</td>
+      <td style="padding:6px;border:1px solid #ccc">${sanitize(r.start)}</td>
+      <td style="padding:6px;border:1px solid #ccc">${sanitize(r.duration)}</td>
+      <td style="padding:6px;border:1px solid #ccc">${sanitize(r.excess)}</td>
+      <td style="padding:6px;border:1px solid #ccc">${remarkLines}</td>
     </tr>`;
   });
   return html + "</tbody></table>";

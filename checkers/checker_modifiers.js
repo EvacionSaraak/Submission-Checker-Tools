@@ -284,19 +284,19 @@ function renderResults(rows) {
   let prevClaimId = null, prevMemberId = null, prevActivityId = null;
   let validCount = 0;
 
-  let html = `<table class="shared-table">
+  let html = `<table class="table table-striped table-bordered" style="width:100%;border-collapse:collapse">
     <thead>
       <tr>
-        <th>Claim ID</th>
-        <th>Member ID</th>
-        <th>Activity ID</th>
-        <th>Ordering Clinician</th>
-        <th>Observation Code</th>
-        <th>Observation CPT Modifier</th>
-        <th>VOI Number</th>
-        <th>Payer ID</th>
-        <th>Remarks</th>
-        <th>Eligibility Details</th>
+        <th style="padding:8px;border:1px solid #ccc">Claim ID</th>
+        <th style="padding:8px;border:1px solid #ccc">Member ID</th>
+        <th style="padding:8px;border:1px solid #ccc">Activity ID</th>
+        <th style="padding:8px;border:1px solid #ccc">Ordering Clinician</th>
+        <th style="padding:8px;border:1px solid #ccc">Observation Code</th>
+        <th style="padding:8px;border:1px solid #ccc">Observation CPT Modifier</th>
+        <th style="padding:8px;border:1px solid #ccc">VOI Number</th>
+        <th style="padding:8px;border:1px solid #ccc">Payer ID</th>
+        <th style="padding:8px;border:1px solid #ccc">Remarks</th>
+        <th style="padding:8px;border:1px solid #ccc">Eligibility Details</th>
       </tr>
     </thead>
     <tbody>`;
@@ -317,16 +317,16 @@ function renderResults(rows) {
 
     const isValid = remarks.length === 0;
     html += `<tr class="${isValid ? 'valid' : 'invalid'}">
-      <td>${showClaim ? escapeHtml(r.ClaimID) : ''}</td>
-      <td>${showMember ? escapeHtml(r.MemberID) : ''}</td>
-      <td>${showActivity ? escapeHtml(r.ActivityID) : ''}</td>
-      <td>${escapeHtml(r.OrderingClinician)}</td>
-      <td>${escapeHtml(r.ObsCode || '')}</td>
-      <td>${escapeHtml(r.Modifier)}</td>
-      <td>${escapeHtml(r.VOINumber || '')}</td>
-      <td>${escapeHtml(r.PayerID)}</td>
-      <td>${escapeHtml(remarks.join('; ') || 'OK')}</td>
-      <td>${r.EligibilityRow ? `<button type="button" class="details-btn eligibility-details" onclick="showEligibility(${r._originalIndex})">View</button>` : ''}</td>
+      <td style="padding:6px;border:1px solid #ccc">${showClaim ? escapeHtml(r.ClaimID) : ''}</td>
+      <td style="padding:6px;border:1px solid #ccc">${showMember ? escapeHtml(r.MemberID) : ''}</td>
+      <td style="padding:6px;border:1px solid #ccc">${showActivity ? escapeHtml(r.ActivityID) : ''}</td>
+      <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.OrderingClinician)}</td>
+      <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.ObsCode || '')}</td>
+      <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.Modifier)}</td>
+      <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.VOINumber || '')}</td>
+      <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.PayerID)}</td>
+      <td style="padding:6px;border:1px solid #ccc">${escapeHtml(remarks.join('; ') || 'OK')}</td>
+      <td style="padding:6px;border:1px solid #ccc">${r.EligibilityRow ? `<button type="button" class="details-btn eligibility-details" onclick="showEligibility(${r._originalIndex})">View</button>` : ''}</td>
     </tr>`;
 
     prevClaimId = r.ClaimID;

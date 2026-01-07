@@ -753,21 +753,23 @@ function renderResults(results, eligMap) {
   tableContainer.style.overflowX = 'auto';
 
   const table = document.createElement('table');
-  table.className = 'shared-table';
+  table.className = 'table table-striped table-bordered';
+  table.style.borderCollapse = 'collapse';
+  table.style.width = '100%';
 
   const isXmlMode = xmlRadio ? xmlRadio.checked : true;
   const thead = document.createElement('thead');
   thead.innerHTML = `
     <tr>
-      <th>Claim ID</th>
-      <th>Member ID</th>
-      <th>Encounter Date</th>
-      ${!isXmlMode ? '<th>Package</th><th>Provider</th>' : ''}
-      <th>Clinician</th>
-      <th>Service Category</th>
-      <th>Status</th>
-      <th class="wrap-col">Remarks</th>
-      <th>Details</th>
+      <th style="padding:8px;border:1px solid #ccc">Claim ID</th>
+      <th style="padding:8px;border:1px solid #ccc">Member ID</th>
+      <th style="padding:8px;border:1px solid #ccc">Encounter Date</th>
+      ${!isXmlMode ? '<th style="padding:8px;border:1px solid #ccc">Package</th><th style="padding:8px;border:1px solid #ccc">Provider</th>' : ''}
+      <th style="padding:8px;border:1px solid #ccc">Clinician</th>
+      <th style="padding:8px;border:1px solid #ccc">Service Category</th>
+      <th style="padding:8px;border:1px solid #ccc">Status</th>
+      <th class="wrap-col" style="padding:8px;border:1px solid #ccc">Remarks</th>
+      <th style="padding:8px;border:1px solid #ccc">Details</th>
     </tr>
   `;
   table.appendChild(thead);
@@ -812,15 +814,15 @@ function renderResults(results, eligMap) {
     }
 
     row.innerHTML = `
-      <td>${result.claimID}</td>
-      <td>${result.memberID}</td>
-      <td>${result.encounterStart}</td>
-      ${!isXmlMode ? `<td class="description-col">${result.packageName}</td><td class="description-col">${result.provider}</td>` : ''}
-      <td class="description-col">${result.clinician}</td>
-      <td class="description-col">${result.serviceCategory}</td>
-      <td class="description-col">${statusBadge}</td>
-      <td class="wrap-col">${remarksHTML}</td>
-      <td>${detailsCell}</td>
+      <td style="padding:6px;border:1px solid #ccc">${result.claimID}</td>
+      <td style="padding:6px;border:1px solid #ccc">${result.memberID}</td>
+      <td style="padding:6px;border:1px solid #ccc">${result.encounterStart}</td>
+      ${!isXmlMode ? `<td class="description-col" style="padding:6px;border:1px solid #ccc">${result.packageName}</td><td class="description-col" style="padding:6px;border:1px solid #ccc">${result.provider}</td>` : ''}
+      <td class="description-col" style="padding:6px;border:1px solid #ccc">${result.clinician}</td>
+      <td class="description-col" style="padding:6px;border:1px solid #ccc">${result.serviceCategory}</td>
+      <td class="description-col" style="padding:6px;border:1px solid #ccc">${statusBadge}</td>
+      <td class="wrap-col" style="padding:6px;border:1px solid #ccc">${remarksHTML}</td>
+      <td style="padding:6px;border:1px solid #ccc">${detailsCell}</td>
     `;
     tbody.appendChild(row);
   });

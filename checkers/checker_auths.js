@@ -411,20 +411,23 @@ function renderResults(results) {
   const claimCodeSums = preprocessClaimCodeSums(results);
 
   const table = document.createElement("table");
+  table.className = "table table-striped table-bordered";
+  table.style.borderCollapse = "collapse";
+  table.style.width = "100%";
   table.innerHTML = `
   <thead>
     <tr>
-      <th>Claim ID</th>
-      <th>Member ID</th>
-      <th>Activity ID</th>
-      <th>Code</th>
-      <th>Auth ID</th>
-      <th class="description-col">Description</th>
-      <th>Net Total</th>
-      <th>Payer Share</th>
-      <th>Status</th>
-      <th>Remarks</th>
-      <th>Details</th>
+      <th style="padding:8px;border:1px solid #ccc">Claim ID</th>
+      <th style="padding:8px;border:1px solid #ccc">Member ID</th>
+      <th style="padding:8px;border:1px solid #ccc">Activity ID</th>
+      <th style="padding:8px;border:1px solid #ccc">Code</th>
+      <th style="padding:8px;border:1px solid #ccc">Auth ID</th>
+      <th class="description-col" style="padding:8px;border:1px solid #ccc">Description</th>
+      <th style="padding:8px;border:1px solid #ccc">Net Total</th>
+      <th style="padding:8px;border:1px solid #ccc">Payer Share</th>
+      <th style="padding:8px;border:1px solid #ccc">Status</th>
+      <th style="padding:8px;border:1px solid #ccc">Remarks</th>
+      <th style="padding:8px;border:1px solid #ccc">Details</th>
     </tr>
   </thead>`;
 
@@ -455,6 +458,8 @@ function renderRow(r, lastClaimId, idx, codeGroup) {
   const cid = document.createElement("td");
   cid.textContent = (r.claimId === lastClaimId) ? "" : r.claimId;
   cid.className = "nowrap-col";
+  cid.style.padding = "6px";
+  cid.style.border = "1px solid #ccc";
   tr.appendChild(cid);
 
   // XML fields (memberId, id, code)
@@ -462,6 +467,8 @@ function renderRow(r, lastClaimId, idx, codeGroup) {
     const td = document.createElement("td");
     td.textContent = val || "";
     td.className = "nowrap-col";
+    td.style.padding = "6px";
+    td.style.border = "1px solid #ccc";
     tr.appendChild(td);
   });
 
@@ -469,30 +476,40 @@ function renderRow(r, lastClaimId, idx, codeGroup) {
   const authTd = document.createElement("td");
   authTd.textContent = r.authID || "";
   authTd.className = "nowrap-col";
+  authTd.style.padding = "6px";
+  authTd.style.border = "1px solid #ccc";
   tr.appendChild(authTd);
 
   // Description (wrap allowed, class='description-col')
   const descTd = document.createElement("td");
   descTd.textContent = r.description || "";
   descTd.className = "description-col";
+  descTd.style.padding = "6px";
+  descTd.style.border = "1px solid #ccc";
   tr.appendChild(descTd);
 
   // Net Total (2 decimals, with source)
   const netTd = document.createElement("td");
   netTd.textContent = (parseFloat(r.netTotal || 0)).toFixed(2) + " (xml)";
   netTd.className = "nowrap-col";
+  netTd.style.padding = "6px";
+  netTd.style.border = "1px solid #ccc";
   tr.appendChild(netTd);
 
   // Payer Share (2 decimals, with source)
   const payerTd = document.createElement("td");
   payerTd.textContent = (parseFloat(xls["Payer Share"] || 0)).toFixed(2) + " (xlsx)";
   payerTd.className = "nowrap-col";
+  payerTd.style.padding = "6px";
+  payerTd.style.border = "1px solid #ccc";
   tr.appendChild(payerTd);
 
   // Status
   const statusTd = document.createElement("td");
   statusTd.textContent = xls["Status"] || xls.status || "";
   statusTd.className = "nowrap-col";
+  statusTd.style.padding = "6px";
+  statusTd.style.border = "1px solid #ccc";
   tr.appendChild(statusTd);
 
   // Remarks (summary only)
@@ -506,10 +523,14 @@ function renderRow(r, lastClaimId, idx, codeGroup) {
     remarksTd.textContent = "";
   }
   remarksTd.className = "wrap-col description-col";
+  remarksTd.style.padding = "6px";
+  remarksTd.style.border = "1px solid #ccc";
   tr.appendChild(remarksTd);
 
   // Details button (opens modal)
   const detailsTd = document.createElement("td");
+  detailsTd.style.padding = "6px";
+  detailsTd.style.border = "1px solid #ccc";
   const detailsBtn = document.createElement("button");
   detailsBtn.textContent = "View";
   detailsBtn.className = "details-btn";

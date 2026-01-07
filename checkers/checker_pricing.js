@@ -184,24 +184,31 @@ function renderResults(rows) {
   lastResults = rows.slice(); // ensure modal access
 
   let prevClaimId = null;
-  let html = `<table class="shared-table"><thead><tr>
-    <th>Claim ID</th><th>Activity ID</th><th>Code</th><th>Claimed Net</th><th>Quantity</th>
-    <th>Reference Net Price</th><th>Status</th><th>Remarks</th><th>Compare</th>
+  let html = `<table class="table table-striped table-bordered" style="width:100%;border-collapse:collapse"><thead><tr>
+    <th style="padding:8px;border:1px solid #ccc">Claim ID</th>
+    <th style="padding:8px;border:1px solid #ccc">Activity ID</th>
+    <th style="padding:8px;border:1px solid #ccc">Code</th>
+    <th style="padding:8px;border:1px solid #ccc">Claimed Net</th>
+    <th style="padding:8px;border:1px solid #ccc">Quantity</th>
+    <th style="padding:8px;border:1px solid #ccc">Reference Net Price</th>
+    <th style="padding:8px;border:1px solid #ccc">Status</th>
+    <th style="padding:8px;border:1px solid #ccc">Remarks</th>
+    <th style="padding:8px;border:1px solid #ccc">Compare</th>
   </tr></thead><tbody>`;
 
   for (const r of rows) {
     const cls = String(r.status || 'Invalid').toLowerCase();
     const showClaim = r.ClaimID !== prevClaimId;
     html += `<tr class="${cls}">
-      <td>${showClaim ? escapeHtml(r.ClaimID) : ''}</td>
-      <td>${escapeHtml(r.ActivityID)}</td>
-      <td>${escapeHtml(r.CPT)}</td>
-      <td>${escapeHtml(r.ClaimedNet)}</td>
-      <td>${escapeHtml(r.ClaimedQty)}</td>
-      <td>${escapeHtml(r.ReferenceNetPrice)}</td>
-      <td>${escapeHtml(r.status)}</td>
-      <td>${escapeHtml(r.Remarks || 'OK')}</td>
-      <td>${r.PricingRow ? `<button type="button" class="details-btn" onclick="showComparisonModal(${r._originalIndex})">View</button>` : ''}</td>
+      <td style="padding:6px;border:1px solid #ccc">${showClaim ? escapeHtml(r.ClaimID) : ''}</td>
+      <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.ActivityID)}</td>
+      <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.CPT)}</td>
+      <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.ClaimedNet)}</td>
+      <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.ClaimedQty)}</td>
+      <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.ReferenceNetPrice)}</td>
+      <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.status)}</td>
+      <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.Remarks || 'OK')}</td>
+      <td style="padding:6px;border:1px solid #ccc">${r.PricingRow ? `<button type="button" class="details-btn" onclick="showComparisonModal(${r._originalIndex})">View</button>` : ''}</td>
     </tr>`;
     prevClaimId = r.ClaimID;
   }
