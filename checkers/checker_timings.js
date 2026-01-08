@@ -1,31 +1,50 @@
 // checker_timings.js
 
-// --- DOM Handlers ---
-document.addEventListener('DOMContentLoaded', () => {
-  // Radio button generation removed - unified interface provides claim type selector
-  const fileInput = document.getElementById('xmlFileInput');
-  if (fileInput) fileInput.addEventListener('change', onFileChange);
+// --- Main Entry Point (called by unified interface) ---
+async function validateTimingsAsync() {
+  const xmlInput = document.getElementById('xmlFileInput');
+  const resultsDiv = document.getElementById('results');
   
-  // Export button handler (if button exists in DOM)
-  const exportBtn = document.getElementById('exportBtn');
-  if (exportBtn) {
-    exportBtn.addEventListener('click', () => {
-      if (!window.invalidRows?.length) return;
-      const wb = XLSX.utils.book_new();
-      const wsData = [
-        ['Claim ID', 'Activity ID', 'Encounter Start', 'Encounter End', 'Activity Start', 'Duration', 'Excess', 'Remarks'],
-        ...window.invalidRows.map(r => [
-          r.claimId, r.activityId, r.encounterStart, r.encounterEnd,
-          r.start, r.duration, r.excess, r.remarks.join('; ')
-        ])
-      ];
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(wsData), 'Invalid Timings');
-      XLSX.writeFile(wb, 'invalid_timings.xlsx');
-    });
+  clearResults();
+  
+  if (!xmlInput || !xmlInput.files || !xmlInput.files.length) {
+    return renderMessage('No XML file selected.');
   }
-});
+  
+  const file = xmlInput.files[0];
+  
+  try {
+    renderMessage('Processing file...');
+    const xmlText = await file.text();
+    validateXMLString(xmlText);
+    const xmlDoc = parseXML(xmlText);
+    const selectedType = document.querySelector('input[name="claimType"]:checked')?.value || "DENTAL";
+    const requiredType = (selectedType === "DENTAL") ? "6" : "3";
+    const claims = extractClaims(xmlDoc, requiredType);
+    renderResults(resultsDiv, claims);
+    
+    // Export button handler (add if button exists)
+    const exportBtn = document.getElementById('exportBtn');
+    if (exportBtn && window.invalidRows?.length) {
+      exportBtn.onclick = () => {
+        const wb = XLSX.utils.book_new();
+        const wsData = [
+          ['Claim ID', 'Activity ID', 'Encounter Start', 'Encounter End', 'Activity Start', 'Duration', 'Excess', 'Remarks'],
+          ...window.invalidRows.map(r => [
+            r.claimId, r.activityId, r.encounterStart, r.encounterEnd,
+            r.start, r.duration, r.excess, r.remarks.join('; ')
+          ])
+        ];
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(wsData), 'Invalid Timings');
+        XLSX.writeFile(wb, 'invalid_timings.xlsx');
+      };
+    }
+  } catch (err) {
+    renderMessage(`❌ Error: ${sanitize(String(err.message))}`);
+  }
+}
 
-// --- Main Handler ---
+// --- Legacy onFileChange (kept for backward compatibility) ---
 async function onFileChange(event) {
   clearResults();
   const file = event.target.files?.[0];

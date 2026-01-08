@@ -407,12 +407,9 @@
         if (checkerName === 'schema' && typeof validateXmlSchema === 'function') {
           console.log('[DEBUG] Calling validateXmlSchema()');
           validateXmlSchema();
-        } else if (checkerName === 'timings' && typeof onFileChange === 'function') {
-          const xmlInput = elements.resultsContainer.querySelector('#xmlFileInput');
-          if (xmlInput && xmlInput.files.length > 0) {
-            console.log('[DEBUG] Calling onFileChange() for timings');
-            onFileChange({ target: xmlInput });
-          }
+        } else if (checkerName === 'timings' && typeof validateTimingsAsync === 'function') {
+          console.log('[DEBUG] Calling validateTimingsAsync()');
+          await validateTimingsAsync();
         } else if (checkerName === 'teeth') {
           console.log('[DEBUG] Processing teeth checker');
           if (typeof parseXML === 'function') {
