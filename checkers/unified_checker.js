@@ -204,7 +204,7 @@
       console.log(`[DEBUG] Loading and executing ${checkerName} checker...`);
       await loadAndExecuteChecker(checkerName);
 
-      elements.uploadStatus.innerHTML = `<div class="status-message success">${checkerName.charAt(0).toUpperCase() + checkerName.slice(1)} checker ready.</div>`;
+      elements.uploadStatus.innerHTML = ''; // Clear status message
       if (elements.exportBtn) {
         elements.exportBtn.disabled = false;
       }
