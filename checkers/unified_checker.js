@@ -29,6 +29,9 @@
     pricing: null
   };
 
+  // Expose files globally for checkers to access
+  window.unifiedCheckerFiles = files;
+
   let activeChecker = null;
 
   // DOM elements

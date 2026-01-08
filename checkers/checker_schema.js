@@ -5,30 +5,24 @@
 // Error message constants
 const AMPERSAND_REPLACEMENT_ERROR = "Please replace `&` in the observations to `and` because this will cause error.";
 
-// Automatically validate when file is uploaded
-document.addEventListener("DOMContentLoaded", function () {
-  const fileInput = document.getElementById("xmlFile");
-  if (fileInput) {
-    fileInput.addEventListener("change", function () {
-      document.getElementById("uploadStatus").textContent = "";
-      document.getElementById("results").innerHTML = "";
-      if (fileInput.files.length > 0) {
-        validateXmlSchema();
-      }
-    });
-  }
-});
-
 function validateXmlSchema() {
-  const fileInput = document.getElementById("xmlFile");
   const status = document.getElementById("uploadStatus");
   const resultsDiv = document.getElementById("results");
-  resultsDiv.innerHTML = "";
-  status.textContent = "";
+  
+  if (resultsDiv) resultsDiv.innerHTML = "";
+  if (status) status.textContent = "";
 
-  const file = fileInput.files[0];
+  const fileInput = document.getElementById("xmlFile");
+  let file = fileInput?.files?.[0];
+  
+  // Fallback to unified checker files cache
+  if (!file && window.unifiedCheckerFiles && window.unifiedCheckerFiles.xml) {
+    file = window.unifiedCheckerFiles.xml;
+    console.log('[SCHEMA] Using XML file from unified cache:', file.name);
+  }
+  
   if (!file) {
-    status.textContent = "Please select an XML file first.";
+    if (status) status.textContent = "Please select an XML file first.";
     return;
   }
 
