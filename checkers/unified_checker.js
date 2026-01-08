@@ -503,12 +503,17 @@
         if (filterEnabled) {
           // Check for invalid/error indicators:
           // 1. Bootstrap danger class (red rows)
-          // 2. Old 'invalid' class (backward compatibility)
-          // 3. Text contains "invalid" or "error"
+          // 2. Bootstrap warning class (yellow rows - unknown/warning states)
+          // 3. Old 'invalid' or 'unknown' class (backward compatibility)
+          // 4. Text contains "invalid", "error", "warning", or "unknown"
           const hasInvalid = row.classList.contains('table-danger') ||
+                            row.classList.contains('table-warning') ||
                             row.classList.contains('invalid') ||
+                            row.classList.contains('unknown') ||
                             row.innerHTML.toLowerCase().includes('invalid') ||
                             row.innerHTML.toLowerCase().includes('error') ||
+                            row.innerHTML.toLowerCase().includes('warning') ||
+                            row.innerHTML.toLowerCase().includes('unknown') ||
                             row.innerHTML.includes('❌');
           row.style.display = hasInvalid ? '' : 'none';
         } else {
