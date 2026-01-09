@@ -594,8 +594,15 @@ function parseXML() {
   const xmlInput    = document.getElementById('xmlFile');
   const resultsDiv  = document.getElementById('results');
   const messageBox  = document.getElementById('messageBox');
-  messageBox.textContent = '';
-  resultsDiv.innerHTML   = '';
+  
+  // Defensive null checks
+  if (messageBox) messageBox.textContent = '';
+  if (resultsDiv) resultsDiv.innerHTML   = '';
+  
+  console.log('[TEETH] parseXML() called');
+  console.log('[TEETH] xmlInput element:', !!xmlInput);
+  console.log('[TEETH] resultsDiv element:', !!resultsDiv);
+  console.log('[TEETH] messageBox element:', !!messageBox);
 
   let file = xmlInput?.files?.[0];
   
@@ -605,35 +612,61 @@ function parseXML() {
     console.log('[TEETH] Using XML file from unified cache:', file.name);
   }
   
+  console.log('[TEETH] File to process:', file ? file.name : 'NO FILE');
+  
   if (!file) {
-    messageBox.textContent = 'Please upload an XML file.';
+    const msg = 'Please upload an XML file.';
+    console.error('[TEETH]', msg);
+    if (messageBox) messageBox.textContent = msg;
+    if (resultsDiv) resultsDiv.innerHTML = `<div class="alert alert-warning">${msg}</div>`;
     return;
   }
+  
+  console.log('[TEETH] Starting file processing...');
 
   Promise.all([
     new Promise((res, rej) => {
       const rdr = new FileReader();
-      rdr.onload  = () => res(rdr.result);
-      rdr.onerror = () => rej('Error reading XML');
+      rdr.onload  = () => {
+        console.log('[TEETH] XML file read successfully');
+        res(rdr.result);
+      };
+      rdr.onerror = () => {
+        console.error('[TEETH] Error reading XML file');
+        rej('Error reading XML');
+      };
       rdr.readAsText(file);
     }),
     fetch(repoJsonUrl)
-      .then(r => r.ok ? r.json() : Promise.reject(`Failed to load ${repoJsonUrl} (HTTP ${r.status})`)),
+      .then(r => {
+        console.log('[TEETH] Fetched tooth JSON:', r.ok);
+        return r.ok ? r.json() : Promise.reject(`Failed to load ${repoJsonUrl} (HTTP ${r.status})`);
+      }),
     fetch('checker_auths.json')
-      .then(r => r.ok ? r.json() : Promise.reject(`Failed to load checker_auths.json (HTTP ${r.status})`))
+      .then(r => {
+        console.log('[TEETH] Fetched auth JSON:', r.ok);
+        return r.ok ? r.json() : Promise.reject(`Failed to load checker_auths.json (HTTP ${r.status})`);
+      })
   ])
   .then(([xmlText, toothJson, authJson]) => {
+    console.log('[TEETH] All resources loaded, processing...');
     const toothMap = buildCodeMeta(toothJson);
     const authMap  = buildAuthMap(authJson);
     // Preprocess XML to replace unescaped & with "and" for parseability
     const xmlContent = xmlText.replace(/&(?!(amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;))/g, "and");
     const xmlDoc   = new DOMParser().parseFromString(xmlContent, 'application/xml');
     if (xmlDoc.querySelector('parsererror')) throw new Error('Invalid XML file');
+    console.log('[TEETH] XML parsed, validating activities...');
     const rows     = validateActivities(xmlDoc, toothMap, authMap);
+    console.log('[TEETH] Validation complete, rendering results... (rows:', rows.length, ')');
     renderResults(resultsDiv, rows);
+    console.log('[TEETH] Render complete');
   })
   .catch(err => {
-    messageBox.textContent = err.toString();
+    console.error('[TEETH] Error during processing:', err);
+    const errorMsg = err.toString();
+    if (messageBox) messageBox.textContent = errorMsg;
+    if (resultsDiv) resultsDiv.innerHTML = `<div class="alert alert-danger">Error: ${errorMsg}</div>`;
   });
 }
 
