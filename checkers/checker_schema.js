@@ -452,7 +452,8 @@ function claimToHtmlTable(xmlString) {
 // renderResults (stores last results on window - button removed for unified interface)
 function renderResults(results, container, schemaType) {
   // keep a global reference so export works even if scopes change
-  window._lastValidationResults = Array.isArray(results) ? results.slice() : [];
+  const safeResults = Array.isArray(results) ? results.slice() : [];
+  window._lastValidationResults = safeResults;
   window._lastValidationSchema = schemaType || "claim";
   container.innerHTML = "";
 
@@ -481,7 +482,7 @@ function renderResults(results, container, schemaType) {
 
   // Body
   const tbody = document.createElement("tbody");
-  (results || []).forEach(row => {
+  safeResults.forEach(row => {
     const tr = document.createElement("tr");
     // Add Bootstrap classes for consistent styling with other checkers
     if (row.Valid) {
