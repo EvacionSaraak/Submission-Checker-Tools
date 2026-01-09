@@ -599,7 +599,7 @@
   /**
    * Attempt to generate table for active checker
    */
-  function attemptTableGeneration() {
+  async function attemptTableGeneration() {
     autoTableGeneration.attemptCount++;
     
     console.log(`[AUTO-TABLE] Attempt ${autoTableGeneration.attemptCount}/${autoTableGeneration.maxAttempts}`);
@@ -651,13 +651,29 @@
       return;
     }
     
-    // Attempt to run the checker
+    // Attempt to run the checker directly without triggering runChecker to avoid recursion
     console.log(`[AUTO-TABLE] Generating table for ${activeChecker} checker...`);
-    runChecker(activeChecker).then(() => {
+    
+    try {
+      // Temporarily stop monitoring to prevent recursion
+      const wasEnabled = autoTableGeneration.enabled;
+      stopAutoTableGeneration();
+      
+      // Execute checker function directly
+      await loadAndExecuteChecker(activeChecker);
+      
       console.log('[AUTO-TABLE] Table generation completed');
-    }).catch(err => {
+      
+      // Check if table was generated, if not and we were enabled, restart monitoring
+      if (wasEnabled && !checkForExistingTable()) {
+        autoTableGeneration.enabled = true;
+        autoTableGeneration.intervalId = setInterval(() => {
+          attemptTableGeneration();
+        }, autoTableGeneration.retryDelayMs);
+      }
+    } catch (err) {
       console.error('[AUTO-TABLE] Error during table generation:', err);
-    });
+    }
   }
   
   /**
@@ -665,11 +681,33 @@
    * Returns true if table exists, false otherwise
    */
   function checkForExistingTable() {
-    // Check main results container
-    const mainTable = elements.resultsContainer && elements.resultsContainer.querySelector('table');
-    if (mainTable) {
-      console.log('[AUTO-TABLE] Found table in main container');
-      return true;
+    // Check main results container for any tables (including nested)
+    if (elements.resultsContainer) {
+      const allTables = elements.resultsContainer.querySelectorAll('table');
+      if (allTables && allTables.length > 0) {
+        console.log(`[AUTO-TABLE] Found ${allTables.length} table(s) in main container`);
+        return true;
+      }
+    }
+    
+    // Also check the #results div specifically (used by most checkers)
+    const resultsDiv = document.getElementById('results');
+    if (resultsDiv) {
+      const resultsTables = resultsDiv.querySelectorAll('table');
+      if (resultsTables && resultsTables.length > 0) {
+        console.log(`[AUTO-TABLE] Found ${resultsTables.length} table(s) in #results div`);
+        return true;
+      }
+    }
+    
+    // Check #outputTableContainer (used by pricing/modifiers)
+    const outputContainer = document.getElementById('outputTableContainer');
+    if (outputContainer) {
+      const outputTables = outputContainer.querySelectorAll('table');
+      if (outputTables && outputTables.length > 0) {
+        console.log(`[AUTO-TABLE] Found ${outputTables.length} table(s) in #outputTableContainer`);
+        return true;
+      }
     }
     
     // Check for tables in any iframes
@@ -677,9 +715,9 @@
     for (let iframe of iframes) {
       try {
         const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
-        const iframeTable = iframeDoc && iframeDoc.querySelector('table');
-        if (iframeTable) {
-          console.log('[AUTO-TABLE] Found table in iframe');
+        const iframeTables = iframeDoc && iframeDoc.querySelectorAll('table');
+        if (iframeTables && iframeTables.length > 0) {
+          console.log(`[AUTO-TABLE] Found ${iframeTables.length} table(s) in iframe`);
           return true;
         }
       } catch (e) {
