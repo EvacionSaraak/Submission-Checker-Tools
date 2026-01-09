@@ -777,18 +777,29 @@ async function runAuthsCheck() {
   if (resultsDiv) resultsDiv.innerHTML = '';
   if (statusDiv) statusDiv.textContent = '';
   
+  // Get XML file - try input element first, then fall back to unified cache
+  let xmlFile = xmlFileInput?.files?.[0];
+  if (!xmlFile && window.unifiedCheckerFiles && window.unifiedCheckerFiles.xml) {
+    xmlFile = window.unifiedCheckerFiles.xml;
+    console.log('[AUTHS] Using XML file from unified cache:', xmlFile.name);
+  }
+  
+  // Get XLSX file - try input element first, then fall back to unified cache
+  let xlsxFile = xlsxFileInput?.files?.[0];
+  if (!xlsxFile && window.unifiedCheckerFiles && window.unifiedCheckerFiles.auth) {
+    xlsxFile = window.unifiedCheckerFiles.auth;
+    console.log('[AUTHS] Using Auth file from unified cache:', xlsxFile.name);
+  }
+  
   // Validate files are uploaded
-  if (!xmlFileInput || !xmlFileInput.files || !xmlFileInput.files.length) {
+  if (!xmlFile) {
     if (statusDiv) statusDiv.textContent = 'Please select an XML file first.';
     return;
   }
-  if (!xlsxFileInput || !xlsxFileInput.files || !xlsxFileInput.files.length) {
+  if (!xlsxFile) {
     if (statusDiv) statusDiv.textContent = 'Please select an authorization XLSX file first.';
     return;
   }
-  
-  const xmlFile = xmlFileInput.files[0];
-  const xlsxFile = xlsxFileInput.files[0];
   
   try {
     if (statusDiv) statusDiv.textContent = 'Processing...';
