@@ -230,8 +230,8 @@
         setTimeout(() => applyFilter(), 100); // Small delay to ensure table is fully rendered
       }
       
-      // Start auto-table generation monitoring after button click
-      startAutoTableGeneration();
+      // Stop auto-generation after manual run to prevent duplicate processing
+      stopAutoTableGeneration();
 
     } catch (error) {
       console.error('[DEBUG] Error running checker:', error);
