@@ -33,6 +33,15 @@
   window.unifiedCheckerFiles = files;
 
   let activeChecker = null;
+  
+  // Auto-table generation state
+  let autoTableGeneration = {
+    enabled: false,
+    attemptCount: 0,
+    maxAttempts: 5,
+    intervalId: null,
+    retryDelayMs: 3000
+  };
 
   // DOM elements
   let elements = {};
@@ -139,6 +148,9 @@
       console.log(`[FILE] Cleared: ${fileKey}`);
     }
     updateButtonStates();
+    
+    // Trigger auto-table generation on file change
+    startAutoTableGeneration();
   }
 
   function updateButtonStates() {
@@ -217,6 +229,9 @@
       if (elements.filterInvalid.checked) {
         setTimeout(() => applyFilter(), 100); // Small delay to ensure table is fully rendered
       }
+      
+      // Start auto-table generation monitoring after button click
+      startAutoTableGeneration();
 
     } catch (error) {
       console.error('[DEBUG] Error running checker:', error);
@@ -544,6 +559,136 @@
 
     const filename = `${activeChecker || 'checker'}_results_${new Date().toISOString().slice(0, 10)}.xlsx`;
     XLSX.writeFile(wb, filename);
+  }
+  
+  /**
+   * Start auto-table generation monitoring
+   * Triggered when:
+   * 1. File is uploaded
+   * 2. Checker button is clicked
+   */
+  function startAutoTableGeneration() {
+    console.log('[AUTO-TABLE] Starting auto-table generation monitoring...');
+    
+    // Reset state
+    stopAutoTableGeneration();
+    autoTableGeneration.attemptCount = 0;
+    autoTableGeneration.enabled = true;
+    
+    // Immediate first attempt
+    attemptTableGeneration();
+    
+    // Start interval for retry attempts
+    autoTableGeneration.intervalId = setInterval(() => {
+      attemptTableGeneration();
+    }, autoTableGeneration.retryDelayMs);
+  }
+  
+  /**
+   * Stop auto-table generation monitoring
+   */
+  function stopAutoTableGeneration() {
+    if (autoTableGeneration.intervalId) {
+      clearInterval(autoTableGeneration.intervalId);
+      autoTableGeneration.intervalId = null;
+      console.log('[AUTO-TABLE] Stopped monitoring');
+    }
+    autoTableGeneration.enabled = false;
+  }
+  
+  /**
+   * Attempt to generate table for active checker
+   */
+  function attemptTableGeneration() {
+    autoTableGeneration.attemptCount++;
+    
+    console.log(`[AUTO-TABLE] Attempt ${autoTableGeneration.attemptCount}/${autoTableGeneration.maxAttempts}`);
+    
+    // Check if we've exceeded max attempts
+    if (autoTableGeneration.attemptCount > autoTableGeneration.maxAttempts) {
+      console.log('[AUTO-TABLE] Max attempts reached, stopping...');
+      stopAutoTableGeneration();
+      return;
+    }
+    
+    // Check if there's an active checker
+    if (!activeChecker) {
+      console.log('[AUTO-TABLE] No active checker, skipping generation');
+      return;
+    }
+    
+    // Check if table already exists
+    const existingTable = checkForExistingTable();
+    if (existingTable) {
+      console.log('[AUTO-TABLE] Table already exists, stopping monitoring');
+      stopAutoTableGeneration();
+      return;
+    }
+    
+    // Check if required files are available for active checker
+    const requirements = {
+      clinician: ['xml', 'clinician', 'status'],
+      elig: ['xml', 'eligibility'],
+      auths: ['xml', 'auth'],
+      timings: ['xml'],
+      teeth: ['xml'],
+      schema: ['xml'],
+      pricing: ['xml', 'pricing'],
+      modifiers: ['xml', 'eligibility']
+    };
+    
+    const requiredFiles = requirements[activeChecker];
+    if (!requiredFiles) {
+      console.log(`[AUTO-TABLE] Unknown checker: ${activeChecker}`);
+      stopAutoTableGeneration();
+      return;
+    }
+    
+    const hasAllFiles = requiredFiles.every(req => files[req] !== null);
+    if (!hasAllFiles) {
+      const missingFiles = requiredFiles.filter(req => !files[req]);
+      console.log(`[AUTO-TABLE] Missing required files: ${missingFiles.join(', ')}`);
+      return;
+    }
+    
+    // Attempt to run the checker
+    console.log(`[AUTO-TABLE] Generating table for ${activeChecker} checker...`);
+    runChecker(activeChecker).then(() => {
+      console.log('[AUTO-TABLE] Table generation completed');
+    }).catch(err => {
+      console.error('[AUTO-TABLE] Error during table generation:', err);
+    });
+  }
+  
+  /**
+   * Check if a table already exists in the results container or any iframes
+   * Returns true if table exists, false otherwise
+   */
+  function checkForExistingTable() {
+    // Check main results container
+    const mainTable = elements.resultsContainer && elements.resultsContainer.querySelector('table');
+    if (mainTable) {
+      console.log('[AUTO-TABLE] Found table in main container');
+      return true;
+    }
+    
+    // Check for tables in any iframes
+    const iframes = document.querySelectorAll('iframe');
+    for (let iframe of iframes) {
+      try {
+        const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+        const iframeTable = iframeDoc && iframeDoc.querySelector('table');
+        if (iframeTable) {
+          console.log('[AUTO-TABLE] Found table in iframe');
+          return true;
+        }
+      } catch (e) {
+        // Cross-origin iframe, can't access
+        console.log('[AUTO-TABLE] Cannot access iframe (cross-origin)');
+      }
+    }
+    
+    return false;
   }
 
 })();
