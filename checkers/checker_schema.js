@@ -5,30 +5,24 @@
 // Error message constants
 const AMPERSAND_REPLACEMENT_ERROR = "Please replace `&` in the observations to `and` because this will cause error.";
 
-// Automatically validate when file is uploaded
-document.addEventListener("DOMContentLoaded", function () {
-  const fileInput = document.getElementById("xmlFile");
-  if (fileInput) {
-    fileInput.addEventListener("change", function () {
-      document.getElementById("uploadStatus").textContent = "";
-      document.getElementById("results").innerHTML = "";
-      if (fileInput.files.length > 0) {
-        validateXmlSchema();
-      }
-    });
-  }
-});
-
 function validateXmlSchema() {
-  const fileInput = document.getElementById("xmlFile");
   const status = document.getElementById("uploadStatus");
   const resultsDiv = document.getElementById("results");
-  resultsDiv.innerHTML = "";
-  status.textContent = "";
+  
+  if (resultsDiv) resultsDiv.innerHTML = "";
+  if (status) status.textContent = "";
 
-  const file = fileInput.files[0];
+  const fileInput = document.getElementById("xmlFile");
+  let file = fileInput?.files?.[0];
+  
+  // Fallback to unified checker files cache
+  if (!file && window.unifiedCheckerFiles && window.unifiedCheckerFiles.xml) {
+    file = window.unifiedCheckerFiles.xml;
+    console.log('[SCHEMA] Using XML file from unified cache:', file.name);
+  }
+  
   if (!file) {
-    status.textContent = "Please select an XML file first.";
+    if (status) status.textContent = "Please select an XML file first.";
     return;
   }
 
@@ -455,22 +449,17 @@ function claimToHtmlTable(xmlString) {
   return html;
 }
 
-// renderResults (stores last results on window and places export button above table)
+// renderResults (stores last results on window - button removed for unified interface)
 function renderResults(results, container, schemaType) {
   // keep a global reference so export works even if scopes change
   window._lastValidationResults = Array.isArray(results) ? results.slice() : [];
   window._lastValidationSchema = schemaType || "claim";
   container.innerHTML = "";
 
-  // Export XLSX button above the table
-  const exportBtn = document.createElement("button");
-  exportBtn.textContent = "Export XLSX";
-  exportBtn.style.marginBottom = "10px";
-  exportBtn.onclick = () => exportErrorsToXLSX(); // uses global last results
-  container.appendChild(exportBtn);
+  // Export button removed - unified interface handles export
 
   const table = document.createElement("table");
-  table.className = "table";
+  table.className = "table table-striped table-bordered";
   table.style.borderCollapse = "collapse";
   table.style.width = "100%";
 
@@ -494,7 +483,12 @@ function renderResults(results, container, schemaType) {
   const tbody = document.createElement("tbody");
   (results || []).forEach(row => {
     const tr = document.createElement("tr");
-    tr.style.backgroundColor = row.Valid ? "#d4edda" : "#f8d7da";
+    // Add Bootstrap classes for consistent styling with other checkers
+    if (row.Valid) {
+      tr.classList.add('table-success'); // Green for valid
+    } else {
+      tr.classList.add('table-danger'); // Red for invalid
+    }
     [row.ClaimID, row.Remark, row.Valid ? "Yes" : "No"].forEach(text => {
       const td = document.createElement("td");
       td.textContent = text;

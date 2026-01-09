@@ -367,17 +367,43 @@ function validateClaims(xmlDoc, xlsxData) {
 // === RENDERERS ===
 function renderResults(results) {
   const container = document.getElementById("results");
+  
+  if (!container) {
+    console.error('Results container not found');
+    return;
+  }
+  
   container.innerHTML = "";
+
+  // Validate results is an array
+  if (!Array.isArray(results)) {
+    console.error('renderResults: results is not an array:', results);
+    container.innerHTML = '<div class="alert alert-danger">Error: Invalid results data structure</div>';
+    return;
+  }
 
   // Show "X loaded" count at the top
   const loadedMsg = document.createElement("div");
   loadedMsg.id = "loaded-count";
   loadedMsg.style.marginBottom = "10px";
-  loadedMsg.textContent = `${results.length} loaded`;
+  loadedMsg.style.fontWeight = "bold";
+  loadedMsg.textContent = `${results.length} authorization activities loaded`;
   container.appendChild(loadedMsg);
 
   if (!results.length) {
-    container.textContent = "✅ No activities to validate.";
+    const noResultsMsg = document.createElement("div");
+    noResultsMsg.className = "alert alert-info";
+    noResultsMsg.style.marginTop = "10px";
+    noResultsMsg.innerHTML = `
+      <strong>No authorization activities found.</strong><br>
+      This could mean:<br>
+      • The XML file contains no claims with activities requiring authorization checks<br>
+      • All activities in the XML are for codes that don't require authorization<br>
+      <br>
+      Claims loaded from XML: ${xmlClaimCount}<br>
+      Authorization rows loaded from XLSX: ${xlsxAuthCount}
+    `;
+    container.appendChild(noResultsMsg);
     return;
   }
 
@@ -385,20 +411,23 @@ function renderResults(results) {
   const claimCodeSums = preprocessClaimCodeSums(results);
 
   const table = document.createElement("table");
+  table.className = "table table-striped table-bordered";
+  table.style.borderCollapse = "collapse";
+  table.style.width = "100%";
   table.innerHTML = `
   <thead>
     <tr>
-      <th>Claim ID</th>
-      <th>Member ID</th>
-      <th>Activity ID</th>
-      <th>Code</th>
-      <th>Auth ID</th>
-      <th class="description-col">Description</th>
-      <th>Net Total</th>
-      <th>Payer Share</th>
-      <th>Status</th>
-      <th>Remarks</th>
-      <th>Details</th>
+      <th style="padding:8px;border:1px solid #ccc">Claim ID</th>
+      <th style="padding:8px;border:1px solid #ccc">Member ID</th>
+      <th style="padding:8px;border:1px solid #ccc">Activity ID</th>
+      <th style="padding:8px;border:1px solid #ccc">Code</th>
+      <th style="padding:8px;border:1px solid #ccc">Auth ID</th>
+      <th class="description-col" style="padding:8px;border:1px solid #ccc">Description</th>
+      <th style="padding:8px;border:1px solid #ccc">Net Total</th>
+      <th style="padding:8px;border:1px solid #ccc">Payer Share</th>
+      <th style="padding:8px;border:1px solid #ccc">Status</th>
+      <th style="padding:8px;border:1px solid #ccc">Remarks</th>
+      <th style="padding:8px;border:1px solid #ccc">Details</th>
     </tr>
   </thead>`;
 
@@ -421,7 +450,14 @@ function renderResults(results) {
 // MODIFIED: set class to unknown if r.unknown
 function renderRow(r, lastClaimId, idx, codeGroup) {
   const tr = document.createElement("tr");
-  tr.className = r.unknown ? 'unknown' : (r.remarks.length ? 'invalid' : 'valid');
+  // Use Bootstrap classes for row coloring
+  if (r.unknown) {
+    tr.classList.add('table-warning'); // Yellow for unknown
+  } else if (r.remarks && r.remarks.length > 0) {
+    tr.classList.add('table-danger'); // Red for invalid
+  } else {
+    tr.classList.add('table-success'); // Green for valid
+  }
 
   const xls = r.xlsRow || {};
 
@@ -429,6 +465,8 @@ function renderRow(r, lastClaimId, idx, codeGroup) {
   const cid = document.createElement("td");
   cid.textContent = (r.claimId === lastClaimId) ? "" : r.claimId;
   cid.className = "nowrap-col";
+  cid.style.padding = "6px";
+  cid.style.border = "1px solid #ccc";
   tr.appendChild(cid);
 
   // XML fields (memberId, id, code)
@@ -436,6 +474,8 @@ function renderRow(r, lastClaimId, idx, codeGroup) {
     const td = document.createElement("td");
     td.textContent = val || "";
     td.className = "nowrap-col";
+    td.style.padding = "6px";
+    td.style.border = "1px solid #ccc";
     tr.appendChild(td);
   });
 
@@ -443,30 +483,40 @@ function renderRow(r, lastClaimId, idx, codeGroup) {
   const authTd = document.createElement("td");
   authTd.textContent = r.authID || "";
   authTd.className = "nowrap-col";
+  authTd.style.padding = "6px";
+  authTd.style.border = "1px solid #ccc";
   tr.appendChild(authTd);
 
   // Description (wrap allowed, class='description-col')
   const descTd = document.createElement("td");
   descTd.textContent = r.description || "";
   descTd.className = "description-col";
+  descTd.style.padding = "6px";
+  descTd.style.border = "1px solid #ccc";
   tr.appendChild(descTd);
 
   // Net Total (2 decimals, with source)
   const netTd = document.createElement("td");
   netTd.textContent = (parseFloat(r.netTotal || 0)).toFixed(2) + " (xml)";
   netTd.className = "nowrap-col";
+  netTd.style.padding = "6px";
+  netTd.style.border = "1px solid #ccc";
   tr.appendChild(netTd);
 
   // Payer Share (2 decimals, with source)
   const payerTd = document.createElement("td");
   payerTd.textContent = (parseFloat(xls["Payer Share"] || 0)).toFixed(2) + " (xlsx)";
   payerTd.className = "nowrap-col";
+  payerTd.style.padding = "6px";
+  payerTd.style.border = "1px solid #ccc";
   tr.appendChild(payerTd);
 
   // Status
   const statusTd = document.createElement("td");
   statusTd.textContent = xls["Status"] || xls.status || "";
   statusTd.className = "nowrap-col";
+  statusTd.style.padding = "6px";
+  statusTd.style.border = "1px solid #ccc";
   tr.appendChild(statusTd);
 
   // Remarks (summary only)
@@ -480,10 +530,14 @@ function renderRow(r, lastClaimId, idx, codeGroup) {
     remarksTd.textContent = "";
   }
   remarksTd.className = "wrap-col description-col";
+  remarksTd.style.padding = "6px";
+  remarksTd.style.border = "1px solid #ccc";
   tr.appendChild(remarksTd);
 
   // Details button (opens modal)
   const detailsTd = document.createElement("td");
+  detailsTd.style.padding = "6px";
+  detailsTd.style.border = "1px solid #ccc";
   const detailsBtn = document.createElement("button");
   detailsBtn.textContent = "View";
   detailsBtn.className = "details-btn";
@@ -648,8 +702,8 @@ function setupDetailsModal(results, claimCodeSums) {
 
 // === MAIN PROCESSING ===
 function postProcessResults(results) {
-  const container = document.getElementById("results-container");
-  container.innerHTML = "";
+  const container = document.getElementById("results");
+  // DON'T clear container - table is already rendered by renderResults()
 
   const total = results.length;
   const invalidEntries = results.filter(r => !r.unknown && r.remarks.length > 0);
@@ -657,18 +711,19 @@ function postProcessResults(results) {
   const validCount   = total - invalidCount;
   const pctValid     = total ? ((validCount / total) * 100).toFixed(1) : "0.0";
 
-  // 1) Show summary
+  // 1) Show summary at the top (prepend before table)
   const summary = document.createElement("div");
-  summary.textContent = `Valid: ${validCount} / ${total} (${pctValid}% valid)`;
-  container.appendChild(summary);
+  summary.className = "alert alert-info mb-3";
+  summary.innerHTML = `<strong>Validation Summary:</strong> ${validCount} valid / ${total} total (${pctValid}% valid)`;
+  container.insertBefore(summary, container.firstChild);
 
-  // 2) If any invalid, show export button
+  // 2) If any invalid, show export button (add to summary)
   if (invalidCount > 0) {
     const btn = document.createElement("button");
     btn.textContent = `Export ${invalidCount} Invalid Entries`;
     btn.id = "exportInvalidBtn";
-    btn.className = "btn btn-sm btn-outline-danger mt-2";
-    container.appendChild(btn);
+    btn.className = "btn btn-sm btn-danger ms-3";
+    summary.appendChild(btn);
 
     btn.addEventListener("click", () => {
       // Build array of objects matching your table headers
@@ -705,6 +760,85 @@ function postProcessResults(results) {
       XLSX.utils.book_append_sheet(wb, ws, "InvalidEntries");
       XLSX.writeFile(wb, `invalid_entries_${Date.now()}.xlsx`);
     });
+  }
+}
+
+/********************
+ * UNIFIED ENTRY POINT *
+ ********************/
+// Simplified entry point for unified checker - reads files, validates, renders
+async function runAuthsCheck() {
+  const xmlFileInput = document.getElementById('xmlInput');
+  const xlsxFileInput = document.getElementById('xlsxInput');
+  const resultsDiv = document.getElementById('results');
+  const statusDiv = document.getElementById('uploadStatus');
+  
+  // Clear previous results
+  if (resultsDiv) resultsDiv.innerHTML = '';
+  if (statusDiv) statusDiv.textContent = '';
+  
+  // Get XML file - try input element first, then fall back to unified cache
+  let xmlFile = xmlFileInput?.files?.[0];
+  if (!xmlFile && window.unifiedCheckerFiles && window.unifiedCheckerFiles.xml) {
+    xmlFile = window.unifiedCheckerFiles.xml;
+    console.log('[AUTHS] Using XML file from unified cache:', xmlFile.name);
+  }
+  
+  // Get XLSX file - try input element first, then fall back to unified cache
+  let xlsxFile = xlsxFileInput?.files?.[0];
+  if (!xlsxFile && window.unifiedCheckerFiles && window.unifiedCheckerFiles.auth) {
+    xlsxFile = window.unifiedCheckerFiles.auth;
+    console.log('[AUTHS] Using Auth file from unified cache:', xlsxFile.name);
+  }
+  
+  // Validate files are uploaded
+  if (!xmlFile) {
+    if (statusDiv) statusDiv.textContent = 'Please select an XML file first.';
+    return;
+  }
+  if (!xlsxFile) {
+    if (statusDiv) statusDiv.textContent = 'Please select an authorization XLSX file first.';
+    return;
+  }
+  
+  try {
+    if (statusDiv) statusDiv.textContent = 'Processing...';
+    
+    // Load authorization rules
+    await loadAuthRules();
+    
+    // Parse XML file
+    const xmlDoc = await parseXMLFile(xmlFile);
+    if (!xmlDoc) {
+      throw new Error('Failed to parse XML file');
+    }
+    
+    // Parse XLSX file
+    const xlsxData = await parseXLSXFile(xlsxFile);
+    if (!Array.isArray(xlsxData)) {
+      throw new Error('Invalid authorization file structure - expected array of rows');
+    }
+    
+    // Validate claims against authorizations
+    const results = validateClaims(xmlDoc, xlsxData, authRules);
+    console.log('[DEBUG] Auth validation complete:', {
+      resultsCount: results.length,
+      xmlClaimCount,
+      xlsxAuthCount,
+      hasAuthRules: Object.keys(authRules).length > 0
+    });
+    
+    // Render results to resultsDiv
+    renderResults(results);
+    postProcessResults(results);
+    
+    if (statusDiv) statusDiv.textContent = `Processed ${results.length} authorization activities`;
+  } catch (error) {
+    console.error('Authorization check error:', error);
+    if (statusDiv) statusDiv.textContent = 'Processing failed: ' + error.message;
+    if (resultsDiv) resultsDiv.innerHTML = `<div class="error" style="color: red; padding: 20px; border: 1px solid red; margin: 10px;">
+      <strong>Authorization Checker Error:</strong><br>${error.message}
+    </div>`;
   }
 }
 

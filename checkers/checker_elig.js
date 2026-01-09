@@ -732,6 +732,15 @@ function normalizeReportData(rawData) {
  ********************/
 // renderResults: no normalization of memberID in button data attributes
 function renderResults(results, eligMap) {
+  // Query for fresh DOM elements each time to avoid stale references
+  const resultsContainer = document.getElementById('results');
+  const xmlRadio = document.querySelector('input[name="reportSource"][value="xml"]');
+  
+  if (!resultsContainer) {
+    console.error('Results container not found');
+    return;
+  }
+  
   resultsContainer.innerHTML = '';
 
   if (!results || results.length === 0) {
@@ -744,21 +753,23 @@ function renderResults(results, eligMap) {
   tableContainer.style.overflowX = 'auto';
 
   const table = document.createElement('table');
-  table.className = 'shared-table';
+  table.className = 'table table-striped table-bordered';
+  table.style.borderCollapse = 'collapse';
+  table.style.width = '100%';
 
-  const isXmlMode = xmlRadio.checked;
+  const isXmlMode = xmlRadio ? xmlRadio.checked : true;
   const thead = document.createElement('thead');
   thead.innerHTML = `
     <tr>
-      <th>Claim ID</th>
-      <th>Member ID</th>
-      <th>Encounter Date</th>
-      ${!isXmlMode ? '<th>Package</th><th>Provider</th>' : ''}
-      <th>Clinician</th>
-      <th>Service Category</th>
-      <th>Status</th>
-      <th class="wrap-col">Remarks</th>
-      <th>Details</th>
+      <th style="padding:8px;border:1px solid #ccc">Claim ID</th>
+      <th style="padding:8px;border:1px solid #ccc">Member ID</th>
+      <th style="padding:8px;border:1px solid #ccc">Encounter Date</th>
+      ${!isXmlMode ? '<th style="padding:8px;border:1px solid #ccc">Package</th><th style="padding:8px;border:1px solid #ccc">Provider</th>' : ''}
+      <th style="padding:8px;border:1px solid #ccc">Clinician</th>
+      <th style="padding:8px;border:1px solid #ccc">Service Category</th>
+      <th style="padding:8px;border:1px solid #ccc">Status</th>
+      <th class="wrap-col" style="padding:8px;border:1px solid #ccc">Remarks</th>
+      <th style="padding:8px;border:1px solid #ccc">Details</th>
     </tr>
   `;
   table.appendChild(thead);
@@ -785,7 +796,14 @@ function renderResults(results, eligMap) {
     }
 
     const row = document.createElement('tr');
-    row.className = result.finalStatus;
+    // Use Bootstrap classes for row coloring
+    if (result.finalStatus === 'valid') {
+      row.classList.add('table-success'); // Green for valid
+    } else if (result.finalStatus === 'invalid') {
+      row.classList.add('table-danger'); // Red for invalid
+    } else {
+      row.classList.add('table-warning'); // Yellow for unknown/other
+    }
 
     const statusBadge = result.status 
       ? `<span class="status-badge ${result.status.toLowerCase() === 'eligible' ? 'eligible' : 'ineligible'}">${result.status}</span>`
@@ -803,15 +821,15 @@ function renderResults(results, eligMap) {
     }
 
     row.innerHTML = `
-      <td>${result.claimID}</td>
-      <td>${result.memberID}</td>
-      <td>${result.encounterStart}</td>
-      ${!isXmlMode ? `<td class="description-col">${result.packageName}</td><td class="description-col">${result.provider}</td>` : ''}
-      <td class="description-col">${result.clinician}</td>
-      <td class="description-col">${result.serviceCategory}</td>
-      <td class="description-col">${statusBadge}</td>
-      <td class="wrap-col">${remarksHTML}</td>
-      <td>${detailsCell}</td>
+      <td style="padding:6px;border:1px solid #ccc">${result.claimID}</td>
+      <td style="padding:6px;border:1px solid #ccc">${result.memberID}</td>
+      <td style="padding:6px;border:1px solid #ccc">${result.encounterStart}</td>
+      ${!isXmlMode ? `<td class="description-col" style="padding:6px;border:1px solid #ccc">${result.packageName}</td><td class="description-col" style="padding:6px;border:1px solid #ccc">${result.provider}</td>` : ''}
+      <td class="description-col" style="padding:6px;border:1px solid #ccc">${result.clinician}</td>
+      <td class="description-col" style="padding:6px;border:1px solid #ccc">${result.serviceCategory}</td>
+      <td class="description-col" style="padding:6px;border:1px solid #ccc">${statusBadge}</td>
+      <td class="wrap-col" style="padding:6px;border:1px solid #ccc">${remarksHTML}</td>
+      <td style="padding:6px;border:1px solid #ccc">${detailsCell}</td>
     `;
     tbody.appendChild(row);
   });
@@ -1075,6 +1093,69 @@ function handleExportInvalidClick() {
     return;
   }
   exportInvalidEntries(window.lastValidationResults);
+}
+
+/********************
+ * UNIFIED ENTRY POINT *
+ ********************/
+// Simplified entry point for unified checker - reads files, validates, renders
+async function runEligCheck() {
+  const xmlFileInput = document.getElementById('xmlFileInput');
+  const eligFileInput = document.getElementById('eligibilityFileInput');
+  const resultsDiv = document.getElementById('results');
+  const statusDiv = document.getElementById('uploadStatus');
+  
+  // Clear previous results
+  if (resultsDiv) resultsDiv.innerHTML = '';
+  if (statusDiv) statusDiv.textContent = '';
+  
+  // Validate files are uploaded
+  if (!xmlFileInput || !xmlFileInput.files || !xmlFileInput.files.length) {
+    if (statusDiv) statusDiv.textContent = 'Please select an XML file first.';
+    return;
+  }
+  if (!eligFileInput || !eligFileInput.files || !eligFileInput.files.length) {
+    if (statusDiv) statusDiv.textContent = 'Please select an eligibility XLSX file first.';
+    return;
+  }
+  
+  const xmlFile = xmlFileInput.files[0];
+  const eligFile = eligFileInput.files[0];
+  
+  try {
+    if (statusDiv) statusDiv.textContent = 'Processing...';
+    usedEligibilities.clear();
+    
+    // Parse XML file
+    const xmlResult = await parseXmlFile(xmlFile);
+    if (!xmlResult || !xmlResult.claims || !Array.isArray(xmlResult.claims)) {
+      throw new Error('Invalid XML file structure - expected claims array');
+    }
+    
+    // Parse eligibility XLSX file
+    const eligResult = await parseExcelFile(eligFile);
+    if (!Array.isArray(eligResult)) {
+      throw new Error('Invalid eligibility file structure - expected array of rows');
+    }
+    
+    // Prepare eligibility map
+    const eligMap = prepareEligibilityMap(eligResult);
+    
+    // Validate claims against eligibility
+    const results = validateXmlClaims(xmlResult.claims, eligMap);
+    
+    // Render results to resultsDiv
+    window.lastValidationResults = results;
+    renderResults(results, eligMap);
+    
+    if (statusDiv) statusDiv.textContent = `Processed ${results.length} claims`;
+  } catch (error) {
+    console.error('Eligibility check error:', error);
+    if (statusDiv) statusDiv.textContent = 'Processing failed: ' + error.message;
+    if (resultsDiv) resultsDiv.innerHTML = `<div class="error" style="color: red; padding: 20px; border: 1px solid red; margin: 10px;">
+      <strong>Eligibility Checker Error:</strong><br>${error.message}
+    </div>`;
+  }
 }
 
 /********************

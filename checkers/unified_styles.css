@@ -1,0 +1,440 @@
+/**
+ * Unified Styles for All Checker Tools
+ * Consolidates styles from tables.css and unified_checker.css
+ */
+
+/* ==================== BASE AND LAYOUT ==================== */
+body {
+  font-family: Arial, sans-serif;
+  padding: 20px;
+  margin: auto;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* ==================== UNIFIED CHECKER INTERFACE ==================== */
+
+/* File Input Section */
+.file-input-group {
+  margin-bottom: 1rem;
+}
+
+.file-input-group label {
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+.file-status {
+  margin-left: 0.5rem;
+  font-weight: bold;
+}
+
+/* Checker Buttons */
+.checker-buttons {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.checker-buttons .btn {
+  margin-bottom: 0.5rem;
+}
+
+/* Make enabled buttons more visible */
+.checker-buttons .btn:not(:disabled) {
+  background-color: #0d6efd;
+  color: white;
+  border-color: #0d6efd;
+  font-weight: 600;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.checker-buttons .btn:not(:disabled):hover {
+  background-color: #0b5ed7;
+  border-color: #0a58ca;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+  transform: translateY(-1px);
+  transition: all 0.2s;
+}
+
+/* Active button styling */
+.checker-buttons .btn.active {
+  background-color: #198754 !important;
+  border-color: #198754 !important;
+  color: white !important;
+  font-weight: 700;
+  box-shadow: 0 4px 12px rgba(25, 135, 84, 0.4);
+}
+
+/* Warning button (Check All) when enabled */
+.checker-buttons .btn-warning:not(:disabled) {
+  background-color: #ffc107;
+  border-color: #ffc107;
+  color: #000;
+  font-weight: 600;
+}
+
+.checker-buttons .btn-warning:not(:disabled):hover {
+  background-color: #ffca2c;
+  border-color: #ffc720;
+}
+
+/* Experimental Badge */
+.experimental-badge {
+  background-color: #ff9800;
+  color: white;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  margin-left: 5px;
+  vertical-align: super;
+}
+
+/* Status Messages */
+.status-message {
+  padding: 0.75rem;
+  border-radius: 0.375rem;
+  margin-bottom: 1rem;
+}
+
+.status-message.info {
+  background-color: #cfe2ff;
+  color: #084298;
+  border: 1px solid #b6d4fe;
+}
+
+.status-message.success {
+  background-color: #d1e7dd;
+  color: #0f5132;
+  border: 1px solid #badbcc;
+}
+
+.status-message.error {
+  background-color: #f8d7da;
+  color: #842029;
+  border: 1px solid #f5c2c7;
+}
+
+/* ==================== FORM ELEMENTS ==================== */
+.form-row {
+  margin-bottom: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+input[type="text"],
+input[type="number"],
+input[type="file"],
+button {
+  font-size: 14px;
+  border-radius: 4px;
+}
+
+input[type="text"],
+input[type="number"],
+input[type="file"] {
+  padding: 6px 8px;
+  border: 1px solid #ccc;
+}
+
+button {
+  padding: 6px 12px;
+  background-color: #f0f0f0;
+  border: 1px solid #ccc;
+  cursor: pointer;
+}
+
+button:disabled {
+  background-color: #eee;
+  cursor: not-allowed;
+}
+
+.calc-output {
+  font-weight: bold;
+  margin-left: 12px;
+}
+
+/* ==================== RESULTS CONTAINER ==================== */
+#results {
+  margin-top: 20px;
+  overflow-x: auto;
+}
+
+/* ==================== TABLE STYLING ==================== */
+table {
+  width: 100%;
+  min-width: 900px;
+  border-collapse: collapse;
+  font-size: 14px;
+  background: #fff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+  margin-bottom: 12px;
+  table-layout: auto;
+}
+
+th, td {
+  padding: 8px 10px;
+  border: 1px solid #ccc;
+  text-align: left;
+  vertical-align: middle;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 300px;
+}
+
+th {
+  background-color: #f4f4f4;
+  font-weight: bold;
+}
+
+tr.selected {
+  background-color: #d0ebff !important;
+  font-weight: bold;
+}
+
+.description-col {
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  max-width: 600px;
+}
+
+td.copied {
+  background-color: #c5f6c7;
+  transition: background-color 0.3s ease;
+}
+
+td.last-copied {
+  outline: 2px solid #4caf50;
+  outline-offset: -2px;
+}
+
+/* ==================== VALIDITY ROW COLORS ==================== */
+.valid         { background: #d5ffd9; }
+.thiqa-only    { background: #e1e9ff; }
+.daman-only    { background: #f3e1ff; }
+.unknown       { background: #ffffbf; }
+.invalid       { background: #ffd6d6; }
+
+/* Bootstrap table classes for consistency */
+.table-success { background-color: #d1e7dd !important; }
+.table-danger  { background-color: #f8d7da !important; }
+.table-warning { background-color: #fff3cd !important; }
+.table-info    { background-color: #cfe2ff !important; }
+
+/* ==================== UTILITY TEXT STYLES ==================== */
+.loaded-count {
+  margin-bottom: 10px;
+  font-weight: bold;
+}
+
+.source-note {
+  color: #888;
+}
+
+#error-box,
+.error-box {
+  background-color: #ffdddd;
+  border: 1px solid #ff5c5c;
+  padding: 12px;
+  margin-top: 12px;
+  color: #a30000;
+  border-radius: 4px;
+}
+
+#messageBox {
+  color: red;
+  font-weight: bold;
+  margin-top: 10px;
+}
+
+/* ==================== EXPLANATION BOX ==================== */
+#explanationBox {
+  background-color: #f0f8ff;
+  border: 1px solid #99c;
+  padding: 15px;
+  margin-bottom: 20px;
+  border-radius: 5px;
+  color: #333;
+  font-family: Arial, sans-serif;
+  max-width: 900px;
+  margin: auto;
+}
+
+/* ==================== MODAL COMPONENTS ==================== */
+.modal {
+  display: none;
+  position: fixed;
+  z-index: 999;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  justify-content: center;
+  align-items: center;
+  background: rgba(0,0,0,0.5);
+}
+
+.modal-content {
+  background: #fff;
+  margin: 2vh auto;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.2);
+  width: fit-content;
+  max-height: 90vh;
+  overflow-y: auto;
+  min-width: 320px;
+  position: relative;
+}
+
+.modal.hidden {
+  display: none !important;
+}
+
+.modal-content.eligibility-modal {
+  min-width: 80vw !important;
+  max-width: 95vw !important;
+  width: auto;
+}
+
+.modal-content.draggable {
+  cursor: move;
+  user-select: none;
+}
+
+.close {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  font-size: 24px;
+  cursor: pointer;
+  color: #888;
+  transition: color 0.2s;
+}
+
+.close:hover {
+  color: #333;
+}
+
+/* ==================== STATUS BADGES ==================== */
+.status-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.8em;
+  font-weight: bold;
+  text-transform: uppercase;
+}
+
+.status-badge.eligible {
+  background-color: #d5ffd9;
+  color: #0a6b16;
+}
+
+.status-badge.ineligible {
+  background-color: #ffd6d6;
+  color: #a30000;
+}
+
+.license-badge {
+  display: inline-block;
+  background: #ddeeff;
+  color: #1d3b69;
+  border-radius: 3px;
+  padding: 1px 6px;
+  font-size: 1em;
+  margin: 0 2px;
+  border: 1px solid #b2c6df;
+}
+
+/* ==================== ACTION BUTTONS ==================== */
+.details-btn {
+  padding: 2px 10px;
+  font-size: 13px;
+  border-radius: 4px;
+  border: 1px solid #bbb;
+  background: #f6f8fa;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.details-btn:hover {
+  background: #eaeaea;
+}
+
+.details-btn.eligibility-details {
+  background-color: #e6f7ff;
+  border-color: #91d5ff;
+  color: #1890ff;
+}
+
+.details-btn.eligibility-details:hover {
+  background-color: #bae7ff;
+}
+
+/* ==================== RESPONSIVE DESIGN ==================== */
+@media (max-width: 768px) {
+  .modal-content.eligibility-modal {
+    min-width: 95vw !important;
+    margin: 2vh 10px;
+    padding: 15px;
+  }
+
+  table {
+    min-width: auto;
+    font-size: 12px;
+  }
+
+  th, td {
+    padding: 6px 8px;
+  }
+}
+
+/* ==================== MODE PANEL SPACING ==================== */
+#mode-selector {
+  margin-bottom: 30px;
+}
+
+#lookup-panel .section,
+#analysis-panel .section {
+  margin-bottom: 24px;
+}
+
+/* ==================== SHARED TABLE ==================== */
+.shared-table {
+  font-size: 0.85em;
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  border: 1px solid #ccc;
+}
+
+.shared-table th,
+.shared-table td {
+  padding: 6px 8px;
+  white-space: normal;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  text-overflow: ellipsis;
+  border: 1px solid #ccc;
+  vertical-align: top;
+  max-width: 300px;
+  text-align: left;
+  min-width: 80px;
+}
+
+.shared-table .wrap-col {
+  max-width: 180px;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.shared-table .description-col {
+  max-width: 300px;
+  white-space: normal;
+  word-break: break-word;
+}
