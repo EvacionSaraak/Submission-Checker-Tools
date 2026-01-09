@@ -567,16 +567,9 @@ function renderResults(container, rows) {
   container.innerHTML = html;
 }
 
-// UI event handlers
-document.addEventListener('DOMContentLoaded', () => {
-  const xmlInput = document.getElementById('xmlFile');
-  xmlInput.addEventListener('change', () => {
-    if (!xmlInput.files.length) return;
-    parseXML();
-  });
-});
+// UI event handlers removed - teeth checker is now called directly from unified interface via parseXML()
 
-document.getElementById('exportBtn').addEventListener('click', () => {
+document.getElementById('exportBtn')?.addEventListener('click', () => {
   if (!window.invalidRows || !window.invalidRows.length) return;
 
   const wb = XLSX.utils.book_new();
@@ -604,11 +597,18 @@ function parseXML() {
   messageBox.textContent = '';
   resultsDiv.innerHTML   = '';
 
-  if (!xmlInput.files.length) {
+  let file = xmlInput?.files?.[0];
+  
+  // Fallback to unified checker files cache
+  if (!file && window.unifiedCheckerFiles && window.unifiedCheckerFiles.xml) {
+    file = window.unifiedCheckerFiles.xml;
+    console.log('[TEETH] Using XML file from unified cache:', file.name);
+  }
+  
+  if (!file) {
     messageBox.textContent = 'Please upload an XML file.';
     return;
   }
-  const file = xmlInput.files[0];
 
   Promise.all([
     new Promise((res, rej) => {
