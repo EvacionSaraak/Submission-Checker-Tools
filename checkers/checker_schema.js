@@ -455,8 +455,10 @@ function renderResults(results, container, schemaType) {
   const safeResults = Array.isArray(results) ? results.slice() : [];
   window._lastValidationResults = safeResults;
   window._lastValidationSchema = schemaType || "claim";
-  container.innerHTML = "";
-
+  
+  // Don't clear container here - validateXmlSchema() already cleared it at line 12
+  // Clearing here would remove tables from OTHER checkers if schema runs after them
+  
   // Export button removed - unified interface handles export
 
   const idLabel = schemaType === "person" ? "Member ID" : "Claim ID";
