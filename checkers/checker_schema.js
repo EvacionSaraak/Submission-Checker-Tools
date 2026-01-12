@@ -459,54 +459,56 @@ function renderResults(results, container, schemaType) {
 
   // Export button removed - unified interface handles export
 
-  const table = document.createElement("table");
-  table.className = "table table-striped table-bordered";
-  table.style.borderCollapse = "collapse";
-  table.style.width = "100%";
-
-  // Header
-  const thead = document.createElement("thead");
-  const headerRow = document.createElement("tr");
-  [
-    schemaType === "person" ? "Member ID" : "Claim ID",
-    "Remark", "Valid", "View Full Entry"
-  ].forEach(text => {
-    const th = document.createElement("th");
-    th.textContent = text;
-    th.style.padding = "8px";
-    th.style.border = "1px solid #ccc";
-    headerRow.appendChild(th);
-  });
-  thead.appendChild(headerRow);
-  table.appendChild(thead);
-
-  // Body
-  const tbody = document.createElement("tbody");
-  safeResults.forEach(row => {
-    const tr = document.createElement("tr");
-    // Add Bootstrap classes for consistent styling with other checkers
-    if (row.Valid) {
-      tr.classList.add('table-success'); // Green for valid
-    } else {
-      tr.classList.add('table-danger'); // Red for invalid
+  const idLabel = schemaType === "person" ? "Member ID" : "Claim ID";
+  
+  // Build table using innerHTML for consistency with other checkers (teeth, elig, auths)
+  const tableHTML = `
+    <table class="table table-striped table-bordered" style="border-collapse:collapse;width:100%">
+      <thead>
+        <tr>
+          <th style="padding:8px;border:1px solid #ccc">${idLabel}</th>
+          <th style="padding:8px;border:1px solid #ccc">Remark</th>
+          <th style="padding:8px;border:1px solid #ccc">Valid</th>
+          <th style="padding:8px;border:1px solid #ccc">View Full Entry</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${safeResults.map((row, index) => {
+          // Use Bootstrap classes for consistent row coloring
+          const rowClass = row.Valid ? 'table-success' : 'table-danger';
+          return `
+            <tr class="${rowClass}">
+              <td style="padding:6px;border:1px solid #ccc">${sanitizeForHTML(row.ClaimID)}</td>
+              <td style="padding:6px;border:1px solid #ccc">${sanitizeForHTML(row.Remark)}</td>
+              <td style="padding:6px;border:1px solid #ccc">${row.Valid ? "Yes" : "No"}</td>
+              <td style="padding:6px;border:1px solid #ccc">
+                <button class="view-claim-btn" data-index="${index}">View</button>
+              </td>
+            </tr>`;
+        }).join('')}
+      </tbody>
+    </table>`;
+  
+  container.innerHTML = tableHTML;
+  
+  // Attach event listeners to view buttons after DOM is updated
+  safeResults.forEach((row, index) => {
+    const btn = container.querySelector(`.view-claim-btn[data-index="${index}"]`);
+    if (btn) {
+      btn.onclick = () => showModal(claimToHtmlTable(row.ClaimXML));
     }
-    [row.ClaimID, row.Remark, row.Valid ? "Yes" : "No"].forEach(text => {
-      const td = document.createElement("td");
-      td.textContent = text;
-      td.style.padding = "6px";
-      td.style.border = "1px solid #ccc";
-      tr.appendChild(td);
-    });
-    const btnTd = document.createElement("td");
-    const viewBtn = document.createElement("button");
-    viewBtn.textContent = "View";
-    viewBtn.onclick = () => showModal(claimToHtmlTable(row.ClaimXML));
-    btnTd.appendChild(viewBtn);
-    tr.appendChild(btnTd);
-    tbody.appendChild(tr);
   });
-  table.appendChild(tbody);
-  container.appendChild(table);
+}
+
+// Helper function to sanitize text for HTML insertion
+function sanitizeForHTML(text) {
+  if (text == null) return '';
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
 
 function exportErrorsToXLSX(data, schemaType) {
