@@ -551,9 +551,10 @@ function renderResults(container, rows) {
           const showClaimId = r.claimId !== lastClaimId;
           lastClaimId = r.claimId;
           const rowClass = r.remarks && r.remarks.length > 0 ? 'table-danger' : 'table-success';
+          // Always include claim ID in data attribute for filtering visibility
           return `
-            <tr class="${rowClass}">
-              <td style="padding:6px;border:1px solid #ccc">${showClaimId ? r.claimId : ''}</td>
+            <tr class="${rowClass}" data-claim-id="${r.claimId || ''}">
+              <td style="padding:6px;border:1px solid #ccc" class="claim-id-cell">${showClaimId ? r.claimId : ''}</td>
               <td style="padding:6px;border:1px solid #ccc">${r.activityId}</td>
               <td style="padding:6px;border:1px solid #ccc">${r.code}</td>
               <td class="description-col" style="padding:6px;border:1px solid #ccc">${r.description}</td>
@@ -565,6 +566,51 @@ function renderResults(container, rows) {
     </table>`;
 
   container.innerHTML = html;
+  
+  // Add observer to fill in Claim IDs when filtering hides rows
+  const observer = new MutationObserver(() => {
+    fillMissingClaimIds();
+  });
+  
+  const tbody = container.querySelector('tbody');
+  if (tbody) {
+    observer.observe(tbody, { attributes: true, attributeFilter: ['style'], subtree: true });
+  }
+  
+  // Initial fill in case filter is already active
+  fillMissingClaimIds();
+}
+
+// Helper function to fill in missing Claim IDs when rows are filtered
+function fillMissingClaimIds() {
+  const table = document.querySelector('#results table');
+  if (!table) return;
+  
+  const rows = Array.from(table.querySelectorAll('tbody tr'));
+  let lastVisibleClaimId = null;
+  
+  rows.forEach(row => {
+    const isHidden = row.style.display === 'none';
+    const claimIdCell = row.querySelector('.claim-id-cell');
+    const claimId = row.getAttribute('data-claim-id');
+    
+    if (!claimIdCell || !claimId) return;
+    
+    if (!isHidden) {
+      // Row is visible
+      if (claimIdCell.textContent.trim() === '') {
+        // Empty claim ID cell - fill it in for filtered view
+        claimIdCell.textContent = claimId;
+        claimIdCell.style.color = '#666'; // Lighter color to indicate it's auto-filled
+        claimIdCell.style.fontStyle = 'italic';
+      } else {
+        // Has claim ID - this is a new claim
+        lastVisibleClaimId = claimId;
+        claimIdCell.style.color = '';
+        claimIdCell.style.fontStyle = '';
+      }
+    }
+  });
 }
 
 // UI event handlers removed - teeth checker is now called directly from unified interface via parseXML()
