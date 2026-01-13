@@ -445,6 +445,49 @@ function renderResults(results) {
   container.appendChild(table);
 
   setupDetailsModal(results, claimCodeSums);
+  
+  // Add MutationObserver to detect when filter hides/shows rows
+  const observer = new MutationObserver(() => {
+    fillMissingClaimIds();
+  });
+  
+  if (tbody) {
+    observer.observe(tbody, { 
+      attributes: true, 
+      attributeFilter: ['style'],
+      subtree: true 
+    });
+  }
+  
+  // Fill immediately if filter is already active
+  fillMissingClaimIds();
+}
+
+// Helper function to fill missing Claim IDs when rows are filtered
+function fillMissingClaimIds() {
+  const table = document.querySelector('#results table');
+  if (!table) return;
+  
+  const rows = Array.from(table.querySelectorAll('tbody tr'));
+  
+  rows.forEach(row => {
+    const isHidden = row.style.display === 'none';
+    const claimIdCell = row.querySelector('.claim-id-cell');
+    const claimId = row.getAttribute('data-claim-id');
+    
+    if (!isHidden && claimIdCell && claimId) {
+      if (claimIdCell.textContent.trim() === '') {
+        // Empty cell - fill it in for visibility
+        claimIdCell.textContent = claimId;
+        claimIdCell.style.color = '#666';  // Gray color
+        claimIdCell.style.fontStyle = 'italic';  // Italic style
+      } else {
+        // Has claim ID - original first row
+        claimIdCell.style.color = '';  // Black color
+        claimIdCell.style.fontStyle = '';  // Normal style
+      }
+    }
+  });
 }
 
 // MODIFIED: set class to unknown if r.unknown
@@ -458,13 +501,16 @@ function renderRow(r, lastClaimId, idx, codeGroup) {
   } else {
     tr.classList.add('table-success'); // Green for valid
   }
+  
+  // Add data attribute for claim ID
+  tr.setAttribute('data-claim-id', r.claimId || '');
 
   const xls = r.xlsRow || {};
 
   // Claim ID (hide repeats)
   const cid = document.createElement("td");
   cid.textContent = (r.claimId === lastClaimId) ? "" : r.claimId;
-  cid.className = "nowrap-col";
+  cid.className = "nowrap-col claim-id-cell";
   cid.style.padding = "6px";
   cid.style.border = "1px solid #ccc";
   tr.appendChild(cid);

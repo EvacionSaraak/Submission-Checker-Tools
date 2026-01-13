@@ -204,6 +204,23 @@ function renderResults(container, rows) {
   exportBtn.style.display = invalidRows.length ? 'inline-block' : 'none';
   summaryBox.textContent = `Valid: ${rows.length - invalidRows.length} / ${rows.length} (${((rows.length - invalidRows.length)/rows.length*100).toFixed(1)}%)`;
   container.innerHTML = buildResultsTable(rows);
+  
+  // Add MutationObserver to detect when filter hides/shows rows
+  const observer = new MutationObserver(() => {
+    fillMissingClaimIds();
+  });
+  
+  const tbody = container.querySelector('tbody');
+  if (tbody) {
+    observer.observe(tbody, { 
+      attributes: true, 
+      attributeFilter: ['style'],
+      subtree: true 
+    });
+  }
+  
+  // Fill immediately if filter is already active
+  fillMissingClaimIds();
 }
 function buildResultsTable(rows) {
   // Defensive check: ensure rows is an array
@@ -229,8 +246,8 @@ function buildResultsTable(rows) {
     const claimCell = (r.claimId !== prevClaimId) ? r.claimId : '';
     prevClaimId = r.claimId;
     const remarkLines = (r.remarks || []).map(line => `<div>${sanitize(line)}</div>`).join('');
-    html += `<tr class="${r.isValid ? 'table-success' : 'table-danger'}">
-      <td style="padding:6px;border:1px solid #ccc">${sanitize(claimCell)}</td>
+    html += `<tr class="${r.isValid ? 'table-success' : 'table-danger'}" data-claim-id="${sanitize(r.claimId || '')}">
+      <td class="claim-id-cell" style="padding:6px;border:1px solid #ccc">${sanitize(claimCell)}</td>
       <td style="padding:6px;border:1px solid #ccc">${sanitize(r.activityId)}</td>
       <td style="padding:6px;border:1px solid #ccc">${sanitize(r.encounterStart)}</td>
       <td style="padding:6px;border:1px solid #ccc">${sanitize(r.encounterEnd)}</td>
@@ -241,6 +258,33 @@ function buildResultsTable(rows) {
     </tr>`;
   });
   return html + "</tbody></table>";
+}
+
+// Helper function to fill missing Claim IDs when rows are filtered
+function fillMissingClaimIds() {
+  const table = document.querySelector('#results table');
+  if (!table) return;
+  
+  const rows = Array.from(table.querySelectorAll('tbody tr'));
+  
+  rows.forEach(row => {
+    const isHidden = row.style.display === 'none';
+    const claimIdCell = row.querySelector('.claim-id-cell');
+    const claimId = row.getAttribute('data-claim-id');
+    
+    if (!isHidden && claimIdCell && claimId) {
+      if (claimIdCell.textContent.trim() === '') {
+        // Empty cell - fill it in for visibility
+        claimIdCell.textContent = claimId;
+        claimIdCell.style.color = '#666';  // Gray color
+        claimIdCell.style.fontStyle = 'italic';  // Italic style
+      } else {
+        // Has claim ID - original first row
+        claimIdCell.style.color = '';  // Black color
+        claimIdCell.style.fontStyle = '';  // Normal style
+      }
+    }
+  });
 }
 
 // --- Superfluous/Unused Functions (fully commented out) ---
