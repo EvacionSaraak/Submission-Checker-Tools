@@ -37,6 +37,9 @@
   // Filter state for floating button
   let filterActive = false;
   
+  // Debug log for Check All functionality
+  let debugLog = [];
+  
   // Auto-table generation state
   let autoTableGeneration = {
     enabled: false,
@@ -45,6 +48,18 @@
     intervalId: null,
     retryDelayMs: 3000
   };
+
+  // Helper function to add to debug log
+  function logDebug(message, data = null) {
+    const timestamp = new Date().toISOString();
+    const logEntry = {
+      timestamp,
+      message,
+      data
+    };
+    debugLog.push(logEntry);
+    console.log(`[DEBUG-LOG] ${timestamp} - ${message}`, data || '');
+  }
 
   // DOM elements
   let elements = {};
@@ -84,6 +99,8 @@
       // Export and filter
       exportBtn: document.getElementById('exportBtn'),
       floatingFilterBtn: document.getElementById('floatingFilterBtn'),
+      debugLogContainer: document.getElementById('debugLogContainer'),
+      downloadDebugLogBtn: document.getElementById('downloadDebugLogBtn'),
       
       // Results
       uploadStatus: document.getElementById('uploadStatus'),
@@ -130,6 +147,11 @@
 
     // Export button
     elements.exportBtn.addEventListener('click', exportResults);
+
+    // Debug log download button
+    if (elements.downloadDebugLogBtn) {
+      elements.downloadDebugLogBtn.addEventListener('click', downloadDebugLog);
+    }
 
     console.log('[INIT] Performing initial button state update...');
     updateButtonStates();
@@ -515,6 +537,34 @@
   async function runAllCheckers() {
     console.log('[CHECK-ALL] Starting Check All functionality...');
     
+    // Reset debug log
+    debugLog = [];
+    logDebug('Check All Started', { timestamp: new Date().toISOString() });
+    
+    // Hide debug log button initially
+    if (elements.debugLogContainer) {
+      elements.debugLogContainer.style.display = 'none';
+    }
+    
+    // Log system information
+    logDebug('System Information', {
+      userAgent: navigator.userAgent,
+      platform: navigator.platform,
+      language: navigator.language,
+      screenResolution: `${screen.width}x${screen.height}`,
+      viewportSize: `${window.innerWidth}x${window.innerHeight}`
+    });
+    
+    // Log uploaded files
+    logDebug('Uploaded Files', {
+      xml: files.xml ? files.xml.name : 'Not uploaded',
+      clinician: files.clinician ? files.clinician.name : 'Not uploaded',
+      eligibility: files.eligibility ? files.eligibility.name : 'Not uploaded',
+      auth: files.auth ? files.auth.name : 'Not uploaded',
+      status: files.status ? files.status.name : 'Not uploaded',
+      pricing: files.pricing ? files.pricing.name : 'Not uploaded'
+    });
+    
     // Determine which checkers are available (enabled buttons)
     const availableCheckers = [];
     const checkerButtons = {
@@ -532,18 +582,43 @@
     for (const [checkerName, button] of Object.entries(checkerButtons)) {
       if (button && !button.disabled) {
         availableCheckers.push(checkerName);
+        logDebug(`Checker Available: ${checkerName}`, { 
+          buttonEnabled: true,
+          buttonExists: !!button 
+        });
+      } else {
+        logDebug(`Checker Unavailable: ${checkerName}`, { 
+          buttonEnabled: false,
+          buttonExists: !!button,
+          reason: !button ? 'Button element not found' : 'Button is disabled (missing required files)'
+        });
       }
     }
     
     console.log('[CHECK-ALL] Available checkers:', availableCheckers);
+    logDebug('Available Checkers Detected', { 
+      count: availableCheckers.length,
+      checkers: availableCheckers 
+    });
     
     if (availableCheckers.length === 0) {
-      elements.uploadStatus.innerHTML = '<div class="status-message error">No checkers are available. Please upload the required files first.</div>';
+      const errorMsg = 'No checkers are available. Please upload the required files first.';
+      elements.uploadStatus.innerHTML = `<div class="status-message error">${errorMsg}</div>`;
+      logDebug('Check All Aborted', { reason: 'No checkers available' });
+      
+      // Show debug log button even if aborted
+      if (elements.debugLogContainer) {
+        elements.debugLogContainer.style.display = 'block';
+      }
       return;
     }
     
     // Show progress message
     elements.uploadStatus.innerHTML = `<div class="status-message info">Running ${availableCheckers.length} checker(s): ${availableCheckers.join(', ')}... Please wait.</div>`;
+    logDebug('Check All Progress Started', { 
+      totalCheckers: availableCheckers.length,
+      checkerList: availableCheckers.join(', ')
+    });
     
     // Set Check All button as active
     setActiveButton('checkAll');
@@ -551,14 +626,23 @@
     
     // Clear previous results
     elements.resultsContainer.innerHTML = '<div id="results"></div>';
+    logDebug('Results Container Cleared');
     
     // Array to store all results for combined export
     const allResults = [];
     let successCount = 0;
     let errorCount = 0;
+    const checkerTimings = [];
     
     // Run each available checker sequentially
     for (const checkerName of availableCheckers) {
+      const checkerStartTime = performance.now();
+      logDebug(`Starting Checker: ${checkerName}`, {
+        checkerNumber: successCount + errorCount + 1,
+        totalCheckers: availableCheckers.length,
+        timestamp: new Date().toISOString()
+      });
+      
       try {
         console.log(`[CHECK-ALL] Running ${checkerName} checker...`);
         
@@ -572,21 +656,43 @@
         sectionDiv.innerHTML = `<h3 style="color:#0d6efd;border-bottom:2px solid #0d6efd;padding-bottom:10px;margin-top:20px;">${checkerName.toUpperCase()} Checker Results</h3><div id="${checkerName}-results"></div>`;
         elements.resultsContainer.appendChild(sectionDiv);
         
+        logDebug(`Created Results Section: ${checkerName}`);
+        
         // Temporarily override resultsContainer to point to this section
         const originalContainer = elements.resultsContainer;
         const sectionResults = document.getElementById(`${checkerName}-results`);
         
         // Load and execute the checker
+        logDebug(`Loading Checker Script: ${checkerName}`);
         await loadAndExecuteChecker(checkerName, sectionResults);
+        logDebug(`Checker Script Loaded: ${checkerName}`);
         
         // Wait a moment for table to render
         await new Promise(resolve => setTimeout(resolve, 500));
         
         // Check if table was generated
         const table = sectionResults.querySelector('table');
+        const checkerEndTime = performance.now();
+        const executionTime = (checkerEndTime - checkerStartTime).toFixed(2);
+        
         if (table) {
           successCount++;
+          const rowCount = table.querySelectorAll('tbody tr').length;
           console.log(`[CHECK-ALL] ✓ ${checkerName} checker completed successfully`);
+          
+          logDebug(`Checker Success: ${checkerName}`, {
+            status: 'success',
+            executionTimeMs: executionTime,
+            rowsGenerated: rowCount,
+            tableGenerated: true
+          });
+          
+          checkerTimings.push({
+            checker: checkerName,
+            executionTimeMs: executionTime,
+            status: 'success',
+            rowCount: rowCount
+          });
           
           // Store table for combined export
           allResults.push({
@@ -597,32 +703,92 @@
           errorCount++;
           console.log(`[CHECK-ALL] ✗ ${checkerName} checker failed to generate table`);
           sectionResults.innerHTML = '<div class="alert alert-warning">No results or checker did not complete</div>';
+          
+          logDebug(`Checker Failed: ${checkerName}`, {
+            status: 'failed',
+            executionTimeMs: executionTime,
+            reason: 'No table generated',
+            tableGenerated: false
+          });
+          
+          checkerTimings.push({
+            checker: checkerName,
+            executionTimeMs: executionTime,
+            status: 'failed',
+            reason: 'No table generated'
+          });
         }
         
       } catch (error) {
         errorCount++;
+        const checkerEndTime = performance.now();
+        const executionTime = (checkerEndTime - checkerStartTime).toFixed(2);
+        
         console.error(`[CHECK-ALL] Error running ${checkerName}:`, error);
         const errorDiv = document.getElementById(`${checkerName}-results`);
         if (errorDiv) {
           errorDiv.innerHTML = `<div class="alert alert-danger">Error: ${error.message}</div>`;
         }
+        
+        logDebug(`Checker Error: ${checkerName}`, {
+          status: 'error',
+          executionTimeMs: executionTime,
+          errorMessage: error.message,
+          errorStack: error.stack,
+          errorType: error.name
+        });
+        
+        checkerTimings.push({
+          checker: checkerName,
+          executionTimeMs: executionTime,
+          status: 'error',
+          errorMessage: error.message
+        });
       }
     }
+    
+    // Calculate total execution time
+    const totalExecutionTime = checkerTimings.reduce((sum, timing) => 
+      sum + parseFloat(timing.executionTimeMs), 0
+    ).toFixed(2);
     
     // Show completion status
     const totalRun = successCount + errorCount;
     elements.uploadStatus.innerHTML = `<div class="status-message success">Check All complete: ${successCount} successful, ${errorCount} failed out of ${totalRun} checker(s)</div>`;
     
+    logDebug('Check All Completed', {
+      totalCheckers: totalRun,
+      successCount: successCount,
+      errorCount: errorCount,
+      totalExecutionTimeMs: totalExecutionTime,
+      timestamp: new Date().toISOString()
+    });
+    
+    logDebug('Checker Execution Timings', checkerTimings);
+    
     // Enable export button if we have results
     if (successCount > 0 && elements.exportBtn) {
       elements.exportBtn.disabled = false;
+      logDebug('Export Button Enabled', { resultsCount: successCount });
     }
     
     // Store results globally for export
     window._checkAllResults = allResults;
     
+    logDebug('Results Stored for Export', { 
+      checkersWithResults: allResults.length,
+      checkerNames: allResults.map(r => r.checkerName)
+    });
+    
+    // Show debug log download button
+    if (elements.debugLogContainer) {
+      elements.debugLogContainer.style.display = 'block';
+      logDebug('Debug Log Button Displayed');
+    }
+    
     console.log('[CHECK-ALL] ✓ Check All functionality complete');
     console.log('[CHECK-ALL] Results collected from', allResults.length, 'checkers');
+    console.log('[CHECK-ALL] Debug log contains', debugLog.length, 'entries');
   }
   
   /**
@@ -703,6 +869,77 @@
     const filename = `${activeChecker || 'checker'}_results_${new Date().toISOString().slice(0, 10)}.xlsx`;
     XLSX.writeFile(wb, filename);
     console.log('[EXPORT] ✓ Single checker export complete:', filename);
+  }
+
+  /**
+   * Download comprehensive debug log as text file
+   */
+  function downloadDebugLog() {
+    console.log('[DEBUG-LOG] Preparing debug log download...');
+    
+    if (!debugLog || debugLog.length === 0) {
+      alert('No debug log available. Please run Check All first.');
+      return;
+    }
+    
+    // Build debug log text content
+    const logLines = [];
+    
+    // Header
+    logLines.push('='.repeat(80));
+    logLines.push('UNIFIED CHECKER TOOL - DEBUG LOG');
+    logLines.push('='.repeat(80));
+    logLines.push('');
+    logLines.push(`Generated: ${new Date().toISOString()}`);
+    logLines.push(`Total Log Entries: ${debugLog.length}`);
+    logLines.push('');
+    logLines.push('='.repeat(80));
+    logLines.push('');
+    
+    // Log entries
+    debugLog.forEach((entry, index) => {
+      logLines.push(`[${index + 1}] ${entry.timestamp}`);
+      logLines.push(`Message: ${entry.message}`);
+      
+      if (entry.data) {
+        logLines.push('Data:');
+        try {
+          const dataStr = JSON.stringify(entry.data, null, 2);
+          // Indent each line of data
+          dataStr.split('\n').forEach(line => {
+            logLines.push(`  ${line}`);
+          });
+        } catch (e) {
+          logLines.push(`  [Error serializing data: ${e.message}]`);
+        }
+      }
+      
+      logLines.push('-'.repeat(80));
+      logLines.push('');
+    });
+    
+    // Footer
+    logLines.push('='.repeat(80));
+    logLines.push('END OF DEBUG LOG');
+    logLines.push('='.repeat(80));
+    
+    // Create blob and download
+    const logText = logLines.join('\n');
+    const blob = new Blob([logText], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `check-all_debug_log_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    console.log('[DEBUG-LOG] ✓ Debug log downloaded:', a.download);
+    logDebug('Debug Log Downloaded', { 
+      filename: a.download,
+      entriesCount: debugLog.length 
+    });
   }
   
   /**
