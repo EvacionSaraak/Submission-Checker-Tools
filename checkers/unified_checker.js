@@ -34,6 +34,9 @@
 
   let activeChecker = null;
   
+  // Filter state for floating button
+  let filterActive = false;
+  
   // Auto-table generation state
   let autoTableGeneration = {
     enabled: false,
@@ -80,7 +83,7 @@
       
       // Export and filter
       exportBtn: document.getElementById('exportBtn'),
-      filterInvalid: document.getElementById('filterInvalid'),
+      floatingFilterBtn: document.getElementById('floatingFilterBtn'),
       
       // Results
       uploadStatus: document.getElementById('uploadStatus'),
@@ -118,8 +121,12 @@
     elements.btnModifiers.addEventListener('click', () => runChecker('modifiers'));
     elements.btnCheckAll.addEventListener('click', runAllCheckers);
 
-    // Filter checkbox
-    elements.filterInvalid.addEventListener('change', applyFilter);
+    // Filter button - make it toggleable
+    elements.floatingFilterBtn.addEventListener('click', () => {
+      filterActive = !filterActive;
+      elements.floatingFilterBtn.classList.toggle('active', filterActive);
+      applyFilter();
+    });
 
     // Export button
     elements.exportBtn.addEventListener('click', exportResults);
@@ -225,8 +232,8 @@
       }
       console.log(`[DEBUG] ${checkerName} checker completed successfully`);
 
-      // Apply filter if checkbox is checked (works on already-rendered tables)
-      if (elements.filterInvalid.checked) {
+      // Apply filter if button is active (works on already-rendered tables)
+      if (filterActive) {
         setTimeout(() => applyFilter(), 100); // Small delay to ensure table is fully rendered
       }
       
@@ -510,7 +517,7 @@
   }
 
   function applyFilter() {
-    const filterEnabled = elements.filterInvalid.checked;
+    const filterEnabled = filterActive;
     const tables = elements.resultsContainer.querySelectorAll('table');
 
     console.log('[FILTER] Applying filter, enabled:', filterEnabled);
