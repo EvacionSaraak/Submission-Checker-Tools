@@ -513,7 +513,123 @@
   }
 
   async function runAllCheckers() {
-    elements.uploadStatus.innerHTML = '<div class="status-message info">Check All functionality is experimental and coming soon!</div>';
+    console.log('[CHECK-ALL] Starting Check All functionality...');
+    
+    // Determine which checkers are available (enabled buttons)
+    const availableCheckers = [];
+    const checkerButtons = {
+      'clinician': elements.btnClinician,
+      'elig': elements.btnElig,
+      'auths': elements.btnAuths,
+      'timings': elements.btnTimings,
+      'teeth': elements.btnTeeth,
+      'schema': elements.btnSchema,
+      'pricing': elements.btnPricing,
+      'modifiers': elements.btnModifiers
+    };
+    
+    // Find all enabled checkers
+    for (const [checkerName, button] of Object.entries(checkerButtons)) {
+      if (button && !button.disabled) {
+        availableCheckers.push(checkerName);
+      }
+    }
+    
+    console.log('[CHECK-ALL] Available checkers:', availableCheckers);
+    
+    if (availableCheckers.length === 0) {
+      elements.uploadStatus.innerHTML = '<div class="status-message error">No checkers are available. Please upload the required files first.</div>';
+      return;
+    }
+    
+    // Show progress message
+    elements.uploadStatus.innerHTML = `<div class="status-message info">Running ${availableCheckers.length} checker(s): ${availableCheckers.join(', ')}... Please wait.</div>`;
+    
+    // Set Check All button as active
+    setActiveButton('checkAll');
+    activeChecker = 'check-all';
+    
+    // Clear previous results
+    elements.resultsContainer.innerHTML = '<div id="results"></div>';
+    
+    // Array to store all results for combined export
+    const allResults = [];
+    let successCount = 0;
+    let errorCount = 0;
+    
+    // Run each available checker sequentially
+    for (const checkerName of availableCheckers) {
+      try {
+        console.log(`[CHECK-ALL] Running ${checkerName} checker...`);
+        
+        // Update status
+        elements.uploadStatus.innerHTML = `<div class="status-message info">Running ${checkerName} checker (${successCount + errorCount + 1}/${availableCheckers.length})...</div>`;
+        
+        // Create a section for this checker's results
+        const sectionDiv = document.createElement('div');
+        sectionDiv.id = `${checkerName}-section`;
+        sectionDiv.style.marginBottom = '30px';
+        sectionDiv.innerHTML = `<h3 style="color:#0d6efd;border-bottom:2px solid #0d6efd;padding-bottom:10px;margin-top:20px;">${checkerName.toUpperCase()} Checker Results</h3><div id="${checkerName}-results"></div>`;
+        elements.resultsContainer.appendChild(sectionDiv);
+        
+        // Temporarily override resultsContainer to point to this section
+        const originalContainer = elements.resultsContainer;
+        const sectionResults = document.getElementById(`${checkerName}-results`);
+        
+        // Load and execute the checker
+        await loadAndExecuteChecker(checkerName, sectionResults);
+        
+        // Wait a moment for table to render
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Check if table was generated
+        const table = sectionResults.querySelector('table');
+        if (table) {
+          successCount++;
+          console.log(`[CHECK-ALL] ✓ ${checkerName} checker completed successfully`);
+          
+          // Store table for combined export
+          allResults.push({
+            checkerName: checkerName,
+            table: table.cloneNode(true)
+          });
+        } else {
+          errorCount++;
+          console.log(`[CHECK-ALL] ✗ ${checkerName} checker failed to generate table`);
+          sectionResults.innerHTML = '<div class="alert alert-warning">No results or checker did not complete</div>';
+        }
+        
+      } catch (error) {
+        errorCount++;
+        console.error(`[CHECK-ALL] Error running ${checkerName}:`, error);
+        const errorDiv = document.getElementById(`${checkerName}-results`);
+        if (errorDiv) {
+          errorDiv.innerHTML = `<div class="alert alert-danger">Error: ${error.message}</div>`;
+        }
+      }
+    }
+    
+    // Show completion status
+    const totalRun = successCount + errorCount;
+    elements.uploadStatus.innerHTML = `<div class="status-message success">Check All complete: ${successCount} successful, ${errorCount} failed out of ${totalRun} checker(s)</div>`;
+    
+    // Enable export button if we have results
+    if (successCount > 0 && elements.exportBtn) {
+      elements.exportBtn.disabled = false;
+    }
+    
+    // Store results globally for export
+    window._checkAllResults = allResults;
+    
+    console.log('[CHECK-ALL] ✓ Check All functionality complete');
+    console.log('[CHECK-ALL] Results collected from', allResults.length, 'checkers');
+  }
+  
+  /**
+   * Modified loadAndExecuteChecker to accept custom results container
+   */
+  async function loadAndExecuteCheckerOriginal(checkerName, customResultsDiv) {
+    return loadAndExecuteChecker(checkerName, customResultsDiv);
   }
 
   function applyFilter() {
@@ -551,6 +667,26 @@
   }
 
   function exportResults() {
+    // Check if this is a Check All export
+    if (activeChecker === 'check-all' && window._checkAllResults && window._checkAllResults.length > 0) {
+      console.log('[EXPORT] Exporting Check All results from', window._checkAllResults.length, 'checkers');
+      
+      const wb = XLSX.utils.book_new();
+      
+      window._checkAllResults.forEach((result, index) => {
+        const ws = XLSX.utils.table_to_sheet(result.table);
+        // Limit sheet name to 31 characters (Excel limit)
+        const sheetName = result.checkerName.substring(0, 31);
+        XLSX.utils.book_append_sheet(wb, ws, sheetName);
+      });
+      
+      const filename = `check-all_results_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      XLSX.writeFile(wb, filename);
+      console.log('[EXPORT] ✓ Check All export complete:', filename);
+      return;
+    }
+    
+    // Regular single checker export
     const tables = elements.resultsContainer.querySelectorAll('table');
     if (tables.length === 0) {
       alert('No results to export');
@@ -566,6 +702,7 @@
 
     const filename = `${activeChecker || 'checker'}_results_${new Date().toISOString().slice(0, 10)}.xlsx`;
     XLSX.writeFile(wb, filename);
+    console.log('[EXPORT] ✓ Single checker export complete:', filename);
   }
   
   /**
