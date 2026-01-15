@@ -177,8 +177,18 @@
       </button>
     </div>
 
-    <!-- Results Container -->
-    <div id="results-container"></div>
+    <!-- Persistent Checker Containers (one per checker, all hidden by default) -->
+    <div id="checker-containers">
+      <div id="checker-container-clinician" class="checker-container" style="display:none;"></div>
+      <div id="checker-container-elig" class="checker-container" style="display:none;"></div>
+      <div id="checker-container-auths" class="checker-container" style="display:none;"></div>
+      <div id="checker-container-timings" class="checker-container" style="display:none;"></div>
+      <div id="checker-container-teeth" class="checker-container" style="display:none;"></div>
+      <div id="checker-container-schema" class="checker-container" style="display:none;"></div>
+      <div id="checker-container-pricing" class="checker-container" style="display:none;"></div>
+      <div id="checker-container-modifiers" class="checker-container" style="display:none;"></div>
+      <div id="checker-container-check-all" class="checker-container" style="display:none;"></div>
+    </div>
   </div>
 
   <!-- Floating Filter Button -->
@@ -194,7 +204,17 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="table_clipboard.js"></script>
   
-  <!-- Main unified controller -->
+  <!-- Load all checker scripts upfront (they stay loaded) -->
+  <script src="checker_clinician.js"></script>
+  <script src="checker_elig.js"></script>
+  <script src="checker_auths.js"></script>
+  <script src="checker_timings.js"></script>
+  <script src="checker_tooths.js"></script>
+  <script src="checker_schema.js"></script>
+  <script src="checker_pricing.js"></script>
+  <script src="checker_modifiers.js"></script>
+  
+  <!-- Main unified controller (must load after checker scripts) -->
   <script src="unified_checker.js"></script>
 </body>
 </html>
