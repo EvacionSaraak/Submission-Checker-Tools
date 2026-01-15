@@ -806,6 +806,11 @@
 
     tables.forEach(table => {
       const rows = table.querySelectorAll('tbody tr');
+      
+      // Track which Claim IDs have already been shown in this table
+      // This prevents showing the same Claim ID multiple times in filtered view
+      const shownClaimIds = new Set();
+      
       rows.forEach(row => {
         if (filterEnabled) {
           // Check for invalid/error indicators:
@@ -822,7 +827,25 @@
                             row.innerHTML.toLowerCase().includes('warning') ||
                             row.innerHTML.toLowerCase().includes('unknown') ||
                             row.innerHTML.includes('❌');
-          row.style.display = hasInvalid ? '' : 'none';
+          
+          if (hasInvalid) {
+            // Get the Claim ID from this row (if it has one)
+            const claimId = row.getAttribute('data-claim-id');
+            
+            if (claimId && shownClaimIds.has(claimId)) {
+              // This Claim ID is already shown in the filtered results, hide this duplicate
+              row.style.display = 'none';
+              console.log('[FILTER] Hiding duplicate Claim ID:', claimId);
+            } else {
+              // Show this row and track its Claim ID
+              row.style.display = '';
+              if (claimId) {
+                shownClaimIds.add(claimId);
+              }
+            }
+          } else {
+            row.style.display = 'none';
+          }
         } else {
           row.style.display = '';
         }
