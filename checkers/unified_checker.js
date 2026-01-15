@@ -325,6 +325,7 @@
         <input type="file" id="xmlInput" accept=".xml" style="display:none" />
         <input type="file" id="xlsxInput" accept=".xlsx" style="display:none" />
         <button id="processBtn" class="btn btn-primary" style="display:none;">Run Checker</button>
+        <div id="uploadStatus" style="margin-top:12px; color:#0074D9;"></div>
         <div id="file-status"></div>
         <div id="results"></div>
       `,
@@ -397,10 +398,11 @@
       script.src = scriptName;
       script.onload = () => {
         // After script loads, set files and trigger processing
+        // Increased delay to ensure script fully initializes, especially when switching checkers
         setTimeout(async () => {
           await setFilesAndTrigger(checkerName);
           resolve();
-        }, 500);
+        }, 800);
       };
       script.onerror = () => reject(new Error(`Failed to load ${scriptName}`));
       document.body.appendChild(script);
@@ -514,7 +516,7 @@
         console.error(`[DEBUG] Error triggering ${checkerName}:`, error);
         console.error(error.stack);
       }
-    }, 500); // Fixed: increased delay from 200ms to 500ms for consistency
+    }, 800); // Increased delay to ensure script fully initializes before calling functions
   }
 
   function setActiveButton(checkerName) {
