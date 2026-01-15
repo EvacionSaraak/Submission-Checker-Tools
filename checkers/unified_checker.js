@@ -39,15 +39,6 @@
   
   // Debug log for Check All functionality
   let debugLog = [];
-  
-  // Auto-table generation state
-  let autoTableGeneration = {
-    enabled: false,
-    attemptCount: 0,
-    maxAttempts: 5,
-    intervalId: null,
-    retryDelayMs: 3000
-  };
 
   // Helper function to add to debug log
   function logDebug(message, data = null) {
@@ -177,9 +168,6 @@
       console.log(`[FILE] Cleared: ${fileKey}`);
     }
     updateButtonStates();
-    
-    // Trigger auto-table generation on file change
-    startAutoTableGeneration();
   }
 
   function updateButtonStates() {
@@ -269,9 +257,6 @@
       if (filterActive) {
         setTimeout(() => applyFilter(), 100); // Small delay to ensure table is fully rendered
       }
-      
-      // Stop auto-generation after manual run to prevent duplicate processing
-      stopAutoTableGeneration();
 
     } catch (error) {
       console.error('[DEBUG] Error running checker:', error);
@@ -649,7 +634,12 @@
         const sectionDiv = document.createElement('div');
         sectionDiv.id = `${checkerName}-section`;
         sectionDiv.style.marginBottom = '30px';
-        sectionDiv.innerHTML = `<h3 style="color:#0d6efd;border-bottom:2px solid #0d6efd;padding-bottom:10px;margin-top:20px;">${checkerName.toUpperCase()} Checker Results</h3><div id="${checkerName}-results"></div>`;
+        sectionDiv.innerHTML = `
+          <h3 style="color:#0d6efd;border-bottom:2px solid #0d6efd;padding-bottom:10px;margin-top:20px;">
+            ${checkerName.toUpperCase()} Checker Results
+          </h3>
+          <div id="${checkerName}-results"></div>
+        `;
         if (checkAllContainer) {
           checkAllContainer.appendChild(sectionDiv);
         }
@@ -659,13 +649,7 @@
         // Get this checker's persistent container and run it
         const checkerContainer = document.getElementById(`checker-container-${checkerName}`);
         if (checkerContainer) {
-          // Initialize if needed
-          if (!checkerContainer.dataset.initialized) {
-            createCheckerInterface(checkerName, checkerContainer);
-            checkerContainer.dataset.initialized = 'true';
-          }
-          
-          // Execute the checker
+          // Execute the checker (Bug #10 fix: removed duplicate initialization check)
           logDebug(`Executing Checker: ${checkerName}`);
           await executeChecker(checkerName, checkerContainer);
         }
@@ -1004,169 +988,7 @@
     }
   }
   
-  /**
-   * Start auto-table generation monitoring
-   * Triggered when:
-   * 1. File is uploaded
-   * 2. Checker button is clicked
-   */
-  function startAutoTableGeneration() {
-    console.log('[AUTO-TABLE] Starting auto-table generation monitoring...');
-    
-    // Reset state
-    stopAutoTableGeneration();
-    autoTableGeneration.attemptCount = 0;
-    autoTableGeneration.enabled = true;
-    
-    // Immediate first attempt
-    attemptTableGeneration();
-    
-    // Start interval for retry attempts
-    autoTableGeneration.intervalId = setInterval(() => {
-      attemptTableGeneration();
-    }, autoTableGeneration.retryDelayMs);
-  }
-  
-  /**
-   * Stop auto-table generation monitoring
-   */
-  function stopAutoTableGeneration() {
-    if (autoTableGeneration.intervalId) {
-      clearInterval(autoTableGeneration.intervalId);
-      autoTableGeneration.intervalId = null;
-      console.log('[AUTO-TABLE] Stopped monitoring');
-    }
-    autoTableGeneration.enabled = false;
-  }
-  
-  /**
-   * Attempt to generate table for active checker
-   */
-  async function attemptTableGeneration() {
-    autoTableGeneration.attemptCount++;
-    
-    console.log(`[AUTO-TABLE] Attempt ${autoTableGeneration.attemptCount}/${autoTableGeneration.maxAttempts}`);
-    
-    // Check if we've exceeded max attempts
-    if (autoTableGeneration.attemptCount > autoTableGeneration.maxAttempts) {
-      console.log('[AUTO-TABLE] Max attempts reached, stopping...');
-      stopAutoTableGeneration();
-      return;
-    }
-    
-    // Check if there's an active checker
-    if (!activeChecker) {
-      console.log('[AUTO-TABLE] No active checker, skipping generation');
-      return;
-    }
-    
-    // Check if table already exists
-    const existingTable = checkForExistingTable();
-    if (existingTable) {
-      console.log('[AUTO-TABLE] Table already exists, stopping monitoring');
-      stopAutoTableGeneration();
-      return;
-    }
-    
-    // Check if required files are available for active checker
-    const requirements = {
-      clinician: ['xml', 'clinician', 'status'],
-      elig: ['xml', 'eligibility'],
-      auths: ['xml', 'auth'],
-      timings: ['xml'],
-      teeth: ['xml'],
-      schema: ['xml'],
-      pricing: ['xml', 'pricing'],
-      modifiers: ['xml', 'eligibility']
-    };
-    
-    const requiredFiles = requirements[activeChecker];
-    if (!requiredFiles) {
-      console.log(`[AUTO-TABLE] Unknown checker: ${activeChecker}`);
-      stopAutoTableGeneration();
-      return;
-    }
-    
-    const hasAllFiles = requiredFiles.every(req => files[req] !== null);
-    if (!hasAllFiles) {
-      const missingFiles = requiredFiles.filter(req => !files[req]);
-      console.log(`[AUTO-TABLE] Missing required files: ${missingFiles.join(', ')}`);
-      return;
-    }
-    
-    // Attempt to run the checker directly without triggering runChecker to avoid recursion
-    console.log(`[AUTO-TABLE] Generating table for ${activeChecker} checker...`);
-    
-    try {
-      // Temporarily stop monitoring to prevent recursion
-      const wasEnabled = autoTableGeneration.enabled;
-      stopAutoTableGeneration();
-      
-      // Execute checker function directly
-      const container = document.getElementById(`checker-container-${activeChecker}`);
-      if (container) {
-        await executeChecker(activeChecker, container);
-      }
-      
-      console.log('[AUTO-TABLE] Table generation completed');
-      
-      // Check if table was generated, if not and we were enabled, restart monitoring
-      if (wasEnabled && !checkForExistingTable()) {
-        autoTableGeneration.enabled = true;
-        autoTableGeneration.intervalId = setInterval(() => {
-          attemptTableGeneration();
-        }, autoTableGeneration.retryDelayMs);
-      }
-    } catch (err) {
-      console.error('[AUTO-TABLE] Error during table generation:', err);
-    }
-  }
-  
-  /**
-   * Check if a table already exists in the active checker's container
-   * Returns true if table exists, false otherwise
-   */
-  function checkForExistingTable() {
-    // Check active checker's container
-    const container = document.getElementById(`checker-container-${activeChecker}`);
-    if (!container) {
-      return false;
-    }
-    
-    const allTables = container.querySelectorAll('table');
-    if (allTables && allTables.length > 0) {
-      console.log(`[AUTO-TABLE] Found ${allTables.length} table(s) in ${activeChecker} container`);
-      return true;
-    }
-    
-    return false;
-    // Check #outputTableContainer (used by pricing/modifiers)
-    const outputContainer = document.getElementById('outputTableContainer');
-    if (outputContainer) {
-      const outputTables = outputContainer.querySelectorAll('table');
-      if (outputTables && outputTables.length > 0) {
-        console.log(`[AUTO-TABLE] Found ${outputTables.length} table(s) in #outputTableContainer`);
-        return true;
-      }
-    }
-    
-    // Check for tables in any iframes
-    const iframes = document.querySelectorAll('iframe');
-    for (let iframe of iframes) {
-      try {
-        const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
-        const iframeTables = iframeDoc && iframeDoc.querySelectorAll('table');
-        if (iframeTables && iframeTables.length > 0) {
-          console.log(`[AUTO-TABLE] Found ${iframeTables.length} table(s) in iframe`);
-          return true;
-        }
-      } catch (e) {
-        // Cross-origin iframe, can't access
-        console.log('[AUTO-TABLE] Cannot access iframe (cross-origin)');
-      }
-    }
-    
-    return false;
-  }
+  // Bug #7 fix: Auto-table generation system removed (obsolete with persistent containers)
+  // Bug #8 fix: Dead code in checkForExistingTable removed (lines after early return)
 
 })();
