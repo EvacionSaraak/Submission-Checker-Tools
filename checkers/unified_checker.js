@@ -242,14 +242,9 @@
       }
       container.style.display = 'block';
 
-      // Initialize checker interface if not already initialized
-      if (!container.dataset.initialized) {
-        console.log(`[DEBUG] Initializing ${checkerName} interface...`);
-        createCheckerInterface(checkerName, container);
-        container.dataset.initialized = 'true';
-      } else {
-        console.log(`[DEBUG] Using existing ${checkerName} interface`);
-      }
+      // Always recreate interface to ensure fresh state (Bug #3 fix)
+      console.log(`[DEBUG] Creating ${checkerName} interface...`);
+      createCheckerInterface(checkerName, container);
 
       // Sync global claim type with timings checker if applicable
       if (checkerName === 'timings') {
@@ -260,6 +255,9 @@
       // Set files in the checker's hidden inputs and run
       console.log(`[DEBUG] Executing ${checkerName} checker...`);
       await executeChecker(checkerName, container);
+
+      // Bug #6: Clean up inactive containers to free memory
+      cleanupInactiveContainers(checkerName);
 
       elements.uploadStatus.innerHTML = ''; // Clear status message
       if (elements.exportBtn) {
@@ -289,6 +287,26 @@
   function hideAllCheckerContainers() {
     const containers = document.querySelectorAll('.checker-container');
     containers.forEach(c => c.style.display = 'none');
+  }
+
+  // Bug #6: Memory cleanup for inactive containers
+  function cleanupInactiveContainers(activeCheckerName) {
+    console.log(`[DEBUG] Cleaning up inactive containers (keeping ${activeCheckerName})`);
+    const allCheckers = ['schema', 'timings', 'teeth', 'elig', 'auths', 'clinician', 'pricing', 'modifiers'];
+    
+    allCheckers.forEach(checkerName => {
+      if (checkerName !== activeCheckerName) {
+        const container = document.getElementById(`checker-container-${checkerName}`);
+        if (container && container.style.display === 'none') {
+          // Clear results from hidden containers to free memory
+          const resultsDiv = container.querySelector('#results');
+          if (resultsDiv && resultsDiv.innerHTML) {
+            resultsDiv.innerHTML = '';
+            console.log(`[DEBUG] Cleared results from inactive container: ${checkerName}`);
+          }
+        }
+      }
+    });
   }
 
   function createCheckerInterface(checkerName, container) {
@@ -459,36 +477,30 @@
     }
 
     // Call the checker function directly (scripts are already loaded)
+    // Bug #5 fix: Use function registry map instead of if-else chain
     try {
       console.log(`[DEBUG] Calling ${checkerName} checker function...`);
       
-      if (checkerName === 'schema' && typeof validateXmlSchema === 'function') {
-        console.log('[DEBUG] Calling validateXmlSchema()');
-        validateXmlSchema();
-      } else if (checkerName === 'timings' && typeof validateTimingsAsync === 'function') {
-        console.log('[DEBUG] Calling validateTimingsAsync()');
-        await validateTimingsAsync();
-      } else if (checkerName === 'teeth' && typeof parseXML === 'function') {
-        console.log('[DEBUG] Calling parseXML() for teeth');
-        parseXML();
-      } else if (checkerName === 'clinician' && typeof runClinicianCheck === 'function') {
-        console.log('[DEBUG] Calling runClinicianCheck()');
-        await runClinicianCheck();
-      } else if (checkerName === 'elig' && typeof runEligCheck === 'function') {
-        console.log('[DEBUG] Calling runEligCheck()');
-        await runEligCheck();
-      } else if (checkerName === 'auths' && typeof runAuthsCheck === 'function') {
-        console.log('[DEBUG] Calling runAuthsCheck()');
-        await runAuthsCheck();
-      } else if (checkerName === 'pricing' && typeof runPricingCheck === 'function') {
-        console.log('[DEBUG] Calling runPricingCheck()');
-        await runPricingCheck();
-      } else if (checkerName === 'modifiers' && typeof runModifiersCheck === 'function') {
-        console.log('[DEBUG] Calling runModifiersCheck()');
-        await runModifiersCheck();
-      } else {
-        console.error(`[DEBUG] Checker function not found for: ${checkerName}`);
+      const checkerFunctions = {
+        schema: validateXmlSchema,
+        timings: validateTimingsAsync,
+        teeth: parseXML,
+        elig: runEligCheck,
+        auths: runAuthsCheck,
+        clinician: runClinicianCheck,
+        pricing: runPricingCheck,
+        modifiers: runModifiersCheck
+      };
+      
+      const checkerFn = checkerFunctions[checkerName];
+      
+      if (!checkerFn || typeof checkerFn !== 'function') {
+        throw new Error(`Checker function not found for: ${checkerName}`);
       }
+      
+      console.log(`[DEBUG] Executing ${checkerName} checker function`);
+      await checkerFn();
+      
     } catch (error) {
       console.error(`[DEBUG] Error executing ${checkerName}:`, error);
       throw error;
