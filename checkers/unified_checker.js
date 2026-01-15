@@ -875,71 +875,95 @@
    * Download comprehensive debug log as text file
    */
   function downloadDebugLog() {
-    console.log('[DEBUG-LOG] Preparing debug log download...');
+    console.log('[DEBUG-LOG] downloadDebugLog() function called');
+    console.log('[DEBUG-LOG] Debug log array length:', debugLog ? debugLog.length : 'undefined');
+    console.log('[DEBUG-LOG] Debug log contents:', debugLog);
     
     if (!debugLog || debugLog.length === 0) {
+      console.error('[DEBUG-LOG] Debug log is empty or undefined');
       alert('No debug log available. Please run Check All first.');
       return;
     }
     
-    // Build debug log text content
-    const logLines = [];
+    console.log('[DEBUG-LOG] Preparing debug log download...');
     
-    // Header
-    logLines.push('='.repeat(80));
-    logLines.push('UNIFIED CHECKER TOOL - DEBUG LOG');
-    logLines.push('='.repeat(80));
-    logLines.push('');
-    logLines.push(`Generated: ${new Date().toISOString()}`);
-    logLines.push(`Total Log Entries: ${debugLog.length}`);
-    logLines.push('');
-    logLines.push('='.repeat(80));
-    logLines.push('');
-    
-    // Log entries
-    debugLog.forEach((entry, index) => {
-      logLines.push(`[${index + 1}] ${entry.timestamp}`);
-      logLines.push(`Message: ${entry.message}`);
+    try {
+      // Build debug log text content
+      const logLines = [];
       
-      if (entry.data) {
-        logLines.push('Data:');
-        try {
-          const dataStr = JSON.stringify(entry.data, null, 2);
-          // Indent each line of data
-          dataStr.split('\n').forEach(line => {
-            logLines.push(`  ${line}`);
-          });
-        } catch (e) {
-          logLines.push(`  [Error serializing data: ${e.message}]`);
-        }
-      }
-      
-      logLines.push('-'.repeat(80));
+      // Header
+      logLines.push('='.repeat(80));
+      logLines.push('UNIFIED CHECKER TOOL - DEBUG LOG');
+      logLines.push('='.repeat(80));
       logLines.push('');
-    });
-    
-    // Footer
-    logLines.push('='.repeat(80));
-    logLines.push('END OF DEBUG LOG');
-    logLines.push('='.repeat(80));
-    
-    // Create blob and download
-    const logText = logLines.join('\n');
-    const blob = new Blob([logText], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `check-all_debug_log_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.txt`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    
-    console.log('[DEBUG-LOG] ✓ Debug log downloaded:', a.download);
-    logDebug('Debug Log Downloaded', { 
-      filename: a.download,
-      entriesCount: debugLog.length 
-    });
+      logLines.push(`Generated: ${new Date().toISOString()}`);
+      logLines.push(`Total Log Entries: ${debugLog.length}`);
+      logLines.push('');
+      logLines.push('='.repeat(80));
+      logLines.push('');
+      
+      // Log entries
+      debugLog.forEach((entry, index) => {
+        logLines.push(`[${index + 1}] ${entry.timestamp}`);
+        logLines.push(`Message: ${entry.message}`);
+        
+        if (entry.data) {
+          logLines.push('Data:');
+          try {
+            const dataStr = JSON.stringify(entry.data, null, 2);
+            // Indent each line of data
+            dataStr.split('\n').forEach(line => {
+              logLines.push(`  ${line}`);
+            });
+          } catch (e) {
+            logLines.push(`  [Error serializing data: ${e.message}]`);
+          }
+        }
+        
+        logLines.push('-'.repeat(80));
+        logLines.push('');
+      });
+      
+      // Footer
+      logLines.push('='.repeat(80));
+      logLines.push('END OF DEBUG LOG');
+      logLines.push('='.repeat(80));
+      
+      console.log('[DEBUG-LOG] Generated log text, length:', logLines.join('\n').length);
+      
+      // Create blob and download
+      const logText = logLines.join('\n');
+      const blob = new Blob([logText], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      
+      const filename = `check-all_debug_log_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.txt`;
+      
+      // Create temporary link and click it
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      
+      console.log('[DEBUG-LOG] Triggering download for:', filename);
+      a.click();
+      
+      // Clean up
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        console.log('[DEBUG-LOG] ✓ Download triggered and cleaned up');
+      }, 100);
+      
+      logDebug('Debug Log Downloaded', { 
+        filename: filename,
+        entriesCount: debugLog.length,
+        logSizeBytes: logText.length
+      });
+    } catch (error) {
+      console.error('[DEBUG-LOG] Error during download:', error);
+      alert(`Error downloading debug log: ${error.message}`);
+    }
   }
   
   /**

@@ -132,39 +132,36 @@ function checkSpecialActivityDiagnosis(activities, diagnoses, getText, invalidFi
 /**
  * New supplemental validation:
  * If any Activity Code matches implant codes (79931, 79932, 79933, 79934)
- * then the claim MUST include at least one of the listed K08.* diagnosis codes.
+ * then the claim MUST include at least one diagnosis code matching K08.1xx or K08.4xx patterns.
  *
  * The diagnosis comparison is case-insensitive and ignores dots, so K08.131 and K08131 both match.
+ * Pattern matching: K081xx (K08.1 followed by any two digits) or K084xx (K08.4 followed by any two digits)
  */
 function checkImplantActivityDiagnosis(activities, diagnoses, getText, invalidFields) {
   try {
     const implantActivityCodes = new Set(["79931", "79932", "79933", "79934"]);
-    const requiredDiagnosisList = [
-      "K08.131", "K08.401", "K08.402", "K08.403", "K08.404",
-      "K08.411", "K08.412", "K08.413", "K08.414",
-      "K08.421", "K08.422", "K08.423", "K08.424",
-      "K08.431", "K08.432", "K08.433", "K08.434"
-    ];
-
-    // normalized required codes (remove dots and uppercase)
-    const requiredNormalized = new Set(requiredDiagnosisList.map(c => c.replace(/\./g, "").toUpperCase()));
-
+    
     const foundImplantCodes = Array.from(activities || [])
       .map(a => (getText("Code", a) || "").trim())
       .filter(c => c && implantActivityCodes.has(c));
 
     if (foundImplantCodes.length > 0) {
-      // normalize diagnosis codes present in claim
-      const diagNormalizedSet = new Set(
-        Array.from(diagnoses || []).map(d => (getText("Code", d) || "").replace(/\./g, "").toUpperCase())
-      );
+      // Get all diagnosis codes present in claim (normalized: remove dots, uppercase)
+      const diagnosisCodes = Array.from(diagnoses || [])
+        .map(d => (getText("Code", d) || "").replace(/\./g, "").toUpperCase().trim())
+        .filter(c => c);
+      
+      // Check if any diagnosis code matches K081xx or K084xx pattern
+      // K081xx: starts with K081 followed by any two characters
+      // K084xx: starts with K084 followed by any two characters
+      const hasValidDiagnosis = diagnosisCodes.some(code => {
+        return (code.startsWith("K081") && code.length >= 5) || 
+               (code.startsWith("K084") && code.length >= 5);
+      });
 
-      // check if at least one required diagnosis is present
-      const hasAnyRequired = Array.from(requiredNormalized).some(req => diagNormalizedSet.has(req));
-
-      if (!hasAnyRequired) {
+      if (!hasValidDiagnosis) {
         invalidFields.push(
-          `Activity code(s) ${Array.from(new Set(foundImplantCodes)).join(", ")} require at least one Diagnosis code from: ${requiredDiagnosisList.join(", ")}`
+          `Activity code(s) ${Array.from(new Set(foundImplantCodes)).join(", ")} require at least one Diagnosis code from: K08.1xx or K08.4xx`
         );
       }
     }
