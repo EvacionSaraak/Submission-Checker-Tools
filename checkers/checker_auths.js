@@ -1,8 +1,10 @@
-// === GLOBAL STATE ===
-let authRules = {};
-let authRulesPromise = null;
-let xmlClaimCount = 0;
-let xlsxAuthCount = 0;
+(function() {
+  try {
+    // === GLOBAL STATE ===
+    let authRules = {};
+    let authRulesPromise = null;
+    let xmlClaimCount = 0;
+    let xlsxAuthCount = 0;
 
 // === FILE HANDLING STATE ===
 let currentXmlFile = null;
@@ -929,3 +931,9 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   });
 });
+
+  } catch (error) {
+    console.error('[CHECKER-ERROR] Failed to load checker:', error);
+    console.error(error.stack);
+  }
+})();

@@ -1,7 +1,9 @@
-const repoJsonUrl = 'checker_tooths.json';
+(function() {
+  try {
+    const repoJsonUrl = 'checker_tooths.json';
 
-// Tooth region maps and sets
-const SEXTANT_MAP = {
+    // Tooth region maps and sets
+    const SEXTANT_MAP = {
   // Permanent Dentition
   'Upper Right Sextant': new Set(['1', '2', '3', '4', '5']),
   'Upper Anterior Sextant': new Set(['6', '7', '8', '9', '10', '11']),
@@ -721,3 +723,9 @@ function parseXML() {
 // function getRegionName(tooth) { ... }
 // function getQuadrant(tooth) { ... }
 // function getSextant(tooth) { ... }
+
+  } catch (error) {
+    console.error('[CHECKER-ERROR] Failed to load checker:', error);
+    console.error(error.stack);
+  }
+})();

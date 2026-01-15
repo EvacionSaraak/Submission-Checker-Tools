@@ -1,6 +1,8 @@
-// checker_modifiers.js
-let lastResults = [];
-let lastWorkbook = null;
+(function() {
+  try {
+    // checker_modifiers.js
+    let lastResults = [];
+    let lastWorkbook = null;
 
 document.addEventListener('DOMContentLoaded', () => {
   const runBtn = el('run-button');
@@ -474,3 +476,9 @@ window.runModifiersCheck = async function() {
     console.error('handleRun function not found');
   }
 };
+
+  } catch (error) {
+    console.error('[CHECKER-ERROR] Failed to load checker:', error);
+    console.error(error.stack);
+  }
+})();

@@ -1,7 +1,9 @@
-// checker_timings.js
+(function() {
+  try {
+    // checker_timings.js
 
-// --- Main Entry Point (called by unified interface) ---
-async function validateTimingsAsync() {
+    // --- Main Entry Point (called by unified interface) ---
+    async function validateTimingsAsync() {
   const xmlInput = document.getElementById('xmlFileInput');
   const resultsDiv = document.getElementById('results');
   
@@ -408,3 +410,9 @@ function formatDateTimeCell(datetimeStr) {
   `;
 }
 **/
+
+  } catch (error) {
+    console.error('[CHECKER-ERROR] Failed to load checker:', error);
+    console.error(error.stack);
+  }
+})();

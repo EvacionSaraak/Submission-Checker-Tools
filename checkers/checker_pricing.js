@@ -1,7 +1,9 @@
-// checker_pricing.js
+(function() {
+  try {
+    // checker_pricing.js
 
-let lastResults = [];
-let lastWorkbook = null;
+    let lastResults = [];
+    let lastWorkbook = null;
 
 document.addEventListener('DOMContentLoaded', () => {
   const runBtn = el('run-button'), dlBtn = el('download-button');
@@ -304,3 +306,9 @@ window.runPricingCheck = async function() {
     console.error('handleRun function not found');
   }
 };
+
+  } catch (error) {
+    console.error('[CHECKER-ERROR] Failed to load checker:', error);
+    console.error(error.stack);
+  }
+})();

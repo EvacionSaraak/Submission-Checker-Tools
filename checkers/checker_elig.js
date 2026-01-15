@@ -1,7 +1,9 @@
-/*******************************
- * GLOBAL VARIABLES & CONSTANTS *
- *******************************/
-const SERVICE_PACKAGE_RULES = {
+(function() {
+  try {
+    /*******************************
+     * GLOBAL VARIABLES & CONSTANTS *
+     *******************************/
+    const SERVICE_PACKAGE_RULES = {
   'Dental Services': ['dental', 'orthodontic'],
   'Physiotherapy': ['physio'],
   'Other OP Services': ['physio', 'diet', 'occupational', 'speech'],
@@ -1174,3 +1176,9 @@ document.addEventListener('DOMContentLoaded', () => {
   initializeEventListeners();
   updateStatus('Ready to process files');
 });
+
+  } catch (error) {
+    console.error('[CHECKER-ERROR] Failed to load checker:', error);
+    console.error(error.stack);
+  }
+})();

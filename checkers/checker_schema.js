@@ -1,9 +1,11 @@
-// checker_schema.js with modal table view and Person schema support
-// Requires SheetJS for Excel export: 
-// <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+(function() {
+  try {
+    // checker_schema.js with modal table view and Person schema support
+    // Requires SheetJS for Excel export: 
+    // <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
 
-// Error message constants
-const AMPERSAND_REPLACEMENT_ERROR = "Please replace `&` in the observations to `and` because this will cause error.";
+    // Error message constants
+    const AMPERSAND_REPLACEMENT_ERROR = "Please replace `&` in the observations to `and` because this will cause error.";
 
 function validateXmlSchema() {
   const status = document.getElementById("uploadStatus");
@@ -547,3 +549,9 @@ function exportErrorsToXLSX(data, schemaType) {
     alert("Export failed. See console for details.");
   }
 }
+
+  } catch (error) {
+    console.error('[CHECKER-ERROR] Failed to load checker:', error);
+    console.error(error.stack);
+  }
+})();
