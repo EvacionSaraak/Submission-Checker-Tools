@@ -395,6 +395,34 @@
   async function executeChecker(checkerName, container) {
     console.log(`[DEBUG] executeChecker called for: ${checkerName}`);
     
+    // ✅ Clear previous results before running checker
+    const resultsDiv = container.querySelector('#results');
+    if (resultsDiv) {
+      resultsDiv.innerHTML = '';
+      console.log(`[DEBUG] Cleared previous results for ${checkerName}`);
+    }
+    
+    // Also clear other common result containers
+    const resultsSummary = container.querySelector('#resultsSummary');
+    if (resultsSummary) {
+      resultsSummary.innerHTML = '';
+    }
+    
+    const messageBox = container.querySelector('#messageBox');
+    if (messageBox) {
+      messageBox.innerHTML = '';
+    }
+    
+    const uploadStatus = container.querySelector('#uploadStatus');
+    if (uploadStatus) {
+      uploadStatus.innerHTML = '';
+    }
+    
+    const fileStatus = container.querySelector('#file-status');
+    if (fileStatus) {
+      fileStatus.innerHTML = '';
+    }
+    
     const fileInputMap = {
       clinician: { xmlFileInput: 'xml', clinicianFileInput: 'clinician', statusFileInput: 'status' },
       elig: { xmlFileInput: 'xml', eligibilityFileInput: 'eligibility' },
