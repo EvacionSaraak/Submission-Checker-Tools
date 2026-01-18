@@ -662,13 +662,15 @@
         const checkerEndTime = performance.now();
         const executionTime = (checkerEndTime - checkerStartTime).toFixed(2);
         
+        // Get section results container (needed for both success and failure cases)
+        const sectionResults = document.getElementById(`${checkerName}-results`);
+        
         if (table) {
           successCount++;
           const rowCount = table.querySelectorAll('tbody tr').length;
           console.log(`[CHECK-ALL] ✓ ${checkerName} checker completed successfully`);
           
           // Copy table to check-all results section
-          const sectionResults = document.getElementById(`${checkerName}-results`);
           if (sectionResults && table) {
             sectionResults.appendChild(table.cloneNode(true));
           }
@@ -695,7 +697,9 @@
         } else {
           errorCount++;
           console.log(`[CHECK-ALL] ✗ ${checkerName} checker failed to generate table`);
-          sectionResults.innerHTML = '<div class="alert alert-warning">No results or checker did not complete</div>';
+          if (sectionResults) {
+            sectionResults.innerHTML = '<div class="alert alert-warning">No results or checker did not complete</div>';
+          }
           
           logDebug(`Checker Failed: ${checkerName}`, {
             status: 'failed',
