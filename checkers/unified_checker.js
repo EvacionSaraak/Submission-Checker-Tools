@@ -141,7 +141,13 @@
 
     // Debug log download button
     if (elements.downloadDebugLogBtn) {
-      elements.downloadDebugLogBtn.addEventListener('click', downloadDebugLog);
+      console.log('[INIT] Debug log button found, attaching click listener');
+      elements.downloadDebugLogBtn.addEventListener('click', () => {
+        console.log('[DEBUG-LOG] Debug button clicked');
+        downloadDebugLog();
+      });
+    } else {
+      console.warn('[INIT] Debug log button not found in DOM');
     }
 
     console.log('[INIT] Performing initial button state update...');
@@ -651,9 +657,15 @@
         // Get this checker's persistent container and run it
         const checkerContainer = document.getElementById(`checker-container-${checkerName}`);
         if (checkerContainer) {
+          // IMPORTANT: Ensure checker container stays hidden during Check All
+          checkerContainer.style.display = 'none';
+          
           // Execute the checker (Bug #10 fix: removed duplicate initialization check)
           logDebug(`Executing Checker: ${checkerName}`);
           await executeChecker(checkerName, checkerContainer);
+          
+          // Re-confirm container is hidden after execution
+          checkerContainer.style.display = 'none';
         }
         
         // Wait a moment for table to render
