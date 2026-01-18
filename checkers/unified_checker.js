@@ -628,7 +628,9 @@
         console.log(`[CHECK-ALL] Running ${checkerName} checker...`);
         
         // Update status
-        elements.uploadStatus.innerHTML = `<div class="status-message info">Running ${checkerName} checker (${successCount + errorCount + 1}/${availableCheckers.length})...</div>`;
+        if (elements.uploadStatus) {
+          elements.uploadStatus.innerHTML = `<div class="status-message info">Running ${checkerName} checker (${successCount + errorCount + 1}/${availableCheckers.length})...</div>`;
+        }
         
         // Create a section for this checker's results
         const sectionDiv = document.createElement('div');
@@ -751,7 +753,9 @@
     
     // Show completion status
     const totalRun = successCount + errorCount;
-    elements.uploadStatus.innerHTML = `<div class="status-message success">Check All complete: ${successCount} successful, ${errorCount} failed out of ${totalRun} checker(s)</div>`;
+    if (elements.uploadStatus) {
+      elements.uploadStatus.innerHTML = `<div class="status-message success">Check All complete: ${successCount} successful, ${errorCount} failed out of ${totalRun} checker(s)</div>`;
+    }
     
     logDebug('Check All Completed', {
       totalCheckers: totalRun,
