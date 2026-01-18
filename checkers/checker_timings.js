@@ -411,6 +411,9 @@ function formatDateTimeCell(datetimeStr) {
 }
 **/
 
+    // Expose function globally for unified checker
+    window.validateTimingsAsync = validateTimingsAsync;
+
   } catch (error) {
     console.error('[CHECKER-ERROR] Failed to load checker:', error);
     console.error(error.stack);

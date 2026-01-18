@@ -724,6 +724,9 @@ function parseXML() {
 // function getQuadrant(tooth) { ... }
 // function getSextant(tooth) { ... }
 
+    // Expose function globally for unified checker
+    window.parseXML = parseXML;
+
   } catch (error) {
     console.error('[CHECKER-ERROR] Failed to load checker:', error);
     console.error(error.stack);

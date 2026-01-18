@@ -932,6 +932,9 @@ document.addEventListener('DOMContentLoaded', function() {
   });
 });
 
+    // Expose function globally for unified checker
+    window.runAuthsCheck = runAuthsCheck;
+
   } catch (error) {
     console.error('[CHECKER-ERROR] Failed to load checker:', error);
     console.error(error.stack);

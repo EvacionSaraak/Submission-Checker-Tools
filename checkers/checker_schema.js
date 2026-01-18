@@ -550,6 +550,9 @@ function exportErrorsToXLSX(data, schemaType) {
   }
 }
 
+    // Expose function globally for unified checker
+    window.validateXmlSchema = validateXmlSchema;
+
   } catch (error) {
     console.error('[CHECKER-ERROR] Failed to load checker:', error);
     console.error(error.stack);

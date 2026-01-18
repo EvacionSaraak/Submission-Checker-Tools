@@ -1177,6 +1177,9 @@ document.addEventListener('DOMContentLoaded', () => {
   updateStatus('Ready to process files');
 });
 
+    // Expose function globally for unified checker
+    window.runEligCheck = runEligCheck;
+
   } catch (error) {
     console.error('[CHECKER-ERROR] Failed to load checker:', error);
     console.error(error.stack);
