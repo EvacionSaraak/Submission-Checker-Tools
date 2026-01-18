@@ -1,7 +1,9 @@
-const repoJsonUrl = 'checker_tooths.json';
+(function() {
+  try {
+    const repoJsonUrl = 'checker_tooths.json';
 
-// Tooth region maps and sets
-const SEXTANT_MAP = {
+    // Tooth region maps and sets
+    const SEXTANT_MAP = {
   // Permanent Dentition
   'Upper Right Sextant': new Set(['1', '2', '3', '4', '5']),
   'Upper Anterior Sextant': new Set(['6', '7', '8', '9', '10', '11']),
@@ -504,6 +506,17 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions) {
 }
 
 function renderResults(container, rows) {
+  // Defensive check: ensure rows is an array
+  if (!Array.isArray(rows)) {
+    console.error('[TEETH] Invalid results - expected array, got:', typeof rows, rows);
+    container.innerHTML = '<div class="alert alert-danger">Error: Invalid data structure for results table</div>';
+    const summaryBox = document.getElementById('resultsSummary');
+    if (summaryBox) summaryBox.textContent = '';
+    const exportBtn = document.getElementById('exportBtn');
+    if (exportBtn) exportBtn.style.display = 'none';
+    return;
+  }
+  
   const summaryBox = document.getElementById('resultsSummary');
   if (!rows.length) {
     container.innerHTML = '<p>No activities found.</p>';
@@ -524,48 +537,87 @@ function renderResults(container, rows) {
   summaryBox.textContent = `Valid claims: ${validClaims} / ${totalClaims} (${percentage}%)`;
 
   const html = `
-    <table border="1" style="width:100%;border-collapse:collapse">
+    <table class="table table-striped table-bordered" style="width:100%;border-collapse:collapse">
       <thead>
         <tr>
-          <th>Claim ID</th>
-          <th>Activity ID</th>
-          <th>Code</th>
-          <th class="description-col">Description</th>
-          <th>Observations</th>
-          <th class="description-col">Remarks</th>
+          <th style="padding:8px;border:1px solid #ccc">Claim ID</th>
+          <th style="padding:8px;border:1px solid #ccc">Activity ID</th>
+          <th style="padding:8px;border:1px solid #ccc">Code</th>
+          <th class="description-col" style="padding:8px;border:1px solid #ccc">Description</th>
+          <th style="padding:8px;border:1px solid #ccc">Observations</th>
+          <th class="description-col" style="padding:8px;border:1px solid #ccc">Remarks</th>
         </tr>
       </thead>
       <tbody>
         ${rows.map(r => {
           const showClaimId = r.claimId !== lastClaimId;
           lastClaimId = r.claimId;
-          const invalidClass = r.remarks && r.remarks.length > 0 ? 'invalid' : 'valid';
+          const rowClass = r.remarks && r.remarks.length > 0 ? 'table-danger' : 'table-success';
+          // Always include claim ID in data attribute for filtering visibility
           return `
-            <tr class="${invalidClass}">
-              <td>${showClaimId ? r.claimId : ''}</td>
-              <td>${r.activityId}</td>
-              <td>${r.code}</td>
-              <td class="description-col">${r.description}</td>
-              <td>${r.details}</td>
-              <td class="description-col">${r.remarks.join('<br>')}</td>
+            <tr class="${rowClass}" data-claim-id="${r.claimId || ''}">
+              <td style="padding:6px;border:1px solid #ccc" class="claim-id-cell">${showClaimId ? r.claimId : ''}</td>
+              <td style="padding:6px;border:1px solid #ccc">${r.activityId}</td>
+              <td style="padding:6px;border:1px solid #ccc">${r.code}</td>
+              <td class="description-col" style="padding:6px;border:1px solid #ccc">${r.description}</td>
+              <td style="padding:6px;border:1px solid #ccc">${r.details}</td>
+              <td class="description-col" style="padding:6px;border:1px solid #ccc">${r.remarks.join('<br>')}</td>
             </tr>`;
         }).join('')}
       </tbody>
     </table>`;
 
   container.innerHTML = html;
+  
+  // Add observer to fill in Claim IDs when filtering hides rows
+  const observer = new MutationObserver(() => {
+    fillMissingClaimIds();
+  });
+  
+  const tbody = container.querySelector('tbody');
+  if (tbody) {
+    observer.observe(tbody, { attributes: true, attributeFilter: ['style'], subtree: true });
+  }
+  
+  // Initial fill in case filter is already active
+  fillMissingClaimIds();
 }
 
-// UI event handlers
-document.addEventListener('DOMContentLoaded', () => {
-  const xmlInput = document.getElementById('xmlFile');
-  xmlInput.addEventListener('change', () => {
-    if (!xmlInput.files.length) return;
-    parseXML();
+// Helper function to fill in missing Claim IDs when rows are filtered
+function fillMissingClaimIds() {
+  const table = document.querySelector('#results table');
+  if (!table) return;
+  
+  const rows = Array.from(table.querySelectorAll('tbody tr'));
+  let lastVisibleClaimId = null;
+  
+  rows.forEach(row => {
+    const isHidden = row.style.display === 'none';
+    const claimIdCell = row.querySelector('.claim-id-cell');
+    const claimId = row.getAttribute('data-claim-id');
+    
+    if (!claimIdCell || !claimId) return;
+    
+    if (!isHidden) {
+      // Row is visible
+      if (claimIdCell.textContent.trim() === '') {
+        // Empty claim ID cell - fill it in for filtered view
+        claimIdCell.textContent = claimId;
+        claimIdCell.style.color = '#666'; // Lighter color to indicate it's auto-filled
+        claimIdCell.style.fontStyle = 'italic';
+      } else {
+        // Has claim ID - this is a new claim
+        lastVisibleClaimId = claimId;
+        claimIdCell.style.color = '';
+        claimIdCell.style.fontStyle = '';
+      }
+    }
   });
-});
+}
 
-document.getElementById('exportBtn').addEventListener('click', () => {
+// UI event handlers removed - teeth checker is now called directly from unified interface via parseXML()
+
+document.getElementById('exportBtn')?.addEventListener('click', () => {
   if (!window.invalidRows || !window.invalidRows.length) return;
 
   const wb = XLSX.utils.book_new();
@@ -590,39 +642,79 @@ function parseXML() {
   const xmlInput    = document.getElementById('xmlFile');
   const resultsDiv  = document.getElementById('results');
   const messageBox  = document.getElementById('messageBox');
-  messageBox.textContent = '';
-  resultsDiv.innerHTML   = '';
+  
+  // Defensive null checks
+  if (messageBox) messageBox.textContent = '';
+  if (resultsDiv) resultsDiv.innerHTML   = '';
+  
+  console.log('[TEETH] parseXML() called');
+  console.log('[TEETH] xmlInput element:', !!xmlInput);
+  console.log('[TEETH] resultsDiv element:', !!resultsDiv);
+  console.log('[TEETH] messageBox element:', !!messageBox);
 
-  if (!xmlInput.files.length) {
-    messageBox.textContent = 'Please upload an XML file.';
+  let file = xmlInput?.files?.[0];
+  
+  // Fallback to unified checker files cache
+  if (!file && window.unifiedCheckerFiles && window.unifiedCheckerFiles.xml) {
+    file = window.unifiedCheckerFiles.xml;
+    console.log('[TEETH] Using XML file from unified cache:', file.name);
+  }
+  
+  console.log('[TEETH] File to process:', file ? file.name : 'NO FILE');
+  
+  if (!file) {
+    const msg = 'Please upload an XML file.';
+    console.error('[TEETH]', msg);
+    if (messageBox) messageBox.textContent = msg;
+    if (resultsDiv) resultsDiv.innerHTML = `<div class="alert alert-warning">${msg}</div>`;
     return;
   }
-  const file = xmlInput.files[0];
+  
+  console.log('[TEETH] Starting file processing...');
 
   Promise.all([
     new Promise((res, rej) => {
       const rdr = new FileReader();
-      rdr.onload  = () => res(rdr.result);
-      rdr.onerror = () => rej('Error reading XML');
+      rdr.onload  = () => {
+        console.log('[TEETH] XML file read successfully');
+        res(rdr.result);
+      };
+      rdr.onerror = () => {
+        console.error('[TEETH] Error reading XML file');
+        rej('Error reading XML');
+      };
       rdr.readAsText(file);
     }),
     fetch(repoJsonUrl)
-      .then(r => r.ok ? r.json() : Promise.reject(`Failed to load ${repoJsonUrl} (HTTP ${r.status})`)),
+      .then(r => {
+        console.log('[TEETH] Fetched tooth JSON:', r.ok);
+        return r.ok ? r.json() : Promise.reject(`Failed to load ${repoJsonUrl} (HTTP ${r.status})`);
+      }),
     fetch('checker_auths.json')
-      .then(r => r.ok ? r.json() : Promise.reject(`Failed to load checker_auths.json (HTTP ${r.status})`))
+      .then(r => {
+        console.log('[TEETH] Fetched auth JSON:', r.ok);
+        return r.ok ? r.json() : Promise.reject(`Failed to load checker_auths.json (HTTP ${r.status})`);
+      })
   ])
   .then(([xmlText, toothJson, authJson]) => {
+    console.log('[TEETH] All resources loaded, processing...');
     const toothMap = buildCodeMeta(toothJson);
     const authMap  = buildAuthMap(authJson);
     // Preprocess XML to replace unescaped & with "and" for parseability
     const xmlContent = xmlText.replace(/&(?!(amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;))/g, "and");
     const xmlDoc   = new DOMParser().parseFromString(xmlContent, 'application/xml');
     if (xmlDoc.querySelector('parsererror')) throw new Error('Invalid XML file');
+    console.log('[TEETH] XML parsed, validating activities...');
     const rows     = validateActivities(xmlDoc, toothMap, authMap);
+    console.log('[TEETH] Validation complete, rendering results... (rows:', rows.length, ')');
     renderResults(resultsDiv, rows);
+    console.log('[TEETH] Render complete');
   })
   .catch(err => {
-    messageBox.textContent = err.toString();
+    console.error('[TEETH] Error during processing:', err);
+    const errorMsg = err.toString();
+    if (messageBox) messageBox.textContent = errorMsg;
+    if (resultsDiv) resultsDiv.innerHTML = `<div class="alert alert-danger">Error: ${errorMsg}</div>`;
   });
 }
 
@@ -631,3 +723,12 @@ function parseXML() {
 // function getRegionName(tooth) { ... }
 // function getQuadrant(tooth) { ... }
 // function getSextant(tooth) { ... }
+
+    // Expose function globally for unified checker
+    window.parseXML = parseXML;
+
+  } catch (error) {
+    console.error('[CHECKER-ERROR] Failed to load checker:', error);
+    console.error(error.stack);
+  }
+})();

@@ -1,8 +1,9 @@
 (function () {
-  'use strict';
+  try {
+    'use strict';
 
-  // --- Helper: Parse DD/MM/YYYY or DD/MM/YYYY HH:MM ---
-  function parseDMY(dateStr) {
+    // --- Helper: Parse DD/MM/YYYY or DD/MM/YYYY HH:MM ---
+    function parseDMY(dateStr) {
     if (typeof dateStr !== 'string') return new Date(dateStr);
     const match = dateStr.match(/^(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}):(\d{2}))?/);
     if (!match) return new Date(dateStr); // fallback
@@ -546,5 +547,27 @@
     }
     uploadDiv.textContent = messages.join(', ');
     processBtn.disabled = !(claimCount && clinicianCount && historyCount && facilitiesLoaded && affiliatedLicenses.size);
+  }
+
+  // Unified checker entry point
+  window.runClinicianCheck = async function() {
+    xmlInput = document.getElementById('xmlFileInput');
+    clinicianInput = document.getElementById('clinicianFileInput');
+    statusInput = document.getElementById('statusFileInput');
+    processBtn = document.getElementById('processBtn');
+    csvBtn = document.getElementById('csvBtn');
+    resultsDiv = document.getElementById('results');
+    uploadDiv = document.getElementById('uploadStatus');
+    
+    if (typeof validateClinicians === 'function') {
+      validateClinicians();
+    } else {
+      console.error('validateClinicians function not found');
+    }
+  };
+
+  } catch (error) {
+    console.error('[CHECKER-ERROR] Failed to load checker:', error);
+    console.error(error.stack);
   }
 })();

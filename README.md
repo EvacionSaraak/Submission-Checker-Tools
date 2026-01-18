@@ -10,6 +10,28 @@ A comprehensive collection of JavaScript tools to validate, audit, and analyze h
 
 ---
 
+## 🎯 Unified Checker Interface (NEW!)
+
+The **Unified Checker** provides a streamlined interface to run all validation tools from a single page with shared file inputs.
+
+### Features:
+- **Centralized File Management** - Upload all required files once, use them across all checkers
+- **Smart Button Controls** - Buttons automatically enable/disable based on required file availability
+- **Dynamic Checker Loading** - Switch between different validators without page reload
+- **Filter Invalid Fields** - Checkbox option to show only rows with errors
+- **Export Results** - Download validation results as Excel files
+- **Experimental "Check All"** - Run all available checkers sequentially
+
+### Usage:
+1. Navigate to the **Unified** tab in the navigation bar
+2. Upload your required files (XML, Excel files, etc.)
+3. Click any enabled checker button to run that validation
+4. Review results displayed below
+5. Use the filter checkbox to focus on invalid entries
+6. Export results using the Export button
+
+---
+
 ## 🚦 Tool Overview
 
 ### 1. `checker_auths.js` – Authorization Validator

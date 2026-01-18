@@ -1,34 +1,30 @@
-// checker_schema.js with modal table view and Person schema support
-// Requires SheetJS for Excel export: 
-// <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+(function() {
+  try {
+    // checker_schema.js with modal table view and Person schema support
+    // Requires SheetJS for Excel export: 
+    // <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
 
-// Error message constants
-const AMPERSAND_REPLACEMENT_ERROR = "Please replace `&` in the observations to `and` because this will cause error.";
-
-// Automatically validate when file is uploaded
-document.addEventListener("DOMContentLoaded", function () {
-  const fileInput = document.getElementById("xmlFile");
-  if (fileInput) {
-    fileInput.addEventListener("change", function () {
-      document.getElementById("uploadStatus").textContent = "";
-      document.getElementById("results").innerHTML = "";
-      if (fileInput.files.length > 0) {
-        validateXmlSchema();
-      }
-    });
-  }
-});
+    // Error message constants
+    const AMPERSAND_REPLACEMENT_ERROR = "Please replace `&` in the observations to `and` because this will cause error.";
 
 function validateXmlSchema() {
-  const fileInput = document.getElementById("xmlFile");
   const status = document.getElementById("uploadStatus");
   const resultsDiv = document.getElementById("results");
-  resultsDiv.innerHTML = "";
-  status.textContent = "";
+  
+  if (resultsDiv) resultsDiv.innerHTML = "";
+  if (status) status.textContent = "";
 
-  const file = fileInput.files[0];
+  const fileInput = document.getElementById("xmlFile");
+  let file = fileInput?.files?.[0];
+  
+  // Fallback to unified checker files cache
+  if (!file && window.unifiedCheckerFiles && window.unifiedCheckerFiles.xml) {
+    file = window.unifiedCheckerFiles.xml;
+    console.log('[SCHEMA] Using XML file from unified cache:', file.name);
+  }
+  
   if (!file) {
-    status.textContent = "Please select an XML file first.";
+    if (status) status.textContent = "Please select an XML file first.";
     return;
   }
 
@@ -138,39 +134,36 @@ function checkSpecialActivityDiagnosis(activities, diagnoses, getText, invalidFi
 /**
  * New supplemental validation:
  * If any Activity Code matches implant codes (79931, 79932, 79933, 79934)
- * then the claim MUST include at least one of the listed K08.* diagnosis codes.
+ * then the claim MUST include at least one diagnosis code matching K08.1xx or K08.4xx patterns.
  *
  * The diagnosis comparison is case-insensitive and ignores dots, so K08.131 and K08131 both match.
+ * Pattern matching: K081xx (K08.1 followed by any two digits) or K084xx (K08.4 followed by any two digits)
  */
 function checkImplantActivityDiagnosis(activities, diagnoses, getText, invalidFields) {
   try {
     const implantActivityCodes = new Set(["79931", "79932", "79933", "79934"]);
-    const requiredDiagnosisList = [
-      "K08.131", "K08.401", "K08.402", "K08.403", "K08.404",
-      "K08.411", "K08.412", "K08.413", "K08.414",
-      "K08.421", "K08.422", "K08.423", "K08.424",
-      "K08.431", "K08.432", "K08.433", "K08.434"
-    ];
-
-    // normalized required codes (remove dots and uppercase)
-    const requiredNormalized = new Set(requiredDiagnosisList.map(c => c.replace(/\./g, "").toUpperCase()));
-
+    
     const foundImplantCodes = Array.from(activities || [])
       .map(a => (getText("Code", a) || "").trim())
       .filter(c => c && implantActivityCodes.has(c));
 
     if (foundImplantCodes.length > 0) {
-      // normalize diagnosis codes present in claim
-      const diagNormalizedSet = new Set(
-        Array.from(diagnoses || []).map(d => (getText("Code", d) || "").replace(/\./g, "").toUpperCase())
-      );
+      // Get all diagnosis codes present in claim (normalized: remove dots, uppercase)
+      const diagnosisCodes = Array.from(diagnoses || [])
+        .map(d => (getText("Code", d) || "").replace(/\./g, "").toUpperCase().trim())
+        .filter(c => c);
+      
+      // Check if any diagnosis code matches K081xx or K084xx pattern
+      // K081xx: starts with K081 followed by any two characters
+      // K084xx: starts with K084 followed by any two characters
+      const hasValidDiagnosis = diagnosisCodes.some(code => {
+        return (code.startsWith("K081") && code.length >= 5) || 
+               (code.startsWith("K084") && code.length >= 5);
+      });
 
-      // check if at least one required diagnosis is present
-      const hasAnyRequired = Array.from(requiredNormalized).some(req => diagNormalizedSet.has(req));
-
-      if (!hasAnyRequired) {
+      if (!hasValidDiagnosis) {
         invalidFields.push(
-          `Activity code(s) ${Array.from(new Set(foundImplantCodes)).join(", ")} require at least one Diagnosis code from: ${requiredDiagnosisList.join(", ")}`
+          `Activity code(s) ${Array.from(new Set(foundImplantCodes)).join(", ")} require at least one Diagnosis code from: K08.1xx or K08.4xx`
         );
       }
     }
@@ -455,63 +448,68 @@ function claimToHtmlTable(xmlString) {
   return html;
 }
 
-// renderResults (stores last results on window and places export button above table)
+// renderResults (stores last results on window - button removed for unified interface)
 function renderResults(results, container, schemaType) {
   // keep a global reference so export works even if scopes change
-  window._lastValidationResults = Array.isArray(results) ? results.slice() : [];
+  const safeResults = Array.isArray(results) ? results.slice() : [];
+  window._lastValidationResults = safeResults;
   window._lastValidationSchema = schemaType || "claim";
-  container.innerHTML = "";
+  
+  // Don't clear container here - validateXmlSchema() already cleared it at line 12
+  // Clearing here would remove tables from OTHER checkers if schema runs after them
+  
+  // Export button removed - unified interface handles export
 
-  // Export XLSX button above the table
-  const exportBtn = document.createElement("button");
-  exportBtn.textContent = "Export XLSX";
-  exportBtn.style.marginBottom = "10px";
-  exportBtn.onclick = () => exportErrorsToXLSX(); // uses global last results
-  container.appendChild(exportBtn);
-
-  const table = document.createElement("table");
-  table.className = "table";
-  table.style.borderCollapse = "collapse";
-  table.style.width = "100%";
-
-  // Header
-  const thead = document.createElement("thead");
-  const headerRow = document.createElement("tr");
-  [
-    schemaType === "person" ? "Member ID" : "Claim ID",
-    "Remark", "Valid", "View Full Entry"
-  ].forEach(text => {
-    const th = document.createElement("th");
-    th.textContent = text;
-    th.style.padding = "8px";
-    th.style.border = "1px solid #ccc";
-    headerRow.appendChild(th);
+  const idLabel = schemaType === "person" ? "Member ID" : "Claim ID";
+  
+  // Build table using innerHTML for consistency with other checkers (teeth, elig, auths)
+  const tableHTML = `
+    <table class="table table-striped table-bordered" style="border-collapse:collapse;width:100%">
+      <thead>
+        <tr>
+          <th style="padding:8px;border:1px solid #ccc">${idLabel}</th>
+          <th style="padding:8px;border:1px solid #ccc">Remark</th>
+          <th style="padding:8px;border:1px solid #ccc">Valid</th>
+          <th style="padding:8px;border:1px solid #ccc">View Full Entry</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${safeResults.map((row, index) => {
+          // Use Bootstrap classes for consistent row coloring
+          const rowClass = row.Valid ? 'table-success' : 'table-danger';
+          return `
+            <tr class="${rowClass}">
+              <td style="padding:6px;border:1px solid #ccc">${sanitizeForHTML(row.ClaimID)}</td>
+              <td style="padding:6px;border:1px solid #ccc">${sanitizeForHTML(row.Remark)}</td>
+              <td style="padding:6px;border:1px solid #ccc">${row.Valid ? "Yes" : "No"}</td>
+              <td style="padding:6px;border:1px solid #ccc">
+                <button class="view-claim-btn" data-index="${index}">View</button>
+              </td>
+            </tr>`;
+        }).join('')}
+      </tbody>
+    </table>`;
+  
+  container.innerHTML = tableHTML;
+  
+  // Attach event listeners to view buttons after DOM is updated
+  safeResults.forEach((row, index) => {
+    const btn = container.querySelector(`.view-claim-btn[data-index="${index}"]`);
+    if (btn) {
+      btn.onclick = () => showModal(claimToHtmlTable(row.ClaimXML));
+    }
   });
-  thead.appendChild(headerRow);
-  table.appendChild(thead);
+}
 
-  // Body
-  const tbody = document.createElement("tbody");
-  (results || []).forEach(row => {
-    const tr = document.createElement("tr");
-    tr.style.backgroundColor = row.Valid ? "#d4edda" : "#f8d7da";
-    [row.ClaimID, row.Remark, row.Valid ? "Yes" : "No"].forEach(text => {
-      const td = document.createElement("td");
-      td.textContent = text;
-      td.style.padding = "6px";
-      td.style.border = "1px solid #ccc";
-      tr.appendChild(td);
-    });
-    const btnTd = document.createElement("td");
-    const viewBtn = document.createElement("button");
-    viewBtn.textContent = "View";
-    viewBtn.onclick = () => showModal(claimToHtmlTable(row.ClaimXML));
-    btnTd.appendChild(viewBtn);
-    tr.appendChild(btnTd);
-    tbody.appendChild(tr);
-  });
-  table.appendChild(tbody);
-  container.appendChild(table);
+// Helper function to sanitize text for HTML insertion
+function sanitizeForHTML(text) {
+  if (text == null) return '';
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
 
 function exportErrorsToXLSX(data, schemaType) {
@@ -551,3 +549,12 @@ function exportErrorsToXLSX(data, schemaType) {
     alert("Export failed. See console for details.");
   }
 }
+
+    // Expose function globally for unified checker
+    window.validateXmlSchema = validateXmlSchema;
+
+  } catch (error) {
+    console.error('[CHECKER-ERROR] Failed to load checker:', error);
+    console.error(error.stack);
+  }
+})();

@@ -1,38 +1,52 @@
-// checker_timings.js
+(function() {
+  try {
+    // checker_timings.js
 
-// --- DOM Handlers ---
-document.addEventListener('DOMContentLoaded', () => {
-  if (!document.getElementById('typeSelector')) {
-    const selectorHTML = `
-      <div id="typeSelector" style="margin-bottom: 1em;">
-        <label><input type="radio" name="claimType" value="DENTAL" checked> Dental</label>
-        <label><input type="radio" name="claimType" value="MEDICAL"> Medical</label>
-      </div>`;
-    const fileInput = document.getElementById('xmlFileInput');
-    if (fileInput && fileInput.parentNode) {
-      fileInput.parentNode.insertBefore(
-        document.createRange().createContextualFragment(selectorHTML), fileInput
-      );
-    }
+    // --- Main Entry Point (called by unified interface) ---
+    async function validateTimingsAsync() {
+  const xmlInput = document.getElementById('xmlFileInput');
+  const resultsDiv = document.getElementById('results');
+  
+  clearResults();
+  
+  if (!xmlInput || !xmlInput.files || !xmlInput.files.length) {
+    return renderMessage('No XML file selected.');
   }
-  const fileInput = document.getElementById('xmlFileInput');
-  if (fileInput) fileInput.addEventListener('change', onFileChange);
-});
-document.getElementById('exportBtn').addEventListener('click', () => {
-  if (!window.invalidRows?.length) return;
-  const wb = XLSX.utils.book_new();
-  const wsData = [
-    ['Claim ID', 'Activity ID', 'Encounter Start', 'Encounter End', 'Activity Start', 'Duration', 'Excess', 'Remarks'],
-    ...window.invalidRows.map(r => [
-      r.claimId, r.activityId, r.encounterStart, r.encounterEnd,
-      r.start, r.duration, r.excess, r.remarks.join('; ')
-    ])
-  ];
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(wsData), 'Invalid Timings');
-  XLSX.writeFile(wb, 'invalid_timings.xlsx');
-});
+  
+  const file = xmlInput.files[0];
+  
+  try {
+    renderMessage('Processing file...');
+    const xmlText = await file.text();
+    validateXMLString(xmlText);
+    const xmlDoc = parseXML(xmlText);
+    const selectedType = document.querySelector('input[name="claimType"]:checked')?.value || "DENTAL";
+    const requiredType = (selectedType === "DENTAL") ? "6" : "3";
+    const claims = extractClaims(xmlDoc, requiredType);
+    renderResults(resultsDiv, claims);
+    
+    // Export button handler (add if button exists)
+    const exportBtn = document.getElementById('exportBtn');
+    if (exportBtn && window.invalidRows?.length) {
+      exportBtn.onclick = () => {
+        const wb = XLSX.utils.book_new();
+        const wsData = [
+          ['Claim ID', 'Activity ID', 'Encounter Start', 'Encounter End', 'Activity Start', 'Duration', 'Excess', 'Remarks'],
+          ...window.invalidRows.map(r => [
+            r.claimId, r.activityId, r.encounterStart, r.encounterEnd,
+            r.start, r.duration, r.excess, r.remarks.join('; ')
+          ])
+        ];
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(wsData), 'Invalid Timings');
+        XLSX.writeFile(wb, 'invalid_timings.xlsx');
+      };
+    }
+  } catch (err) {
+    renderMessage(`❌ Error: ${sanitize(String(err.message))}`);
+  }
+}
 
-// --- Main Handler ---
+// --- Legacy onFileChange (kept for backward compatibility) ---
 async function onFileChange(event) {
   clearResults();
   const file = event.target.files?.[0];
@@ -192,32 +206,87 @@ function renderResults(container, rows) {
   exportBtn.style.display = invalidRows.length ? 'inline-block' : 'none';
   summaryBox.textContent = `Valid: ${rows.length - invalidRows.length} / ${rows.length} (${((rows.length - invalidRows.length)/rows.length*100).toFixed(1)}%)`;
   container.innerHTML = buildResultsTable(rows);
+  
+  // Add MutationObserver to detect when filter hides/shows rows
+  const observer = new MutationObserver(() => {
+    fillMissingClaimIds();
+  });
+  
+  const tbody = container.querySelector('tbody');
+  if (tbody) {
+    observer.observe(tbody, { 
+      attributes: true, 
+      attributeFilter: ['style'],
+      subtree: true 
+    });
+  }
+  
+  // Fill immediately if filter is already active
+  fillMissingClaimIds();
 }
 function buildResultsTable(rows) {
+  // Defensive check: ensure rows is an array
+  if (!Array.isArray(rows)) {
+    console.error('buildResultsTable: rows is not an array:', rows);
+    return '<div class="alert alert-danger">Error: Invalid data structure for results table</div>';
+  }
+  
   let prevClaimId = null, html = `
-    <table border="1" style="width:100%;border-collapse:collapse">
+    <table class="table table-striped table-bordered" style="width:100%;border-collapse:collapse">
       <thead><tr>
-        <th>Claim ID</th><th>Activity ID</th><th>Encounter Start</th>
-        <th>Encounter End</th><th>Activity Start</th>
-        <th>Duration</th><th>Excess</th><th>Remarks</th>
+        <th style="padding:8px;border:1px solid #ccc">Claim ID</th>
+        <th style="padding:8px;border:1px solid #ccc">Activity ID</th>
+        <th style="padding:8px;border:1px solid #ccc">Encounter Start</th>
+        <th style="padding:8px;border:1px solid #ccc">Encounter End</th>
+        <th style="padding:8px;border:1px solid #ccc">Activity Start</th>
+        <th style="padding:8px;border:1px solid #ccc">Duration</th>
+        <th style="padding:8px;border:1px solid #ccc">Excess</th>
+        <th style="padding:8px;border:1px solid #ccc">Remarks</th>
       </tr></thead><tbody>
   `;
   rows.forEach(r => {
     const claimCell = (r.claimId !== prevClaimId) ? r.claimId : '';
     prevClaimId = r.claimId;
     const remarkLines = (r.remarks || []).map(line => `<div>${sanitize(line)}</div>`).join('');
-    html += `<tr class="${r.isValid ? 'valid' : 'invalid'}">
-      <td>${sanitize(claimCell)}</td>
-      <td>${sanitize(r.activityId)}</td>
-      <td>${sanitize(r.encounterStart)}</td>
-      <td>${sanitize(r.encounterEnd)}</td>
-      <td>${sanitize(r.start)}</td>
-      <td>${sanitize(r.duration)}</td>
-      <td>${sanitize(r.excess)}</td>
-      <td>${remarkLines}</td>
+    html += `<tr class="${r.isValid ? 'table-success' : 'table-danger'}" data-claim-id="${sanitize(r.claimId || '')}">
+      <td class="claim-id-cell" style="padding:6px;border:1px solid #ccc">${sanitize(claimCell)}</td>
+      <td style="padding:6px;border:1px solid #ccc">${sanitize(r.activityId)}</td>
+      <td style="padding:6px;border:1px solid #ccc">${sanitize(r.encounterStart)}</td>
+      <td style="padding:6px;border:1px solid #ccc">${sanitize(r.encounterEnd)}</td>
+      <td style="padding:6px;border:1px solid #ccc">${sanitize(r.start)}</td>
+      <td style="padding:6px;border:1px solid #ccc">${sanitize(r.duration)}</td>
+      <td style="padding:6px;border:1px solid #ccc">${sanitize(r.excess)}</td>
+      <td style="padding:6px;border:1px solid #ccc">${remarkLines}</td>
     </tr>`;
   });
   return html + "</tbody></table>";
+}
+
+// Helper function to fill missing Claim IDs when rows are filtered
+function fillMissingClaimIds() {
+  const table = document.querySelector('#results table');
+  if (!table) return;
+  
+  const rows = Array.from(table.querySelectorAll('tbody tr'));
+  
+  rows.forEach(row => {
+    const isHidden = row.style.display === 'none';
+    const claimIdCell = row.querySelector('.claim-id-cell');
+    const claimId = row.getAttribute('data-claim-id');
+    
+    if (!isHidden && claimIdCell && claimId) {
+      if (claimIdCell.textContent.trim() === '') {
+        // Empty cell - fill it in for visibility
+        claimIdCell.textContent = claimId;
+        claimIdCell.style.color = '#666';  // Gray color
+        claimIdCell.style.fontStyle = 'italic';  // Italic style
+      } else {
+        // Has claim ID - original first row
+        claimIdCell.style.color = '';  // Black color
+        claimIdCell.style.fontStyle = '';  // Normal style
+      }
+    }
+  });
 }
 
 // --- Superfluous/Unused Functions (fully commented out) ---
@@ -341,3 +410,12 @@ function formatDateTimeCell(datetimeStr) {
   `;
 }
 **/
+
+    // Expose function globally for unified checker
+    window.validateTimingsAsync = validateTimingsAsync;
+
+  } catch (error) {
+    console.error('[CHECKER-ERROR] Failed to load checker:', error);
+    console.error(error.stack);
+  }
+})();
