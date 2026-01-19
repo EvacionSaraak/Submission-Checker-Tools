@@ -932,19 +932,22 @@
     } else if (reason === 'no-errors') {
       // Get list of checkers that ran successfully but had no errors
       const checkersWithoutErrors = [];
+      const checkersWithErrors = [];
       
-      // Check which checkers have tables but no invalid rows
+      // Check which checkers have tables and categorize them
       const allContainers = document.querySelectorAll('[id^="checker-container-"]');
       allContainers.forEach(container => {
         const tables = container.querySelectorAll('table');
         if (tables.length > 0) {
           const invalidRows = container.querySelectorAll('tr.table-danger, tr.table-warning, tr.invalid, tr.unknown');
-          if (invalidRows.length === 0) {
-            const checkerMatch = container.id.match(/checker-container-(.+)/);
-            if (checkerMatch) {
-              const name = checkerMatch[1].toUpperCase();
-              // Exclude CHECK-ALL from the list (it's a meta-container, not a real checker)
-              if (name !== 'CHECK-ALL') {
+          const checkerMatch = container.id.match(/checker-container-(.+)/);
+          if (checkerMatch) {
+            const name = checkerMatch[1].toUpperCase();
+            // Exclude CHECK-ALL from the list (it's a meta-container, not a real checker)
+            if (name !== 'CHECK-ALL') {
+              if (invalidRows.length > 0) {
+                checkersWithErrors.push(name);
+              } else {
                 checkersWithoutErrors.push(name);
               }
             }
@@ -952,7 +955,20 @@
         }
       });
       
-      if (checkersWithoutErrors.length > 0) {
+      // If there are checkers with errors, show them
+      if (checkersWithErrors.length > 0) {
+        // Format the list with proper grammar: "x, y, and z"
+        let checkerList = '';
+        if (checkersWithErrors.length === 1) {
+          checkerList = checkersWithErrors[0];
+        } else if (checkersWithErrors.length === 2) {
+          checkerList = checkersWithErrors.join(' and ');
+        } else {
+          const lastChecker = checkersWithErrors.pop();
+          checkerList = checkersWithErrors.join(', ') + ', and ' + lastChecker;
+        }
+        tooltipMessage = `Errors found in ${checkerList} checker${checkersWithErrors.length > 1 ? 's' : ''}`;
+      } else if (checkersWithoutErrors.length > 0) {
         tooltipMessage = `No errors found in all checkers`;
       } else {
         tooltipMessage = 'No invalid entries found. Please run a checker first.';
