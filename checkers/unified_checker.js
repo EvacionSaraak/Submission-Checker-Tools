@@ -874,8 +874,22 @@
       console.log(`[CHECK-ALL] Export Invalids button disabled (no invalid rows found)`);
       
       // Determine appropriate tooltip reason
-      const hasErrors = errorCount > 0;
-      const tooltipReason = hasErrors ? 'error' : (successCount > 0 ? 'no-errors' : 'no-tables');
+      // Check if ANY tables were generated (even if there were some errors)
+      const anyTablesGenerated = successCount > 0 || totalRun > errorCount;
+      let tooltipReason;
+      
+      if (!anyTablesGenerated) {
+        // No tables generated at all
+        if (errorCount > 0) {
+          tooltipReason = 'error'; // Fatal errors prevented all tables
+        } else {
+          tooltipReason = 'no-tables'; // No checkers ran
+        }
+      } else {
+        // Tables were generated, but no invalids found
+        tooltipReason = 'no-errors';
+      }
+      
       updateExportInvalidsTooltip(tooltipReason);
     }
     
