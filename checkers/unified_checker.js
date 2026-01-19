@@ -148,6 +148,8 @@
     if (elements.exportInvalidsBtn) {
       elements.exportInvalidsBtn.addEventListener('click', exportInvalids);
       console.log('[INIT] Export Invalids button found, attached event listener');
+      // Set initial tooltip for disabled button
+      updateExportInvalidsTooltip('no-tables');
     }
 
     // Debug log download button
@@ -283,6 +285,7 @@
           if (elements.exportInvalidsBtn) {
             elements.exportInvalidsBtn.disabled = false;
             console.log(`[CHECKER] Export Invalids button enabled (${invalidRows.length} invalid rows)`);
+            updateExportInvalidsTooltip(); // Remove tooltip when enabled
           }
         } else {
           // No invalids found, disable button
@@ -290,6 +293,7 @@
           if (elements.exportInvalidsBtn) {
             elements.exportInvalidsBtn.disabled = true;
             console.log(`[CHECKER] Export Invalids button disabled (no invalid rows)`);
+            updateExportInvalidsTooltip('no-errors'); // Set tooltip explaining no errors found
           }
         }
       }
@@ -581,6 +585,7 @@
     // Disable Export Invalids button initially
     if (elements.exportInvalidsBtn) {
       elements.exportInvalidsBtn.disabled = true;
+      updateExportInvalidsTooltip('no-tables'); // Set initial tooltip
     }
     
     // Hide debug log button initially
@@ -863,9 +868,15 @@
       elements.exportInvalidsBtn.disabled = false;
       console.log(`[CHECK-ALL] Export Invalids button enabled (${invalidRowsData.length} invalid rows from ${successCount} checkers)`);
       logDebug('Export Invalids Button Enabled', { invalidRowsCount: invalidRowsData.length });
+      updateExportInvalidsTooltip(); // Remove tooltip when enabled
     } else if (elements.exportInvalidsBtn) {
       elements.exportInvalidsBtn.disabled = true;
       console.log(`[CHECK-ALL] Export Invalids button disabled (no invalid rows found)`);
+      
+      // Determine appropriate tooltip reason
+      const hasErrors = errorCount > 0;
+      const tooltipReason = hasErrors ? 'error' : (successCount > 0 ? 'no-errors' : 'no-tables');
+      updateExportInvalidsTooltip(tooltipReason);
     }
     
     // Store results globally for export
@@ -885,6 +896,68 @@
     console.log('[CHECK-ALL] ✓ Check All functionality complete');
     console.log('[CHECK-ALL] Results collected from', allResults.length, 'checkers');
     console.log('[CHECK-ALL] Debug log contains', debugLog.length, 'entries');
+  }
+
+  function updateExportInvalidsTooltip(reason = null) {
+    if (!elements.exportInvalidsBtn) return;
+    
+    if (!elements.exportInvalidsBtn.disabled) {
+      // Button is enabled, remove tooltip
+      elements.exportInvalidsBtn.removeAttribute('title');
+      elements.exportInvalidsBtn.removeAttribute('data-bs-toggle');
+      elements.exportInvalidsBtn.removeAttribute('data-bs-placement');
+      return;
+    }
+    
+    // Button is disabled, set appropriate tooltip message
+    let tooltipMessage = '';
+    
+    if (reason === 'no-tables') {
+      tooltipMessage = 'No tables generated. Please run a checker first.';
+    } else if (reason === 'no-errors') {
+      // Get list of checkers that ran successfully but had no errors
+      const checkersWithoutErrors = [];
+      
+      // Check which checkers have tables but no invalid rows
+      const allContainers = document.querySelectorAll('[id^="checker-container-"]');
+      allContainers.forEach(container => {
+        const tables = container.querySelectorAll('table');
+        if (tables.length > 0) {
+          const invalidRows = container.querySelectorAll('tr.table-danger, tr.table-warning, tr.invalid, tr.unknown');
+          if (invalidRows.length === 0) {
+            const checkerMatch = container.id.match(/checker-container-(.+)/);
+            if (checkerMatch) {
+              const name = checkerMatch[1].toUpperCase();
+              checkersWithoutErrors.push(name);
+            }
+          }
+        }
+      });
+      
+      if (checkersWithoutErrors.length > 0) {
+        tooltipMessage = `No errors found in the following checker(s): ${checkersWithoutErrors.join(', ')}`;
+      } else {
+        tooltipMessage = 'No invalid entries found. Please run a checker first.';
+      }
+    } else if (reason === 'error') {
+      tooltipMessage = 'Error occurred during checker execution. Please download debug log for more details.';
+    } else {
+      tooltipMessage = 'No invalid entries found. Please run a checker first.';
+    }
+    
+    // Set tooltip attributes
+    elements.exportInvalidsBtn.setAttribute('title', tooltipMessage);
+    elements.exportInvalidsBtn.setAttribute('data-bs-toggle', 'tooltip');
+    elements.exportInvalidsBtn.setAttribute('data-bs-placement', 'top');
+    
+    // Initialize Bootstrap tooltip if available
+    if (typeof bootstrap !== 'undefined' && bootstrap.Tooltip) {
+      const existingTooltip = bootstrap.Tooltip.getInstance(elements.exportInvalidsBtn);
+      if (existingTooltip) {
+        existingTooltip.dispose();
+      }
+      new bootstrap.Tooltip(elements.exportInvalidsBtn);
+    }
   }
 
   function applyFilter() {
