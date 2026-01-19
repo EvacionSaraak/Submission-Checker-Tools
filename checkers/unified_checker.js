@@ -1,4 +1,5 @@
-// unified_checker.js - Simplified controller that works with existing checker scripts
+// unified_checker.js - Unified controller for all checkers
+// Refactored: Checkers return tables; rendering handled centrally
 
 (function() {
   'use strict';
