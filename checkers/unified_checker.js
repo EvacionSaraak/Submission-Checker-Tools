@@ -9,13 +9,13 @@
     let sessionCount = sessionStorage.getItem('checkerSessionCount');
     sessionCount = sessionCount ? parseInt(sessionCount) + 1 : 1;
     sessionStorage.setItem('checkerSessionCount', sessionCount);
-    console.log(`[INIT] Unified Checker v1.2.82 - Session #${sessionCount}`);
+    console.log(`[INIT] Unified Checker v1.2.88 - Session #${sessionCount}`);
     
     // Update DOM when ready
     document.addEventListener('DOMContentLoaded', () => {
       const sessionElement = document.getElementById('sessionCount');
       if (sessionElement) {
-        sessionElement.textContent = `v1.2.82 | Session #${sessionCount}`;
+        sessionElement.textContent = `v1.2.88 | Session #${sessionCount}`;
       }
     });
   })();
@@ -238,6 +238,13 @@
       
       setActiveButton(checkerName);
       activeChecker = checkerName;
+
+      // Reset filter when starting a new checker (Bug #26 fix)
+      if (filterActive) {
+        filterActive = false;
+        elements.floatingFilterBtn.classList.remove('active');
+        console.log('[FILTER] Auto-reset: Filter turned off when running new checker');
+      }
 
       // Hide all checker containers and show the active one
       hideAllCheckerContainers();
