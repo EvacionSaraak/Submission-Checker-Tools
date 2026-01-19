@@ -9,13 +9,13 @@
     let sessionCount = sessionStorage.getItem('checkerSessionCount');
     sessionCount = sessionCount ? parseInt(sessionCount) + 1 : 1;
     sessionStorage.setItem('checkerSessionCount', sessionCount);
-    console.log(`[INIT] Unified Checker v1.0.0 - Session #${sessionCount}`);
+    console.log(`[INIT] Unified Checker v1.2.82 - Session #${sessionCount}`);
     
     // Update DOM when ready
     document.addEventListener('DOMContentLoaded', () => {
       const sessionElement = document.getElementById('sessionCount');
       if (sessionElement) {
-        sessionElement.textContent = `| Session #${sessionCount}`;
+        sessionElement.textContent = `v1.2.82 | Session #${sessionCount}`;
       }
     });
   })();
