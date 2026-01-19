@@ -590,10 +590,6 @@ function buildResultsTable(rows) {
   
   return table;
 }
-  
-  // Initial fill in case filter is already active
-  fillMissingClaimIds();
-}
 
 // Helper function to fill in missing Claim IDs when rows are filtered
 function fillMissingClaimIds() {
