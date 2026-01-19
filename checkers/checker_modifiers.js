@@ -16,8 +16,19 @@ document.addEventListener('DOMContentLoaded', () => {
 async function handleRun() {
   resetUI();
   try {
-    const xmlFile = fileEl('xml-file');
-    const xlsxFile = fileEl('xlsx-file');
+    let xmlFile = fileEl('xml-file');
+    let xlsxFile = fileEl('xlsx-file');
+    
+    // Fallback to unified checker files cache
+    if (!xmlFile && window.unifiedCheckerFiles && window.unifiedCheckerFiles.xml) {
+      xmlFile = window.unifiedCheckerFiles.xml;
+      console.log('[MODIFIERS] Using XML file from unified cache:', xmlFile.name);
+    }
+    if (!xlsxFile && window.unifiedCheckerFiles && window.unifiedCheckerFiles.eligibility) {
+      xlsxFile = window.unifiedCheckerFiles.eligibility;
+      console.log('[MODIFIERS] Using eligibility file from unified cache:', xlsxFile.name);
+    }
+    
     if (!xmlFile || !xlsxFile) throw new Error('Please select both an XML file and an XLSX file.');
 
     const [xmlText, xlsxObj] = await Promise.all([readFileText(xmlFile), readXlsx(xlsxFile)]);
