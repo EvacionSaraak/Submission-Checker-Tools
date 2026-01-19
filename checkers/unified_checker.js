@@ -501,6 +501,9 @@
         console.log(`[DEBUG] ${checkerName} returned no table (may have rendered status message instead)`);
       }
       
+      // Return the table element so Check All can use it
+      return tableElement;
+      
     } catch (error) {
       console.error(`[DEBUG] Error executing ${checkerName}:`, error);
       throw error;
@@ -665,23 +668,19 @@
         
         // Get this checker's persistent container and run it
         const checkerContainer = document.getElementById(`checker-container-${checkerName}`);
+        let table = null;
+        
         if (checkerContainer) {
           // IMPORTANT: Ensure checker container stays hidden during Check All
           checkerContainer.style.display = 'none';
           
-          // Execute the checker (Bug #10 fix: removed duplicate initialization check)
+          // Execute the checker and get returned table element (Bug #10 fix: removed duplicate initialization check)
           logDebug(`Executing Checker: ${checkerName}`);
-          await executeChecker(checkerName, checkerContainer);
+          table = await executeChecker(checkerName, checkerContainer);
           
           // Re-confirm container is hidden after execution
           checkerContainer.style.display = 'none';
         }
-        
-        // Wait a moment for table to render
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        // Check if table was generated in the checker's container
-        const table = checkerContainer ? checkerContainer.querySelector('table') : null;
         const checkerEndTime = performance.now();
         const executionTime = (checkerEndTime - checkerStartTime).toFixed(2);
         
