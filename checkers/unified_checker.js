@@ -915,11 +915,20 @@
   function updateExportInvalidsTooltip(reason = null) {
     if (!elements.exportInvalidsBtn) return;
     
+    // Dispose any existing tooltip first
+    if (typeof bootstrap !== 'undefined' && bootstrap.Tooltip) {
+      const existingTooltip = bootstrap.Tooltip.getInstance(elements.exportInvalidsBtn);
+      if (existingTooltip) {
+        existingTooltip.dispose();
+      }
+    }
+    
     if (!elements.exportInvalidsBtn.disabled) {
-      // Button is enabled, remove tooltip
+      // Button is enabled, remove tooltip and pointer-events style
       elements.exportInvalidsBtn.removeAttribute('title');
       elements.exportInvalidsBtn.removeAttribute('data-bs-toggle');
       elements.exportInvalidsBtn.removeAttribute('data-bs-placement');
+      elements.exportInvalidsBtn.style.pointerEvents = '';
       return;
     }
     
@@ -959,18 +968,19 @@
       tooltipMessage = 'No invalid entries found. Please run a checker first.';
     }
     
+    // Enable pointer events on disabled button to allow tooltips
+    elements.exportInvalidsBtn.style.pointerEvents = 'auto';
+    
     // Set tooltip attributes
     elements.exportInvalidsBtn.setAttribute('title', tooltipMessage);
     elements.exportInvalidsBtn.setAttribute('data-bs-toggle', 'tooltip');
     elements.exportInvalidsBtn.setAttribute('data-bs-placement', 'top');
     
-    // Initialize Bootstrap tooltip if available
+    // Initialize Bootstrap tooltip
     if (typeof bootstrap !== 'undefined' && bootstrap.Tooltip) {
-      const existingTooltip = bootstrap.Tooltip.getInstance(elements.exportInvalidsBtn);
-      if (existingTooltip) {
-        existingTooltip.dispose();
-      }
-      new bootstrap.Tooltip(elements.exportInvalidsBtn);
+      new bootstrap.Tooltip(elements.exportInvalidsBtn, {
+        trigger: 'hover focus'
+      });
     }
   }
 
