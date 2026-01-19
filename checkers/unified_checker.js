@@ -443,15 +443,27 @@
     const globalDental = document.getElementById('claimTypeDental');
     const globalMedical = document.getElementById('claimTypeMedical');
     
-    if (!globalDental || !globalMedical) return;
+    if (!globalDental || !globalMedical) {
+      console.warn('[SYNC] Global claim type radio buttons not found');
+      return;
+    }
     
     const selectedType = globalDental.checked ? 'DENTAL' : 'MEDICAL';
+    console.log(`[SYNC] Global claim type selected: ${selectedType}`);
     
     // Set the hidden radio buttons in the timings checker to match
     const timingsRadios = container.querySelectorAll('input[name="claimType"]');
+    console.log(`[SYNC] Found ${timingsRadios.length} radio buttons in timings container`);
+    
     timingsRadios.forEach(radio => {
+      const wasChecked = radio.checked;
       radio.checked = (radio.value === selectedType);
+      console.log(`[SYNC] Radio ${radio.value}: ${wasChecked} → ${radio.checked}`);
     });
+    
+    // Verify the sync worked
+    const checkedRadio = container.querySelector('input[name="claimType"]:checked');
+    console.log(`[SYNC] Final checked value in container: ${checkedRadio?.value || 'NONE'}`);
   }
 
   async function executeChecker(checkerName, container) {
