@@ -145,12 +145,14 @@
     elements.exportBtn.addEventListener('click', exportResults);
     
     // Export Invalids button
+    console.log('[INIT] Checking Export Invalids button...', elements.exportInvalidsBtn);
     if (elements.exportInvalidsBtn) {
       elements.exportInvalidsBtn.addEventListener('click', exportInvalids);
       console.log('[INIT] Export Invalids button found, attached event listener');
       // Set initial tooltip for disabled button
       updateExportInvalidsTooltip('no-tables');
-    }
+    } else {
+      console.warn('[INIT] Export Invalids button NOT found in DOM!');
 
     // Debug log download button
     if (elements.downloadDebugLogBtn) {
