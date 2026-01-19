@@ -145,14 +145,10 @@
     elements.exportBtn.addEventListener('click', exportResults);
     
     // Export Invalids button
-    console.log('[INIT] Checking Export Invalids button...', elements.exportInvalidsBtn);
     if (elements.exportInvalidsBtn) {
       elements.exportInvalidsBtn.addEventListener('click', exportInvalids);
-      console.log('[INIT] Export Invalids button found, attached event listener');
-      // Set initial tooltip for disabled button
-      updateExportInvalidsTooltip('no-tables');
-    } else {
-      console.warn('[INIT] Export Invalids button NOT found in DOM!');
+      // Speech bubble is visible by default in HTML with initial message
+    }
 
     // Debug log download button
     if (elements.downloadDebugLogBtn) {
@@ -915,26 +911,15 @@
   }
 
   function updateExportInvalidsTooltip(reason = null) {
-    console.log('[SPEECH-BUBBLE] updateExportInvalidsTooltip called with reason:', reason);
-    
-    if (!elements.exportInvalidsBtn) {
-      console.warn('[SPEECH-BUBBLE] Export Invalids button element not found');
-      return;
-    }
-    
     const bubble = document.getElementById('exportInvalidsBubble');
     const bubbleText = document.getElementById('exportInvalidsBubbleText');
     
     if (!bubble || !bubbleText) {
-      console.warn('[SPEECH-BUBBLE] Bubble elements not found:', { bubble: !!bubble, bubbleText: !!bubbleText });
       return;
     }
     
-    console.log('[SPEECH-BUBBLE] Button disabled:', elements.exportInvalidsBtn.disabled);
-    
-    if (!elements.exportInvalidsBtn.disabled) {
-      // Button is enabled, hide speech bubble
-      console.log('[SPEECH-BUBBLE] Button is enabled, hiding bubble');
+    // If button is enabled, hide speech bubble
+    if (elements.exportInvalidsBtn && !elements.exportInvalidsBtn.disabled) {
       bubble.style.display = 'none';
       return;
     }
@@ -975,11 +960,9 @@
       tooltipMessage = 'No invalid entries found. Please run a checker first.';
     }
     
-    // Update speech bubble text and show it
-    console.log('[SPEECH-BUBBLE] Setting message:', tooltipMessage);
+    // Update speech bubble text and make sure it's visible
     bubbleText.textContent = tooltipMessage;
     bubble.style.display = 'block';
-    console.log('[SPEECH-BUBBLE] Bubble display set to: block');
   }
 
   function applyFilter() {
