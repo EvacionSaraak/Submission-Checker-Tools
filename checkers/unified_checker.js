@@ -943,14 +943,17 @@
             const checkerMatch = container.id.match(/checker-container-(.+)/);
             if (checkerMatch) {
               const name = checkerMatch[1].toUpperCase();
-              checkersWithoutErrors.push(name);
+              // Exclude CHECK-ALL from the list (it's a meta-container, not a real checker)
+              if (name !== 'CHECK-ALL') {
+                checkersWithoutErrors.push(name);
+              }
             }
           }
         }
       });
       
       if (checkersWithoutErrors.length > 0) {
-        tooltipMessage = `No errors found in the following checker(s): ${checkersWithoutErrors.join(', ')}`;
+        tooltipMessage = `No errors found in all checkers`;
       } else {
         tooltipMessage = 'No invalid entries found. Please run a checker first.';
       }
