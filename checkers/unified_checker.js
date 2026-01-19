@@ -913,15 +913,26 @@
   }
 
   function updateExportInvalidsTooltip(reason = null) {
-    if (!elements.exportInvalidsBtn) return;
+    console.log('[SPEECH-BUBBLE] updateExportInvalidsTooltip called with reason:', reason);
+    
+    if (!elements.exportInvalidsBtn) {
+      console.warn('[SPEECH-BUBBLE] Export Invalids button element not found');
+      return;
+    }
     
     const bubble = document.getElementById('exportInvalidsBubble');
     const bubbleText = document.getElementById('exportInvalidsBubbleText');
     
-    if (!bubble || !bubbleText) return;
+    if (!bubble || !bubbleText) {
+      console.warn('[SPEECH-BUBBLE] Bubble elements not found:', { bubble: !!bubble, bubbleText: !!bubbleText });
+      return;
+    }
+    
+    console.log('[SPEECH-BUBBLE] Button disabled:', elements.exportInvalidsBtn.disabled);
     
     if (!elements.exportInvalidsBtn.disabled) {
       // Button is enabled, hide speech bubble
+      console.log('[SPEECH-BUBBLE] Button is enabled, hiding bubble');
       bubble.style.display = 'none';
       return;
     }
@@ -963,8 +974,10 @@
     }
     
     // Update speech bubble text and show it
+    console.log('[SPEECH-BUBBLE] Setting message:', tooltipMessage);
     bubbleText.textContent = tooltipMessage;
     bubble.style.display = 'block';
+    console.log('[SPEECH-BUBBLE] Bubble display set to: block');
   }
 
   function applyFilter() {
