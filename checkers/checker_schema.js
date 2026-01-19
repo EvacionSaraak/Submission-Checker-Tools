@@ -39,7 +39,7 @@ function validateXmlSchema() {
       const xmlDoc = parser.parseFromString(xmlContent, "application/xml");
       const parseErrors = xmlDoc.getElementsByTagName("parsererror");
       if (parseErrors.length > 0) {
-        status.textContent = "XML Parsing Error: The file is not well-formed.";
+        if (status) status.textContent = "XML Parsing Error: The file is not well-formed.";
         const errorDiv = document.createElement('pre');
         errorDiv.textContent = parseErrors[0].textContent;
         resolve(errorDiv);
@@ -56,7 +56,7 @@ function validateXmlSchema() {
         schemaType = "person";
         results = validatePersonSchema(xmlDoc, originalXmlContent);
       } else {
-        status.textContent = "Unknown schema: " + xmlDoc.documentElement.nodeName;
+        if (status) status.textContent = "Unknown schema: " + xmlDoc.documentElement.nodeName;
         resolve(null);
         return;
       }
@@ -67,12 +67,12 @@ function validateXmlSchema() {
       const total = results.length;
       const valid = results.filter(r => r.Valid).length;
       const percent = total > 0 ? ((valid / total) * 100).toFixed(1) : "0.0";
-      status.textContent = `Valid ${schemaType === "claim" ? "claims" : "persons"}: ${valid} / ${total} (${percent}%)`;
+      if (status) status.textContent = `Valid ${schemaType === "claim" ? "claims" : "persons"}: ${valid} / ${total} (${percent}%)`;
       
       resolve(tableElement);
     };
     reader.onerror = function () {
-      status.textContent = "Error reading the file.";
+      if (status) status.textContent = "Error reading the file.";
       resolve(null);
     };
     reader.readAsText(file);
