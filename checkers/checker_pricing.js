@@ -74,7 +74,7 @@ async function handleRun() {
   });
 
     lastResults = output;
-    renderResults(output);
+    const tableElement = buildResultsTable(output);
     lastWorkbook = makeWorkbookFromJson(output, 'checker_pricing_results');
     toggleDownload(output.length > 0);
 
@@ -85,7 +85,8 @@ async function handleRun() {
   const percentText = totalCount ? numericPercent.toFixed(2) : '0.00';
   const color = numericPercent === 100 ? 'green' : 'orange';
   message(`Completed — ${validCount}/${totalCount} rows correct (${percentText}%)`, color);
-  } catch (err) { showError(err); }
+  return tableElement;
+  } catch (err) { showError(err); return null; }
 }
 
 // ----------------- Download -----------------
@@ -177,14 +178,18 @@ function buildPricingMatcher(rows) {
 }
 
 // ----------------- Modified: renderResults (hide repeated Claim ID) -----------------
-function renderResults(rows) {
-  const container = el('outputTableContainer');
-  if (!rows || !rows.length) { container.innerHTML = '<div>No results</div>'; return; }
+function buildResultsTable(rows) {
+  if (!rows || !rows.length) {
+    const emptyDiv = document.createElement('div');
+    emptyDiv.textContent = 'No results';
+    return emptyDiv;
+  }
 
   // Map rows to index for modal linking
   rows.forEach((r, i) => r._originalIndex = i);
   lastResults = rows.slice(); // ensure modal access
 
+  const container = document.createElement('div');
   let prevClaimId = null;
   let html = `<table class="table table-striped table-bordered" style="width:100%;border-collapse:collapse"><thead><tr>
     <th style="padding:8px;border:1px solid #ccc">Claim ID</th>
@@ -219,6 +224,7 @@ function renderResults(rows) {
 
   html += `</tbody></table>`;
   container.innerHTML = html;
+  return container;
 }
 
 // ----------------- Modal comparison -----------------
@@ -301,9 +307,10 @@ function escapeHtml(str) { return String(str == null ? '' : str).replaceAll('&',
 // Unified checker entry point
 window.runPricingCheck = async function() {
   if (typeof handleRun === 'function') {
-    await handleRun();
+    return await handleRun();
   } else {
     console.error('handleRun function not found');
+    return null;
   }
 };
 

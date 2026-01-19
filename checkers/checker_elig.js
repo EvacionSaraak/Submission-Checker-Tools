@@ -732,22 +732,16 @@ function normalizeReportData(rawData) {
 /********************
  * UI RENDERING FUNCTIONS *
  ********************/
-// renderResults: no normalization of memberID in button data attributes
-function renderResults(results, eligMap) {
+// buildResultsTable: builds and returns table element
+function buildResultsTable(results, eligMap) {
   // Query for fresh DOM elements each time to avoid stale references
-  const resultsContainer = document.getElementById('results');
   const xmlRadio = document.querySelector('input[name="reportSource"][value="xml"]');
-  
-  if (!resultsContainer) {
-    console.error('Results container not found');
-    return;
-  }
-  
-  resultsContainer.innerHTML = '';
 
   if (!results || results.length === 0) {
-    resultsContainer.innerHTML = '<div class="no-results">No claims to display</div>';
-    return;
+    const emptyDiv = document.createElement('div');
+    emptyDiv.className = 'no-results';
+    emptyDiv.textContent = 'No claims to display';
+    return emptyDiv;
   }
 
   const tableContainer = document.createElement('div');
@@ -783,8 +777,7 @@ function renderResults(results, eligMap) {
     // Skip rows where Member ID is missing/empty
     if (!result.memberID || result.memberID.trim() === '') return;
 
-    // Ignore claims whose status is "Not Seen" (check report status, eligibility status, or general status)
-    // (trim + lowercase so " Not Seen " / "not seen" also match)
+    // Ignore claims whose status is "Not Seen"
     const statusToCheck = (result.claimStatus || result.status || result.fullEligibilityRecord?.Status || '')
       .toString()
       .trim()
@@ -800,11 +793,11 @@ function renderResults(results, eligMap) {
     const row = document.createElement('tr');
     // Use Bootstrap classes for row coloring
     if (result.finalStatus === 'valid') {
-      row.classList.add('table-success'); // Green for valid
+      row.classList.add('table-success');
     } else if (result.finalStatus === 'invalid') {
-      row.classList.add('table-danger'); // Red for invalid
+      row.classList.add('table-danger');
     } else {
-      row.classList.add('table-warning'); // Yellow for unknown/other
+      row.classList.add('table-warning');
     }
 
     const statusBadge = result.status 
@@ -838,7 +831,6 @@ function renderResults(results, eligMap) {
 
   table.appendChild(tbody);
   tableContainer.appendChild(table);
-  resultsContainer.appendChild(tableContainer);
 
   const summary = document.createElement('div');
   summary.className = 'loaded-count';
@@ -848,9 +840,16 @@ function renderResults(results, eligMap) {
     <span class="unknown">${statusCounts.unknown} unknown</span>, 
     <span class="invalid">${statusCounts.invalid} invalid</span>
   `;
-  resultsContainer.prepend(summary);
-
-  initEligibilityModal(results, eligMap);
+  
+  // Create wrapper container for summary + table
+  const wrapper = document.createElement('div');
+  wrapper.appendChild(summary);
+  wrapper.appendChild(tableContainer);
+  
+  // Initialize modal and attach event handlers
+  setTimeout(() => initEligibilityModal(results, eligMap), 0);
+  
+  return wrapper;
 }
 
 function initEligibilityModal(results) {
@@ -1104,21 +1103,19 @@ function handleExportInvalidClick() {
 async function runEligCheck() {
   const xmlFileInput = document.getElementById('xmlFileInput');
   const eligFileInput = document.getElementById('eligibilityFileInput');
-  const resultsDiv = document.getElementById('results');
   const statusDiv = document.getElementById('uploadStatus');
   
-  // Clear previous results
-  if (resultsDiv) resultsDiv.innerHTML = '';
+  // Clear status
   if (statusDiv) statusDiv.textContent = '';
   
   // Validate files are uploaded
   if (!xmlFileInput || !xmlFileInput.files || !xmlFileInput.files.length) {
     if (statusDiv) statusDiv.textContent = 'Please select an XML file first.';
-    return;
+    return null;
   }
   if (!eligFileInput || !eligFileInput.files || !eligFileInput.files.length) {
     if (statusDiv) statusDiv.textContent = 'Please select an eligibility XLSX file first.';
-    return;
+    return null;
   }
   
   const xmlFile = xmlFileInput.files[0];
@@ -1146,17 +1143,20 @@ async function runEligCheck() {
     // Validate claims against eligibility
     const results = validateXmlClaims(xmlResult.claims, eligMap);
     
-    // Render results to resultsDiv
+    // Store results for export
     window.lastValidationResults = results;
-    renderResults(results, eligMap);
     
     if (statusDiv) statusDiv.textContent = `Processed ${results.length} claims`;
+    
+    return buildResultsTable(results, eligMap);
   } catch (error) {
     console.error('Eligibility check error:', error);
     if (statusDiv) statusDiv.textContent = 'Processing failed: ' + error.message;
-    if (resultsDiv) resultsDiv.innerHTML = `<div class="error" style="color: red; padding: 20px; border: 1px solid red; margin: 10px;">
-      <strong>Eligibility Checker Error:</strong><br>${error.message}
-    </div>`;
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'error';
+    errorDiv.style.cssText = 'color: red; padding: 20px; border: 1px solid red; margin: 10px;';
+    errorDiv.innerHTML = `<strong>Eligibility Checker Error:</strong><br>${error.message}`;
+    return errorDiv;
   }
 }
 

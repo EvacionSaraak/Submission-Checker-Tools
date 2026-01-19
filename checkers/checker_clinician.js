@@ -260,11 +260,11 @@
   function validateClinicians() {
     if (!xmlDoc) {
       logCriticalError('No XML loaded', '');
-      return;
+      return null;
     }
     if (!facilitiesLoaded || affiliatedLicenses.size === 0) {
       logCriticalError('Facility list not loaded. Please check facilities.json and reload.', '');
-      return;
+      return null;
     }
     const claims = xmlDoc.getElementsByTagName('Claim');
     const results = [];
@@ -383,12 +383,13 @@
     });
 
     lastResults = results;
-    renderResults(results);
+    const tableElement = buildResultsTable(results);
     if (csvBtn) csvBtn.disabled = !(results.length > 0);
+    return tableElement;
   }
 
   // --- Streamlined, grouped rendering with modal for Claim IDs ---
-  function renderResults(results) {
+  function buildResultsTable(results) {
     let validCt = results.filter(r => r.valid).length;
     let total = results.length;
     let pct = total ? Math.round(validCt / total * 100) : 0;
@@ -396,7 +397,8 @@
     const groupedResults = groupResults(results);
     const modalData = {};
 
-    resultsDiv.innerHTML =
+    const container = document.createElement('div');
+    container.innerHTML =
       `<div class="${pct > 90 ? 'valid-message' : pct > 70 ? 'warning-message' : 'error-message'}">
         Validation: ${validCt}/${total} valid (${pct}%)
       </div>` +
@@ -474,37 +476,53 @@
         </div>
       </div>`;
 
-    // Attach click handlers for license history modal
-    document.querySelectorAll('.view-license-history').forEach(btn => {
-      btn.addEventListener('click', function() {
-        const fullHistory = decodeURIComponent(this.getAttribute('data-fullhistory'));
-        document.getElementById('licenseHistoryText').innerHTML = formatLicenseHistory(fullHistory);
-        document.getElementById('licenseHistoryModal').style.display = 'block';
+    // Attach click handlers for license history modal after a delay (to ensure DOM is ready)
+    setTimeout(() => {
+      document.querySelectorAll('.view-license-history').forEach(btn => {
+        btn.addEventListener('click', function() {
+          const fullHistory = decodeURIComponent(this.getAttribute('data-fullhistory'));
+          document.getElementById('licenseHistoryText').innerHTML = formatLicenseHistory(fullHistory);
+          document.getElementById('licenseHistoryModal').style.display = 'block';
+        });
       });
-    });
-    document.getElementById('licenseHistoryClose').onclick = function() {
-      document.getElementById('licenseHistoryModal').style.display = 'none';
-    };
-    document.getElementById('licenseHistoryModal').onclick = function(event) {
-      if (event.target === this) this.style.display = 'none';
-    };
+      const licenseHistoryClose = document.getElementById('licenseHistoryClose');
+      if (licenseHistoryClose) {
+        licenseHistoryClose.onclick = function() {
+          document.getElementById('licenseHistoryModal').style.display = 'none';
+        };
+      }
+      const licenseHistoryModal = document.getElementById('licenseHistoryModal');
+      if (licenseHistoryModal) {
+        licenseHistoryModal.onclick = function(event) {
+          if (event.target === this) this.style.display = 'none';
+        };
+      }
 
-    // Attach click handlers for claims group modal
-    document.querySelectorAll('.view-claims-group').forEach(btn => {
-      btn.addEventListener('click', function() {
-        const modalId = this.getAttribute('data-modalid');
-        document.getElementById('claimIdsModalText').innerHTML = modalData[modalId];
-        document.getElementById('claimIdsModal').style.display = 'block';
+      // Attach click handlers for claims group modal
+      document.querySelectorAll('.view-claims-group').forEach(btn => {
+        btn.addEventListener('click', function() {
+          const modalId = this.getAttribute('data-modalid');
+          document.getElementById('claimIdsModalText').innerHTML = modalData[modalId];
+          document.getElementById('claimIdsModal').style.display = 'block';
+        });
       });
-    });
-    document.getElementById('claimIdsModalClose').onclick = function() {
-      document.getElementById('claimIdsModal').style.display = 'none';
-    };
-    document.getElementById('claimIdsModal').onclick = function(event) {
-      if (event.target === this) this.style.display = 'none';
-    };
-
-    updateUploadStatus();
+      const claimIdsModalClose = document.getElementById('claimIdsModalClose');
+      if (claimIdsModalClose) {
+        claimIdsModalClose.onclick = function() {
+          document.getElementById('claimIdsModal').style.display = 'none';
+        };
+      }
+      const claimIdsModal = document.getElementById('claimIdsModal');
+      if (claimIdsModal) {
+        claimIdsModal.onclick = function(event) {
+          if (event.target === this) this.style.display = 'none';
+        };
+      }
+      
+      updateUploadStatus();
+    }, 0);
+    
+    return container;
   }
 
 
@@ -560,9 +578,10 @@
     uploadDiv = document.getElementById('uploadStatus');
     
     if (typeof validateClinicians === 'function') {
-      validateClinicians();
+      return validateClinicians();
     } else {
       console.error('validateClinicians function not found');
+      return null;
     }
   };
 

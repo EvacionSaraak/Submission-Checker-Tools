@@ -11,7 +11,6 @@ function validateXmlSchema() {
   const status = document.getElementById("uploadStatus");
   const resultsDiv = document.getElementById("results");
   
-  if (resultsDiv) resultsDiv.innerHTML = "";
   if (status) status.textContent = "";
 
   const fileInput = document.getElementById("xmlFile");
@@ -25,50 +24,59 @@ function validateXmlSchema() {
   
   if (!file) {
     if (status) status.textContent = "Please select an XML file first.";
-    return;
+    return null;
   }
 
-  const reader = new FileReader();
-  reader.onload = function (e) {
-    const originalXmlContent = e.target.result;
-    
-    // Replace unescaped & with "and" (but preserve valid XML entities like &amp; &lt; &gt; &quot; &apos;)
-    const xmlContent = originalXmlContent.replace(/&(?!(amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;))/g, "and");
-    
-    const parser = new DOMParser();
-    const xmlDoc = parser.parseFromString(xmlContent, "application/xml");
-    const parseErrors = xmlDoc.getElementsByTagName("parsererror");
-    if (parseErrors.length > 0) {
-      status.textContent = "XML Parsing Error: The file is not well-formed.";
-      resultsDiv.innerHTML = `<pre>${parseErrors[0].textContent}</pre>`;
-      return;
-    }
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = function (e) {
+      const originalXmlContent = e.target.result;
+      
+      // Replace unescaped & with "and" (but preserve valid XML entities like &amp; &lt; &gt; &quot; &apos;)
+      const xmlContent = originalXmlContent.replace(/&(?!(amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;))/g, "and");
+      
+      const parser = new DOMParser();
+      const xmlDoc = parser.parseFromString(xmlContent, "application/xml");
+      const parseErrors = xmlDoc.getElementsByTagName("parsererror");
+      if (parseErrors.length > 0) {
+        status.textContent = "XML Parsing Error: The file is not well-formed.";
+        const errorDiv = document.createElement('pre');
+        errorDiv.textContent = parseErrors[0].textContent;
+        resolve(errorDiv);
+        return;
+      }
 
-    // Detect schema type
-    let results = [];
-    let schemaType = "";
-    if (xmlDoc.documentElement.nodeName === "Claim.Submission") {
-      schemaType = "claim";
-      results = validateClaimSchema(xmlDoc, originalXmlContent);
-    } else if (xmlDoc.documentElement.nodeName === "Person.Register") {
-      schemaType = "person";
-      results = validatePersonSchema(xmlDoc, originalXmlContent);
-    } else {
-      status.textContent = "Unknown schema: " + xmlDoc.documentElement.nodeName;
-      return;
-    }
-    renderResults(results, resultsDiv, schemaType);
+      // Detect schema type
+      let results = [];
+      let schemaType = "";
+      if (xmlDoc.documentElement.nodeName === "Claim.Submission") {
+        schemaType = "claim";
+        results = validateClaimSchema(xmlDoc, originalXmlContent);
+      } else if (xmlDoc.documentElement.nodeName === "Person.Register") {
+        schemaType = "person";
+        results = validatePersonSchema(xmlDoc, originalXmlContent);
+      } else {
+        status.textContent = "Unknown schema: " + xmlDoc.documentElement.nodeName;
+        resolve(null);
+        return;
+      }
+      
+      const tableElement = renderResults(results, schemaType);
 
-    // Stats
-    const total = results.length;
-    const valid = results.filter(r => r.Valid).length;
-    const percent = total > 0 ? ((valid / total) * 100).toFixed(1) : "0.0";
-    status.textContent = `Valid ${schemaType === "claim" ? "claims" : "persons"}: ${valid} / ${total} (${percent}%)`;
-  };
-  reader.onerror = function () {
-    status.textContent = "Error reading the file.";
-  };
-  reader.readAsText(file);
+      // Stats
+      const total = results.length;
+      const valid = results.filter(r => r.Valid).length;
+      const percent = total > 0 ? ((valid / total) * 100).toFixed(1) : "0.0";
+      status.textContent = `Valid ${schemaType === "claim" ? "claims" : "persons"}: ${valid} / ${total} (${percent}%)`;
+      
+      resolve(tableElement);
+    };
+    reader.onerror = function () {
+      status.textContent = "Error reading the file.";
+      resolve(null);
+    };
+    reader.readAsText(file);
+  });
 }
 
 function checkForFalseValues(parent, invalidFields, prefix = "") {
@@ -448,57 +456,58 @@ function claimToHtmlTable(xmlString) {
   return html;
 }
 
-// renderResults (stores last results on window - button removed for unified interface)
-function renderResults(results, container, schemaType) {
+// renderResults - builds and RETURNS table element instead of inserting into DOM
+function renderResults(results, schemaType) {
   // keep a global reference so export works even if scopes change
   const safeResults = Array.isArray(results) ? results.slice() : [];
   window._lastValidationResults = safeResults;
   window._lastValidationSchema = schemaType || "claim";
-  
-  // Don't clear container here - validateXmlSchema() already cleared it at line 12
-  // Clearing here would remove tables from OTHER checkers if schema runs after them
-  
-  // Export button removed - unified interface handles export
 
   const idLabel = schemaType === "person" ? "Member ID" : "Claim ID";
   
+  // Create table element
+  const table = document.createElement('table');
+  table.className = 'table table-striped table-bordered';
+  table.style.borderCollapse = 'collapse';
+  table.style.width = '100%';
+  
   // Build table using innerHTML for consistency with other checkers (teeth, elig, auths)
   const tableHTML = `
-    <table class="table table-striped table-bordered" style="border-collapse:collapse;width:100%">
-      <thead>
-        <tr>
-          <th style="padding:8px;border:1px solid #ccc">${idLabel}</th>
-          <th style="padding:8px;border:1px solid #ccc">Remark</th>
-          <th style="padding:8px;border:1px solid #ccc">Valid</th>
-          <th style="padding:8px;border:1px solid #ccc">View Full Entry</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${safeResults.map((row, index) => {
-          // Use Bootstrap classes for consistent row coloring
-          const rowClass = row.Valid ? 'table-success' : 'table-danger';
-          return `
-            <tr class="${rowClass}">
-              <td style="padding:6px;border:1px solid #ccc">${sanitizeForHTML(row.ClaimID)}</td>
-              <td style="padding:6px;border:1px solid #ccc">${sanitizeForHTML(row.Remark)}</td>
-              <td style="padding:6px;border:1px solid #ccc">${row.Valid ? "Yes" : "No"}</td>
-              <td style="padding:6px;border:1px solid #ccc">
-                <button class="view-claim-btn" data-index="${index}">View</button>
-              </td>
-            </tr>`;
-        }).join('')}
-      </tbody>
-    </table>`;
+    <thead>
+      <tr>
+        <th style="padding:8px;border:1px solid #ccc">${idLabel}</th>
+        <th style="padding:8px;border:1px solid #ccc">Remark</th>
+        <th style="padding:8px;border:1px solid #ccc">Valid</th>
+        <th style="padding:8px;border:1px solid #ccc">View Full Entry</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${safeResults.map((row, index) => {
+        // Use Bootstrap classes for consistent row coloring
+        const rowClass = row.Valid ? 'table-success' : 'table-danger';
+        return `
+          <tr class="${rowClass}">
+            <td style="padding:6px;border:1px solid #ccc">${sanitizeForHTML(row.ClaimID)}</td>
+            <td style="padding:6px;border:1px solid #ccc">${sanitizeForHTML(row.Remark)}</td>
+            <td style="padding:6px;border:1px solid #ccc">${row.Valid ? "Yes" : "No"}</td>
+            <td style="padding:6px;border:1px solid #ccc">
+              <button class="view-claim-btn" data-index="${index}">View</button>
+            </td>
+          </tr>`;
+      }).join('')}
+    </tbody>`;
   
-  container.innerHTML = tableHTML;
+  table.innerHTML = tableHTML;
   
-  // Attach event listeners to view buttons after DOM is updated
+  // Attach event listeners to view buttons
   safeResults.forEach((row, index) => {
-    const btn = container.querySelector(`.view-claim-btn[data-index="${index}"]`);
+    const btn = table.querySelector(`.view-claim-btn[data-index="${index}"]`);
     if (btn) {
       btn.onclick = () => showModal(claimToHtmlTable(row.ClaimXML));
     }
   });
+  
+  return table;
 }
 
 // Helper function to sanitize text for HTML insertion

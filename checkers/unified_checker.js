@@ -490,7 +490,15 @@
       }
       
       console.log(`[DEBUG] Executing ${checkerName} checker function`);
-      await checkerFn();
+      const tableElement = await checkerFn();  // GET the returned table
+      
+      // ✅ NEW: Render the returned table
+      if (tableElement && resultsDiv) {
+        console.log(`[DEBUG] Rendering table returned from ${checkerName}`);
+        resultsDiv.appendChild(tableElement);
+      } else if (!tableElement) {
+        console.log(`[DEBUG] ${checkerName} returned no table (may have rendered status message instead)`);
+      }
       
     } catch (error) {
       console.error(`[DEBUG] Error executing ${checkerName}:`, error);

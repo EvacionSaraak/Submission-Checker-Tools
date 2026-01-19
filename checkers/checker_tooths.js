@@ -505,79 +505,91 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions) {
   return rows;
 }
 
-function renderResults(container, rows) {
+function buildResultsTable(rows) {
   // Defensive check: ensure rows is an array
   if (!Array.isArray(rows)) {
     console.error('[TEETH] Invalid results - expected array, got:', typeof rows, rows);
-    container.innerHTML = '<div class="alert alert-danger">Error: Invalid data structure for results table</div>';
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'alert alert-danger';
+    errorDiv.textContent = 'Error: Invalid data structure for results table';
     const summaryBox = document.getElementById('resultsSummary');
     if (summaryBox) summaryBox.textContent = '';
     const exportBtn = document.getElementById('exportBtn');
     if (exportBtn) exportBtn.style.display = 'none';
-    return;
+    return errorDiv;
   }
   
   const summaryBox = document.getElementById('resultsSummary');
   if (!rows.length) {
-    container.innerHTML = '<p>No activities found.</p>';
-    summaryBox.textContent = '';
-    document.getElementById('exportBtn').style.display = 'none';
-    return;
+    if (summaryBox) summaryBox.textContent = '';
+    const exportBtn = document.getElementById('exportBtn');
+    if (exportBtn) exportBtn.style.display = 'none';
+    const emptyDiv = document.createElement('p');
+    emptyDiv.textContent = 'No activities found.';
+    return emptyDiv;
   }
 
   let lastClaimId = null;
   window.invalidRows = rows.filter(r => r.remarks && r.remarks.length > 0);
-  document.getElementById('exportBtn').style.display = window.invalidRows.length ? 'inline-block' : 'none';
+  const exportBtn = document.getElementById('exportBtn');
+  if (exportBtn) exportBtn.style.display = window.invalidRows.length ? 'inline-block' : 'none';
 
   const claimSummaries = rows.__claimSummaries || {};
   const totalClaims = Object.keys(claimSummaries).length;
   const validClaims = Object.values(claimSummaries).filter(isInvalid => !isInvalid).length;
   const percentage = totalClaims === 0 ? "0.0" : ((validClaims / totalClaims) * 100).toFixed(1);
 
-  summaryBox.textContent = `Valid claims: ${validClaims} / ${totalClaims} (${percentage}%)`;
+  if (summaryBox) summaryBox.textContent = `Valid claims: ${validClaims} / ${totalClaims} (${percentage}%)`;
+
+  const table = document.createElement('table');
+  table.className = 'table table-striped table-bordered';
+  table.style.width = '100%';
+  table.style.borderCollapse = 'collapse';
 
   const html = `
-    <table class="table table-striped table-bordered" style="width:100%;border-collapse:collapse">
-      <thead>
-        <tr>
-          <th style="padding:8px;border:1px solid #ccc">Claim ID</th>
-          <th style="padding:8px;border:1px solid #ccc">Activity ID</th>
-          <th style="padding:8px;border:1px solid #ccc">Code</th>
-          <th class="description-col" style="padding:8px;border:1px solid #ccc">Description</th>
-          <th style="padding:8px;border:1px solid #ccc">Observations</th>
-          <th class="description-col" style="padding:8px;border:1px solid #ccc">Remarks</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${rows.map(r => {
-          const showClaimId = r.claimId !== lastClaimId;
-          lastClaimId = r.claimId;
-          const rowClass = r.remarks && r.remarks.length > 0 ? 'table-danger' : 'table-success';
-          // Always include claim ID in data attribute for filtering visibility
-          return `
-            <tr class="${rowClass}" data-claim-id="${r.claimId || ''}">
-              <td style="padding:6px;border:1px solid #ccc" class="claim-id-cell">${showClaimId ? r.claimId : ''}</td>
-              <td style="padding:6px;border:1px solid #ccc">${r.activityId}</td>
-              <td style="padding:6px;border:1px solid #ccc">${r.code}</td>
-              <td class="description-col" style="padding:6px;border:1px solid #ccc">${r.description}</td>
-              <td style="padding:6px;border:1px solid #ccc">${r.details}</td>
-              <td class="description-col" style="padding:6px;border:1px solid #ccc">${r.remarks.join('<br>')}</td>
-            </tr>`;
-        }).join('')}
-      </tbody>
-    </table>`;
+    <thead>
+      <tr>
+        <th style="padding:8px;border:1px solid #ccc">Claim ID</th>
+        <th style="padding:8px;border:1px solid #ccc">Activity ID</th>
+        <th style="padding:8px;border:1px solid #ccc">Code</th>
+        <th class="description-col" style="padding:8px;border:1px solid #ccc">Description</th>
+        <th style="padding:8px;border:1px solid #ccc">Observations</th>
+        <th class="description-col" style="padding:8px;border:1px solid #ccc">Remarks</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rows.map(r => {
+        const showClaimId = r.claimId !== lastClaimId;
+        lastClaimId = r.claimId;
+        const rowClass = r.remarks && r.remarks.length > 0 ? 'table-danger' : 'table-success';
+        return `
+          <tr class="${rowClass}" data-claim-id="${r.claimId || ''}">
+            <td style="padding:6px;border:1px solid #ccc" class="claim-id-cell">${showClaimId ? r.claimId : ''}</td>
+            <td style="padding:6px;border:1px solid #ccc">${r.activityId}</td>
+            <td style="padding:6px;border:1px solid #ccc">${r.code}</td>
+            <td class="description-col" style="padding:6px;border:1px solid #ccc">${r.description}</td>
+            <td style="padding:6px;border:1px solid #ccc">${r.details}</td>
+            <td class="description-col" style="padding:6px;border:1px solid #ccc">${r.remarks.join('<br>')}</td>
+          </tr>`;
+      }).join('')}
+    </tbody>`;
 
-  container.innerHTML = html;
+  table.innerHTML = html;
   
   // Add observer to fill in Claim IDs when filtering hides rows
   const observer = new MutationObserver(() => {
     fillMissingClaimIds();
   });
   
-  const tbody = container.querySelector('tbody');
+  const tbody = table.querySelector('tbody');
   if (tbody) {
     observer.observe(tbody, { attributes: true, attributeFilter: ['style'], subtree: true });
   }
+  
+  setTimeout(() => fillMissingClaimIds(), 0);
+  
+  return table;
+}
   
   // Initial fill in case filter is already active
   fillMissingClaimIds();
@@ -637,19 +649,16 @@ document.getElementById('exportBtn')?.addEventListener('click', () => {
   XLSX.writeFile(wb, "invalid_tooths.xlsx");
 });
 
-// Main XML parsing function
+// Main XML parsing function - returns Promise<Element>
 function parseXML() {
   const xmlInput    = document.getElementById('xmlFile');
-  const resultsDiv  = document.getElementById('results');
   const messageBox  = document.getElementById('messageBox');
   
   // Defensive null checks
   if (messageBox) messageBox.textContent = '';
-  if (resultsDiv) resultsDiv.innerHTML   = '';
   
   console.log('[TEETH] parseXML() called');
   console.log('[TEETH] xmlInput element:', !!xmlInput);
-  console.log('[TEETH] resultsDiv element:', !!resultsDiv);
   console.log('[TEETH] messageBox element:', !!messageBox);
 
   let file = xmlInput?.files?.[0];
@@ -666,13 +675,15 @@ function parseXML() {
     const msg = 'Please upload an XML file.';
     console.error('[TEETH]', msg);
     if (messageBox) messageBox.textContent = msg;
-    if (resultsDiv) resultsDiv.innerHTML = `<div class="alert alert-warning">${msg}</div>`;
-    return;
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'alert alert-warning';
+    errorDiv.textContent = msg;
+    return Promise.resolve(errorDiv);
   }
   
   console.log('[TEETH] Starting file processing...');
 
-  Promise.all([
+  return Promise.all([
     new Promise((res, rej) => {
       const rdr = new FileReader();
       rdr.onload  = () => {
@@ -706,15 +717,19 @@ function parseXML() {
     if (xmlDoc.querySelector('parsererror')) throw new Error('Invalid XML file');
     console.log('[TEETH] XML parsed, validating activities...');
     const rows     = validateActivities(xmlDoc, toothMap, authMap);
-    console.log('[TEETH] Validation complete, rendering results... (rows:', rows.length, ')');
-    renderResults(resultsDiv, rows);
-    console.log('[TEETH] Render complete');
+    console.log('[TEETH] Validation complete, building table... (rows:', rows.length, ')');
+    const tableElement = buildResultsTable(rows);
+    console.log('[TEETH] Table build complete');
+    return tableElement;
   })
   .catch(err => {
     console.error('[TEETH] Error during processing:', err);
     const errorMsg = err.toString();
     if (messageBox) messageBox.textContent = errorMsg;
-    if (resultsDiv) resultsDiv.innerHTML = `<div class="alert alert-danger">Error: ${errorMsg}</div>`;
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'alert alert-danger';
+    errorDiv.textContent = `Error: ${errorMsg}`;
+    return errorDiv;
   });
 }
 

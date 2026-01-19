@@ -367,22 +367,18 @@ function validateClaims(xmlDoc, xlsxData) {
 }
 
 // === RENDERERS ===
-function renderResults(results) {
-  const container = document.getElementById("results");
-  
-  if (!container) {
-    console.error('Results container not found');
-    return;
-  }
-  
-  container.innerHTML = "";
-
+function buildResultsTable(results) {
   // Validate results is an array
   if (!Array.isArray(results)) {
-    console.error('renderResults: results is not an array:', results);
-    container.innerHTML = '<div class="alert alert-danger">Error: Invalid results data structure</div>';
-    return;
+    console.error('buildResultsTable: results is not an array:', results);
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'alert alert-danger';
+    errorDiv.textContent = 'Error: Invalid results data structure';
+    return errorDiv;
   }
+
+  // Create container div
+  const container = document.createElement('div');
 
   // Show "X loaded" count at the top
   const loadedMsg = document.createElement("div");
@@ -406,7 +402,7 @@ function renderResults(results) {
       Authorization rows loaded from XLSX: ${xlsxAuthCount}
     `;
     container.appendChild(noResultsMsg);
-    return;
+    return container;
   }
 
   // Preprocess grouped claim/code sums
@@ -446,7 +442,7 @@ function renderResults(results) {
   table.appendChild(tbody);
   container.appendChild(table);
 
-  setupDetailsModal(results, claimCodeSums);
+  setTimeout(() => setupDetailsModal(results, claimCodeSums), 0);
   
   // Add MutationObserver to detect when filter hides/shows rows
   const observer = new MutationObserver(() => {
@@ -462,7 +458,9 @@ function renderResults(results) {
   }
   
   // Fill immediately if filter is already active
-  fillMissingClaimIds();
+  setTimeout(() => fillMissingClaimIds(), 0);
+  
+  return container;
 }
 
 // Helper function to fill missing Claim IDs when rows are filtered
@@ -818,11 +816,9 @@ function postProcessResults(results) {
 async function runAuthsCheck() {
   const xmlFileInput = document.getElementById('xmlInput');
   const xlsxFileInput = document.getElementById('xlsxInput');
-  const resultsDiv = document.getElementById('results');
   const statusDiv = document.getElementById('uploadStatus');
   
-  // Clear previous results
-  if (resultsDiv) resultsDiv.innerHTML = '';
+  // Clear status
   if (statusDiv) statusDiv.textContent = '';
   
   // Get XML file - try input element first, then fall back to unified cache
@@ -842,11 +838,11 @@ async function runAuthsCheck() {
   // Validate files are uploaded
   if (!xmlFile) {
     if (statusDiv) statusDiv.textContent = 'Please select an XML file first.';
-    return;
+    return null;
   }
   if (!xlsxFile) {
     if (statusDiv) statusDiv.textContent = 'Please select an authorization XLSX file first.';
-    return;
+    return null;
   }
   
   try {
@@ -876,17 +872,21 @@ async function runAuthsCheck() {
       hasAuthRules: Object.keys(authRules).length > 0
     });
     
-    // Render results to resultsDiv
-    renderResults(results);
+    // Build and return table
+    const tableElement = buildResultsTable(results);
     postProcessResults(results);
     
     if (statusDiv) statusDiv.textContent = `Processed ${results.length} authorization activities`;
+    
+    return tableElement;
   } catch (error) {
     console.error('Authorization check error:', error);
     if (statusDiv) statusDiv.textContent = 'Processing failed: ' + error.message;
-    if (resultsDiv) resultsDiv.innerHTML = `<div class="error" style="color: red; padding: 20px; border: 1px solid red; margin: 10px;">
-      <strong>Authorization Checker Error:</strong><br>${error.message}
-    </div>`;
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'error';
+    errorDiv.style.cssText = 'color: red; padding: 20px; border: 1px solid red; margin: 10px;';
+    errorDiv.innerHTML = `<strong>Authorization Checker Error:</strong><br>${error.message}`;
+    return errorDiv;
   }
 }
 

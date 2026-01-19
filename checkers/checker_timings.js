@@ -5,29 +5,36 @@
     // --- Main Entry Point (called by unified interface) ---
     async function validateTimingsAsync() {
   const xmlInput = document.getElementById('xmlFileInput');
-  const resultsDiv = document.getElementById('results');
-  
-  clearResults();
+  const status = document.getElementById('uploadStatus');
   
   if (!xmlInput || !xmlInput.files || !xmlInput.files.length) {
-    return renderMessage('No XML file selected.');
+    if (status) status.textContent = 'No XML file selected.';
+    return null;
   }
   
   const file = xmlInput.files[0];
   
   try {
-    renderMessage('Processing file...');
+    if (status) status.textContent = 'Processing file...';
     const xmlText = await file.text();
     validateXMLString(xmlText);
     const xmlDoc = parseXML(xmlText);
     const selectedType = document.querySelector('input[name="claimType"]:checked')?.value || "DENTAL";
     const requiredType = (selectedType === "DENTAL") ? "6" : "3";
     const claims = extractClaims(xmlDoc, requiredType);
-    renderResults(resultsDiv, claims);
+    
+    // Update summary status
+    const invalidRows = claims.filter(r => !r.isValid);
+    window.invalidRows = invalidRows;
+    const summaryBox = document.getElementById('resultsSummary');
+    if (summaryBox) {
+      summaryBox.textContent = `Valid: ${claims.length - invalidRows.length} / ${claims.length} (${((claims.length - invalidRows.length)/claims.length*100).toFixed(1)}%)`;
+    }
     
     // Export button handler (add if button exists)
     const exportBtn = document.getElementById('exportBtn');
-    if (exportBtn && window.invalidRows?.length) {
+    if (exportBtn) {
+      exportBtn.style.display = invalidRows.length ? 'inline-block' : 'none';
       exportBtn.onclick = () => {
         const wb = XLSX.utils.book_new();
         const wsData = [
@@ -41,8 +48,12 @@
         XLSX.writeFile(wb, 'invalid_timings.xlsx');
       };
     }
+    
+    if (status) status.textContent = '';
+    return buildResultsTable(claims);
   } catch (err) {
-    renderMessage(`❌ Error: ${sanitize(String(err.message))}`);
+    if (status) status.textContent = `❌ Error: ${sanitize(String(err.message))}`;
+    return null;
   }
 }
 
@@ -228,38 +239,73 @@ function buildResultsTable(rows) {
   // Defensive check: ensure rows is an array
   if (!Array.isArray(rows)) {
     console.error('buildResultsTable: rows is not an array:', rows);
-    return '<div class="alert alert-danger">Error: Invalid data structure for results table</div>';
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'alert alert-danger';
+    errorDiv.textContent = 'Error: Invalid data structure for results table';
+    return errorDiv;
   }
   
-  let prevClaimId = null, html = `
-    <table class="table table-striped table-bordered" style="width:100%;border-collapse:collapse">
-      <thead><tr>
-        <th style="padding:8px;border:1px solid #ccc">Claim ID</th>
-        <th style="padding:8px;border:1px solid #ccc">Activity ID</th>
-        <th style="padding:8px;border:1px solid #ccc">Encounter Start</th>
-        <th style="padding:8px;border:1px solid #ccc">Encounter End</th>
-        <th style="padding:8px;border:1px solid #ccc">Activity Start</th>
-        <th style="padding:8px;border:1px solid #ccc">Duration</th>
-        <th style="padding:8px;border:1px solid #ccc">Excess</th>
-        <th style="padding:8px;border:1px solid #ccc">Remarks</th>
-      </tr></thead><tbody>
+  if (!rows.length) {
+    const emptyDiv = document.createElement('p');
+    emptyDiv.textContent = 'No entries found.';
+    return emptyDiv;
+  }
+  
+  const table = document.createElement('table');
+  table.className = 'table table-striped table-bordered';
+  table.style.width = '100%';
+  table.style.borderCollapse = 'collapse';
+  
+  let prevClaimId = null;
+  const html = `
+    <thead><tr>
+      <th style="padding:8px;border:1px solid #ccc">Claim ID</th>
+      <th style="padding:8px;border:1px solid #ccc">Activity ID</th>
+      <th style="padding:8px;border:1px solid #ccc">Encounter Start</th>
+      <th style="padding:8px;border:1px solid #ccc">Encounter End</th>
+      <th style="padding:8px;border:1px solid #ccc">Activity Start</th>
+      <th style="padding:8px;border:1px solid #ccc">Duration</th>
+      <th style="padding:8px;border:1px solid #ccc">Excess</th>
+      <th style="padding:8px;border:1px solid #ccc">Remarks</th>
+    </tr></thead><tbody>
+    ${rows.map(r => {
+      const claimCell = (r.claimId !== prevClaimId) ? r.claimId : '';
+      prevClaimId = r.claimId;
+      const remarkLines = (r.remarks || []).map(line => `<div>${sanitize(line)}</div>`).join('');
+      return `<tr class="${r.isValid ? 'table-success' : 'table-danger'}" data-claim-id="${sanitize(r.claimId || '')}">
+        <td class="claim-id-cell" style="padding:6px;border:1px solid #ccc">${sanitize(claimCell)}</td>
+        <td style="padding:6px;border:1px solid #ccc">${sanitize(r.activityId)}</td>
+        <td style="padding:6px;border:1px solid #ccc">${sanitize(r.encounterStart)}</td>
+        <td style="padding:6px;border:1px solid #ccc">${sanitize(r.encounterEnd)}</td>
+        <td style="padding:6px;border:1px solid #ccc">${sanitize(r.start)}</td>
+        <td style="padding:6px;border:1px solid #ccc">${sanitize(r.duration)}</td>
+        <td style="padding:6px;border:1px solid #ccc">${sanitize(r.excess)}</td>
+        <td style="padding:6px;border:1px solid #ccc">${remarkLines}</td>
+      </tr>`;
+    }).join('')}
+    </tbody>
   `;
-  rows.forEach(r => {
-    const claimCell = (r.claimId !== prevClaimId) ? r.claimId : '';
-    prevClaimId = r.claimId;
-    const remarkLines = (r.remarks || []).map(line => `<div>${sanitize(line)}</div>`).join('');
-    html += `<tr class="${r.isValid ? 'table-success' : 'table-danger'}" data-claim-id="${sanitize(r.claimId || '')}">
-      <td class="claim-id-cell" style="padding:6px;border:1px solid #ccc">${sanitize(claimCell)}</td>
-      <td style="padding:6px;border:1px solid #ccc">${sanitize(r.activityId)}</td>
-      <td style="padding:6px;border:1px solid #ccc">${sanitize(r.encounterStart)}</td>
-      <td style="padding:6px;border:1px solid #ccc">${sanitize(r.encounterEnd)}</td>
-      <td style="padding:6px;border:1px solid #ccc">${sanitize(r.start)}</td>
-      <td style="padding:6px;border:1px solid #ccc">${sanitize(r.duration)}</td>
-      <td style="padding:6px;border:1px solid #ccc">${sanitize(r.excess)}</td>
-      <td style="padding:6px;border:1px solid #ccc">${remarkLines}</td>
-    </tr>`;
+  
+  table.innerHTML = html;
+  
+  // Add MutationObserver to detect when filter hides/shows rows
+  const observer = new MutationObserver(() => {
+    fillMissingClaimIds();
   });
-  return html + "</tbody></table>";
+  
+  const tbody = table.querySelector('tbody');
+  if (tbody) {
+    observer.observe(tbody, { 
+      attributes: true, 
+      attributeFilter: ['style'],
+      subtree: true 
+    });
+  }
+  
+  // Fill immediately if filter is already active
+  setTimeout(() => fillMissingClaimIds(), 0);
+  
+  return table;
 }
 
 // Helper function to fill missing Claim IDs when rows are filtered

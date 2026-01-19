@@ -68,7 +68,7 @@ async function handleRun() {
     });
 
     lastResults = output;
-    renderResults(output);
+    const tableElement = buildResultsTable(output);
     lastWorkbook = makeWorkbookFromJson(output, 'checker_modifiers_results');
     toggleDownload(output.length > 0);
 
@@ -78,8 +78,10 @@ async function handleRun() {
     const percent = totalCount ? Math.round((validCount / totalCount) * 100) : 0;
     message(`Completed — ${validCount}/${totalCount} rows correct (${percent}%)`, percent === 100 ? 'green' : 'orange');
 
+    return tableElement;
   } catch (err) {
     showError(err);
+    return null;
   }
 }
 
@@ -258,11 +260,11 @@ function expectedModifierForVOI(voi) {
 }
 
 // ----------------- Rendering -----------------
-function renderResults(rows) {
-  const container = el('outputTableContainer');
+function buildResultsTable(rows) {
   if (!rows || !rows.length) {
-    container.innerHTML = '<div>No results</div>';
-    return;
+    const emptyDiv = document.createElement('div');
+    emptyDiv.textContent = 'No results';
+    return emptyDiv;
   }
 
   console.info('[DEBUG] total rows from mapping:', rows.length);
@@ -276,13 +278,15 @@ function renderResults(rows) {
   });
 
   if (!filteredRows.length) {
-    container.innerHTML = '<div>No matching claims (only A001 and E001 shown)</div>';
-    return;
+    const emptyDiv = document.createElement('div');
+    emptyDiv.textContent = 'No matching claims (only A001 and E001 shown)';
+    return emptyDiv;
   }
 
   // Map filtered rows back to original lastResults indices for modal linking
   filteredRows.forEach(r => { r._originalIndex = rows.indexOf(r); });
 
+  const container = document.createElement('div');
   let prevClaimId = null, prevMemberId = null, prevActivityId = null;
   let validCount = 0;
 
@@ -338,6 +342,7 @@ function renderResults(rows) {
 
   html += `</tbody></table>`;
   container.innerHTML = html;
+  return container;
 }
 
 // ----------------- Utilities -----------------
@@ -471,9 +476,10 @@ function closeEligibilityModal() { const modal = el('eligibilityModal'); if (mod
 // Unified checker entry point
 window.runModifiersCheck = async function() {
   if (typeof handleRun === 'function') {
-    await handleRun();
+    return await handleRun();
   } else {
     console.error('handleRun function not found');
+    return null;
   }
 };
 
