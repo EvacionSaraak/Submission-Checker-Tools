@@ -40,6 +40,9 @@
   
   // Debug log for Check All functionality
   let debugLog = [];
+  
+  // Storage for invalid rows from Check All
+  let invalidRowsData = [];
 
   // Helper function to add to debug log
   function logDebug(message, data = null) {
@@ -90,6 +93,7 @@
       
       // Export and filter
       exportBtn: document.getElementById('exportBtn'),
+      exportInvalidsBtn: document.getElementById('exportInvalidsBtn'),
       floatingFilterBtn: document.getElementById('floatingFilterBtn'),
       debugLogContainer: document.getElementById('debugLogContainer'),
       downloadDebugLogBtn: document.getElementById('downloadDebugLogBtn'),
@@ -139,6 +143,12 @@
 
     // Export button
     elements.exportBtn.addEventListener('click', exportResults);
+    
+    // Export Invalids button
+    if (elements.exportInvalidsBtn) {
+      elements.exportInvalidsBtn.addEventListener('click', exportInvalids);
+      console.log('[INIT] Export Invalids button found, attached event listener');
+    }
 
     // Debug log download button
     if (elements.downloadDebugLogBtn) {
@@ -249,7 +259,40 @@
 
       // Set files in the checker's hidden inputs and run
       console.log(`[DEBUG] Executing ${checkerName} checker...`);
-      await executeChecker(checkerName, container);
+      const tableElement = await executeChecker(checkerName, container);
+
+      // Collect invalid rows from this individual checker
+      if (tableElement) {
+        const invalidRows = tableElement.querySelectorAll('tbody tr.table-danger, tbody tr.table-warning, tbody tr.invalid, tbody tr.unknown');
+        if (invalidRows.length > 0) {
+          console.log(`[CHECKER] Found ${invalidRows.length} invalid rows in ${checkerName}`);
+          // Reset invalidRowsData for single checker (don't accumulate from previous runs)
+          invalidRowsData = [];
+          invalidRows.forEach(row => {
+            const rowData = {
+              checker: checkerName,
+              cells: []
+            };
+            row.querySelectorAll('td').forEach(cell => {
+              rowData.cells.push(cell.textContent.trim());
+            });
+            invalidRowsData.push(rowData);
+          });
+          
+          // Enable Export Invalids button
+          if (elements.exportInvalidsBtn) {
+            elements.exportInvalidsBtn.disabled = false;
+            console.log(`[CHECKER] Export Invalids button enabled (${invalidRows.length} invalid rows)`);
+          }
+        } else {
+          // No invalids found, disable button
+          invalidRowsData = [];
+          if (elements.exportInvalidsBtn) {
+            elements.exportInvalidsBtn.disabled = true;
+            console.log(`[CHECKER] Export Invalids button disabled (no invalid rows)`);
+          }
+        }
+      }
 
       // Bug #6: Clean up inactive containers to free memory
       cleanupInactiveContainers(checkerName);
@@ -530,9 +573,15 @@
   async function runAllCheckers() {
     console.log('[CHECK-ALL] Starting Check All functionality...');
     
-    // Reset debug log
+    // Reset debug log and invalid rows data
     debugLog = [];
+    invalidRowsData = [];
     logDebug('Check All Started', { timestamp: new Date().toISOString() });
+    
+    // Disable Export Invalids button initially
+    if (elements.exportInvalidsBtn) {
+      elements.exportInvalidsBtn.disabled = true;
+    }
     
     // Hide debug log button initially
     if (elements.debugLogContainer) {
@@ -692,6 +741,22 @@
           const rowCount = table.querySelectorAll('tbody tr').length;
           console.log(`[CHECK-ALL] ✓ ${checkerName} checker completed successfully`);
           
+          // Collect invalid rows from this table
+          const invalidRows = table.querySelectorAll('tbody tr.table-danger, tbody tr.table-warning, tbody tr.invalid, tbody tr.unknown');
+          if (invalidRows.length > 0) {
+            console.log(`[CHECK-ALL] Found ${invalidRows.length} invalid rows in ${checkerName}`);
+            invalidRows.forEach(row => {
+              const rowData = {
+                checker: checkerName,
+                cells: []
+              };
+              row.querySelectorAll('td').forEach(cell => {
+                rowData.cells.push(cell.textContent.trim());
+              });
+              invalidRowsData.push(rowData);
+            });
+          }
+          
           // Copy table to check-all results section
           if (sectionResults && table) {
             sectionResults.appendChild(table.cloneNode(true));
@@ -791,6 +856,16 @@
     if (successCount > 0 && elements.exportBtn) {
       elements.exportBtn.disabled = false;
       logDebug('Export Button Enabled', { resultsCount: successCount });
+    }
+    
+    // Enable Export Invalids button if we have invalid rows
+    if (invalidRowsData.length > 0 && elements.exportInvalidsBtn) {
+      elements.exportInvalidsBtn.disabled = false;
+      console.log(`[CHECK-ALL] Export Invalids button enabled (${invalidRowsData.length} invalid rows from ${successCount} checkers)`);
+      logDebug('Export Invalids Button Enabled', { invalidRowsCount: invalidRowsData.length });
+    } else if (elements.exportInvalidsBtn) {
+      elements.exportInvalidsBtn.disabled = true;
+      console.log(`[CHECK-ALL] Export Invalids button disabled (no invalid rows found)`);
     }
     
     // Store results globally for export
@@ -919,6 +994,114 @@
     const filename = `${activeChecker || 'checker'}_results_${new Date().toISOString().slice(0, 10)}.xlsx`;
     XLSX.writeFile(wb, filename);
     console.log('[EXPORT] ✓ Single checker export complete:', filename);
+  }
+  
+  /**
+   * Export only invalid rows to Excel with unified headers
+   */
+  function exportInvalids() {
+    console.log('[EXPORT-INVALIDS] Exporting invalid rows...');
+    console.log('[EXPORT-INVALIDS] Total invalid rows:', invalidRowsData.length);
+    
+    if (!invalidRowsData || invalidRowsData.length === 0) {
+      alert('No invalid entries found. Please run a checker or Check All first.');
+      return;
+    }
+    
+    // Group invalid rows by checker to get their headers
+    const checkerGroups = {};
+    invalidRowsData.forEach(row => {
+      if (!checkerGroups[row.checker]) {
+        checkerGroups[row.checker] = [];
+      }
+      checkerGroups[row.checker].push(row);
+    });
+    
+    console.log('[EXPORT-INVALIDS] Checkers with invalids:', Object.keys(checkerGroups));
+    
+    // Collect all unique headers from all checkers
+    const allHeaders = new Set();
+    const checkerHeaders = {};
+    
+    // Get headers from the actual tables in DOM
+    Object.keys(checkerGroups).forEach(checkerName => {
+      let table = null;
+      
+      // Try to find the table in the checker's container or check-all container
+      const checkerContainer = document.getElementById(`checker-container-${checkerName}`);
+      const checkAllContainer = document.getElementById('checker-container-check-all');
+      
+      if (checkerContainer) {
+        table = checkerContainer.querySelector('table');
+      }
+      
+      if (!table && checkAllContainer) {
+        // Try to find this checker's table in Check All results
+        const tables = checkAllContainer.querySelectorAll('table');
+        tables.forEach(t => {
+          const caption = t.querySelector('caption');
+          if (caption && caption.textContent.toLowerCase().includes(checkerName.toLowerCase())) {
+            table = t;
+          }
+        });
+      }
+      
+      if (table) {
+        const headers = [];
+        table.querySelectorAll('thead th').forEach(th => {
+          const headerText = th.textContent.trim();
+          headers.push(headerText);
+          allHeaders.add(headerText);
+        });
+        checkerHeaders[checkerName] = headers;
+        console.log(`[EXPORT-INVALIDS] Headers for ${checkerName}:`, headers);
+      } else {
+        console.warn(`[EXPORT-INVALIDS] Could not find table for ${checkerName}`);
+      }
+    });
+    
+    // Convert Set to Array and sort for consistent column order
+    const unifiedHeaders = Array.from(allHeaders).sort();
+    console.log('[EXPORT-INVALIDS] Unified headers:', unifiedHeaders);
+    
+    // Build data rows with unified headers
+    const exportData = [];
+    
+    invalidRowsData.forEach(row => {
+      const rowObj = {};
+      const checkerHeadersArr = checkerHeaders[row.checker] || [];
+      
+      // Map each cell to its header, filling in blanks for missing columns
+      unifiedHeaders.forEach(header => {
+        const headerIndex = checkerHeadersArr.indexOf(header);
+        if (headerIndex >= 0 && headerIndex < row.cells.length) {
+          rowObj[header] = row.cells[headerIndex];
+        } else {
+          rowObj[header] = ''; // Blank cell for headers not in this checker
+        }
+      });
+      
+      // Add checker source as first column
+      rowObj['Checker Source'] = row.checker.toUpperCase();
+      
+      exportData.push(rowObj);
+    });
+    
+    console.log('[EXPORT-INVALIDS] Export data prepared:', exportData.length, 'rows');
+    
+    // Create workbook with unified invalid rows
+    const wb = XLSX.utils.book_new();
+    
+    // Ensure 'Checker Source' is the first column
+    const finalHeaders = ['Checker Source', ...unifiedHeaders];
+    const ws = XLSX.utils.json_to_sheet(exportData, { header: finalHeaders });
+    
+    XLSX.utils.book_append_sheet(wb, ws, 'Invalid Entries');
+    
+    const filename = `invalid_entries_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    XLSX.writeFile(wb, filename);
+    console.log('[EXPORT-INVALIDS] ✓ Invalid entries export complete:', filename);
+    console.log('[EXPORT-INVALIDS] Exported', invalidRowsData.length, 'invalid rows with', finalHeaders.length, 'columns');
   }
 
   /**
