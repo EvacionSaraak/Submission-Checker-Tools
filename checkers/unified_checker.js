@@ -915,24 +915,18 @@
   function updateExportInvalidsTooltip(reason = null) {
     if (!elements.exportInvalidsBtn) return;
     
-    // Dispose any existing tooltip first
-    if (typeof bootstrap !== 'undefined' && bootstrap.Tooltip) {
-      const existingTooltip = bootstrap.Tooltip.getInstance(elements.exportInvalidsBtn);
-      if (existingTooltip) {
-        existingTooltip.dispose();
-      }
-    }
+    const bubble = document.getElementById('exportInvalidsBubble');
+    const bubbleText = document.getElementById('exportInvalidsBubbleText');
+    
+    if (!bubble || !bubbleText) return;
     
     if (!elements.exportInvalidsBtn.disabled) {
-      // Button is enabled, remove tooltip and pointer-events style
-      elements.exportInvalidsBtn.removeAttribute('title');
-      elements.exportInvalidsBtn.removeAttribute('data-bs-toggle');
-      elements.exportInvalidsBtn.removeAttribute('data-bs-placement');
-      elements.exportInvalidsBtn.style.pointerEvents = '';
+      // Button is enabled, hide speech bubble
+      bubble.style.display = 'none';
       return;
     }
     
-    // Button is disabled, set appropriate tooltip message
+    // Button is disabled, show speech bubble with appropriate message
     let tooltipMessage = '';
     
     if (reason === 'no-tables') {
@@ -968,20 +962,9 @@
       tooltipMessage = 'No invalid entries found. Please run a checker first.';
     }
     
-    // Enable pointer events on disabled button to allow tooltips
-    elements.exportInvalidsBtn.style.pointerEvents = 'auto';
-    
-    // Set tooltip attributes
-    elements.exportInvalidsBtn.setAttribute('title', tooltipMessage);
-    elements.exportInvalidsBtn.setAttribute('data-bs-toggle', 'tooltip');
-    elements.exportInvalidsBtn.setAttribute('data-bs-placement', 'top');
-    
-    // Initialize Bootstrap tooltip
-    if (typeof bootstrap !== 'undefined' && bootstrap.Tooltip) {
-      new bootstrap.Tooltip(elements.exportInvalidsBtn, {
-        trigger: 'hover focus'
-      });
-    }
+    // Update speech bubble text and show it
+    bubbleText.textContent = tooltipMessage;
+    bubble.style.display = 'block';
   }
 
   function applyFilter() {

@@ -14,6 +14,49 @@ body {
   display: none !important;
 }
 
+/* Speech Bubble Tooltip for Export Invalids Button */
+.speech-bubble {
+  position: relative;
+  background: #f8f9fa;
+  border: 2px solid #6c757d;
+  border-radius: 8px;
+  padding: 10px 15px;
+  min-width: 250px;
+  max-width: 400px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  z-index: 1000;
+}
+
+.speech-bubble-content {
+  font-size: 14px;
+  color: #495057;
+  line-height: 1.4;
+}
+
+.speech-bubble-arrow {
+  position: absolute;
+  left: -12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 0;
+  height: 0;
+  border-top: 10px solid transparent;
+  border-bottom: 10px solid transparent;
+  border-right: 12px solid #6c757d;
+}
+
+.speech-bubble-arrow::after {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: -9px;
+  width: 0;
+  height: 0;
+  border-top: 9px solid transparent;
+  border-bottom: 9px solid transparent;
+  border-right: 10px solid #f8f9fa;
+}
+
 /* ==================== UNIFIED CHECKER INTERFACE ==================== */
 
 /* File Input Section */
