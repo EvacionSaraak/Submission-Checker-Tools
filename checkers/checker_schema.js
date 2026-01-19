@@ -30,48 +30,64 @@ function validateXmlSchema() {
   return new Promise((resolve) => {
     const reader = new FileReader();
     reader.onload = function (e) {
-      const originalXmlContent = e.target.result;
-      
-      // Replace unescaped & with "and" (but preserve valid XML entities like &amp; &lt; &gt; &quot; &apos;)
-      const xmlContent = originalXmlContent.replace(/&(?!(amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;))/g, "and");
-      
-      const parser = new DOMParser();
-      const xmlDoc = parser.parseFromString(xmlContent, "application/xml");
-      const parseErrors = xmlDoc.getElementsByTagName("parsererror");
-      if (parseErrors.length > 0) {
-        if (status) status.textContent = "XML Parsing Error: The file is not well-formed.";
-        const errorDiv = document.createElement('pre');
-        errorDiv.textContent = parseErrors[0].textContent;
-        resolve(errorDiv);
-        return;
-      }
+      try {
+        const originalXmlContent = e.target.result;
+        
+        // Replace unescaped & with "and" (but preserve valid XML entities like &amp; &lt; &gt; &quot; &apos;)
+        const xmlContent = originalXmlContent.replace(/&(?!(amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;))/g, "and");
+        
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(xmlContent, "application/xml");
+        const parseErrors = xmlDoc.getElementsByTagName("parsererror");
+        if (parseErrors.length > 0) {
+          console.log('[SCHEMA] XML parsing error detected');
+          if (status) status.textContent = "XML Parsing Error: The file is not well-formed.";
+          const errorDiv = document.createElement('pre');
+          errorDiv.textContent = parseErrors[0].textContent;
+          resolve(errorDiv);
+          return;
+        }
 
-      // Detect schema type
-      let results = [];
-      let schemaType = "";
-      if (xmlDoc.documentElement.nodeName === "Claim.Submission") {
-        schemaType = "claim";
-        results = validateClaimSchema(xmlDoc, originalXmlContent);
-      } else if (xmlDoc.documentElement.nodeName === "Person.Register") {
-        schemaType = "person";
-        results = validatePersonSchema(xmlDoc, originalXmlContent);
-      } else {
-        if (status) status.textContent = "Unknown schema: " + xmlDoc.documentElement.nodeName;
+        // Detect schema type
+        let results = [];
+        let schemaType = "";
+        if (xmlDoc.documentElement.nodeName === "Claim.Submission") {
+          schemaType = "claim";
+          console.log('[SCHEMA] Validating Claim schema');
+          results = validateClaimSchema(xmlDoc, originalXmlContent);
+          console.log('[SCHEMA] Claim validation complete, results count:', results.length);
+        } else if (xmlDoc.documentElement.nodeName === "Person.Register") {
+          schemaType = "person";
+          console.log('[SCHEMA] Validating Person schema');
+          results = validatePersonSchema(xmlDoc, originalXmlContent);
+          console.log('[SCHEMA] Person validation complete, results count:', results.length);
+        } else {
+          console.log('[SCHEMA] Unknown schema type:', xmlDoc.documentElement.nodeName);
+          if (status) status.textContent = "Unknown schema: " + xmlDoc.documentElement.nodeName;
+          resolve(null);
+          return;
+        }
+        
+        console.log('[SCHEMA] Rendering results table...');
+        const tableElement = renderResults(results, schemaType);
+        console.log('[SCHEMA] Table element created:', tableElement ? 'success' : 'failed');
+
+        // Stats
+        const total = results.length;
+        const valid = results.filter(r => r.Valid).length;
+        const percent = total > 0 ? ((valid / total) * 100).toFixed(1) : "0.0";
+        if (status) status.textContent = `Valid ${schemaType === "claim" ? "claims" : "persons"}: ${valid} / ${total} (${percent}%)`;
+        
+        console.log('[SCHEMA] Resolving with table element');
+        resolve(tableElement);
+      } catch (error) {
+        console.error('[SCHEMA] Error during validation:', error);
+        if (status) status.textContent = "Error: " + error.message;
         resolve(null);
-        return;
       }
-      
-      const tableElement = renderResults(results, schemaType);
-
-      // Stats
-      const total = results.length;
-      const valid = results.filter(r => r.Valid).length;
-      const percent = total > 0 ? ((valid / total) * 100).toFixed(1) : "0.0";
-      if (status) status.textContent = `Valid ${schemaType === "claim" ? "claims" : "persons"}: ${valid} / ${total} (${percent}%)`;
-      
-      resolve(tableElement);
     };
     reader.onerror = function () {
+      console.error('[SCHEMA] FileReader error');
       if (status) status.textContent = "Error reading the file.";
       resolve(null);
     };
