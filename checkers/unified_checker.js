@@ -1303,6 +1303,9 @@
         console.log(`[EXPORT-INVALIDS] Found ${invalidRowElements.length} invalid row(s) in ${checkerName}`);
         totalInvalidCount += invalidRowElements.length;
         
+        // Track last non-empty Claim ID for this table
+        let lastClaimId = 'Unknown';
+        
         invalidRowElements.forEach(rowElement => {
           const cells = [];
           rowElement.querySelectorAll('td').forEach(td => {
@@ -1310,7 +1313,20 @@
           });
           
           // Extract Claim ID (typically first column)
-          const claimId = cells.length > 0 ? cells[0] : 'Unknown';
+          // If empty, use the last non-empty Claim ID from previous row
+          let claimId = cells.length > 0 ? cells[0] : '';
+          
+          if (claimId && claimId !== '') {
+            // Update last known Claim ID
+            lastClaimId = claimId;
+          } else {
+            // Use last known Claim ID for empty cells
+            claimId = lastClaimId;
+            // Update the cells array with the filled Claim ID
+            if (cells.length > 0) {
+              cells[0] = claimId;
+            }
+          }
           
           invalidRows.push({
             checkerName,
