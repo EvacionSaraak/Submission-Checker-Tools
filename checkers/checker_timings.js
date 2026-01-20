@@ -20,7 +20,7 @@
     validateXMLString(xmlText);
     const xmlDoc = parseXML(xmlText);
     const selectedType = document.querySelector('input[name="claimType"]:checked')?.value || "DENTAL";
-    const requiredType = (selectedType === "DENTAL") ? "3" : "6";
+    const requiredType = (selectedType === "DENTAL") ? "6" : "3";
     const claims = extractClaims(xmlDoc, requiredType);
     
     // Update summary status
@@ -68,7 +68,7 @@ async function onFileChange(event) {
     validateXMLString(xmlText);
     const xmlDoc = parseXML(xmlText);
     const selectedType = document.querySelector('input[name="claimType"]:checked')?.value || "DENTAL";
-    const requiredType = (selectedType === "DENTAL") ? "3" : "6";
+    const requiredType = (selectedType === "DENTAL") ? "6" : "3";
     const claims = extractClaims(xmlDoc, requiredType);
     renderResults(document.getElementById('results'), claims);
   } catch (err) {
