@@ -179,6 +179,14 @@
 
     console.log('[INIT] Performing initial button state update...');
     updateButtonStates();
+    
+    // Bug #28 fix: Ensure Modifiers button is hidden on page load if Dental is selected
+    const claimTypeDental = document.getElementById('claimTypeDental');
+    if (claimTypeDental && claimTypeDental.checked && elements.btnModifiers) {
+      console.log('[INIT] DENTAL selected on page load - ensuring Modifiers button is hidden');
+      elements.btnModifiers.style.display = 'none';
+    }
+    
     console.log('[INIT] ✓ Initialization complete! Ready for file uploads.');
   }
 
