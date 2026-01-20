@@ -1251,25 +1251,34 @@
     Object.keys(checkerGroups).forEach(checkerName => {
       let table = null;
       
-      // Try to find the table in the checker's container or check-all container
-      const checkerContainer = document.getElementById(`checker-container-${checkerName}`);
-      const checkAllContainer = document.getElementById('checker-container-check-all');
-      
-      if (checkerContainer) {
-        table = checkerContainer.querySelector('table');
+      // Change 1: Improved table-finding logic using section div IDs
+      // Try to find the table in the Check All results section first
+      const sectionResults = document.getElementById(`${checkerName}-results`);
+      if (sectionResults) {
+        table = sectionResults.querySelector('table');
       }
       
-      if (!table && checkAllContainer) {
-        // Try to find this checker's table in Check All results
-        const tables = checkAllContainer.querySelectorAll('table');
-        tables.forEach(t => {
-          const caption = t.querySelector('caption');
-          if (caption && caption.textContent.toLowerCase().includes(checkerName.toLowerCase())) {
-            table = t;
+      // Change 2: Fallback to checker's individual container
+      if (!table) {
+        const checkerContainer = document.getElementById(`checker-container-${checkerName}`);
+        if (checkerContainer) {
+          table = checkerContainer.querySelector('table');
+        }
+      }
+      
+      // Additional fallback: Search in Check All container by proximity
+      if (!table) {
+        const checkAllContainer = document.getElementById('checker-container-check-all');
+        if (checkAllContainer) {
+          // Find all tables and try to match by section heading
+          const section = checkAllContainer.querySelector(`#${checkerName}-section`);
+          if (section) {
+            table = section.querySelector('table');
           }
-        });
+        }
       }
       
+      // Change 3: Ensure headers are always populated
       if (table) {
         const headers = [];
         table.querySelectorAll('thead th').forEach(th => {
@@ -1277,10 +1286,15 @@
           headers.push(headerText);
           allHeaders.add(headerText);
         });
-        checkerHeaders[checkerName] = headers;
-        console.log(`[EXPORT-INVALIDS] Headers for ${checkerName}:`, headers);
+        
+        if (headers.length === 0) {
+          console.error(`[EXPORT-INVALIDS] ERROR: No headers found in table for ${checkerName}, skipping this checker`);
+        } else {
+          checkerHeaders[checkerName] = headers;
+          console.log(`[EXPORT-INVALIDS] Headers for ${checkerName}:`, headers);
+        }
       } else {
-        console.warn(`[EXPORT-INVALIDS] Could not find table for ${checkerName}`);
+        console.error(`[EXPORT-INVALIDS] ERROR: Could not find table for ${checkerName}, skipping this checker`);
       }
     });
     
