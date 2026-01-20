@@ -141,19 +141,29 @@
       applyFilter();
     });
 
-    // Claim type radio buttons - update button states when changed
+    // Claim type radio buttons - update button states AND sync timings when changed
     const claimTypeDental = document.getElementById('claimTypeDental');
     const claimTypeMedical = document.getElementById('claimTypeMedical');
     if (claimTypeDental) {
       claimTypeDental.addEventListener('change', () => {
-        console.log('[CLAIM-TYPE] Changed to DENTAL - updating button states');
+        console.log('[CLAIM-TYPE] Changed to DENTAL - updating button states and syncing timings');
         updateButtonStates();
+        // Sync the timings checker's hidden radio buttons immediately
+        const timingsContainer = document.getElementById('timings-container');
+        if (timingsContainer) {
+          syncClaimType(timingsContainer);
+        }
       });
     }
     if (claimTypeMedical) {
       claimTypeMedical.addEventListener('change', () => {
-        console.log('[CLAIM-TYPE] Changed to MEDICAL - updating button states');
+        console.log('[CLAIM-TYPE] Changed to MEDICAL - updating button states and syncing timings');
         updateButtonStates();
+        // Sync the timings checker's hidden radio buttons immediately
+        const timingsContainer = document.getElementById('timings-container');
+        if (timingsContainer) {
+          syncClaimType(timingsContainer);
+        }
       });
     }
 
