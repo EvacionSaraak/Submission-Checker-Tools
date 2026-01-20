@@ -106,76 +106,61 @@
     // File input event listeners - add null checks to prevent crashes
     if (elements.xmlInput) {
       elements.xmlInput.addEventListener('change', (e) => {
-        console.log('🔵 [FILE-UPLOAD] XML file upload detected');
         handleFileChange(e, 'xml', elements.xmlStatus);
       });
     }
     if (elements.clinicianInput) {
       elements.clinicianInput.addEventListener('change', (e) => {
-        console.log('🔵 [FILE-UPLOAD] Clinician file upload detected');
         handleFileChange(e, 'clinician', elements.clinicianStatus);
       });
     }
     if (elements.eligibilityInput) {
       elements.eligibilityInput.addEventListener('change', (e) => {
-        console.log('🔵 [FILE-UPLOAD] Eligibility file upload detected');
         handleFileChange(e, 'eligibility', elements.eligibilityStatus);
       });
     }
     if (elements.authInput) {
       elements.authInput.addEventListener('change', (e) => {
-        console.log('🔵 [FILE-UPLOAD] Authorization file upload detected');
         handleFileChange(e, 'auth', elements.authStatus);
       });
     }
     if (elements.statusInput) {
       elements.statusInput.addEventListener('change', (e) => {
-        console.log('🔵 [FILE-UPLOAD] Status file upload detected');
         handleFileChange(e, 'status', elements.statusStatus);
       });
     }
     if (elements.pricingInput) {
       elements.pricingInput.addEventListener('change', (e) => {
-        console.log('🔵 [FILE-UPLOAD] Pricing file upload detected');
         handleFileChange(e, 'pricing', elements.pricingStatus);
       });
     }
 
     // Checker button event listeners
     elements.btnTimings.addEventListener('click', () => {
-      console.log('🟢 [BUTTON-CLICK] TIMINGS button clicked');
       runChecker('timings');
     });
     elements.btnTeeth.addEventListener('click', () => {
-      console.log('🟢 [BUTTON-CLICK] TEETH button clicked');
       runChecker('teeth');
     });
     elements.btnSchema.addEventListener('click', () => {
-      console.log('🟢 [BUTTON-CLICK] SCHEMA button clicked');
       runChecker('schema');
     });
     elements.btnClinician.addEventListener('click', () => {
-      console.log('🟢 [BUTTON-CLICK] CLINICIAN button clicked');
       runChecker('clinician');
     });
     elements.btnElig.addEventListener('click', () => {
-      console.log('🟢 [BUTTON-CLICK] ELIG button clicked');
       runChecker('elig');
     });
     elements.btnAuths.addEventListener('click', () => {
-      console.log('🟢 [BUTTON-CLICK] AUTHS button clicked');
       runChecker('auths');
     });
     elements.btnPricing.addEventListener('click', () => {
-      console.log('🟢 [BUTTON-CLICK] PRICING button clicked');
       runChecker('pricing');
     });
     elements.btnModifiers.addEventListener('click', () => {
-      console.log('🟢 [BUTTON-CLICK] MODIFIERS button clicked');
       runChecker('modifiers');
     });
     elements.btnCheckAll.addEventListener('click', () => {
-      console.log('🟢 [BUTTON-CLICK] CHECK-ALL button clicked');
       runAllCheckers();
     });
 
@@ -191,15 +176,11 @@
     const claimTypeMedical = document.getElementById('claimTypeMedical');
     if (claimTypeDental) {
       claimTypeDental.addEventListener('change', () => {
-        console.log('🔴 [RADIO-CHANGE] DENTAL radio button selected');
-        console.log('🔴 [RADIO-CHANGE] Current state - Dental checked:', claimTypeDental.checked, 'Medical checked:', claimTypeMedical ? claimTypeMedical.checked : 'N/A');
         updateButtonStates();
       });
     }
     if (claimTypeMedical) {
       claimTypeMedical.addEventListener('change', () => {
-        console.log('🔴 [RADIO-CHANGE] MEDICAL radio button selected');
-        console.log('🔴 [RADIO-CHANGE] Current state - Dental checked:', claimTypeDental ? claimTypeDental.checked : 'N/A', 'Medical checked:', claimTypeMedical.checked);
         updateButtonStates();
       });
     }
@@ -573,34 +554,24 @@
     }
     
     const selectedType = globalDental.checked ? 'DENTAL' : 'MEDICAL';
-    console.log(`🟡 [SYNC] ===== STARTING CLAIM TYPE SYNC =====`);
-    console.log(`🟡 [SYNC] Global claim type selected: ${selectedType}`);
-    console.log(`🟡 [SYNC] Global Dental checked: ${globalDental.checked}, Global Medical checked: ${globalMedical.checked}`);
     
     // Set the hidden radio buttons in the timings checker to match
     const timingsRadios = container.querySelectorAll('input[name="claimType"]');
-    console.log(`🟡 [SYNC] Found ${timingsRadios.length} radio buttons in timings container`);
     
     if (timingsRadios.length === 0) {
       console.error('⚠️ [SYNC] NO RADIO BUTTONS FOUND IN TIMINGS CONTAINER!');
       return;
     }
     
-    timingsRadios.forEach((radio, index) => {
-      const wasChecked = radio.checked;
+    timingsRadios.forEach((radio) => {
       radio.checked = (radio.value === selectedType);
-      console.log(`🟡 [SYNC] Radio #${index + 1} value="${radio.value}": checked ${wasChecked} → ${radio.checked}`);
     });
     
     // Verify the sync worked
     const checkedRadio = container.querySelector('input[name="claimType"]:checked');
-    if (checkedRadio) {
-      console.log(`🟡 [SYNC] ✓ Final checked value in container: ${checkedRadio.value}`);
-      console.log(`🟡 [SYNC] ✓ Sync successful - Timings will use type ${checkedRadio.value === 'DENTAL' ? '6' : '3'}`);
-    } else {
+    if (!checkedRadio) {
       console.error(`⚠️ [SYNC] ✗ NO RADIO BUTTON IS CHECKED AFTER SYNC!`);
     }
-    console.log(`🟡 [SYNC] ===== CLAIM TYPE SYNC COMPLETE =====`);
   }
 
   async function executeChecker(checkerName, container) {
