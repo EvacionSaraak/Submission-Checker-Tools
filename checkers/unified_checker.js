@@ -186,7 +186,7 @@
       applyFilter();
     });
 
-    // Claim type radio buttons - update button states AND sync timings when changed
+    // Claim type radio buttons - update button states when changed
     const claimTypeDental = document.getElementById('claimTypeDental');
     const claimTypeMedical = document.getElementById('claimTypeMedical');
     if (claimTypeDental) {
@@ -194,11 +194,6 @@
         console.log('🔴 [RADIO-CHANGE] DENTAL radio button selected');
         console.log('🔴 [RADIO-CHANGE] Current state - Dental checked:', claimTypeDental.checked, 'Medical checked:', claimTypeMedical ? claimTypeMedical.checked : 'N/A');
         updateButtonStates();
-        // Sync the timings checker's hidden radio buttons immediately
-        const timingsContainer = document.getElementById('checker-container-timings');
-        if (timingsContainer) {
-          syncClaimType(timingsContainer);
-        }
       });
     }
     if (claimTypeMedical) {
@@ -206,11 +201,6 @@
         console.log('🔴 [RADIO-CHANGE] MEDICAL radio button selected');
         console.log('🔴 [RADIO-CHANGE] Current state - Dental checked:', claimTypeDental ? claimTypeDental.checked : 'N/A', 'Medical checked:', claimTypeMedical.checked);
         updateButtonStates();
-        // Sync the timings checker's hidden radio buttons immediately
-        const timingsContainer = document.getElementById('checker-container-timings');
-        if (timingsContainer) {
-          syncClaimType(timingsContainer);
-        }
       });
     }
 
@@ -480,16 +470,26 @@
   function createCheckerInterface(checkerName, container) {
     // Create a simple interface for the checker with necessary DOM elements
     const interfaces = {
-      timings: `
-        <div id="typeSelector" style="display:none;">
-          <label><input type="radio" name="claimType" value="DENTAL" checked> Dental</label>
-          <label><input type="radio" name="claimType" value="MEDICAL"> Medical</label>
-        </div>
-        <input type="file" id="xmlFileInput" accept=".xml" style="display:none" />
-        <button id="exportBtn" class="btn btn-secondary" style="display:none;">Export Invalid Entries</button>
-        <div id="resultsSummary" style="margin:10px;font-weight:bold;"></div>
-        <div id="results"></div>
-      `,
+      timings: () => {
+        // Read current global radio button state
+        const globalDental = document.getElementById('claimTypeDental');
+        const globalMedical = document.getElementById('claimTypeMedical');
+        const isDental = globalDental ? globalDental.checked : true;
+        const isMedical = globalMedical ? globalMedical.checked : false;
+        
+        console.log('🟡 [TIMINGS-INIT] Creating interface with claim type:', isDental ? 'DENTAL' : 'MEDICAL');
+        
+        return `
+          <div id="typeSelector" style="display:none;">
+            <label><input type="radio" name="claimType" value="DENTAL" ${isDental ? 'checked' : ''}> Dental</label>
+            <label><input type="radio" name="claimType" value="MEDICAL" ${isMedical ? 'checked' : ''}> Medical</label>
+          </div>
+          <input type="file" id="xmlFileInput" accept=".xml" style="display:none" />
+          <button id="exportBtn" class="btn btn-secondary" style="display:none;">Export Invalid Entries</button>
+          <div id="resultsSummary" style="margin:10px;font-weight:bold;"></div>
+          <div id="results"></div>
+        `;
+      },
       teeth: `
         <input type="file" id="xmlFile" accept=".xml" style="display:none" />
         <button id="exportBtn" class="btn btn-secondary" style="display:none;">Export Invalid Activities</button>
@@ -559,7 +559,7 @@
       `
     };
 
-    container.innerHTML = interfaces[checkerName] || '<div id="results"></div>';
+    container.innerHTML = (typeof interfaces[checkerName] === 'function' ? interfaces[checkerName]() : interfaces[checkerName]) || '<div id="results"></div>';
   }
 
   function syncClaimType(container) {
