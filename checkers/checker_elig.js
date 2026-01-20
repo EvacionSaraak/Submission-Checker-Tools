@@ -970,6 +970,14 @@ function updateStatus(message) {
 }
 
 function updateProcessButtonState() {
+  const reportSourceXML = document.querySelector('input[name="reportSource"][value="xml"]');
+  const reportSourceXLS = document.querySelector('input[name="reportSource"][value="xls"]');
+  
+  // Exit early if elements don't exist yet
+  if (!processBtn || !reportSourceXML || !reportSourceXLS) {
+    return;
+  }
+  
   const hasEligibility = !!eligData;
   const isXmlMode = xmlRadio ? xmlRadio.checked : true;
   const hasReportData = isXmlMode ? !!xmlData : !!xlsData;
