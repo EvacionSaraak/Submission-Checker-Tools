@@ -9,13 +9,13 @@
     let sessionCount = sessionStorage.getItem('checkerSessionCount');
     sessionCount = sessionCount ? parseInt(sessionCount) + 1 : 1;
     sessionStorage.setItem('checkerSessionCount', sessionCount);
-    console.log(`[INIT] Unified Checker v1.2.88 - Session #${sessionCount}`);
+    console.log(`[INIT] Unified Checker v1.2.90 - Session #${sessionCount}`);
     
     // Update DOM when ready
     document.addEventListener('DOMContentLoaded', () => {
       const sessionElement = document.getElementById('sessionCount');
       if (sessionElement) {
-        sessionElement.textContent = `v1.2.88 | Session #${sessionCount}`;
+        sessionElement.textContent = `v1.2.90 | Session #${sessionCount}`;
       }
     });
   })();
@@ -141,6 +141,22 @@
       applyFilter();
     });
 
+    // Claim type radio buttons - update button states when changed
+    const claimTypeDental = document.getElementById('claimTypeDental');
+    const claimTypeMedical = document.getElementById('claimTypeMedical');
+    if (claimTypeDental) {
+      claimTypeDental.addEventListener('change', () => {
+        console.log('[CLAIM-TYPE] Changed to DENTAL - updating button states');
+        updateButtonStates();
+      });
+    }
+    if (claimTypeMedical) {
+      claimTypeMedical.addEventListener('change', () => {
+        console.log('[CLAIM-TYPE] Changed to MEDICAL - updating button states');
+        updateButtonStates();
+      });
+    }
+
     // Export button
     elements.exportBtn.addEventListener('click', exportResults);
     
@@ -188,7 +204,11 @@
   }
 
   function updateButtonStates() {
-    console.log('[BUTTON] Updating button states based on available files...');
+    console.log('[BUTTON] Updating button states based on available files and claim type...');
+    
+    // Check claim type selection
+    const claimTypeMedical = document.getElementById('claimTypeMedical');
+    const isMedical = claimTypeMedical && claimTypeMedical.checked;
     
     const requirements = {
       clinician: ['xml', 'clinician', 'status'],
@@ -205,6 +225,26 @@
       const btnName = `btn${checker.charAt(0).toUpperCase() + checker.slice(1)}`;
       const button = elements[btnName];
       if (button) {
+        // Special handling for Modifiers - only available for Medical claims
+        if (checker === 'modifiers' && !isMedical) {
+          button.disabled = true;
+          button.style.display = 'none';
+          
+          // Also hide the modifiers container if it's currently active
+          const modifiersContainer = document.getElementById('checker-container-modifiers');
+          if (modifiersContainer && activeChecker === 'modifiers') {
+            modifiersContainer.style.display = 'none';
+            modifiersContainer.innerHTML = ''; // Clear the content
+            activeChecker = null;
+            console.log('[BUTTON] Cleared modifiers container (switched to DENTAL)');
+          }
+          
+          console.log(`[BUTTON] ${checker}: HIDDEN (claim type is DENTAL, modifiers only available for MEDICAL)`);
+          continue;
+        } else if (checker === 'modifiers' && isMedical) {
+          button.style.display = '';  // Show button when Medical
+        }
+        
         const hasAll = reqs.every(req => files[req] !== null);
         button.disabled = !hasAll;
         
@@ -232,6 +272,17 @@
   async function runChecker(checkerName) {
     console.log(`[DEBUG] runChecker called with: ${checkerName}`);
     console.log(`[DEBUG] Files available:`, Object.keys(files).filter(k => files[k]));
+    
+    // Safety check: Don't allow running Modifiers checker when Dental is selected
+    if (checkerName === 'modifiers') {
+      const claimTypeMedical = document.getElementById('claimTypeMedical');
+      const isMedical = claimTypeMedical && claimTypeMedical.checked;
+      if (!isMedical) {
+        console.error('[ERROR] Cannot run Modifiers checker - only available for MEDICAL claims');
+        elements.uploadStatus.innerHTML = '<div class="status-message error">Modifiers checker is only available for Medical claims. Please select Medical claim type.</div>';
+        return;
+      }
+    }
     
     try {
       elements.uploadStatus.innerHTML = `<div class="status-message info">Running ${checkerName} checker...</div>`;
