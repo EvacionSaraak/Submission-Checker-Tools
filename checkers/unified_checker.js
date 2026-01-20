@@ -1222,115 +1222,123 @@
   
   /**
    * Export only invalid rows to Excel with unified headers
+   * Redesigned to scan all tables and create unified export
    */
   function exportInvalids() {
-    console.log('[EXPORT-INVALIDS] Exporting invalid rows...');
-    console.log('[EXPORT-INVALIDS] Total invalid rows:', invalidRowsData.length);
+    console.log('[EXPORT-INVALIDS] Starting unified export of invalid rows...');
     
-    if (!invalidRowsData || invalidRowsData.length === 0) {
-      alert('No invalid entries found. Please run a checker or Check All first.');
+    // Step 1: Collect all tables from all containers
+    const allTables = [];
+    
+    // Scan all checker containers
+    const checkerContainers = document.querySelectorAll('[id^="checker-container-"]');
+    checkerContainers.forEach(container => {
+      const tables = container.querySelectorAll('table');
+      tables.forEach(table => {
+        // Extract checker name from container ID
+        const containerId = container.id;
+        const checkerName = containerId.replace('checker-container-', '');
+        allTables.push({ table, checkerName });
+      });
+    });
+    
+    console.log(`[EXPORT-INVALIDS] Found ${allTables.length} table(s) across all containers`);
+    
+    if (allTables.length === 0) {
+      alert('No tables found. Please run a checker or Check All first.');
       return;
     }
     
-    // Group invalid rows by checker to get their headers
-    const checkerGroups = {};
-    invalidRowsData.forEach(row => {
-      if (!checkerGroups[row.checker]) {
-        checkerGroups[row.checker] = [];
-      }
-      checkerGroups[row.checker].push(row);
-    });
+    // Step 2: Extract and merge headers from all tables
+    const allHeadersSet = new Set();
+    const tableHeadersMap = new Map(); // Store headers for each table
     
-    console.log('[EXPORT-INVALIDS] Checkers with invalids:', Object.keys(checkerGroups));
-    
-    // Collect all unique headers from all checkers
-    const allHeaders = new Set();
-    const checkerHeaders = {};
-    
-    // Get headers from the actual tables in DOM
-    Object.keys(checkerGroups).forEach(checkerName => {
-      let table = null;
-      
-      // Change 1: Improved table-finding logic using section div IDs
-      // Try to find the table in the Check All results section first
-      const sectionResults = document.getElementById(`${checkerName}-results`);
-      if (sectionResults) {
-        table = sectionResults.querySelector('table');
-      }
-      
-      // Change 2: Fallback to checker's individual container
-      if (!table) {
-        const checkerContainer = document.getElementById(`checker-container-${checkerName}`);
-        if (checkerContainer) {
-          table = checkerContainer.querySelector('table');
-        }
-      }
-      
-      // Additional fallback: Search in Check All container by proximity
-      if (!table) {
-        const checkAllContainer = document.getElementById('checker-container-check-all');
-        if (checkAllContainer) {
-          // Find all tables and try to match by section heading
-          const section = checkAllContainer.querySelector(`#${checkerName}-section`);
-          if (section) {
-            table = section.querySelector('table');
-          }
-        }
-      }
-      
-      // Change 3: Ensure headers are always populated
-      if (table) {
-        const headers = [];
-        table.querySelectorAll('thead th').forEach(th => {
-          const headerText = th.textContent.trim();
+    allTables.forEach(({ table, checkerName }) => {
+      const headers = [];
+      table.querySelectorAll('thead th').forEach(th => {
+        const headerText = th.textContent.trim();
+        if (headerText) {
           headers.push(headerText);
-          allHeaders.add(headerText);
-        });
-        
-        if (headers.length === 0) {
-          console.error(`[EXPORT-INVALIDS] ERROR: No headers found in table for ${checkerName}, skipping this checker`);
-        } else {
-          checkerHeaders[checkerName] = headers;
-          console.log(`[EXPORT-INVALIDS] Headers for ${checkerName}:`, headers);
+          allHeadersSet.add(headerText);
         }
-      } else {
-        console.error(`[EXPORT-INVALIDS] ERROR: Could not find table for ${checkerName}, skipping this checker`);
+      });
+      tableHeadersMap.set(table, { headers, checkerName });
+      console.log(`[EXPORT-INVALIDS] Extracted ${headers.length} header(s) from ${checkerName} table`);
+    });
+    
+    // Convert Set to sorted Array for consistent column order
+    const unifiedHeaders = Array.from(allHeadersSet).sort();
+    console.log(`[EXPORT-INVALIDS] Unified headers (${unifiedHeaders.length} total):`, unifiedHeaders);
+    
+    // Step 3: Collect invalid rows from all tables
+    const invalidRows = [];
+    let totalInvalidCount = 0;
+    
+    allTables.forEach(({ table, checkerName }) => {
+      const tableInfo = tableHeadersMap.get(table);
+      const tableHeaders = tableInfo.headers;
+      
+      // Find all invalid rows
+      const invalidRowElements = table.querySelectorAll('tbody tr.table-danger, tbody tr.table-warning, tbody tr.invalid, tbody tr.unknown');
+      
+      if (invalidRowElements.length > 0) {
+        console.log(`[EXPORT-INVALIDS] Found ${invalidRowElements.length} invalid row(s) in ${checkerName}`);
+        totalInvalidCount += invalidRowElements.length;
+        
+        invalidRowElements.forEach(rowElement => {
+          const cells = [];
+          rowElement.querySelectorAll('td').forEach(td => {
+            cells.push(td.textContent.trim());
+          });
+          
+          // Extract Claim ID (typically first column)
+          const claimId = cells.length > 0 ? cells[0] : 'Unknown';
+          
+          invalidRows.push({
+            checkerName,
+            claimId,
+            cells,
+            originalHeaders: tableHeaders
+          });
+        });
       }
     });
     
-    // Convert Set to Array and sort for consistent column order
-    const unifiedHeaders = Array.from(allHeaders).sort();
-    console.log('[EXPORT-INVALIDS] Unified headers:', unifiedHeaders);
+    console.log(`[EXPORT-INVALIDS] Total invalid rows collected: ${totalInvalidCount}`);
     
-    // Build data rows with unified headers
+    if (invalidRows.length === 0) {
+      alert('No invalid entries found in any tables.');
+      return;
+    }
+    
+    // Step 4: Map rows to unified headers
     const exportData = [];
     
-    invalidRowsData.forEach(row => {
+    invalidRows.forEach(row => {
       const rowObj = {};
-      const checkerHeadersArr = checkerHeaders[row.checker] || [];
       
-      // Map each cell to its header, filling in blanks for missing columns
+      // Add Checker Source as first column
+      rowObj['Checker Source'] = row.checkerName.toUpperCase();
+      
+      // Map each cell to its header
       unifiedHeaders.forEach(header => {
-        const headerIndex = checkerHeadersArr.indexOf(header);
+        const headerIndex = row.originalHeaders.indexOf(header);
         if (headerIndex >= 0 && headerIndex < row.cells.length) {
           rowObj[header] = row.cells[headerIndex];
         } else {
-          rowObj[header] = ''; // Blank cell for headers not in this checker
+          rowObj[header] = ''; // Blank cell for headers not in this table
         }
       });
-      
-      // Add checker source as first column
-      rowObj['Checker Source'] = row.checker.toUpperCase();
       
       exportData.push(rowObj);
     });
     
-    console.log('[EXPORT-INVALIDS] Export data prepared:', exportData.length, 'rows');
+    console.log(`[EXPORT-INVALIDS] Export data prepared: ${exportData.length} row(s)`);
     
-    // Create workbook with unified invalid rows
+    // Step 5: Export to Excel
     const wb = XLSX.utils.book_new();
     
-    // Ensure 'Checker Source' is the first column
+    // Ensure 'Checker Source' is the first column, followed by sorted unified headers
     const finalHeaders = ['Checker Source', ...unifiedHeaders];
     const ws = XLSX.utils.json_to_sheet(exportData, { header: finalHeaders });
     
@@ -1338,8 +1346,9 @@
     
     const filename = `invalid_entries_${new Date().toISOString().slice(0, 10)}.xlsx`;
     XLSX.writeFile(wb, filename);
+    
     console.log('[EXPORT-INVALIDS] ✓ Invalid entries export complete:', filename);
-    console.log('[EXPORT-INVALIDS] Exported', invalidRowsData.length, 'invalid rows with', finalHeaders.length, 'columns');
+    console.log(`[EXPORT-INVALIDS] Exported ${exportData.length} invalid row(s) with ${finalHeaders.length} column(s)`);
   }
 
   /**
