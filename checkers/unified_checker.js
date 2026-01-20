@@ -9,7 +9,7 @@
     let sessionCount = sessionStorage.getItem('checkerSessionCount');
     sessionCount = sessionCount ? parseInt(sessionCount) + 1 : 1;
     sessionStorage.setItem('checkerSessionCount', sessionCount);
-    console.log(`[INIT] Unified Checker v1.2.104 - Session #${sessionCount}`);
+    console.log(`[INIT] Unified Checker v1.2.107 - Session #${sessionCount}`);
     
     // Update DOM when ready
     document.addEventListener('DOMContentLoaded', () => {
@@ -106,76 +106,61 @@
     // File input event listeners - add null checks to prevent crashes
     if (elements.xmlInput) {
       elements.xmlInput.addEventListener('change', (e) => {
-        console.log('🔵 [FILE-UPLOAD] XML file upload detected');
         handleFileChange(e, 'xml', elements.xmlStatus);
       });
     }
     if (elements.clinicianInput) {
       elements.clinicianInput.addEventListener('change', (e) => {
-        console.log('🔵 [FILE-UPLOAD] Clinician file upload detected');
         handleFileChange(e, 'clinician', elements.clinicianStatus);
       });
     }
     if (elements.eligibilityInput) {
       elements.eligibilityInput.addEventListener('change', (e) => {
-        console.log('🔵 [FILE-UPLOAD] Eligibility file upload detected');
         handleFileChange(e, 'eligibility', elements.eligibilityStatus);
       });
     }
     if (elements.authInput) {
       elements.authInput.addEventListener('change', (e) => {
-        console.log('🔵 [FILE-UPLOAD] Authorization file upload detected');
         handleFileChange(e, 'auth', elements.authStatus);
       });
     }
     if (elements.statusInput) {
       elements.statusInput.addEventListener('change', (e) => {
-        console.log('🔵 [FILE-UPLOAD] Status file upload detected');
         handleFileChange(e, 'status', elements.statusStatus);
       });
     }
     if (elements.pricingInput) {
       elements.pricingInput.addEventListener('change', (e) => {
-        console.log('🔵 [FILE-UPLOAD] Pricing file upload detected');
         handleFileChange(e, 'pricing', elements.pricingStatus);
       });
     }
 
     // Checker button event listeners
     elements.btnTimings.addEventListener('click', () => {
-      console.log('🟢 [BUTTON-CLICK] TIMINGS button clicked');
       runChecker('timings');
     });
     elements.btnTeeth.addEventListener('click', () => {
-      console.log('🟢 [BUTTON-CLICK] TEETH button clicked');
       runChecker('teeth');
     });
     elements.btnSchema.addEventListener('click', () => {
-      console.log('🟢 [BUTTON-CLICK] SCHEMA button clicked');
       runChecker('schema');
     });
     elements.btnClinician.addEventListener('click', () => {
-      console.log('🟢 [BUTTON-CLICK] CLINICIAN button clicked');
       runChecker('clinician');
     });
     elements.btnElig.addEventListener('click', () => {
-      console.log('🟢 [BUTTON-CLICK] ELIG button clicked');
       runChecker('elig');
     });
     elements.btnAuths.addEventListener('click', () => {
-      console.log('🟢 [BUTTON-CLICK] AUTHS button clicked');
       runChecker('auths');
     });
     elements.btnPricing.addEventListener('click', () => {
-      console.log('🟢 [BUTTON-CLICK] PRICING button clicked');
       runChecker('pricing');
     });
     elements.btnModifiers.addEventListener('click', () => {
-      console.log('🟢 [BUTTON-CLICK] MODIFIERS button clicked');
       runChecker('modifiers');
     });
     elements.btnCheckAll.addEventListener('click', () => {
-      console.log('🟢 [BUTTON-CLICK] CHECK-ALL button clicked');
       runAllCheckers();
     });
 
@@ -191,15 +176,11 @@
     const claimTypeMedical = document.getElementById('claimTypeMedical');
     if (claimTypeDental) {
       claimTypeDental.addEventListener('change', () => {
-        console.log('🔴 [RADIO-CHANGE] DENTAL radio button selected');
-        console.log('🔴 [RADIO-CHANGE] Current state - Dental checked:', claimTypeDental.checked, 'Medical checked:', claimTypeMedical ? claimTypeMedical.checked : 'N/A');
         updateButtonStates();
       });
     }
     if (claimTypeMedical) {
       claimTypeMedical.addEventListener('change', () => {
-        console.log('🔴 [RADIO-CHANGE] MEDICAL radio button selected');
-        console.log('🔴 [RADIO-CHANGE] Current state - Dental checked:', claimTypeDental ? claimTypeDental.checked : 'N/A', 'Medical checked:', claimTypeMedical.checked);
         updateButtonStates();
       });
     }
@@ -568,39 +549,29 @@
     const globalMedical = document.getElementById('claimTypeMedical');
     
     if (!globalDental || !globalMedical) {
-      console.warn('⚠️ [SYNC] Global claim type radio buttons not found');
+      console.warn('[SYNC] WARNING: Global claim type radio buttons not found');
       return;
     }
     
     const selectedType = globalDental.checked ? 'DENTAL' : 'MEDICAL';
-    console.log(`🟡 [SYNC] ===== STARTING CLAIM TYPE SYNC =====`);
-    console.log(`🟡 [SYNC] Global claim type selected: ${selectedType}`);
-    console.log(`🟡 [SYNC] Global Dental checked: ${globalDental.checked}, Global Medical checked: ${globalMedical.checked}`);
     
     // Set the hidden radio buttons in the timings checker to match
     const timingsRadios = container.querySelectorAll('input[name="claimType"]');
-    console.log(`🟡 [SYNC] Found ${timingsRadios.length} radio buttons in timings container`);
     
     if (timingsRadios.length === 0) {
-      console.error('⚠️ [SYNC] NO RADIO BUTTONS FOUND IN TIMINGS CONTAINER!');
+      console.error('[SYNC] ERROR: No radio buttons found in timings container');
       return;
     }
     
-    timingsRadios.forEach((radio, index) => {
-      const wasChecked = radio.checked;
+    timingsRadios.forEach((radio) => {
       radio.checked = (radio.value === selectedType);
-      console.log(`🟡 [SYNC] Radio #${index + 1} value="${radio.value}": checked ${wasChecked} → ${radio.checked}`);
     });
     
     // Verify the sync worked
     const checkedRadio = container.querySelector('input[name="claimType"]:checked');
-    if (checkedRadio) {
-      console.log(`🟡 [SYNC] ✓ Final checked value in container: ${checkedRadio.value}`);
-      console.log(`🟡 [SYNC] ✓ Sync successful - Timings will use type ${checkedRadio.value === 'DENTAL' ? '6' : '3'}`);
-    } else {
-      console.error(`⚠️ [SYNC] ✗ NO RADIO BUTTON IS CHECKED AFTER SYNC!`);
+    if (!checkedRadio) {
+      console.error('[SYNC] ERROR: No radio button checked after sync');
     }
-    console.log(`🟡 [SYNC] ===== CLAIM TYPE SYNC COMPLETE =====`);
   }
 
   async function executeChecker(checkerName, container) {
@@ -1251,101 +1222,168 @@
   
   /**
    * Export only invalid rows to Excel with unified headers
+   * Redesigned to scan all tables and create unified export
    */
   function exportInvalids() {
-    console.log('[EXPORT-INVALIDS] Exporting invalid rows...');
-    console.log('[EXPORT-INVALIDS] Total invalid rows:', invalidRowsData.length);
+    console.log('[EXPORT-INVALIDS] Starting unified export of invalid rows...');
     
-    if (!invalidRowsData || invalidRowsData.length === 0) {
-      alert('No invalid entries found. Please run a checker or Check All first.');
+    // Step 1: Collect all tables from all containers
+    const allTables = [];
+    
+    // Scan all checker containers
+    const checkerContainers = document.querySelectorAll('[id^="checker-container-"]');
+    checkerContainers.forEach(container => {
+      const tables = container.querySelectorAll('table');
+      tables.forEach(table => {
+        // Extract checker name - prioritize from parent section, fallback to container ID
+        let checkerName = container.id.replace('checker-container-', '');
+        
+        // If in check-all container, find the actual checker from parent section
+        if (checkerName === 'check-all') {
+          const parentSection = table.closest('[id$="-section"]');
+          if (parentSection) {
+            checkerName = parentSection.id.replace('-section', '');
+          }
+        }
+        
+        allTables.push({ table, checkerName });
+      });
+    });
+    
+    console.log(`[EXPORT-INVALIDS] Found ${allTables.length} table(s) across all containers`);
+    
+    if (allTables.length === 0) {
+      alert('No tables found. Please run a checker or Check All first.');
       return;
     }
     
-    // Group invalid rows by checker to get their headers
-    const checkerGroups = {};
-    invalidRowsData.forEach(row => {
-      if (!checkerGroups[row.checker]) {
-        checkerGroups[row.checker] = [];
-      }
-      checkerGroups[row.checker].push(row);
-    });
+    // Step 2: Extract and merge headers from all tables
+    const allHeadersSet = new Set();
+    const tableHeadersMap = new Map(); // Store headers for each table
     
-    console.log('[EXPORT-INVALIDS] Checkers with invalids:', Object.keys(checkerGroups));
-    
-    // Collect all unique headers from all checkers
-    const allHeaders = new Set();
-    const checkerHeaders = {};
-    
-    // Get headers from the actual tables in DOM
-    Object.keys(checkerGroups).forEach(checkerName => {
-      let table = null;
-      
-      // Try to find the table in the checker's container or check-all container
-      const checkerContainer = document.getElementById(`checker-container-${checkerName}`);
-      const checkAllContainer = document.getElementById('checker-container-check-all');
-      
-      if (checkerContainer) {
-        table = checkerContainer.querySelector('table');
-      }
-      
-      if (!table && checkAllContainer) {
-        // Try to find this checker's table in Check All results
-        const tables = checkAllContainer.querySelectorAll('table');
-        tables.forEach(t => {
-          const caption = t.querySelector('caption');
-          if (caption && caption.textContent.toLowerCase().includes(checkerName.toLowerCase())) {
-            table = t;
-          }
-        });
-      }
-      
-      if (table) {
-        const headers = [];
-        table.querySelectorAll('thead th').forEach(th => {
-          const headerText = th.textContent.trim();
+    allTables.forEach(({ table, checkerName }) => {
+      const headers = [];
+      table.querySelectorAll('thead th').forEach(th => {
+        const headerText = th.textContent.trim();
+        if (headerText) {
           headers.push(headerText);
-          allHeaders.add(headerText);
-        });
-        checkerHeaders[checkerName] = headers;
-        console.log(`[EXPORT-INVALIDS] Headers for ${checkerName}:`, headers);
-      } else {
-        console.warn(`[EXPORT-INVALIDS] Could not find table for ${checkerName}`);
-      }
-    });
-    
-    // Convert Set to Array and sort for consistent column order
-    const unifiedHeaders = Array.from(allHeaders).sort();
-    console.log('[EXPORT-INVALIDS] Unified headers:', unifiedHeaders);
-    
-    // Build data rows with unified headers
-    const exportData = [];
-    
-    invalidRowsData.forEach(row => {
-      const rowObj = {};
-      const checkerHeadersArr = checkerHeaders[row.checker] || [];
-      
-      // Map each cell to its header, filling in blanks for missing columns
-      unifiedHeaders.forEach(header => {
-        const headerIndex = checkerHeadersArr.indexOf(header);
-        if (headerIndex >= 0 && headerIndex < row.cells.length) {
-          rowObj[header] = row.cells[headerIndex];
-        } else {
-          rowObj[header] = ''; // Blank cell for headers not in this checker
+          allHeadersSet.add(headerText);
         }
       });
+      tableHeadersMap.set(table, { headers, checkerName });
+      console.log(`[EXPORT-INVALIDS] Extracted ${headers.length} header(s) from ${checkerName} table`);
+    });
+    
+    // Remove unwanted columns and merge similar ones
+    const columnsToRemove = ['View Full Entry', 'Valid'];
+    columnsToRemove.forEach(col => allHeadersSet.delete(col));
+    
+    // Handle Remark/Remarks merge - keep only "Remarks"
+    if (allHeadersSet.has('Remark') || allHeadersSet.has('Remarks')) {
+      allHeadersSet.delete('Remark');
+      allHeadersSet.add('Remarks');
+    }
+    
+    // Convert Set to sorted Array for consistent column order
+    const unifiedHeaders = Array.from(allHeadersSet).sort();
+    console.log(`[EXPORT-INVALIDS] Unified headers (${unifiedHeaders.length} total):`, unifiedHeaders);
+    
+    // Step 3: Collect invalid rows from all tables
+    const invalidRows = [];
+    let totalInvalidCount = 0;
+    
+    allTables.forEach(({ table, checkerName }) => {
+      const tableInfo = tableHeadersMap.get(table);
+      const tableHeaders = tableInfo.headers;
       
-      // Add checker source as first column
-      rowObj['Checker Source'] = row.checker.toUpperCase();
+      // Find all invalid rows
+      const invalidRowElements = table.querySelectorAll('tbody tr.table-danger, tbody tr.table-warning, tbody tr.invalid, tbody tr.unknown');
+      
+      if (invalidRowElements.length > 0) {
+        console.log(`[EXPORT-INVALIDS] Found ${invalidRowElements.length} invalid row(s) in ${checkerName}`);
+        totalInvalidCount += invalidRowElements.length;
+        
+        invalidRowElements.forEach(rowElement => {
+          const cells = [];
+          rowElement.querySelectorAll('td').forEach(td => {
+            cells.push(td.textContent.trim());
+          });
+          
+          // Extract Claim ID from data attribute first, fallback to first cell
+          let claimId = rowElement.getAttribute('data-claim-id');
+          
+          if (!claimId || claimId === '') {
+            // Fallback to first cell if data attribute not present
+            claimId = cells.length > 0 ? cells[0] : 'Unknown';
+          }
+          
+          // Ensure first cell has the Claim ID for export consistency
+          if (cells.length > 0 && (!cells[0] || cells[0] === '')) {
+            cells[0] = claimId;
+          }
+          
+          invalidRows.push({
+            checkerName,
+            claimId,
+            cells,
+            originalHeaders: tableHeaders
+          });
+        });
+      }
+    });
+    
+    console.log(`[EXPORT-INVALIDS] Total invalid rows collected: ${totalInvalidCount}`);
+    
+    if (invalidRows.length === 0) {
+      alert('No invalid entries found in any tables.');
+      return;
+    }
+    
+    // Step 4: Map rows to unified headers
+    const exportData = [];
+    
+    invalidRows.forEach(row => {
+      const rowObj = {};
+      
+      // Add Checker Source as first column
+      rowObj['Checker Source'] = row.checkerName.toUpperCase();
+      
+      // Map each cell to its header
+      unifiedHeaders.forEach(header => {
+        let headerIndex = row.originalHeaders.indexOf(header);
+        let value = '';
+        
+        // Handle merged Remark/Remarks columns
+        if (header === 'Remarks') {
+          const remarksIndex = row.originalHeaders.indexOf('Remarks');
+          const remarkIndex = row.originalHeaders.indexOf('Remark');
+          
+          // Prioritize 'Remarks' if not blank, otherwise use 'Remark'
+          if (remarksIndex >= 0 && remarksIndex < row.cells.length) {
+            value = row.cells[remarksIndex];
+          }
+          if ((!value || value === '') && remarkIndex >= 0 && remarkIndex < row.cells.length) {
+            value = row.cells[remarkIndex];
+          }
+        } else {
+          // Normal header mapping, skip removed columns
+          if (headerIndex >= 0 && headerIndex < row.cells.length) {
+            value = row.cells[headerIndex];
+          }
+        }
+        
+        rowObj[header] = value;
+      });
       
       exportData.push(rowObj);
     });
     
-    console.log('[EXPORT-INVALIDS] Export data prepared:', exportData.length, 'rows');
+    console.log(`[EXPORT-INVALIDS] Export data prepared: ${exportData.length} row(s)`);
     
-    // Create workbook with unified invalid rows
+    // Step 5: Export to Excel
     const wb = XLSX.utils.book_new();
     
-    // Ensure 'Checker Source' is the first column
+    // Ensure 'Checker Source' is the first column, followed by sorted unified headers
     const finalHeaders = ['Checker Source', ...unifiedHeaders];
     const ws = XLSX.utils.json_to_sheet(exportData, { header: finalHeaders });
     
@@ -1353,8 +1391,9 @@
     
     const filename = `invalid_entries_${new Date().toISOString().slice(0, 10)}.xlsx`;
     XLSX.writeFile(wb, filename);
+    
     console.log('[EXPORT-INVALIDS] ✓ Invalid entries export complete:', filename);
-    console.log('[EXPORT-INVALIDS] Exported', invalidRowsData.length, 'invalid rows with', finalHeaders.length, 'columns');
+    console.log(`[EXPORT-INVALIDS] Exported ${exportData.length} invalid row(s) with ${finalHeaders.length} column(s)`);
   }
 
   /**
