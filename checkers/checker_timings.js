@@ -21,7 +21,7 @@
     const xmlDoc = parseXML(xmlText);
     
     // Diagnostic logging for claim type determination
-    const checkedRadio = document.querySelector('input[name="claimType"]:checked');
+    const checkedRadio = document.querySelector('input[name="claimTypeGlobal"]:checked');
     console.log('[TIMINGS-VALIDATION] === CLAIM TYPE DETECTION ===');
     console.log('[TIMINGS-VALIDATION] Checked radio element:', checkedRadio);
     console.log('[TIMINGS-VALIDATION] Checked radio value:', checkedRadio ? checkedRadio.value : 'NULL');
@@ -82,7 +82,7 @@ async function onFileChange(event) {
     const xmlText = await file.text();
     validateXMLString(xmlText);
     const xmlDoc = parseXML(xmlText);
-    const selectedType = document.querySelector('input[name="claimType"]:checked')?.value || "DENTAL";
+    const selectedType = document.querySelector('input[name="claimTypeGlobal"]:checked')?.value || "DENTAL";
     const requiredType = (selectedType === "DENTAL") ? "3" : "6";
     const claims = extractClaims(xmlDoc, requiredType);
     renderResults(document.getElementById('results'), claims);
