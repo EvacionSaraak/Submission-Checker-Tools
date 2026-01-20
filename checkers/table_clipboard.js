@@ -10,7 +10,7 @@ document.addEventListener('click', e => {
     !cell.closest('input') &&
     !cell.querySelector('input')
   ) {
-    const text = cell.textContent.trim();
+    const text = cell.innerText.trim();
     if (text) {
       console.log('[CLIPBOARD] Copying:', text);
       navigator.clipboard.writeText(text).then(() => {
