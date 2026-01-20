@@ -35,6 +35,7 @@ const xlsRadio = document.querySelector('input[name="reportSource"][value="xls"]
  * RADIO BUTTON HANDLING *
  *************************/
 function handleReportSourceChange() {
+  if (!xmlRadio) return;
   const isXmlMode = xmlRadio.checked;
 
   xmlGroup.style.display = isXmlMode ? 'block' : 'none';
@@ -970,7 +971,8 @@ function updateStatus(message) {
 
 function updateProcessButtonState() {
   const hasEligibility = !!eligData;
-  const hasReportData = xmlRadio.checked ? !!xmlData : !!xlsData;
+  const isXmlMode = xmlRadio ? xmlRadio.checked : true;
+  const hasReportData = isXmlMode ? !!xmlData : !!xlsData;
   processBtn.disabled = !hasEligibility || !hasReportData;
   exportInvalidBtn.disabled = !hasEligibility || !hasReportData;
 }
@@ -1067,11 +1069,12 @@ async function handleProcessClick() {
     usedEligibilities.clear();
 
     const eligMap = prepareEligibilityMap(eligData);
-    const results = xmlRadio.checked ? validateXmlClaims(xmlData.claims, eligMap) : validateReportClaims(xlsData, eligMap);
+    const isXmlMode = xmlRadio ? xmlRadio.checked : true;
+    const results = isXmlMode ? validateXmlClaims(xmlData.claims, eligMap) : validateReportClaims(xlsData, eligMap);
 
     // Only filter for Daman/Thiqa if report mode
     let filteredResults = results;
-    if (!xmlRadio.checked) {
+    if (!isXmlMode) {
       filteredResults = results.filter(r => {
         const provider = (r.provider || r.insuranceCompany || r.packageName || r['Payer Name'] || r['Insurance Company'] || '').toString().toLowerCase();
         return provider.includes('daman') || provider.includes('thiqa');
