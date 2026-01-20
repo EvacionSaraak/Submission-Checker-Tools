@@ -1,21 +1,38 @@
-// checker_modifiers.js
-let lastResults = [];
-let lastWorkbook = null;
+(function() {
+  try {
+    // checker_modifiers.js
+    let lastResults = [];
+    let lastWorkbook = null;
 
 document.addEventListener('DOMContentLoaded', () => {
-  const runBtn = el('run-button');
-  const dlBtn = el('download-button');
-  if (runBtn) runBtn.addEventListener('click', handleRun);
-  if (dlBtn) dlBtn.addEventListener('click', handleDownload);
-  resetUI();
+  try {
+    const runBtn = el('run-button');
+    const dlBtn = el('download-button');
+    if (runBtn) runBtn.addEventListener('click', handleRun);
+    if (dlBtn) dlBtn.addEventListener('click', handleDownload);
+    resetUI();
+  } catch (error) {
+    console.error('[MODIFIERS] DOMContentLoaded initialization error:', error);
+  }
 });
 
 // ----------------- Main run handler -----------------
 async function handleRun() {
   resetUI();
   try {
-    const xmlFile = fileEl('xml-file');
-    const xlsxFile = fileEl('xlsx-file');
+    let xmlFile = fileEl('xml-file');
+    let xlsxFile = fileEl('xlsx-file');
+    
+    // Fallback to unified checker files cache
+    if (!xmlFile && window.unifiedCheckerFiles && window.unifiedCheckerFiles.xml) {
+      xmlFile = window.unifiedCheckerFiles.xml;
+      console.log('[MODIFIERS] Using XML file from unified cache:', xmlFile.name);
+    }
+    if (!xlsxFile && window.unifiedCheckerFiles && window.unifiedCheckerFiles.eligibility) {
+      xlsxFile = window.unifiedCheckerFiles.eligibility;
+      console.log('[MODIFIERS] Using eligibility file from unified cache:', xlsxFile.name);
+    }
+    
     if (!xmlFile || !xlsxFile) throw new Error('Please select both an XML file and an XLSX file.');
 
     const [xmlText, xlsxObj] = await Promise.all([readFileText(xmlFile), readXlsx(xlsxFile)]);
@@ -66,7 +83,7 @@ async function handleRun() {
     });
 
     lastResults = output;
-    renderResults(output);
+    const tableElement = buildResultsTable(output);
     lastWorkbook = makeWorkbookFromJson(output, 'checker_modifiers_results');
     toggleDownload(output.length > 0);
 
@@ -76,8 +93,10 @@ async function handleRun() {
     const percent = totalCount ? Math.round((validCount / totalCount) * 100) : 0;
     message(`Completed — ${validCount}/${totalCount} rows correct (${percent}%)`, percent === 100 ? 'green' : 'orange');
 
+    return tableElement;
   } catch (err) {
     showError(err);
+    return null;
   }
 }
 
@@ -256,11 +275,11 @@ function expectedModifierForVOI(voi) {
 }
 
 // ----------------- Rendering -----------------
-function renderResults(rows) {
-  const container = el('outputTableContainer');
+function buildResultsTable(rows) {
   if (!rows || !rows.length) {
-    container.innerHTML = '<div>No results</div>';
-    return;
+    const emptyDiv = document.createElement('div');
+    emptyDiv.textContent = 'No results';
+    return emptyDiv;
   }
 
   console.info('[DEBUG] total rows from mapping:', rows.length);
@@ -274,29 +293,31 @@ function renderResults(rows) {
   });
 
   if (!filteredRows.length) {
-    container.innerHTML = '<div>No matching claims (only A001 and E001 shown)</div>';
-    return;
+    const emptyDiv = document.createElement('div');
+    emptyDiv.textContent = 'No matching claims (only A001 and E001 shown)';
+    return emptyDiv;
   }
 
   // Map filtered rows back to original lastResults indices for modal linking
   filteredRows.forEach(r => { r._originalIndex = rows.indexOf(r); });
 
+  const container = document.createElement('div');
   let prevClaimId = null, prevMemberId = null, prevActivityId = null;
   let validCount = 0;
 
-  let html = `<table class="shared-table">
+  let html = `<table class="table table-striped table-bordered" style="width:100%;border-collapse:collapse">
     <thead>
       <tr>
-        <th>Claim ID</th>
-        <th>Member ID</th>
-        <th>Activity ID</th>
-        <th>Ordering Clinician</th>
-        <th>Observation Code</th>
-        <th>Observation CPT Modifier</th>
-        <th>VOI Number</th>
-        <th>Payer ID</th>
-        <th>Remarks</th>
-        <th>Eligibility Details</th>
+        <th style="padding:8px;border:1px solid #ccc">Claim ID</th>
+        <th style="padding:8px;border:1px solid #ccc">Member ID</th>
+        <th style="padding:8px;border:1px solid #ccc">Activity ID</th>
+        <th style="padding:8px;border:1px solid #ccc">Ordering Clinician</th>
+        <th style="padding:8px;border:1px solid #ccc">Observation Code</th>
+        <th style="padding:8px;border:1px solid #ccc">Observation CPT Modifier</th>
+        <th style="padding:8px;border:1px solid #ccc">VOI Number</th>
+        <th style="padding:8px;border:1px solid #ccc">Payer ID</th>
+        <th style="padding:8px;border:1px solid #ccc">Remarks</th>
+        <th style="padding:8px;border:1px solid #ccc">Eligibility Details</th>
       </tr>
     </thead>
     <tbody>`;
@@ -316,17 +337,17 @@ function renderResults(rows) {
     if (!r.EligibilityRow) remarks.push('No matching eligibility found.');
 
     const isValid = remarks.length === 0;
-    html += `<tr class="${isValid ? 'valid' : 'invalid'}">
-      <td>${showClaim ? escapeHtml(r.ClaimID) : ''}</td>
-      <td>${showMember ? escapeHtml(r.MemberID) : ''}</td>
-      <td>${showActivity ? escapeHtml(r.ActivityID) : ''}</td>
-      <td>${escapeHtml(r.OrderingClinician)}</td>
-      <td>${escapeHtml(r.ObsCode || '')}</td>
-      <td>${escapeHtml(r.Modifier)}</td>
-      <td>${escapeHtml(r.VOINumber || '')}</td>
-      <td>${escapeHtml(r.PayerID)}</td>
-      <td>${escapeHtml(remarks.join('; ') || 'OK')}</td>
-      <td>${r.EligibilityRow ? `<button type="button" class="details-btn eligibility-details" onclick="showEligibility(${r._originalIndex})">View</button>` : ''}</td>
+    html += `<tr class="${isValid ? 'table-success' : 'table-danger'}">
+      <td style="padding:6px;border:1px solid #ccc">${showClaim ? escapeHtml(r.ClaimID) : ''}</td>
+      <td style="padding:6px;border:1px solid #ccc">${showMember ? escapeHtml(r.MemberID) : ''}</td>
+      <td style="padding:6px;border:1px solid #ccc">${showActivity ? escapeHtml(r.ActivityID) : ''}</td>
+      <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.OrderingClinician)}</td>
+      <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.ObsCode || '')}</td>
+      <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.Modifier)}</td>
+      <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.VOINumber || '')}</td>
+      <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.PayerID)}</td>
+      <td style="padding:6px;border:1px solid #ccc">${escapeHtml(remarks.join('; ') || 'OK')}</td>
+      <td style="padding:6px;border:1px solid #ccc">${r.EligibilityRow ? `<button type="button" class="details-btn eligibility-details" onclick="showEligibility(${r._originalIndex})">View</button>` : ''}</td>
     </tr>`;
 
     prevClaimId = r.ClaimID;
@@ -336,6 +357,7 @@ function renderResults(rows) {
 
   html += `</tbody></table>`;
   container.innerHTML = html;
+  return container;
 }
 
 // ----------------- Utilities -----------------
@@ -465,3 +487,19 @@ function showEligibility(index) {
 }
 
 function closeEligibilityModal() { const modal = el('eligibilityModal'); if (modal) modal.remove(); }
+
+// Unified checker entry point
+window.runModifiersCheck = async function() {
+  if (typeof handleRun === 'function') {
+    return await handleRun();
+  } else {
+    console.error('handleRun function not found');
+    return null;
+  }
+};
+
+  } catch (error) {
+    console.error('[CHECKER-ERROR] Failed to load checker:', error);
+    console.error(error.stack);
+  }
+})();

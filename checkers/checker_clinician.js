@@ -1,8 +1,9 @@
 (function () {
-  'use strict';
+  try {
+    'use strict';
 
-  // --- Helper: Parse DD/MM/YYYY or DD/MM/YYYY HH:MM ---
-  function parseDMY(dateStr) {
+    // --- Helper: Parse DD/MM/YYYY or DD/MM/YYYY HH:MM ---
+    function parseDMY(dateStr) {
     if (typeof dateStr !== 'string') return new Date(dateStr);
     const match = dateStr.match(/^(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}):(\d{2}))?/);
     if (!match) return new Date(dateStr); // fallback
@@ -66,24 +67,31 @@
     });
 
   document.addEventListener('DOMContentLoaded', () => {
-    xmlInput = document.getElementById('xmlFileInput');
-    clinicianInput = document.getElementById('clinicianFileInput');
-    statusInput = document.getElementById('statusFileInput');
-    processBtn = document.getElementById('processBtn');
-    csvBtn = document.getElementById('csvBtn');
-    resultsDiv = document.getElementById('results');
-    uploadDiv = document.getElementById('uploadStatus');
+    try {
+      xmlInput = document.getElementById('xmlFileInput');
+      clinicianInput = document.getElementById('clinicianFileInput');
+      statusInput = document.getElementById('statusFileInput');
+      processBtn = document.getElementById('processBtn');
+      csvBtn = document.getElementById('csvBtn');
+      resultsDiv = document.getElementById('results');
+      uploadDiv = document.getElementById('uploadStatus');
 
-    xmlInput.addEventListener('change', handleXmlInput);
-    clinicianInput.addEventListener('change', handleClinicianInput);
-    statusInput.addEventListener('change', handleStatusInput);
+      if (xmlInput) xmlInput.addEventListener('change', handleXmlInput);
+      if (clinicianInput) clinicianInput.addEventListener('change', handleClinicianInput);
+      if (statusInput) statusInput.addEventListener('change', handleStatusInput);
 
-    processBtn.addEventListener('click', validateClinicians);
-    if (csvBtn) csvBtn.addEventListener('click', exportResults);
-
-    processBtn.disabled = true;
-    if (csvBtn) csvBtn.disabled = true;
-    updateUploadStatus();
+      if (processBtn) {
+        processBtn.addEventListener('click', validateClinicians);
+        processBtn.disabled = true;
+      }
+      if (csvBtn) {
+        csvBtn.addEventListener('click', exportResults);
+        csvBtn.disabled = true;
+      }
+      updateUploadStatus();
+    } catch (error) {
+      console.error('[CLINICIAN] DOMContentLoaded initialization error:', error);
+    }
   });
 
   function handleXmlInput(e) {
@@ -259,11 +267,11 @@
   function validateClinicians() {
     if (!xmlDoc) {
       logCriticalError('No XML loaded', '');
-      return;
+      return null;
     }
     if (!facilitiesLoaded || affiliatedLicenses.size === 0) {
       logCriticalError('Facility list not loaded. Please check facilities.json and reload.', '');
-      return;
+      return null;
     }
     const claims = xmlDoc.getElementsByTagName('Claim');
     const results = [];
@@ -382,12 +390,13 @@
     });
 
     lastResults = results;
-    renderResults(results);
+    const tableElement = buildResultsTable(results);
     if (csvBtn) csvBtn.disabled = !(results.length > 0);
+    return tableElement;
   }
 
   // --- Streamlined, grouped rendering with modal for Claim IDs ---
-  function renderResults(results) {
+  function buildResultsTable(results) {
     let validCt = results.filter(r => r.valid).length;
     let total = results.length;
     let pct = total ? Math.round(validCt / total * 100) : 0;
@@ -395,7 +404,8 @@
     const groupedResults = groupResults(results);
     const modalData = {};
 
-    resultsDiv.innerHTML =
+    const container = document.createElement('div');
+    container.innerHTML =
       `<div class="${pct > 90 ? 'valid-message' : pct > 70 ? 'warning-message' : 'error-message'}">
         Validation: ${validCt}/${total} valid (${pct}%)
       </div>` +
@@ -473,37 +483,53 @@
         </div>
       </div>`;
 
-    // Attach click handlers for license history modal
-    document.querySelectorAll('.view-license-history').forEach(btn => {
-      btn.addEventListener('click', function() {
-        const fullHistory = decodeURIComponent(this.getAttribute('data-fullhistory'));
-        document.getElementById('licenseHistoryText').innerHTML = formatLicenseHistory(fullHistory);
-        document.getElementById('licenseHistoryModal').style.display = 'block';
+    // Attach click handlers for license history modal after a delay (to ensure DOM is ready)
+    setTimeout(() => {
+      document.querySelectorAll('.view-license-history').forEach(btn => {
+        btn.addEventListener('click', function() {
+          const fullHistory = decodeURIComponent(this.getAttribute('data-fullhistory'));
+          document.getElementById('licenseHistoryText').innerHTML = formatLicenseHistory(fullHistory);
+          document.getElementById('licenseHistoryModal').style.display = 'block';
+        });
       });
-    });
-    document.getElementById('licenseHistoryClose').onclick = function() {
-      document.getElementById('licenseHistoryModal').style.display = 'none';
-    };
-    document.getElementById('licenseHistoryModal').onclick = function(event) {
-      if (event.target === this) this.style.display = 'none';
-    };
+      const licenseHistoryClose = document.getElementById('licenseHistoryClose');
+      if (licenseHistoryClose) {
+        licenseHistoryClose.onclick = function() {
+          document.getElementById('licenseHistoryModal').style.display = 'none';
+        };
+      }
+      const licenseHistoryModal = document.getElementById('licenseHistoryModal');
+      if (licenseHistoryModal) {
+        licenseHistoryModal.onclick = function(event) {
+          if (event.target === this) this.style.display = 'none';
+        };
+      }
 
-    // Attach click handlers for claims group modal
-    document.querySelectorAll('.view-claims-group').forEach(btn => {
-      btn.addEventListener('click', function() {
-        const modalId = this.getAttribute('data-modalid');
-        document.getElementById('claimIdsModalText').innerHTML = modalData[modalId];
-        document.getElementById('claimIdsModal').style.display = 'block';
+      // Attach click handlers for claims group modal
+      document.querySelectorAll('.view-claims-group').forEach(btn => {
+        btn.addEventListener('click', function() {
+          const modalId = this.getAttribute('data-modalid');
+          document.getElementById('claimIdsModalText').innerHTML = modalData[modalId];
+          document.getElementById('claimIdsModal').style.display = 'block';
+        });
       });
-    });
-    document.getElementById('claimIdsModalClose').onclick = function() {
-      document.getElementById('claimIdsModal').style.display = 'none';
-    };
-    document.getElementById('claimIdsModal').onclick = function(event) {
-      if (event.target === this) this.style.display = 'none';
-    };
-
-    updateUploadStatus();
+      const claimIdsModalClose = document.getElementById('claimIdsModalClose');
+      if (claimIdsModalClose) {
+        claimIdsModalClose.onclick = function() {
+          document.getElementById('claimIdsModal').style.display = 'none';
+        };
+      }
+      const claimIdsModal = document.getElementById('claimIdsModal');
+      if (claimIdsModal) {
+        claimIdsModal.onclick = function(event) {
+          if (event.target === this) this.style.display = 'none';
+        };
+      }
+      
+      updateUploadStatus();
+    }, 0);
+    
+    return container;
   }
 
 
@@ -544,7 +570,30 @@
     } else {
       messages.push('Facilities not loaded');
     }
-    uploadDiv.textContent = messages.join(', ');
-    processBtn.disabled = !(claimCount && clinicianCount && historyCount && facilitiesLoaded && affiliatedLicenses.size);
+    if (uploadDiv) uploadDiv.textContent = messages.join(', ');
+    if (processBtn) processBtn.disabled = !(claimCount && clinicianCount && historyCount && facilitiesLoaded && affiliatedLicenses.size);
+  }
+
+  // Unified checker entry point
+  window.runClinicianCheck = async function() {
+    xmlInput = document.getElementById('xmlFileInput');
+    clinicianInput = document.getElementById('clinicianFileInput');
+    statusInput = document.getElementById('statusFileInput');
+    processBtn = document.getElementById('processBtn');
+    csvBtn = document.getElementById('csvBtn');
+    resultsDiv = document.getElementById('results');
+    uploadDiv = document.getElementById('uploadStatus');
+    
+    if (typeof validateClinicians === 'function') {
+      return validateClinicians();
+    } else {
+      console.error('validateClinicians function not found');
+      return null;
+    }
+  };
+
+  } catch (error) {
+    console.error('[CHECKER-ERROR] Failed to load checker:', error);
+    console.error(error.stack);
   }
 })();

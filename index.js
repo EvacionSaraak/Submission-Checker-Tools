@@ -1,16 +1,8 @@
 document.addEventListener('DOMContentLoaded', () => {
   const pages = [
     { label: "Formatting", file: "checkers/checker_formatter.html" },
-    { label: "Clinicians", file: "checkers/checker_clinician.html" },
-    { label: "Eligs", file: "checkers/checker_elig.html" },
-    { label: "Auths", file: "checkers/checker_auths.html" },
-    { label: "Timings", file: "checkers/checker_timings.html" },
-    { label: "Teeth", file: "checkers/checker_tooths.html" },
-    { label: "Schema", file: "checkers/checker_schema.html" },
-    { label: "Prices", file: "checkers/checker_pricing.html" },
-    { label: "UPP", file: "checkers/checker_drugs.html" },
-    { label: "Drugs", file: "checkers/checker_drugquantities.html" },
-    { label: "Modifiers", file: "checkers/checker_modifiers.html" }
+    { label: "Checkers", file: "checkers/unified_checker.html" },
+    { label: "Drug Quantities", file: "checkers/checker_drugquantities.html" }
   ];
 
   const navLeft = document.getElementById("navLeft");

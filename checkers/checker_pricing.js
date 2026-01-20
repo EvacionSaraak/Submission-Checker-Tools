@@ -1,20 +1,37 @@
-// checker_pricing.js
+(function() {
+  try {
+    // checker_pricing.js
 
-let lastResults = [];
-let lastWorkbook = null;
+    let lastResults = [];
+    let lastWorkbook = null;
 
 document.addEventListener('DOMContentLoaded', () => {
-  const runBtn = el('run-button'), dlBtn = el('download-button');
-  if (runBtn) runBtn.addEventListener('click', handleRun);
-  if (dlBtn) dlBtn.addEventListener('click', handleDownload);
-  resetUI();
+  try {
+    const runBtn = el('run-button'), dlBtn = el('download-button');
+    if (runBtn) runBtn.addEventListener('click', handleRun);
+    if (dlBtn) dlBtn.addEventListener('click', handleDownload);
+    resetUI();
+  } catch (error) {
+    console.error('[PRICING] DOMContentLoaded initialization error:', error);
+  }
 });
 
 // ----------------- Main run handler (modified to treat Unknown as valid for the summary) -----------------
 async function handleRun() {
   resetUI();
   try {
-    const xmlFile = fileEl('xml-file'), xlsxFile = fileEl('xlsx-file');
+    let xmlFile = fileEl('xml-file'), xlsxFile = fileEl('xlsx-file');
+    
+    // Fallback to unified checker files cache
+    if (!xmlFile && window.unifiedCheckerFiles && window.unifiedCheckerFiles.xml) {
+      xmlFile = window.unifiedCheckerFiles.xml;
+      console.log('[PRICING] Using XML file from unified cache:', xmlFile.name);
+    }
+    if (!xlsxFile && window.unifiedCheckerFiles && window.unifiedCheckerFiles.pricing) {
+      xlsxFile = window.unifiedCheckerFiles.pricing;
+      console.log('[PRICING] Using pricing file from unified cache:', xlsxFile.name);
+    }
+    
     if (!xmlFile || !xlsxFile) throw new Error('Please select both an XML file and an XLSX file.');
 
     showProgress(5, 'Reading files');
@@ -72,7 +89,7 @@ async function handleRun() {
   });
 
     lastResults = output;
-    renderResults(output);
+    const tableElement = buildResultsTable(output);
     lastWorkbook = makeWorkbookFromJson(output, 'checker_pricing_results');
     toggleDownload(output.length > 0);
 
@@ -83,7 +100,8 @@ async function handleRun() {
   const percentText = totalCount ? numericPercent.toFixed(2) : '0.00';
   const color = numericPercent === 100 ? 'green' : 'orange';
   message(`Completed — ${validCount}/${totalCount} rows correct (${percentText}%)`, color);
-  } catch (err) { showError(err); }
+  return tableElement;
+  } catch (err) { showError(err); return null; }
 }
 
 // ----------------- Download -----------------
@@ -175,39 +193,53 @@ function buildPricingMatcher(rows) {
 }
 
 // ----------------- Modified: renderResults (hide repeated Claim ID) -----------------
-function renderResults(rows) {
-  const container = el('outputTableContainer');
-  if (!rows || !rows.length) { container.innerHTML = '<div>No results</div>'; return; }
+function buildResultsTable(rows) {
+  if (!rows || !rows.length) {
+    const emptyDiv = document.createElement('div');
+    emptyDiv.textContent = 'No results';
+    return emptyDiv;
+  }
 
   // Map rows to index for modal linking
   rows.forEach((r, i) => r._originalIndex = i);
   lastResults = rows.slice(); // ensure modal access
 
+  const container = document.createElement('div');
   let prevClaimId = null;
-  let html = `<table class="shared-table"><thead><tr>
-    <th>Claim ID</th><th>Activity ID</th><th>Code</th><th>Claimed Net</th><th>Quantity</th>
-    <th>Reference Net Price</th><th>Status</th><th>Remarks</th><th>Compare</th>
+  let html = `<table class="table table-striped table-bordered" style="width:100%;border-collapse:collapse"><thead><tr>
+    <th style="padding:8px;border:1px solid #ccc">Claim ID</th>
+    <th style="padding:8px;border:1px solid #ccc">Activity ID</th>
+    <th style="padding:8px;border:1px solid #ccc">Code</th>
+    <th style="padding:8px;border:1px solid #ccc">Claimed Net</th>
+    <th style="padding:8px;border:1px solid #ccc">Quantity</th>
+    <th style="padding:8px;border:1px solid #ccc">Reference Net Price</th>
+    <th style="padding:8px;border:1px solid #ccc">Status</th>
+    <th style="padding:8px;border:1px solid #ccc">Remarks</th>
+    <th style="padding:8px;border:1px solid #ccc">Compare</th>
   </tr></thead><tbody>`;
 
   for (const r of rows) {
-    const cls = String(r.status || 'Invalid').toLowerCase();
+    const status = String(r.status || 'Invalid').toLowerCase();
+    // Map status to Bootstrap classes
+    const cls = status === 'ok' || status === 'valid' ? 'table-success' : 'table-danger';
     const showClaim = r.ClaimID !== prevClaimId;
     html += `<tr class="${cls}">
-      <td>${showClaim ? escapeHtml(r.ClaimID) : ''}</td>
-      <td>${escapeHtml(r.ActivityID)}</td>
-      <td>${escapeHtml(r.CPT)}</td>
-      <td>${escapeHtml(r.ClaimedNet)}</td>
-      <td>${escapeHtml(r.ClaimedQty)}</td>
-      <td>${escapeHtml(r.ReferenceNetPrice)}</td>
-      <td>${escapeHtml(r.status)}</td>
-      <td>${escapeHtml(r.Remarks || 'OK')}</td>
-      <td>${r.PricingRow ? `<button type="button" class="details-btn" onclick="showComparisonModal(${r._originalIndex})">View</button>` : ''}</td>
+      <td style="padding:6px;border:1px solid #ccc">${showClaim ? escapeHtml(r.ClaimID) : ''}</td>
+      <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.ActivityID)}</td>
+      <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.CPT)}</td>
+      <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.ClaimedNet)}</td>
+      <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.ClaimedQty)}</td>
+      <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.ReferenceNetPrice)}</td>
+      <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.status)}</td>
+      <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.Remarks || 'OK')}</td>
+      <td style="padding:6px;border:1px solid #ccc">${r.PricingRow ? `<button type="button" class="details-btn" onclick="showComparisonModal(${r._originalIndex})">View</button>` : ''}</td>
     </tr>`;
     prevClaimId = r.ClaimID;
   }
 
   html += `</tbody></table>`;
   container.innerHTML = html;
+  return container;
 }
 
 // ----------------- Modal comparison -----------------
@@ -286,3 +318,19 @@ function showError(err) { message(err && err.message ? err.message : String(err)
 
 // ----------------- Helpers: escaping -----------------
 function escapeHtml(str) { return String(str == null ? '' : str).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;'); }
+
+// Unified checker entry point
+window.runPricingCheck = async function() {
+  if (typeof handleRun === 'function') {
+    return await handleRun();
+  } else {
+    console.error('handleRun function not found');
+    return null;
+  }
+};
+
+  } catch (error) {
+    console.error('[CHECKER-ERROR] Failed to load checker:', error);
+    console.error(error.stack);
+  }
+})();

@@ -1,17 +1,18 @@
 document.addEventListener('click', e => {
-  const cell = e.target;
+  // Find the closest TD element (works even if clicking on child elements)
+  const cell = e.target.closest('td');
 
   // Must be a TD, and not inside or containing a button/input
   if (
-    cell.tagName === 'TD' &&
+    cell &&
     !cell.closest('button') &&
     !cell.querySelector('button') &&
     !cell.closest('input') &&
     !cell.querySelector('input')
   ) {
-    const text = cell.textContent.trim();
+    const text = cell.innerText.trim();
     if (text) {
-      console.log(text);
+      console.log('[CLIPBOARD] Copying:', text);
       navigator.clipboard.writeText(text).then(() => {
         // Remove previous permanent highlight
         document.querySelectorAll('td.last-copied').forEach(td => td.classList.remove('last-copied'));

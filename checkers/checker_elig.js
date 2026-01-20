@@ -1,7 +1,9 @@
-/*******************************
- * GLOBAL VARIABLES & CONSTANTS *
- *******************************/
-const SERVICE_PACKAGE_RULES = {
+(function() {
+  try {
+    /*******************************
+     * GLOBAL VARIABLES & CONSTANTS *
+     *******************************/
+    const SERVICE_PACKAGE_RULES = {
   'Dental Services': ['dental', 'orthodontic'],
   'Physiotherapy': ['physio'],
   'Other OP Services': ['physio', 'diet', 'occupational', 'speech'],
@@ -33,6 +35,7 @@ const xlsRadio = document.querySelector('input[name="reportSource"][value="xls"]
  * RADIO BUTTON HANDLING *
  *************************/
 function handleReportSourceChange() {
+  if (!xmlRadio) return;
   const isXmlMode = xmlRadio.checked;
 
   xmlGroup.style.display = isXmlMode ? 'block' : 'none';
@@ -730,13 +733,16 @@ function normalizeReportData(rawData) {
 /********************
  * UI RENDERING FUNCTIONS *
  ********************/
-// renderResults: no normalization of memberID in button data attributes
-function renderResults(results, eligMap) {
-  resultsContainer.innerHTML = '';
+// buildResultsTable: builds and returns table element
+function buildResultsTable(results, eligMap) {
+  // Query for fresh DOM elements each time to avoid stale references
+  const xmlRadio = document.querySelector('input[name="reportSource"][value="xml"]');
 
   if (!results || results.length === 0) {
-    resultsContainer.innerHTML = '<div class="no-results">No claims to display</div>';
-    return;
+    const emptyDiv = document.createElement('div');
+    emptyDiv.className = 'no-results';
+    emptyDiv.textContent = 'No claims to display';
+    return emptyDiv;
   }
 
   const tableContainer = document.createElement('div');
@@ -744,21 +750,23 @@ function renderResults(results, eligMap) {
   tableContainer.style.overflowX = 'auto';
 
   const table = document.createElement('table');
-  table.className = 'shared-table';
+  table.className = 'table table-striped table-bordered';
+  table.style.borderCollapse = 'collapse';
+  table.style.width = '100%';
 
-  const isXmlMode = xmlRadio.checked;
+  const isXmlMode = xmlRadio ? xmlRadio.checked : true;
   const thead = document.createElement('thead');
   thead.innerHTML = `
     <tr>
-      <th>Claim ID</th>
-      <th>Member ID</th>
-      <th>Encounter Date</th>
-      ${!isXmlMode ? '<th>Package</th><th>Provider</th>' : ''}
-      <th>Clinician</th>
-      <th>Service Category</th>
-      <th>Status</th>
-      <th class="wrap-col">Remarks</th>
-      <th>Details</th>
+      <th style="padding:8px;border:1px solid #ccc">Claim ID</th>
+      <th style="padding:8px;border:1px solid #ccc">Member ID</th>
+      <th style="padding:8px;border:1px solid #ccc">Encounter Date</th>
+      ${!isXmlMode ? '<th style="padding:8px;border:1px solid #ccc">Package</th><th style="padding:8px;border:1px solid #ccc">Provider</th>' : ''}
+      <th style="padding:8px;border:1px solid #ccc">Clinician</th>
+      <th style="padding:8px;border:1px solid #ccc">Service Category</th>
+      <th style="padding:8px;border:1px solid #ccc">Status</th>
+      <th class="wrap-col" style="padding:8px;border:1px solid #ccc">Remarks</th>
+      <th style="padding:8px;border:1px solid #ccc">Details</th>
     </tr>
   `;
   table.appendChild(thead);
@@ -770,8 +778,7 @@ function renderResults(results, eligMap) {
     // Skip rows where Member ID is missing/empty
     if (!result.memberID || result.memberID.trim() === '') return;
 
-    // Ignore claims whose status is "Not Seen" (check report status, eligibility status, or general status)
-    // (trim + lowercase so " Not Seen " / "not seen" also match)
+    // Ignore claims whose status is "Not Seen"
     const statusToCheck = (result.claimStatus || result.status || result.fullEligibilityRecord?.Status || '')
       .toString()
       .trim()
@@ -785,7 +792,14 @@ function renderResults(results, eligMap) {
     }
 
     const row = document.createElement('tr');
-    row.className = result.finalStatus;
+    // Use Bootstrap classes for row coloring
+    if (result.finalStatus === 'valid') {
+      row.classList.add('table-success');
+    } else if (result.finalStatus === 'invalid') {
+      row.classList.add('table-danger');
+    } else {
+      row.classList.add('table-warning');
+    }
 
     const statusBadge = result.status 
       ? `<span class="status-badge ${result.status.toLowerCase() === 'eligible' ? 'eligible' : 'ineligible'}">${result.status}</span>`
@@ -803,22 +817,21 @@ function renderResults(results, eligMap) {
     }
 
     row.innerHTML = `
-      <td>${result.claimID}</td>
-      <td>${result.memberID}</td>
-      <td>${result.encounterStart}</td>
-      ${!isXmlMode ? `<td class="description-col">${result.packageName}</td><td class="description-col">${result.provider}</td>` : ''}
-      <td class="description-col">${result.clinician}</td>
-      <td class="description-col">${result.serviceCategory}</td>
-      <td class="description-col">${statusBadge}</td>
-      <td class="wrap-col">${remarksHTML}</td>
-      <td>${detailsCell}</td>
+      <td style="padding:6px;border:1px solid #ccc">${result.claimID}</td>
+      <td style="padding:6px;border:1px solid #ccc">${result.memberID}</td>
+      <td style="padding:6px;border:1px solid #ccc">${result.encounterStart}</td>
+      ${!isXmlMode ? `<td class="description-col" style="padding:6px;border:1px solid #ccc">${result.packageName}</td><td class="description-col" style="padding:6px;border:1px solid #ccc">${result.provider}</td>` : ''}
+      <td class="description-col" style="padding:6px;border:1px solid #ccc">${result.clinician}</td>
+      <td class="description-col" style="padding:6px;border:1px solid #ccc">${result.serviceCategory}</td>
+      <td class="description-col" style="padding:6px;border:1px solid #ccc">${statusBadge}</td>
+      <td class="wrap-col" style="padding:6px;border:1px solid #ccc">${remarksHTML}</td>
+      <td style="padding:6px;border:1px solid #ccc">${detailsCell}</td>
     `;
     tbody.appendChild(row);
   });
 
   table.appendChild(tbody);
   tableContainer.appendChild(table);
-  resultsContainer.appendChild(tableContainer);
 
   const summary = document.createElement('div');
   summary.className = 'loaded-count';
@@ -828,9 +841,16 @@ function renderResults(results, eligMap) {
     <span class="unknown">${statusCounts.unknown} unknown</span>, 
     <span class="invalid">${statusCounts.invalid} invalid</span>
   `;
-  resultsContainer.prepend(summary);
-
-  initEligibilityModal(results, eligMap);
+  
+  // Create wrapper container for summary + table
+  const wrapper = document.createElement('div');
+  wrapper.appendChild(summary);
+  wrapper.appendChild(tableContainer);
+  
+  // Initialize modal and attach event handlers
+  setTimeout(() => initEligibilityModal(results, eligMap), 0);
+  
+  return wrapper;
 }
 
 function initEligibilityModal(results) {
@@ -950,8 +970,17 @@ function updateStatus(message) {
 }
 
 function updateProcessButtonState() {
+  const reportSourceXML = document.querySelector('input[name="reportSource"][value="xml"]');
+  const reportSourceXLS = document.querySelector('input[name="reportSource"][value="xls"]');
+  
+  // Exit early if elements don't exist yet
+  if (!processBtn || !reportSourceXML || !reportSourceXLS) {
+    return;
+  }
+  
   const hasEligibility = !!eligData;
-  const hasReportData = xmlRadio.checked ? !!xmlData : !!xlsData;
+  const isXmlMode = xmlRadio ? xmlRadio.checked : true;
+  const hasReportData = isXmlMode ? !!xmlData : !!xlsData;
   processBtn.disabled = !hasEligibility || !hasReportData;
   exportInvalidBtn.disabled = !hasEligibility || !hasReportData;
 }
@@ -1048,11 +1077,12 @@ async function handleProcessClick() {
     usedEligibilities.clear();
 
     const eligMap = prepareEligibilityMap(eligData);
-    const results = xmlRadio.checked ? validateXmlClaims(xmlData.claims, eligMap) : validateReportClaims(xlsData, eligMap);
+    const isXmlMode = xmlRadio ? xmlRadio.checked : true;
+    const results = isXmlMode ? validateXmlClaims(xmlData.claims, eligMap) : validateReportClaims(xlsData, eligMap);
 
     // Only filter for Daman/Thiqa if report mode
     let filteredResults = results;
-    if (!xmlRadio.checked) {
+    if (!isXmlMode) {
       filteredResults = results.filter(r => {
         const provider = (r.provider || r.insuranceCompany || r.packageName || r['Payer Name'] || r['Insurance Company'] || '').toString().toLowerCase();
         return provider.includes('daman') || provider.includes('thiqa');
@@ -1078,18 +1108,95 @@ function handleExportInvalidClick() {
 }
 
 /********************
+ * UNIFIED ENTRY POINT *
+ ********************/
+// Simplified entry point for unified checker - reads files, validates, renders
+async function runEligCheck() {
+  const xmlFileInput = document.getElementById('xmlFileInput');
+  const eligFileInput = document.getElementById('eligibilityFileInput');
+  const statusDiv = document.getElementById('uploadStatus');
+  
+  // Clear status
+  if (statusDiv) statusDiv.textContent = '';
+  
+  // Validate files are uploaded
+  if (!xmlFileInput || !xmlFileInput.files || !xmlFileInput.files.length) {
+    if (statusDiv) statusDiv.textContent = 'Please select an XML file first.';
+    return null;
+  }
+  if (!eligFileInput || !eligFileInput.files || !eligFileInput.files.length) {
+    if (statusDiv) statusDiv.textContent = 'Please select an eligibility XLSX file first.';
+    return null;
+  }
+  
+  const xmlFile = xmlFileInput.files[0];
+  const eligFile = eligFileInput.files[0];
+  
+  try {
+    if (statusDiv) statusDiv.textContent = 'Processing...';
+    usedEligibilities.clear();
+    
+    // Parse XML file
+    const xmlResult = await parseXmlFile(xmlFile);
+    if (!xmlResult || !xmlResult.claims || !Array.isArray(xmlResult.claims)) {
+      throw new Error('Invalid XML file structure - expected claims array');
+    }
+    
+    // Parse eligibility XLSX file
+    const eligResult = await parseExcelFile(eligFile);
+    if (!Array.isArray(eligResult)) {
+      throw new Error('Invalid eligibility file structure - expected array of rows');
+    }
+    
+    // Prepare eligibility map
+    const eligMap = prepareEligibilityMap(eligResult);
+    
+    // Validate claims against eligibility
+    const results = validateXmlClaims(xmlResult.claims, eligMap);
+    
+    // Store results for export
+    window.lastValidationResults = results;
+    
+    if (statusDiv) statusDiv.textContent = `Processed ${results.length} claims`;
+    
+    return buildResultsTable(results, eligMap);
+  } catch (error) {
+    console.error('Eligibility check error:', error);
+    if (statusDiv) statusDiv.textContent = 'Processing failed: ' + error.message;
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'error';
+    errorDiv.style.cssText = 'color: red; padding: 20px; border: 1px solid red; margin: 10px;';
+    errorDiv.innerHTML = `<strong>Eligibility Checker Error:</strong><br>${error.message}`;
+    return errorDiv;
+  }
+}
+
+/********************
  * INITIALIZATION *
  ********************/
 function initializeEventListeners() {
-  xmlInput.addEventListener('change', (e) => handleFileUpload(e, 'xml'));
-  reportInput.addEventListener('change', (e) => handleFileUpload(e, 'report'));
-  eligInput.addEventListener('change', (e) => handleFileUpload(e, 'eligibility'));
-  processBtn.addEventListener('click', handleProcessClick);
-  exportInvalidBtn.addEventListener('click', handleExportInvalidClick);
+  if (xmlInput) xmlInput.addEventListener('change', (e) => handleFileUpload(e, 'xml'));
+  if (reportInput) reportInput.addEventListener('change', (e) => handleFileUpload(e, 'report'));
+  if (eligInput) eligInput.addEventListener('change', (e) => handleFileUpload(e, 'eligibility'));
+  if (processBtn) processBtn.addEventListener('click', handleProcessClick);
+  if (exportInvalidBtn) exportInvalidBtn.addEventListener('click', handleExportInvalidClick);
   initializeRadioButtons();
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  initializeEventListeners();
-  updateStatus('Ready to process files');
+  try {
+    initializeEventListeners();
+    updateStatus('Ready to process files');
+  } catch (error) {
+    console.error('[ELIG] DOMContentLoaded initialization error:', error);
+  }
 });
+
+    // Expose function globally for unified checker
+    window.runEligCheck = runEligCheck;
+
+  } catch (error) {
+    console.error('[CHECKER-ERROR] Failed to load checker:', error);
+    console.error(error.stack);
+  }
+})();
