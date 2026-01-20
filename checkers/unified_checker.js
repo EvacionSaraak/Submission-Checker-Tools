@@ -9,7 +9,7 @@
     let sessionCount = sessionStorage.getItem('checkerSessionCount');
     sessionCount = sessionCount ? parseInt(sessionCount) + 1 : 1;
     sessionStorage.setItem('checkerSessionCount', sessionCount);
-    console.log(`[INIT] Unified Checker v1.2.104 - Session #${sessionCount}`);
+    console.log(`[INIT] Unified Checker v1.2.107 - Session #${sessionCount}`);
     
     // Update DOM when ready
     document.addEventListener('DOMContentLoaded', () => {
@@ -549,7 +549,7 @@
     const globalMedical = document.getElementById('claimTypeMedical');
     
     if (!globalDental || !globalMedical) {
-      console.warn('⚠️ [SYNC] Global claim type radio buttons not found');
+      console.warn('[SYNC] WARNING: Global claim type radio buttons not found');
       return;
     }
     
@@ -559,7 +559,7 @@
     const timingsRadios = container.querySelectorAll('input[name="claimType"]');
     
     if (timingsRadios.length === 0) {
-      console.error('⚠️ [SYNC] NO RADIO BUTTONS FOUND IN TIMINGS CONTAINER!');
+      console.error('[SYNC] ERROR: No radio buttons found in timings container');
       return;
     }
     
@@ -570,7 +570,7 @@
     // Verify the sync worked
     const checkedRadio = container.querySelector('input[name="claimType"]:checked');
     if (!checkedRadio) {
-      console.error(`⚠️ [SYNC] ✗ NO RADIO BUTTON IS CHECKED AFTER SYNC!`);
+      console.error('[SYNC] ERROR: No radio button checked after sync');
     }
   }
 
