@@ -6,10 +6,14 @@
     let lastWorkbook = null;
 
 document.addEventListener('DOMContentLoaded', () => {
-  const runBtn = el('run-button'), dlBtn = el('download-button');
-  if (runBtn) runBtn.addEventListener('click', handleRun);
-  if (dlBtn) dlBtn.addEventListener('click', handleDownload);
-  resetUI();
+  try {
+    const runBtn = el('run-button'), dlBtn = el('download-button');
+    if (runBtn) runBtn.addEventListener('click', handleRun);
+    if (dlBtn) dlBtn.addEventListener('click', handleDownload);
+    resetUI();
+  } catch (error) {
+    console.error('[PRICING] DOMContentLoaded initialization error:', error);
+  }
 });
 
 // ----------------- Main run handler (modified to treat Unknown as valid for the summary) -----------------

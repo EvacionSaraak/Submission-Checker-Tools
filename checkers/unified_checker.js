@@ -215,7 +215,7 @@
     }
 
     // Export button
-    elements.exportBtn.addEventListener('click', exportResults);
+    if (elements.exportBtn) elements.exportBtn.addEventListener('click', exportResults);
     
     // Export Invalids button
     if (elements.exportInvalidsBtn) {

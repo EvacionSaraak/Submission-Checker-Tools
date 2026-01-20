@@ -5,11 +5,15 @@
     let lastWorkbook = null;
 
 document.addEventListener('DOMContentLoaded', () => {
-  const runBtn = el('run-button');
-  const dlBtn = el('download-button');
-  if (runBtn) runBtn.addEventListener('click', handleRun);
-  if (dlBtn) dlBtn.addEventListener('click', handleDownload);
-  resetUI();
+  try {
+    const runBtn = el('run-button');
+    const dlBtn = el('download-button');
+    if (runBtn) runBtn.addEventListener('click', handleRun);
+    if (dlBtn) dlBtn.addEventListener('click', handleDownload);
+    resetUI();
+  } catch (error) {
+    console.error('[MODIFIERS] DOMContentLoaded initialization error:', error);
+  }
 });
 
 // ----------------- Main run handler -----------------

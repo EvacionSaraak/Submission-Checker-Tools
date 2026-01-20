@@ -1164,17 +1164,21 @@ async function runEligCheck() {
  * INITIALIZATION *
  ********************/
 function initializeEventListeners() {
-  xmlInput.addEventListener('change', (e) => handleFileUpload(e, 'xml'));
-  reportInput.addEventListener('change', (e) => handleFileUpload(e, 'report'));
-  eligInput.addEventListener('change', (e) => handleFileUpload(e, 'eligibility'));
-  processBtn.addEventListener('click', handleProcessClick);
-  exportInvalidBtn.addEventListener('click', handleExportInvalidClick);
+  if (xmlInput) xmlInput.addEventListener('change', (e) => handleFileUpload(e, 'xml'));
+  if (reportInput) reportInput.addEventListener('change', (e) => handleFileUpload(e, 'report'));
+  if (eligInput) eligInput.addEventListener('change', (e) => handleFileUpload(e, 'eligibility'));
+  if (processBtn) processBtn.addEventListener('click', handleProcessClick);
+  if (exportInvalidBtn) exportInvalidBtn.addEventListener('click', handleExportInvalidClick);
   initializeRadioButtons();
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  initializeEventListeners();
-  updateStatus('Ready to process files');
+  try {
+    initializeEventListeners();
+    updateStatus('Ready to process files');
+  } catch (error) {
+    console.error('[ELIG] DOMContentLoaded initialization error:', error);
+  }
 });
 
     // Expose function globally for unified checker

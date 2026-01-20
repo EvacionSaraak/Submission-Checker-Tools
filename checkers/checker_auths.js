@@ -903,33 +903,37 @@ async function handleRun() {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
-  const processBtn = document.getElementById('processBtn');
-  if (processBtn) {
-    processBtn.addEventListener('click', handleRun);
-  }
-  ["xmlInput", "xlsxInput"].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) {
-      el.addEventListener("change", async (event) => {
-        const file = event.target.files[0];
-        if (!file) return;
-        if (id === "xmlInput") {
-          currentXmlFile = file;
-          xmlClaimCount = -1;
-          try {
-            parsedXmlDoc = await parseXMLFile(currentXmlFile);
-          } catch (e) { parsedXmlDoc = null; }
-        } else if (id === "xlsxInput") {
-          currentXlsxFile = file;
-          xlsxAuthCount = -1;
-          try {
-            parsedXlsxData = await parseXLSXFile(currentXlsxFile);
-          } catch (e) { parsedXlsxData = null; }
-        }
-        updateStatus();
-      });
+  try {
+    const processBtn = document.getElementById('processBtn');
+    if (processBtn) {
+      processBtn.addEventListener('click', handleRun);
     }
-  });
+    ["xmlInput", "xlsxInput"].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.addEventListener("change", async (event) => {
+          const file = event.target.files[0];
+          if (!file) return;
+          if (id === "xmlInput") {
+            currentXmlFile = file;
+            xmlClaimCount = -1;
+            try {
+              parsedXmlDoc = await parseXMLFile(currentXmlFile);
+            } catch (e) { parsedXmlDoc = null; }
+          } else if (id === "xlsxInput") {
+            currentXlsxFile = file;
+            xlsxAuthCount = -1;
+            try {
+              parsedXlsxData = await parseXLSXFile(currentXlsxFile);
+            } catch (e) { parsedXlsxData = null; }
+          }
+          updateStatus();
+        });
+      }
+    });
+  } catch (error) {
+    console.error('[AUTHS] DOMContentLoaded initialization error:', error);
+  }
 });
 
     // Expose function globally for unified checker

@@ -67,24 +67,31 @@
     });
 
   document.addEventListener('DOMContentLoaded', () => {
-    xmlInput = document.getElementById('xmlFileInput');
-    clinicianInput = document.getElementById('clinicianFileInput');
-    statusInput = document.getElementById('statusFileInput');
-    processBtn = document.getElementById('processBtn');
-    csvBtn = document.getElementById('csvBtn');
-    resultsDiv = document.getElementById('results');
-    uploadDiv = document.getElementById('uploadStatus');
+    try {
+      xmlInput = document.getElementById('xmlFileInput');
+      clinicianInput = document.getElementById('clinicianFileInput');
+      statusInput = document.getElementById('statusFileInput');
+      processBtn = document.getElementById('processBtn');
+      csvBtn = document.getElementById('csvBtn');
+      resultsDiv = document.getElementById('results');
+      uploadDiv = document.getElementById('uploadStatus');
 
-    xmlInput.addEventListener('change', handleXmlInput);
-    clinicianInput.addEventListener('change', handleClinicianInput);
-    statusInput.addEventListener('change', handleStatusInput);
+      if (xmlInput) xmlInput.addEventListener('change', handleXmlInput);
+      if (clinicianInput) clinicianInput.addEventListener('change', handleClinicianInput);
+      if (statusInput) statusInput.addEventListener('change', handleStatusInput);
 
-    processBtn.addEventListener('click', validateClinicians);
-    if (csvBtn) csvBtn.addEventListener('click', exportResults);
-
-    processBtn.disabled = true;
-    if (csvBtn) csvBtn.disabled = true;
-    updateUploadStatus();
+      if (processBtn) {
+        processBtn.addEventListener('click', validateClinicians);
+        processBtn.disabled = true;
+      }
+      if (csvBtn) {
+        csvBtn.addEventListener('click', exportResults);
+        csvBtn.disabled = true;
+      }
+      updateUploadStatus();
+    } catch (error) {
+      console.error('[CLINICIAN] DOMContentLoaded initialization error:', error);
+    }
   });
 
   function handleXmlInput(e) {
@@ -563,8 +570,8 @@
     } else {
       messages.push('Facilities not loaded');
     }
-    uploadDiv.textContent = messages.join(', ');
-    processBtn.disabled = !(claimCount && clinicianCount && historyCount && facilitiesLoaded && affiliatedLicenses.size);
+    if (uploadDiv) uploadDiv.textContent = messages.join(', ');
+    if (processBtn) processBtn.disabled = !(claimCount && clinicianCount && historyCount && facilitiesLoaded && affiliatedLicenses.size);
   }
 
   // Unified checker entry point
