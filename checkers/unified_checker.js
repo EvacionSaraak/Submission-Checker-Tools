@@ -195,7 +195,7 @@
         console.log('🔴 [RADIO-CHANGE] Current state - Dental checked:', claimTypeDental.checked, 'Medical checked:', claimTypeMedical ? claimTypeMedical.checked : 'N/A');
         updateButtonStates();
         // Sync the timings checker's hidden radio buttons immediately
-        const timingsContainer = document.getElementById('timings-container');
+        const timingsContainer = document.getElementById('checker-container-timings');
         if (timingsContainer) {
           syncClaimType(timingsContainer);
         }
@@ -207,7 +207,7 @@
         console.log('🔴 [RADIO-CHANGE] Current state - Dental checked:', claimTypeDental ? claimTypeDental.checked : 'N/A', 'Medical checked:', claimTypeMedical.checked);
         updateButtonStates();
         // Sync the timings checker's hidden radio buttons immediately
-        const timingsContainer = document.getElementById('timings-container');
+        const timingsContainer = document.getElementById('checker-container-timings');
         if (timingsContainer) {
           syncClaimType(timingsContainer);
         }
