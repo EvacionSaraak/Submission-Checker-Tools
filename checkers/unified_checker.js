@@ -1235,9 +1235,17 @@
     checkerContainers.forEach(container => {
       const tables = container.querySelectorAll('table');
       tables.forEach(table => {
-        // Extract checker name from container ID
-        const containerId = container.id;
-        const checkerName = containerId.replace('checker-container-', '');
+        // Extract checker name - prioritize from parent section, fallback to container ID
+        let checkerName = container.id.replace('checker-container-', '');
+        
+        // If in check-all container, find the actual checker from parent section
+        if (checkerName === 'check-all') {
+          const parentSection = table.closest('[id$="-section"]');
+          if (parentSection) {
+            checkerName = parentSection.id.replace('-section', '');
+          }
+        }
+        
         allTables.push({ table, checkerName });
       });
     });
@@ -1265,6 +1273,16 @@
       tableHeadersMap.set(table, { headers, checkerName });
       console.log(`[EXPORT-INVALIDS] Extracted ${headers.length} header(s) from ${checkerName} table`);
     });
+    
+    // Remove unwanted columns and merge similar ones
+    const columnsToRemove = ['View Full Entry', 'Valid'];
+    columnsToRemove.forEach(col => allHeadersSet.delete(col));
+    
+    // Handle Remark/Remarks merge - keep only "Remarks"
+    if (allHeadersSet.has('Remark') || allHeadersSet.has('Remarks')) {
+      allHeadersSet.delete('Remark');
+      allHeadersSet.add('Remarks');
+    }
     
     // Convert Set to sorted Array for consistent column order
     const unifiedHeaders = Array.from(allHeadersSet).sort();
@@ -1322,12 +1340,29 @@
       
       // Map each cell to its header
       unifiedHeaders.forEach(header => {
-        const headerIndex = row.originalHeaders.indexOf(header);
-        if (headerIndex >= 0 && headerIndex < row.cells.length) {
-          rowObj[header] = row.cells[headerIndex];
+        let headerIndex = row.originalHeaders.indexOf(header);
+        let value = '';
+        
+        // Handle merged Remark/Remarks columns
+        if (header === 'Remarks') {
+          const remarksIndex = row.originalHeaders.indexOf('Remarks');
+          const remarkIndex = row.originalHeaders.indexOf('Remark');
+          
+          // Prioritize 'Remarks' if not blank, otherwise use 'Remark'
+          if (remarksIndex >= 0 && remarksIndex < row.cells.length) {
+            value = row.cells[remarksIndex];
+          }
+          if ((!value || value === '') && remarkIndex >= 0 && remarkIndex < row.cells.length) {
+            value = row.cells[remarkIndex];
+          }
         } else {
-          rowObj[header] = ''; // Blank cell for headers not in this table
+          // Normal header mapping, skip removed columns
+          if (headerIndex >= 0 && headerIndex < row.cells.length) {
+            value = row.cells[headerIndex];
+          }
         }
+        
+        rowObj[header] = value;
       });
       
       exportData.push(rowObj);
