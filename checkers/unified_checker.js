@@ -9,7 +9,7 @@
     let sessionCount = sessionStorage.getItem('checkerSessionCount');
     sessionCount = sessionCount ? parseInt(sessionCount) + 1 : 1;
     sessionStorage.setItem('checkerSessionCount', sessionCount);
-    console.log(`[INIT] Unified Checker v1.2.98 - Session #${sessionCount}`);
+    console.log(`[INIT] Unified Checker v1.2.104 - Session #${sessionCount}`);
     
     // Update DOM when ready
     document.addEventListener('DOMContentLoaded', () => {

@@ -19,8 +19,23 @@
     const xmlText = await file.text();
     validateXMLString(xmlText);
     const xmlDoc = parseXML(xmlText);
-    const selectedType = document.querySelector('input[name="claimType"]:checked')?.value || "DENTAL";
-    const requiredType = (selectedType === "DENTAL") ? "3" : "6";
+    
+    // Diagnostic logging for claim type determination
+    const checkedRadio = document.querySelector('input[name="claimType"]:checked');
+    console.log('[TIMINGS-VALIDATION] === CLAIM TYPE DETECTION ===');
+    console.log('[TIMINGS-VALIDATION] Checked radio element:', checkedRadio);
+    console.log('[TIMINGS-VALIDATION] Checked radio value:', checkedRadio ? checkedRadio.value : 'NULL');
+    console.log('[TIMINGS-VALIDATION] Checked radio name:', checkedRadio ? checkedRadio.name : 'NULL');
+    console.log('[TIMINGS-VALIDATION] Checked radio id:', checkedRadio ? checkedRadio.id : 'NULL');
+    
+    const selectedType = checkedRadio?.value || "DENTAL";
+    console.log('[TIMINGS-VALIDATION] Selected type (final):', selectedType);
+    
+    const requiredType = (selectedType === "DENTAL") ? "6" : "3";
+    console.log('[TIMINGS-VALIDATION] Required Activity Type for validation:', requiredType);
+    console.log('[TIMINGS-VALIDATION] Logic: DENTAL expects "6", MEDICAL expects "3"');
+    console.log('[TIMINGS-VALIDATION] === END CLAIM TYPE DETECTION ===');
+    
     const claims = extractClaims(xmlDoc, requiredType);
     
     // Update summary status
