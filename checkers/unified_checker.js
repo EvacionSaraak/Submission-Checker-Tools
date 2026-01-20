@@ -213,6 +213,7 @@
 
   function updateButtonStates() {
     console.log('[BUTTON] Updating button states based on available files and claim type...');
+    console.log('[BUTTON] Current files state:', JSON.stringify(files));
     
     // Check claim type selection
     const claimTypeMedical = document.getElementById('claimTypeMedical');
@@ -232,6 +233,8 @@
     for (const [checker, reqs] of Object.entries(requirements)) {
       const btnName = `btn${checker.charAt(0).toUpperCase() + checker.slice(1)}`;
       const button = elements[btnName];
+      console.log(`[BUTTON] Checking ${checker}: button element found = ${!!button}, btnName = ${btnName}`);
+      
       if (button) {
         // Special handling for Modifiers - only available for Medical claims
         if (checker === 'modifiers' && !isMedical) {
@@ -253,7 +256,11 @@
           button.style.display = '';  // Show button when Medical
         }
         
-        const hasAll = reqs.every(req => files[req] !== null);
+        const hasAll = reqs.every(req => {
+          const hasFile = files[req] !== null && files[req] !== undefined;
+          console.log(`[BUTTON]   - Checking requirement '${req}': ${hasFile ? 'YES' : 'NO'} (value: ${files[req] ? 'File object' : files[req]})`);
+          return hasFile;
+        });
         button.disabled = !hasAll;
         
         const missingFiles = reqs.filter(req => !files[req]);
@@ -262,6 +269,8 @@
         } else {
           console.log(`[BUTTON] ${checker}: DISABLED (missing: ${missingFiles.join(', ')})`);
         }
+      } else {
+        console.log(`[BUTTON] ${checker}: BUTTON ELEMENT NOT FOUND (looking for #${btnName})`);
       }
     }
 
