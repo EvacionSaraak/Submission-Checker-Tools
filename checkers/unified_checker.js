@@ -56,6 +56,35 @@
     console.log(`[DEBUG-LOG] ${timestamp} - ${message}`, data || '');
   }
 
+  // Loading overlay functions
+  function showLoadingOverlay(text = 'Processing...', subtext = 'Please wait while we check your data') {
+    const overlay = document.getElementById('loadingOverlay');
+    const loadingText = document.getElementById('loadingText');
+    const loadingSubtext = document.getElementById('loadingSubtext');
+    
+    if (overlay) {
+      overlay.classList.add('active');
+      if (loadingText) loadingText.textContent = text;
+      if (loadingSubtext) loadingSubtext.textContent = subtext;
+      console.log('[LOADING] Showing loading overlay:', text);
+    }
+  }
+  
+  function hideLoadingOverlay() {
+    const overlay = document.getElementById('loadingOverlay');
+    if (overlay) {
+      overlay.classList.remove('active');
+      console.log('[LOADING] Hiding loading overlay');
+    }
+  }
+  
+  function updateLoadingOverlay(text, subtext) {
+    const loadingText = document.getElementById('loadingText');
+    const loadingSubtext = document.getElementById('loadingSubtext');
+    if (loadingText) loadingText.textContent = text;
+    if (loadingSubtext) loadingSubtext.textContent = subtext;
+  }
+
   // DOM elements
   let elements = {};
 
@@ -329,6 +358,9 @@
     }
     
     try {
+      // Show loading overlay
+      showLoadingOverlay(`Running ${checkerName} checker...`, 'Processing your data...');
+      
       elements.uploadStatus.innerHTML = `<div class="status-message info">Running ${checkerName} checker...</div>`;
       
       setActiveButton(checkerName);
@@ -411,6 +443,9 @@
       if (filterActive) {
         setTimeout(() => applyFilter(), 100); // Small delay to ensure table is fully rendered
       }
+      
+      // Hide loading overlay after completion
+      hideLoadingOverlay();
 
     } catch (error) {
       console.error('[DEBUG] Error running checker:', error);
@@ -420,6 +455,8 @@
       if (container) {
         container.innerHTML = `<div class="alert alert-danger" role="alert"><strong>Error:</strong> ${error.message}</div>`;
       }
+      // Hide loading overlay on error
+      hideLoadingOverlay();
     }
   }
 
@@ -702,6 +739,9 @@
   async function runAllCheckers() {
     console.log('[CHECK-ALL] Starting Check All functionality...');
     
+    // Show loading overlay
+    showLoadingOverlay('Running all checkers...', 'Please wait while we check all your data');
+    
     // Reset debug log and invalid rows data
     debugLog = [];
     invalidRowsData = [];
@@ -782,6 +822,9 @@
       if (elements.debugLogContainer) {
         elements.debugLogContainer.style.display = 'block';
       }
+      
+      // Hide loading overlay since we're done
+      hideLoadingOverlay();
       return;
     }
     
@@ -823,6 +866,12 @@
       
       try {
         console.log(`[CHECK-ALL] Running ${checkerName} checker...`);
+        
+        // Update loading overlay with current progress
+        updateLoadingOverlay(
+          `Running ${checkerName} checker...`,
+          `Progress: ${successCount + errorCount + 1}/${availableCheckers.length} checkers`
+        );
         
         // Update status
         if (elements.uploadStatus) {
@@ -1031,6 +1080,9 @@
       elements.debugLogContainer.style.display = 'block';
       logDebug('Debug Log Button Displayed');
     }
+    
+    // Hide loading overlay after all checkers complete
+    hideLoadingOverlay();
     
     console.log('[CHECK-ALL] ✓ Check All functionality complete');
     console.log('[CHECK-ALL] Results collected from', allResults.length, 'checkers');
