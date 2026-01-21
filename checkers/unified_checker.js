@@ -737,15 +737,16 @@
   }
 
   async function runAllCheckers() {
-    console.log('[CHECK-ALL] Starting Check All functionality...');
-    
-    // Show loading overlay
-    showLoadingOverlay('Running all checkers...', 'Please wait while we check all your data');
-    
-    // Reset debug log and invalid rows data
-    debugLog = [];
-    invalidRowsData = [];
-    logDebug('Check All Started', { timestamp: new Date().toISOString() });
+    try {
+      console.log('[CHECK-ALL] Starting Check All functionality...');
+      
+      // Show loading overlay
+      showLoadingOverlay('Running all checkers...', 'Please wait while we check all your data');
+      
+      // Reset debug log and invalid rows data
+      debugLog = [];
+      invalidRowsData = [];
+      logDebug('Check All Started', { timestamp: new Date().toISOString() });
     
     // Disable Export Invalids button initially
     if (elements.exportInvalidsBtn) {
@@ -1087,6 +1088,27 @@
     console.log('[CHECK-ALL] ✓ Check All functionality complete');
     console.log('[CHECK-ALL] Results collected from', allResults.length, 'checkers');
     console.log('[CHECK-ALL] Debug log contains', debugLog.length, 'entries');
+  } catch (error) {
+    // Catch any unexpected errors to ensure loading overlay is hidden
+    console.error('[CHECK-ALL] Unexpected error in runAllCheckers:', error);
+    logDebug('Check All Fatal Error', {
+      errorMessage: error.message,
+      errorStack: error.stack
+    });
+    
+    // Show error message to user
+    if (elements.uploadStatus) {
+      elements.uploadStatus.innerHTML = `<div class="status-message error">An unexpected error occurred: ${error.message}</div>`;
+    }
+    
+    // Show debug log button so user can download the log
+    if (elements.debugLogContainer) {
+      elements.debugLogContainer.style.display = 'block';
+    }
+    
+    // Always hide loading overlay on error
+    hideLoadingOverlay();
+  }
   }
 
   function updateExportInvalidsTooltip(reason = null) {
