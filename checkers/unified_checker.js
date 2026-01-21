@@ -367,11 +367,10 @@
       activeChecker = checkerName;
 
       // Reset filter when starting a new checker (Bug #26 fix)
-      if (filterActive) {
-        filterActive = false;
-        elements.floatingFilterBtn.classList.remove('active');
-        console.log('[FILTER] Auto-reset: Filter turned off when running new checker');
-      }
+      // Always set to inactive state when new tables are loaded
+      filterActive = false;
+      elements.floatingFilterBtn.classList.remove('active');
+      console.log('[FILTER] Auto-reset: Filter set to off when running new checker');
 
       // Hide all checker containers and show the active one
       hideAllCheckerContainers();
@@ -839,6 +838,14 @@
     // Set Check All button as active
     setActiveButton('checkAll');
     activeChecker = 'check-all';
+    
+    // Reset filter when starting Check All
+    // Always set to inactive state when new tables are loaded
+    filterActive = false;
+    if (elements.floatingFilterBtn) {
+      elements.floatingFilterBtn.classList.remove('active');
+    }
+    console.log('[FILTER] Auto-reset: Filter set to off when running Check All');
     
     // Hide all containers and show the check-all container
     hideAllCheckerContainers();
