@@ -369,7 +369,9 @@
       // Reset filter when starting a new checker (Bug #26 fix)
       // Always set to inactive state when new tables are loaded
       filterActive = false;
-      elements.floatingFilterBtn.classList.remove('active');
+      if (elements.floatingFilterBtn) {
+        elements.floatingFilterBtn.classList.remove('active');
+      }
       console.log('[FILTER] Auto-reset: Filter set to off when running new checker');
 
       // Hide all checker containers and show the active one
