@@ -53,6 +53,9 @@ function handleReportSourceChange() {
 }
 
 function initializeRadioButtons() {
+  // Only initialize if the radio buttons exist (they don't exist in unified_checker.html)
+  if (!xmlRadio || !xlsRadio) return;
+  
   xmlRadio.addEventListener('change', handleReportSourceChange);
   xlsRadio.addEventListener('change', handleReportSourceChange);
   handleReportSourceChange();

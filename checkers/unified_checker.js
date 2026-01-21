@@ -56,6 +56,35 @@
     console.log(`[DEBUG-LOG] ${timestamp} - ${message}`, data || '');
   }
 
+  // Loading overlay functions
+  function showLoadingOverlay(text = 'Processing...', subtext = 'Please wait while we check your data') {
+    const overlay = document.getElementById('loadingOverlay');
+    const loadingText = document.getElementById('loadingText');
+    const loadingSubtext = document.getElementById('loadingSubtext');
+    
+    if (overlay) {
+      overlay.classList.add('active');
+      if (loadingText) loadingText.textContent = text;
+      if (loadingSubtext) loadingSubtext.textContent = subtext;
+      console.log('[LOADING] Showing loading overlay:', text);
+    }
+  }
+  
+  function hideLoadingOverlay() {
+    const overlay = document.getElementById('loadingOverlay');
+    if (overlay) {
+      overlay.classList.remove('active');
+      console.log('[LOADING] Hiding loading overlay');
+    }
+  }
+  
+  function updateLoadingOverlay(text, subtext) {
+    const loadingText = document.getElementById('loadingText');
+    const loadingSubtext = document.getElementById('loadingSubtext');
+    if (loadingText) loadingText.textContent = text;
+    if (loadingSubtext) loadingSubtext.textContent = subtext;
+  }
+
   // DOM elements
   let elements = {};
 
@@ -329,17 +358,21 @@
     }
     
     try {
+      // Show loading overlay
+      showLoadingOverlay(`Running ${checkerName} checker...`, 'Processing your data...');
+      
       elements.uploadStatus.innerHTML = `<div class="status-message info">Running ${checkerName} checker...</div>`;
       
       setActiveButton(checkerName);
       activeChecker = checkerName;
 
       // Reset filter when starting a new checker (Bug #26 fix)
-      if (filterActive) {
-        filterActive = false;
+      // Always set to inactive state when new tables are loaded
+      filterActive = false;
+      if (elements.floatingFilterBtn) {
         elements.floatingFilterBtn.classList.remove('active');
-        console.log('[FILTER] Auto-reset: Filter turned off when running new checker');
       }
+      console.log('[FILTER] Auto-reset: Filter set to off when running new checker');
 
       // Hide all checker containers and show the active one
       hideAllCheckerContainers();
@@ -411,6 +444,9 @@
       if (filterActive) {
         setTimeout(() => applyFilter(), 100); // Small delay to ensure table is fully rendered
       }
+      
+      // Hide loading overlay after completion
+      hideLoadingOverlay();
 
     } catch (error) {
       console.error('[DEBUG] Error running checker:', error);
@@ -420,6 +456,8 @@
       if (container) {
         container.innerHTML = `<div class="alert alert-danger" role="alert"><strong>Error:</strong> ${error.message}</div>`;
       }
+      // Hide loading overlay on error
+      hideLoadingOverlay();
     }
   }
 
@@ -700,12 +738,16 @@
   }
 
   async function runAllCheckers() {
-    console.log('[CHECK-ALL] Starting Check All functionality...');
-    
-    // Reset debug log and invalid rows data
-    debugLog = [];
-    invalidRowsData = [];
-    logDebug('Check All Started', { timestamp: new Date().toISOString() });
+    try {
+      console.log('[CHECK-ALL] Starting Check All functionality...');
+      
+      // Show loading overlay
+      showLoadingOverlay('Running all checkers...', 'Please wait while we check all your data');
+      
+      // Reset debug log and invalid rows data
+      debugLog = [];
+      invalidRowsData = [];
+      logDebug('Check All Started', { timestamp: new Date().toISOString() });
     
     // Disable Export Invalids button initially
     if (elements.exportInvalidsBtn) {
@@ -782,6 +824,9 @@
       if (elements.debugLogContainer) {
         elements.debugLogContainer.style.display = 'block';
       }
+      
+      // Hide loading overlay since we're done
+      hideLoadingOverlay();
       return;
     }
     
@@ -795,6 +840,14 @@
     // Set Check All button as active
     setActiveButton('checkAll');
     activeChecker = 'check-all';
+    
+    // Reset filter when starting Check All
+    // Always set to inactive state when new tables are loaded
+    filterActive = false;
+    if (elements.floatingFilterBtn) {
+      elements.floatingFilterBtn.classList.remove('active');
+    }
+    console.log('[FILTER] Auto-reset: Filter set to off when running Check All');
     
     // Hide all containers and show the check-all container
     hideAllCheckerContainers();
@@ -823,6 +876,12 @@
       
       try {
         console.log(`[CHECK-ALL] Running ${checkerName} checker...`);
+        
+        // Update loading overlay with current progress
+        updateLoadingOverlay(
+          `Running ${checkerName} checker...`,
+          `Progress: ${successCount + errorCount + 1}/${availableCheckers.length} checkers`
+        );
         
         // Update status
         if (elements.uploadStatus) {
@@ -1032,9 +1091,33 @@
       logDebug('Debug Log Button Displayed');
     }
     
+    // Hide loading overlay after all checkers complete
+    hideLoadingOverlay();
+    
     console.log('[CHECK-ALL] ✓ Check All functionality complete');
     console.log('[CHECK-ALL] Results collected from', allResults.length, 'checkers');
     console.log('[CHECK-ALL] Debug log contains', debugLog.length, 'entries');
+  } catch (error) {
+    // Catch any unexpected errors to ensure loading overlay is hidden
+    console.error('[CHECK-ALL] Unexpected error in runAllCheckers:', error);
+    logDebug('Check All Fatal Error', {
+      errorMessage: error.message,
+      errorStack: error.stack
+    });
+    
+    // Show error message to user
+    if (elements.uploadStatus) {
+      elements.uploadStatus.innerHTML = `<div class="status-message error">An unexpected error occurred: ${error.message}</div>`;
+    }
+    
+    // Show debug log button so user can download the log
+    if (elements.debugLogContainer) {
+      elements.debugLogContainer.style.display = 'block';
+    }
+    
+    // Always hide loading overlay on error
+    hideLoadingOverlay();
+  }
   }
 
   function updateExportInvalidsTooltip(reason = null) {
@@ -1127,8 +1210,8 @@
     tables.forEach(table => {
       const rows = table.querySelectorAll('tbody tr');
       
-      // Track which Claim IDs have already been shown in this table
-      // This prevents showing the same Claim ID multiple times in filtered view
+      // Track which Claim IDs have been shown in the filtered view
+      // This is used to fill the claim ID for the first invalid occurrence only
       const shownClaimIds = new Set();
       
       rows.forEach(row => {
@@ -1149,20 +1232,24 @@
                             row.innerHTML.includes('❌');
           
           if (hasInvalid) {
+            // Show all invalid rows
+            row.style.display = '';
+            
             // Get the Claim ID from this row (if it has one)
             const claimId = row.getAttribute('data-claim-id');
             
-            if (claimId && shownClaimIds.has(claimId)) {
-              // This Claim ID is already shown in the filtered results, hide this duplicate
-              row.style.display = 'none';
-              console.log('[FILTER] Hiding duplicate Claim ID:', claimId);
-            } else {
-              // Show this row and track its Claim ID
-              row.style.display = '';
-              if (claimId) {
-                shownClaimIds.add(claimId);
+            if (claimId && !shownClaimIds.has(claimId)) {
+              // First invalid occurrence of this Claim ID - ensure it's displayed
+              shownClaimIds.add(claimId);
+              
+              const claimIdCell = row.querySelector('.claim-id-cell');
+              if (claimIdCell && claimIdCell.textContent.trim() === '') {
+                claimIdCell.textContent = claimId;
+                claimIdCell.style.color = '#666';
+                claimIdCell.style.fontStyle = 'italic';
               }
             }
+            // Subsequent invalid rows with the same Claim ID keep their blank cells
           } else {
             row.style.display = 'none';
           }
