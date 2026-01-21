@@ -196,6 +196,77 @@ function checkImplantActivityDiagnosis(activities, diagnoses, getText, invalidFi
   }
 }
 
+/**
+ * GT License validation for Ordering Clinician:
+ * 
+ * Background: GT licenses are for Physiotherapy/Occupational Therapy and are only 
+ * supported at specific facilities.
+ * 
+ * Validation Rules:
+ * 1. DENTAL cases with GT license → INVALID (GT licenses not applicable to dental)
+ * 2. MEDICAL cases with GT license at supported facilities (WLDY, Al Yahar, TrueLife) 
+ *    → INVALID (requires confirmation from coders/auditors)
+ * 3. MEDICAL cases with GT license at other facilities 
+ *    → INVALID (facility doesn't support Physio/Occupational Therapy)
+ * 4. All other cases → continue processing normally
+ *
+ * Parameters:
+ *  - activities: HTMLCollection/array of Activity elements for this claim
+ *  - facilityID: The FacilityID from the Encounter element
+ *  - getText: function(tag, parent) -> returns text content for tag within parent
+ *  - invalidFields: array to append any validation messages to
+ */
+function checkGTLicenseValidation(activities, facilityID, getText, invalidFields) {
+  try {
+    // Facilities that support Physio/Occupational Therapy (GT licenses)
+    const gtSupportedFacilities = new Set([
+      "MF5339",  // Wldy Medical Center
+      "MF5357",  // New Look Medical Center (Al Yahar Branch 3)
+      "MF7003",  // True Life Primary Care Center
+      "MF7231",  // True Life Primary Care Center (Al Wagan Branch 1)
+      "PF4000"   // True Life Pharmacy
+    ]);
+
+    // Check each activity for GT license
+    Array.from(activities || []).forEach((activity, index) => {
+      const orderingClinician = (getText("OrderingClinician", activity) || "").trim().toUpperCase();
+      const activityType = (getText("Type", activity) || "").trim();
+      const activityCode = (getText("Code", activity) || "").trim();
+
+      // Check if ordering clinician starts with "GT"
+      if (orderingClinician.startsWith("GT")) {
+        const isMedical = activityType === "3";
+        const isDental = activityType === "6";
+        const isSupportedFacility = gtSupportedFacilities.has((facilityID || "").trim());
+
+        // DENTAL validation: GT licenses are not valid for dental cases
+        if (isDental) {
+          invalidFields.push(
+            `Activity[${index}] Code ${activityCode}: Ordering Clinician ${orderingClinician} (GT license) is INVALID for DENTAL cases`
+          );
+        }
+        // MEDICAL validation: Check facility support
+        else if (isMedical) {
+          // Supported facilities: Require confirmation from coders/auditors
+          if (isSupportedFacility) {
+            invalidFields.push(
+              `Activity[${index}] Code ${activityCode}: Ordering Clinician ${orderingClinician} (GT license) requires confirmation from coders/auditors`
+            );
+          }
+          // Unsupported facilities: Facility doesn't support Physio/Occupational Therapy
+          else {
+            invalidFields.push(
+              `Activity[${index}] Code ${activityCode}: Ordering Clinician ${orderingClinician} (GT license) is INVALID - Facility does NOT support Physio or Occupational Therapy`
+            );
+          }
+        }
+      }
+    });
+  } catch (err) {
+    console.error("GT license validation check error:", err);
+  }
+}
+
 function validateClaimSchema(xmlDoc, originalXmlContent = "") {
   const results = [];
   const claims = xmlDoc.getElementsByTagName("Claim");
@@ -297,6 +368,10 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
 
     // NEW CHECK: implant-specific codes requiring certain diagnosis codes
     checkImplantActivityDiagnosis(activities, diagnoses, text, invalidFields);
+
+    // NEW CHECK: GT license validation for Ordering Clinician
+    const facilityID = encounter ? text("FacilityID", encounter) : "";
+    checkGTLicenseValidation(activities, facilityID, text, invalidFields);
 
     // Contract optional
     const contract = claim.getElementsByTagName("Contract")[0];
