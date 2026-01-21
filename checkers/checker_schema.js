@@ -198,14 +198,17 @@ function checkImplantActivityDiagnosis(activities, diagnoses, getText, invalidFi
 
 /**
  * GT License validation for Ordering Clinician:
- * Rules:
- * 1. If Ordering Clinician license starts with "GT" at facilities WLDY, Al Yahar, TrueLife:
- *    - Mark INVALID, require confirmation from coders/auditors
- * 2. If Ordering Clinician license starts with "GT" at OTHER facilities:
- *    - Mark INVALID, flag for recheck (facility doesn't support Physio/Occupational Therapy)
- * 3. Apply to MEDICAL cases only (Activity.Type = "3")
- * 4. If DENTAL case (Activity.Type = "6") has GT license:
- *    - Mark INVALID
+ * 
+ * Background: GT licenses are for Physiotherapy/Occupational Therapy and are only 
+ * supported at specific facilities.
+ * 
+ * Validation Rules:
+ * 1. DENTAL cases with GT license → INVALID (GT licenses not applicable to dental)
+ * 2. MEDICAL cases with GT license at supported facilities (WLDY, Al Yahar, TrueLife) 
+ *    → INVALID (requires confirmation from coders/auditors)
+ * 3. MEDICAL cases with GT license at other facilities 
+ *    → INVALID (facility doesn't support Physio/Occupational Therapy)
+ * 4. All other cases → continue processing normally
  *
  * Parameters:
  *  - activities: HTMLCollection/array of Activity elements for this claim
@@ -236,21 +239,21 @@ function checkGTLicenseValidation(activities, facilityID, getText, invalidFields
         const isDental = activityType === "6";
         const isSupportedFacility = gtSupportedFacilities.has((facilityID || "").trim());
 
-        // Rule 4: DENTAL case with GT license
+        // DENTAL validation: GT licenses are not valid for dental cases
         if (isDental) {
           invalidFields.push(
             `Activity[${index}] Code ${activityCode}: Ordering Clinician ${orderingClinician} (GT license) is INVALID for DENTAL cases`
           );
         }
-        // Rule 3: Apply to MEDICAL cases only
+        // MEDICAL validation: Check facility support
         else if (isMedical) {
-          // Rule 1: Supported facilities (WLDY, Al Yahar, TrueLife)
+          // Supported facilities: Require confirmation from coders/auditors
           if (isSupportedFacility) {
             invalidFields.push(
               `Activity[${index}] Code ${activityCode}: Ordering Clinician ${orderingClinician} (GT license) requires confirmation from coders/auditors`
             );
           }
-          // Rule 2: Other facilities
+          // Unsupported facilities: Facility doesn't support Physio/Occupational Therapy
           else {
             invalidFields.push(
               `Activity[${index}] Code ${activityCode}: Ordering Clinician ${orderingClinician} (GT license) is INVALID - Facility does NOT support Physio or Occupational Therapy`
