@@ -295,7 +295,7 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId) {
   let clinicianMismatchMsg = "";
 
   if (!matchedRow.AuthorizationID) {
-    remarks.push(`${authID} has no authorization for ${code}.`);
+    remarks.push(`Authorization required for ${code}.`);
   } else {
     // Check for extra whitespace in common fields (including AuthorizationID on the XLSX row)
     ["Item Code", "Card Number / DHA Member ID", "Ordering Clinician", "Payer Share", "AuthorizationID"].forEach(field => {
