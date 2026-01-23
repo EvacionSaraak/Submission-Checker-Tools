@@ -295,7 +295,7 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId) {
   let clinicianMismatchMsg = "";
 
   if (!matchedRow.AuthorizationID) {
-    if (authID) {
+    if (authID.length > 0) {
       remarks.push(`${authID} has no authorization for ${code}.`);
     } else {
       remarks.push(`Authorization required for ${code}.`);
