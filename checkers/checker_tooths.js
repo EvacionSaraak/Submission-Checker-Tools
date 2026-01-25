@@ -392,11 +392,6 @@ function validateUnknownCode({
     details = obsCodes.map(obsCode => (
       isDrugPatientShareOrPDF(obsCode) ? `${obsCode} (valid - no validation)` : obsCode
     )).join('<br>');
-
-    const nonPDFObs = obsCodes.filter(o => !isDrugPatientShareOrPDF(o));
-    if (nonPDFObs.length > 0) {
-      remarks.push(`Unknown code but observation is present (${nonPDFObs.join(', ')}).`);
-    }
   } else {
     details = 'N/A';
   }
