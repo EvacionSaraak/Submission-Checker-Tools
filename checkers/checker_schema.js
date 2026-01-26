@@ -145,7 +145,7 @@ function checkSpecialActivityDiagnosis(activities, diagnoses, getText, invalidFi
 
       if (missingRequiredDiag.length > 0) {
         invalidFields.push(
-          `Activity code(s) ${Array.from(new Set(foundSpecialActivityCodes)).join(", ")} require Diagnosis code(s): ${missingRequiredDiag.join(", ")}`
+          `Activity code(s) ${Array.from(new Set(foundSpecialActivityCodes)).join(" ")} require Diagnosis code(s): ${missingRequiredDiag.join(" ")}`
         );
       }
     }
@@ -187,7 +187,7 @@ function checkImplantActivityDiagnosis(activities, diagnoses, getText, invalidFi
 
       if (!hasValidDiagnosis) {
         invalidFields.push(
-          `Activity code(s) ${Array.from(new Set(foundImplantCodes)).join(", ")} require at least one Diagnosis code from: K08.1xx or K08.4xx`
+          `Activity code(s) ${Array.from(new Set(foundImplantCodes)).join(" ")} require at least one Diagnosis code from: K08.1xx or K08.4xx`
         );
       }
     }
