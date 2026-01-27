@@ -114,7 +114,11 @@ function checkForFalseValues(parent, invalidFields, prefix = "") {
 /**
  * Supplemental check extracted to its own function:
  * If any Activity Code is one of the special dental codes (11111, 11119, 11101, 11109)
- * then the claim must include Diagnosis code(s) K05.10 and K03.6.
+ * then the claim must include Diagnosis code(s) matching K05.1x and K03.6x patterns.
+ *
+ * Pattern matching: Only the code before the decimal and the first digit after the decimal are checked.
+ * Examples: K05.10, K05.11, K05.12 all match the K05.1x pattern
+ *           K03.60, K03.61, K03.62 all match the K03.6x pattern
  *
  * Parameters:
  *  - activities: HTMLCollection/array of Activity elements for this claim
@@ -127,7 +131,26 @@ function checkForFalseValues(parent, invalidFields, prefix = "") {
 function checkSpecialActivityDiagnosis(activities, diagnoses, getText, invalidFields) {
   try {
     const specialActivityCodes = new Set(["11111", "11119", "11101", "11109"]);
-    const requiredDiagnosisCodes = new Set(["K05.10", "K03.6"]);
+    // Required diagnosis patterns: code before decimal + first digit after decimal
+    const requiredDiagnosisPatterns = [
+      { pattern: "K05.1", displayCode: "K05.1x" },
+      { pattern: "K03.6", displayCode: "K03.6x" }
+    ];
+
+    /**
+     * Helper function to check if a diagnosis code matches a pattern
+     * @param {string} code - The diagnosis code to check (e.g., "K05.10", "K03.61")
+     * @param {string} pattern - The pattern to match (e.g., "K05.1", "K03.6")
+     * @returns {boolean} - True if the code matches the pattern
+     */
+    function matchesDiagnosisPattern(code, pattern) {
+      // Check if code is long enough to match the pattern
+      if (code.length < pattern.length) {
+        return false;
+      }
+      // Compare the prefix: code before decimal + first digit after decimal
+      return code.substring(0, pattern.length) === pattern;
+    }
 
     // find special activity codes present in this claim
     const foundSpecialActivityCodes = Array.from(activities || [])
@@ -135,17 +158,25 @@ function checkSpecialActivityDiagnosis(activities, diagnoses, getText, invalidFi
       .filter(c => c && specialActivityCodes.has(c));
 
     if (foundSpecialActivityCodes.length > 0) {
-      // collect diagnosis codes (uppercased)
-      const diagCodesSet = new Set(
-        Array.from(diagnoses || []).map(d => (getText("Code", d) || "").toUpperCase())
-      );
+      // collect diagnosis codes (uppercased and normalized)
+      const diagnosisCodes = Array.from(diagnoses || [])
+        .map(d => (getText("Code", d) || "").toUpperCase().trim())
+        .filter(c => c);
 
-      // determine which required diagnosis codes are missing
-      const missingRequiredDiag = Array.from(requiredDiagnosisCodes).filter(req => !diagCodesSet.has(req));
+      // Check which required patterns are missing
+      const missingPatterns = [];
+      for (const { pattern, displayCode } of requiredDiagnosisPatterns) {
+        // Check if any diagnosis code matches this pattern
+        const hasMatch = diagnosisCodes.some(code => matchesDiagnosisPattern(code, pattern));
+        
+        if (!hasMatch) {
+          missingPatterns.push(displayCode);
+        }
+      }
 
-      if (missingRequiredDiag.length > 0) {
+      if (missingPatterns.length > 0) {
         invalidFields.push(
-          `Activity code(s) ${Array.from(new Set(foundSpecialActivityCodes)).join(", ")} require Diagnosis code(s): ${missingRequiredDiag.join(", ")}`
+          `Activity code(s) ${Array.from(new Set(foundSpecialActivityCodes)).join(" ")} require Diagnosis code(s): ${missingPatterns.join(" ")}`
         );
       }
     }
@@ -187,7 +218,7 @@ function checkImplantActivityDiagnosis(activities, diagnoses, getText, invalidFi
 
       if (!hasValidDiagnosis) {
         invalidFields.push(
-          `Activity code(s) ${Array.from(new Set(foundImplantCodes)).join(", ")} require at least one Diagnosis code from: K08.1xx or K08.4xx`
+          `Activity code(s) ${Array.from(new Set(foundImplantCodes)).join(" ")} require at least one Diagnosis code from: K08.1xx or K08.4xx`
         );
       }
     }
@@ -386,14 +417,18 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
     }
 
     // Compile remarks
-    missingFields.length && remarks.push("Missing: " + missingFields.join(", "));
-    invalidFields.length && remarks.push("Invalid: " + invalidFields.join(", "));
+    if (missingFields.length) {
+      remarks.push("Missing: " + missingFields.join(", "));
+    }
+    if (invalidFields.length) {
+      invalidFields.forEach(field => remarks.push(field));
+    }
     !remarks.length && remarks.push("OK");
 
     results.push({
       ClaimID: text("ID") || "Unknown",
       Valid: !missingFields.length && !invalidFields.length,
-      Remark: remarks.join("; "),
+      Remark: remarks.join("\n"),
       ClaimXML: claim.outerHTML,
       SchemaType: "claim"
     });
@@ -475,14 +510,18 @@ function validatePersonSchema(xmlDoc, originalXmlContent = "") {
     }
 
     // Compile remarks
-    missingFields.length && remarks.push("Missing: " + missingFields.join(", "));
-    invalidFields.length && remarks.push("Invalid: " + invalidFields.join(", "));
+    if (missingFields.length) {
+      remarks.push("Missing: " + missingFields.join(", "));
+    }
+    if (invalidFields.length) {
+      invalidFields.forEach(field => remarks.push(field));
+    }
     !remarks.length && remarks.push("OK");
 
     results.push({
       ClaimID: memberID,
       Valid: !missingFields.length && !invalidFields.length,
-      Remark: remarks.join("; "),
+      Remark: remarks.join("\n"),
       ClaimXML: person.outerHTML,
       SchemaType: "person"
     });

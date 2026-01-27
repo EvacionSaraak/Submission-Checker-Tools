@@ -293,7 +293,8 @@ function validateKnownCode({
       }
       let thisRemark = '';
       if (!meta.teethSet.has(obsCode)) {
-        thisRemark = `${obsCode} not allowed for ${meta.description.match(/anterior|posterior|bicuspid|all/i)?.[0] || 'see code description'} code ${code}.`;
+        const toothType = getRegionName(obsCode);
+        thisRemark = `${toothType} ${obsCode} not allowed for ${meta.description.match(/anterior|posterior|bicuspid|all/i)?.[0] || 'see code description'} code ${code}.`;
         remarks.push(thisRemark);
       }
 
@@ -303,7 +304,7 @@ function validateKnownCode({
         regionKey = getQuadrant(obsCode);
       }
 
-      return `${obsCode} - ${getRegionName(obsCode)}${thisRemark ? ' | ' + thisRemark : ''}`;
+      return `${obsCode} - ${getRegionName(obsCode)}`;
     }).join('<br>');
 
   // Region duplication check
