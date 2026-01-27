@@ -386,14 +386,18 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
     }
 
     // Compile remarks
-    missingFields.length && remarks.push("Missing: " + missingFields.join(", "));
-    invalidFields.length && remarks.push("Invalid: " + invalidFields.join(", "));
+    if (missingFields.length) {
+      remarks.push("Missing: " + missingFields.join(", "));
+    }
+    if (invalidFields.length) {
+      invalidFields.forEach(field => remarks.push(field));
+    }
     !remarks.length && remarks.push("OK");
 
     results.push({
       ClaimID: text("ID") || "Unknown",
       Valid: !missingFields.length && !invalidFields.length,
-      Remark: remarks.join("; "),
+      Remark: remarks.join("\n"),
       ClaimXML: claim.outerHTML,
       SchemaType: "claim"
     });
@@ -475,14 +479,18 @@ function validatePersonSchema(xmlDoc, originalXmlContent = "") {
     }
 
     // Compile remarks
-    missingFields.length && remarks.push("Missing: " + missingFields.join(", "));
-    invalidFields.length && remarks.push("Invalid: " + invalidFields.join(", "));
+    if (missingFields.length) {
+      remarks.push("Missing: " + missingFields.join(", "));
+    }
+    if (invalidFields.length) {
+      invalidFields.forEach(field => remarks.push(field));
+    }
     !remarks.length && remarks.push("OK");
 
     results.push({
       ClaimID: memberID,
       Valid: !missingFields.length && !invalidFields.length,
-      Remark: remarks.join("; "),
+      Remark: remarks.join("\n"),
       ClaimXML: person.outerHTML,
       SchemaType: "person"
     });
