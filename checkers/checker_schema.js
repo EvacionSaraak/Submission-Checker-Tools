@@ -137,6 +137,21 @@ function checkSpecialActivityDiagnosis(activities, diagnoses, getText, invalidFi
       { pattern: "K03.6", displayCode: "K03.6x" }
     ];
 
+    /**
+     * Helper function to check if a diagnosis code matches a pattern
+     * @param {string} code - The diagnosis code to check (e.g., "K05.10", "K03.61")
+     * @param {string} pattern - The pattern to match (e.g., "K05.1", "K03.6")
+     * @returns {boolean} - True if the code matches the pattern
+     */
+    function matchesDiagnosisPattern(code, pattern) {
+      // Check if code is long enough to match the pattern
+      if (code.length < pattern.length) {
+        return false;
+      }
+      // Compare the prefix: code before decimal + first digit after decimal
+      return code.substring(0, pattern.length) === pattern;
+    }
+
     // find special activity codes present in this claim
     const foundSpecialActivityCodes = Array.from(activities || [])
       .map(a => (getText("Code", a) || "").trim())
@@ -152,12 +167,7 @@ function checkSpecialActivityDiagnosis(activities, diagnoses, getText, invalidFi
       const missingPatterns = [];
       for (const { pattern, displayCode } of requiredDiagnosisPatterns) {
         // Check if any diagnosis code matches this pattern
-        // Pattern matching: code before decimal + first digit after decimal
-        const hasMatch = diagnosisCodes.some(code => {
-          // Normalize the code to match pattern (e.g., K05.10 -> K05.1, K03.61 -> K03.6)
-          const normalizedCode = code.substring(0, pattern.length);
-          return normalizedCode === pattern;
-        });
+        const hasMatch = diagnosisCodes.some(code => matchesDiagnosisPattern(code, pattern));
         
         if (!hasMatch) {
           missingPatterns.push(displayCode);
