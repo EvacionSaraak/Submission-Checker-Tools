@@ -114,7 +114,11 @@ function checkForFalseValues(parent, invalidFields, prefix = "") {
 /**
  * Supplemental check extracted to its own function:
  * If any Activity Code is one of the special dental codes (11111, 11119, 11101, 11109)
- * then the claim must include Diagnosis code(s) K05.10 and K03.6.
+ * then the claim must include Diagnosis code(s) matching K05.1x and K03.6x patterns.
+ *
+ * Pattern matching: Only the code before the decimal and the first digit after the decimal are checked.
+ * Examples: K05.10, K05.11, K05.12 all match the K05.1x pattern
+ *           K03.60, K03.61, K03.62 all match the K03.6x pattern
  *
  * Parameters:
  *  - activities: HTMLCollection/array of Activity elements for this claim
@@ -127,7 +131,11 @@ function checkForFalseValues(parent, invalidFields, prefix = "") {
 function checkSpecialActivityDiagnosis(activities, diagnoses, getText, invalidFields) {
   try {
     const specialActivityCodes = new Set(["11111", "11119", "11101", "11109"]);
-    const requiredDiagnosisCodes = new Set(["K05.10", "K03.6"]);
+    // Required diagnosis patterns: code before decimal + first digit after decimal
+    const requiredDiagnosisPatterns = [
+      { pattern: "K05.1", displayCode: "K05.1x" },
+      { pattern: "K03.6", displayCode: "K03.6x" }
+    ];
 
     // find special activity codes present in this claim
     const foundSpecialActivityCodes = Array.from(activities || [])
@@ -135,17 +143,30 @@ function checkSpecialActivityDiagnosis(activities, diagnoses, getText, invalidFi
       .filter(c => c && specialActivityCodes.has(c));
 
     if (foundSpecialActivityCodes.length > 0) {
-      // collect diagnosis codes (uppercased)
-      const diagCodesSet = new Set(
-        Array.from(diagnoses || []).map(d => (getText("Code", d) || "").toUpperCase())
-      );
+      // collect diagnosis codes (uppercased and normalized)
+      const diagnosisCodes = Array.from(diagnoses || [])
+        .map(d => (getText("Code", d) || "").toUpperCase().trim())
+        .filter(c => c);
 
-      // determine which required diagnosis codes are missing
-      const missingRequiredDiag = Array.from(requiredDiagnosisCodes).filter(req => !diagCodesSet.has(req));
+      // Check which required patterns are missing
+      const missingPatterns = [];
+      for (const { pattern, displayCode } of requiredDiagnosisPatterns) {
+        // Check if any diagnosis code matches this pattern
+        // Pattern matching: code before decimal + first digit after decimal
+        const hasMatch = diagnosisCodes.some(code => {
+          // Normalize the code to match pattern (e.g., K05.10 -> K05.1, K03.61 -> K03.6)
+          const normalizedCode = code.substring(0, pattern.length);
+          return normalizedCode === pattern;
+        });
+        
+        if (!hasMatch) {
+          missingPatterns.push(displayCode);
+        }
+      }
 
-      if (missingRequiredDiag.length > 0) {
+      if (missingPatterns.length > 0) {
         invalidFields.push(
-          `Activity code(s) ${Array.from(new Set(foundSpecialActivityCodes)).join(" ")} require Diagnosis code(s): ${missingRequiredDiag.join(" ")}`
+          `Activity code(s) ${Array.from(new Set(foundSpecialActivityCodes)).join(" ")} require Diagnosis code(s): ${missingPatterns.join(" ")}`
         );
       }
     }
