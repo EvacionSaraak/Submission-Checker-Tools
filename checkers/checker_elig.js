@@ -1195,8 +1195,10 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 });
 
-    // Expose function globally for unified checker
+    // Expose functions globally for unified checker and modal functionality
     window.runEligCheck = runEligCheck;
+    window.hideModal = hideModal;
+    window.initEligibilityModal = initEligibilityModal;
 
   } catch (error) {
     console.error('[CHECKER-ERROR] Failed to load checker:', error);
