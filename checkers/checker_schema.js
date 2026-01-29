@@ -133,8 +133,8 @@ function checkSpecialActivityDiagnosis(activities, diagnoses, getText, invalidFi
     const specialActivityCodes = new Set(["11111", "11119", "11101", "11109"]);
     // Required diagnosis patterns: code before decimal + first digit after decimal
     const requiredDiagnosisPatterns = [
-      { pattern: "K05.1", displayCode: "K05.1x" },
-      { pattern: "K03.6", displayCode: "K03.6x" }
+      { pattern: "K05.1", displayCode: "K05.1" },
+      { pattern: "K03.6", displayCode: "K03.6" }
     ];
 
     /**
@@ -218,7 +218,7 @@ function checkImplantActivityDiagnosis(activities, diagnoses, getText, invalidFi
 
       if (!hasValidDiagnosis) {
         invalidFields.push(
-          `Activity code(s) ${Array.from(new Set(foundImplantCodes)).join(" ")} require at least one Diagnosis code from: K08.1xx or K08.4xx`
+          `Activity code(s) ${Array.from(new Set(foundImplantCodes)).join(" ")} require at least one Diagnosis code from: K08.1 or K08.4`
         );
       }
     }
@@ -534,7 +534,7 @@ function ensureModal() {
   if (document.getElementById("modalOverlay")) return;
   const modalHtml = `
     <div id="modalOverlay" style="display:none;position:fixed;z-index:9999;left:0;top:0;width:100vw;height:100vh;background:rgba(0,0,0,0.35);">
-      <div id="modalContent" style="background:#fff;max-width:900px;max-height:85vh;overflow:auto;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);padding:20px;border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,0.2);">
+      <div id="modalContent" style="background:#fff;width:90%;max-width:1000px;max-height:95vh;overflow:auto;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);padding:20px;border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,0.2);">
         <button id="modalCloseBtn" style="float:right;font-size:18px;padding:2px 10px;cursor:pointer;" aria-label="Close">&times;</button>
         <div id="modalTable"></div>
       </div>
@@ -689,8 +689,12 @@ function exportErrorsToXLSX(data, schemaType) {
   }
 }
 
-    // Expose function globally for unified checker
+    // Expose functions globally for unified checker and modal functionality
     window.validateXmlSchema = validateXmlSchema;
+    window.showModal = showModal;
+    window.hideModal = hideModal;
+    window.claimToHtmlTable = claimToHtmlTable;
+    window.ensureModal = ensureModal;
 
   } catch (error) {
     console.error('[CHECKER-ERROR] Failed to load checker:', error);

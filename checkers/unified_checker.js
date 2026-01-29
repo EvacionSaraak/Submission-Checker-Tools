@@ -737,6 +737,58 @@
     }
   }
 
+  /**
+   * Re-attach event listeners to a cloned table for Check-All functionality
+   * When tables are cloned, event listeners are lost. This function restores them.
+   */
+  function reattachEventListeners(clonedTable, checkerName) {
+    console.log(`[CHECK-ALL] Re-attaching event listeners for ${checkerName} table`);
+    
+    try {
+      if (checkerName === 'schema') {
+        // Schema checker uses .view-claim-btn buttons with data-index
+        const results = window._lastValidationResults;
+        if (!results || !Array.isArray(results)) {
+          console.warn('[CHECK-ALL] No validation results found for schema checker');
+          return;
+        }
+        
+        results.forEach((row, index) => {
+          const btn = clonedTable.querySelector(`.view-claim-btn[data-index="${index}"]`);
+          if (btn) {
+            btn.onclick = () => {
+              if (typeof window.showModal === 'function' && typeof window.claimToHtmlTable === 'function') {
+                window.showModal(window.claimToHtmlTable(row.ClaimXML));
+              } else {
+                console.error('[CHECK-ALL] Modal functions not available');
+              }
+            };
+          }
+        });
+        console.log(`[CHECK-ALL] Re-attached ${results.length} event listeners for schema checker`);
+      } else if (checkerName === 'elig') {
+        // Eligibility checker uses .eligibility-details buttons
+        // Note: initEligibilityModal should be called with the results
+        if (typeof window.initEligibilityModal === 'function') {
+          // The eligibility modal initialization needs the results array
+          // For now, we'll attach basic click handlers that use global modal functions
+          const detailButtons = clonedTable.querySelectorAll('.eligibility-details');
+          console.log(`[CHECK-ALL] Found ${detailButtons.length} eligibility detail buttons`);
+          
+          detailButtons.forEach(btn => {
+            btn.onclick = function() {
+              console.log('[CHECK-ALL] Eligibility detail button clicked, but full data not available in cloned table');
+              alert('For detailed eligibility information, please run the Eligibility checker individually.');
+            };
+          });
+        }
+      }
+      // Add more checker types as needed
+    } catch (error) {
+      console.error(`[CHECK-ALL] Error re-attaching event listeners for ${checkerName}:`, error);
+    }
+  }
+
   async function runAllCheckers() {
     try {
       console.log('[CHECK-ALL] Starting Check All functionality...');
@@ -948,7 +1000,11 @@
           
           // Copy table to check-all results section
           if (sectionResults && table) {
-            sectionResults.appendChild(table.cloneNode(true));
+            const clonedTable = table.cloneNode(true);
+            sectionResults.appendChild(clonedTable);
+            
+            // Re-attach event listeners that were lost during cloning
+            reattachEventListeners(clonedTable, checkerName);
           }
           
           logDebug(`Checker Success: ${checkerName}`, {
