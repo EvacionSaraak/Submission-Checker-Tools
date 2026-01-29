@@ -865,7 +865,7 @@ function initEligibilityModal(results) {
           background:#fff;
           width:90%;
           max-width:1200px;
-          max-height:90vh;
+          max-height:95vh;
           overflow:auto;
           position:absolute;
           left:50%;
