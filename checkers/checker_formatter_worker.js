@@ -859,10 +859,9 @@ self.onmessage = async (e) => {
     log(`Processing started in mode: ${mode}, ${files.length} file(s)`);
     
     if (mode === 'xml') {
-      // Handle XML mode differently - returns Uint8Array directly
-      const xmlData = await combineXMLs(files);
-      self.postMessage({ type: 'result', workbookData: xmlData }, [xmlData.buffer]);
-      log(`Processing complete for mode: ${mode}`, 'SUCCESS');
+      // XML mode is now handled in main thread (DOMParser not available in workers)
+      log('XML mode should be processed in main thread, not worker', 'WARN');
+      throw new Error('XML mode should be processed in main thread');
     } else {
       // Handle eligibility and reporting modes - returns workbook
       const combineFn = mode === 'eligibility' ? combineEligibilities : combineReportings;
