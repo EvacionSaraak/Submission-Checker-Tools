@@ -7,10 +7,12 @@ const messageBox = document.getElementById('messageBox');
 
 const eligibilityPanel = document.getElementById('eligibility-panel');
 const reportingPanel = document.getElementById('reporting-panel');
+const xmlPanel = document.getElementById('xml-panel');
 
 const eligibilityInput = document.getElementById('eligibility-files');
 const reportingInput = document.getElementById('reporting-files');
 const clinicianInput = document.getElementById('clinician-files'); // NEW clinician input
+const xmlInput = document.getElementById('xml-files');
 
 const outputTableContainer = document.getElementById('outputTableContainer');
 
@@ -23,9 +25,15 @@ document.getElementById('mode-selector').addEventListener('change', e => {
   if (mode === 'eligibility') {
     eligibilityPanel.classList.remove('hidden');
     reportingPanel.classList.add('hidden');
-  } else {
+    xmlPanel.classList.add('hidden');
+  } else if (mode === 'reporting') {
     eligibilityPanel.classList.add('hidden');
     reportingPanel.classList.remove('hidden');
+    xmlPanel.classList.add('hidden');
+  } else if (mode === 'xml') {
+    eligibilityPanel.classList.add('hidden');
+    reportingPanel.classList.add('hidden');
+    xmlPanel.classList.remove('hidden');
   }
   resetUI();
 });
@@ -46,7 +54,9 @@ combineButton.addEventListener('click', async () => {
     messageBox.textContent = '';
     outputTableContainer.innerHTML = '';
     const mode = document.querySelector('input[name="mode"]:checked').value;
-    const inputFiles = mode === 'eligibility' ? eligibilityInput.files : reportingInput.files;
+    const inputFiles = mode === 'eligibility' ? eligibilityInput.files : 
+                       mode === 'reporting' ? reportingInput.files : 
+                       xmlInput.files;
 
     if (!inputFiles.length) {
       alert('Please upload one or more files first.');
@@ -143,14 +153,23 @@ worker.onerror = e => {
 
 downloadButton.addEventListener('click', () => {
   if (!lastWorkbookData) return;
-  const blob = new Blob([lastWorkbookData], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const mode = document.querySelector('input[name="mode"]:checked').value;
+  
+  let blob, filename;
+  const timestamp = new Date().toISOString().slice(0,19).replace(/:/g,'-');
+  
+  if (mode === 'xml') {
+    blob = new Blob([lastWorkbookData], { type: 'application/xml' });
+    filename = `combined_xml_${timestamp}.xml`;
+  } else {
+    blob = new Blob([lastWorkbookData], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    filename = `combined_${mode}_${timestamp}.xlsx`;
+  }
+  
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-
-  const mode = document.querySelector('input[name="mode"]:checked').value;
-  const timestamp = new Date().toISOString().slice(0,19).replace(/:/g,'-');
-  a.download = `combined_${mode}_${timestamp}.xlsx`;
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   setTimeout(() => {

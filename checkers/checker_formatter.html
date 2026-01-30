@@ -11,6 +11,7 @@
 <div id="mode-selector" class="form-row">
   <label><input type="radio" name="mode" value="eligibility" checked> Eligibility</label>
   <label><input type="radio" name="mode" value="reporting"> Reporting</label>
+  <label><input type="radio" name="mode" value="xml"> XML</label>
 </div>
 
 <div id="eligibility-panel">
@@ -28,6 +29,13 @@
   <div class="form-row">
     <label for="clinician-files">Upload Clinician Licenses Excel (XLSX):</label>
     <input type="file" id="clinician-files" accept=".xlsx" />
+  </div>
+</div>
+
+<div id="xml-panel" class="hidden">
+  <div class="form-row">
+    <label for="xml-files">Upload XML files:</label>
+    <input type="file" id="xml-files" multiple accept=".xml" />
   </div>
 </div>
 

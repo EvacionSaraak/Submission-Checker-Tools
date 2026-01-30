@@ -705,6 +705,105 @@ async function combineReportings(fileEntries, clinicianFile) {
 }
 
 // ==============================
+// combineXMLs function
+// ==============================
+async function combineXMLs(fileEntries) {
+  log("Starting XML combining");
+  if (!fileEntries || !fileEntries.length) {
+    log("No XML files provided", "ERROR");
+    throw new Error("No XML files provided");
+  }
+
+  self.postMessage({ type: 'progress', progress: 10 });
+
+  // We'll parse each XML, extract the Claims element's children, and merge them
+  const parser = new DOMParser();
+  let combinedClaims = [];
+
+  for (let i = 0; i < fileEntries.length; i++) {
+    const entry = fileEntries[i];
+    log(`Processing XML file ${i + 1}/${fileEntries.length}: ${entry.name}`);
+    
+    try {
+      // Convert ArrayBuffer to string
+      const decoder = new TextDecoder('utf-8');
+      const xmlString = decoder.decode(entry.buffer);
+      
+      // Parse the XML
+      const xmlDoc = parser.parseFromString(xmlString, "text/xml");
+      
+      // Check for parsing errors
+      const parserError = xmlDoc.querySelector('parsererror');
+      if (parserError) {
+        log(`XML parsing error in ${entry.name}: ${parserError.textContent}`, 'ERROR');
+        continue;
+      }
+      
+      // Extract all Claim elements from the Claims node
+      const claims = xmlDoc.querySelectorAll('Claims > Claim');
+      log(`Found ${claims.length} claim(s) in ${entry.name}`);
+      
+      // Add each claim to our combined list
+      claims.forEach(claim => {
+        combinedClaims.push(claim);
+      });
+      
+    } catch (err) {
+      log(`Error processing ${entry.name}: ${err.message}`, 'ERROR');
+    }
+    
+    const progress = 10 + (80 * (i + 1) / fileEntries.length);
+    self.postMessage({ type: 'progress', progress: Math.floor(progress) });
+  }
+
+  if (combinedClaims.length === 0) {
+    log("No claims found in any XML file", "ERROR");
+    throw new Error("No claims found in XML files");
+  }
+
+  log(`Total claims collected: ${combinedClaims.length}`);
+  self.postMessage({ type: 'progress', progress: 90 });
+
+  // Build the combined XML structure
+  // Get the structure from the first file as a template
+  const decoder = new TextDecoder('utf-8');
+  const firstXmlString = decoder.decode(fileEntries[0].buffer);
+  const firstXmlDoc = parser.parseFromString(firstXmlString, "text/xml");
+  
+  // Clone the root structure but clear the Claims element
+  const serializer = new XMLSerializer();
+  const rootNode = firstXmlDoc.documentElement.cloneNode(true);
+  
+  // Find and clear the Claims element
+  const claimsNode = rootNode.querySelector('Claims');
+  if (claimsNode) {
+    // Remove all existing Claim children
+    while (claimsNode.firstChild) {
+      claimsNode.removeChild(claimsNode.firstChild);
+    }
+    
+    // Add all combined claims
+    combinedClaims.forEach(claim => {
+      const importedClaim = claimsNode.ownerDocument.importNode(claim, true);
+      claimsNode.appendChild(importedClaim);
+    });
+  }
+
+  // Serialize the combined XML
+  const combinedXmlString = serializer.serializeToString(rootNode);
+  
+  // Add XML declaration
+  const finalXml = '<?xml version="1.0" encoding="utf-8"?>\n' + combinedXmlString;
+  
+  log(`Combined XML created with ${combinedClaims.length} claims`);
+  self.postMessage({ type: 'progress', progress: 100 });
+  
+  // Return the XML string as a Uint8Array
+  const encoder = new TextEncoder();
+  return encoder.encode(finalXml);
+}
+
+// ==============================
 // Remaining helpers kept but commented if unneeded
 // (You asked: do not delete functions; comment them if unneeded)
 // ==============================
@@ -726,12 +825,21 @@ self.onmessage = async (e) => {
   const { mode, files, clinicianFile } = e.data;
   try {
     log(`Processing started in mode: ${mode}, ${files.length} file(s)`);
-    const combineFn = mode === 'eligibility' ? combineEligibilities : combineReportings;
-    const wb = await combineFn(files, clinicianFile);
-    const wbArray = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-    const wbUint8 = new Uint8Array(wbArray);
-    self.postMessage({ type: 'result', workbookData: wbUint8 }, [wbUint8.buffer]);
-    log(`Processing complete for mode: ${mode}`, 'SUCCESS');
+    
+    if (mode === 'xml') {
+      // Handle XML mode differently - returns Uint8Array directly
+      const xmlData = await combineXMLs(files);
+      self.postMessage({ type: 'result', workbookData: xmlData }, [xmlData.buffer]);
+      log(`Processing complete for mode: ${mode}`, 'SUCCESS');
+    } else {
+      // Handle eligibility and reporting modes - returns workbook
+      const combineFn = mode === 'eligibility' ? combineEligibilities : combineReportings;
+      const wb = await combineFn(files, clinicianFile);
+      const wbArray = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      const wbUint8 = new Uint8Array(wbArray);
+      self.postMessage({ type: 'result', workbookData: wbUint8 }, [wbUint8.buffer]);
+      log(`Processing complete for mode: ${mode}`, 'SUCCESS');
+    }
   } catch (err) {
     self.postMessage({ type: 'error', error: err.message });
     log(`Error during processing: ${err.message}`, 'ERROR');
