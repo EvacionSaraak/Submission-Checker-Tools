@@ -1,7 +1,14 @@
 // ==============================
 // import and constants
 // ==============================
-importScripts('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
+// Import XLSX only when needed (wrapped in try-catch to handle CDN blocks)
+let XLSX_LOADED = false;
+try {
+  importScripts('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
+  XLSX_LOADED = true;
+} catch (e) {
+  console.log('XLSX library not loaded - only XML mode will be available');
+}
 
 const TARGET_HEADERS = [
   'Pri. Claim No', 'Clinician License', 'Encounter Date', 'Pri. Patient Insurance Card No',
@@ -373,6 +380,9 @@ function mapSourceRowWithHeaderMap(headerRow, dataRow, headerMap) {
 // ==============================
 async function combineEligibilities(fileEntries) {
   log("Starting eligibility combining");
+  if (!XLSX_LOADED) {
+    throw new Error("XLSX library not available. Cannot process eligibility files.");
+  }
   const XLSX = (typeof window !== "undefined" ? window.XLSX : self.XLSX);
   if (!fileEntries || !fileEntries.length) return log("No eligibility files provided", "ERROR");
 
@@ -413,6 +423,9 @@ async function combineEligibilities(fileEntries) {
 // ==============================
 async function combineReportings(fileEntries, clinicianFile) {
   log("Starting combineReportings function");
+  if (!XLSX_LOADED) {
+    throw new Error("XLSX library not available. Cannot process reporting files.");
+  }
   if (!Array.isArray(fileEntries) || fileEntries.length === 0) {
     log("No input files provided", "ERROR");
     throw new Error("No input files provided");
