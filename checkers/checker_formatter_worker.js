@@ -732,6 +732,8 @@ async function combineXMLs(fileEntries) {
   // We'll parse each XML, extract the Claim elements, and merge them
   const parser = new DOMParser();
   let combinedClaims = [];
+  let firstXmlDoc = null;
+  let parseErrors = 0;
 
   for (let i = 0; i < fileEntries.length; i++) {
     const entry = fileEntries[i];
@@ -739,8 +741,8 @@ async function combineXMLs(fileEntries) {
     
     try {
       // Convert ArrayBuffer to string
-      const decoder = new TextDecoder('utf-8');
-      const xmlString = decoder.decode(entry.buffer);
+      const textDecoder = new TextDecoder('utf-8');
+      const xmlString = textDecoder.decode(entry.buffer);
       
       // Parse the XML
       const xmlDoc = parser.parseFromString(xmlString, "text/xml");
@@ -749,49 +751,63 @@ async function combineXMLs(fileEntries) {
       const parserError = xmlDoc.querySelector('parsererror');
       if (parserError) {
         log(`XML parsing error in ${entry.name}: ${parserError.textContent}`, 'ERROR');
+        parseErrors++;
         continue;
       }
       
-      // Extract all Claim elements directly under the root (Claim.Submission)
-      const claims = xmlDoc.querySelectorAll('Claim\\.Submission > Claim');
-      log(`Found ${claims.length} claim(s) in ${entry.name}`);
+      // Store the first successfully parsed document as template
+      if (!firstXmlDoc) {
+        firstXmlDoc = xmlDoc;
+      }
       
-      // Add each claim to our combined list
-      claims.forEach(claim => {
-        combinedClaims.push(claim);
-      });
+      // Extract all Claim elements that are direct children of the root
+      const root = xmlDoc.documentElement;
+      if (root) {
+        // Get all direct child elements named "Claim"
+        const children = root.children || root.childNodes;
+        for (let j = 0; j < children.length; j++) {
+          const child = children[j];
+          if (child.nodeType === 1 && child.tagName === 'Claim') {
+            combinedClaims.push(child);
+          }
+        }
+      }
+      
+      log(`Found ${combinedClaims.length - (i > 0 ? combinedClaims.length : 0)} claim(s) in ${entry.name}`);
       
     } catch (err) {
       log(`Error processing ${entry.name}: ${err.message}`, 'ERROR');
+      parseErrors++;
     }
     
     const progress = 10 + (80 * (i + 1) / fileEntries.length);
     self.postMessage({ type: 'progress', progress: Math.floor(progress) });
   }
 
-  if (combinedClaims.length === 0) {
-    log("No claims found in any XML file", "ERROR");
-    throw new Error("No claims found in XML files");
+  if (parseErrors === fileEntries.length) {
+    log(`All ${parseErrors} file(s) failed to parse`, "ERROR");
+    throw new Error(`Failed to parse all ${parseErrors} XML file(s)`);
   }
 
-  log(`Total claims collected: ${combinedClaims.length}`);
+  if (combinedClaims.length === 0) {
+    log("No claims found in any XML file", "ERROR");
+    throw new Error(`Successfully parsed ${fileEntries.length - parseErrors} file(s), but found no claims`);
+  }
+
+  log(`Total claims collected: ${combinedClaims.length} from ${fileEntries.length - parseErrors} file(s)`);
   self.postMessage({ type: 'progress', progress: 90 });
 
-  // Build the combined XML structure
-  // Get the structure from the first file as a template
-  const decoder = new TextDecoder('utf-8');
-  const firstXmlString = decoder.decode(fileEntries[0].buffer);
-  const firstXmlDoc = parser.parseFromString(firstXmlString, "text/xml");
-  
-  // Clone the root structure
+  // Build the combined XML structure using the first parsed document as template
   const serializer = new XMLSerializer();
   const rootNode = firstXmlDoc.documentElement.cloneNode(true);
   
-  // Remove all existing Claim children from root
-  const existingClaims = rootNode.querySelectorAll('Claim');
-  existingClaims.forEach(claim => {
-    rootNode.removeChild(claim);
-  });
+  // Remove all existing Claim children from root (only direct children)
+  const children = Array.from(rootNode.children || rootNode.childNodes);
+  for (const child of children) {
+    if (child.nodeType === 1 && child.tagName === 'Claim') {
+      rootNode.removeChild(child);
+    }
+  }
   
   // Update the RecordCount in Header if it exists
   const headerRecordCount = rootNode.querySelector('Header > RecordCount');
@@ -799,17 +815,10 @@ async function combineXMLs(fileEntries) {
     headerRecordCount.textContent = combinedClaims.length.toString();
   }
   
-  // Add all combined claims after the Header
-  const headerNode = rootNode.querySelector('Header');
-  const insertAfter = headerNode || rootNode.firstChild;
-  
+  // Add all combined claims to the root node
   combinedClaims.forEach(claim => {
     const importedClaim = rootNode.ownerDocument.importNode(claim, true);
-    if (insertAfter && insertAfter.nextSibling) {
-      rootNode.insertBefore(importedClaim, insertAfter.nextSibling);
-    } else {
-      rootNode.appendChild(importedClaim);
-    }
+    rootNode.appendChild(importedClaim);
   });
 
   // Serialize the combined XML
