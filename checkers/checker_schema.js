@@ -114,7 +114,7 @@ function checkForFalseValues(parent, invalidFields, prefix = "") {
 /**
  * Supplemental check extracted to its own function:
  * If any Activity Code is one of the special dental codes (11111, 11119, 11101, 11109)
- * then the claim must include Diagnosis code(s) matching K05.1x and K03.6x patterns.
+ * then the claim must include at least one Diagnosis code matching either K05.1x or K03.6x pattern.
  *
  * Pattern matching: Only the code before the decimal and the first digit after the decimal are checked.
  * Examples: K05.10, K05.11, K05.12 all match the K05.1x pattern
@@ -163,20 +163,16 @@ function checkSpecialActivityDiagnosis(activities, diagnoses, getText, invalidFi
         .map(d => (getText("Code", d) || "").toUpperCase().trim())
         .filter(c => c);
 
-      // Check which required patterns are missing
-      const missingPatterns = [];
-      for (const { pattern, displayCode } of requiredDiagnosisPatterns) {
-        // Check if any diagnosis code matches this pattern
-        const hasMatch = diagnosisCodes.some(code => matchesDiagnosisPattern(code, pattern));
-        
-        if (!hasMatch) {
-          missingPatterns.push(displayCode);
-        }
-      }
+      // Check if at least one of the required patterns is present (OR logic)
+      const hasAnyMatch = requiredDiagnosisPatterns.some(({ pattern }) => {
+        return diagnosisCodes.some(code => matchesDiagnosisPattern(code, pattern));
+      });
 
-      if (missingPatterns.length > 0) {
+      if (!hasAnyMatch) {
+        // None of the required patterns found
+        const requiredCodes = requiredDiagnosisPatterns.map(p => p.displayCode).join(" or ");
         invalidFields.push(
-          `Activity code(s) ${Array.from(new Set(foundSpecialActivityCodes)).join(" ")} require Diagnosis code(s): ${missingPatterns.join(" ")}`
+          `Activity code(s) ${Array.from(new Set(foundSpecialActivityCodes)).join(" ")} require Diagnosis code(s): ${requiredCodes}`
         );
       }
     }
