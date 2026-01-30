@@ -114,10 +114,11 @@ function checkForFalseValues(parent, invalidFields, prefix = "") {
 /**
  * Supplemental check extracted to its own function:
  * If any Activity Code is one of the special dental codes (11111, 11119, 11101, 11109)
- * then the claim must include at least one Diagnosis code matching either K05.1x or K03.6x pattern.
+ * then the claim must include at least one Diagnosis code matching K05.0x, K05.1x or K03.6x pattern.
  *
  * Pattern matching: Only the code before the decimal and the first digit after the decimal are checked.
- * Examples: K05.10, K05.11, K05.12 all match the K05.1x pattern
+ * Examples: K05.00, K05.01, K05.02 all match the K05.0x pattern
+ *           K05.10, K05.11, K05.12 all match the K05.1x pattern
  *           K03.60, K03.61, K03.62 all match the K03.6x pattern
  *
  * Parameters:
@@ -133,14 +134,15 @@ function checkSpecialActivityDiagnosis(activities, diagnoses, getText, invalidFi
     const specialActivityCodes = new Set(["11111", "11119", "11101", "11109"]);
     // Required diagnosis patterns: code before decimal + first digit after decimal
     const requiredDiagnosisPatterns = [
+      { pattern: "K05.0", displayCode: "K05.0" },
       { pattern: "K05.1", displayCode: "K05.1" },
       { pattern: "K03.6", displayCode: "K03.6" }
     ];
 
     /**
      * Helper function to check if a diagnosis code matches a pattern
-     * @param {string} code - The diagnosis code to check (e.g., "K05.10", "K03.61")
-     * @param {string} pattern - The pattern to match (e.g., "K05.1", "K03.6")
+     * @param {string} code - The diagnosis code to check (e.g., "K05.00", "K05.10", "K03.61")
+     * @param {string} pattern - The pattern to match (e.g., "K05.0", "K05.1", "K03.6")
      * @returns {boolean} - True if the code matches the pattern
      */
     function matchesDiagnosisPattern(code, pattern) {
