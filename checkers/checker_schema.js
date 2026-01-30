@@ -141,8 +141,8 @@ function checkSpecialActivityDiagnosis(activities, diagnoses, getText, invalidFi
 
     /**
      * Helper function to check if a diagnosis code matches a pattern
-     * @param {string} code - The diagnosis code to check (e.g., "K05.10", "K03.61")
-     * @param {string} pattern - The pattern to match (e.g., "K05.1", "K03.6")
+     * @param {string} code - The diagnosis code to check (e.g., "K05.00", "K05.10", "K03.61")
+     * @param {string} pattern - The pattern to match (e.g., "K05.0", "K05.1", "K03.6")
      * @returns {boolean} - True if the code matches the pattern
      */
     function matchesDiagnosisPattern(code, pattern) {
