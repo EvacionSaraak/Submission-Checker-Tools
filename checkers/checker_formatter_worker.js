@@ -716,7 +716,7 @@ async function combineXMLs(fileEntries) {
 
   self.postMessage({ type: 'progress', progress: 10 });
 
-  // We'll parse each XML, extract the Claims element's children, and merge them
+  // We'll parse each XML, extract the Claim elements, and merge them
   const parser = new DOMParser();
   let combinedClaims = [];
 
@@ -739,8 +739,8 @@ async function combineXMLs(fileEntries) {
         continue;
       }
       
-      // Extract all Claim elements from the Claims node
-      const claims = xmlDoc.querySelectorAll('Claims > Claim');
+      // Extract all Claim elements directly under the root (Claim.Submission)
+      const claims = xmlDoc.querySelectorAll('Claim\\.Submission > Claim');
       log(`Found ${claims.length} claim(s) in ${entry.name}`);
       
       // Add each claim to our combined list
@@ -770,24 +770,34 @@ async function combineXMLs(fileEntries) {
   const firstXmlString = decoder.decode(fileEntries[0].buffer);
   const firstXmlDoc = parser.parseFromString(firstXmlString, "text/xml");
   
-  // Clone the root structure but clear the Claims element
+  // Clone the root structure
   const serializer = new XMLSerializer();
   const rootNode = firstXmlDoc.documentElement.cloneNode(true);
   
-  // Find and clear the Claims element
-  const claimsNode = rootNode.querySelector('Claims');
-  if (claimsNode) {
-    // Remove all existing Claim children
-    while (claimsNode.firstChild) {
-      claimsNode.removeChild(claimsNode.firstChild);
-    }
-    
-    // Add all combined claims
-    combinedClaims.forEach(claim => {
-      const importedClaim = claimsNode.ownerDocument.importNode(claim, true);
-      claimsNode.appendChild(importedClaim);
-    });
+  // Remove all existing Claim children from root
+  const existingClaims = rootNode.querySelectorAll('Claim');
+  existingClaims.forEach(claim => {
+    rootNode.removeChild(claim);
+  });
+  
+  // Update the RecordCount in Header if it exists
+  const headerRecordCount = rootNode.querySelector('Header > RecordCount');
+  if (headerRecordCount) {
+    headerRecordCount.textContent = combinedClaims.length.toString();
   }
+  
+  // Add all combined claims after the Header
+  const headerNode = rootNode.querySelector('Header');
+  const insertAfter = headerNode || rootNode.firstChild;
+  
+  combinedClaims.forEach(claim => {
+    const importedClaim = rootNode.ownerDocument.importNode(claim, true);
+    if (insertAfter && insertAfter.nextSibling) {
+      rootNode.insertBefore(importedClaim, insertAfter.nextSibling);
+    } else {
+      rootNode.appendChild(importedClaim);
+    }
+  });
 
   // Serialize the combined XML
   const combinedXmlString = serializer.serializeToString(rootNode);
