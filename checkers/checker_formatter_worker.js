@@ -1,7 +1,14 @@
 // ==============================
 // import and constants
 // ==============================
-importScripts('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
+// Import XLSX only when needed (wrapped in try-catch to handle CDN blocks)
+let XLSX_LOADED = false;
+try {
+  importScripts('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
+  XLSX_LOADED = true;
+} catch (e) {
+  console.log('XLSX library not loaded - only XML mode will be available');
+}
 
 const TARGET_HEADERS = [
   'Pri. Claim No', 'Clinician License', 'Encounter Date', 'Pri. Patient Insurance Card No',
@@ -373,6 +380,9 @@ function mapSourceRowWithHeaderMap(headerRow, dataRow, headerMap) {
 // ==============================
 async function combineEligibilities(fileEntries) {
   log("Starting eligibility combining");
+  if (!XLSX_LOADED) {
+    throw new Error("XLSX library not available. Cannot process eligibility files.");
+  }
   const XLSX = (typeof window !== "undefined" ? window.XLSX : self.XLSX);
   if (!fileEntries || !fileEntries.length) return log("No eligibility files provided", "ERROR");
 
@@ -413,6 +423,9 @@ async function combineEligibilities(fileEntries) {
 // ==============================
 async function combineReportings(fileEntries, clinicianFile) {
   log("Starting combineReportings function");
+  if (!XLSX_LOADED) {
+    throw new Error("XLSX library not available. Cannot process reporting files.");
+  }
   if (!Array.isArray(fileEntries) || fileEntries.length === 0) {
     log("No input files provided", "ERROR");
     throw new Error("No input files provided");
@@ -705,6 +718,124 @@ async function combineReportings(fileEntries, clinicianFile) {
 }
 
 // ==============================
+// combineXMLs function
+// ==============================
+async function combineXMLs(fileEntries) {
+  log("Starting XML combining");
+  if (!fileEntries || !fileEntries.length) {
+    log("No XML files provided", "ERROR");
+    throw new Error("No XML files provided");
+  }
+
+  self.postMessage({ type: 'progress', progress: 10 });
+
+  // We'll parse each XML, extract the Claim elements, and merge them
+  const parser = new DOMParser();
+  let combinedClaims = [];
+  let firstXmlDoc = null;
+  let parseErrors = 0;
+
+  for (let i = 0; i < fileEntries.length; i++) {
+    const entry = fileEntries[i];
+    log(`Processing XML file ${i + 1}/${fileEntries.length}: ${entry.name}`);
+    
+    try {
+      // Convert ArrayBuffer to string
+      const textDecoder = new TextDecoder('utf-8');
+      const xmlString = textDecoder.decode(entry.buffer);
+      
+      // Parse the XML
+      const xmlDoc = parser.parseFromString(xmlString, "text/xml");
+      
+      // Check for parsing errors
+      const parserError = xmlDoc.querySelector('parsererror');
+      if (parserError) {
+        log(`XML parsing error in ${entry.name}: ${parserError.textContent}`, 'ERROR');
+        parseErrors++;
+        continue;
+      }
+      
+      // Store the first successfully parsed document as template
+      if (!firstXmlDoc) {
+        firstXmlDoc = xmlDoc;
+      }
+      
+      // Extract all Claim elements that are direct children of the root
+      const root = xmlDoc.documentElement;
+      if (root) {
+        // Get all direct child elements named "Claim"
+        const children = root.children || root.childNodes;
+        for (let j = 0; j < children.length; j++) {
+          const child = children[j];
+          if (child.nodeType === 1 && child.tagName === 'Claim') {
+            combinedClaims.push(child);
+          }
+        }
+      }
+      
+      log(`Found ${combinedClaims.length - (i > 0 ? combinedClaims.length : 0)} claim(s) in ${entry.name}`);
+      
+    } catch (err) {
+      log(`Error processing ${entry.name}: ${err.message}`, 'ERROR');
+      parseErrors++;
+    }
+    
+    const progress = 10 + (80 * (i + 1) / fileEntries.length);
+    self.postMessage({ type: 'progress', progress: Math.floor(progress) });
+  }
+
+  if (parseErrors === fileEntries.length) {
+    log(`All ${parseErrors} file(s) failed to parse`, "ERROR");
+    throw new Error(`Failed to parse all ${parseErrors} XML file(s)`);
+  }
+
+  if (combinedClaims.length === 0) {
+    log("No claims found in any XML file", "ERROR");
+    throw new Error(`Successfully parsed ${fileEntries.length - parseErrors} file(s), but found no claims`);
+  }
+
+  log(`Total claims collected: ${combinedClaims.length} from ${fileEntries.length - parseErrors} file(s)`);
+  self.postMessage({ type: 'progress', progress: 90 });
+
+  // Build the combined XML structure using the first parsed document as template
+  const serializer = new XMLSerializer();
+  const rootNode = firstXmlDoc.documentElement.cloneNode(true);
+  
+  // Remove all existing Claim children from root (only direct children)
+  const children = Array.from(rootNode.children || rootNode.childNodes);
+  for (const child of children) {
+    if (child.nodeType === 1 && child.tagName === 'Claim') {
+      rootNode.removeChild(child);
+    }
+  }
+  
+  // Update the RecordCount in Header if it exists
+  const headerRecordCount = rootNode.querySelector('Header > RecordCount');
+  if (headerRecordCount) {
+    headerRecordCount.textContent = combinedClaims.length.toString();
+  }
+  
+  // Add all combined claims to the root node
+  combinedClaims.forEach(claim => {
+    const importedClaim = rootNode.ownerDocument.importNode(claim, true);
+    rootNode.appendChild(importedClaim);
+  });
+
+  // Serialize the combined XML
+  const combinedXmlString = serializer.serializeToString(rootNode);
+  
+  // Add XML declaration
+  const finalXml = '<?xml version="1.0" encoding="utf-8"?>\n' + combinedXmlString;
+  
+  log(`Combined XML created with ${combinedClaims.length} claims`);
+  self.postMessage({ type: 'progress', progress: 100 });
+  
+  // Return the XML string as a Uint8Array
+  const encoder = new TextEncoder();
+  return encoder.encode(finalXml);
+}
+
+// ==============================
 // Remaining helpers kept but commented if unneeded
 // (You asked: do not delete functions; comment them if unneeded)
 // ==============================
@@ -726,12 +857,20 @@ self.onmessage = async (e) => {
   const { mode, files, clinicianFile } = e.data;
   try {
     log(`Processing started in mode: ${mode}, ${files.length} file(s)`);
-    const combineFn = mode === 'eligibility' ? combineEligibilities : combineReportings;
-    const wb = await combineFn(files, clinicianFile);
-    const wbArray = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-    const wbUint8 = new Uint8Array(wbArray);
-    self.postMessage({ type: 'result', workbookData: wbUint8 }, [wbUint8.buffer]);
-    log(`Processing complete for mode: ${mode}`, 'SUCCESS');
+    
+    if (mode === 'xml') {
+      // XML mode is now handled in main thread (DOMParser not available in workers)
+      log('XML mode should be processed in main thread, not worker', 'WARN');
+      throw new Error('XML mode should be processed in main thread');
+    } else {
+      // Handle eligibility and reporting modes - returns workbook
+      const combineFn = mode === 'eligibility' ? combineEligibilities : combineReportings;
+      const wb = await combineFn(files, clinicianFile);
+      const wbArray = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      const wbUint8 = new Uint8Array(wbArray);
+      self.postMessage({ type: 'result', workbookData: wbUint8 }, [wbUint8.buffer]);
+      log(`Processing complete for mode: ${mode}`, 'SUCCESS');
+    }
   } catch (err) {
     self.postMessage({ type: 'error', error: err.message });
     log(`Error during processing: ${err.message}`, 'ERROR');

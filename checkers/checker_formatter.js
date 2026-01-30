@@ -7,10 +7,12 @@ const messageBox = document.getElementById('messageBox');
 
 const eligibilityPanel = document.getElementById('eligibility-panel');
 const reportingPanel = document.getElementById('reporting-panel');
+const xmlPanel = document.getElementById('xml-panel');
 
 const eligibilityInput = document.getElementById('eligibility-files');
 const reportingInput = document.getElementById('reporting-files');
 const clinicianInput = document.getElementById('clinician-files'); // NEW clinician input
+const xmlInput = document.getElementById('xml-files');
 
 const outputTableContainer = document.getElementById('outputTableContainer');
 
@@ -23,9 +25,15 @@ document.getElementById('mode-selector').addEventListener('change', e => {
   if (mode === 'eligibility') {
     eligibilityPanel.classList.remove('hidden');
     reportingPanel.classList.add('hidden');
-  } else {
+    xmlPanel.classList.add('hidden');
+  } else if (mode === 'reporting') {
     eligibilityPanel.classList.add('hidden');
     reportingPanel.classList.remove('hidden');
+    xmlPanel.classList.add('hidden');
+  } else if (mode === 'xml') {
+    eligibilityPanel.classList.add('hidden');
+    reportingPanel.classList.add('hidden');
+    xmlPanel.classList.remove('hidden');
   }
   resetUI();
 });
@@ -41,12 +49,129 @@ function resetUI() {
   lastWorkbookData = null;
 }
 
+// XML combining function (runs in main thread where DOMParser is available)
+async function combineXMLFiles(fileEntries) {
+  console.log("Starting XML combining in main thread");
+  if (!fileEntries || !fileEntries.length) {
+    throw new Error("No XML files provided");
+  }
+
+  progressBar.style.width = '10%';
+  progressText.textContent = '10%';
+
+  const parser = new DOMParser();
+  let combinedClaims = [];
+  let firstXmlDoc = null;
+  let parseErrors = 0;
+
+  for (let i = 0; i < fileEntries.length; i++) {
+    const entry = fileEntries[i];
+    messageBox.textContent = `Processing XML file ${i + 1}/${fileEntries.length}: ${entry.name}`;
+    
+    try {
+      // Convert ArrayBuffer to string
+      const textDecoder = new TextDecoder('utf-8');
+      const xmlString = textDecoder.decode(entry.buffer);
+      
+      // Parse the XML
+      const xmlDoc = parser.parseFromString(xmlString, "text/xml");
+      
+      // Check for parsing errors
+      const parserError = xmlDoc.querySelector('parsererror');
+      if (parserError) {
+        console.error(`XML parsing error in ${entry.name}:`, parserError.textContent);
+        parseErrors++;
+        continue;
+      }
+      
+      // Store the first successfully parsed document as template
+      if (!firstXmlDoc) {
+        firstXmlDoc = xmlDoc;
+      }
+      
+      // Extract all Claim elements that are direct children of the root
+      const root = xmlDoc.documentElement;
+      if (root) {
+        // Get all direct child elements named "Claim"
+        const children = root.children || root.childNodes;
+        let claimsInFile = 0;
+        for (let j = 0; j < children.length; j++) {
+          const child = children[j];
+          if (child.nodeType === 1 && child.tagName === 'Claim') {
+            combinedClaims.push(child);
+            claimsInFile++;
+          }
+        }
+        console.log(`Found ${claimsInFile} claim(s) in ${entry.name}`);
+      }
+      
+    } catch (err) {
+      console.error(`Error processing ${entry.name}:`, err.message);
+      parseErrors++;
+    }
+    
+    const progress = 10 + (80 * (i + 1) / fileEntries.length);
+    progressBar.style.width = `${Math.floor(progress)}%`;
+    progressText.textContent = `${Math.floor(progress)}%`;
+  }
+
+  if (parseErrors === fileEntries.length) {
+    throw new Error(`Failed to parse all ${parseErrors} XML file(s)`);
+  }
+
+  if (combinedClaims.length === 0) {
+    throw new Error(`Successfully parsed ${fileEntries.length - parseErrors} file(s), but found no claims`);
+  }
+
+  console.log(`Total claims collected: ${combinedClaims.length} from ${fileEntries.length - parseErrors} file(s)`);
+  progressBar.style.width = '90%';
+  progressText.textContent = '90%';
+
+  // Build the combined XML structure using the first parsed document as template
+  const serializer = new XMLSerializer();
+  const rootNode = firstXmlDoc.documentElement.cloneNode(true);
+  
+  // Remove all existing Claim children from root (only direct children)
+  const children = Array.from(rootNode.children || rootNode.childNodes);
+  for (const child of children) {
+    if (child.nodeType === 1 && child.tagName === 'Claim') {
+      rootNode.removeChild(child);
+    }
+  }
+  
+  // Update the RecordCount in Header if it exists
+  const headerRecordCount = rootNode.querySelector('Header > RecordCount');
+  if (headerRecordCount) {
+    headerRecordCount.textContent = combinedClaims.length.toString();
+  }
+  
+  // Add all combined claims to the root node
+  combinedClaims.forEach(claim => {
+    const importedClaim = rootNode.ownerDocument.importNode(claim, true);
+    rootNode.appendChild(importedClaim);
+  });
+
+  // Serialize the combined XML
+  const combinedXmlString = serializer.serializeToString(rootNode);
+  
+  // Add XML declaration
+  const finalXml = '<?xml version="1.0" encoding="utf-8"?>\n' + combinedXmlString;
+  
+  console.log(`Combined XML created with ${combinedClaims.length} claims`);
+  
+  // Return the XML string as a Uint8Array
+  const encoder = new TextEncoder();
+  return encoder.encode(finalXml);
+}
+
 combineButton.addEventListener('click', async () => {
   try {
     messageBox.textContent = '';
     outputTableContainer.innerHTML = '';
     const mode = document.querySelector('input[name="mode"]:checked').value;
-    const inputFiles = mode === 'eligibility' ? eligibilityInput.files : reportingInput.files;
+    const inputFiles = mode === 'eligibility' ? eligibilityInput.files : 
+                       mode === 'reporting' ? reportingInput.files : 
+                       xmlInput.files;
 
     if (!inputFiles.length) {
       alert('Please upload one or more files first.');
@@ -95,10 +220,30 @@ combineButton.addEventListener('click', async () => {
 
     messageBox.textContent = 'Files read. Starting processing...';
 
+    // Handle XML mode directly in main thread (DOMParser not available in workers)
+    if (mode === 'xml') {
+      try {
+        const combinedXml = await combineXMLFiles(fileEntries);
+        lastWorkbookData = combinedXml;
+        messageBox.textContent = 'Processing complete.';
+        combineButton.disabled = false;
+        downloadButton.disabled = false;
+        progressBar.style.width = '100%';
+        progressText.textContent = '100%';
+      } catch (err) {
+        messageBox.textContent = 'Error: ' + err.message;
+        combineButton.disabled = false;
+        downloadButton.disabled = true;
+        progressBar.style.width = '0%';
+        progressText.textContent = '0%';
+      }
+      return;
+    }
+
     // Debug log before posting message to worker
     console.log('Posting start message to worker', { mode, files: fileEntries.length, clinicianFile: clinicianFileEntry ? clinicianFileEntry.name : 'none' });
 
-    // Post message to worker with clinician file included
+    // Post message to worker with clinician file included (for eligibility and reporting modes)
     worker.postMessage({ type: 'start', mode, files: fileEntries, clinicianFile: clinicianFileEntry });
 
   } catch (err) {
@@ -143,14 +288,23 @@ worker.onerror = e => {
 
 downloadButton.addEventListener('click', () => {
   if (!lastWorkbookData) return;
-  const blob = new Blob([lastWorkbookData], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const mode = document.querySelector('input[name="mode"]:checked').value;
+  
+  let blob, filename;
+  const timestamp = new Date().toISOString().slice(0,19).replace(/:/g,'-');
+  
+  if (mode === 'xml') {
+    blob = new Blob([lastWorkbookData], { type: 'application/xml' });
+    filename = `combined_xml_${timestamp}.xml`;
+  } else {
+    blob = new Blob([lastWorkbookData], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    filename = `combined_${mode}_${timestamp}.xlsx`;
+  }
+  
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-
-  const mode = document.querySelector('input[name="mode"]:checked').value;
-  const timestamp = new Date().toISOString().slice(0,19).replace(/:/g,'-');
-  a.download = `combined_${mode}_${timestamp}.xlsx`;
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   setTimeout(() => {
