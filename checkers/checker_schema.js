@@ -345,16 +345,21 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
     // EmiratesIDNumber checks (improved messages)
     if (present("EmiratesIDNumber")) {
       const eid = text("EmiratesIDNumber"), p = eid.split("-");
+      const eidDigits = eid.replace(/-/g, "");
+      const isMedicalTourism = /^[129]+$/.test(eidDigits);
+      const isNationalWithoutEID = /^0+$/.test(eidDigits);
+      
       if (p.length !== 4) invalidFields.push(`EmiratesIDNumber '${eid}' (must have 4 parts separated by dashes)`);
       else {
-        if (p[0] !== "784") invalidFields.push(`EmiratesIDNumber '${eid}' (first part must be 784)`);
+        // Skip 784 validation for Medical Tourism cases
+        if (!isMedicalTourism && p[0] !== "784") invalidFields.push(`EmiratesIDNumber '${eid}' (first part must be 784)`);
         if (!/^\d{4}$/.test(p[1])) invalidFields.push(`EmiratesIDNumber '${eid}' (second part must be 4 digits for year)`);
         if (!/^\d{7}$/.test(p[2])) invalidFields.push(`EmiratesIDNumber '${eid}' (third part must be 7 digits)`);
         if (!/^\d{1}$/.test(p[3])) invalidFields.push(`EmiratesIDNumber '${eid}' (fourth part must be 1 digit)`);
       }
-      const eidDigits = eid.replace(/-/g, "");
-      if (/^[129]+$/.test(eidDigits)) remarks.push("EmiratesIDNumber (Medical Tourism: all digits 1/2/9)");
-      else if (/^0+$/.test(eidDigits)) remarks.push("EmiratesIDNumber (National without EID: all digits 0)");
+      
+      if (isMedicalTourism) remarks.push("EmiratesIDNumber (Medical Tourism: all digits 1/2/9)");
+      else if (isNationalWithoutEID) remarks.push("EmiratesIDNumber (National without EID: all digits 0)");
     }
 
     // Encounter
@@ -481,17 +486,22 @@ function validatePersonSchema(xmlDoc, originalXmlContent = "") {
     // EmiratesIDNumber checks (detailed)
     if (present("EmiratesIDNumber")) {
       const eid = text("EmiratesIDNumber"), p = eid.split("-");
+      const eidDigits = eid.replace(/-/g, "");
+      const isMedicalTourism = /^[129]+$/.test(eidDigits);
+      const isNationalWithoutEID = /^0+$/.test(eidDigits);
+      
       if (p.length !== 4) {
         invalidFields.push(`EmiratesIDNumber '${eid}' (must have 4 parts separated by dashes)`);
       } else {
-        if (p[0] !== "784") invalidFields.push(`EmiratesIDNumber '${eid}' (first part must be 784)`);
+        // Skip 784 validation for Medical Tourism cases
+        if (!isMedicalTourism && p[0] !== "784") invalidFields.push(`EmiratesIDNumber '${eid}' (first part must be 784)`);
         if (!/^\d{4}$/.test(p[1])) invalidFields.push(`EmiratesIDNumber '${eid}' (second part must be 4 digits for year)`);
         if (!/^\d{7}$/.test(p[2])) invalidFields.push(`EmiratesIDNumber '${eid}' (third part must be 7 digits)`);
         if (!/^\d{1}$/.test(p[3])) invalidFields.push(`EmiratesIDNumber '${eid}' (fourth part must be 1 digit)`);
       }
-      const eidDigits = eid.replace(/-/g, "");
-      if (/^[129]+$/.test(eidDigits)) remarks.push("EmiratesIDNumber (Medical Tourism: all digits 1/2/9)");
-      else if (/^0+$/.test(eidDigits)) remarks.push("EmiratesIDNumber (National without EID: all digits 0)");
+      
+      if (isMedicalTourism) remarks.push("EmiratesIDNumber (Medical Tourism: all digits 1/2/9)");
+      else if (isNationalWithoutEID) remarks.push("EmiratesIDNumber (National without EID: all digits 0)");
     }
 
     // Member.ID check
