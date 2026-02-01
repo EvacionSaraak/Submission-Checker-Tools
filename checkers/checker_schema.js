@@ -351,8 +351,8 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
       
       if (p.length !== 4) invalidFields.push(`EmiratesIDNumber '${eid}' (must have 4 parts separated by dashes)`);
       else {
-        // Skip 784 validation for Medical Tourism cases
-        if (!isMedicalTourism && p[0] !== "784") invalidFields.push(`EmiratesIDNumber '${eid}' (first part must be 784)`);
+        // Skip 784 validation for Medical Tourism and National without EID cases
+        if (!isMedicalTourism && !isNationalWithoutEID && p[0] !== "784") invalidFields.push(`EmiratesIDNumber '${eid}' (first part must be 784)`);
         if (!/^\d{4}$/.test(p[1])) invalidFields.push(`EmiratesIDNumber '${eid}' (second part must be 4 digits for year)`);
         if (!/^\d{7}$/.test(p[2])) invalidFields.push(`EmiratesIDNumber '${eid}' (third part must be 7 digits)`);
         if (!/^\d{1}$/.test(p[3])) invalidFields.push(`EmiratesIDNumber '${eid}' (fourth part must be 1 digit)`);
@@ -493,8 +493,8 @@ function validatePersonSchema(xmlDoc, originalXmlContent = "") {
       if (p.length !== 4) {
         invalidFields.push(`EmiratesIDNumber '${eid}' (must have 4 parts separated by dashes)`);
       } else {
-        // Skip 784 validation for Medical Tourism cases
-        if (!isMedicalTourism && p[0] !== "784") invalidFields.push(`EmiratesIDNumber '${eid}' (first part must be 784)`);
+        // Skip 784 validation for Medical Tourism and National without EID cases
+        if (!isMedicalTourism && !isNationalWithoutEID && p[0] !== "784") invalidFields.push(`EmiratesIDNumber '${eid}' (first part must be 784)`);
         if (!/^\d{4}$/.test(p[1])) invalidFields.push(`EmiratesIDNumber '${eid}' (second part must be 4 digits for year)`);
         if (!/^\d{7}$/.test(p[2])) invalidFields.push(`EmiratesIDNumber '${eid}' (third part must be 7 digits)`);
         if (!/^\d{1}$/.test(p[3])) invalidFields.push(`EmiratesIDNumber '${eid}' (fourth part must be 1 digit)`);
