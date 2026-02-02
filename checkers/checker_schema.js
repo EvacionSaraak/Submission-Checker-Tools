@@ -95,19 +95,50 @@ function validateXmlSchema() {
   });
 }
 
-function checkForFalseValues(parent, invalidFields, prefix = "") {
+function checkForFalseValues(parent, invalidFields, prefix = "", activityContext = null) {
   for (const el of parent.children) {
     const val = (el.textContent || "").trim().toLowerCase();
-    if (!el.children.length && val === "false" && el.nodeName !== "MiddleNameEn") {
-      invalidFields.push(
-        `The element ${
-          (prefix ? `${prefix} → ${el.nodeName}` : el.nodeName)
-            .replace(/^Claim(?:[.\s→]*)/, "")
-            .replace(/^Person(?:[.\s→]*)/, "")
-        } has an invalid value 'false'.`
-      );
+    
+    // Track when we enter an Activity element
+    let currentActivityContext = activityContext;
+    if (el.nodeName === "Activity") {
+      // Extract the Code from this Activity element
+      const codeEl = el.getElementsByTagName("Code")[0];
+      const activityCode = codeEl ? (codeEl.textContent || "").trim() : null;
+      currentActivityContext = activityCode;
     }
-    if (el.children.length) checkForFalseValues(el, invalidFields, prefix ? `${prefix} → ${el.nodeName}` : el.nodeName);
+    
+    if (!el.children.length && val === "false" && el.nodeName !== "MiddleNameEn") {
+      // Format the error message in a more user-friendly way
+      let errorMessage;
+      
+      if (currentActivityContext) {
+        // We're inside an Activity - format like: "Activity code 12345 has `observation type` `false`"
+        const fieldPath = (prefix ? `${prefix} → ${el.nodeName}` : el.nodeName)
+          .replace(/^Claim(?:[.\s→]*)/, "")
+          .replace(/^Person(?:[.\s→]*)/, "")
+          .replace(/Activity\s*→\s*/g, ""); // Remove "Activity →" prefix
+        
+        // Convert field path to a more readable format (e.g., "Observation → Type" becomes "observation type")
+        const readableField = fieldPath
+          .split(/\s*→\s*/)
+          .map(part => part.trim())
+          .join(" ")
+          .toLowerCase();
+        
+        errorMessage = `Activity code ${currentActivityContext} has \`${readableField}\` \`false\``;
+      } else {
+        // Not in an Activity context - use original format but simplified
+        const fieldPath = (prefix ? `${prefix} → ${el.nodeName}` : el.nodeName)
+          .replace(/^Claim(?:[.\s→]*)/, "")
+          .replace(/^Person(?:[.\s→]*)/, "");
+        
+        errorMessage = `The element ${fieldPath} has an invalid value 'false'.`;
+      }
+      
+      invalidFields.push(errorMessage);
+    }
+    if (el.children.length) checkForFalseValues(el, invalidFields, prefix ? `${prefix} → ${el.nodeName}` : el.nodeName, currentActivityContext);
   }
 }
 
