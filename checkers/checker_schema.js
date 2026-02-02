@@ -126,16 +126,15 @@ function checkForFalseValues(parent, invalidFields, prefix = "", activityContext
       let errorMessage;
       
       if (currentActivityContext) {
-        // We're inside an Activity - format like: "Activity code 12345 has `observation type` `false`"
+        // We're inside an Activity - format like: "Activity 96999 has Observation Type of `false`"
         const fieldPath = normalizeFieldPath(prefix, el.nodeName, true);
         
-        // Convert field path to a more readable format (e.g., "Observation → Type" becomes "observation type")
+        // Keep the capitalization of element names (e.g., "Observation → Type" becomes "Observation Type")
         const readableField = fieldPath
           .split(/\s*→\s*/)
-          .join(" ")
-          .toLowerCase();
+          .join(" ");
         
-        errorMessage = `Activity code ${currentActivityContext} has \`${readableField}\` \`false\``;
+        errorMessage = `Activity ${currentActivityContext} has ${readableField} of \`false\``;
       } else {
         // Not in an Activity context - use original format but simplified
         const fieldPath = normalizeFieldPath(prefix, el.nodeName, false);
