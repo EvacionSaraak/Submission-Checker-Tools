@@ -96,6 +96,19 @@ function validateXmlSchema() {
 }
 
 function checkForFalseValues(parent, invalidFields, prefix = "", activityContext = null) {
+  // Helper function to normalize field path
+  const normalizeFieldPath = (prefix, nodeName, removeActivityPrefix = false) => {
+    let fieldPath = (prefix ? `${prefix} → ${nodeName}` : nodeName)
+      .replace(/^Claim(?:[.\s→]*)/, "")
+      .replace(/^Person(?:[.\s→]*)/, "");
+    
+    if (removeActivityPrefix) {
+      fieldPath = fieldPath.replace(/Activity\s*→\s*/g, "");
+    }
+    
+    return fieldPath;
+  };
+  
   for (const el of parent.children) {
     const val = (el.textContent || "").trim().toLowerCase();
     
@@ -105,7 +118,7 @@ function checkForFalseValues(parent, invalidFields, prefix = "", activityContext
       // Extract the Code from this Activity element
       const codeEl = el.getElementsByTagName("Code")[0];
       const activityCode = codeEl ? (codeEl.textContent || "").trim() : null;
-      currentActivityContext = activityCode;
+      currentActivityContext = activityCode || "unknown";
     }
     
     if (!el.children.length && val === "false" && el.nodeName !== "MiddleNameEn") {
@@ -114,10 +127,7 @@ function checkForFalseValues(parent, invalidFields, prefix = "", activityContext
       
       if (currentActivityContext) {
         // We're inside an Activity - format like: "Activity code 12345 has `observation type` `false`"
-        const fieldPath = (prefix ? `${prefix} → ${el.nodeName}` : el.nodeName)
-          .replace(/^Claim(?:[.\s→]*)/, "")
-          .replace(/^Person(?:[.\s→]*)/, "")
-          .replace(/Activity\s*→\s*/g, ""); // Remove "Activity →" prefix
+        const fieldPath = normalizeFieldPath(prefix, el.nodeName, true);
         
         // Convert field path to a more readable format (e.g., "Observation → Type" becomes "observation type")
         const readableField = fieldPath
@@ -129,10 +139,7 @@ function checkForFalseValues(parent, invalidFields, prefix = "", activityContext
         errorMessage = `Activity code ${currentActivityContext} has \`${readableField}\` \`false\``;
       } else {
         // Not in an Activity context - use original format but simplified
-        const fieldPath = (prefix ? `${prefix} → ${el.nodeName}` : el.nodeName)
-          .replace(/^Claim(?:[.\s→]*)/, "")
-          .replace(/^Person(?:[.\s→]*)/, "");
-        
+        const fieldPath = normalizeFieldPath(prefix, el.nodeName, false);
         errorMessage = `The element ${fieldPath} has an invalid value 'false'.`;
       }
       
@@ -426,6 +433,15 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
       ["Start","Type","Code","Quantity","Net","Clinician"].forEach(tag => invalidIfNull(tag, act, prefix));
       if (qty === "0") invalidFields.push(`Activity Code ${code || "(unknown)"} has invalid Quantity (0)`);
       Array.from(act.getElementsByTagName("Observation")).forEach((obs,j) => ["Type","Code"].forEach(tag => invalidIfNull(tag, obs, `${prefix}Observation[${j}].`)));
+      
+      // Check if certain codes require observations
+      const codesRequiringObservation = new Set(["17999", "96999"]);
+      if (code && codesRequiringObservation.has(code)) {
+        const observations = act.getElementsByTagName("Observation");
+        if (!observations.length) {
+          invalidFields.push(`Activity Code ${code} requires at least one Observation`);
+        }
+      }
     });
 
     // NEW CHECK: use the extracted function for clarity/debugging
