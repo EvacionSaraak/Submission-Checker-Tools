@@ -95,7 +95,12 @@ function validateXmlSchema() {
   });
 }
 
-function checkForFalseValues(parent, invalidFields, prefix = "", activityContext = null) {
+function checkForFalseValues(parent, invalidFields, prefix = "", activityContext = null, falseValueErrors = null) {
+  // Initialize the collection object at the top level
+  if (falseValueErrors === null) {
+    falseValueErrors = { activity: new Map(), nonActivity: [] };
+  }
+  
   // Helper function to normalize field path
   const normalizeFieldPath = (prefix, nodeName, removeActivityPrefix = false) => {
     let fieldPath = (prefix ? `${prefix} → ${nodeName}` : nodeName)
@@ -122,28 +127,45 @@ function checkForFalseValues(parent, invalidFields, prefix = "", activityContext
     }
     
     if (!el.children.length && val === "false" && el.nodeName !== "MiddleNameEn") {
-      // Format the error message in a more user-friendly way
-      let errorMessage;
-      
       if (currentActivityContext) {
-        // We're inside an Activity - format like: "Activity 96999 has Observation Type of `false`"
+        // We're inside an Activity - collect for consolidation
         const fieldPath = normalizeFieldPath(prefix, el.nodeName, true);
-        
-        // Keep the capitalization of element names (e.g., "Observation → Type" becomes "Observation Type")
         const readableField = fieldPath
           .split(/\s*→\s*/)
           .join(" ");
         
-        errorMessage = `Activity ${currentActivityContext} has ${readableField} of \`false\``;
+        // Group by field name
+        if (!falseValueErrors.activity.has(readableField)) {
+          falseValueErrors.activity.set(readableField, []);
+        }
+        falseValueErrors.activity.get(readableField).push(currentActivityContext);
       } else {
-        // Not in an Activity context - use original format but simplified
+        // Not in an Activity context - use original format
         const fieldPath = normalizeFieldPath(prefix, el.nodeName, false);
-        errorMessage = `The element ${fieldPath} has an invalid value 'false'.`;
+        falseValueErrors.nonActivity.push(`The element ${fieldPath} has an invalid value 'false'.`);
       }
-      
-      invalidFields.push(errorMessage);
     }
-    if (el.children.length) checkForFalseValues(el, invalidFields, prefix ? `${prefix} → ${el.nodeName}` : el.nodeName, currentActivityContext);
+    if (el.children.length) checkForFalseValues(el, invalidFields, prefix ? `${prefix} → ${el.nodeName}` : el.nodeName, currentActivityContext, falseValueErrors);
+  }
+  
+  // At the top level (when prefix is "Claim."), consolidate and add to invalidFields
+  if (prefix === "Claim." && activityContext === null) {
+    // Add non-activity errors as-is
+    falseValueErrors.nonActivity.forEach(msg => invalidFields.push(msg));
+    
+    // Consolidate activity errors
+    for (const [field, activities] of falseValueErrors.activity) {
+      if (activities.length === 1) {
+        invalidFields.push(`Activity ${activities[0]} has ${field} of \`false\``);
+      } else if (activities.length === 2) {
+        invalidFields.push(`Activities ${activities[0]} and ${activities[1]} have ${field} as \`false\`.`);
+      } else {
+        // For 3 or more, format as: "Activities X Y and Z have Field as `false`."
+        const lastActivity = activities[activities.length - 1];
+        const otherActivities = activities.slice(0, -1).join(" ");
+        invalidFields.push(`Activities ${otherActivities} and ${lastActivity} have ${field} as \`false\`.`);
+      }
+    }
   }
 }
 
