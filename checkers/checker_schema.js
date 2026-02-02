@@ -453,11 +453,11 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
           const obsValueType = text("ValueType", obs);
           
           if (obsType && obsType.toUpperCase() !== "TEXT") {
-            invalidFields.push(`Activity Code ${code}: Only Text is a valid observation Type for special medical codes (found: ${obsType})`);
+            invalidFields.push(`Activity ${code} has invalid Observation Type. Found \`${obsType}\` but must be \`Text\`.`);
           }
           
           if (obsValueType && obsValueType.toUpperCase() !== "TEXT") {
-            invalidFields.push(`Activity Code ${code}: Only Text is a valid observation ValueType for special medical codes (found: ${obsValueType})`);
+            invalidFields.push(`Activity ${code} has invalid Observation ValueType. Found \`${obsValueType}\` but must be \`Text\`.`);
           }
         });
       }
