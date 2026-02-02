@@ -118,7 +118,7 @@ function checkForFalseValues(parent, invalidFields, prefix = "", activityContext
       // Extract the Code from this Activity element
       const codeEl = el.getElementsByTagName("Code")[0];
       const activityCode = codeEl ? (codeEl.textContent || "").trim() : null;
-      currentActivityContext = activityCode || "unknown";
+      currentActivityContext = activityCode || "(unknown)";
     }
     
     if (!el.children.length && val === "false" && el.nodeName !== "MiddleNameEn") {
@@ -132,7 +132,6 @@ function checkForFalseValues(parent, invalidFields, prefix = "", activityContext
         // Convert field path to a more readable format (e.g., "Observation → Type" becomes "observation type")
         const readableField = fieldPath
           .split(/\s*→\s*/)
-          .map(part => part.trim())
           .join(" ")
           .toLowerCase();
         
