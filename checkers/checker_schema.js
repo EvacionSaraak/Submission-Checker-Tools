@@ -425,6 +425,11 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
 
     // Activities
     const activities = claim.getElementsByTagName("Activity");
+    
+    // Define constants for activity validation (outside loop for performance)
+    const codesRequiringObservation = new Set(["17999", "96999"]);
+    const specialMedicalCodes = new Set(["17999", "96999", "0232T", "J3490", "81479"]);
+    
     if (!activities.length) missingFields.push("Activity");
     else Array.from(activities).forEach((act, i) => {
       const prefix = `Activity[${i}].`, code = text("Code", act), qty = text("Quantity", act);
@@ -433,7 +438,6 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
       Array.from(act.getElementsByTagName("Observation")).forEach((obs,j) => ["Type","Code"].forEach(tag => invalidIfNull(tag, obs, `${prefix}Observation[${j}].`)));
       
       // Check if certain codes require observations
-      const codesRequiringObservation = new Set(["17999", "96999"]);
       if (code && codesRequiringObservation.has(code)) {
         const observations = act.getElementsByTagName("Observation");
         if (!observations.length) {
@@ -442,7 +446,6 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
       }
       
       // Check if special medical codes have valid observation type and valuetype (only Text is valid)
-      const specialMedicalCodes = new Set(["17999", "96999", "0232T", "J3490", "81479"]);
       if (code && specialMedicalCodes.has(code)) {
         const observations = act.getElementsByTagName("Observation");
         Array.from(observations).forEach((obs) => {
