@@ -452,11 +452,22 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
     const codesRequiringObservation = new Set(["17999", "96999"]);
     const specialMedicalCodes = new Set(["17999", "96999", "0232T", "J3490", "81479"]);
     
+    // Collect invalid quantity errors for consolidation
+    const invalidQuantityErrors = new Map(); // Map<quantity, [codes]>
+    
     if (!activities.length) missingFields.push("Activity");
     else Array.from(activities).forEach((act, i) => {
       const prefix = `Activity[${i}].`, code = text("Code", act), qty = text("Quantity", act);
       ["Start","Type","Code","Quantity","Net","Clinician"].forEach(tag => invalidIfNull(tag, act, prefix));
-      if (qty === "0") invalidFields.push(`Activity ${code || "(unknown)"} has invalid quantity of 0.`);
+      
+      // Collect invalid quantity errors instead of pushing immediately
+      if (qty === "0") {
+        if (!invalidQuantityErrors.has("0")) {
+          invalidQuantityErrors.set("0", []);
+        }
+        invalidQuantityErrors.get("0").push(code || "(unknown)");
+      }
+      
       Array.from(act.getElementsByTagName("Observation")).forEach((obs,j) => ["Type","Code"].forEach(tag => invalidIfNull(tag, obs, `${prefix}Observation[${j}].`)));
       
       // Check if certain codes require observations
@@ -484,6 +495,20 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
         });
       }
     });
+    
+    // Generate consolidated invalid quantity error messages
+    for (const [quantity, codes] of invalidQuantityErrors) {
+      if (codes.length === 1) {
+        invalidFields.push(`Activity ${codes[0]} has invalid quantity of ${quantity}.`);
+      } else if (codes.length === 2) {
+        invalidFields.push(`Activities ${codes[0]} and ${codes[1]} have invalid quantities of ${quantity}.`);
+      } else {
+        // For 3 or more
+        const lastCode = codes[codes.length - 1];
+        const otherCodes = codes.slice(0, -1).join(" ");
+        invalidFields.push(`Activities ${otherCodes} and ${lastCode} have invalid quantities of ${quantity}.`);
+      }
+    }
 
     // NEW CHECK: use the extracted function for clarity/debugging
     checkSpecialActivityDiagnosis(activities, diagnoses, text, invalidFields);
