@@ -441,14 +441,20 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
         }
       }
       
-      // Check if special medical codes have invalid LOINC observation type
+      // Check if special medical codes have valid observation type and valuetype (only Text is valid)
       const specialMedicalCodes = new Set(["17999", "96999", "0232T", "J3490", "81479"]);
       if (code && specialMedicalCodes.has(code)) {
         const observations = act.getElementsByTagName("Observation");
-        Array.from(observations).forEach((obs, j) => {
+        Array.from(observations).forEach((obs) => {
           const obsType = text("Type", obs);
-          if (obsType && obsType.toUpperCase() === "LOINC") {
-            invalidFields.push(`Activity Code ${code}: LOINC is not a valid observation type for special medical codes`);
+          const obsValueType = text("ValueType", obs);
+          
+          if (obsType && obsType.toUpperCase() !== "TEXT") {
+            invalidFields.push(`Activity Code ${code}: Only Text is a valid observation Type for special medical codes (found: ${obsType})`);
+          }
+          
+          if (obsValueType && obsValueType.toUpperCase() !== "TEXT") {
+            invalidFields.push(`Activity Code ${code}: Only Text is a valid observation ValueType for special medical codes (found: ${obsValueType})`);
           }
         });
       }
