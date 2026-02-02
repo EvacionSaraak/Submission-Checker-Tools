@@ -453,7 +453,8 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
     const specialMedicalCodes = new Set(["17999", "96999", "0232T", "J3490", "81479"]);
     
     // Collect invalid quantity errors for consolidation
-    const invalidQuantityErrors = new Map(); // Map<quantity, [codes]>
+    /** @type {Map<string, string[]>} */
+    const invalidQuantityErrors = new Map();
     
     if (!activities.length) missingFields.push("Activity");
     else Array.from(activities).forEach((act, i) => {
@@ -462,10 +463,10 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
       
       // Collect invalid quantity errors instead of pushing immediately
       if (qty === "0") {
-        if (!invalidQuantityErrors.has("0")) {
-          invalidQuantityErrors.set("0", []);
+        if (!invalidQuantityErrors.has(qty)) {
+          invalidQuantityErrors.set(qty, []);
         }
-        invalidQuantityErrors.get("0").push(code || "(unknown)");
+        invalidQuantityErrors.get(qty).push(code || "(unknown)");
       }
       
       Array.from(act.getElementsByTagName("Observation")).forEach((obs,j) => ["Type","Code"].forEach(tag => invalidIfNull(tag, obs, `${prefix}Observation[${j}].`)));
