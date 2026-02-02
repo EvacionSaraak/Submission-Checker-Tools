@@ -456,7 +456,7 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
     else Array.from(activities).forEach((act, i) => {
       const prefix = `Activity[${i}].`, code = text("Code", act), qty = text("Quantity", act);
       ["Start","Type","Code","Quantity","Net","Clinician"].forEach(tag => invalidIfNull(tag, act, prefix));
-      if (qty === "0") invalidFields.push(`Activity Code ${code || "(unknown)"} has invalid Quantity (0)`);
+      if (qty === "0") invalidFields.push(`Activity ${code || "(unknown)"} has invalid quantity of 0.`);
       Array.from(act.getElementsByTagName("Observation")).forEach((obs,j) => ["Type","Code"].forEach(tag => invalidIfNull(tag, obs, `${prefix}Observation[${j}].`)));
       
       // Check if certain codes require observations
