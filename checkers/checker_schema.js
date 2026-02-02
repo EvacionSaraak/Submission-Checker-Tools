@@ -440,6 +440,18 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
           invalidFields.push(`Activity Code ${code} requires at least one Observation`);
         }
       }
+      
+      // Check if special medical codes have invalid LOINC observation type
+      const specialMedicalCodes = new Set(["17999", "96999", "0232T", "J3490", "81479"]);
+      if (code && specialMedicalCodes.has(code)) {
+        const observations = act.getElementsByTagName("Observation");
+        Array.from(observations).forEach((obs, j) => {
+          const obsType = text("Type", obs);
+          if (obsType && obsType.toUpperCase() === "LOINC") {
+            invalidFields.push(`Activity Code ${code}: LOINC is not a valid observation type for special medical codes`);
+          }
+        });
+      }
     });
 
     // NEW CHECK: use the extracted function for clarity/debugging
