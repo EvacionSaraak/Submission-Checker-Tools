@@ -12,6 +12,28 @@
 const DATE_KEYS = ['Date', 'On'];
 const MONTHS = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"];
 
+// Package Name Normalization Mapping
+// Maps variations/aliases to canonical package names
+const PACKAGE_NAME_MAPPING = {
+  // Thiqa variations
+  'Thiqa C1': 'Thiqa 1',
+  'Thiqa C2': 'Thiqa 2',
+  'Thiqa C3': 'Thiqa 3',
+  // Add more mappings as needed
+};
+
+/**
+ * Normalize package name by converting known variations to canonical form
+ * @param {string} packageName - The package name to normalize
+ * @returns {string} - Normalized package name
+ */
+function normalizePackageName(packageName) {
+  if (!packageName) return packageName;
+  const trimmed = packageName.trim();
+  return PACKAGE_NAME_MAPPING[trimmed] || trimmed;
+}
+
+
 // Application state
 let xmlData = null;
 let xlsData = null;
@@ -368,12 +390,21 @@ function validateXmlClaims(xmlClaims, eligMap) {
     } else if (!checkClinicianMatch(claim.clinicians, eligibility.Clinician)) {
       status = 'unknown';
       remarks.push('Clinician mismatch');
-    } else if (packageName && eligibility['Package Name'] && packageName !== eligibility['Package Name']) {
-      // Package Name mismatch is treated as 'invalid' (not 'unknown') because it's a definitive
-      // data mismatch that indicates the wrong eligibility record or incorrect package in the claim.
-      // Compares: XML <Contract><PackageName> vs XLSX eligibility "Package Name" column (column AH)
-      status = 'invalid';
-      remarks.push(`Package Name mismatch: XML PackageName="${packageName}", Eligibility PackageName="${eligibility['Package Name']}"`);
+    } else if (packageName && eligibility['Package Name']) {
+      // Normalize both package names before comparison to handle variations
+      const normalizedXmlPackage = normalizePackageName(packageName);
+      const normalizedEligPackage = normalizePackageName(eligibility['Package Name']);
+      
+      if (normalizedXmlPackage !== normalizedEligPackage) {
+        // Package Name mismatch is treated as 'invalid' (not 'unknown') because it's a definitive
+        // data mismatch that indicates the wrong eligibility record or incorrect package in the claim.
+        // Compares: XML <Contract><PackageName> vs XLSX eligibility "Package Name" column (column AH)
+        status = 'invalid';
+        remarks.push(`Package Name mismatch: XML PackageName="${packageName}" (normalized: "${normalizedXmlPackage}"), Eligibility PackageName="${eligibility['Package Name']}" (normalized: "${normalizedEligPackage}")`);
+      } else if (!hasLeadingZero) {
+        // Only mark as valid if there is no leading zero
+        status = 'valid';
+      }
     } else if (!hasLeadingZero) {
       // Only mark as valid if there is no leading zero
       status = 'valid';
