@@ -392,9 +392,7 @@ function validateXmlClaims(xmlClaims, eligMap) {
       status = 'unknown';
       remarks.push('Clinician mismatch');
     } else if (packageName && eligibility['Package Name']) {
-      // Only validate package names if both XML and XLSX have package name values
-      // If XML has no PackageName element, skip this validation entirely
-      // Normalize both package names before comparison to handle variations
+      // Only validate if both XML and XLSX have PackageName values (skip if XML has no PackageName)
       const normalizedXmlPackage = normalizePackageName(packageName);
       const normalizedEligPackage = normalizePackageName(eligibility['Package Name']);
       
@@ -405,10 +403,7 @@ function validateXmlClaims(xmlClaims, eligMap) {
         status = 'invalid';
         remarks.push(`Package Name mismatch: XML="${packageName}" (normalized: "${normalizedXmlPackage}"), Eligibility="${eligibility['Package Name']}" (normalized: "${normalizedEligPackage}")`);
       }
-      // If package names match (normalized), status remains 'valid'
     }
-    // If packageName is missing from XML, validation is skipped and status remains 'valid'
-    // If all checks pass, status remains 'valid'
 
     return {
       claimID: claim.claimID,
