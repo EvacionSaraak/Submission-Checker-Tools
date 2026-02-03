@@ -95,19 +95,77 @@ function validateXmlSchema() {
   });
 }
 
-function checkForFalseValues(parent, invalidFields, prefix = "") {
+function checkForFalseValues(parent, invalidFields, prefix = "", activityContext = null, falseValueErrors = null) {
+  // Initialize the collection object at the top level
+  if (falseValueErrors === null) {
+    falseValueErrors = { activity: new Map(), nonActivity: [] };
+  }
+  
+  // Helper function to normalize field path
+  const normalizeFieldPath = (prefix, nodeName, removeActivityPrefix = false) => {
+    let fieldPath = (prefix ? `${prefix} → ${nodeName}` : nodeName)
+      .replace(/^Claim(?:[.\s→]*)/, "")
+      .replace(/^Person(?:[.\s→]*)/, "");
+    
+    if (removeActivityPrefix) {
+      fieldPath = fieldPath.replace(/Activity\s*→\s*/g, "");
+    }
+    
+    return fieldPath;
+  };
+  
   for (const el of parent.children) {
     const val = (el.textContent || "").trim().toLowerCase();
-    if (!el.children.length && val === "false" && el.nodeName !== "MiddleNameEn") {
-      invalidFields.push(
-        `The element ${
-          (prefix ? `${prefix} → ${el.nodeName}` : el.nodeName)
-            .replace(/^Claim(?:[.\s→]*)/, "")
-            .replace(/^Person(?:[.\s→]*)/, "")
-        } has an invalid value 'false'.`
-      );
+    
+    // Track when we enter an Activity element
+    let currentActivityContext = activityContext;
+    if (el.nodeName === "Activity") {
+      // Extract the Code from this Activity element
+      const codeEl = el.getElementsByTagName("Code")[0];
+      const activityCode = codeEl ? (codeEl.textContent || "").trim() : null;
+      currentActivityContext = activityCode || "(unknown)";
     }
-    if (el.children.length) checkForFalseValues(el, invalidFields, prefix ? `${prefix} → ${el.nodeName}` : el.nodeName);
+    
+    if (!el.children.length && val === "false" && el.nodeName !== "MiddleNameEn") {
+      if (currentActivityContext) {
+        // We're inside an Activity - collect for consolidation
+        const fieldPath = normalizeFieldPath(prefix, el.nodeName, true);
+        const readableField = fieldPath
+          .split(/\s*→\s*/)
+          .join(" ");
+        
+        // Group by field name
+        if (!falseValueErrors.activity.has(readableField)) {
+          falseValueErrors.activity.set(readableField, []);
+        }
+        falseValueErrors.activity.get(readableField).push(currentActivityContext);
+      } else {
+        // Not in an Activity context - use original format
+        const fieldPath = normalizeFieldPath(prefix, el.nodeName, false);
+        falseValueErrors.nonActivity.push(`The element ${fieldPath} has an invalid value 'false'.`);
+      }
+    }
+    if (el.children.length) checkForFalseValues(el, invalidFields, prefix ? `${prefix} → ${el.nodeName}` : el.nodeName, currentActivityContext, falseValueErrors);
+  }
+  
+  // At the top level (when prefix is "Claim."), consolidate and add to invalidFields
+  if (prefix === "Claim." && activityContext === null) {
+    // Add non-activity errors as-is
+    falseValueErrors.nonActivity.forEach(msg => invalidFields.push(msg));
+    
+    // Consolidate activity errors
+    for (const [field, activities] of falseValueErrors.activity) {
+      if (activities.length === 1) {
+        invalidFields.push(`Activity ${activities[0]} has ${field} of \`false\``);
+      } else if (activities.length === 2) {
+        invalidFields.push(`Activities ${activities[0]} and ${activities[1]} have ${field} as \`false\`.`);
+      } else {
+        // For 3 or more, format as: "Activities X Y and Z have Field as `false`."
+        const lastActivity = activities[activities.length - 1];
+        const otherActivities = activities.slice(0, -1).join(" ");
+        invalidFields.push(`Activities ${otherActivities} and ${lastActivity} have ${field} as \`false\`.`);
+      }
+    }
   }
 }
 
@@ -389,13 +447,69 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
 
     // Activities
     const activities = claim.getElementsByTagName("Activity");
+    
+    // Define constants for activity validation (outside loop for performance)
+    const codesRequiringObservation = new Set(["17999", "96999"]);
+    const specialMedicalCodes = new Set(["17999", "96999", "0232T", "J3490", "81479"]);
+    
+    // Collect invalid quantity errors for consolidation
+    /** @type {Map<string, string[]>} */
+    const invalidQuantityErrors = new Map();
+    
     if (!activities.length) missingFields.push("Activity");
     else Array.from(activities).forEach((act, i) => {
       const prefix = `Activity[${i}].`, code = text("Code", act), qty = text("Quantity", act);
       ["Start","Type","Code","Quantity","Net","Clinician"].forEach(tag => invalidIfNull(tag, act, prefix));
-      if (qty === "0") invalidFields.push(`Activity Code ${code || "(unknown)"} has invalid Quantity (0)`);
+      
+      // Collect invalid quantity errors instead of pushing immediately
+      if (qty === "0") {
+        if (!invalidQuantityErrors.has(qty)) {
+          invalidQuantityErrors.set(qty, []);
+        }
+        invalidQuantityErrors.get(qty).push(code || "(unknown)");
+      }
+      
       Array.from(act.getElementsByTagName("Observation")).forEach((obs,j) => ["Type","Code"].forEach(tag => invalidIfNull(tag, obs, `${prefix}Observation[${j}].`)));
+      
+      // Check if certain codes require observations
+      if (code && codesRequiringObservation.has(code)) {
+        const observations = act.getElementsByTagName("Observation");
+        if (!observations.length) {
+          invalidFields.push(`Activity Code ${code} requires at least one Observation`);
+        }
+      }
+      
+      // Check if special medical codes have valid observation type and valuetype (only Text is valid)
+      if (code && specialMedicalCodes.has(code)) {
+        const observations = act.getElementsByTagName("Observation");
+        Array.from(observations).forEach((obs) => {
+          const obsType = text("Type", obs);
+          const obsValueType = text("ValueType", obs);
+          
+          if (obsType && obsType.toUpperCase() !== "TEXT") {
+            invalidFields.push(`Activity ${code} has invalid Observation Type. Found \`${obsType}\` but must be \`Text\`.`);
+          }
+          
+          if (obsValueType && obsValueType.toUpperCase() !== "TEXT") {
+            invalidFields.push(`Activity ${code} has invalid Observation ValueType. Found \`${obsValueType}\` but must be \`Text\`.`);
+          }
+        });
+      }
     });
+    
+    // Generate consolidated invalid quantity error messages
+    for (const [quantity, codes] of invalidQuantityErrors) {
+      if (codes.length === 1) {
+        invalidFields.push(`Activity ${codes[0]} has invalid quantity of ${quantity}.`);
+      } else if (codes.length === 2) {
+        invalidFields.push(`Activities ${codes[0]} and ${codes[1]} have invalid quantities of ${quantity}.`);
+      } else {
+        // For 3 or more
+        const lastCode = codes[codes.length - 1];
+        const otherCodes = codes.slice(0, -1).join(" ");
+        invalidFields.push(`Activities ${otherCodes} and ${lastCode} have invalid quantities of ${quantity}.`);
+      }
+    }
 
     // NEW CHECK: use the extracted function for clarity/debugging
     checkSpecialActivityDiagnosis(activities, diagnoses, text, invalidFields);
