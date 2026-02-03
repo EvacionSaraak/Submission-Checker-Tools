@@ -199,8 +199,11 @@ function validateDateAndStatus(row, start) {
   if (!xlsDate) remarks.push("Invalid XLSX Ordered On date");
   if (!xmlDate) remarks.push("Invalid XML Start date");
   if (xlsDate && xmlDate && xlsDate > xmlDate) remarks.push("Approval must be on or before procedure date");
-  const status = (row.Status || row.status || "").toLowerCase();
-  if (!status.includes("approved") && !status.includes("rejected")) remarks.push("Status not approved");
+  const status = (row.Status || row.status || "").toLowerCase().trim();
+  // Accept "approved", "totally approved", or "rejected" as valid statuses
+  const validStatuses = ["approved", "totally approved", "rejected"];
+  const isValidStatus = validStatuses.some(validStatus => status === validStatus);
+  if (!isValidStatus) remarks.push("Status not approved");
   return remarks;
 }
 
