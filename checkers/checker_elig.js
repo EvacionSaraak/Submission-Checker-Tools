@@ -347,7 +347,7 @@ function validateXmlClaims(xmlClaims, eligMap) {
     const claimDate = DateHandler.parse(claim.encounterStart);
     const formattedDate = DateHandler.format(claimDate);
     const memberID = claim.memberID;
-    const cardNetwork = claim.cardNetwork;
+    const packageName = claim.packageName;
 
     // Check for leading zero in original memberID
     const hasLeadingZero = memberID.match(/^0+\d+$/);
@@ -368,12 +368,12 @@ function validateXmlClaims(xmlClaims, eligMap) {
     } else if (!checkClinicianMatch(claim.clinicians, eligibility.Clinician)) {
       status = 'unknown';
       remarks.push('Clinician mismatch');
-    } else if (cardNetwork && eligibility['Card Network'] && cardNetwork !== eligibility['Card Network']) {
-      // Card Network mismatch is treated as 'invalid' (not 'unknown') because it's a definitive
-      // data mismatch that indicates the wrong eligibility record or incorrect card network in the claim.
-      // Compares: XML <Contract><CardNetwork> vs XLSX eligibility "Card Network" column (column AI)
+    } else if (packageName && eligibility['Card Network'] && packageName !== eligibility['Card Network']) {
+      // Package Name mismatch is treated as 'invalid' (not 'unknown') because it's a definitive
+      // data mismatch that indicates the wrong eligibility record or incorrect package in the claim.
+      // Compares: XML <Contract><PackageName> vs XLSX eligibility "Card Network" column (column AI)
       status = 'invalid';
-      remarks.push(`Card Network mismatch: XML CardNetwork="${cardNetwork}", Eligibility Card Network="${eligibility['Card Network']}"`);
+      remarks.push(`Package Name mismatch: XML PackageName="${packageName}", Eligibility Card Network="${eligibility['Card Network']}"`);
     } else if (!hasLeadingZero) {
       // Only mark as valid if there is no leading zero
       status = 'valid';
@@ -383,10 +383,10 @@ function validateXmlClaims(xmlClaims, eligMap) {
     return {
       claimID: claim.claimID,
       memberID: claim.memberID,
-      cardNetwork: claim.cardNetwork,
+      packageName: claim.packageName,
       encounterStart: formattedDate,
       clinician: eligibility?.['Clinician'] || '',
-      packageName: eligibility?.['Package Name'] || '',
+      cardNetwork: eligibility?.['Card Network'] || '',  // Display value from XLSX "Card Network" column
       serviceCategory: eligibility?.['Service Category'] || '',
       consultationStatus: eligibility?.['Consultation Status'] || '',
       status: eligibility?.Status || '',
@@ -544,14 +544,14 @@ async function parseXmlFile(file) {
   const xmlDoc = new DOMParser().parseFromString(xmlContent, "application/xml");
 
   const claims = Array.from(xmlDoc.querySelectorAll("Claim")).map(claim => {
-    // Extract CardNetwork from Contract element
+    // Extract PackageName from Contract element (to match with XLSX "Card Network" column)
     const contract = claim.querySelector("Contract");
-    const cardNetwork = contract?.querySelector("CardNetwork")?.textContent.trim() || '';
+    const packageName = contract?.querySelector("PackageName")?.textContent.trim() || '';
     
     return {
       claimID: claim.querySelector("ID")?.textContent.trim() || '',
       memberID: claim.querySelector("MemberID")?.textContent.trim() || '',
-      cardNetwork: cardNetwork,
+      packageName: packageName,
       encounterStart: claim.querySelector("Encounter Start")?.textContent.trim(),
       clinicians: Array.from(claim.querySelectorAll("Clinician")).map(c => c.textContent.trim())
     };
@@ -781,7 +781,6 @@ function buildResultsTable(results, eligMap) {
     <tr>
       <th style="padding:8px;border:1px solid #ccc">Claim ID</th>
       <th style="padding:8px;border:1px solid #ccc">Member ID</th>
-      ${isXmlMode ? '<th style="padding:8px;border:1px solid #ccc">Card Network</th>' : ''}
       <th style="padding:8px;border:1px solid #ccc">Encounter Date</th>
       ${!isXmlMode ? '<th style="padding:8px;border:1px solid #ccc">Package</th><th style="padding:8px;border:1px solid #ccc">Provider</th>' : ''}
       <th style="padding:8px;border:1px solid #ccc">Clinician</th>
@@ -842,11 +841,10 @@ function buildResultsTable(results, eligMap) {
     row.innerHTML = `
       <td style="padding:6px;border:1px solid #ccc">${result.claimID}</td>
       <td style="padding:6px;border:1px solid #ccc">${result.memberID}</td>
-      ${isXmlMode ? `<td style="padding:6px;border:1px solid #ccc">${result.cardNetwork || ''}</td>` : ''}
       <td style="padding:6px;border:1px solid #ccc">${result.encounterStart}</td>
       ${!isXmlMode ? `<td class="description-col" style="padding:6px;border:1px solid #ccc">${result.packageName}</td><td class="description-col" style="padding:6px;border:1px solid #ccc">${result.provider}</td>` : ''}
       <td class="description-col" style="padding:6px;border:1px solid #ccc">${result.clinician}</td>
-      ${isXmlMode ? `<td class="description-col" style="padding:6px;border:1px solid #ccc">${result.packageName || ''}</td>` : ''}  <!-- Package Name from eligibility in XML mode -->
+      ${isXmlMode ? `<td class="description-col" style="padding:6px;border:1px solid #ccc">${result.cardNetwork || ''}</td>` : ''}  <!-- Package Name shows XLSX "Card Network" value -->
       <td class="description-col" style="padding:6px;border:1px solid #ccc">${result.serviceCategory}</td>
       <td class="description-col" style="padding:6px;border:1px solid #ccc">${statusBadge}</td>
       <td class="wrap-col" style="padding:6px;border:1px solid #ccc">${remarksHTML}</td>
@@ -1028,9 +1026,8 @@ function exportInvalidEntries(results) {
   const exportData = invalidEntries.map(entry => ({
     'Claim ID': entry.claimID,
     'Member ID': entry.memberID,
-    'Card Network': entry.cardNetwork || '',
+    'Package Name': entry.cardNetwork || '',  // XLSX "Card Network" value matched with XML PackageName
     'Encounter Date': entry.encounterStart,
-    'Package Name': entry.packageName || '',
     'Provider': entry.provider || '',
     'Clinician': entry.clinician || '',
     'Service Category': entry.serviceCategory || '',
