@@ -540,13 +540,19 @@ async function parseXmlFile(file) {
   const xmlContent = text.replace(/&(?!(amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;))/g, "and");
   const xmlDoc = new DOMParser().parseFromString(xmlContent, "application/xml");
 
-  const claims = Array.from(xmlDoc.querySelectorAll("Claim")).map(claim => ({
-    claimID: claim.querySelector("ID")?.textContent.trim() || '',
-    memberID: claim.querySelector("MemberID")?.textContent.trim() || '',
-    cardClass: claim.querySelector("CardClass")?.textContent.trim() || '',
-    encounterStart: claim.querySelector("Encounter Start")?.textContent.trim(),
-    clinicians: Array.from(claim.querySelectorAll("Clinician")).map(c => c.textContent.trim())
-  }));
+  const claims = Array.from(xmlDoc.querySelectorAll("Claim")).map(claim => {
+    // Extract CardClass from Contract element
+    const contract = claim.querySelector("Contract");
+    const cardClass = contract?.querySelector("CardClass")?.textContent.trim() || '';
+    
+    return {
+      claimID: claim.querySelector("ID")?.textContent.trim() || '',
+      memberID: claim.querySelector("MemberID")?.textContent.trim() || '',
+      cardClass: cardClass,
+      encounterStart: claim.querySelector("Encounter Start")?.textContent.trim(),
+      clinicians: Array.from(claim.querySelectorAll("Clinician")).map(c => c.textContent.trim())
+    };
+  });
 
   return { claims };
 }
