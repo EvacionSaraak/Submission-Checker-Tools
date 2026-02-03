@@ -229,6 +229,7 @@ function prepareEligibilityMap(eligData) {
 
     if (!eligMap.has(memberID)) eligMap.set(memberID, []);
 
+    // Build eligibility record from XLSX columns
     const eligRecord = {
       'Eligibility Request Number': e['Eligibility Request Number'],
       'Card Number / DHA Member ID': rawID, // preserve original for display
@@ -239,7 +240,7 @@ function prepareEligibilityMap(eligData) {
       'Payer Name': e['Payer Name'],
       'Service Category': e['Service Category'],
       'Package Name': e['Package Name'],
-      'Card Network': e['Card Network']
+      'Card Network': e['Card Network']  // Column AI in XLSX eligibility file
     };
 
     eligMap.get(memberID).push(eligRecord);
@@ -369,7 +370,8 @@ function validateXmlClaims(xmlClaims, eligMap) {
       remarks.push('Clinician mismatch');
     } else if (cardNetwork && eligibility['Card Network'] && cardNetwork !== eligibility['Card Network']) {
       // Card Network mismatch is treated as 'invalid' (not 'unknown') because it's a definitive
-      // data mismatch that indicates the wrong eligibility record or incorrect card network in the claim
+      // data mismatch that indicates the wrong eligibility record or incorrect card network in the claim.
+      // Compares: XML <Contract><CardNetwork> vs XLSX eligibility "Card Network" column (column AI)
       status = 'invalid';
       remarks.push(`Card Network mismatch: XML CardNetwork="${cardNetwork}", Eligibility Card Network="${eligibility['Card Network']}"`);
     } else if (!hasLeadingZero) {
