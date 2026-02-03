@@ -198,13 +198,26 @@ function validateDateAndStatus(row, start) {
   const xmlDate = isNaN(di) ? null : new Date(yi, mi - 1, di);
   if (!xlsDate) remarks.push("Invalid XLSX Ordered On date");
   if (!xmlDate) remarks.push("Invalid XML Start date");
-  if (xlsDate && xmlDate && xlsDate > xmlDate) remarks.push("Approval must be on or before procedure date");
+  
   const status = (row.Status || row.status || "").toLowerCase().trim();
+  const isTotallyApproved = status === "totally approved";
+  const isPartiallyApproved = status === "partially approved";
+  
+  // If status is "Totally Approved", override the date validation (don't push the remark)
+  if (xlsDate && xmlDate && xlsDate > xmlDate && !isTotallyApproved) {
+    remarks.push("Approval must be on or before procedure date");
+  }
+  
   // Accept "approved", "totally approved", or "rejected" as valid statuses
   const validStatuses = ["approved", "totally approved", "rejected"];
   const isValidStatus = validStatuses.some(validStatus => status === validStatus);
-  if (!isValidStatus) remarks.push("Invalid status (must be Approved, Totally Approved, or Rejected)");
-  return remarks;
+  
+  // If status is "Partially Approved", we will treat it as unknown instead of invalid
+  if (!isValidStatus && !isPartiallyApproved) {
+    remarks.push("Invalid status (must be Approved, Totally Approved, or Rejected)");
+  }
+  
+  return { remarks, isPartiallyApproved };
 }
 
 function logInvalidRow(xlsRow, context, remarks) {
@@ -320,7 +333,11 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId) {
       clinicianMismatchMsg = `Clinician mismatch: XML=[${matchResult.xmlClinician}], XLSX=[${matchResult.xlsClinician}]`;
       remarks.unshift(clinicianMismatchMsg);
     }
-    remarks.push(...validateDateAndStatus(matchedRow, start));
+    const dateStatusResult = validateDateAndStatus(matchedRow, start);
+    remarks.push(...dateStatusResult.remarks);
+    if (dateStatusResult.isPartiallyApproved) {
+      unknown = true;
+    }
 
     return {
       claimId,
