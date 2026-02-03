@@ -238,7 +238,8 @@ function prepareEligibilityMap(eligData) {
       'Clinician': e['Clinician'],
       'Payer Name': e['Payer Name'],
       'Service Category': e['Service Category'],
-      'Package Name': e['Package Name']
+      'Package Name': e['Package Name'],
+      'Card Network': e['Card Network']
     };
 
     eligMap.get(memberID).push(eligRecord);
@@ -345,6 +346,7 @@ function validateXmlClaims(xmlClaims, eligMap) {
     const claimDate = DateHandler.parse(claim.encounterStart);
     const formattedDate = DateHandler.format(claimDate);
     const memberID = claim.memberID;
+    const cardClass = claim.cardClass;
 
     // Check for leading zero in original memberID
     const hasLeadingZero = memberID.match(/^0+\d+$/);
@@ -365,6 +367,9 @@ function validateXmlClaims(xmlClaims, eligMap) {
     } else if (!checkClinicianMatch(claim.clinicians, eligibility.Clinician)) {
       status = 'unknown';
       remarks.push('Clinician mismatch');
+    } else if (cardClass && eligibility['Card Network'] && cardClass !== eligibility['Card Network']) {
+      status = 'invalid';
+      remarks.push(`Card Network mismatch: XML CardClass="${cardClass}", Eligibility Card Network="${eligibility['Card Network']}"`);
     } else if (!hasLeadingZero) {
       // Only mark as valid if there is no leading zero
       status = 'valid';
@@ -374,6 +379,7 @@ function validateXmlClaims(xmlClaims, eligMap) {
     return {
       claimID: claim.claimID,
       memberID: claim.memberID,
+      cardClass: claim.cardClass,
       encounterStart: formattedDate,
       clinician: eligibility?.['Clinician'] || '',
       serviceCategory: eligibility?.['Service Category'] || '',
@@ -535,6 +541,7 @@ async function parseXmlFile(file) {
   const claims = Array.from(xmlDoc.querySelectorAll("Claim")).map(claim => ({
     claimID: claim.querySelector("ID")?.textContent.trim() || '',
     memberID: claim.querySelector("MemberID")?.textContent.trim() || '',
+    cardClass: claim.querySelector("CardClass")?.textContent.trim() || '',
     encounterStart: claim.querySelector("Encounter Start")?.textContent.trim(),
     clinicians: Array.from(claim.querySelectorAll("Clinician")).map(c => c.textContent.trim())
   }));
@@ -763,6 +770,7 @@ function buildResultsTable(results, eligMap) {
     <tr>
       <th style="padding:8px;border:1px solid #ccc">Claim ID</th>
       <th style="padding:8px;border:1px solid #ccc">Member ID</th>
+      ${isXmlMode ? '<th style="padding:8px;border:1px solid #ccc">Card Network</th>' : ''}
       <th style="padding:8px;border:1px solid #ccc">Encounter Date</th>
       ${!isXmlMode ? '<th style="padding:8px;border:1px solid #ccc">Package</th><th style="padding:8px;border:1px solid #ccc">Provider</th>' : ''}
       <th style="padding:8px;border:1px solid #ccc">Clinician</th>
@@ -822,6 +830,7 @@ function buildResultsTable(results, eligMap) {
     row.innerHTML = `
       <td style="padding:6px;border:1px solid #ccc">${result.claimID}</td>
       <td style="padding:6px;border:1px solid #ccc">${result.memberID}</td>
+      ${isXmlMode ? `<td style="padding:6px;border:1px solid #ccc">${result.cardClass || ''}</td>` : ''}
       <td style="padding:6px;border:1px solid #ccc">${result.encounterStart}</td>
       ${!isXmlMode ? `<td class="description-col" style="padding:6px;border:1px solid #ccc">${result.packageName}</td><td class="description-col" style="padding:6px;border:1px solid #ccc">${result.provider}</td>` : ''}
       <td class="description-col" style="padding:6px;border:1px solid #ccc">${result.clinician}</td>
@@ -909,6 +918,7 @@ function initEligibilityModal(results) {
           <table style="width:100%;border-collapse:collapse;">
             <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Eligibility Request Number</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Eligibility Request Number"] || ''}</td></tr>
             <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Card Number / DHA Member ID</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Card Number / DHA Member ID"] || ''}</td></tr>
+            <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Card Network</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Card Network"] || ''}</td></tr>
             <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Answered On</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Answered On"] || ''}</td></tr>
             <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Ordered On</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Ordered On"] || ''}</td></tr>
             <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Status</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Status"] || ''}</td></tr>
@@ -1005,6 +1015,7 @@ function exportInvalidEntries(results) {
   const exportData = invalidEntries.map(entry => ({
     'Claim ID': entry.claimID,
     'Member ID': entry.memberID,
+    'Card Network': entry.cardClass || '',
     'Encounter Date': entry.encounterStart,
     'Package Name': entry.packageName || '',
     'Provider': entry.provider || '',
