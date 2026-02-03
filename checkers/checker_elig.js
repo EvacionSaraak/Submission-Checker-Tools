@@ -609,17 +609,35 @@ async function parseExcelFile(file) {
         // Default to first row if none detected
         if (!foundHeaders) headerRow = 0;
 
-        // Trim headers
+        // Trim headers and handle duplicates
         const headers = allRows[headerRow].map(h => String(h).trim());
-        console.log(`Headers: ${headers}`);
+        
+        // Handle duplicate header names by keeping first occurrence and renaming subsequent ones
+        const seenHeaders = new Map();
+        const uniqueHeaders = headers.map((header, index) => {
+          if (!header) return `Column${index}`;
+          
+          if (seenHeaders.has(header)) {
+            // This is a duplicate - rename it
+            const count = seenHeaders.get(header) + 1;
+            seenHeaders.set(header, count);
+            return `${header}_${count}`;
+          } else {
+            // First occurrence - keep it
+            seenHeaders.set(header, 1);
+            return header;
+          }
+        });
+        
+        console.log(`Headers: ${uniqueHeaders}`);
 
         // Extract data rows
         const dataRows = allRows.slice(headerRow + 1);
 
-        // Map rows to objects
+        // Map rows to objects using unique headers
         const jsonData = dataRows.map(row => {
           const obj = {};
-          headers.forEach((header, index) => {
+          uniqueHeaders.forEach((header, index) => {
             obj[header] = row[index] || '';
           });
           return obj;
@@ -662,7 +680,26 @@ async function parseCsvFile(file) {
 
         if (headerRowIndex === -1) throw new Error("Could not detect header row in CSV");
 
-        const headers = allRows[headerRowIndex];
+        const rawHeaders = allRows[headerRowIndex];
+        
+        // Handle duplicate header names by keeping first occurrence and renaming subsequent ones
+        const seenHeaders = new Map();
+        const headers = rawHeaders.map((header, index) => {
+          const trimmedHeader = String(header).trim();
+          if (!trimmedHeader) return `Column${index}`;
+          
+          if (seenHeaders.has(trimmedHeader)) {
+            // This is a duplicate - rename it
+            const count = seenHeaders.get(trimmedHeader) + 1;
+            seenHeaders.set(trimmedHeader, count);
+            return `${trimmedHeader}_${count}`;
+          } else {
+            // First occurrence - keep it
+            seenHeaders.set(trimmedHeader, 1);
+            return trimmedHeader;
+          }
+        });
+        
         const dataRows = allRows.slice(headerRowIndex + 1);
 
         console.log(`Detected header at row ${headerRowIndex + 1}:`, headers);
