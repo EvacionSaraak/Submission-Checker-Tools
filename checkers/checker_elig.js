@@ -383,10 +383,10 @@ function validateXmlClaims(xmlClaims, eligMap) {
     return {
       claimID: claim.claimID,
       memberID: claim.memberID,
-      packageName: claim.packageName,
+      packageName: claim.packageName,  // XML PackageName (used for validation)
       encounterStart: formattedDate,
       clinician: eligibility?.['Clinician'] || '',
-      cardNetwork: eligibility?.['Card Network'] || '',  // Display value from XLSX "Card Network" column
+      cardNetwork: eligibility?.['Card Network'] || '',  // XLSX "Card Network" (displayed as "Package Name" column)
       serviceCategory: eligibility?.['Service Category'] || '',
       consultationStatus: eligibility?.['Consultation Status'] || '',
       status: eligibility?.Status || '',
