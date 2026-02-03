@@ -346,7 +346,7 @@ function validateXmlClaims(xmlClaims, eligMap) {
     const claimDate = DateHandler.parse(claim.encounterStart);
     const formattedDate = DateHandler.format(claimDate);
     const memberID = claim.memberID;
-    const cardClass = claim.cardClass;
+    const cardNetwork = claim.cardNetwork;
 
     // Check for leading zero in original memberID
     const hasLeadingZero = memberID.match(/^0+\d+$/);
@@ -367,11 +367,11 @@ function validateXmlClaims(xmlClaims, eligMap) {
     } else if (!checkClinicianMatch(claim.clinicians, eligibility.Clinician)) {
       status = 'unknown';
       remarks.push('Clinician mismatch');
-    } else if (cardClass && eligibility['Card Network'] && cardClass !== eligibility['Card Network']) {
+    } else if (cardNetwork && eligibility['Card Network'] && cardNetwork !== eligibility['Card Network']) {
       // Card Network mismatch is treated as 'invalid' (not 'unknown') because it's a definitive
-      // data mismatch that indicates the wrong eligibility record or incorrect card class in the claim
+      // data mismatch that indicates the wrong eligibility record or incorrect card network in the claim
       status = 'invalid';
-      remarks.push(`Card Network mismatch: XML CardClass="${cardClass}", Eligibility Card Network="${eligibility['Card Network']}"`);
+      remarks.push(`Card Network mismatch: XML CardNetwork="${cardNetwork}", Eligibility Card Network="${eligibility['Card Network']}"`);
     } else if (!hasLeadingZero) {
       // Only mark as valid if there is no leading zero
       status = 'valid';
@@ -381,7 +381,7 @@ function validateXmlClaims(xmlClaims, eligMap) {
     return {
       claimID: claim.claimID,
       memberID: claim.memberID,
-      cardClass: claim.cardClass,
+      cardNetwork: claim.cardNetwork,
       encounterStart: formattedDate,
       clinician: eligibility?.['Clinician'] || '',
       serviceCategory: eligibility?.['Service Category'] || '',
@@ -541,14 +541,14 @@ async function parseXmlFile(file) {
   const xmlDoc = new DOMParser().parseFromString(xmlContent, "application/xml");
 
   const claims = Array.from(xmlDoc.querySelectorAll("Claim")).map(claim => {
-    // Extract CardClass from Contract element
+    // Extract CardNetwork from Contract element
     const contract = claim.querySelector("Contract");
-    const cardClass = contract?.querySelector("CardClass")?.textContent.trim() || '';
+    const cardNetwork = contract?.querySelector("CardNetwork")?.textContent.trim() || '';
     
     return {
       claimID: claim.querySelector("ID")?.textContent.trim() || '',
       memberID: claim.querySelector("MemberID")?.textContent.trim() || '',
-      cardClass: cardClass,
+      cardNetwork: cardNetwork,
       encounterStart: claim.querySelector("Encounter Start")?.textContent.trim(),
       clinicians: Array.from(claim.querySelectorAll("Clinician")).map(c => c.textContent.trim())
     };
@@ -838,7 +838,7 @@ function buildResultsTable(results, eligMap) {
     row.innerHTML = `
       <td style="padding:6px;border:1px solid #ccc">${result.claimID}</td>
       <td style="padding:6px;border:1px solid #ccc">${result.memberID}</td>
-      ${isXmlMode ? `<td style="padding:6px;border:1px solid #ccc">${result.cardClass || ''}</td>` : ''}
+      ${isXmlMode ? `<td style="padding:6px;border:1px solid #ccc">${result.cardNetwork || ''}</td>` : ''}
       <td style="padding:6px;border:1px solid #ccc">${result.encounterStart}</td>
       ${!isXmlMode ? `<td class="description-col" style="padding:6px;border:1px solid #ccc">${result.packageName}</td><td class="description-col" style="padding:6px;border:1px solid #ccc">${result.provider}</td>` : ''}
       <td class="description-col" style="padding:6px;border:1px solid #ccc">${result.clinician}</td>
@@ -1023,7 +1023,7 @@ function exportInvalidEntries(results) {
   const exportData = invalidEntries.map(entry => ({
     'Claim ID': entry.claimID,
     'Member ID': entry.memberID,
-    'Card Network': entry.cardClass || '',
+    'Card Network': entry.cardNetwork || '',
     'Encounter Date': entry.encounterStart,
     'Package Name': entry.packageName || '',
     'Provider': entry.provider || '',
