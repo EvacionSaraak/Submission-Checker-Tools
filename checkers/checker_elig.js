@@ -376,21 +376,24 @@ function validateXmlClaims(xmlClaims, eligMap) {
 
     const eligibility = findEligibilityForClaim(eligMap, claimDate, memberID, claim.clinicians);
 
-    let status = 'invalid';
+    let status = 'valid';  // Start with valid, invalidate on failures
     const remarks = [];
 
     if (hasLeadingZero) {
+      status = 'invalid';
       remarks.push('Member ID has a leading zero; claim marked as invalid.');
-    }
-
-    if (!eligibility) {
+    } else if (!eligibility) {
+      status = 'invalid';
       remarks.push(`No matching eligibility found for ${memberID} on ${formattedDate}`);
     } else if (eligibility.Status?.toLowerCase() !== 'eligible') {
+      status = 'invalid';
       remarks.push(`Eligibility status: ${eligibility.Status}`);
     } else if (!checkClinicianMatch(claim.clinicians, eligibility.Clinician)) {
       status = 'unknown';
       remarks.push('Clinician mismatch');
     } else if (packageName && eligibility['Package Name']) {
+      // Only validate package names if both XML and XLSX have package name values
+      // If XML has no PackageName element, skip this validation entirely
       // Normalize both package names before comparison to handle variations
       const normalizedXmlPackage = normalizePackageName(packageName);
       const normalizedEligPackage = normalizePackageName(eligibility['Package Name']);
@@ -402,13 +405,10 @@ function validateXmlClaims(xmlClaims, eligMap) {
         status = 'invalid';
         remarks.push(`Package Name mismatch: XML="${packageName}" (normalized: "${normalizedXmlPackage}"), Eligibility="${eligibility['Package Name']}" (normalized: "${normalizedEligPackage}")`);
       }
+      // If package names match (normalized), status remains 'valid'
     }
-    
-    // Mark as valid if no errors and no leading zero
-    if (status !== 'invalid' && status !== 'unknown' && !hasLeadingZero) {
-      status = 'valid';
-    }
-    // If hasLeadingZero, status remains 'invalid'
+    // If packageName is missing from XML, validation is skipped and status remains 'valid'
+    // If all checks pass, status remains 'valid'
 
     return {
       claimID: claim.claimID,
