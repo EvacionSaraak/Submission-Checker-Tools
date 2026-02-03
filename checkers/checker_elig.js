@@ -368,12 +368,12 @@ function validateXmlClaims(xmlClaims, eligMap) {
     } else if (!checkClinicianMatch(claim.clinicians, eligibility.Clinician)) {
       status = 'unknown';
       remarks.push('Clinician mismatch');
-    } else if (packageName && eligibility['Card Network'] && packageName !== eligibility['Card Network']) {
+    } else if (packageName && eligibility['Package Name'] && packageName !== eligibility['Package Name']) {
       // Package Name mismatch is treated as 'invalid' (not 'unknown') because it's a definitive
       // data mismatch that indicates the wrong eligibility record or incorrect package in the claim.
-      // Compares: XML <Contract><PackageName> vs XLSX eligibility "Card Network" column (column AI)
+      // Compares: XML <Contract><PackageName> vs XLSX eligibility "Package Name" column (column AH)
       status = 'invalid';
-      remarks.push(`Package Name mismatch: XML PackageName="${packageName}", Eligibility Card Network="${eligibility['Card Network']}"`);
+      remarks.push(`Package Name mismatch: XML PackageName="${packageName}", Eligibility PackageName="${eligibility['Package Name']}"`);
     } else if (!hasLeadingZero) {
       // Only mark as valid if there is no leading zero
       status = 'valid';
@@ -386,7 +386,7 @@ function validateXmlClaims(xmlClaims, eligMap) {
       packageName: claim.packageName,  // XML PackageName (used for validation)
       encounterStart: formattedDate,
       clinician: eligibility?.['Clinician'] || '',
-      cardNetwork: eligibility?.['Card Network'] || '',  // XLSX "Card Network" (displayed as "Package Name" column)
+      xlsxPackageName: eligibility?.['Package Name'] || '',  // XLSX "Package Name" column (column AH)
       serviceCategory: eligibility?.['Service Category'] || '',
       consultationStatus: eligibility?.['Consultation Status'] || '',
       status: eligibility?.Status || '',
@@ -544,7 +544,7 @@ async function parseXmlFile(file) {
   const xmlDoc = new DOMParser().parseFromString(xmlContent, "application/xml");
 
   const claims = Array.from(xmlDoc.querySelectorAll("Claim")).map(claim => {
-    // Extract PackageName from Contract element (to match with XLSX "Card Network" column)
+    // Extract PackageName from Contract element (to match with XLSX "Package Name" column AH)
     const contract = claim.querySelector("Contract");
     const packageName = contract?.querySelector("PackageName")?.textContent.trim() || '';
     
@@ -784,7 +784,7 @@ function buildResultsTable(results, eligMap) {
       <th style="padding:8px;border:1px solid #ccc">Encounter Date</th>
       ${!isXmlMode ? '<th style="padding:8px;border:1px solid #ccc">Package</th><th style="padding:8px;border:1px solid #ccc">Provider</th>' : ''}
       <th style="padding:8px;border:1px solid #ccc">Clinician</th>
-      ${isXmlMode ? '<th style="padding:8px;border:1px solid #ccc">XML Package Name</th><th style="padding:8px;border:1px solid #ccc">XLSX Card Network</th>' : ''}
+      ${isXmlMode ? '<th style="padding:8px;border:1px solid #ccc">XML Package Name</th><th style="padding:8px;border:1px solid #ccc">XLSX Package Name</th>' : ''}
       <th style="padding:8px;border:1px solid #ccc">Service Category</th>
       <th style="padding:8px;border:1px solid #ccc">Status</th>
       <th class="wrap-col" style="padding:8px;border:1px solid #ccc">Remarks</th>
@@ -844,7 +844,7 @@ function buildResultsTable(results, eligMap) {
       <td style="padding:6px;border:1px solid #ccc">${result.encounterStart}</td>
       ${!isXmlMode ? `<td class="description-col" style="padding:6px;border:1px solid #ccc">${result.packageName}</td><td class="description-col" style="padding:6px;border:1px solid #ccc">${result.provider}</td>` : ''}
       <td class="description-col" style="padding:6px;border:1px solid #ccc">${result.clinician}</td>
-      ${isXmlMode ? `<td class="description-col" style="padding:6px;border:1px solid #ccc">${result.packageName || ''}</td><td class="description-col" style="padding:6px;border:1px solid #ccc">${result.cardNetwork || ''}</td>` : ''}
+      ${isXmlMode ? `<td class="description-col" style="padding:6px;border:1px solid #ccc">${result.packageName || ''}</td><td class="description-col" style="padding:6px;border:1px solid #ccc">${result.xlsxPackageName || ''}</td>` : ''}
       <td class="description-col" style="padding:6px;border:1px solid #ccc">${result.serviceCategory}</td>
       <td class="description-col" style="padding:6px;border:1px solid #ccc">${statusBadge}</td>
       <td class="wrap-col" style="padding:6px;border:1px solid #ccc">${remarksHTML}</td>
@@ -1027,7 +1027,7 @@ function exportInvalidEntries(results) {
     'Claim ID': entry.claimID,
     'Member ID': entry.memberID,
     'XML Package Name': entry.packageName || '',  // XML <Contract><PackageName>
-    'XLSX Card Network': entry.cardNetwork || '',  // XLSX "Card Network" column
+    'XLSX Package Name': entry.xlsxPackageName || '',  // XLSX "Package Name" column (AH)
     'Encounter Date': entry.encounterStart,
     'Provider': entry.provider || '',
     'Clinician': entry.clinician || '',
