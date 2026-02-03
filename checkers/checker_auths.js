@@ -203,7 +203,7 @@ function validateDateAndStatus(row, start) {
   // Accept "approved", "totally approved", or "rejected" as valid statuses
   const validStatuses = ["approved", "totally approved", "rejected"];
   const isValidStatus = validStatuses.some(validStatus => status === validStatus);
-  if (!isValidStatus) remarks.push("Status not approved");
+  if (!isValidStatus) remarks.push("Invalid status (must be Approved, Totally Approved, or Rejected)");
   return remarks;
 }
 
