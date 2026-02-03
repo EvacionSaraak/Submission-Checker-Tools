@@ -536,6 +536,32 @@ function logNoEligibilityMatch(sourceType, claimSummary, memberID, parsedClaimDa
 /*********************
  * FILE PARSING FUNCTIONS *
  *********************/
+
+/**
+ * Helper function to handle duplicate header names
+ * Keeps first occurrence with original name, renames subsequent duplicates
+ * @param {Array} headers - Array of header names
+ * @returns {Array} Array of unique header names
+ */
+function handleDuplicateHeaders(headers) {
+  const seenHeaders = new Map();
+  return headers.map((header, index) => {
+    const trimmedHeader = String(header).trim();
+    if (!trimmedHeader) return `Column${index + 1}`;  // Use 1-based indexing
+    
+    if (seenHeaders.has(trimmedHeader)) {
+      // This is a duplicate - rename it
+      const count = seenHeaders.get(trimmedHeader) + 1;
+      seenHeaders.set(trimmedHeader, count);
+      return `${trimmedHeader}_${count}`;
+    } else {
+      // First occurrence - keep it
+      seenHeaders.set(trimmedHeader, 1);
+      return trimmedHeader;
+    }
+  });
+}
+
 async function parseXmlFile(file) {
   console.log(`Parsing XML file: ${file.name}`);
   const text = await file.text();
@@ -611,23 +637,7 @@ async function parseExcelFile(file) {
 
         // Trim headers and handle duplicates
         const headers = allRows[headerRow].map(h => String(h).trim());
-        
-        // Handle duplicate header names by keeping first occurrence and renaming subsequent ones
-        const seenHeaders = new Map();
-        const uniqueHeaders = headers.map((header, index) => {
-          if (!header) return `Column${index}`;
-          
-          if (seenHeaders.has(header)) {
-            // This is a duplicate - rename it
-            const count = seenHeaders.get(header) + 1;
-            seenHeaders.set(header, count);
-            return `${header}_${count}`;
-          } else {
-            // First occurrence - keep it
-            seenHeaders.set(header, 1);
-            return header;
-          }
-        });
+        const uniqueHeaders = handleDuplicateHeaders(headers);
         
         console.log(`Headers: ${uniqueHeaders}`);
 
@@ -681,24 +691,7 @@ async function parseCsvFile(file) {
         if (headerRowIndex === -1) throw new Error("Could not detect header row in CSV");
 
         const rawHeaders = allRows[headerRowIndex];
-        
-        // Handle duplicate header names by keeping first occurrence and renaming subsequent ones
-        const seenHeaders = new Map();
-        const headers = rawHeaders.map((header, index) => {
-          const trimmedHeader = String(header).trim();
-          if (!trimmedHeader) return `Column${index}`;
-          
-          if (seenHeaders.has(trimmedHeader)) {
-            // This is a duplicate - rename it
-            const count = seenHeaders.get(trimmedHeader) + 1;
-            seenHeaders.set(trimmedHeader, count);
-            return `${trimmedHeader}_${count}`;
-          } else {
-            // First occurrence - keep it
-            seenHeaders.set(trimmedHeader, 1);
-            return trimmedHeader;
-          }
-        });
+        const headers = handleDuplicateHeaders(rawHeaders);
         
         const dataRows = allRows.slice(headerRowIndex + 1);
 
