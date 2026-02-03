@@ -368,6 +368,8 @@ function validateXmlClaims(xmlClaims, eligMap) {
       status = 'unknown';
       remarks.push('Clinician mismatch');
     } else if (cardClass && eligibility['Card Network'] && cardClass !== eligibility['Card Network']) {
+      // Card Network mismatch is treated as 'invalid' (not 'unknown') because it's a definitive
+      // data mismatch that indicates the wrong eligibility record or incorrect card class in the claim
       status = 'invalid';
       remarks.push(`Card Network mismatch: XML CardClass="${cardClass}", Eligibility Card Network="${eligibility['Card Network']}"`);
     } else if (!hasLeadingZero) {
