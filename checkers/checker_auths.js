@@ -212,7 +212,8 @@ function validateDateAndStatus(row, start) {
   const validStatuses = ["approved", "totally approved", "rejected"];
   const isValidStatus = validStatuses.some(validStatus => status === validStatus);
   
-  // If status is "Partially Approved", we will treat it as unknown instead of invalid
+  // If status is "Partially Approved", treat it as unknown (not invalid).
+  // This is a special case where the row is uncertain rather than definitively invalid.
   if (!isValidStatus && !isPartiallyApproved) {
     remarks.push("Invalid status (must be Approved, Totally Approved, or Rejected)");
   }
