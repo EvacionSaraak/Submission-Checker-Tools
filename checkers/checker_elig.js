@@ -784,7 +784,7 @@ function buildResultsTable(results, eligMap) {
       <th style="padding:8px;border:1px solid #ccc">Encounter Date</th>
       ${!isXmlMode ? '<th style="padding:8px;border:1px solid #ccc">Package</th><th style="padding:8px;border:1px solid #ccc">Provider</th>' : ''}
       <th style="padding:8px;border:1px solid #ccc">Clinician</th>
-      ${isXmlMode ? '<th style="padding:8px;border:1px solid #ccc">Package Name</th>' : ''}
+      ${isXmlMode ? '<th style="padding:8px;border:1px solid #ccc">XML Package Name</th><th style="padding:8px;border:1px solid #ccc">XLSX Card Network</th>' : ''}
       <th style="padding:8px;border:1px solid #ccc">Service Category</th>
       <th style="padding:8px;border:1px solid #ccc">Status</th>
       <th class="wrap-col" style="padding:8px;border:1px solid #ccc">Remarks</th>
@@ -844,7 +844,7 @@ function buildResultsTable(results, eligMap) {
       <td style="padding:6px;border:1px solid #ccc">${result.encounterStart}</td>
       ${!isXmlMode ? `<td class="description-col" style="padding:6px;border:1px solid #ccc">${result.packageName}</td><td class="description-col" style="padding:6px;border:1px solid #ccc">${result.provider}</td>` : ''}
       <td class="description-col" style="padding:6px;border:1px solid #ccc">${result.clinician}</td>
-      ${isXmlMode ? `<td class="description-col" style="padding:6px;border:1px solid #ccc">${result.cardNetwork || ''}</td>` : ''}  <!-- Package Name shows XLSX "Card Network" value -->
+      ${isXmlMode ? `<td class="description-col" style="padding:6px;border:1px solid #ccc">${result.packageName || ''}</td><td class="description-col" style="padding:6px;border:1px solid #ccc">${result.cardNetwork || ''}</td>` : ''}
       <td class="description-col" style="padding:6px;border:1px solid #ccc">${result.serviceCategory}</td>
       <td class="description-col" style="padding:6px;border:1px solid #ccc">${statusBadge}</td>
       <td class="wrap-col" style="padding:6px;border:1px solid #ccc">${remarksHTML}</td>
@@ -1026,7 +1026,8 @@ function exportInvalidEntries(results) {
   const exportData = invalidEntries.map(entry => ({
     'Claim ID': entry.claimID,
     'Member ID': entry.memberID,
-    'Package Name': entry.cardNetwork || '',  // XLSX "Card Network" value matched with XML PackageName
+    'XML Package Name': entry.packageName || '',  // XML <Contract><PackageName>
+    'XLSX Card Network': entry.cardNetwork || '',  // XLSX "Card Network" column
     'Encounter Date': entry.encounterStart,
     'Provider': entry.provider || '',
     'Clinician': entry.clinician || '',
