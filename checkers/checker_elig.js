@@ -401,12 +401,11 @@ function validateXmlClaims(xmlClaims, eligMap) {
         // Compares: XML <Contract><PackageName> vs XLSX eligibility "Package Name" column (column AH)
         status = 'invalid';
         remarks.push(`Package Name mismatch: XML PackageName="${packageName}" (normalized: "${normalizedXmlPackage}"), Eligibility PackageName="${eligibility['Package Name']}" (normalized: "${normalizedEligPackage}")`);
-      } else if (!hasLeadingZero) {
-        // Only mark as valid if there is no leading zero
-        status = 'valid';
       }
-    } else if (!hasLeadingZero) {
-      // Only mark as valid if there is no leading zero
+    }
+    
+    // Mark as valid if no errors and no leading zero
+    if (status !== 'invalid' && status !== 'unknown' && !hasLeadingZero) {
       status = 'valid';
     }
     // If hasLeadingZero, status remains 'invalid'
