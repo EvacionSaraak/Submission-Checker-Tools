@@ -142,7 +142,9 @@ function checkForFalseValues(parent, invalidFields, prefix = "", activityContext
       } else {
         // Not in an Activity context - use original format
         const fieldPath = normalizeFieldPath(prefix, el.nodeName, false);
-        falseValueErrors.nonActivity.push(`The element ${fieldPath} has an invalid value 'false'.`);
+        // Format: "X Y has invalid value of `false`." instead of "The element X → Y has an invalid value 'false'."
+        const formattedPath = fieldPath.replace(/\s*→\s*/g, ' ');
+        falseValueErrors.nonActivity.push(`${formattedPath} has invalid value of \`false\`.`);
       }
     }
     if (el.children.length) checkForFalseValues(el, invalidFields, prefix ? `${prefix} → ${el.nodeName}` : el.nodeName, currentActivityContext, falseValueErrors);

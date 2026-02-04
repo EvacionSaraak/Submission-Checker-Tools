@@ -12,6 +12,28 @@
 const DATE_KEYS = ['Date', 'On'];
 const MONTHS = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"];
 
+// Package Name Normalization Mapping
+// Maps variations/aliases to canonical package names
+const PACKAGE_NAME_MAPPING = {
+  // Thiqa variations
+  'Thiqa C1': 'Thiqa 1',
+  'Thiqa C2': 'Thiqa 2',
+  'Thiqa C3': 'Thiqa 3',
+  // Add more mappings as needed
+};
+
+/**
+ * Normalize package name by converting known variations to canonical form
+ * @param {string} packageName - The package name to normalize
+ * @returns {string} - Normalized package name
+ */
+function normalizePackageName(packageName) {
+  if (!packageName) return packageName;
+  const trimmed = packageName.trim();
+  return PACKAGE_NAME_MAPPING[trimmed] || trimmed;
+}
+
+
 // Application state
 let xmlData = null;
 let xlsData = null;
@@ -229,6 +251,7 @@ function prepareEligibilityMap(eligData) {
 
     if (!eligMap.has(memberID)) eligMap.set(memberID, []);
 
+    // Build eligibility record from XLSX columns
     const eligRecord = {
       'Eligibility Request Number': e['Eligibility Request Number'],
       'Card Number / DHA Member ID': rawID, // preserve original for display
@@ -238,7 +261,8 @@ function prepareEligibilityMap(eligData) {
       'Clinician': e['Clinician'],
       'Payer Name': e['Payer Name'],
       'Service Category': e['Service Category'],
-      'Package Name': e['Package Name']
+      'Package Name': e['Package Name'],
+      'Card Network': e['Card Network']  // Column AI in XLSX eligibility file
     };
 
     eligMap.get(memberID).push(eligRecord);
@@ -345,37 +369,49 @@ function validateXmlClaims(xmlClaims, eligMap) {
     const claimDate = DateHandler.parse(claim.encounterStart);
     const formattedDate = DateHandler.format(claimDate);
     const memberID = claim.memberID;
+    const packageName = claim.packageName;
 
     // Check for leading zero in original memberID
     const hasLeadingZero = memberID.match(/^0+\d+$/);
 
     const eligibility = findEligibilityForClaim(eligMap, claimDate, memberID, claim.clinicians);
 
-    let status = 'invalid';
+    let status = 'valid';  // Start with valid, invalidate on failures
     const remarks = [];
 
     if (hasLeadingZero) {
+      status = 'invalid';
       remarks.push('Member ID has a leading zero; claim marked as invalid.');
-    }
-
-    if (!eligibility) {
+    } else if (!eligibility) {
+      status = 'invalid';
       remarks.push(`No matching eligibility found for ${memberID} on ${formattedDate}`);
     } else if (eligibility.Status?.toLowerCase() !== 'eligible') {
+      status = 'invalid';
       remarks.push(`Eligibility status: ${eligibility.Status}`);
     } else if (!checkClinicianMatch(claim.clinicians, eligibility.Clinician)) {
       status = 'unknown';
       remarks.push('Clinician mismatch');
-    } else if (!hasLeadingZero) {
-      // Only mark as valid if there is no leading zero
-      status = 'valid';
+    } else if (packageName && eligibility['Package Name']) {
+      // Only validate if both XML and XLSX have PackageName values (skip if XML has no PackageName)
+      const normalizedXmlPackage = normalizePackageName(packageName);
+      const normalizedEligPackage = normalizePackageName(eligibility['Package Name']);
+      
+      if (normalizedXmlPackage !== normalizedEligPackage) {
+        // Package Name mismatch is treated as 'invalid' (not 'unknown') because it's a definitive
+        // data mismatch that indicates the wrong eligibility record or incorrect package in the claim.
+        // Compares: XML <Contract><PackageName> vs XLSX eligibility "Package Name" column (column AH)
+        status = 'invalid';
+        remarks.push(`Claim package (${normalizedXmlPackage}) is different from eligibility (${normalizedEligPackage}).`);
+      }
     }
-    // If hasLeadingZero, status remains 'invalid'
 
     return {
       claimID: claim.claimID,
       memberID: claim.memberID,
+      packageName: claim.packageName,  // XML PackageName (used for validation)
       encounterStart: formattedDate,
       clinician: eligibility?.['Clinician'] || '',
+      xlsxPackageName: eligibility?.['Package Name'] || '',  // XLSX "Package Name" column (column AH)
       serviceCategory: eligibility?.['Service Category'] || '',
       consultationStatus: eligibility?.['Consultation Status'] || '',
       status: eligibility?.Status || '',
@@ -525,6 +561,32 @@ function logNoEligibilityMatch(sourceType, claimSummary, memberID, parsedClaimDa
 /*********************
  * FILE PARSING FUNCTIONS *
  *********************/
+
+/**
+ * Helper function to handle duplicate header names
+ * Keeps first occurrence with original name, renames subsequent duplicates
+ * @param {Array} headers - Array of header names
+ * @returns {Array} Array of unique header names
+ */
+function handleDuplicateHeaders(headers) {
+  const seenHeaders = new Map();
+  return headers.map((header, index) => {
+    const trimmedHeader = String(header).trim();
+    if (!trimmedHeader) return `Column${index + 1}`;  // Use 1-based indexing
+    
+    if (seenHeaders.has(trimmedHeader)) {
+      // This is a duplicate - rename it
+      const count = seenHeaders.get(trimmedHeader) + 1;
+      seenHeaders.set(trimmedHeader, count);
+      return `${trimmedHeader}_${count}`;
+    } else {
+      // First occurrence - keep it
+      seenHeaders.set(trimmedHeader, 1);
+      return trimmedHeader;
+    }
+  });
+}
+
 async function parseXmlFile(file) {
   console.log(`Parsing XML file: ${file.name}`);
   const text = await file.text();
@@ -532,12 +594,19 @@ async function parseXmlFile(file) {
   const xmlContent = text.replace(/&(?!(amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;))/g, "and");
   const xmlDoc = new DOMParser().parseFromString(xmlContent, "application/xml");
 
-  const claims = Array.from(xmlDoc.querySelectorAll("Claim")).map(claim => ({
-    claimID: claim.querySelector("ID")?.textContent.trim() || '',
-    memberID: claim.querySelector("MemberID")?.textContent.trim() || '',
-    encounterStart: claim.querySelector("Encounter Start")?.textContent.trim(),
-    clinicians: Array.from(claim.querySelectorAll("Clinician")).map(c => c.textContent.trim())
-  }));
+  const claims = Array.from(xmlDoc.querySelectorAll("Claim")).map(claim => {
+    // Extract PackageName from Contract element (to match with XLSX "Package Name" column AH)
+    const contract = claim.querySelector("Contract");
+    const packageName = contract?.querySelector("PackageName")?.textContent.trim() || '';
+    
+    return {
+      claimID: claim.querySelector("ID")?.textContent.trim() || '',
+      memberID: claim.querySelector("MemberID")?.textContent.trim() || '',
+      packageName: packageName,
+      encounterStart: claim.querySelector("Encounter Start")?.textContent.trim(),
+      clinicians: Array.from(claim.querySelectorAll("Clinician")).map(c => c.textContent.trim())
+    };
+  });
 
   return { claims };
 }
@@ -591,17 +660,19 @@ async function parseExcelFile(file) {
         // Default to first row if none detected
         if (!foundHeaders) headerRow = 0;
 
-        // Trim headers
+        // Trim headers and handle duplicates
         const headers = allRows[headerRow].map(h => String(h).trim());
-        console.log(`Headers: ${headers}`);
+        const uniqueHeaders = handleDuplicateHeaders(headers);
+        
+        console.log(`Headers: ${uniqueHeaders}`);
 
         // Extract data rows
         const dataRows = allRows.slice(headerRow + 1);
 
-        // Map rows to objects
+        // Map rows to objects using unique headers
         const jsonData = dataRows.map(row => {
           const obj = {};
-          headers.forEach((header, index) => {
+          uniqueHeaders.forEach((header, index) => {
             obj[header] = row[index] || '';
           });
           return obj;
@@ -644,7 +715,9 @@ async function parseCsvFile(file) {
 
         if (headerRowIndex === -1) throw new Error("Could not detect header row in CSV");
 
-        const headers = allRows[headerRowIndex];
+        const rawHeaders = allRows[headerRowIndex];
+        const headers = handleDuplicateHeaders(rawHeaders);
+        
         const dataRows = allRows.slice(headerRowIndex + 1);
 
         console.log(`Detected header at row ${headerRowIndex + 1}:`, headers);
@@ -766,6 +839,7 @@ function buildResultsTable(results, eligMap) {
       <th style="padding:8px;border:1px solid #ccc">Encounter Date</th>
       ${!isXmlMode ? '<th style="padding:8px;border:1px solid #ccc">Package</th><th style="padding:8px;border:1px solid #ccc">Provider</th>' : ''}
       <th style="padding:8px;border:1px solid #ccc">Clinician</th>
+      ${isXmlMode ? '<th style="padding:8px;border:1px solid #ccc">XML Package Name</th><th style="padding:8px;border:1px solid #ccc">XLSX Package Name</th>' : ''}
       <th style="padding:8px;border:1px solid #ccc">Service Category</th>
       <th style="padding:8px;border:1px solid #ccc">Status</th>
       <th class="wrap-col" style="padding:8px;border:1px solid #ccc">Remarks</th>
@@ -825,6 +899,7 @@ function buildResultsTable(results, eligMap) {
       <td style="padding:6px;border:1px solid #ccc">${result.encounterStart}</td>
       ${!isXmlMode ? `<td class="description-col" style="padding:6px;border:1px solid #ccc">${result.packageName}</td><td class="description-col" style="padding:6px;border:1px solid #ccc">${result.provider}</td>` : ''}
       <td class="description-col" style="padding:6px;border:1px solid #ccc">${result.clinician}</td>
+      ${isXmlMode ? `<td class="description-col" style="padding:6px;border:1px solid #ccc">${result.packageName || ''}</td><td class="description-col" style="padding:6px;border:1px solid #ccc">${result.xlsxPackageName || ''}</td>` : ''}
       <td class="description-col" style="padding:6px;border:1px solid #ccc">${result.serviceCategory}</td>
       <td class="description-col" style="padding:6px;border:1px solid #ccc">${statusBadge}</td>
       <td class="wrap-col" style="padding:6px;border:1px solid #ccc">${remarksHTML}</td>
@@ -909,6 +984,7 @@ function initEligibilityModal(results) {
           <table style="width:100%;border-collapse:collapse;">
             <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Eligibility Request Number</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Eligibility Request Number"] || ''}</td></tr>
             <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Card Number / DHA Member ID</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Card Number / DHA Member ID"] || ''}</td></tr>
+            <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Card Network</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Card Network"] || ''}</td></tr>
             <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Answered On</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Answered On"] || ''}</td></tr>
             <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Ordered On</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Ordered On"] || ''}</td></tr>
             <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Status</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Status"] || ''}</td></tr>
@@ -1005,8 +1081,9 @@ function exportInvalidEntries(results) {
   const exportData = invalidEntries.map(entry => ({
     'Claim ID': entry.claimID,
     'Member ID': entry.memberID,
+    'XML Package Name': entry.packageName || '',  // XML <Contract><PackageName>
+    'XLSX Package Name': entry.xlsxPackageName || '',  // XLSX "Package Name" column (AH)
     'Encounter Date': entry.encounterStart,
-    'Package Name': entry.packageName || '',
     'Provider': entry.provider || '',
     'Clinician': entry.clinician || '',
     'Service Category': entry.serviceCategory || '',
