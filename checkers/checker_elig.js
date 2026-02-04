@@ -926,7 +926,10 @@ function buildResultsTable(results, eligMap) {
   wrapper.appendChild(tableContainer);
   
   // Initialize modal and attach event handlers
-  setTimeout(() => initEligibilityModal(results, eligMap), 0);
+  setTimeout(() => {
+    initEligibilityModal(results);
+    initShowAllEligibilitiesHandlers(eligMap);
+  }, 0);
   
   return wrapper;
 }
@@ -995,6 +998,54 @@ function initEligibilityModal(results) {
           </table>
         </div>
       `;
+
+      document.getElementById("modalTable").innerHTML = tableHtml;
+      document.getElementById("modalOverlay").style.display = "block";
+    };
+  });
+}
+
+function initShowAllEligibilitiesHandlers(eligMap) {
+  // Attach click handlers for "View All" buttons
+  document.querySelectorAll(".show-all-eligibilities").forEach(btn => {
+    btn.onclick = function() {
+      const memberID = this.dataset.member;
+      const clinicians = (this.dataset.clinicians || '').split(',').filter(c => c.trim());
+      
+      if (!eligMap || !eligMap.has(memberID)) {
+        alert('No eligibility records found for this member.');
+        return;
+      }
+
+      const eligList = eligMap.get(memberID);
+      
+      console.log("Showing all eligibilities for member:", memberID, "Eligibilities:", eligList);
+
+      let tableHtml = `
+        <h3>All Eligibility Records for Member ${memberID}</h3>
+        <p>Clinician(s): ${clinicians.join(', ') || 'N/A'}</p>
+        <div style="overflow-x:auto;">
+      `;
+
+      eligList.forEach((record, idx) => {
+        tableHtml += `
+          <h4>Record ${idx + 1}</h4>
+          <table style="width:100%;border-collapse:collapse;margin-bottom:20px;">
+            <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Eligibility Request Number</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Eligibility Request Number"] || ''}</td></tr>
+            <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Card Number / DHA Member ID</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Card Number / DHA Member ID"] || ''}</td></tr>
+            <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Card Network</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Card Network"] || ''}</td></tr>
+            <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Answered On</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Answered On"] || ''}</td></tr>
+            <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Ordered On</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Ordered On"] || ''}</td></tr>
+            <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Status</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Status"] || ''}</td></tr>
+            <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Clinician</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Clinician"] || ''}</td></tr>
+            <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Payer Name</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Payer Name"] || ''}</td></tr>
+            <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Service Category</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Service Category"] || ''}</td></tr>
+            <tr><th style="text-align:left;padding:6px;">Package Name</th><td style="padding:6px;">${record["Package Name"] || ''}</td></tr>
+          </table>
+        `;
+      });
+
+      tableHtml += '</div>';
 
       document.getElementById("modalTable").innerHTML = tableHtml;
       document.getElementById("modalOverlay").style.display = "block";

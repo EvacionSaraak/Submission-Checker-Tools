@@ -498,6 +498,10 @@ window.runModifiersCheck = async function() {
   }
 };
 
+// Expose showEligibility to global scope for onclick handlers
+window.showEligibility = showEligibility;
+window.closeEligibilityModal = closeEligibilityModal;
+
   } catch (error) {
     console.error('[CHECKER-ERROR] Failed to load checker:', error);
     console.error(error.stack);
