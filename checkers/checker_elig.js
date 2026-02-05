@@ -363,8 +363,33 @@ function isServiceCategoryValid(serviceCategory, consultationStatus, rawPackage)
   return { valid: true };
 }
 
-function validateXmlClaims(xmlClaims, eligMap) {
+function validateXmlClaims(xmlClaims, eligMap, receiverID = '') {
   console.log(`Validating ${xmlClaims.length} XML claims`);
+  
+  // If ReceiverID is HAAD, skip validation and treat all claims as valid (cash file with no eligibility required)
+  if (receiverID.toUpperCase() === 'HAAD') {
+    console.log('ReceiverID is HAAD - treating all claims as valid (cash file, no eligibility required)');
+    return xmlClaims.map(claim => {
+      const claimDate = DateHandler.parse(claim.encounterStart);
+      const formattedDate = DateHandler.format(claimDate);
+      
+      return {
+        claimID: claim.claimID,
+        memberID: claim.memberID,
+        packageName: claim.packageName,
+        encounterStart: formattedDate,
+        clinician: '',
+        xlsxPackageName: '',
+        serviceCategory: '',
+        consultationStatus: '',
+        status: '',
+        remarks: ['Cash claim (HAAD receiver) - all rows are valid, no eligibility check required'],
+        finalStatus: 'valid',
+        fullEligibilityRecord: null
+      };
+    });
+  }
+  
   return xmlClaims.map(claim => {
     const claimDate = DateHandler.parse(claim.encounterStart);
     const formattedDate = DateHandler.format(claimDate);
@@ -594,6 +619,11 @@ async function parseXmlFile(file) {
   const xmlContent = text.replace(/&(?!(amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;))/g, "and");
   const xmlDoc = new DOMParser().parseFromString(xmlContent, "application/xml");
 
+  // Extract ReceiverID from Header element
+  const header = xmlDoc.querySelector("Header");
+  const receiverID = header?.querySelector("ReceiverID")?.textContent.trim() || '';
+  console.log(`ReceiverID found: ${receiverID}`);
+
   const claims = Array.from(xmlDoc.querySelectorAll("Claim")).map(claim => {
     // Extract PackageName from Contract element (to match with XLSX "Package Name" column AH)
     const contract = claim.querySelector("Contract");
@@ -608,7 +638,7 @@ async function parseXmlFile(file) {
     };
   });
 
-  return { claims };
+  return { claims, receiverID };
 }
 
 async function parseExcelFile(file) {
@@ -1158,7 +1188,7 @@ async function handleProcessClick() {
 
     const eligMap = prepareEligibilityMap(eligData);
     const isXmlMode = xmlRadio ? xmlRadio.checked : true;
-    const results = isXmlMode ? validateXmlClaims(xmlData.claims, eligMap) : validateReportClaims(xlsData, eligMap);
+    const results = isXmlMode ? validateXmlClaims(xmlData.claims, eligMap, xmlData.receiverID) : validateReportClaims(xlsData, eligMap);
 
     // Only filter for Daman/Thiqa if report mode
     let filteredResults = results;
@@ -1231,8 +1261,8 @@ async function runEligCheck() {
     // Prepare eligibility map
     const eligMap = prepareEligibilityMap(eligResult);
     
-    // Validate claims against eligibility
-    const results = validateXmlClaims(xmlResult.claims, eligMap);
+    // Validate claims against eligibility (pass receiverID to skip validation for HAAD)
+    const results = validateXmlClaims(xmlResult.claims, eligMap, xmlResult.receiverID);
     
     // Store results for export
     window.lastValidationResults = results;

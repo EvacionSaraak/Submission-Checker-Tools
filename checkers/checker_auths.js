@@ -13,6 +13,7 @@ let currentXlsxFile = null;
 // Enhanced file input change handlers for auto-run
 let parsedXmlDoc = null;
 let parsedXlsxData = null;
+let parsedReceiverID = '';
 
 // === UTILITIES ===
 
@@ -72,10 +73,18 @@ function parseXMLFile(file) {
         updateStatus();
         return reject("Invalid XML file");
       }
+      
+      // Extract ReceiverID from Header element
+      const header = doc.querySelector("Header");
+      const receiverID = header?.querySelector("ReceiverID")?.textContent.trim() || '';
+      console.log(`[AUTHS] ReceiverID found: ${receiverID}`);
+      
       const claims = doc.querySelectorAll("Claim");
       xmlClaimCount = claims.length;
       updateStatus();
-      resolve(doc);
+      
+      // Return both the document and the receiverID
+      resolve({ doc, receiverID });
     };
     reader.onerror = () => {
       xmlClaimCount = 0;
@@ -378,7 +387,45 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId) {
   };
 }
 
-function validateClaims(xmlDoc, xlsxData) {
+function validateClaims(xmlDoc, xlsxData, receiverID = '') {
+  // If ReceiverID is HAAD, skip validation and treat all activities as valid (cash file with no authorization required)
+  if (receiverID.toUpperCase() === 'HAAD') {
+    console.log('[AUTHS] ReceiverID is HAAD - treating all activities as valid (cash file, no authorization required)');
+    const results = [];
+    const claims = Array.from(xmlDoc.getElementsByTagName("Claim"));
+    claims.forEach(claimEl => {
+      const cid = getText(claimEl, "ID");
+      const mid = getText(claimEl, "MemberID");
+      const acts = Array.from(claimEl.getElementsByTagName("Activity"));
+      acts.forEach(a => {
+        const id = getText(a, "ID");
+        const code = getText(a, "Code");
+        const start = getText(a, "Start");
+        const netTotal = getText(a, "Net") || getText(a, "NetTotal");
+        const qty = getText(a, "Quantity") || "1";
+        const ordering = getText(a, "OrderingClinician");
+        
+        results.push({
+          claimId: cid,
+          memberId: mid,
+          activityId: id,
+          code: code,
+          start: start,
+          authId: '',
+          net: netTotal,
+          qty: qty,
+          orderingClinician: ordering,
+          description: '',
+          payerShare: '',
+          status: 'valid',
+          remarks: 'Cash claim (HAAD receiver) - all rows are valid, no authorization check required',
+          xlsxMatch: null
+        });
+      });
+    });
+    return results;
+  }
+  
   const xlsxMap = mapXLSXData(xlsxData);
   const results = [];
   const claims = Array.from(xmlDoc.getElementsByTagName("Claim"));
@@ -876,9 +923,9 @@ async function runAuthsCheck() {
     // Load authorization rules
     await loadAuthRules();
     
-    // Parse XML file
-    const xmlDoc = await parseXMLFile(xmlFile);
-    if (!xmlDoc) {
+    // Parse XML file (returns { doc, receiverID })
+    const xmlResult = await parseXMLFile(xmlFile);
+    if (!xmlResult || !xmlResult.doc) {
       throw new Error('Failed to parse XML file');
     }
     
@@ -888,13 +935,14 @@ async function runAuthsCheck() {
       throw new Error('Invalid authorization file structure - expected array of rows');
     }
     
-    // Validate claims against authorizations
-    const results = validateClaims(xmlDoc, xlsxData, authRules);
+    // Validate claims against authorizations (pass receiverID to skip validation for HAAD)
+    const results = validateClaims(xmlResult.doc, xlsxData, xmlResult.receiverID);
     console.log('[DEBUG] Auth validation complete:', {
       resultsCount: results.length,
       xmlClaimCount,
       xlsxAuthCount,
-      hasAuthRules: Object.keys(authRules).length > 0
+      hasAuthRules: Object.keys(authRules).length > 0,
+      receiverID: xmlResult.receiverID
     });
     
     // Build and return table
@@ -919,7 +967,7 @@ async function runAuthsCheck() {
 async function handleRun() {
   try {
     await loadAuthRules();
-    const results = validateClaims(parsedXmlDoc, parsedXlsxData, authRules);
+    const results = validateClaims(parsedXmlDoc, parsedXlsxData, parsedReceiverID);
     renderResults(results);
     postProcessResults(results);
   } catch (err) {
@@ -943,8 +991,13 @@ document.addEventListener('DOMContentLoaded', function() {
             currentXmlFile = file;
             xmlClaimCount = -1;
             try {
-              parsedXmlDoc = await parseXMLFile(currentXmlFile);
-            } catch (e) { parsedXmlDoc = null; }
+              const xmlResult = await parseXMLFile(currentXmlFile);
+              parsedXmlDoc = xmlResult.doc;
+              parsedReceiverID = xmlResult.receiverID;
+            } catch (e) { 
+              parsedXmlDoc = null;
+              parsedReceiverID = '';
+            }
           } else if (id === "xlsxInput") {
             currentXlsxFile = file;
             xlsxAuthCount = -1;
