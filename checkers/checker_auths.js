@@ -418,7 +418,7 @@ function validateClaims(xmlDoc, xlsxData, receiverID = '') {
           description: '',
           payerShare: '',
           status: 'valid',
-          remarks: 'Cash claim (HAAD receiver) - all rows are valid, no authorization check required',
+          remarks: ['Cash claim (HAAD receiver) - all rows are valid, no authorization check required'],
           xlsxMatch: null
         });
       });
