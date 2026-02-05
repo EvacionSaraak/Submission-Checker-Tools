@@ -420,7 +420,7 @@ function validateClaims(xmlDoc, xlsxData, receiverID = '') {
           denialCode: '',
           denialReason: '',
           status: 'valid',
-          remarks: ['Cash claim (HAAD receiver) - all rows are valid, no authorization check required'],
+          remarks: [],
           unknown: false
         });
       });
