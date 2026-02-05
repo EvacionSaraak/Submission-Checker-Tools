@@ -408,18 +408,20 @@ function validateClaims(xmlDoc, xlsxData, receiverID = '') {
         results.push({
           claimId: cid,
           memberId: mid,
-          activityId: id,
+          id: id,
           code: code,
           start: start,
-          authId: '',
-          net: netTotal,
+          authID: '',
+          netTotal: netTotal,
           qty: qty,
-          orderingClinician: ordering,
+          ordering: ordering,
           description: '',
-          payerShare: '',
+          xlsRow: {},
+          denialCode: '',
+          denialReason: '',
           status: 'valid',
-          remarks: 'Cash claim (HAAD receiver) - all rows are valid, no authorization check required',
-          xlsxMatch: null
+          remarks: [],
+          unknown: false
         });
       });
     });
