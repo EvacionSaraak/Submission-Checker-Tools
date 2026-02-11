@@ -1713,7 +1713,7 @@
     const headers = table.querySelectorAll('thead th');
     let remarksColumnIndex = -1;
     
-    // Find first header that is "Remark" or "Remarks" (case-insensitive)
+    // Find first header matching "Remark" or "Remarks" (exact match, case-insensitive)
     for (let i = 0; i < headers.length; i++) {
       const headerText = headers[i].textContent.trim();
       const headerLower = headerText.toLowerCase();
