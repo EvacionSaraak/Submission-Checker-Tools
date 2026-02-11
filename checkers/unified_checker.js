@@ -1718,7 +1718,8 @@
       return;
     }
     
-    const results = [];
+    // Use a Map to deduplicate: key = "ClaimID\t\tRemark", value = true
+    const uniqueResults = new Map();
     
     invalidRows.forEach(row => {
       // Get all cells in the row
@@ -1727,6 +1728,9 @@
       
       // First cell is Claim ID (index 0)
       const claimID = cells[0].textContent.trim();
+      
+      // Skip empty claim IDs (can happen with merged/hidden cells)
+      if (!claimID) return;
       
       // Find the Remarks column using the offset constant
       // The structure is: Claim ID, ..., Remarks, Details (last)
@@ -1744,18 +1748,23 @@
           const remarkText = div.textContent.trim();
           // Skip "No remarks" entries and source notes
           if (remarkText && remarkText !== 'No remarks' && !div.classList.contains('source-note')) {
-            // Format: CLAIM_ID\t\tRemark
-            results.push(`${claimID}\t\t${remarkText}`);
+            // Format: CLAIM_ID\t\tRemark - use as Map key to deduplicate
+            const entry = `${claimID}\t\t${remarkText}`;
+            uniqueResults.set(entry, true);
           }
         });
       } else {
         // If no divs, try getting text content directly (some checkers may use plain text)
         const remarkText = remarksCell.textContent.trim();
         if (remarkText && remarkText !== 'No remarks' && remarkText !== '') {
-          results.push(`${claimID}\t\t${remarkText}`);
+          const entry = `${claimID}\t\t${remarkText}`;
+          uniqueResults.set(entry, true);
         }
       }
     });
+    
+    // Convert Map keys to array
+    const results = Array.from(uniqueResults.keys());
     
     if (results.length === 0) {
       console.log(`[CLIPBOARD] Invalid rows found in ${checkerName} but no remarks to copy`);
