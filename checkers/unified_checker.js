@@ -8,7 +8,12 @@
   const CLIPBOARD_FEEDBACK_DURATION_MS = 2000;
   const ERROR_FEEDBACK_DURATION_EXTENSION_FACTOR = 1.5; // Extend error messages display time by 50%
   const INVALID_ROW_CLASSES = 'tbody tr.table-danger, tbody tr.table-warning';
-  const REMARKS_COLUMN_OFFSET = 2; // Remarks is always 2nd from end (before Details which is last)
+  
+  // Remarks column offset varies by checker:
+  // - Most checkers: Remarks is 2nd from end (before Details/Compare which is last)
+  // - Timings checker: Remarks is LAST column (no column after it)
+  const REMARKS_COLUMN_OFFSET_DEFAULT = 2; // Most checkers: second-to-last
+  const REMARKS_COLUMN_OFFSET_TIMINGS = 1; // Timings: last column
 
   // Initialize session counter immediately
   (function initSessionCounter() {
@@ -1721,6 +1726,13 @@
     // Use a Map to deduplicate: key = "ClaimID\t\tRemark", value = true
     const uniqueResults = new Map();
     
+    // Determine the correct column offset based on checker
+    // Timings checker has Remarks as the LAST column (no Details after it)
+    // All other checkers have Remarks as second-to-last (Details/Compare is last)
+    const remarksOffset = checkerName === 'timings' 
+      ? REMARKS_COLUMN_OFFSET_TIMINGS 
+      : REMARKS_COLUMN_OFFSET_DEFAULT;
+    
     invalidRows.forEach(row => {
       // Get all cells in the row
       const cells = row.querySelectorAll('td');
@@ -1733,11 +1745,11 @@
       // the Claim ID is visually hidden for consecutive activities of the same claim)
       if (!claimID) return;
       
-      // Find the Remarks column using the offset constant
-      // Table structure varies by checker but Remarks is always second-to-last:
-      // Example: Claim ID, Member ID, ..., Service Category, Status, Remarks, Details
-      // REMARKS_COLUMN_OFFSET = 2 means second-to-last cell (before Details which is last)
-      const remarksCell = cells[cells.length - REMARKS_COLUMN_OFFSET];
+      // Find the Remarks column using the appropriate offset for this checker
+      // Table structure varies by checker:
+      // - Most checkers: Claim ID, ..., Remarks, Details (remarksOffset = 2)
+      // - Timings: Claim ID, ..., Excess, Remarks (remarksOffset = 1, Remarks is last)
+      const remarksCell = cells[cells.length - remarksOffset];
       
       if (!remarksCell) return;
       
