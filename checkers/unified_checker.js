@@ -944,10 +944,19 @@
         const sectionDiv = document.createElement('div');
         sectionDiv.id = `${checkerName}-section`;
         sectionDiv.style.marginBottom = '30px';
+        
+        // Add clipboard button only for ELIG checker
+        const clipboardButton = checkerName === 'elig' 
+          ? `<button class="btn btn-sm btn-outline-primary" onclick="window.copyEligResults()" style="margin-left:10px;" title="Copy all ELIG results to clipboard">📋 Copy Summary</button>`
+          : '';
+        
         sectionDiv.innerHTML = `
-          <h3 style="color:#0d6efd;border-bottom:2px solid #0d6efd;padding-bottom:10px;margin-top:20px;">
-            ${checkerName.toUpperCase()} Checker Results
-          </h3>
+          <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #0d6efd;padding-bottom:10px;margin-top:20px;">
+            <h3 style="color:#0d6efd;margin:0;">
+              ${checkerName.toUpperCase()} Checker Results
+            </h3>
+            ${clipboardButton}
+          </div>
           <div id="${checkerName}-results"></div>
         `;
         if (checkAllContainer) {
@@ -1628,6 +1637,104 @@
       alert(`Error downloading debug log: ${error.message}`);
     }
   }
+  
+  /**
+   * Copy ELIG checker results to clipboard in specified format
+   * Format: CLAIM_ID\t\tRemark
+   */
+  function copyEligResults() {
+    console.log('[CLIPBOARD] Copying ELIG checker results...');
+    
+    // Find the ELIG results section
+    const eligSection = document.getElementById('elig-results');
+    if (!eligSection) {
+      alert('ELIG checker results not found. Please run Check All first.');
+      return;
+    }
+    
+    // Find the table in the ELIG section
+    const table = eligSection.querySelector('table');
+    if (!table) {
+      alert('No ELIG results table found.');
+      return;
+    }
+    
+    // Extract data from table rows
+    const rows = table.querySelectorAll('tbody tr');
+    if (rows.length === 0) {
+      alert('No ELIG results to copy.');
+      return;
+    }
+    
+    const results = [];
+    
+    rows.forEach(row => {
+      // Get all cells in the row
+      const cells = row.querySelectorAll('td');
+      if (cells.length < 2) return; // Skip if not enough cells
+      
+      // First cell is Claim ID (index 0)
+      const claimID = cells[0].textContent.trim();
+      
+      // Find the Remarks column (it's the second-to-last cell, before Details)
+      // The structure is: Claim ID, Member ID, Encounter Date, [Clinician/Packages], Service Category, Status, Remarks, Details
+      const remarksCell = cells[cells.length - 2]; // Second to last cell
+      
+      if (!remarksCell) return;
+      
+      // Get all remark divs from the cell
+      const remarkDivs = remarksCell.querySelectorAll('div');
+      
+      // Only include rows that have remarks (not "No remarks")
+      if (remarkDivs.length > 0) {
+        remarkDivs.forEach(div => {
+          const remarkText = div.textContent.trim();
+          // Skip "No remarks" entries
+          if (remarkText && remarkText !== 'No remarks') {
+            // Format: CLAIM_ID\t\tRemark
+            results.push(`${claimID}\t\t${remarkText}`);
+          }
+        });
+      }
+    });
+    
+    if (results.length === 0) {
+      alert('No remarks found in ELIG results.');
+      return;
+    }
+    
+    // Join all results with newlines
+    const textToCopy = results.join('\n');
+    
+    // Copy to clipboard
+    navigator.clipboard.writeText(textToCopy).then(() => {
+      console.log('[CLIPBOARD] ✓ Copied', results.length, 'ELIG results');
+      
+      // Visual feedback - flash the clipboard button
+      const button = document.querySelector('button[onclick="window.copyEligResults()"]');
+      if (button) {
+        const originalText = button.innerHTML;
+        button.innerHTML = '✓ Copied!';
+        button.style.backgroundColor = '#198754';
+        button.style.color = 'white';
+        
+        setTimeout(() => {
+          button.innerHTML = originalText;
+          button.style.backgroundColor = '';
+          button.style.color = '';
+        }, 2000);
+      }
+      
+      // Also show a toast or alert
+      alert(`Copied ${results.length} ELIG result(s) to clipboard!`);
+    }).catch(err => {
+      console.error('[CLIPBOARD] Copy failed:', err);
+      alert('Failed to copy to clipboard. Please try again.');
+    });
+  }
+  
+  // Expose the copyEligResults function globally so it can be called from onclick
+  window.copyEligResults = copyEligResults;
   
   // Bug #7 fix: Auto-table generation system removed (obsolete with persistent containers)
   // Bug #8 fix: Dead code in checkForExistingTable removed (lines after early return)
