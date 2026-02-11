@@ -6,6 +6,8 @@
 
   // Constants
   const CLIPBOARD_FEEDBACK_DURATION_MS = 2000;
+  const EXTENDED_FEEDBACK_MULTIPLIER = 1.5;
+  const INVALID_ROW_CLASSES = 'tbody tr.table-danger, tbody tr.table-warning';
 
   // Initialize session counter immediately
   (function initSessionCounter() {
@@ -1671,11 +1673,11 @@
     const button = document.querySelector('button[onclick="window.copyEligResults()"]');
     
     // Helper function to show button feedback
-    const showButtonFeedback = (message, bgColor, duration = CLIPBOARD_FEEDBACK_DURATION_MS) => {
+    const showButtonFeedback = (message, backgroundColor, duration = CLIPBOARD_FEEDBACK_DURATION_MS) => {
       if (!button) return;
       const originalText = button.innerHTML;
       button.innerHTML = message;
-      button.style.backgroundColor = bgColor;
+      button.style.backgroundColor = backgroundColor;
       button.style.color = 'white';
       
       setTimeout(() => {
@@ -1702,7 +1704,7 @@
     }
     
     // Extract data from INVALID rows only (table-danger or table-warning)
-    const invalidRows = table.querySelectorAll('tbody tr.table-danger, tbody tr.table-warning');
+    const invalidRows = table.querySelectorAll(INVALID_ROW_CLASSES);
     if (invalidRows.length === 0) {
       console.log('[CLIPBOARD] No invalid rows found');
       showButtonFeedback('⚠ No Invalids', '#ffc107');
@@ -1756,7 +1758,7 @@
       showButtonFeedback(`✓ Copied ${results.length}!`, '#198754');
     }).catch(err => {
       console.error('[CLIPBOARD] Copy failed:', err);
-      showButtonFeedback(`❌ Copy Failed: ${err.message || 'Unknown error'}`, '#dc3545', CLIPBOARD_FEEDBACK_DURATION_MS * 1.5);
+      showButtonFeedback(`❌ Copy Failed: ${err.message || 'Unknown error'}`, '#dc3545', CLIPBOARD_FEEDBACK_DURATION_MS * EXTENDED_FEEDBACK_MULTIPLIER);
     });
   }
   
