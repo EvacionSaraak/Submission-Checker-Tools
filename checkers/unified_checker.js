@@ -8,6 +8,7 @@
   const CLIPBOARD_FEEDBACK_DURATION_MS = 2000;
   const EXTENDED_FEEDBACK_MULTIPLIER = 1.5;
   const INVALID_ROW_CLASSES = 'tbody tr.table-danger, tbody tr.table-warning';
+  const REMARKS_COLUMN_OFFSET = -2; // Remarks is always second-to-last column (before Details)
 
   // Initialize session counter immediately
   (function initSessionCounter() {
@@ -971,7 +972,7 @@
         
         // Add clipboard button only for ELIG checker
         const clipboardButton = checkerName === 'elig' 
-          ? `<button class="btn btn-sm btn-outline-primary" onclick="window.copyEligResults()" style="margin-left:10px;" title="Copy invalid ELIG results to clipboard">📋 Copy Invalids</button>`
+          ? `<button class="btn btn-sm btn-outline-primary elig-copy-button" data-checker="elig" style="margin-left:10px;" title="Copy invalid ELIG results to clipboard">📋 Copy Invalids</button>`
           : '';
         
         sectionDiv.innerHTML = `
@@ -985,6 +986,17 @@
         `;
         if (checkAllContainer) {
           checkAllContainer.appendChild(sectionDiv);
+        }
+        
+        // Attach event listener to clipboard button if it was added
+        if (checkerName === 'elig') {
+          setTimeout(() => {
+            const eligCopyBtn = sectionDiv.querySelector('.elig-copy-button');
+            if (eligCopyBtn) {
+              eligCopyBtn.addEventListener('click', copyEligResults);
+              logDebug('ELIG copy button event listener attached');
+            }
+          }, 0);
         }
         
         logDebug(`Created Results Section: ${checkerName}`);
@@ -1670,7 +1682,7 @@
   function copyEligResults() {
     console.log('[CLIPBOARD] Copying ELIG checker invalid results...');
     
-    const button = document.querySelector('button[onclick="window.copyEligResults()"]');
+    const button = document.querySelector('.elig-copy-button');
     
     // Helper function to show button feedback
     const showButtonFeedback = (message, backgroundColor, duration = CLIPBOARD_FEEDBACK_DURATION_MS) => {
@@ -1721,9 +1733,10 @@
       // First cell is Claim ID (index 0)
       const claimID = cells[0].textContent.trim();
       
-      // Find the Remarks column (it's the second-to-last cell, before Details)
+      // Find the Remarks column using the offset constant
       // The structure is: Claim ID, Member ID, Encounter Date, [Clinician/Packages], Service Category, Status, Remarks, Details
-      const remarksCell = cells[cells.length - 2]; // Second to last cell
+      // REMARKS_COLUMN_OFFSET = -2 means second-to-last cell (before Details)
+      const remarksCell = cells[cells.length + REMARKS_COLUMN_OFFSET];
       
       if (!remarksCell) return;
       
@@ -1761,9 +1774,6 @@
       showButtonFeedback(`❌ Copy Failed: ${err.message || 'Unknown error'}`, '#dc3545', CLIPBOARD_FEEDBACK_DURATION_MS * EXTENDED_FEEDBACK_MULTIPLIER);
     });
   }
-  
-  // Expose the copyEligResults function globally so it can be called from onclick
-  window.copyEligResults = copyEligResults;
   
   // Bug #7 fix: Auto-table generation system removed (obsolete with persistent containers)
   // Bug #8 fix: Dead code in checkForExistingTable removed (lines after early return)
