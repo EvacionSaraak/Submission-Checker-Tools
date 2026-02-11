@@ -4,6 +4,9 @@
 (function() {
   'use strict';
 
+  // Constants
+  const CLIPBOARD_FEEDBACK_DURATION_MS = 2000;
+
   // Initialize session counter immediately
   (function initSessionCounter() {
     let sessionCount = sessionStorage.getItem('checkerSessionCount');
@@ -1734,7 +1737,7 @@
       const button = document.querySelector('button[onclick="window.copyEligResults()"]');
       if (button) {
         const originalText = button.innerHTML;
-        button.innerHTML = '✓ Copied!';
+        button.innerHTML = `✓ Copied ${results.length}!`;
         button.style.backgroundColor = '#198754';
         button.style.color = 'white';
         
@@ -1742,11 +1745,8 @@
           button.innerHTML = originalText;
           button.style.backgroundColor = '';
           button.style.color = '';
-        }, 2000);
+        }, CLIPBOARD_FEEDBACK_DURATION_MS);
       }
-      
-      // Also show a toast or alert
-      alert(`Copied ${results.length} invalid ELIG result(s) to clipboard!`);
     }).catch(err => {
       console.error('[CLIPBOARD] Copy failed:', err);
       alert('Failed to copy to clipboard. Please try again.');
