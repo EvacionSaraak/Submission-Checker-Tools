@@ -336,7 +336,8 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
   const header = xmlDoc.querySelector("Header");
   const receiverID = header?.querySelector("ReceiverID")?.textContent.trim() || '';
   const shouldCheckLeadingZero = receiverID === 'A001' || receiverID === 'D001';
-  console.log(`[SCHEMA] ReceiverID: ${receiverID}, shouldCheckLeadingZero: ${shouldCheckLeadingZero}`);
+  const missingReceiverID = !receiverID; // Flag if ReceiverID is missing or empty
+  console.log(`[SCHEMA] ReceiverID: ${receiverID || '(MISSING)'}, shouldCheckLeadingZero: ${shouldCheckLeadingZero}`);
 
   for (const claim of claims) {
     let missingFields = [], invalidFields = [], remarks = [];
@@ -347,6 +348,11 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
       return el && el.textContent ? el.textContent.trim() : "";
     };
     const invalidIfNull = (tag, parent = claim, prefix = "") => !text(tag, parent) ? invalidFields.push(prefix + tag + " (null/empty)") : null;
+
+    // CRITICAL: Check if ReceiverID is missing from Header
+    if (missingReceiverID) {
+      invalidFields.push("CRITICAL ERROR: ReceiverID is missing from XML Header. This file cannot be processed.");
+    }
 
     // Check if this specific claim had ampersands by comparing with original content
     const claimID = text("ID");
