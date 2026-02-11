@@ -331,6 +331,13 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
   const results = [];
   const claims = xmlDoc.getElementsByTagName("Claim");
 
+  // Extract ReceiverID from Header element
+  // Only check leading zeros for Daman (A001) and Thiqa (D001)
+  const header = xmlDoc.querySelector("Header");
+  const receiverID = header?.querySelector("ReceiverID")?.textContent.trim() || '';
+  const shouldCheckLeadingZero = receiverID === 'A001' || receiverID === 'D001';
+  console.log(`[SCHEMA] ReceiverID: ${receiverID}, shouldCheckLeadingZero: ${shouldCheckLeadingZero}`);
+
   for (const claim of claims) {
     let missingFields = [], invalidFields = [], remarks = [];
 
@@ -369,9 +376,11 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
     // Required fields
     ["ID", "MemberID", "PayerID", "ProviderID", "EmiratesIDNumber", "Gross", "PatientShare", "Net"].forEach(tag => invalidIfNull(tag, claim));
 
-    // MemberID check
+    // MemberID check - only check for leading zero if ReceiverID is A001 (Daman) or D001 (Thiqa)
     const memberID = text("MemberID");
-    if (memberID && /^0/.test(memberID)) invalidFields.push("MemberID (starts with 0)");
+    if (shouldCheckLeadingZero && memberID && /^0/.test(memberID)) {
+      invalidFields.push("MemberID (starts with 0)");
+    }
 
     // EmiratesIDNumber checks (improved messages)
     if (present("EmiratesIDNumber")) {
