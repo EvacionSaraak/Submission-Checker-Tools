@@ -970,10 +970,8 @@
         sectionDiv.id = `${checkerName}-section`;
         sectionDiv.style.marginBottom = '30px';
         
-        // Add clipboard button only for ELIG checker
-        const clipboardButton = checkerName === 'elig' 
-          ? `<button class="btn btn-sm btn-outline-primary elig-copy-button" data-checker="elig" style="margin-left:10px;" title="Copy invalid ELIG results to clipboard">📋 Copy Invalids</button>`
-          : '';
+        // Add clipboard button for ALL checkers
+        const clipboardButton = `<button class="btn btn-sm btn-outline-primary checker-copy-button" data-checker="${checkerName}" style="margin-left:10px;" title="Copy invalid ${checkerName.toUpperCase()} results to clipboard">📋 Copy Invalids</button>`;
         
         sectionDiv.innerHTML = `
           <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #0d6efd;padding-bottom:10px;margin-top:20px;">
@@ -987,13 +985,11 @@
         if (checkAllContainer) {
           checkAllContainer.appendChild(sectionDiv);
           
-          // Attach event listener to clipboard button if it was added
-          if (checkerName === 'elig') {
-            const eligCopyBtn = sectionDiv.querySelector('.elig-copy-button');
-            if (eligCopyBtn) {
-              eligCopyBtn.addEventListener('click', copyEligResults);
-              logDebug('ELIG copy button event listener attached');
-            }
+          // Attach event listener to clipboard button
+          const copyBtn = sectionDiv.querySelector('.checker-copy-button');
+          if (copyBtn) {
+            copyBtn.addEventListener('click', () => copyCheckerInvalidResults(checkerName));
+            logDebug(`${checkerName} copy button event listener attached`);
           }
         }
         
@@ -1673,14 +1669,15 @@
   }
   
   /**
-   * Copy ELIG checker invalid results to clipboard in specified format
+   * Copy checker invalid results to clipboard in specified format
    * Format: CLAIM_ID\t\tRemark
    * Only copies invalid/unknown rows (table-danger or table-warning)
+   * @param {string} checkerName - The name of the checker (e.g., 'elig', 'auths', 'pricing')
    */
-  function copyEligResults() {
-    console.log('[CLIPBOARD] Copying ELIG checker invalid results...');
+  function copyCheckerInvalidResults(checkerName) {
+    console.log(`[CLIPBOARD] Copying ${checkerName.toUpperCase()} checker invalid results...`);
     
-    const button = document.querySelector('.elig-copy-button');
+    const button = document.querySelector(`.checker-copy-button[data-checker="${checkerName}"]`);
     
     // Helper function to show button feedback (uses textContent for security)
     const showButtonFeedback = (message, backgroundColor, duration = CLIPBOARD_FEEDBACK_DURATION_MS) => {
@@ -1697,18 +1694,18 @@
       }, duration);
     };
     
-    // Find the ELIG results section
-    const eligSection = document.getElementById('elig-results');
-    if (!eligSection) {
-      console.error('[CLIPBOARD] ELIG results section not found');
+    // Find the checker results section
+    const checkerSection = document.getElementById(`${checkerName}-results`);
+    if (!checkerSection) {
+      console.error(`[CLIPBOARD] ${checkerName} results section not found`);
       showButtonFeedback('⚠ Section Not Found', '#dc3545');
       return;
     }
     
-    // Find the table in the ELIG section
-    const table = eligSection.querySelector('table');
+    // Find the table in the checker section
+    const table = checkerSection.querySelector('table');
     if (!table) {
-      console.error('[CLIPBOARD] ELIG results table not found');
+      console.error(`[CLIPBOARD] ${checkerName} results table not found`);
       showButtonFeedback('⚠ Table Not Found', '#dc3545');
       return;
     }
@@ -1716,7 +1713,7 @@
     // Extract data from INVALID rows only (table-danger or table-warning)
     const invalidRows = table.querySelectorAll(INVALID_ROW_CLASSES);
     if (invalidRows.length === 0) {
-      console.log('[CLIPBOARD] No invalid rows found');
+      console.log(`[CLIPBOARD] No invalid rows found in ${checkerName}`);
       showButtonFeedback('⚠ No Invalids', '#ffc107');
       return;
     }
@@ -1732,7 +1729,7 @@
       const claimID = cells[0].textContent.trim();
       
       // Find the Remarks column using the offset constant
-      // The structure is: Claim ID, Member ID, Encounter Date, [Clinician/Packages], Service Category, Status, Remarks, Details
+      // The structure is: Claim ID, ..., Remarks, Details (last)
       // REMARKS_COLUMN_OFFSET = 2 means second-to-last cell (before Details which is last)
       const remarksCell = cells[cells.length - REMARKS_COLUMN_OFFSET];
       
@@ -1751,11 +1748,17 @@
             results.push(`${claimID}\t\t${remarkText}`);
           }
         });
+      } else {
+        // If no divs, try getting text content directly (some checkers may use plain text)
+        const remarkText = remarksCell.textContent.trim();
+        if (remarkText && remarkText !== 'No remarks' && remarkText !== '') {
+          results.push(`${claimID}\t\t${remarkText}`);
+        }
       }
     });
     
     if (results.length === 0) {
-      console.log('[CLIPBOARD] Invalid rows found but no remarks to copy');
+      console.log(`[CLIPBOARD] Invalid rows found in ${checkerName} but no remarks to copy`);
       showButtonFeedback('⚠ No Remarks', '#ffc107');
       return;
     }
@@ -1765,10 +1768,10 @@
     
     // Copy to clipboard
     navigator.clipboard.writeText(textToCopy).then(() => {
-      console.log('[CLIPBOARD] ✓ Copied', results.length, 'invalid ELIG results');
+      console.log(`[CLIPBOARD] ✓ Copied ${results.length} invalid ${checkerName.toUpperCase()} results`);
       showButtonFeedback(`✓ Copied ${results.length}!`, '#198754');
     }).catch(err => {
-      console.error('[CLIPBOARD] Copy failed:', err);
+      console.error(`[CLIPBOARD] Copy failed for ${checkerName}:`, err);
       // Use a safe, fixed error message instead of potentially unsafe error content
       const safeErrorMsg = err.name === 'NotAllowedError' 
         ? 'Permission denied' 
