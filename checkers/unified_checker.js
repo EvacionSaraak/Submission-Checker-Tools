@@ -986,17 +986,15 @@
         `;
         if (checkAllContainer) {
           checkAllContainer.appendChild(sectionDiv);
-        }
-        
-        // Attach event listener to clipboard button if it was added
-        if (checkerName === 'elig') {
-          setTimeout(() => {
+          
+          // Attach event listener to clipboard button if it was added
+          if (checkerName === 'elig') {
             const eligCopyBtn = sectionDiv.querySelector('.elig-copy-button');
             if (eligCopyBtn) {
               eligCopyBtn.addEventListener('click', copyEligResults);
               logDebug('ELIG copy button event listener attached');
             }
-          }, 0);
+          }
         }
         
         logDebug(`Created Results Section: ${checkerName}`);
@@ -1684,16 +1682,16 @@
     
     const button = document.querySelector('.elig-copy-button');
     
-    // Helper function to show button feedback
+    // Helper function to show button feedback (uses textContent for security)
     const showButtonFeedback = (message, backgroundColor, duration = CLIPBOARD_FEEDBACK_DURATION_MS) => {
       if (!button) return;
-      const originalText = button.innerHTML;
-      button.innerHTML = message;
+      const originalText = button.textContent;
+      button.textContent = message;
       button.style.backgroundColor = backgroundColor;
       button.style.color = 'white';
       
       setTimeout(() => {
-        button.innerHTML = originalText;
+        button.textContent = originalText;
         button.style.backgroundColor = '';
         button.style.color = '';
       }, duration);
@@ -1771,7 +1769,9 @@
       showButtonFeedback(`✓ Copied ${results.length}!`, '#198754');
     }).catch(err => {
       console.error('[CLIPBOARD] Copy failed:', err);
-      showButtonFeedback(`❌ Copy Failed: ${err.message || 'Unknown error'}`, '#dc3545', CLIPBOARD_FEEDBACK_DURATION_MS * EXTENDED_FEEDBACK_MULTIPLIER);
+      // Sanitize error message - only show safe text, no HTML/script content
+      const safeErrorMsg = String(err.message || 'Unknown error').replace(/[<>]/g, '');
+      showButtonFeedback(`❌ Copy Failed: ${safeErrorMsg}`, '#dc3545', CLIPBOARD_FEEDBACK_DURATION_MS * EXTENDED_FEEDBACK_MULTIPLIER);
     });
   }
   
