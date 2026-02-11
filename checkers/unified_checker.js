@@ -1668,24 +1668,44 @@
   function copyEligResults() {
     console.log('[CLIPBOARD] Copying ELIG checker invalid results...');
     
+    const button = document.querySelector('button[onclick="window.copyEligResults()"]');
+    
+    // Helper function to show button feedback
+    const showButtonFeedback = (message, bgColor, duration = CLIPBOARD_FEEDBACK_DURATION_MS) => {
+      if (!button) return;
+      const originalText = button.innerHTML;
+      button.innerHTML = message;
+      button.style.backgroundColor = bgColor;
+      button.style.color = 'white';
+      
+      setTimeout(() => {
+        button.innerHTML = originalText;
+        button.style.backgroundColor = '';
+        button.style.color = '';
+      }, duration);
+    };
+    
     // Find the ELIG results section
     const eligSection = document.getElementById('elig-results');
     if (!eligSection) {
-      alert('ELIG checker results not found. Please run Check All first.');
+      console.error('[CLIPBOARD] ELIG results section not found');
+      showButtonFeedback('⚠ Section Not Found', '#dc3545');
       return;
     }
     
     // Find the table in the ELIG section
     const table = eligSection.querySelector('table');
     if (!table) {
-      alert('No ELIG results table found.');
+      console.error('[CLIPBOARD] ELIG results table not found');
+      showButtonFeedback('⚠ Table Not Found', '#dc3545');
       return;
     }
     
     // Extract data from INVALID rows only (table-danger or table-warning)
     const invalidRows = table.querySelectorAll('tbody tr.table-danger, tbody tr.table-warning');
     if (invalidRows.length === 0) {
-      alert('No invalid ELIG results to copy.');
+      console.log('[CLIPBOARD] No invalid rows found');
+      showButtonFeedback('⚠ No Invalids', '#ffc107');
       return;
     }
     
@@ -1722,7 +1742,8 @@
     });
     
     if (results.length === 0) {
-      alert('No invalid remarks found in ELIG results.');
+      console.log('[CLIPBOARD] Invalid rows found but no remarks to copy');
+      showButtonFeedback('⚠ No Remarks', '#ffc107');
       return;
     }
     
@@ -1732,24 +1753,10 @@
     // Copy to clipboard
     navigator.clipboard.writeText(textToCopy).then(() => {
       console.log('[CLIPBOARD] ✓ Copied', results.length, 'invalid ELIG results');
-      
-      // Visual feedback - flash the clipboard button
-      const button = document.querySelector('button[onclick="window.copyEligResults()"]');
-      if (button) {
-        const originalText = button.innerHTML;
-        button.innerHTML = `✓ Copied ${results.length}!`;
-        button.style.backgroundColor = '#198754';
-        button.style.color = 'white';
-        
-        setTimeout(() => {
-          button.innerHTML = originalText;
-          button.style.backgroundColor = '';
-          button.style.color = '';
-        }, CLIPBOARD_FEEDBACK_DURATION_MS);
-      }
+      showButtonFeedback(`✓ Copied ${results.length}!`, '#198754');
     }).catch(err => {
       console.error('[CLIPBOARD] Copy failed:', err);
-      alert('Failed to copy to clipboard. Please try again.');
+      showButtonFeedback(`❌ Copy Failed: ${err.message || 'Unknown error'}`, '#dc3545', CLIPBOARD_FEEDBACK_DURATION_MS * 1.5);
     });
   }
   
