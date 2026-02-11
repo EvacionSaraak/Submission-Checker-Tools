@@ -1713,13 +1713,14 @@
     const headers = table.querySelectorAll('thead th');
     let remarksColumnIndex = -1;
     
-    // Find first header containing "remark" (case-insensitive)
+    // Find first header that is "Remark" or "Remarks" (case-insensitive)
     for (let i = 0; i < headers.length; i++) {
       const headerText = headers[i].textContent.trim();
-      // Check for "remark" or "remarks" in header text
-      if (headerText.toLowerCase().includes('remark')) {
+      const headerLower = headerText.toLowerCase();
+      // Use exact match for "remark" or "remarks" to avoid false positives
+      if (headerLower === 'remark' || headerLower === 'remarks') {
         remarksColumnIndex = i;
-        console.log(`[CLIPBOARD] Found remarks column at index ${i} with header: "${headerText}"`);
+        console.log(`[CLIPBOARD] Found remarks column at index ${i}: "${headerText}"`);
         break; // Stop after finding first match
       }
     }
