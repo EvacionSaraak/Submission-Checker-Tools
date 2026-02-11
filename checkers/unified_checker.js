@@ -6,9 +6,9 @@
 
   // Constants
   const CLIPBOARD_FEEDBACK_DURATION_MS = 2000;
-  const EXTENDED_FEEDBACK_MULTIPLIER = 1.5;
+  const ERROR_FEEDBACK_DURATION_MULTIPLIER = 1.5; // Extend error messages display time
   const INVALID_ROW_CLASSES = 'tbody tr.table-danger, tbody tr.table-warning';
-  const REMARKS_COLUMN_OFFSET = -2; // Remarks is always second-to-last column (before Details)
+  const REMARKS_COLUMN_INDEX_FROM_END = -2; // Remarks is always second-to-last column (before Details)
 
   // Initialize session counter immediately
   (function initSessionCounter() {
@@ -1733,8 +1733,8 @@
       
       // Find the Remarks column using the offset constant
       // The structure is: Claim ID, Member ID, Encounter Date, [Clinician/Packages], Service Category, Status, Remarks, Details
-      // REMARKS_COLUMN_OFFSET = -2 means second-to-last cell (before Details)
-      const remarksCell = cells[cells.length + REMARKS_COLUMN_OFFSET];
+      // REMARKS_COLUMN_INDEX_FROM_END = -2 means second-to-last cell (before Details)
+      const remarksCell = cells[cells.length + REMARKS_COLUMN_INDEX_FROM_END];
       
       if (!remarksCell) return;
       
@@ -1769,9 +1769,13 @@
       showButtonFeedback(`✓ Copied ${results.length}!`, '#198754');
     }).catch(err => {
       console.error('[CLIPBOARD] Copy failed:', err);
-      // Sanitize error message - only show safe text, no HTML/script content
-      const safeErrorMsg = String(err.message || 'Unknown error').replace(/[<>]/g, '');
-      showButtonFeedback(`❌ Copy Failed: ${safeErrorMsg}`, '#dc3545', CLIPBOARD_FEEDBACK_DURATION_MS * EXTENDED_FEEDBACK_MULTIPLIER);
+      // Use a safe, fixed error message instead of potentially unsafe error content
+      const safeErrorMsg = err.name === 'NotAllowedError' 
+        ? 'Permission denied' 
+        : err.name === 'SecurityError'
+        ? 'Security error'
+        : 'Check console for details';
+      showButtonFeedback(`❌ Copy Failed: ${safeErrorMsg}`, '#dc3545', CLIPBOARD_FEEDBACK_DURATION_MS * ERROR_FEEDBACK_DURATION_MULTIPLIER);
     });
   }
   
