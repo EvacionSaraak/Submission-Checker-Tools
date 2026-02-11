@@ -1729,11 +1729,13 @@
       // First cell is Claim ID (index 0)
       const claimID = cells[0].textContent.trim();
       
-      // Skip empty claim IDs (can happen with merged/hidden cells)
+      // Skip empty claim IDs (can happen with merged/hidden cells in tables where
+      // the Claim ID is visually hidden for consecutive activities of the same claim)
       if (!claimID) return;
       
       // Find the Remarks column using the offset constant
-      // The structure is: Claim ID, ..., Remarks, Details (last)
+      // Table structure varies by checker but Remarks is always second-to-last:
+      // Example: Claim ID, Member ID, ..., Service Category, Status, Remarks, Details
       // REMARKS_COLUMN_OFFSET = 2 means second-to-last cell (before Details which is last)
       const remarksCell = cells[cells.length - REMARKS_COLUMN_OFFSET];
       
