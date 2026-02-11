@@ -6,9 +6,9 @@
 
   // Constants
   const CLIPBOARD_FEEDBACK_DURATION_MS = 2000;
-  const ERROR_FEEDBACK_DURATION_MULTIPLIER = 1.5; // Extend error messages display time
+  const ERROR_FEEDBACK_DURATION_EXTENSION_FACTOR = 1.5; // Extend error messages display time by 50%
   const INVALID_ROW_CLASSES = 'tbody tr.table-danger, tbody tr.table-warning';
-  const REMARKS_COLUMN_INDEX_FROM_END = -2; // Remarks is always second-to-last column (before Details)
+  const REMARKS_COLUMN_OFFSET = 2; // Remarks is always 2nd from end (before Details which is last)
 
   // Initialize session counter immediately
   (function initSessionCounter() {
@@ -1733,8 +1733,8 @@
       
       // Find the Remarks column using the offset constant
       // The structure is: Claim ID, Member ID, Encounter Date, [Clinician/Packages], Service Category, Status, Remarks, Details
-      // REMARKS_COLUMN_INDEX_FROM_END = -2 means second-to-last cell (before Details)
-      const remarksCell = cells[cells.length + REMARKS_COLUMN_INDEX_FROM_END];
+      // REMARKS_COLUMN_OFFSET = 2 means second-to-last cell (before Details which is last)
+      const remarksCell = cells[cells.length - REMARKS_COLUMN_OFFSET];
       
       if (!remarksCell) return;
       
@@ -1775,7 +1775,7 @@
         : err.name === 'SecurityError'
         ? 'Security error'
         : 'Check console for details';
-      showButtonFeedback(`❌ Copy Failed: ${safeErrorMsg}`, '#dc3545', CLIPBOARD_FEEDBACK_DURATION_MS * ERROR_FEEDBACK_DURATION_MULTIPLIER);
+      showButtonFeedback(`❌ Copy Failed: ${safeErrorMsg}`, '#dc3545', CLIPBOARD_FEEDBACK_DURATION_MS * ERROR_FEEDBACK_DURATION_EXTENSION_FACTOR);
     });
   }
   
