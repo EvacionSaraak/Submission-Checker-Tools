@@ -133,32 +133,51 @@
     };
 
     // File input event listeners - add null checks to prevent crashes
+    // Also add click listeners to reset input value (allows re-uploading same filename)
     if (elements.xmlInput) {
+      elements.xmlInput.addEventListener('click', (e) => {
+        e.target.value = ''; // Reset to allow same file to be re-uploaded
+      });
       elements.xmlInput.addEventListener('change', (e) => {
         handleFileChange(e, 'xml', elements.xmlStatus);
       });
     }
     if (elements.clinicianInput) {
+      elements.clinicianInput.addEventListener('click', (e) => {
+        e.target.value = '';
+      });
       elements.clinicianInput.addEventListener('change', (e) => {
         handleFileChange(e, 'clinician', elements.clinicianStatus);
       });
     }
     if (elements.eligibilityInput) {
+      elements.eligibilityInput.addEventListener('click', (e) => {
+        e.target.value = '';
+      });
       elements.eligibilityInput.addEventListener('change', (e) => {
         handleFileChange(e, 'eligibility', elements.eligibilityStatus);
       });
     }
     if (elements.authInput) {
+      elements.authInput.addEventListener('click', (e) => {
+        e.target.value = '';
+      });
       elements.authInput.addEventListener('change', (e) => {
         handleFileChange(e, 'auth', elements.authStatus);
       });
     }
     if (elements.statusInput) {
+      elements.statusInput.addEventListener('click', (e) => {
+        e.target.value = '';
+      });
       elements.statusInput.addEventListener('change', (e) => {
         handleFileChange(e, 'status', elements.statusStatus);
       });
     }
     if (elements.pricingInput) {
+      elements.pricingInput.addEventListener('click', (e) => {
+        e.target.value = '';
+      });
       elements.pricingInput.addEventListener('change', (e) => {
         handleFileChange(e, 'pricing', elements.pricingStatus);
       });
@@ -947,7 +966,7 @@
         
         // Add clipboard button only for ELIG checker
         const clipboardButton = checkerName === 'elig' 
-          ? `<button class="btn btn-sm btn-outline-primary" onclick="window.copyEligResults()" style="margin-left:10px;" title="Copy all ELIG results to clipboard">📋 Copy Summary</button>`
+          ? `<button class="btn btn-sm btn-outline-primary" onclick="window.copyEligResults()" style="margin-left:10px;" title="Copy invalid ELIG results to clipboard">📋 Copy Invalids</button>`
           : '';
         
         sectionDiv.innerHTML = `
@@ -1639,11 +1658,12 @@
   }
   
   /**
-   * Copy ELIG checker results to clipboard in specified format
+   * Copy ELIG checker invalid results to clipboard in specified format
    * Format: CLAIM_ID\t\tRemark
+   * Only copies invalid/unknown rows (table-danger or table-warning)
    */
   function copyEligResults() {
-    console.log('[CLIPBOARD] Copying ELIG checker results...');
+    console.log('[CLIPBOARD] Copying ELIG checker invalid results...');
     
     // Find the ELIG results section
     const eligSection = document.getElementById('elig-results');
@@ -1659,16 +1679,16 @@
       return;
     }
     
-    // Extract data from table rows
-    const rows = table.querySelectorAll('tbody tr');
-    if (rows.length === 0) {
-      alert('No ELIG results to copy.');
+    // Extract data from INVALID rows only (table-danger or table-warning)
+    const invalidRows = table.querySelectorAll('tbody tr.table-danger, tbody tr.table-warning');
+    if (invalidRows.length === 0) {
+      alert('No invalid ELIG results to copy.');
       return;
     }
     
     const results = [];
     
-    rows.forEach(row => {
+    invalidRows.forEach(row => {
       // Get all cells in the row
       const cells = row.querySelectorAll('td');
       if (cells.length < 2) return; // Skip if not enough cells
@@ -1689,8 +1709,8 @@
       if (remarkDivs.length > 0) {
         remarkDivs.forEach(div => {
           const remarkText = div.textContent.trim();
-          // Skip "No remarks" entries
-          if (remarkText && remarkText !== 'No remarks') {
+          // Skip "No remarks" entries and source notes
+          if (remarkText && remarkText !== 'No remarks' && !div.classList.contains('source-note')) {
             // Format: CLAIM_ID\t\tRemark
             results.push(`${claimID}\t\t${remarkText}`);
           }
@@ -1699,7 +1719,7 @@
     });
     
     if (results.length === 0) {
-      alert('No remarks found in ELIG results.');
+      alert('No invalid remarks found in ELIG results.');
       return;
     }
     
@@ -1708,7 +1728,7 @@
     
     // Copy to clipboard
     navigator.clipboard.writeText(textToCopy).then(() => {
-      console.log('[CLIPBOARD] ✓ Copied', results.length, 'ELIG results');
+      console.log('[CLIPBOARD] ✓ Copied', results.length, 'invalid ELIG results');
       
       // Visual feedback - flash the clipboard button
       const button = document.querySelector('button[onclick="window.copyEligResults()"]');
@@ -1726,7 +1746,7 @@
       }
       
       // Also show a toast or alert
-      alert(`Copied ${results.length} ELIG result(s) to clipboard!`);
+      alert(`Copied ${results.length} invalid ELIG result(s) to clipboard!`);
     }).catch(err => {
       console.error('[CLIPBOARD] Copy failed:', err);
       alert('Failed to copy to clipboard. Please try again.');
