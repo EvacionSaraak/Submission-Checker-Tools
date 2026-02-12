@@ -1747,11 +1747,11 @@
       const cells = row.querySelectorAll('td');
       if (cells.length < 2) return; // Skip if not enough cells
       
-      // First cell is Claim ID (index 0)
-      const claimID = cells[0].textContent.trim();
+      // Get Claim ID from data attribute first (for checkers that hide duplicate IDs visually)
+      // or fall back to first cell's textContent
+      let claimID = row.getAttribute('data-claim-id') || cells[0].textContent.trim();
       
-      // Skip empty claim IDs (can happen with merged/hidden cells in tables where
-      // the Claim ID is visually hidden for consecutive activities of the same claim)
+      // Skip empty claim IDs
       if (!claimID) return;
       
       // Get the Remarks cell using the dynamically found column index
