@@ -119,6 +119,13 @@ function extractClaims(xmlDoc, requiredType = "6") {
       const typeValue = activity.querySelector('Type')?.textContent?.trim() || '';
       const codeValue = activity.querySelector('Code')?.textContent?.trim() || '';
       let isValid = baseValid, remarks = [...baseRemarks];
+      
+      // Special validation: A4639 must always be type 4
+      if (codeValue === "A4639" && typeValue !== "4") {
+        isValid = false;
+        remarks.push(`Code A4639 must have Type 4, but found Type ${typeValue || '(missing)'}.`);
+      }
+      
       // Type 5 code format check
       if (typeValue === "5") {
         if (!isValidType5Code(codeValue)) {
@@ -126,9 +133,9 @@ function extractClaims(xmlDoc, requiredType = "6") {
           remarks.push(`Type 5 activity with invalid or missing Code: "${codeValue}".`);
         }
       }
-      // Type 4 special code J3490
+      // Type 4 special codes: J3490 and A4639
       else if (typeValue === "4") {
-        if (codeValue === "J3490") {
+        if (codeValue === "J3490" || codeValue === "A4639") {
           // valid, do not push type error!
         } else if (typeValue !== requiredType) {
           isValid = false;
