@@ -41,9 +41,9 @@
       exportBtn.onclick = () => {
         const wb = XLSX.utils.book_new();
         const wsData = [
-          ['Claim ID', 'Activity ID', 'Encounter Start', 'Encounter End', 'Activity Start', 'Duration', 'Excess', 'Remarks'],
+          ['Claim ID', 'Activity ID', 'Type', 'Encounter Start', 'Encounter End', 'Activity Start', 'Duration', 'Excess', 'Remarks'],
           ...window.invalidRows.map(r => [
-            r.claimId, r.activityId, r.encounterStart, r.encounterEnd,
+            r.claimId, r.activityId, r.type, r.encounterStart, r.encounterEnd,
             r.start, r.duration, r.excess, r.remarks.join('; ')
           ])
         ];
@@ -150,7 +150,7 @@ function extractClaims(xmlDoc, requiredType = "6") {
       if (!activityStartStr) {
         remarks.push('Missing Activity Start');
         results.push({
-          claimId, activityId, encounterStart: encounterStartStr, encounterEnd: encounterEndStr,
+          claimId, activityId, type: typeValue, encounterStart: encounterStartStr, encounterEnd: encounterEndStr,
           start: 'N/A', duration: formatDuration(encMin), excess: 'N/A', isValid, remarks
         });
         return;
@@ -174,7 +174,7 @@ function extractClaims(xmlDoc, requiredType = "6") {
         }
       }
       results.push({
-        claimId, activityId, encounterStart: encounterStartStr, encounterEnd: encounterEndStr,
+        claimId, activityId, type: typeValue, encounterStart: encounterStartStr, encounterEnd: encounterEndStr,
         start: activityStartStr, duration: formatDuration(encMin),
         excess: isNaN(excessMin) ? 'N/A' : formatDuration(excessMin), isValid, remarks
       });
@@ -271,6 +271,7 @@ function buildResultsTable(rows) {
     <thead><tr>
       <th style="padding:8px;border:1px solid #ccc">Claim ID</th>
       <th style="padding:8px;border:1px solid #ccc">Activity ID</th>
+      <th style="padding:8px;border:1px solid #ccc">Type</th>
       <th style="padding:8px;border:1px solid #ccc">Encounter Start</th>
       <th style="padding:8px;border:1px solid #ccc">Encounter End</th>
       <th style="padding:8px;border:1px solid #ccc">Activity Start</th>
@@ -285,6 +286,7 @@ function buildResultsTable(rows) {
       return `<tr class="${r.isValid ? 'table-success' : 'table-danger'}" data-claim-id="${sanitize(r.claimId || '')}">
         <td class="claim-id-cell" style="padding:6px;border:1px solid #ccc">${sanitize(claimCell)}</td>
         <td style="padding:6px;border:1px solid #ccc">${sanitize(r.activityId)}</td>
+        <td style="padding:6px;border:1px solid #ccc">${sanitize(r.type || '')}</td>
         <td style="padding:6px;border:1px solid #ccc">${sanitize(r.encounterStart)}</td>
         <td style="padding:6px;border:1px solid #ccc">${sanitize(r.encounterEnd)}</td>
         <td style="padding:6px;border:1px solid #ccc">${sanitize(r.start)}</td>

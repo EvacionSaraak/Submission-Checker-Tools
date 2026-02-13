@@ -138,7 +138,7 @@ function hasValidActivityDescription(obsList) {
 }
 
 // Special code handler
-function handleSpecialMedicalCode({claimId, activityId, code, obsCodes, obsList}) {
+function handleSpecialMedicalCode({claimId, activityId, type, code, obsCodes, obsList}) {
   const remarks = [];
   let details = "";
 
@@ -151,6 +151,7 @@ function handleSpecialMedicalCode({claimId, activityId, code, obsCodes, obsList}
     return buildActivityRow({
       claimId,
       activityId,
+      type,
       code,
       description: getSpecialMedicalCodeDescription(code),
       details,
@@ -165,6 +166,7 @@ function handleSpecialMedicalCode({claimId, activityId, code, obsCodes, obsList}
     return buildActivityRow({
       claimId,
       activityId,
+      type,
       code,
       description: getSpecialMedicalCodeDescription(code),
       details,
@@ -195,6 +197,7 @@ function handleSpecialMedicalCode({claimId, activityId, code, obsCodes, obsList}
   return buildActivityRow({
     claimId,
     activityId,
+    type,
     code,
     description: getSpecialMedicalCodeDescription(code),
     details,
@@ -249,7 +252,7 @@ function checkRegionDuplication(tracker, code, regionType, regionKey, codeLastDi
 
 // Activity validation functions
 function validateKnownCode({
-  claimId, activityId, code, obsCodes, meta, claimRegionTrack, codeLastDigit, obsList
+  claimId, activityId, type, code, obsCodes, meta, claimRegionTrack, codeLastDigit, obsList
 }) {
   const regionType = meta.description.toLowerCase().includes('sextant') ? 'sextant'
     : meta.description.toLowerCase().includes('quadrant') ? 'quadrant'
@@ -264,6 +267,7 @@ function validateKnownCode({
     return buildActivityRow({
       claimId,
       activityId,
+      type,
       code,
       description: meta.description,
       details: obsCodes.map(obsCode =>
@@ -319,6 +323,7 @@ function validateKnownCode({
   return buildActivityRow({
     claimId,
     activityId,
+    type,
     code,
     description: meta.description,
     details,
@@ -327,7 +332,7 @@ function validateKnownCode({
 }
 
 function validateUnknownCode({
-  claimId, activityId, code, obsCodes, description, claimRegionTrack, codeLastDigit, obsList
+  claimId, activityId, type, code, obsCodes, description, claimRegionTrack, codeLastDigit, obsList
 }) {
   let remarks = [];
   let details = '';
@@ -404,6 +409,7 @@ function validateUnknownCode({
   return buildActivityRow({
     claimId,
     activityId,
+    type,
     code,
     description,
     details,
@@ -411,10 +417,11 @@ function validateUnknownCode({
   });
 }
 
-function buildActivityRow({claimId, activityId, code, description, details, remarks}) {
+function buildActivityRow({claimId, activityId, type, code, description, details, remarks}) {
   return {
     claimId,
     activityId,
+    type,
     code,
     description,
     details,
@@ -437,6 +444,7 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions) {
     Array.from(claim.getElementsByTagName('Activity')).forEach(act => {
       const obsList = act.getElementsByTagName('Observation');
       const activityId = act.querySelector('ID')?.textContent || '';
+      const typeValue = act.querySelector('Type')?.textContent?.trim() || '';
       const rawCode = act.querySelector('Code')?.textContent || '';
       const code = rawCode.trim();
       const codeLastDigit = code.slice(-1);
@@ -446,6 +454,7 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions) {
         const row = buildActivityRow({
           claimId,
           activityId,
+          type: typeValue,
           code,
           description: '(invalid placeholder code)',
           details: 'N/A',
@@ -461,6 +470,7 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions) {
         const row = buildActivityRow({
           claimId,
           activityId,
+          type: typeValue,
           code,
           description: '(invalid code length)',
           details: 'N/A',
@@ -482,11 +492,11 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions) {
           description = fallback.description;
         }
         row = validateUnknownCode({
-          claimId, activityId, code, obsCodes, description, claimRegionTrack: claimRegionTrack[claimId], codeLastDigit, obsList
+          claimId, activityId, type: typeValue, code, obsCodes, description, claimRegionTrack: claimRegionTrack[claimId], codeLastDigit, obsList
         });
       } else {
         row = validateKnownCode({
-          claimId, activityId, code, obsCodes, meta, claimRegionTrack: claimRegionTrack[claimId], codeLastDigit, obsList
+          claimId, activityId, type: typeValue, code, obsCodes, meta, claimRegionTrack: claimRegionTrack[claimId], codeLastDigit, obsList
         });
       }
 
@@ -547,6 +557,7 @@ function buildResultsTable(rows) {
       <tr>
         <th style="padding:8px;border:1px solid #ccc">Claim ID</th>
         <th style="padding:8px;border:1px solid #ccc">Activity ID</th>
+        <th style="padding:8px;border:1px solid #ccc">Type</th>
         <th style="padding:8px;border:1px solid #ccc">Code</th>
         <th class="description-col" style="padding:8px;border:1px solid #ccc">Description</th>
         <th style="padding:8px;border:1px solid #ccc">Observations</th>
@@ -562,6 +573,7 @@ function buildResultsTable(rows) {
           <tr class="${rowClass}" data-claim-id="${r.claimId || ''}">
             <td style="padding:6px;border:1px solid #ccc" class="claim-id-cell">${showClaimId ? r.claimId : ''}</td>
             <td style="padding:6px;border:1px solid #ccc">${r.activityId}</td>
+            <td style="padding:6px;border:1px solid #ccc">${r.type || ''}</td>
             <td style="padding:6px;border:1px solid #ccc">${r.code}</td>
             <td class="description-col" style="padding:6px;border:1px solid #ccc">${r.description}</td>
             <td style="padding:6px;border:1px solid #ccc">${r.details}</td>
