@@ -380,7 +380,7 @@ function renderTable(data) {
 function isDateHeader(line) {
   const trimmed = line.trim();
   // Match patterns like "Jan 18", "Feb 12", "December 25", etc.
-  const datePattern = /^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2}$/i;
+  const datePattern = /^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|January|February|March|April|June|July|August|September|October|November|December)\s+\d{1,2}$/i;
   return datePattern.test(trimmed);
 }
 
@@ -420,7 +420,8 @@ function isCashFileID(str) {
  * Returns: { insuranceID, cashFileID, description }
  */
 function processAuditLogRow(line) {
-  // Split by tabs and/or multiple spaces
+  // Split by tabs and/or multiple spaces (2+)
+  // Single spaces are preserved to keep multi-word descriptions intact
   const parts = line.split(/\t+|\s{2,}/).map(p => p.trim()).filter(p => p.length > 0);
   
   if (parts.length === 0) {
@@ -521,7 +522,13 @@ function formatAuditLogs(inputText) {
     const { insuranceID, cashFileID, description } = processAuditLogRow(line);
     
     // Format with consistent column widths (using tabs)
-    const formattedLine = `${insuranceID}\t${cashFileID}\t${description}`;
+    // For rows with no IDs (description-only), output the description without leading tabs
+    let formattedLine;
+    if (!insuranceID && !cashFileID && description) {
+      formattedLine = description;
+    } else {
+      formattedLine = `${insuranceID}\t${cashFileID}\t${description}`;
+    }
     outputLines.push(formattedLine);
   }
   
@@ -549,7 +556,7 @@ copyButton.addEventListener('click', async () => {
     }, 2000);
   } catch (err) {
     console.error('Failed to copy to clipboard:', err);
-    alert('Failed to copy to clipboard. Please select and copy manually.');
+    alert('Failed to copy to clipboard. Please manually select the text in the output area and use Ctrl+C (or Cmd+C on Mac) to copy.');
   }
 });
 
