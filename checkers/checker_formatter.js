@@ -516,7 +516,7 @@ function formatAuditLogs(inputText) {
     // Only output valid rows (rows with a claim ID)
     // This ignores any text that doesn't match the expected format
     if (claimID) {
-      const formattedLine = `${currentType}\t\t${currentDate}\t${currentPayer}\t${claimID}\t${visitID}\t\t${description}`;
+      const formattedLine = `${currentType}\t\t${currentDate}\t${currentPayer}\t${claimID}\t${visitID}\t${description}`;
       outputLines.push(formattedLine);
     }
     // Rows without valid claim IDs are ignored (filtered out)
