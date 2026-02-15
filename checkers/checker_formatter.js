@@ -8,11 +8,19 @@ const messageBox = document.getElementById('messageBox');
 const eligibilityPanel = document.getElementById('eligibility-panel');
 const reportingPanel = document.getElementById('reporting-panel');
 const xmlPanel = document.getElementById('xml-panel');
+const errorsPanel = document.getElementById('errors-panel');
 
 const eligibilityInput = document.getElementById('eligibility-files');
 const reportingInput = document.getElementById('reporting-files');
 const clinicianInput = document.getElementById('clinician-files'); // NEW clinician input
 const xmlInput = document.getElementById('xml-files');
+
+// Errors panel elements
+const errorsInput = document.getElementById('errors-input');
+const errorsOutput = document.getElementById('errors-output');
+const formatButton = document.getElementById('format-button');
+const copyButton = document.getElementById('copy-button');
+const monospaceToggle = document.getElementById('monospace-toggle');
 
 const outputTableContainer = document.getElementById('outputTableContainer');
 
@@ -26,14 +34,26 @@ document.getElementById('mode-selector').addEventListener('change', e => {
     eligibilityPanel.classList.remove('hidden');
     reportingPanel.classList.add('hidden');
     xmlPanel.classList.add('hidden');
+    errorsPanel.classList.add('hidden');
+    combineButton.style.display = '';
   } else if (mode === 'reporting') {
     eligibilityPanel.classList.add('hidden');
     reportingPanel.classList.remove('hidden');
     xmlPanel.classList.add('hidden');
+    errorsPanel.classList.add('hidden');
+    combineButton.style.display = '';
   } else if (mode === 'xml') {
     eligibilityPanel.classList.add('hidden');
     reportingPanel.classList.add('hidden');
     xmlPanel.classList.remove('hidden');
+    errorsPanel.classList.add('hidden');
+    combineButton.style.display = '';
+  } else if (mode === 'errors') {
+    eligibilityPanel.classList.add('hidden');
+    reportingPanel.classList.add('hidden');
+    xmlPanel.classList.add('hidden');
+    errorsPanel.classList.remove('hidden');
+    combineButton.style.display = 'none';
   }
   resetUI();
 });
@@ -349,5 +369,194 @@ function renderTable(data) {
 
   outputTableContainer.appendChild(table);
 }
+
+// ============================================================================
+// ERRORS FORMATTER - Audit Log Column Realignment
+// ============================================================================
+
+/**
+ * Detects if a line is a date header (e.g., "Jan 18", "Feb 12")
+ */
+function isDateHeader(line) {
+  const trimmed = line.trim();
+  // Match patterns like "Jan 18", "Feb 12", "December 25", etc.
+  const datePattern = /^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2}$/i;
+  return datePattern.test(trimmed);
+}
+
+/**
+ * Detects if a line is a payer header
+ * Common payers: CASH, Thiqa, NAS, Mednet, Nextcare, DAMAN, etc.
+ */
+function isPayerHeader(line) {
+  const trimmed = line.trim().toUpperCase();
+  const payers = ['CASH', 'THIQA', 'NAS', 'MEDNET', 'NEXTCARE', 'DAMAN', 'HAAD', 'ADNIC', 'NEURON'];
+  return payers.includes(trimmed);
+}
+
+/**
+ * Detects if a string looks like an encounter ID
+ * Common prefixes: NL, IM, IV, MJ, TM, TA, etc.
+ */
+function isEncounterID(str) {
+  if (!str || str.length < 5) return false;
+  // Encounter IDs typically start with 2-letter prefix followed by alphanumeric
+  const pattern = /^[A-Z]{2}[A-Z0-9]+$/i;
+  return pattern.test(str);
+}
+
+/**
+ * Detects if a string is a Cash File ID
+ * Cash IDs start with T or I (e.g., TMCOP0872245, IMCOP0146458)
+ */
+function isCashFileID(str) {
+  if (!str || str.length < 5) return false;
+  const firstChar = str.charAt(0).toUpperCase();
+  return (firstChar === 'T' || firstChar === 'I') && /^[A-Z]{2}[A-Z0-9]+$/i.test(str);
+}
+
+/**
+ * Process a single audit log row and return formatted columns
+ * Returns: { insuranceID, cashFileID, description }
+ */
+function processAuditLogRow(line) {
+  // Split by tabs and/or multiple spaces
+  const parts = line.split(/\t+|\s{2,}/).map(p => p.trim()).filter(p => p.length > 0);
+  
+  if (parts.length === 0) {
+    return { insuranceID: '', cashFileID: '', description: '' };
+  }
+  
+  let insuranceID = '';
+  let cashFileID = '';
+  let description = '';
+  
+  // Identify IDs and description
+  const ids = [];
+  const descParts = [];
+  
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i];
+    if (isEncounterID(part)) {
+      ids.push(part);
+    } else {
+      // Everything else is part of the description
+      descParts.push(part);
+    }
+  }
+  
+  // Apply the shifting logic
+  if (ids.length === 0) {
+    // No IDs found, treat entire line as description
+    description = parts.join(' ');
+  } else if (ids.length === 1) {
+    const singleID = ids[0];
+    // If the only ID starts with T or I, it's a Cash File ID
+    if (isCashFileID(singleID)) {
+      cashFileID = singleID;
+    } else {
+      insuranceID = singleID;
+    }
+    description = descParts.join(' ');
+  } else if (ids.length >= 2) {
+    // Multiple IDs: check if first one should be in cash column
+    const firstID = ids[0];
+    const secondID = ids[1];
+    
+    // If first ID starts with T/I and second doesn't, first is Cash
+    if (isCashFileID(firstID) && !isCashFileID(secondID)) {
+      cashFileID = firstID;
+      insuranceID = secondID;
+    }
+    // If first ID doesn't start with T/I but second does, normal order
+    else if (!isCashFileID(firstID) && isCashFileID(secondID)) {
+      insuranceID = firstID;
+      cashFileID = secondID;
+    }
+    // Both start with T/I or neither does - use natural order
+    else {
+      insuranceID = firstID;
+      cashFileID = secondID;
+    }
+    
+    description = descParts.join(' ');
+  }
+  
+  return { insuranceID, cashFileID, description };
+}
+
+/**
+ * Format audit logs by realigning columns
+ */
+function formatAuditLogs(inputText) {
+  if (!inputText || !inputText.trim()) {
+    return '';
+  }
+  
+  const lines = inputText.split('\n');
+  const outputLines = [];
+  
+  for (let line of lines) {
+    const trimmedLine = line.trim();
+    
+    // Skip empty lines
+    if (!trimmedLine) {
+      outputLines.push('');
+      continue;
+    }
+    
+    // Preserve date headers
+    if (isDateHeader(trimmedLine)) {
+      outputLines.push(trimmedLine);
+      continue;
+    }
+    
+    // Preserve payer headers
+    if (isPayerHeader(trimmedLine)) {
+      outputLines.push(trimmedLine);
+      continue;
+    }
+    
+    // Process data rows
+    const { insuranceID, cashFileID, description } = processAuditLogRow(line);
+    
+    // Format with consistent column widths (using tabs)
+    const formattedLine = `${insuranceID}\t${cashFileID}\t${description}`;
+    outputLines.push(formattedLine);
+  }
+  
+  return outputLines.join('\n');
+}
+
+// Event Handlers for Errors Panel
+formatButton.addEventListener('click', () => {
+  const inputText = errorsInput.value;
+  const formattedText = formatAuditLogs(inputText);
+  errorsOutput.value = formattedText;
+  copyButton.disabled = !formattedText;
+});
+
+copyButton.addEventListener('click', async () => {
+  const text = errorsOutput.value;
+  if (!text) return;
+  
+  try {
+    await navigator.clipboard.writeText(text);
+    const originalText = copyButton.textContent;
+    copyButton.textContent = 'Copied!';
+    setTimeout(() => {
+      copyButton.textContent = originalText;
+    }, 2000);
+  } catch (err) {
+    console.error('Failed to copy to clipboard:', err);
+    alert('Failed to copy to clipboard. Please select and copy manually.');
+  }
+});
+
+monospaceToggle.addEventListener('change', (e) => {
+  const fontFamily = e.target.checked ? 'monospace' : 'inherit';
+  errorsInput.style.fontFamily = fontFamily;
+  errorsOutput.style.fontFamily = fontFamily;
+});
 
 resetUI();

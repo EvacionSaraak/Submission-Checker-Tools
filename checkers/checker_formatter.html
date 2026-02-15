@@ -12,6 +12,7 @@
   <label><input type="radio" name="mode" value="eligibility" checked> Eligibility</label>
   <label><input type="radio" name="mode" value="reporting"> Reporting</label>
   <label><input type="radio" name="mode" value="xml"> XML</label>
+  <label><input type="radio" name="mode" value="errors"> Errors</label>
 </div>
 
 <div id="eligibility-panel">
@@ -36,6 +37,48 @@
   <div class="form-row">
     <label for="xml-files">Upload XML files:</label>
     <input type="file" id="xml-files" multiple accept=".xml" />
+  </div>
+</div>
+
+<div id="errors-panel" class="hidden">
+  <div style="margin-bottom: 15px;">
+    <h3 style="margin-top: 0;">Audit Log Formatter</h3>
+    <p style="margin: 5px 0; font-size: 14px; color: #666;">
+      Paste your audit logs below and click "Format" to realign encounter IDs into correct columns.
+    </p>
+    <p style="margin: 5px 0; font-size: 13px; color: #888;">
+      <strong>Column Structure:</strong> Insurance Encounter ID | Cash File ID | Description
+    </p>
+  </div>
+  
+  <div class="form-row" style="flex-direction: column; align-items: flex-start;">
+    <label for="errors-input" style="margin-bottom: 5px;">Input (paste your audit logs here):</label>
+    <textarea 
+      id="errors-input" 
+      rows="12" 
+      style="width: 100%; max-width: 900px; font-family: monospace; font-size: 13px; padding: 8px; border: 1px solid #ccc; border-radius: 4px;"
+      placeholder="Paste audit logs here...&#10;Example:&#10;Jan 18&#10;Thiqa&#10;IMCCL0108698	IMCOP0149300	Encounter duration too long&#10;NLXMC251203265		Encounter duration too long&#10;CASH&#10;IMCOP0149335	Invalid Dental Code"
+    ></textarea>
+  </div>
+  
+  <div class="form-row" style="margin-top: 10px;">
+    <button id="format-button">Format</button>
+    <button id="copy-button" style="margin-left: 10px;" disabled>Copy to Clipboard</button>
+    <label style="margin-left: 15px; font-size: 14px;">
+      <input type="checkbox" id="monospace-toggle" checked>
+      Monospace Font
+    </label>
+  </div>
+  
+  <div class="form-row" style="flex-direction: column; align-items: flex-start; margin-top: 15px;">
+    <label for="errors-output" style="margin-bottom: 5px;">Output (formatted result):</label>
+    <textarea 
+      id="errors-output" 
+      rows="12" 
+      readonly
+      style="width: 100%; max-width: 900px; font-family: monospace; font-size: 13px; padding: 8px; border: 1px solid #ccc; border-radius: 4px; background: #f9f9f9;"
+      placeholder="Formatted output will appear here..."
+    ></textarea>
   </div>
 </div>
 
