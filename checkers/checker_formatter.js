@@ -375,6 +375,14 @@ function renderTable(data) {
 // ============================================================================
 
 /**
+ * Detects if a line is a type header (e.g., "Dental", "Medical")
+ */
+function isTypeHeader(line) {
+  const trimmed = line.trim();
+  return trimmed === 'Dental' || trimmed === 'Medical';
+}
+
+/**
  * Detects if a line is a date header (e.g., "Jan 18", "Feb 12")
  */
 function isDateHeader(line) {
@@ -417,7 +425,7 @@ function isCashFileID(str) {
 
 /**
  * Process a single audit log row and return formatted columns
- * Returns: { insuranceID, cashFileID, description }
+ * Returns: { encounterID, description }
  */
 function processAuditLogRow(line) {
   // Split by tabs and/or multiple spaces (2+)
@@ -425,11 +433,10 @@ function processAuditLogRow(line) {
   const parts = line.split(/\t+|\s{2,}/).map(p => p.trim()).filter(p => p.length > 0);
   
   if (parts.length === 0) {
-    return { insuranceID: '', cashFileID: '', description: '' };
+    return { encounterID: '', description: '' };
   }
   
-  let insuranceID = '';
-  let cashFileID = '';
+  let encounterID = '';
   let description = '';
   
   // Identify IDs and description
@@ -446,48 +453,18 @@ function processAuditLogRow(line) {
     }
   }
   
-  // Apply the shifting logic
-  if (ids.length === 0) {
-    // No IDs found, treat entire line as description
-    description = parts.join(' ');
-  } else if (ids.length === 1) {
-    const singleID = ids[0];
-    // If the only ID starts with T or I, it's a Cash File ID
-    if (isCashFileID(singleID)) {
-      cashFileID = singleID;
-    } else {
-      insuranceID = singleID;
-    }
-    description = descParts.join(' ');
-  } else if (ids.length >= 2) {
-    // Multiple IDs: check if first one should be in cash column
-    const firstID = ids[0];
-    const secondID = ids[1];
-    
-    // If first ID starts with T/I and second doesn't, first is Cash
-    if (isCashFileID(firstID) && !isCashFileID(secondID)) {
-      cashFileID = firstID;
-      insuranceID = secondID;
-    }
-    // If first ID doesn't start with T/I but second does, normal order
-    else if (!isCashFileID(firstID) && isCashFileID(secondID)) {
-      insuranceID = firstID;
-      cashFileID = secondID;
-    }
-    // Both start with T/I or neither does - use natural order
-    else {
-      insuranceID = firstID;
-      cashFileID = secondID;
-    }
-    
-    description = descParts.join(' ');
+  // Take the first encounter ID found (we only need one ID for the new format)
+  if (ids.length > 0) {
+    encounterID = ids[0];
   }
+  description = descParts.join(' ');
   
-  return { insuranceID, cashFileID, description };
+  return { encounterID, description };
 }
 
 /**
  * Format audit logs by realigning columns
+ * Output format: Type | Date | Payer | Encounter ID | Description
  */
 function formatAuditLogs(inputText) {
   if (!inputText || !inputText.trim()) {
@@ -496,6 +473,10 @@ function formatAuditLogs(inputText) {
   
   const lines = inputText.split('\n');
   const outputLines = [];
+  
+  let currentType = '';
+  let currentDate = '';
+  let currentPayer = '';
   
   for (let line of lines) {
     const trimmedLine = line.trim();
@@ -506,28 +487,34 @@ function formatAuditLogs(inputText) {
       continue;
     }
     
-    // Preserve date headers
-    if (isDateHeader(trimmedLine)) {
-      outputLines.push(trimmedLine);
-      continue;
+    // Update current Type header
+    if (isTypeHeader(trimmedLine)) {
+      currentType = trimmedLine;
+      continue; // Don't output the header itself
     }
     
-    // Preserve payer headers
+    // Update current Date header
+    if (isDateHeader(trimmedLine)) {
+      currentDate = trimmedLine;
+      continue; // Don't output the header itself
+    }
+    
+    // Update current Payer header
     if (isPayerHeader(trimmedLine)) {
-      outputLines.push(trimmedLine);
-      continue;
+      currentPayer = trimmedLine;
+      continue; // Don't output the header itself
     }
     
     // Process data rows
-    const { insuranceID, cashFileID, description } = processAuditLogRow(line);
+    const { encounterID, description } = processAuditLogRow(line);
     
-    // Format with consistent column widths (using tabs)
-    // For rows with no IDs (description-only), output the description without leading tabs
+    // Format in 5-column structure: Type, Date, Payer, Encounter ID, Description
+    // For rows with no encounter ID, output the description as-is
     let formattedLine;
-    if (!insuranceID && !cashFileID && description) {
+    if (!encounterID && description) {
       formattedLine = description;
     } else {
-      formattedLine = `${insuranceID}\t${cashFileID}\t${description}`;
+      formattedLine = `${currentType}\t\t${currentDate}\t${currentPayer}\t${encounterID}\t\t${description}`;
     }
     outputLines.push(formattedLine);
   }
