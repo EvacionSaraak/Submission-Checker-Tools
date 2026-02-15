@@ -1,0 +1,5 @@
+127.0.0.1 - - [15/Feb/2026 12:59:04] "HEAD / HTTP/1.1" 200 -
+127.0.0.1 - - [15/Feb/2026 12:59:07] "GET /checkers/checker_formatter.html HTTP/1.1" 200 -
+127.0.0.1 - - [15/Feb/2026 12:59:07] "GET /checkers/tables.css HTTP/1.1" 200 -
+127.0.0.1 - - [15/Feb/2026 12:59:07] "GET /checkers/checker_formatter.js HTTP/1.1" 200 -
+127.0.0.1 - - [15/Feb/2026 12:59:07] "GET /checkers/checker_formatter_worker.js HTTP/1.1" 200 -

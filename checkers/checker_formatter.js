@@ -470,14 +470,16 @@ function processAuditLogRow(line) {
  * Format audit logs by realigning columns
  * Output format: Type | Date | Payer | Encounter ID | Description
  * Type defaults to "Dental" if not specified in input
+ * Returns: { formatted: string, unmatchedLines: string[] }
  */
 function formatAuditLogs(inputText) {
   if (!inputText || !inputText.trim()) {
-    return '';
+    return { formatted: '', unmatchedLines: [] };
   }
   
   const lines = inputText.split('\n');
   const outputLines = [];
+  const unmatchedLines = [];
   
   // Default type to "Dental" (can be overridden by Type header in input)
   let currentType = 'Dental';
@@ -514,23 +516,119 @@ function formatAuditLogs(inputText) {
     const { claimID, visitID, description } = processAuditLogRow(line);
     
     // Only output valid rows (rows with a claim ID)
-    // This ignores any text that doesn't match the expected format
     if (claimID) {
       const formattedLine = `${currentType}\t\t${currentDate}\t${currentPayer}\t${claimID}\t${visitID}\t${description}`;
       outputLines.push(formattedLine);
+    } else {
+      // Collect lines that didn't match the format
+      unmatchedLines.push(trimmedLine);
     }
-    // Rows without valid claim IDs are ignored (filtered out)
   }
   
-  return outputLines.join('\n');
+  return { formatted: outputLines.join('\n'), unmatchedLines };
+}
+
+/**
+ * Render unmatched lines with individual text boxes and clipboard buttons
+ */
+function renderUnmatchedLines(unmatchedLines) {
+  // Find or create the container for unmatched lines
+  let container = document.getElementById('unmatched-lines-container');
+  
+  if (!container) {
+    // Create the container if it doesn't exist
+    container = document.createElement('div');
+    container.id = 'unmatched-lines-container';
+    container.style.marginTop = '20px';
+    
+    // Insert it after the errors-output form-row
+    const errorsOutputRow = errorsOutput.closest('.form-row');
+    errorsOutputRow.parentNode.insertBefore(container, errorsOutputRow.nextSibling);
+  }
+  
+  // Clear previous content
+  container.innerHTML = '';
+  
+  // If no unmatched lines, hide the container
+  if (!unmatchedLines || unmatchedLines.length === 0) {
+    container.style.display = 'none';
+    return;
+  }
+  
+  // Show the container
+  container.style.display = 'block';
+  
+  // Add a header
+  const header = document.createElement('h4');
+  header.textContent = `Lines that didn't match format (${unmatchedLines.length}):`;
+  header.style.marginTop = '0';
+  header.style.marginBottom = '10px';
+  header.style.color = '#d9534f';
+  container.appendChild(header);
+  
+  // Create a text box with clipboard button for each unmatched line
+  unmatchedLines.forEach((line, index) => {
+    const lineContainer = document.createElement('div');
+    lineContainer.style.display = 'flex';
+    lineContainer.style.alignItems = 'center';
+    lineContainer.style.marginBottom = '8px';
+    lineContainer.style.gap = '10px';
+    
+    // Create read-only input for the line
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = line;
+    input.readOnly = true;
+    input.style.flex = '1';
+    input.style.padding = '6px 8px';
+    input.style.fontFamily = monospaceToggle.checked ? 'monospace' : 'inherit';
+    input.style.fontSize = '13px';
+    input.style.border = '1px solid #ccc';
+    input.style.borderRadius = '4px';
+    input.style.backgroundColor = '#fff3cd';
+    
+    // Create clipboard button
+    const clipboardBtn = document.createElement('button');
+    clipboardBtn.textContent = '📋';
+    clipboardBtn.title = 'Copy to clipboard';
+    clipboardBtn.style.padding = '6px 12px';
+    clipboardBtn.style.fontSize = '16px';
+    clipboardBtn.style.cursor = 'pointer';
+    clipboardBtn.style.border = '1px solid #ccc';
+    clipboardBtn.style.borderRadius = '4px';
+    clipboardBtn.style.backgroundColor = '#f8f9fa';
+    
+    clipboardBtn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(line);
+        const originalText = clipboardBtn.textContent;
+        clipboardBtn.textContent = '✓';
+        clipboardBtn.style.backgroundColor = '#d4edda';
+        setTimeout(() => {
+          clipboardBtn.textContent = originalText;
+          clipboardBtn.style.backgroundColor = '#f8f9fa';
+        }, 2000);
+      } catch (err) {
+        console.error('Failed to copy to clipboard:', err);
+        alert('Failed to copy to clipboard.');
+      }
+    });
+    
+    lineContainer.appendChild(input);
+    lineContainer.appendChild(clipboardBtn);
+    container.appendChild(lineContainer);
+  });
 }
 
 // Event Handlers for Errors Panel
 formatButton.addEventListener('click', () => {
   const inputText = errorsInput.value;
-  const formattedText = formatAuditLogs(inputText);
-  errorsOutput.value = formattedText;
-  copyButton.disabled = !formattedText;
+  const result = formatAuditLogs(inputText);
+  errorsOutput.value = result.formatted;
+  copyButton.disabled = !result.formatted;
+  
+  // Render unmatched lines with individual text boxes and clipboard buttons
+  renderUnmatchedLines(result.unmatchedLines);
 });
 
 copyButton.addEventListener('click', async () => {
@@ -554,6 +652,12 @@ monospaceToggle.addEventListener('change', (e) => {
   const fontFamily = e.target.checked ? 'monospace' : 'inherit';
   errorsInput.style.fontFamily = fontFamily;
   errorsOutput.style.fontFamily = fontFamily;
+  
+  // Update unmatched line inputs
+  const unmatchedInputs = document.querySelectorAll('#unmatched-lines-container input[type="text"]');
+  unmatchedInputs.forEach(input => {
+    input.style.fontFamily = fontFamily;
+  });
 });
 
 resetUI();
