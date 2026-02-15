@@ -425,7 +425,7 @@ function isCashFileID(str) {
 
 /**
  * Process a single audit log row and return formatted columns
- * Returns: { encounterID, description }
+ * Returns: { claimID, visitID, description }
  */
 function processAuditLogRow(line) {
   // Split by tabs and/or multiple spaces (2+)
@@ -433,10 +433,11 @@ function processAuditLogRow(line) {
   const parts = line.split(/\t+|\s{2,}/).map(p => p.trim()).filter(p => p.length > 0);
   
   if (parts.length === 0) {
-    return { encounterID: '', description: '' };
+    return { claimID: '', visitID: '', description: '' };
   }
   
-  let encounterID = '';
+  let claimID = '';
+  let visitID = '';
   let description = '';
   
   // Identify IDs and description
@@ -453,13 +454,16 @@ function processAuditLogRow(line) {
     }
   }
   
-  // Take the first encounter ID found (we only need one ID for the new format)
+  // Take the first ID as Claim ID, second ID (if exists) as Visit ID
   if (ids.length > 0) {
-    encounterID = ids[0];
+    claimID = ids[0];
+  }
+  if (ids.length > 1) {
+    visitID = ids[1];
   }
   description = descParts.join(' ');
   
-  return { encounterID, description };
+  return { claimID, visitID, description };
 }
 
 /**
@@ -507,15 +511,15 @@ function formatAuditLogs(inputText) {
     }
     
     // Process data rows
-    const { encounterID, description } = processAuditLogRow(line);
+    const { claimID, visitID, description } = processAuditLogRow(line);
     
-    // Only output valid rows (rows with an encounter ID)
+    // Only output valid rows (rows with a claim ID)
     // This ignores any text that doesn't match the expected format
-    if (encounterID) {
-      const formattedLine = `${currentType}\t\t${currentDate}\t${currentPayer}\t${encounterID}\t\t${description}`;
+    if (claimID) {
+      const formattedLine = `${currentType}\t\t${currentDate}\t${currentPayer}\t${claimID}\t${visitID}\t\t${description}`;
       outputLines.push(formattedLine);
     }
-    // Rows without valid encounter IDs are ignored (filtered out)
+    // Rows without valid claim IDs are ignored (filtered out)
   }
   
   return outputLines.join('\n');
