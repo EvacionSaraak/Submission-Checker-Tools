@@ -653,11 +653,14 @@ monospaceToggle.addEventListener('change', (e) => {
   errorsInput.style.fontFamily = fontFamily;
   errorsOutput.style.fontFamily = fontFamily;
   
-  // Update unmatched line inputs
-  const unmatchedInputs = document.querySelectorAll('#unmatched-lines-container input[type="text"]');
-  unmatchedInputs.forEach(input => {
-    input.style.fontFamily = fontFamily;
-  });
+  // Update unmatched line inputs if they exist
+  const container = document.getElementById('unmatched-lines-container');
+  if (container) {
+    const unmatchedInputs = container.querySelectorAll('input[type="text"]');
+    unmatchedInputs.forEach(input => {
+      input.style.fontFamily = fontFamily;
+    });
+  }
 });
 
 resetUI();
