@@ -465,6 +465,7 @@ function processAuditLogRow(line) {
 /**
  * Format audit logs by realigning columns
  * Output format: Type | Date | Payer | Encounter ID | Description
+ * Type defaults to "Dental" if not specified in input
  */
 function formatAuditLogs(inputText) {
   if (!inputText || !inputText.trim()) {
@@ -474,16 +475,16 @@ function formatAuditLogs(inputText) {
   const lines = inputText.split('\n');
   const outputLines = [];
   
-  let currentType = '';
+  // Default type to "Dental" (can be overridden by Type header in input)
+  let currentType = 'Dental';
   let currentDate = '';
   let currentPayer = '';
   
   for (let line of lines) {
     const trimmedLine = line.trim();
     
-    // Skip empty lines
+    // Skip empty lines - don't add to output
     if (!trimmedLine) {
-      outputLines.push('');
       continue;
     }
     
@@ -508,15 +509,13 @@ function formatAuditLogs(inputText) {
     // Process data rows
     const { encounterID, description } = processAuditLogRow(line);
     
-    // Format in 5-column structure: Type, Date, Payer, Encounter ID, Description
-    // For rows with no encounter ID, output the description as-is
-    let formattedLine;
-    if (!encounterID && description) {
-      formattedLine = description;
-    } else {
-      formattedLine = `${currentType}\t\t${currentDate}\t${currentPayer}\t${encounterID}\t\t${description}`;
+    // Only output valid rows (rows with an encounter ID)
+    // This ignores any text that doesn't match the expected format
+    if (encounterID) {
+      const formattedLine = `${currentType}\t\t${currentDate}\t${currentPayer}\t${encounterID}\t\t${description}`;
+      outputLines.push(formattedLine);
     }
-    outputLines.push(formattedLine);
+    // Rows without valid encounter IDs are ignored (filtered out)
   }
   
   return outputLines.join('\n');
