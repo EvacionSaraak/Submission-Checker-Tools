@@ -331,6 +331,14 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
   const results = [];
   const claims = xmlDoc.getElementsByTagName("Claim");
 
+  // Extract ReceiverID from Header element
+  // Only check leading zeros for Daman (A001) and Thiqa (D001)
+  const header = xmlDoc.querySelector("Header");
+  const receiverID = header?.querySelector("ReceiverID")?.textContent.trim() || '';
+  const shouldCheckLeadingZero = receiverID === 'A001' || receiverID === 'D001';
+  const missingReceiverID = !receiverID; // Flag if ReceiverID is missing or empty
+  console.log(`[SCHEMA] ReceiverID: ${receiverID || '(MISSING)'}, shouldCheckLeadingZero: ${shouldCheckLeadingZero}`);
+
   for (const claim of claims) {
     let missingFields = [], invalidFields = [], remarks = [];
 
@@ -340,6 +348,11 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
       return el && el.textContent ? el.textContent.trim() : "";
     };
     const invalidIfNull = (tag, parent = claim, prefix = "") => !text(tag, parent) ? invalidFields.push(prefix + tag + " (null/empty)") : null;
+
+    // CRITICAL: Check if ReceiverID is missing from Header
+    if (missingReceiverID) {
+      invalidFields.push("CRITICAL ERROR: ReceiverID is missing from XML Header. This file cannot be processed.");
+    }
 
     // Check if this specific claim had ampersands by comparing with original content
     const claimID = text("ID");
@@ -369,9 +382,11 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
     // Required fields
     ["ID", "MemberID", "PayerID", "ProviderID", "EmiratesIDNumber", "Gross", "PatientShare", "Net"].forEach(tag => invalidIfNull(tag, claim));
 
-    // MemberID check
+    // MemberID check - only check for leading zero if ReceiverID is A001 (Daman) or D001 (Thiqa)
     const memberID = text("MemberID");
-    if (memberID && /^0/.test(memberID)) invalidFields.push("MemberID (starts with 0)");
+    if (shouldCheckLeadingZero && memberID && /^0/.test(memberID)) {
+      invalidFields.push("MemberID (starts with 0)");
+    }
 
     // EmiratesIDNumber checks (improved messages)
     if (present("EmiratesIDNumber")) {

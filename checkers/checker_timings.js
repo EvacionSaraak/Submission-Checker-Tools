@@ -41,9 +41,9 @@
       exportBtn.onclick = () => {
         const wb = XLSX.utils.book_new();
         const wsData = [
-          ['Claim ID', 'Activity ID', 'Encounter Start', 'Encounter End', 'Activity Start', 'Duration', 'Excess', 'Remarks'],
+          ['Claim ID', 'Activity ID', 'Type', 'Encounter Start', 'Encounter End', 'Activity Start', 'Duration', 'Excess', 'Remarks'],
           ...window.invalidRows.map(r => [
-            r.claimId, r.activityId, r.encounterStart, r.encounterEnd,
+            r.claimId, r.activityId, r.type, r.encounterStart, r.encounterEnd,
             r.start, r.duration, r.excess, r.remarks.join('; ')
           ])
         ];
@@ -119,6 +119,13 @@ function extractClaims(xmlDoc, requiredType = "6") {
       const typeValue = activity.querySelector('Type')?.textContent?.trim() || '';
       const codeValue = activity.querySelector('Code')?.textContent?.trim() || '';
       let isValid = baseValid, remarks = [...baseRemarks];
+      
+      // Special validation: A4639 must always be type 4
+      if (codeValue === "A4639" && typeValue !== "4") {
+        isValid = false;
+        remarks.push(`Code A4639 must have Type 4, but found Type ${typeValue || '(missing)'}.`);
+      }
+      
       // Type 5 code format check
       if (typeValue === "5") {
         if (!isValidType5Code(codeValue)) {
@@ -126,9 +133,9 @@ function extractClaims(xmlDoc, requiredType = "6") {
           remarks.push(`Type 5 activity with invalid or missing Code: "${codeValue}".`);
         }
       }
-      // Type 4 special code J3490
+      // Type 4 special codes: J3490 and A4639
       else if (typeValue === "4") {
-        if (codeValue === "J3490") {
+        if (codeValue === "J3490" || codeValue === "A4639") {
           // valid, do not push type error!
         } else if (typeValue !== requiredType) {
           isValid = false;
@@ -143,7 +150,7 @@ function extractClaims(xmlDoc, requiredType = "6") {
       if (!activityStartStr) {
         remarks.push('Missing Activity Start');
         results.push({
-          claimId, activityId, encounterStart: encounterStartStr, encounterEnd: encounterEndStr,
+          claimId, activityId, type: typeValue, encounterStart: encounterStartStr, encounterEnd: encounterEndStr,
           start: 'N/A', duration: formatDuration(encMin), excess: 'N/A', isValid, remarks
         });
         return;
@@ -167,7 +174,7 @@ function extractClaims(xmlDoc, requiredType = "6") {
         }
       }
       results.push({
-        claimId, activityId, encounterStart: encounterStartStr, encounterEnd: encounterEndStr,
+        claimId, activityId, type: typeValue, encounterStart: encounterStartStr, encounterEnd: encounterEndStr,
         start: activityStartStr, duration: formatDuration(encMin),
         excess: isNaN(excessMin) ? 'N/A' : formatDuration(excessMin), isValid, remarks
       });
@@ -264,6 +271,7 @@ function buildResultsTable(rows) {
     <thead><tr>
       <th style="padding:8px;border:1px solid #ccc">Claim ID</th>
       <th style="padding:8px;border:1px solid #ccc">Activity ID</th>
+      <th style="padding:8px;border:1px solid #ccc">Type</th>
       <th style="padding:8px;border:1px solid #ccc">Encounter Start</th>
       <th style="padding:8px;border:1px solid #ccc">Encounter End</th>
       <th style="padding:8px;border:1px solid #ccc">Activity Start</th>
@@ -278,6 +286,7 @@ function buildResultsTable(rows) {
       return `<tr class="${r.isValid ? 'table-success' : 'table-danger'}" data-claim-id="${sanitize(r.claimId || '')}">
         <td class="claim-id-cell" style="padding:6px;border:1px solid #ccc">${sanitize(claimCell)}</td>
         <td style="padding:6px;border:1px solid #ccc">${sanitize(r.activityId)}</td>
+        <td style="padding:6px;border:1px solid #ccc">${sanitize(r.type || '')}</td>
         <td style="padding:6px;border:1px solid #ccc">${sanitize(r.encounterStart)}</td>
         <td style="padding:6px;border:1px solid #ccc">${sanitize(r.encounterEnd)}</td>
         <td style="padding:6px;border:1px solid #ccc">${sanitize(r.start)}</td>

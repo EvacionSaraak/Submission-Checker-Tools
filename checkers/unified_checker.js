@@ -4,6 +4,11 @@
 (function() {
   'use strict';
 
+  // Constants
+  const CLIPBOARD_FEEDBACK_DURATION_MS = 2000;
+  const ERROR_FEEDBACK_DURATION_EXTENSION_FACTOR = 1.5; // Extend error messages display time by 50%
+  const INVALID_ROW_CLASSES = 'tbody tr.table-danger, tbody tr.table-warning';
+
   // Initialize session counter immediately
   (function initSessionCounter() {
     let sessionCount = sessionStorage.getItem('checkerSessionCount');
@@ -133,32 +138,51 @@
     };
 
     // File input event listeners - add null checks to prevent crashes
+    // Also add click listeners to reset input value (allows re-uploading same filename)
     if (elements.xmlInput) {
+      elements.xmlInput.addEventListener('click', (e) => {
+        e.target.value = ''; // Reset to allow same file to be re-uploaded
+      });
       elements.xmlInput.addEventListener('change', (e) => {
         handleFileChange(e, 'xml', elements.xmlStatus);
       });
     }
     if (elements.clinicianInput) {
+      elements.clinicianInput.addEventListener('click', (e) => {
+        e.target.value = '';
+      });
       elements.clinicianInput.addEventListener('change', (e) => {
         handleFileChange(e, 'clinician', elements.clinicianStatus);
       });
     }
     if (elements.eligibilityInput) {
+      elements.eligibilityInput.addEventListener('click', (e) => {
+        e.target.value = '';
+      });
       elements.eligibilityInput.addEventListener('change', (e) => {
         handleFileChange(e, 'eligibility', elements.eligibilityStatus);
       });
     }
     if (elements.authInput) {
+      elements.authInput.addEventListener('click', (e) => {
+        e.target.value = '';
+      });
       elements.authInput.addEventListener('change', (e) => {
         handleFileChange(e, 'auth', elements.authStatus);
       });
     }
     if (elements.statusInput) {
+      elements.statusInput.addEventListener('click', (e) => {
+        e.target.value = '';
+      });
       elements.statusInput.addEventListener('change', (e) => {
         handleFileChange(e, 'status', elements.statusStatus);
       });
     }
     if (elements.pricingInput) {
+      elements.pricingInput.addEventListener('click', (e) => {
+        e.target.value = '';
+      });
       elements.pricingInput.addEventListener('change', (e) => {
         handleFileChange(e, 'pricing', elements.pricingStatus);
       });
@@ -944,14 +968,28 @@
         const sectionDiv = document.createElement('div');
         sectionDiv.id = `${checkerName}-section`;
         sectionDiv.style.marginBottom = '30px';
+        
+        // Add clipboard button for ALL checkers
+        const clipboardButton = `<button class="btn btn-sm btn-outline-primary checker-copy-button" data-checker="${checkerName}" style="margin-left:10px;" title="Copy invalid ${checkerName.toUpperCase()} results to clipboard">📋 Copy Invalids</button>`;
+        
         sectionDiv.innerHTML = `
-          <h3 style="color:#0d6efd;border-bottom:2px solid #0d6efd;padding-bottom:10px;margin-top:20px;">
-            ${checkerName.toUpperCase()} Checker Results
-          </h3>
+          <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #0d6efd;padding-bottom:10px;margin-top:20px;">
+            <h3 style="color:#0d6efd;margin:0;">
+              ${checkerName.toUpperCase()} Checker Results
+            </h3>
+            ${clipboardButton}
+          </div>
           <div id="${checkerName}-results"></div>
         `;
         if (checkAllContainer) {
           checkAllContainer.appendChild(sectionDiv);
+          
+          // Attach event listener to clipboard button
+          const copyBtn = sectionDiv.querySelector('.checker-copy-button');
+          if (copyBtn) {
+            copyBtn.addEventListener('click', () => copyCheckerInvalidResults(checkerName));
+            logDebug(`${checkerName} copy button event listener attached`);
+          }
         }
         
         logDebug(`Created Results Section: ${checkerName}`);
@@ -1627,6 +1665,150 @@
       console.error('[DEBUG-LOG] Error during download:', error);
       alert(`Error downloading debug log: ${error.message}`);
     }
+  }
+  
+  /**
+   * Copy checker invalid results to clipboard in specified format
+   * Format: CLAIM_ID\t\tRemark
+   * Only copies invalid/unknown rows (table-danger or table-warning)
+   * @param {string} checkerName - The name of the checker (e.g., 'elig', 'auths', 'pricing')
+   */
+  function copyCheckerInvalidResults(checkerName) {
+    console.log(`[CLIPBOARD] Copying ${checkerName.toUpperCase()} checker invalid results...`);
+    
+    const button = document.querySelector(`.checker-copy-button[data-checker="${checkerName}"]`);
+    
+    // Helper function to show button feedback (uses textContent for security)
+    const showButtonFeedback = (message, backgroundColor, duration = CLIPBOARD_FEEDBACK_DURATION_MS) => {
+      if (!button) return;
+      const originalText = button.textContent;
+      button.textContent = message;
+      button.style.backgroundColor = backgroundColor;
+      button.style.color = 'white';
+      
+      setTimeout(() => {
+        button.textContent = originalText;
+        button.style.backgroundColor = '';
+        button.style.color = '';
+      }, duration);
+    };
+    
+    // Find the checker results section
+    const checkerSection = document.getElementById(`${checkerName}-results`);
+    if (!checkerSection) {
+      console.error(`[CLIPBOARD] ${checkerName} results section not found`);
+      showButtonFeedback('⚠ Section Not Found', '#dc3545');
+      return;
+    }
+    
+    // Find the table in the checker section
+    const table = checkerSection.querySelector('table');
+    if (!table) {
+      console.error(`[CLIPBOARD] ${checkerName} results table not found`);
+      showButtonFeedback('⚠ Table Not Found', '#dc3545');
+      return;
+    }
+    
+    // Find the Remarks column index by searching table headers
+    const headers = table.querySelectorAll('thead th');
+    let remarksColumnIndex = -1;
+    
+    // Find first header matching "Remark" or "Remarks" (exact match, case-insensitive)
+    for (let i = 0; i < headers.length; i++) {
+      const headerText = headers[i].textContent.trim();
+      const headerLower = headerText.toLowerCase();
+      // Use exact match for "remark" or "remarks" to avoid false positives
+      if (headerLower === 'remark' || headerLower === 'remarks') {
+        remarksColumnIndex = i;
+        console.log(`[CLIPBOARD] Found remarks column at index ${i}: "${headerText}"`);
+        break; // Stop after finding first match
+      }
+    }
+    
+    if (remarksColumnIndex === -1) {
+      console.error(`[CLIPBOARD] Could not find Remarks column in ${checkerName} table headers`);
+      showButtonFeedback('⚠ No Remarks Column', '#dc3545');
+      return;
+    }
+    
+    // Extract data from INVALID rows only (table-danger or table-warning)
+    const invalidRows = table.querySelectorAll(INVALID_ROW_CLASSES);
+    if (invalidRows.length === 0) {
+      console.log(`[CLIPBOARD] No invalid rows found in ${checkerName}`);
+      showButtonFeedback('⚠ No Invalids', '#ffc107');
+      return;
+    }
+    
+    // Use a Map to deduplicate: key = "ClaimID\t\tRemark", value = true
+    const uniqueResults = new Map();
+    
+    invalidRows.forEach(row => {
+      // Get all cells in the row
+      const cells = row.querySelectorAll('td');
+      if (cells.length < 2) return; // Skip if not enough cells
+      
+      // Get Claim ID from data attribute first (for checkers that hide duplicate IDs visually)
+      // or fall back to first cell's textContent
+      let claimID = row.getAttribute('data-claim-id') || cells[0].textContent.trim();
+      
+      // Skip empty claim IDs
+      if (!claimID) return;
+      
+      // Get the Remarks cell using the dynamically found column index
+      const remarksCell = cells[remarksColumnIndex];
+      
+      if (!remarksCell) return;
+      
+      // Get all remark divs from the cell
+      const remarkDivs = remarksCell.querySelectorAll('div');
+      
+      // Only include rows that have remarks (not "No remarks")
+      if (remarkDivs.length > 0) {
+        remarkDivs.forEach(div => {
+          const remarkText = div.textContent.trim();
+          // Skip "No remarks" entries and source notes
+          if (remarkText && remarkText !== 'No remarks' && !div.classList.contains('source-note')) {
+            // Format: CLAIM_ID\t\tRemark - use as Map key to deduplicate
+            const entry = `${claimID}\t\t${remarkText}`;
+            uniqueResults.set(entry, true);
+          }
+        });
+      } else {
+        // If no divs, try getting text content directly (some checkers may use plain text)
+        const remarkText = remarksCell.textContent.trim();
+        if (remarkText && remarkText !== 'No remarks' && remarkText !== '') {
+          const entry = `${claimID}\t\t${remarkText}`;
+          uniqueResults.set(entry, true);
+        }
+      }
+    });
+    
+    // Convert Map keys to array
+    const results = Array.from(uniqueResults.keys());
+    
+    if (results.length === 0) {
+      console.log(`[CLIPBOARD] Invalid rows found in ${checkerName} but no remarks to copy`);
+      showButtonFeedback('⚠ No Remarks', '#ffc107');
+      return;
+    }
+    
+    // Join all results with newlines
+    const textToCopy = results.join('\n');
+    
+    // Copy to clipboard
+    navigator.clipboard.writeText(textToCopy).then(() => {
+      console.log(`[CLIPBOARD] ✓ Copied ${results.length} invalid ${checkerName.toUpperCase()} results`);
+      showButtonFeedback(`✓ Copied ${results.length}!`, '#198754');
+    }).catch(err => {
+      console.error(`[CLIPBOARD] Copy failed for ${checkerName}:`, err);
+      // Use a safe, fixed error message instead of potentially unsafe error content
+      const safeErrorMsg = err.name === 'NotAllowedError' 
+        ? 'Permission denied' 
+        : err.name === 'SecurityError'
+        ? 'Security error'
+        : 'Check console for details';
+      showButtonFeedback(`❌ Copy Failed: ${safeErrorMsg}`, '#dc3545', CLIPBOARD_FEEDBACK_DURATION_MS * ERROR_FEEDBACK_DURATION_EXTENSION_FACTOR);
+    });
   }
   
   // Bug #7 fix: Auto-table generation system removed (obsolete with persistent containers)
