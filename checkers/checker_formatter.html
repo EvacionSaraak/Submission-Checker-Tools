@@ -83,6 +83,21 @@
       placeholder="Formatted output will appear here..."
     ></textarea>
   </div>
+  
+  <div id="unmatched-container" class="form-row" style="flex-direction: column; align-items: flex-start; margin-top: 15px; display: none;">
+    <label for="errors-unmatched" style="margin-bottom: 5px;">Lines that didn't match format:</label>
+    <textarea 
+      id="errors-unmatched" 
+      rows="8" 
+      readonly
+      style="width: 100%; max-width: 900px; font-family: monospace; font-size: 13px; padding: 8px; border: 1px solid #ccc; border-radius: 4px; background: #fff3cd;"
+      placeholder="Unmatched lines will appear here..."
+    ></textarea>
+  </div>
+  
+  <div id="unmatched-button-row" class="form-row" style="margin-top: 10px; display: none;">
+    <button id="copy-unmatched-button" style="margin-left: 10px;">Copy Unmatched Lines</button>
+  </div>
 </div>
 
 <div class="form-row">
