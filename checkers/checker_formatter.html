@@ -60,7 +60,6 @@
       id="errors-input" 
       rows="12" 
       style="width: 100%; max-width: 900px; font-family: monospace; font-size: 13px; padding: 8px; border: 1px solid #ccc; border-radius: 4px;"
-      placeholder="Paste audit logs here...&#10;Example:&#10;Jan 18&#10;Thiqa&#10;TMCCL0947600  TMCOP0883774  Claim package (Thiqa 1) is different from eligibility (Thiqa 2).&#10;MJSTCC251201236  Encounter duration too short...&#10;Daman&#10;MJSTCC251201094  Encounter crosses days...&#10;&#10;(Type defaults to Dental. Add 'Medical' header to change)"
     ></textarea>
   </div>
   
@@ -80,8 +79,21 @@
       rows="12" 
       readonly
       style="width: 100%; max-width: 900px; font-family: monospace; font-size: 13px; padding: 8px; border: 1px solid #ccc; border-radius: 4px; background: #f9f9f9;"
-      placeholder="Formatted output will appear here..."
     ></textarea>
+  </div>
+  
+  <div id="unmatched-container" class="form-row" style="flex-direction: column; align-items: flex-start; margin-top: 15px;">
+    <label for="errors-unmatched" style="margin-bottom: 5px;">Lines that didn't match format:</label>
+    <textarea 
+      id="errors-unmatched" 
+      rows="8" 
+      readonly
+      style="width: 100%; max-width: 900px; font-family: monospace; font-size: 13px; padding: 8px; border: 1px solid #ccc; border-radius: 4px; background: #fff3cd;"
+    ></textarea>
+  </div>
+  
+  <div id="unmatched-button-row" class="form-row" style="margin-top: 10px;">
+    <button id="copy-unmatched-button" style="margin-left: 10px;">Copy Unmatched Lines</button>
   </div>
 </div>
 

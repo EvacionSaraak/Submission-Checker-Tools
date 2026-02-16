@@ -18,8 +18,12 @@ const xmlInput = document.getElementById('xml-files');
 // Errors panel elements
 const errorsInput = document.getElementById('errors-input');
 const errorsOutput = document.getElementById('errors-output');
+const errorsUnmatched = document.getElementById('errors-unmatched');
+const unmatchedContainer = document.getElementById('unmatched-container');
+const unmatchedButtonRow = document.getElementById('unmatched-button-row');
 const formatButton = document.getElementById('format-button');
 const copyButton = document.getElementById('copy-button');
+const copyUnmatchedButton = document.getElementById('copy-unmatched-button');
 const monospaceToggle = document.getElementById('monospace-toggle');
 
 const outputTableContainer = document.getElementById('outputTableContainer');
@@ -470,14 +474,16 @@ function processAuditLogRow(line) {
  * Format audit logs by realigning columns
  * Output format: Type | Date | Payer | Encounter ID | Description
  * Type defaults to "Dental" if not specified in input
+ * Returns: { formatted: string, unmatchedLines: string[] }
  */
 function formatAuditLogs(inputText) {
   if (!inputText || !inputText.trim()) {
-    return '';
+    return { formatted: '', unmatchedLines: [] };
   }
   
   const lines = inputText.split('\n');
   const outputLines = [];
+  const unmatchedLinesRaw = [];
   
   // Default type to "Dental" (can be overridden by Type header in input)
   let currentType = 'Dental';
@@ -487,8 +493,9 @@ function formatAuditLogs(inputText) {
   for (let line of lines) {
     const trimmedLine = line.trim();
     
-    // Skip empty lines - don't add to output
+    // Empty lines: add to unmatched to preserve spacing
     if (!trimmedLine) {
+      unmatchedLinesRaw.push('');
       continue;
     }
     
@@ -514,23 +521,52 @@ function formatAuditLogs(inputText) {
     const { claimID, visitID, description } = processAuditLogRow(line);
     
     // Only output valid rows (rows with a claim ID)
-    // This ignores any text that doesn't match the expected format
     if (claimID) {
       const formattedLine = `${currentType}\t\t${currentDate}\t${currentPayer}\t${claimID}\t${visitID}\t${description}`;
       outputLines.push(formattedLine);
+    } else {
+      // Collect lines that didn't match the format (preserve original line, not trimmed)
+      unmatchedLinesRaw.push(line);
     }
-    // Rows without valid claim IDs are ignored (filtered out)
   }
   
-  return outputLines.join('\n');
+  // Remove leading and trailing empty lines from unmatched, but preserve spacing in between
+  let startIdx = 0;
+  let endIdx = unmatchedLinesRaw.length - 1;
+  
+  // Find first non-empty line
+  while (startIdx < unmatchedLinesRaw.length && unmatchedLinesRaw[startIdx] === '') {
+    startIdx++;
+  }
+  
+  // Find last non-empty line
+  while (endIdx >= 0 && unmatchedLinesRaw[endIdx] === '') {
+    endIdx--;
+  }
+  
+  // Extract the range (or empty array if all lines were empty)
+  const unmatchedLines = startIdx <= endIdx ? unmatchedLinesRaw.slice(startIdx, endIdx + 1) : [];
+  
+  return { formatted: outputLines.join('\n'), unmatchedLines };
+}
+
+/**
+ * Display unmatched lines in the unmatched textarea
+ */
+function displayUnmatchedLines(unmatchedLines) {
+  // Simply populate the textarea with unmatched lines (or clear it if empty)
+  errorsUnmatched.value = unmatchedLines && unmatchedLines.length > 0 ? unmatchedLines.join('\n') : '';
 }
 
 // Event Handlers for Errors Panel
 formatButton.addEventListener('click', () => {
   const inputText = errorsInput.value;
-  const formattedText = formatAuditLogs(inputText);
-  errorsOutput.value = formattedText;
-  copyButton.disabled = !formattedText;
+  const result = formatAuditLogs(inputText);
+  errorsOutput.value = result.formatted;
+  copyButton.disabled = !result.formatted;
+  
+  // Display unmatched lines in textarea
+  displayUnmatchedLines(result.unmatchedLines);
 });
 
 copyButton.addEventListener('click', async () => {
@@ -550,10 +586,28 @@ copyButton.addEventListener('click', async () => {
   }
 });
 
+copyUnmatchedButton.addEventListener('click', async () => {
+  const text = errorsUnmatched.value;
+  if (!text) return;
+  
+  try {
+    await navigator.clipboard.writeText(text);
+    const originalText = copyUnmatchedButton.textContent;
+    copyUnmatchedButton.textContent = 'Copied!';
+    setTimeout(() => {
+      copyUnmatchedButton.textContent = originalText;
+    }, 2000);
+  } catch (err) {
+    console.error('Failed to copy to clipboard:', err);
+    alert('Failed to copy to clipboard. Please manually select the text and use Ctrl+C (or Cmd+C on Mac) to copy.');
+  }
+});
+
 monospaceToggle.addEventListener('change', (e) => {
   const fontFamily = e.target.checked ? 'monospace' : 'inherit';
   errorsInput.style.fontFamily = fontFamily;
   errorsOutput.style.fontFamily = fontFamily;
+  errorsUnmatched.style.fontFamily = fontFamily;
 });
 
 resetUI();
