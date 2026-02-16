@@ -554,17 +554,8 @@ function formatAuditLogs(inputText) {
  * Display unmatched lines in the unmatched textarea
  */
 function displayUnmatchedLines(unmatchedLines) {
-  if (!unmatchedLines || unmatchedLines.length === 0) {
-    // Hide the unmatched section
-    unmatchedContainer.style.display = 'none';
-    unmatchedButtonRow.style.display = 'none';
-    errorsUnmatched.value = '';
-  } else {
-    // Show the unmatched section
-    unmatchedContainer.style.display = 'flex';
-    unmatchedButtonRow.style.display = 'flex';
-    errorsUnmatched.value = unmatchedLines.join('\n');
-  }
+  // Simply populate the textarea with unmatched lines (or clear it if empty)
+  errorsUnmatched.value = unmatchedLines && unmatchedLines.length > 0 ? unmatchedLines.join('\n') : '';
 }
 
 // Event Handlers for Errors Panel
