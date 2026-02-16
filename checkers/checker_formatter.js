@@ -483,7 +483,7 @@ function formatAuditLogs(inputText) {
   
   const lines = inputText.split('\n');
   const outputLines = [];
-  const unmatchedLines = [];
+  const unmatchedLinesRaw = [];
   
   // Default type to "Dental" (can be overridden by Type header in input)
   let currentType = 'Dental';
@@ -493,8 +493,9 @@ function formatAuditLogs(inputText) {
   for (let line of lines) {
     const trimmedLine = line.trim();
     
-    // Skip empty lines - don't add to output
+    // Empty lines: add to unmatched to preserve spacing
     if (!trimmedLine) {
+      unmatchedLinesRaw.push('');
       continue;
     }
     
@@ -524,9 +525,20 @@ function formatAuditLogs(inputText) {
       const formattedLine = `${currentType}\t\t${currentDate}\t${currentPayer}\t${claimID}\t${visitID}\t${description}`;
       outputLines.push(formattedLine);
     } else {
-      // Collect lines that didn't match the format
-      unmatchedLines.push(trimmedLine);
+      // Collect lines that didn't match the format (preserve original line, not trimmed)
+      unmatchedLinesRaw.push(line);
     }
+  }
+  
+  // Remove leading and trailing empty lines from unmatched, but preserve spacing in between
+  let unmatchedLines = unmatchedLinesRaw;
+  // Trim leading empty lines
+  while (unmatchedLines.length > 0 && unmatchedLines[0] === '') {
+    unmatchedLines = unmatchedLines.slice(1);
+  }
+  // Trim trailing empty lines
+  while (unmatchedLines.length > 0 && unmatchedLines[unmatchedLines.length - 1] === '') {
+    unmatchedLines = unmatchedLines.slice(0, -1);
   }
   
   return { formatted: outputLines.join('\n'), unmatchedLines };
