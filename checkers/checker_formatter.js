@@ -531,15 +531,21 @@ function formatAuditLogs(inputText) {
   }
   
   // Remove leading and trailing empty lines from unmatched, but preserve spacing in between
-  let unmatchedLines = unmatchedLinesRaw;
-  // Trim leading empty lines
-  while (unmatchedLines.length > 0 && unmatchedLines[0] === '') {
-    unmatchedLines = unmatchedLines.slice(1);
+  let startIdx = 0;
+  let endIdx = unmatchedLinesRaw.length - 1;
+  
+  // Find first non-empty line
+  while (startIdx < unmatchedLinesRaw.length && unmatchedLinesRaw[startIdx] === '') {
+    startIdx++;
   }
-  // Trim trailing empty lines
-  while (unmatchedLines.length > 0 && unmatchedLines[unmatchedLines.length - 1] === '') {
-    unmatchedLines = unmatchedLines.slice(0, -1);
+  
+  // Find last non-empty line
+  while (endIdx >= 0 && unmatchedLinesRaw[endIdx] === '') {
+    endIdx--;
   }
+  
+  // Extract the range (or empty array if all lines were empty)
+  const unmatchedLines = startIdx <= endIdx ? unmatchedLinesRaw.slice(startIdx, endIdx + 1) : [];
   
   return { formatted: outputLines.join('\n'), unmatchedLines };
 }
