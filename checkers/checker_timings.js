@@ -126,6 +126,12 @@ function extractClaims(xmlDoc, requiredType = "6") {
         remarks.push(`Code A4639 must have Type 4, but found Type ${typeValue || '(missing)'}.`);
       }
       
+      // Special validation: 41899 must always be type 3
+      if (codeValue === "41899" && typeValue !== "3") {
+        isValid = false;
+        remarks.push(`Code 41899 must have Type 3, but found Type ${typeValue || '(missing)'}.`);
+      }
+      
       // Type 5 code format check
       if (typeValue === "5") {
         if (!isValidType5Code(codeValue)) {

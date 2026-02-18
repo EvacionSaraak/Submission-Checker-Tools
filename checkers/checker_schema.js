@@ -438,7 +438,7 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
     
     // Define constants for activity validation (outside loop for performance)
     const codesRequiringObservation = new Set(["17999", "96999"]);
-    const specialMedicalCodes = new Set(["17999", "96999", "0232T", "J3490", "81479"]);
+    const specialMedicalCodes = new Set(["17999", "96999", "0232T", "J3490", "81479", "41899"]);
     
     // Collect invalid quantity errors for consolidation
     /** @type {Map<string, string[]>} */
