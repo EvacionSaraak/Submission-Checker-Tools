@@ -59,6 +59,39 @@ const SPECIAL_MEDICAL_CODES = [
   // { code: "11952", description: "Subcutaneous injection of filling material (e.g., collagen); 11 to 50 cc" }
 ];
 
+// Type validation constants
+const SPECIAL_MEDICAL_CODES_SET = new Set(["17999", "96999", "0232T", "J3490", "81479", "41899"]);
+
+// Type 5 code format validator
+function isValidType5Code(code) {
+  const parts = code.split("-");
+  return (parts.length === 4 && parts[0].length === 3 && parts[1].length === 4 && parts[2].length === 5 && parts[3].length === 2);
+}
+
+// Type validation function
+function validateActivityType(code, type) {
+  const remarks = [];
+  
+  // Special validation: A4639 must always be type 4
+  if (code === "A4639" && type !== "4") {
+    remarks.push(`Code A4639 must have Type 4, but found Type ${type || '(missing)'}.`);
+  }
+  
+  // Special validation: All special medical codes must be type 3
+  if (SPECIAL_MEDICAL_CODES_SET.has(code) && type !== "3") {
+    remarks.push(`Code ${code} must have Type 3, but found Type ${type || '(missing)'}.`);
+  }
+  
+  // Type 5 code format check
+  if (type === "5") {
+    if (!isValidType5Code(code)) {
+      remarks.push(`Type 5 activity with invalid or missing Code: "${code}".`);
+    }
+  }
+  
+  return remarks;
+}
+
 // Utility functions: normalization, region/teeth lookup, and code/meta mapping
 function normalizeToothCode(code) {
   return code?.toString().trim().toUpperCase() || '';
@@ -262,6 +295,10 @@ function validateKnownCode({
   let regionKey = null;
   const remarks = [];
 
+  // Validate activity type
+  const typeRemarks = validateActivityType(code, type);
+  remarks.push(...typeRemarks);
+
   // PATCH: If all obsCodes are Drug Patient Share or PDF, mark valid and skip remarks
   const allDrugShareOrPDF = obsCodes.length > 0 && obsCodes.every(isDrugPatientShareOrPDF);
   if (allDrugShareOrPDF) {
@@ -276,7 +313,7 @@ function validateKnownCode({
           ? 'Drug Patient Share (valid - no validation)'
           : 'PDF (valid - no validation)'
       ).join('<br>'),
-      remarks: []
+      remarks: typeRemarks  // Include type validation remarks even for Drug/PDF
     });
   }
 
@@ -346,6 +383,10 @@ function validateUnknownCode({
 
   let regionKey = null;
 
+  // Validate activity type
+  const typeRemarks = validateActivityType(code, type);
+  remarks.push(...typeRemarks);
+
   // PATCH: If all obsCodes are Drug Patient Share or PDF, mark valid and skip remarks
   const allDrugShareOrPDF = obsCodes.length > 0 && obsCodes.every(isDrugPatientShareOrPDF);
   if (allDrugShareOrPDF) {
@@ -360,7 +401,7 @@ function validateUnknownCode({
       code,
       description,
       details,
-      remarks: []
+      remarks: typeRemarks  // Include type validation remarks even for Drug/PDF
     });
   }
 
@@ -452,6 +493,8 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions) {
 
       // --- ADDED: Check for code === "0000"
       if (code === "00000") {
+        const typeRemarks = validateActivityType(code, typeValue);
+        const allRemarks = ['Code "00000" is invalid. Please ask IT to delete this activity or set it to "In Progress".', ...typeRemarks];
         const row = buildActivityRow({
           claimId,
           activityId,
@@ -459,7 +502,7 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions) {
           code,
           description: '(invalid placeholder code)',
           details: 'N/A',
-          remarks: ['Code "00000" is invalid. Please ask IT to delete this activity or set it to "In Progress".']
+          remarks: allRemarks
         });
         claimHasInvalid = true;
         rows.push(row);
@@ -468,6 +511,8 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions) {
       
       // --- ADDED: Check for invalid code length ---
       if (code.length !== 5 && !code.includes(`-`)) {
+        const typeRemarks = validateActivityType(code, typeValue);
+        const allRemarks = [`Code "${code}" is invalid: it must have exactly 5 characters.`, ...typeRemarks];
         const row = buildActivityRow({
           claimId,
           activityId,
@@ -475,7 +520,7 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions) {
           code,
           description: '(invalid code length)',
           details: 'N/A',
-          remarks: [`Code "${code}" is invalid: it must have exactly 5 characters.`]
+          remarks: allRemarks
         });
         claimHasInvalid = true;
         rows.push(row);

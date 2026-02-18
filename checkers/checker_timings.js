@@ -94,15 +94,6 @@ function parseXML(xmlString) {
   return doc;
 }
 
-// --- Type 5 Code Format Checker ---
-function isValidType5Code(code) {
-  const parts = code.split("-");
-  return (parts.length === 4 && parts[0].length === 3 && parts[1].length === 4 && parts[2].length === 5 && parts[3].length === 2);
-}
-
-// --- Special Medical Codes (must be Type 3) ---
-const SPECIAL_MEDICAL_CODES = new Set(["17999", "96999", "0232T", "J3490", "81479", "41899"]);
-
 // --- Claims Extraction/Validation ---
 function extractClaims(xmlDoc, requiredType = "6") {
   const results = [];
@@ -126,39 +117,9 @@ function extractClaims(xmlDoc, requiredType = "6") {
       const codeValue = activity.querySelector('Code')?.textContent?.trim() || '';
       let isValid = baseValid, remarks = [...baseRemarks];
       
-      // Special validation: A4639 must always be type 4
-      if (codeValue === "A4639" && typeValue !== "4") {
-        isValid = false;
-        remarks.push(`Code A4639 must have Type 4, but found Type ${typeValue || '(missing)'}.`);
-      }
+      // Type validation has been moved to the teeths checker
+      // This checker now only validates timing-related aspects
       
-      // Special validation: All special medical codes must be type 3
-      if (SPECIAL_MEDICAL_CODES.has(codeValue) && typeValue !== "3") {
-        isValid = false;
-        remarks.push(`Code ${codeValue} must have Type 3, but found Type ${typeValue || '(missing)'}.`);
-      }
-      
-      // Type 5 code format check
-      if (typeValue === "5") {
-        if (!isValidType5Code(codeValue)) {
-          isValid = false;
-          remarks.push(`Type 5 activity with invalid or missing Code: "${codeValue}".`);
-        }
-      }
-      // Type 4 special codes: A4639 only
-      else if (typeValue === "4") {
-        if (codeValue === "A4639") {
-          // valid, do not push type error!
-        } else if (typeValue !== requiredType) {
-          isValid = false;
-          remarks.push(`Invalid Type: expected ${requiredType} but found ${typeValue || '(missing)'}.`);
-        }
-      }
-      // Normal type check for all other types
-      else if (typeValue !== requiredType) {
-        isValid = false;
-        remarks.push(`Invalid Type: expected ${requiredType} but found ${typeValue || '(missing)'}.`);
-      }
       if (!activityStartStr) {
         remarks.push('Missing Activity Start');
         results.push({
