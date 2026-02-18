@@ -63,6 +63,7 @@ const SPECIAL_MEDICAL_CODES = [
 const SPECIAL_MEDICAL_CODES_SET = new Set(["17999", "96999", "0232T", "J3490", "81479", "41899"]);
 
 // Type 5 code format validator
+// Expected format: XXX-XXXX-XXXXX-XX (3-4-5-2 digits separated by hyphens)
 function isValidType5Code(code) {
   const parts = code.split("-");
   return (parts.length === 4 && parts[0].length === 3 && parts[1].length === 4 && parts[2].length === 5 && parts[3].length === 2);
