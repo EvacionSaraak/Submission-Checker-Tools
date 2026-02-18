@@ -437,7 +437,8 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
     const activities = claim.getElementsByTagName("Activity");
     
     // Define constants for activity validation (outside loop for performance)
-    const codesRequiringObservation = new Set(["17999", "96999"]);
+    // Note: Observation requirement validation for special medical codes (17999, 96999, etc.) 
+    // is handled by the tooth checker with more detailed validation
     const specialMedicalCodes = new Set(["17999", "96999", "0232T", "J3490", "81479", "41899"]);
     
     // Collect invalid quantity errors for consolidation
@@ -458,14 +459,6 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
       }
       
       Array.from(act.getElementsByTagName("Observation")).forEach((obs,j) => ["Type","Code"].forEach(tag => invalidIfNull(tag, obs, `${prefix}Observation[${j}].`)));
-      
-      // Check if certain codes require observations
-      if (code && codesRequiringObservation.has(code)) {
-        const observations = act.getElementsByTagName("Observation");
-        if (!observations.length) {
-          invalidFields.push(`Activity Code ${code} requires at least one Observation`);
-        }
-      }
       
       // Check if special medical codes have valid observation type and valuetype (only Text is valid)
       if (code && specialMedicalCodes.has(code)) {
