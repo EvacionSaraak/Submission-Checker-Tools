@@ -70,8 +70,11 @@ async function onFileChange(event) {
     const xmlText = await file.text();
     validateXMLString(xmlText);
     const xmlDoc = parseXML(xmlText);
-    const selectedType = document.querySelector('input[name="claimTypeGlobal"]:checked')?.value || "DENTAL";
-    const requiredType = (selectedType === "DENTAL") ? "3" : "6";
+    // Use claimType for standalone, claimTypeGlobal for unified
+    const selectedType = document.querySelector('input[name="claimType"]:checked')?.value || 
+                         document.querySelector('input[name="claimTypeGlobal"]:checked')?.value || 
+                         "DENTAL";
+    const requiredType = (selectedType === "DENTAL") ? "6" : "3";
     const claims = extractClaims(xmlDoc, requiredType);
     renderResults(document.getElementById('results'), claims);
   } catch (err) {
@@ -480,6 +483,12 @@ function formatDateTimeCell(datetimeStr) {
 
     // Expose function globally for unified checker
     window.validateTimingsAsync = validateTimingsAsync;
+
+    // Initialize standalone mode if xmlFileInput exists
+    const xmlFileInput = document.getElementById('xmlFileInput');
+    if (xmlFileInput) {
+      xmlFileInput.addEventListener('change', onFileChange);
+    }
 
   } catch (error) {
     console.error('[CHECKER-ERROR] Failed to load checker:', error);
