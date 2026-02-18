@@ -97,6 +97,9 @@ function isValidType5Code(code) {
   return (parts.length === 4 && parts[0].length === 3 && parts[1].length === 4 && parts[2].length === 5 && parts[3].length === 2);
 }
 
+// --- Special Medical Codes (must be Type 3) ---
+const SPECIAL_MEDICAL_CODES = new Set(["17999", "96999", "0232T", "J3490", "81479", "41899"]);
+
 // --- Claims Extraction/Validation ---
 function extractClaims(xmlDoc, requiredType = "6") {
   const results = [];
@@ -126,10 +129,10 @@ function extractClaims(xmlDoc, requiredType = "6") {
         remarks.push(`Code A4639 must have Type 4, but found Type ${typeValue || '(missing)'}.`);
       }
       
-      // Special validation: 41899 must always be type 3
-      if (codeValue === "41899" && typeValue !== "3") {
+      // Special validation: All special medical codes must be type 3
+      if (SPECIAL_MEDICAL_CODES.has(codeValue) && typeValue !== "3") {
         isValid = false;
-        remarks.push(`Code 41899 must have Type 3, but found Type ${typeValue || '(missing)'}.`);
+        remarks.push(`Code ${codeValue} must have Type 3, but found Type ${typeValue || '(missing)'}.`);
       }
       
       // Type 5 code format check
@@ -139,9 +142,9 @@ function extractClaims(xmlDoc, requiredType = "6") {
           remarks.push(`Type 5 activity with invalid or missing Code: "${codeValue}".`);
         }
       }
-      // Type 4 special codes: J3490 and A4639
+      // Type 4 special codes: A4639 only
       else if (typeValue === "4") {
-        if (codeValue === "J3490" || codeValue === "A4639") {
+        if (codeValue === "A4639") {
           // valid, do not push type error!
         } else if (typeValue !== requiredType) {
           isValid = false;
