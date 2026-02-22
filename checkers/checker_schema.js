@@ -390,10 +390,12 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
     }
 
     // EmiratesIDNumber checks (improved messages)
+    let hasMedicalTourismEID = false; // Track if EID matches medical tourism format
     if (present("EmiratesIDNumber")) {
       const eid = text("EmiratesIDNumber"), p = eid.split("-");
       const eidDigits = eid.replace(/-/g, "");
       const isMedicalTourism = /^[129]+$/.test(eidDigits);
+      hasMedicalTourismEID = isMedicalTourism;
       const isNationalWithoutEID = /^0+$/.test(eidDigits);
       
       if (p.length !== 4) invalidFields.push(`EmiratesIDNumber '${eid}' (must have 4 parts separated by dashes)`);
@@ -482,6 +484,31 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
         });
       }
     });
+    
+    // NEW CHECK: Medical Tourism observation vs EID validation
+    // If any observation contains "MEDICALTOURISM" but EID doesn't match medical tourism format, flag it
+    if (!hasMedicalTourismEID && present("EmiratesIDNumber")) {
+      let hasMedicalTourismObservation = false;
+      
+      Array.from(activities).forEach((act) => {
+        const observations = act.getElementsByTagName("Observation");
+        Array.from(observations).forEach((obs) => {
+          // Check Description, Code, and Value fields for "MEDICALTOURISM" text
+          const obsDescription = text("Description", obs) || "";
+          const obsCode = text("Code", obs) || "";
+          const obsValue = text("Value", obs) || "";
+          
+          const observationText = (obsDescription + obsCode + obsValue).toUpperCase();
+          if (observationText.includes("MEDICALTOURISM")) {
+            hasMedicalTourismObservation = true;
+          }
+        });
+      });
+      
+      if (hasMedicalTourismObservation) {
+        invalidFields.push("Kindly clarify if PT is Medical Tourism as EID does not reflect this.");
+      }
+    }
     
     // Generate consolidated invalid quantity error messages
     for (const [quantity, codes] of invalidQuantityErrors) {
