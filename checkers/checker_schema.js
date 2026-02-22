@@ -341,6 +341,7 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
 
   for (const claim of claims) {
     let missingFields = [], invalidFields = [], remarks = [];
+    let isUnknown = false; // Track unknown status (e.g., medical tourism)
 
     const present = (tag, parent = claim) => parent.getElementsByTagName(tag).length > 0;
     const text = (tag, parent = claim) => {
@@ -404,8 +405,12 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
         if (!/^\d{1}$/.test(p[3])) invalidFields.push(`EmiratesIDNumber '${eid}' (fourth part must be 1 digit)`);
       }
       
-      if (isMedicalTourism) invalidFields.push("EmiratesIDNumber (Medical Tourism: all digits 1/2/9)");
-      else if (isNationalWithoutEID) remarks.push("EmiratesIDNumber (National without EID: all digits 0)");
+      if (isMedicalTourism) {
+        remarks.push("EmiratesIDNumber (Medical Tourism: all digits 1/2/9)");
+        isUnknown = true; // Mark as unknown status
+      } else if (isNationalWithoutEID) {
+        remarks.push("EmiratesIDNumber (National without EID: all digits 0)");
+      }
     }
 
     // Encounter
@@ -526,6 +531,7 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
     results.push({
       ClaimID: text("ID") || "Unknown",
       Valid: !missingFields.length && !invalidFields.length,
+      Unknown: isUnknown, // Track unknown status for styling
       Remark: remarks.join("\n"),
       ClaimXML: claim.outerHTML,
       SchemaType: "claim"
@@ -540,6 +546,7 @@ function validatePersonSchema(xmlDoc, originalXmlContent = "") {
   const persons = xmlDoc.getElementsByTagName("Person");
   for (const person of persons) {
     let missingFields = [], invalidFields = [], remarks = [];
+    let isUnknown = false; // Track unknown status (e.g., medical tourism)
 
     const present = (tag, parent = person) => parent.getElementsByTagName(tag).length > 0;
     const text = (tag, parent = person) => {
@@ -595,8 +602,12 @@ function validatePersonSchema(xmlDoc, originalXmlContent = "") {
         if (!/^\d{1}$/.test(p[3])) invalidFields.push(`EmiratesIDNumber '${eid}' (fourth part must be 1 digit)`);
       }
       
-      if (isMedicalTourism) invalidFields.push("EmiratesIDNumber (Medical Tourism: all digits 1/2/9)");
-      else if (isNationalWithoutEID) remarks.push("EmiratesIDNumber (National without EID: all digits 0)");
+      if (isMedicalTourism) {
+        remarks.push("EmiratesIDNumber (Medical Tourism: all digits 1/2/9)");
+        isUnknown = true; // Mark as unknown status
+      } else if (isNationalWithoutEID) {
+        remarks.push("EmiratesIDNumber (National without EID: all digits 0)");
+      }
     }
 
     // Member.ID check
@@ -624,6 +635,7 @@ function validatePersonSchema(xmlDoc, originalXmlContent = "") {
     results.push({
       ClaimID: memberID,
       Valid: !missingFields.length && !invalidFields.length,
+      Unknown: isUnknown, // Track unknown status for styling
       Remark: remarks.join("\n"),
       ClaimXML: person.outerHTML,
       SchemaType: "person"
@@ -717,7 +729,8 @@ function renderResults(results, schemaType) {
     <tbody>
       ${safeResults.map((row, index) => {
         // Use Bootstrap classes for consistent row coloring
-        const rowClass = row.Valid ? 'table-success' : 'table-danger';
+        // Unknown (medical tourism) = yellow, Invalid = red, Valid = green
+        const rowClass = row.Unknown ? 'table-warning' : (row.Valid ? 'table-success' : 'table-danger');
         return `
           <tr class="${rowClass}">
             <td style="padding:6px;border:1px solid #ccc">${sanitizeForHTML(row.ClaimID)}</td>
