@@ -490,9 +490,10 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
     if (!hasMedicalTourismEID && present("EmiratesIDNumber")) {
       let hasMedicalTourismObservation = false;
       
-      Array.from(activities).forEach((act) => {
+      // Use labeled loops for early exit when medical tourism observation is found
+      activityLoop: for (const act of activities) {
         const observations = act.getElementsByTagName("Observation");
-        Array.from(observations).forEach((obs) => {
+        for (const obs of observations) {
           // Check Description, Code, and Value fields for "MEDICALTOURISM" text
           const obsDescription = text("Description", obs) || "";
           const obsCode = text("Code", obs) || "";
@@ -501,12 +502,13 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
           const observationText = (obsDescription + obsCode + obsValue).toUpperCase();
           if (observationText.includes("MEDICALTOURISM")) {
             hasMedicalTourismObservation = true;
+            break activityLoop; // Exit both loops once found
           }
-        });
-      });
+        }
+      }
       
       if (hasMedicalTourismObservation) {
-        invalidFields.push("Kindly clarify if PT is Medical Tourism as EID does not reflect this.");
+        invalidFields.push("Kindly clarify if patient is Medical Tourism as EID does not reflect this.");
       }
     }
     
