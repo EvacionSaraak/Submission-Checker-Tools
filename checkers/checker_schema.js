@@ -404,7 +404,7 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
         if (!/^\d{1}$/.test(p[3])) invalidFields.push(`EmiratesIDNumber '${eid}' (fourth part must be 1 digit)`);
       }
       
-      if (isMedicalTourism) remarks.push("EmiratesIDNumber (Medical Tourism: all digits 1/2/9)");
+      if (isMedicalTourism) invalidFields.push("EmiratesIDNumber (Medical Tourism: all digits 1/2/9)");
       else if (isNationalWithoutEID) remarks.push("EmiratesIDNumber (National without EID: all digits 0)");
     }
 
@@ -595,7 +595,7 @@ function validatePersonSchema(xmlDoc, originalXmlContent = "") {
         if (!/^\d{1}$/.test(p[3])) invalidFields.push(`EmiratesIDNumber '${eid}' (fourth part must be 1 digit)`);
       }
       
-      if (isMedicalTourism) remarks.push("EmiratesIDNumber (Medical Tourism: all digits 1/2/9)");
+      if (isMedicalTourism) invalidFields.push("EmiratesIDNumber (Medical Tourism: all digits 1/2/9)");
       else if (isNationalWithoutEID) remarks.push("EmiratesIDNumber (National without EID: all digits 0)");
     }
 
