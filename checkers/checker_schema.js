@@ -341,6 +341,7 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
 
   for (const claim of claims) {
     let missingFields = [], invalidFields = [], remarks = [];
+    let isUnknown = false; // Track unknown status (e.g., medical tourism)
 
     const present = (tag, parent = claim) => parent.getElementsByTagName(tag).length > 0;
     const text = (tag, parent = claim) => {
@@ -389,10 +390,12 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
     }
 
     // EmiratesIDNumber checks (improved messages)
+    let hasMedicalTourismEID = false; // Track if EID matches medical tourism format
     if (present("EmiratesIDNumber")) {
       const eid = text("EmiratesIDNumber"), p = eid.split("-");
       const eidDigits = eid.replace(/-/g, "");
       const isMedicalTourism = /^[129]+$/.test(eidDigits);
+      hasMedicalTourismEID = isMedicalTourism;
       const isNationalWithoutEID = /^0+$/.test(eidDigits);
       
       if (p.length !== 4) invalidFields.push(`EmiratesIDNumber '${eid}' (must have 4 parts separated by dashes)`);
@@ -404,8 +407,12 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
         if (!/^\d{1}$/.test(p[3])) invalidFields.push(`EmiratesIDNumber '${eid}' (fourth part must be 1 digit)`);
       }
       
-      if (isMedicalTourism) remarks.push("EmiratesIDNumber (Medical Tourism: all digits 1/2/9)");
-      else if (isNationalWithoutEID) remarks.push("EmiratesIDNumber (National without EID: all digits 0)");
+      if (isMedicalTourism) {
+        remarks.push("EmiratesIDNumber (Medical Tourism: all digits 1/2/9)");
+        isUnknown = true; // Mark as unknown status
+      } else if (isNationalWithoutEID) {
+        remarks.push("EmiratesIDNumber (National without EID: all digits 0)");
+      }
     }
 
     // Encounter
@@ -437,8 +444,9 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
     const activities = claim.getElementsByTagName("Activity");
     
     // Define constants for activity validation (outside loop for performance)
-    const codesRequiringObservation = new Set(["17999", "96999"]);
-    const specialMedicalCodes = new Set(["17999", "96999", "0232T", "J3490", "81479"]);
+    // Note: Observation requirement validation for special medical codes (17999, 96999, etc.) 
+    // is handled by the tooth checker with more detailed validation
+    const specialMedicalCodes = new Set(["17999", "96999", "0232T", "J3490", "81479", "41899"]);
     
     // Collect invalid quantity errors for consolidation
     /** @type {Map<string, string[]>} */
@@ -459,14 +467,6 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
       
       Array.from(act.getElementsByTagName("Observation")).forEach((obs,j) => ["Type","Code"].forEach(tag => invalidIfNull(tag, obs, `${prefix}Observation[${j}].`)));
       
-      // Check if certain codes require observations
-      if (code && codesRequiringObservation.has(code)) {
-        const observations = act.getElementsByTagName("Observation");
-        if (!observations.length) {
-          invalidFields.push(`Activity Code ${code} requires at least one Observation`);
-        }
-      }
-      
       // Check if special medical codes have valid observation type and valuetype (only Text is valid)
       if (code && specialMedicalCodes.has(code)) {
         const observations = act.getElementsByTagName("Observation");
@@ -484,6 +484,33 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
         });
       }
     });
+    
+    // NEW CHECK: Medical Tourism observation vs EID validation
+    // If any observation contains "MEDICALTOURISM" but EID doesn't match medical tourism format, flag it
+    if (!hasMedicalTourismEID && present("EmiratesIDNumber")) {
+      let hasMedicalTourismObservation = false;
+      
+      // Use labeled loops for early exit when medical tourism observation is found
+      activityLoop: for (const act of activities) {
+        const observations = act.getElementsByTagName("Observation");
+        for (const obs of observations) {
+          // Check Description, Code, and Value fields for "MEDICALTOURISM" text
+          const obsDescription = text("Description", obs) || "";
+          const obsCode = text("Code", obs) || "";
+          const obsValue = text("Value", obs) || "";
+          
+          const observationText = (obsDescription + obsCode + obsValue).toUpperCase();
+          if (observationText.includes("MEDICALTOURISM")) {
+            hasMedicalTourismObservation = true;
+            break activityLoop; // Exit both loops once found
+          }
+        }
+      }
+      
+      if (hasMedicalTourismObservation) {
+        invalidFields.push("Kindly clarify if patient is Medical Tourism as EID does not reflect this.");
+      }
+    }
     
     // Generate consolidated invalid quantity error messages
     for (const [quantity, codes] of invalidQuantityErrors) {
@@ -533,6 +560,7 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
     results.push({
       ClaimID: text("ID") || "Unknown",
       Valid: !missingFields.length && !invalidFields.length,
+      Unknown: isUnknown, // Track unknown status for styling
       Remark: remarks.join("\n"),
       ClaimXML: claim.outerHTML,
       SchemaType: "claim"
@@ -547,6 +575,7 @@ function validatePersonSchema(xmlDoc, originalXmlContent = "") {
   const persons = xmlDoc.getElementsByTagName("Person");
   for (const person of persons) {
     let missingFields = [], invalidFields = [], remarks = [];
+    let isUnknown = false; // Track unknown status (e.g., medical tourism)
 
     const present = (tag, parent = person) => parent.getElementsByTagName(tag).length > 0;
     const text = (tag, parent = person) => {
@@ -602,8 +631,12 @@ function validatePersonSchema(xmlDoc, originalXmlContent = "") {
         if (!/^\d{1}$/.test(p[3])) invalidFields.push(`EmiratesIDNumber '${eid}' (fourth part must be 1 digit)`);
       }
       
-      if (isMedicalTourism) remarks.push("EmiratesIDNumber (Medical Tourism: all digits 1/2/9)");
-      else if (isNationalWithoutEID) remarks.push("EmiratesIDNumber (National without EID: all digits 0)");
+      if (isMedicalTourism) {
+        remarks.push("EmiratesIDNumber (Medical Tourism: all digits 1/2/9)");
+        isUnknown = true; // Mark as unknown status
+      } else if (isNationalWithoutEID) {
+        remarks.push("EmiratesIDNumber (National without EID: all digits 0)");
+      }
     }
 
     // Member.ID check
@@ -631,6 +664,7 @@ function validatePersonSchema(xmlDoc, originalXmlContent = "") {
     results.push({
       ClaimID: memberID,
       Valid: !missingFields.length && !invalidFields.length,
+      Unknown: isUnknown, // Track unknown status for styling
       Remark: remarks.join("\n"),
       ClaimXML: person.outerHTML,
       SchemaType: "person"
@@ -724,7 +758,8 @@ function renderResults(results, schemaType) {
     <tbody>
       ${safeResults.map((row, index) => {
         // Use Bootstrap classes for consistent row coloring
-        const rowClass = row.Valid ? 'table-success' : 'table-danger';
+        // Unknown (medical tourism) = yellow, Invalid = red, Valid = green
+        const rowClass = row.Unknown ? 'table-warning' : (row.Valid ? 'table-success' : 'table-danger');
         return `
           <tr class="${rowClass}">
             <td style="padding:6px;border:1px solid #ccc">${sanitizeForHTML(row.ClaimID)}</td>

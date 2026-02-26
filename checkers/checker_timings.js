@@ -70,8 +70,11 @@ async function onFileChange(event) {
     const xmlText = await file.text();
     validateXMLString(xmlText);
     const xmlDoc = parseXML(xmlText);
-    const selectedType = document.querySelector('input[name="claimTypeGlobal"]:checked')?.value || "DENTAL";
-    const requiredType = (selectedType === "DENTAL") ? "3" : "6";
+    // Use claimType for standalone, claimTypeGlobal for unified
+    const selectedType = document.querySelector('input[name="claimType"]:checked')?.value || 
+                         document.querySelector('input[name="claimTypeGlobal"]:checked')?.value || 
+                         "DENTAL";
+    const requiredType = (selectedType === "DENTAL") ? "6" : "3";
     const claims = extractClaims(xmlDoc, requiredType);
     renderResults(document.getElementById('results'), claims);
   } catch (err) {
@@ -89,12 +92,6 @@ function parseXML(xmlString) {
   const doc = new DOMParser().parseFromString(xmlContent, 'application/xml');
   if (doc.querySelector('parsererror')) throw new Error('Invalid XML format.');
   return doc;
-}
-
-// --- Type 5 Code Format Checker ---
-function isValidType5Code(code) {
-  const parts = code.split("-");
-  return (parts.length === 4 && parts[0].length === 3 && parts[1].length === 4 && parts[2].length === 5 && parts[3].length === 2);
 }
 
 // --- Claims Extraction/Validation ---
@@ -120,33 +117,9 @@ function extractClaims(xmlDoc, requiredType = "6") {
       const codeValue = activity.querySelector('Code')?.textContent?.trim() || '';
       let isValid = baseValid, remarks = [...baseRemarks];
       
-      // Special validation: A4639 must always be type 4
-      if (codeValue === "A4639" && typeValue !== "4") {
-        isValid = false;
-        remarks.push(`Code A4639 must have Type 4, but found Type ${typeValue || '(missing)'}.`);
-      }
+      // Type validation has been moved to the teeths checker
+      // This checker now only validates timing-related aspects
       
-      // Type 5 code format check
-      if (typeValue === "5") {
-        if (!isValidType5Code(codeValue)) {
-          isValid = false;
-          remarks.push(`Type 5 activity with invalid or missing Code: "${codeValue}".`);
-        }
-      }
-      // Type 4 special codes: J3490 and A4639
-      else if (typeValue === "4") {
-        if (codeValue === "J3490" || codeValue === "A4639") {
-          // valid, do not push type error!
-        } else if (typeValue !== requiredType) {
-          isValid = false;
-          remarks.push(`Invalid Type: expected ${requiredType} but found ${typeValue || '(missing)'}.`);
-        }
-      }
-      // Normal type check for all other types
-      else if (typeValue !== requiredType) {
-        isValid = false;
-        remarks.push(`Invalid Type: expected ${requiredType} but found ${typeValue || '(missing)'}.`);
-      }
       if (!activityStartStr) {
         remarks.push('Missing Activity Start');
         results.push({
@@ -471,6 +444,12 @@ function formatDateTimeCell(datetimeStr) {
 
     // Expose function globally for unified checker
     window.validateTimingsAsync = validateTimingsAsync;
+
+    // Initialize standalone mode if xmlFileInput exists
+    const xmlFileInput = document.getElementById('xmlFileInput');
+    if (xmlFileInput) {
+      xmlFileInput.addEventListener('change', onFileChange);
+    }
 
   } catch (error) {
     console.error('[CHECKER-ERROR] Failed to load checker:', error);
