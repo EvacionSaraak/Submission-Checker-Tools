@@ -306,7 +306,7 @@
       timings: ['xml'],
       teeth: ['xml'],
       schema: ['xml'],
-      pricing: ['xml', 'pricing'],
+      pricing: ['xml'],
       modifiers: ['xml', 'eligibility']
     };
 
