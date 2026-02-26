@@ -258,8 +258,8 @@ function buildResultsTable(rows) {
     // Map status to Bootstrap classes
     const cls = status === 'ok' || status === 'valid' ? 'table-success' : 'table-danger';
     const showClaim = r.ClaimID !== prevClaimId;
-    html += `<tr class="${cls}">
-      <td style="padding:6px;border:1px solid #ccc">${showClaim ? escapeHtml(r.ClaimID) : ''}</td>
+    html += `<tr class="${cls}" data-claim-id="${escapeHtml(r.ClaimID || '')}">
+      <td style="padding:6px;border:1px solid #ccc" class="claim-id-cell">${showClaim ? escapeHtml(r.ClaimID) : ''}</td>
       <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.ActivityID)}</td>
       <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.CPT)}</td>
       <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.ClaimedNet)}</td>
