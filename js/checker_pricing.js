@@ -36,12 +36,27 @@ async function handleRun() {
 
     showProgress(5, 'Reading files');
 
-    const [xmlText, xlsxObj] = await Promise.all([readFileText(xmlFile), readXlsx(xlsxFile)]);
+    const [xmlText, xlsxObj, clinicianData, endoPricingRaw] = await Promise.all([
+      readFileText(xmlFile),
+      readXlsx(xlsxFile),
+      fetch('../json/clinician_licenses.json').then(r => r.json()).catch(() => []),
+      fetch('../json/endo_pricing.json').then(r => r.json()).catch(() => [])
+    ]);
     showProgress(25, 'Parsing XML & XLSX');
 
     const xmlDoc = parseXml(xmlText);
     const extracted = extractPricingRecords(xmlDoc);
     const matcher = buildPricingMatcher(xlsxObj.rows);
+
+    const clinicianSpecialtyMap = new Map();
+    (Array.isArray(clinicianData) ? clinicianData : []).forEach(e => {
+      const lic = String(e['Phy Lic'] || '').trim();
+      if (lic) clinicianSpecialtyMap.set(lic, String(e['Specialty'] || '').trim());
+    });
+    const endoPricingMap = new Map();
+    (Array.isArray(endoPricingRaw) ? endoPricingRaw : []).forEach(e => {
+      if (e.code) endoPricingMap.set(normalizeCode(e.code), e);
+    });
 
     showProgress(50, 'Comparing records');
 
@@ -57,16 +72,25 @@ async function handleRun() {
       refPrice = (facility === 'MF5357' || facility === 'MF7231' || facility === 'MF232') ?
         match._secondaryPrice : match._primaryPrice;
     }
-    const ref = Number(refPrice || 0);
+
+    // Override with endo pricing for applicable codes
+    const endoEntry = endoPricingMap.get(normalizeCode(rec.CPT));
+    if (endoEntry) {
+      const isEndo = clinicianSpecialtyMap.get(rec.ClinicianLic || '') === 'Endodontics';
+      refPrice = isEndo ? endoEntry.endo_price : endoEntry.gp_price;
+    }
+
+    const ref = Number(refPrice ?? NaN);
   
     // Claimed net 0 -> Unknown
     if (xmlNet === 0) status = 'Unknown', remarks.push('Claimed Net is 0 (treated as Unknown)');
     else {
       if (xmlQty <= 0) remarks.push(xmlQty === 0 ? 'Quantity is 0 (invalid)' : 'Quantity is less than 0 (invalid)');
-      if (!match) remarks.push('No pricing match found');
-      if (match && Number.isNaN(ref)) remarks.push('Reference Net Price is not a number');
+      if (!match && !endoEntry) remarks.push('No pricing match found');
+      if (endoEntry && refPrice === null) remarks.push(`Code ${rec.CPT} is not available for GP clinicians`);
+      if ((match || endoEntry) && refPrice !== null && Number.isNaN(ref)) remarks.push('Reference Net Price is not a number');
   
-      if (match && !Number.isNaN(ref) && xmlQty > 0) {
+      if ((match || endoEntry) && refPrice !== null && !Number.isNaN(ref) && xmlQty > 0) {
         if (xmlNet === ref) status = 'Valid';
         else if ((xmlNet / xmlQty) === ref) status = 'Valid';
         else remarks.push(`Claimed Net ${xmlNet} does not match Reference ${ref}`);
@@ -154,7 +178,8 @@ function extractPricingRecords(xmlDoc) {
       const cpt = firstNonEmpty([ textValue(act,'ActivityCode'), textValue(act,'CPTCode'), textValue(act,'Code') ]).trim();
       const net = firstNonEmpty([ textValue(act,'Net'), textValue(act,'GrossAmount'), textValue(act,'Price') ]).trim();
       const qty = firstNonEmpty([ textValue(act,'Quantity'), textValue(act,'Qty') ]).trim() || '0';
-      records.push({ ClaimID: claimId, ActivityID: activityId, CPT: cpt, Net: net, Quantity: qty, FacilityID: facilityId });
+      const clinicianLic = firstNonEmpty([textValue(act, 'OrderingClinician'), textValue(act, 'Clinician')]).trim();
+      records.push({ ClaimID: claimId, ActivityID: activityId, CPT: cpt, Net: net, Quantity: qty, FacilityID: facilityId, ClinicianLic: clinicianLic });
     }
   }
   return records;
