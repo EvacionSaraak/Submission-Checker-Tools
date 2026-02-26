@@ -1,0 +1,10 @@
+[
+  { "code": "33111", "gp_price": 385.00, "endo_price": 481.00 },
+  { "code": "33121", "gp_price": 564.00, "endo_price": 705.00 },
+  { "code": "33131", "gp_price": 764.00, "endo_price": 955.00 },
+  { "code": "33141", "gp_price": 875.00, "endo_price": 1093.00 },
+  { "code": "33115", "gp_price": null, "endo_price": 568.75 },
+  { "code": "33125", "gp_price": null, "endo_price": 818.00 },
+  { "code": "33135", "gp_price": null, "endo_price": 1155.00 },
+  { "code": "33145", "gp_price": null, "endo_price": 1225.00 }
+]

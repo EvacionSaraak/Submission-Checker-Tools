@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Checker Modifiers</title>
+  <link rel="stylesheet" href="../css/tables.css" />
+</head>
+<body>
+
+  <h2>Checker Modifiers</h2>
+
+  <p class="hint">
+    Load one XML file and one Eligibility XLSX. The script looks for &lt;Observation&gt; entries where
+    &lt;Code&gt; is <code>CPT modifier</code> and &lt;Value&gt; is <code>24</code> or <code>52</code>,
+    then matches by Member (Card Number), Ordered On (date) and Clinician to the spreadsheet. This tool will only display claims from Thiqa/DAMAN with cpt modifiers.
+  </p>
+
+  <div id="modifiers-panel">
+    <div class="form-row">
+      <label for="xml-file">Upload XML file</label>
+      <input type="file" id="xml-file" accept=".xml" />
+    </div>
+
+    <div class="form-row">
+      <label for="xlsx-file">Upload Eligibility XLSX</label>
+      <input type="file" id="xlsx-file" accept=".xlsx" />
+    </div>
+  </div>
+
+  <div class="form-row">
+    <button id="run-button">Run Check</button>
+    <button id="download-button" disabled>Download Results</button>
+  </div>
+
+  <div class="form-row">
+    <div id="progress-bar-container" class="progress-bar-container">
+      <div id="progress-bar" class="progress-bar"></div>
+      <div id="progress-text" class="progress-text">0%</div>
+    </div>
+  </div>
+
+  <div id="messageBox" class="message-box" aria-live="polite"></div>
+  <div id="outputTableContainer" class="results-container"></div>
+
+  <!-- SheetJS (required) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
+
+  <!-- Main script -->
+  <script src="../js/checker_modifiers.js" defer></script>
+  <script src="../js/table_clipboard.js"></script>
+</body>
+</html>

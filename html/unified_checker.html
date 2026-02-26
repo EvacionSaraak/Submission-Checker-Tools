@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Unified Checker</title>
+  
+  <!-- Bootstrap 5 CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" />
+  
+  <!-- Unified Styles - Consolidates tables.css and unified_checker.css -->
+  <link rel="stylesheet" href="../css/unified_styles.css" />
+  
+  <!-- XLSX Library -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  
+  <!-- Common Utilities -->
+  <script src="../js/common_table_renderer.js"></script>
+  <script src="../js/file_cache.js"></script>
+  
+  <style>
+    .version-badge {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      background: #2c3e50;
+      color: white;
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 14px;
+      font-weight: 600;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      z-index: 9999;
+    }
+    .session-count {
+      color: #3498db;
+      margin-left: 10px;
+    }
+    
+    /* Loading Overlay Styles */
+    .loading-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(255, 255, 255, 0.95);
+      display: none;
+      justify-content: center;
+      align-items: center;
+      z-index: 10000;
+      backdrop-filter: blur(3px);
+    }
+    
+    .loading-overlay.active {
+      display: flex;
+    }
+    
+    .loading-content {
+      text-align: center;
+      padding: 40px;
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+      max-width: 500px;
+    }
+    
+    .loading-spinner {
+      width: 60px;
+      height: 60px;
+      border: 6px solid #e0e0e0;
+      border-top-color: #007bff;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 20px;
+    }
+    
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    
+    .loading-text {
+      font-size: 18px;
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 10px;
+    }
+    
+    .loading-subtext {
+      font-size: 14px;
+      color: #666;
+    }
+  </style>
+</head>
+<body>
+  <!-- Loading Overlay -->
+  <div class="loading-overlay" id="loadingOverlay">
+    <div class="loading-content">
+      <div class="loading-spinner"></div>
+      <div class="loading-text" id="loadingText">Processing...</div>
+      <div class="loading-subtext" id="loadingSubtext">Please wait while we check your data</div>
+    </div>
+  </div>
+  
+  <!-- Version Badge -->
+  <div class="version-badge">
+    <span>v1.0.0</span>
+    <span class="session-count" id="sessionCount"></span>
+  </div>
+  <div class="container-fluid py-4">
+    <h2 class="mb-4">Unified Checker Tool</h2>
+
+    <!-- File Inputs Section -->
+    <div class="card mb-4">
+      <div class="card-header bg-primary text-white">
+        <h5 class="mb-0">File Inputs</h5>
+      </div>
+      <div class="card-body">
+        <div class="row">
+          <div class="col-md-6">
+            <div class="file-input-group">
+              <label for="xmlFileInput" class="form-label">Claim (XML):</label>
+              <div class="input-group">
+                <input type="file" class="form-control" id="xmlFileInput" accept=".xml" />
+                <span class="input-group-text file-status" id="xmlStatus"></span>
+              </div>
+            </div>
+            
+            <div class="file-input-group">
+              <label for="eligibilityFileInput" class="form-label">Elig (XLSX):</label>
+              <div class="input-group">
+                <input type="file" class="form-control" id="eligibilityFileInput" accept=".xlsx" />
+                <span class="input-group-text file-status" id="eligibilityStatus"></span>
+              </div>
+            </div>
+            
+            <div class="file-input-group">
+              <label for="authFileInput" class="form-label">Auth (XLSX):</label>
+              <div class="input-group">
+                <input type="file" class="form-control" id="authFileInput" accept=".xlsx" />
+                <span class="input-group-text file-status" id="authStatus"></span>
+              </div>
+            </div>
+            
+            <div class="file-input-group">
+              <label class="form-label">Claim Type (for Timings checker):</label>
+              <div>
+                <div class="form-check form-check-inline">
+                  <input class="form-check-input" type="radio" name="claimTypeGlobal" id="claimTypeDental" value="DENTAL" checked>
+                  <label class="form-check-label" for="claimTypeDental">
+                    Dental
+                  </label>
+                </div>
+                <div class="form-check form-check-inline">
+                  <input class="form-check-input" type="radio" name="claimTypeGlobal" id="claimTypeMedical" value="MEDICAL">
+                  <label class="form-check-label" for="claimTypeMedical">
+                    Medical
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div class="col-md-6">
+            <div class="file-input-group">
+              <label for="pricingFileInput" class="form-label">Pricing (XLSX):</label>
+              <div class="input-group">
+                <input type="file" class="form-control" id="pricingFileInput" accept=".xlsx" />
+                <span class="input-group-text file-status" id="pricingStatus"></span>
+              </div>
+            </div>
+            
+            <div class="file-input-group">
+              <label for="clinicianFileInput" class="form-label">Clinician (XLSX):</label>
+              <div class="input-group">
+                <input type="file" class="form-control" id="clinicianFileInput" accept=".xlsx" />
+                <span class="input-group-text file-status" id="clinicianStatus"></span>
+              </div>
+            </div>
+            
+            <div class="file-input-group">
+              <label for="statusFileInput" class="form-label">License Status (XLSX):</label>
+              <div class="input-group">
+                <input type="file" class="form-control" id="statusFileInput" accept=".xlsx" />
+                <span class="input-group-text file-status" id="statusStatus"></span>
+              </div>
+            </div>
+            
+            <!-- Export Invalids Button (disabled by default, enabled after Check All finds invalids) -->
+            <div class="file-input-group mt-3">
+              <div class="d-flex align-items-center gap-2">
+                <button type="button" class="btn btn-success" id="exportInvalidsBtn" disabled title="Export all invalid entries from Check All results">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-file-earmark-spreadsheet" viewBox="0 0 16 16" style="margin-right: 8px;">
+                    <path d="M14 14V4.5L9.5 0H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2zM9.5 3A1.5 1.5 0 0 0 11 4.5h2V9H3V2a1 1 0 0 1 1-1h5.5v2zM3 12v-2h2v2H3zm0 1h2v2H4a1 1 0 0 1-1-1v-1zm3 2v-2h3v2H6zm4 0v-2h3v1a1 1 0 0 1-1 1h-2zm3-3h-3v-2h3v2zm-7 0v-2h3v2H6z"/>
+                  </svg>
+                  Export Invalids to Excel
+                </button>
+                <!-- Speech bubble tooltip (only visible when button is disabled) -->
+                <div id="exportInvalidsBubble" class="speech-bubble">
+                  <div class="speech-bubble-content" id="exportInvalidsBubbleText">
+                    No tables generated. Please run a checker first.
+                  </div>
+                  <div class="speech-bubble-arrow"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Run Checkers buttons at bottom of inputs card -->
+        <div class="mt-4 pt-3 border-top">
+          <div class="d-flex justify-content-between align-items-start mb-3">
+            <h6 class="mb-0">Run Checkers</h6>
+          </div>
+          <div class="btn-group checker-buttons" role="group" aria-label="Checker buttons">
+            <button type="button" class="btn btn-outline-primary" id="btn-clinician" title="Requires: XML, Clinician List, License Status" disabled>
+              Clinicians
+            </button>
+            <button type="button" class="btn btn-outline-primary" id="btn-elig" title="Requires: XML, Eligibility" disabled>
+              Eligibility
+            </button>
+            <button type="button" class="btn btn-outline-primary" id="btn-auths" title="Requires: XML, Authorization Export" disabled>
+              Authorizations
+            </button>
+            <button type="button" class="btn btn-outline-primary" id="btn-timings" title="Requires: XML" disabled>
+              Timings
+            </button>
+            <button type="button" class="btn btn-outline-primary" id="btn-teeth" title="Requires: XML" disabled>
+              Teeth
+            </button>
+            <button type="button" class="btn btn-outline-primary" id="btn-schema" title="Requires: XML" disabled>
+              Schema
+            </button>
+            <button type="button" class="btn btn-outline-primary" id="btn-pricing" title="Requires: XML, Pricing" disabled>
+              Pricing
+            </button>
+            <button type="button" class="btn btn-outline-primary" id="btn-modifiers" title="Requires: XML, Eligibility" disabled>
+              Modifiers
+            </button>
+            <button type="button" class="btn btn-warning" id="btn-check-all" title="Runs all available checkers" disabled>
+              Check All<span class="experimental-badge">EXP</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Status Message -->
+    <div id="uploadStatus" aria-live="polite"></div>
+
+    <!-- Debug Log Button (appears after Check All) -->
+    <div id="debugLogContainer" style="display:none; margin-top: 20px; margin-bottom: 20px;">
+      <button type="button" class="btn btn-secondary" id="downloadDebugLogBtn">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-file-text" viewBox="0 0 16 16" style="margin-right: 8px;">
+          <path d="M5 4a.5.5 0 0 0 0 1h6a.5.5 0 0 0 0-1H5zm-.5 2.5A.5.5 0 0 1 5 6h6a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5zM5 8a.5.5 0 0 0 0 1h6a.5.5 0 0 0 0-1H5zm0 2a.5.5 0 0 0 0 1h3a.5.5 0 0 0 0-1H5z"/>
+          <path d="M2 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2zm10-1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1z"/>
+        </svg>
+        Download Debug Log
+      </button>
+    </div>
+
+    <!-- Persistent Checker Containers (one per checker, all hidden by default) -->
+    <div id="checker-containers">
+      <div id="checker-container-clinician" class="checker-container" style="display:none;"></div>
+      <div id="checker-container-elig" class="checker-container" style="display:none;"></div>
+      <div id="checker-container-auths" class="checker-container" style="display:none;"></div>
+      <div id="checker-container-timings" class="checker-container" style="display:none;"></div>
+      <div id="checker-container-teeth" class="checker-container" style="display:none;"></div>
+      <div id="checker-container-schema" class="checker-container" style="display:none;"></div>
+      <div id="checker-container-pricing" class="checker-container" style="display:none;"></div>
+      <div id="checker-container-modifiers" class="checker-container" style="display:none;"></div>
+      <div id="checker-container-check-all" class="checker-container" style="display:none;"></div>
+    </div>
+  </div>
+
+  <!-- Floating Filter Button -->
+  <button type="button" class="btn btn-primary floating-filter-btn" id="floatingFilterBtn" title="Toggle Show Invalid Only">
+    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="bi bi-funnel" viewBox="0 0 16 16">
+      <path d="M1.5 1.5A.5.5 0 0 1 2 1h12a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-.128.334L10 8.692V13.5a.5.5 0 0 1-.342.474l-3 1A.5.5 0 0 1 6 14.5V8.692L1.628 3.834A.5.5 0 0 1 1.5 3.5v-2zm1 .5v1.308l4.372 4.858A.5.5 0 0 1 7 8.5v5.306l2-.666V8.5a.5.5 0 0 1 .128-.334L13.5 3.308V2h-11z"/>
+    </svg>
+    <span class="filter-label">Show Invalid Only</span>
+  </button>
+
+  <!-- Include required libraries -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="../js/table_clipboard.js"></script>
+  
+  <!-- Load all checker scripts upfront (they stay loaded) -->
+  <script src="../js/checker_clinician.js"></script>
+  <script src="../js/checker_elig.js"></script>
+  <script src="../js/checker_auths.js"></script>
+  <script src="../js/checker_timings.js"></script>
+  <script src="../js/checker_tooths.js"></script>
+  <script src="../js/checker_schema.js"></script>
+  <script src="../js/checker_pricing.js"></script>
+  <script src="../js/checker_modifiers.js"></script>
+  
+  <!-- Main unified controller (must load after checker scripts) -->
+  <script src="../js/unified_checker.js"></script>
+</body>
+</html>
