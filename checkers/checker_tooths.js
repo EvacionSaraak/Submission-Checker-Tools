@@ -492,8 +492,13 @@ function buildActivityRow({claimId, activityId, type, code, description, details
     code,
     description,
     details,
-    remarks
+    remarks,
+    warnings: []
   };
+}
+
+function getCombinedRemarks(row) {
+  return [...(row.remarks || []), ...(row.warnings || [])];
 }
 
 // Main activity validation and results rendering
@@ -579,7 +584,7 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions) {
       // Check Subcode observation requirement for root canal codes from 20-Feb-2026 onward
       if (afterCutoff && ROOT_CANAL_SUBCODE_CODES.has(code)) {
         if (!hasSubcodeObservation(obsList)) {
-          row.remarks.push(`Code ${code} requires a Subcode observation (Type: Text, Code: Subcode, Value: 01, ValueType: Text) for encounters from 20/02/2026 onward.`);
+          row.warnings.push(`Code ${code} is a root canal procedure — please verify the Ordering Clinician is an Endodontist. If so, a Subcode observation (Type: Text, Code: Subcode, Value: 01, ValueType: Text) is required.`);
         }
       }
 
@@ -619,7 +624,7 @@ function buildResultsTable(rows) {
   }
 
   let lastClaimId = null;
-  window.invalidRows = rows.filter(r => r.remarks && r.remarks.length > 0);
+  window.invalidRows = rows.filter(r => (r.remarks && r.remarks.length > 0) || (r.warnings && r.warnings.length > 0));
   const exportBtn = document.getElementById('exportBtn');
   if (exportBtn) exportBtn.style.display = window.invalidRows.length ? 'inline-block' : 'none';
 
@@ -651,7 +656,10 @@ function buildResultsTable(rows) {
       ${rows.map(r => {
         const showClaimId = r.claimId !== lastClaimId;
         lastClaimId = r.claimId;
-        const rowClass = r.remarks && r.remarks.length > 0 ? 'table-danger' : 'table-success';
+        const hasErrors = r.remarks && r.remarks.length > 0;
+        const hasWarnings = r.warnings && r.warnings.length > 0;
+        const rowClass = hasErrors ? 'table-danger' : (hasWarnings ? 'table-warning' : 'table-success');
+        const allRemarks = getCombinedRemarks(r);
         return `
           <tr class="${rowClass}" data-claim-id="${r.claimId || ''}">
             <td style="padding:6px;border:1px solid #ccc" class="claim-id-cell">${showClaimId ? r.claimId : ''}</td>
@@ -660,7 +668,7 @@ function buildResultsTable(rows) {
             <td style="padding:6px;border:1px solid #ccc">${r.code}</td>
             <td class="description-col" style="padding:6px;border:1px solid #ccc">${r.description}</td>
             <td style="padding:6px;border:1px solid #ccc">${r.details}</td>
-            <td class="description-col" style="padding:6px;border:1px solid #ccc">${r.remarks.join('<br>')}</td>
+            <td class="description-col" style="padding:6px;border:1px solid #ccc">${allRemarks.join('<br>')}</td>
           </tr>`;
       }).join('')}
     </tbody>`;
@@ -728,7 +736,7 @@ document.getElementById('exportBtn')?.addEventListener('click', () => {
       r.code,
       r.description,
       r.details.replace(/<br>/g, '\n'),
-      r.remarks.join('\n')
+      getCombinedRemarks(r).join('\n')
     ])
   ];
   const ws = XLSX.utils.aoa_to_sheet(wsData);
