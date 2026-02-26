@@ -83,11 +83,15 @@ async function handleRun() {
         match._secondaryPrice : match._primaryPrice;
     }
 
-    // Override with endo pricing for applicable codes
+    // Override with endo pricing for applicable codes (only for dates on or after Feb 20, 2026)
     const endoEntry = endoPricingMap.get(normalizeCode(rec.CPT));
     if (endoEntry) {
-      const isEndo = clinicianSpecialtyMap.get(rec.ClinicianLic || '') === 'Endodontics';
-      refPrice = isEndo ? endoEntry.endo_price : endoEntry.gp_price;
+      const encounterDate = parseEncounterDate(rec.EncounterDate);
+      const isAfterCutoff = encounterDate !== null && encounterDate >= ENDO_PRICING_CUTOFF;
+      if (isAfterCutoff) {
+        const isEndo = clinicianSpecialtyMap.get(rec.ClinicianLic || '') === 'Endodontics';
+        refPrice = isEndo ? endoEntry.endo_price : endoEntry.gp_price;
+      }
     }
 
     const ref = Number(refPrice ?? NaN);
@@ -187,18 +191,32 @@ function extractPricingRecords(xmlDoc) {
   for (const claim of claims) {
     const claimId = textValue(claim, 'ID') || '';
     const activities = Array.from(claim.getElementsByTagName('Activity'));
-    const facilityId = textValue(claim.getElementsByTagName('Encounter')[0], 'FacilityID') || '';
+    const encounterNode = claim.getElementsByTagName('Encounter')[0];
+    const facilityId = textValue(encounterNode, 'FacilityID') || '';
+    const encounterDateStr = textValue(encounterNode, 'Start') || textValue(encounterNode, 'Date') || textValue(encounterNode, 'EncounterDate') || '';
     for (const act of activities) {
       const activityId = textValue(act, 'ID') || '';
       const cpt = firstNonEmpty([ textValue(act,'ActivityCode'), textValue(act,'CPTCode'), textValue(act,'Code') ]).trim();
       const net = firstNonEmpty([ textValue(act,'Net'), textValue(act,'GrossAmount'), textValue(act,'Price') ]).trim();
       const qty = firstNonEmpty([ textValue(act,'Quantity'), textValue(act,'Qty') ]).trim() || '0';
       const clinicianLic = firstNonEmpty([textValue(act, 'OrderingClinician'), textValue(act, 'Clinician')]).trim();
-      records.push({ ClaimID: claimId, ActivityID: activityId, CPT: cpt, Net: net, Quantity: qty, FacilityID: facilityId, ClinicianLic: clinicianLic });
+      records.push({ ClaimID: claimId, ActivityID: activityId, CPT: cpt, Net: net, Quantity: qty, FacilityID: facilityId, ClinicianLic: clinicianLic, EncounterDate: encounterDateStr });
     }
   }
   return records;
 }
+
+// Parse encounter date from "DD/MM/YYYY" or "DD/MM/YYYY HH:MM" format
+function parseEncounterDate(dateStr) {
+  if (!dateStr) return null;
+  const datePart = dateStr.split(' ')[0];
+  const [d, m, y] = datePart.split('/').map(Number);
+  if (isNaN(d) || isNaN(m) || isNaN(y)) return null;
+  return new Date(y, m - 1, d);
+}
+
+// Endo pricing cutoff date: February 20, 2026
+const ENDO_PRICING_CUTOFF = new Date(2026, 1, 20); // Month is 0-indexed
 
 
 // ----------------- Normalization / Matcher -----------------
