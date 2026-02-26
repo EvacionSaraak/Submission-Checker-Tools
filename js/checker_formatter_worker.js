@@ -443,7 +443,7 @@ async function combineReportings(fileEntries, clinicianFile) {
   // Load clinician licenses JSON (optional)
   try {
     log("Fetching clinician_licenses.json");
-    const resp = await fetch('./clinician_licenses.json');
+    const resp = await fetch('../json/clinician_licenses.json');
     const clinicianData = await resp.json();
     if (!Array.isArray(clinicianData)) throw new Error("Clinician data is not an array");
     clinicianData.forEach(entry => {

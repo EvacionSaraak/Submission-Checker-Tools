@@ -43,7 +43,7 @@ function updateStatus() {
 
 // === LOADERS ===
 
-function loadAuthRules(url = "checker_auths.json") {
+function loadAuthRules(url = "../json/checker_auths.json") {
   if (!authRulesPromise) {
     authRulesPromise = fetch(url)
       .then(res => {

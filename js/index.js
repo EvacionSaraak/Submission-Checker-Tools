@@ -1,9 +1,9 @@
 document.addEventListener('DOMContentLoaded', () => {
   const pages = [
-    { label: "Formatting", file: "checkers/checker_formatter.html" },
-    { label: "Checkers", file: "checkers/unified_checker.html" },
-    { label: "Drug Quantities", file: "checkers/checker_drugquantities.html" },
-    { label: "Modifiers", file: "checkers/checker_modifiers.html" }
+    { label: "Formatting", file: "html/checker_formatter.html" },
+    { label: "Checkers", file: "html/unified_checker.html" },
+    { label: "Drug Quantities", file: "html/checker_drugquantities.html" },
+    { label: "Modifiers", file: "html/checker_modifiers.html" }
   ];
 
   const navLeft = document.getElementById("navLeft");

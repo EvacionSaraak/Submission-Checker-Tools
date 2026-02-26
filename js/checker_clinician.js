@@ -35,7 +35,7 @@
 
   // Load affiliated facilities
   console.log('[INFO] Loading facilities.json...');
-  fetch('/Submission-Checker-Tools/checkers/facilities.json')
+  fetch('/Submission-Checker-Tools/json/facilities.json')
     .then(response => {
       if (!response.ok) {
         throw new Error(`[FACILITIES FETCH ERROR] HTTP status ${response.status} - ${response.statusText}`);

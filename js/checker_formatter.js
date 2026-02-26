@@ -28,7 +28,7 @@ const monospaceToggle = document.getElementById('monospace-toggle');
 
 const outputTableContainer = document.getElementById('outputTableContainer');
 
-const worker = new Worker('checker_formatter_worker.js');
+const worker = new Worker('../js/checker_formatter_worker.js');
 
 let lastWorkbookData = null;
 

@@ -1,6 +1,6 @@
 (function() {
   try {
-    const repoJsonUrl = 'checker_tooths.json';
+    const repoJsonUrl = '../json/checker_tooths.json';
 
     // Tooth region maps and sets
     const SEXTANT_MAP = {
@@ -796,7 +796,7 @@ function parseXML() {
         console.log('[TEETH] Fetched tooth JSON:', r.ok);
         return r.ok ? r.json() : Promise.reject(`Failed to load ${repoJsonUrl} (HTTP ${r.status})`);
       }),
-    fetch('checker_auths.json')
+    fetch('../json/checker_auths.json')
       .then(r => {
         console.log('[TEETH] Fetched auth JSON:', r.ok);
         return r.ok ? r.json() : Promise.reject(`Failed to load checker_auths.json (HTTP ${r.status})`);
