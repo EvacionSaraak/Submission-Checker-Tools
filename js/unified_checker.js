@@ -1068,7 +1068,10 @@
           errorCount++;
           console.log(`[CHECK-ALL] ✗ ${checkerName} checker failed to generate table`);
           if (sectionResults) {
-            sectionResults.innerHTML = '<div class="alert alert-warning">No results or checker did not complete</div>';
+            const noResultsMsg = checkerName === 'pricing'
+              ? 'XML Claims are non-Thiqa, prices are not being checked.'
+              : 'No results or checker did not complete';
+            sectionResults.innerHTML = `<div class="alert alert-warning">${noResultsMsg}</div>`;
           }
           
           logDebug(`Checker Failed: ${checkerName}`, {
