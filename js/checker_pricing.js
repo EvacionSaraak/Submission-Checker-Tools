@@ -16,7 +16,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 });
 
-// ----------------- Main run handler (modified to treat Unknown as valid for the summary) -----------------
+// ----------------- Main run handler -----------------
 async function handleRun() {
   resetUI();
   try {
@@ -92,9 +92,11 @@ async function handleRun() {
 
     const ref = Number(refPrice ?? NaN);
   
-    // Claimed net 0 -> Unknown
-    if (xmlNet === 0) status = 'Unknown', remarks.push('Claimed Net is 0 (treated as Unknown)');
-    else {
+    // Claimed net 0 -> Valid (changed from Unknown)
+    if (xmlNet === 0) {
+      status = 'Valid';
+      remarks.push('Claimed Net is 0 (treated as Valid)');
+    } else {
       if (xmlQty <= 0) remarks.push(xmlQty === 0 ? 'Quantity is 0 (invalid)' : 'Quantity is less than 0 (invalid)');
       if (!match && !endoEntry) remarks.push('No pricing match found');
       if (endoEntry && refPrice === null) remarks.push(`Code ${rec.CPT} is not available for GP clinicians`);
@@ -127,8 +129,8 @@ async function handleRun() {
     lastWorkbook = makeWorkbookFromJson(output, 'checker_pricing_results');
     toggleDownload(output.length > 0);
 
-   // Treat Unknown as valid and show percentage with 2 decimals
-  const validCount = output.filter(r => r.isValid || String(r.status || '').toLowerCase() === 'unknown').length;
+   // Count valid rows and show percentage with 2 decimals
+  const validCount = output.filter(r => r.isValid).length;
   const totalCount = output.length;
   const numericPercent = totalCount ? (validCount / totalCount) * 100 : 0;
   const percentText = totalCount ? numericPercent.toFixed(2) : '0.00';
