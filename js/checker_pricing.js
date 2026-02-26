@@ -106,6 +106,7 @@ async function handleRun() {
         if (xmlNet === ref) status = 'Valid';
         else if ((xmlNet / xmlQty) === ref) status = 'Valid';
         // Special case for code 42702: allow if XML price is exactly double the reference
+        // This code requires special handling where double the reference price is also valid
         else if (normalizeCode(rec.CPT) === '42702' && xmlNet === ref * 2) status = 'Valid';
         else remarks.push(`Claimed Net ${xmlNet} does not match Reference ${ref}`);
       }
