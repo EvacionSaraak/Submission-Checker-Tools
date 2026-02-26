@@ -31,8 +31,18 @@ async function handleRun() {
       xlsxFile = window.unifiedCheckerFiles.pricing;
       console.log('[PRICING] Using pricing file from unified cache:', xlsxFile.name);
     }
-    
-    if (!xmlFile || !xlsxFile) throw new Error('Please select both an XML file and an XLSX file.');
+    if (!xlsxFile) {
+      try {
+        const resp = await fetch('../resources/THIQA DENTAL PRICING.xlsx');
+        if (!resp.ok) throw new Error('Resource not available');
+        xlsxFile = resp;
+        console.log('[PRICING] Using default THIQA DENTAL PRICING resource');
+      } catch (e) {
+        console.warn('[PRICING] Failed to load default THIQA resource:', e);
+      }
+    }
+
+    if (!xmlFile || !xlsxFile) throw new Error(!xmlFile ? 'Please select an XML file.' : 'Please select an XML file and an XLSX file (the default THIQA Dental Pricing resource could not be loaded).');
 
     showProgress(5, 'Reading files');
 

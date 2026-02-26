@@ -11,9 +11,11 @@
   <h2>Checker Pricing</h2>
 
   <p class="hint">
-    Load one XML claim file and one Pricing XLSX file. The script will extract claim line items from the XML,
-    compare them against the pricing list in the spreadsheet, and mark each as <code>Valid</code> or <code>Invalid</code>.
-    Results will display in the table below, with an option to download the processed results.
+    Load one XML claim file and optionally a Pricing XLSX file. If no XLSX is uploaded, the built-in
+    <strong>THIQA Dental Pricing</strong> resource will be used automatically. The script will extract
+    claim line items from the XML, compare them against the pricing list, and mark each as
+    <code>Valid</code> or <code>Invalid</code>. Results will display in the table below, with an option
+    to download the processed results.
   </p>
 
   <div id="pricing-panel">
@@ -23,7 +25,7 @@
     </div>
 
     <div class="form-row">
-      <label for="xlsx-file">Upload Pricing XLSX</label>
+      <label for="xlsx-file">Upload Pricing XLSX <span style="color:#888;font-weight:normal">(optional — defaults to THIQA Dental Pricing)</span></label>
       <input type="file" id="xlsx-file" accept=".xlsx" />
     </div>
   </div>
