@@ -62,6 +62,10 @@ const SPECIAL_MEDICAL_CODES = [
 // Type validation constants
 const SPECIAL_MEDICAL_CODES_SET = new Set(["17999", "96999", "0232T", "J3490", "81479", "41899"]);
 
+// Root canal codes requiring a Subcode observation from 20-Feb-2026 onward
+const ROOT_CANAL_SUBCODE_CODES = new Set(['33111', '33121', '33131', '33141', '33115', '33125', '33135', '33145']);
+const SUBCODE_OBS_CUTOFF = new Date(2026, 1, 20); // 20 Feb 2026 (month is 0-indexed)
+
 // Type 5 code format validator
 // Expected format: XXX-XXXX-XXXXX-XX (3-4-5-2 digits separated by hyphens)
 function isValidType5Code(code) {
@@ -143,6 +147,23 @@ function getSextant(tooth) {
     if (set.has(t)) return sextant;
   }
   return 'Unknown';
+}
+
+// Parse encounter date from "DD/MM/YYYY" or "DD/MM/YYYY HH:MM" format
+function parseEncounterDate(dateStr) {
+  if (!dateStr) return null;
+  const datePart = dateStr.split(' ')[0];
+  const [d, m, y] = datePart.split('/').map(Number);
+  if (isNaN(d) || isNaN(m) || isNaN(y)) return null;
+  return new Date(y, m - 1, d);
+}
+
+// Check if an activity has a Subcode observation (Observation Code = "Subcode")
+function hasSubcodeObservation(obsList) {
+  return Array.from(obsList).some(obs => {
+    const code = (obs.querySelector('Code')?.textContent || '').trim().toUpperCase();
+    return code === 'SUBCODE';
+  });
 }
 
 // Special code utilities
@@ -334,6 +355,9 @@ function validateKnownCode({
       if (isDrugPatientShareOrPDF(obsCode)) {
         return `${obsCode} (valid - no validation)`;
       }
+      if (obsCode === 'SUBCODE') {
+        return `Subcode observation`;
+      }
       let thisRemark = '';
       if (!meta.teethSet.has(obsCode)) {
         const toothType = getRegionName(obsCode);
@@ -482,6 +506,11 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions) {
     const claimId = claim.querySelector('ID')?.textContent || '(no claim ID)';
     claimRegionTrack[claimId] = { sextant: {}, quadrant: {} };
 
+    // Determine if encounter date is on or after the Subcode observation cutoff (20-Feb-2026)
+    const encounterStartStr = claim.querySelector('Encounter > Start')?.textContent || '';
+    const encounterDate = parseEncounterDate(encounterStartStr);
+    const afterCutoff = encounterDate !== null && encounterDate >= SUBCODE_OBS_CUTOFF;
+
     let claimHasInvalid = false;
 
     Array.from(claim.getElementsByTagName('Activity')).forEach(act => {
@@ -545,6 +574,13 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions) {
         row = validateKnownCode({
           claimId, activityId, type: typeValue, code, obsCodes, meta, claimRegionTrack: claimRegionTrack[claimId], codeLastDigit, obsList
         });
+      }
+
+      // Check Subcode observation requirement for root canal codes from 20-Feb-2026 onward
+      if (afterCutoff && ROOT_CANAL_SUBCODE_CODES.has(code)) {
+        if (!hasSubcodeObservation(obsList)) {
+          row.remarks.push(`Code ${code} requires a Subcode observation (Type: Text, Code: Subcode, Value: 01, ValueType: Text) for encounters from 20/02/2026 onward.`);
+        }
       }
 
       if (row.remarks && row.remarks.length > 0) claimHasInvalid = true;
