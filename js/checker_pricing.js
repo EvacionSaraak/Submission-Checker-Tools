@@ -16,7 +16,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 });
 
-// ----------------- Main run handler (modified to treat Unknown as valid for the summary) -----------------
+// ----------------- Main run handler -----------------
 async function handleRun() {
   resetUI();
   try {
@@ -83,18 +83,24 @@ async function handleRun() {
         match._secondaryPrice : match._primaryPrice;
     }
 
-    // Override with endo pricing for applicable codes
+    // Override with endo pricing for applicable codes (only for dates on or after Feb 20, 2026)
     const endoEntry = endoPricingMap.get(normalizeCode(rec.CPT));
     if (endoEntry) {
-      const isEndo = clinicianSpecialtyMap.get(rec.ClinicianLic || '') === 'Endodontics';
-      refPrice = isEndo ? endoEntry.endo_price : endoEntry.gp_price;
+      const encounterDate = parseEncounterDate(rec.EncounterDate);
+      const isAfterCutoff = encounterDate !== null && encounterDate >= ENDO_PRICING_CUTOFF;
+      if (isAfterCutoff) {
+        const isEndo = clinicianSpecialtyMap.get(rec.ClinicianLic || '') === 'Endodontics';
+        refPrice = isEndo ? endoEntry.endo_price : endoEntry.gp_price;
+      }
     }
 
     const ref = Number(refPrice ?? NaN);
   
-    // Claimed net 0 -> Unknown
-    if (xmlNet === 0) status = 'Unknown', remarks.push('Claimed Net is 0 (treated as Unknown)');
-    else {
+    // Claimed net 0 -> Valid (changed from Unknown)
+    if (xmlNet === 0) {
+      status = 'Valid';
+      remarks.push('Claimed Net is 0 (treated as Valid)');
+    } else {
       if (xmlQty <= 0) remarks.push(xmlQty === 0 ? 'Quantity is 0 (invalid)' : 'Quantity is less than 0 (invalid)');
       if (!match && !endoEntry) remarks.push('No pricing match found');
       if (endoEntry && refPrice === null) remarks.push(`Code ${rec.CPT} is not available for GP clinicians`);
@@ -103,6 +109,9 @@ async function handleRun() {
       if ((match || endoEntry) && refPrice !== null && !Number.isNaN(ref) && xmlQty > 0) {
         if (xmlNet === ref) status = 'Valid';
         else if ((xmlNet / xmlQty) === ref) status = 'Valid';
+        // Special case for code 42702: allow if XML price is exactly double the reference
+        // This code requires special handling where double the reference price is also valid
+        else if (normalizeCode(rec.CPT) === '42702' && xmlNet === ref * 2) status = 'Valid';
         else remarks.push(`Claimed Net ${xmlNet} does not match Reference ${ref}`);
       }
     }
@@ -127,8 +136,8 @@ async function handleRun() {
     lastWorkbook = makeWorkbookFromJson(output, 'checker_pricing_results');
     toggleDownload(output.length > 0);
 
-   // Treat Unknown as valid and show percentage with 2 decimals
-  const validCount = output.filter(r => r.isValid || String(r.status || '').toLowerCase() === 'unknown').length;
+   // Count valid rows and show percentage with 2 decimals
+  const validCount = output.filter(r => r.isValid).length;
   const totalCount = output.length;
   const numericPercent = totalCount ? (validCount / totalCount) * 100 : 0;
   const percentText = totalCount ? numericPercent.toFixed(2) : '0.00';
@@ -182,18 +191,32 @@ function extractPricingRecords(xmlDoc) {
   for (const claim of claims) {
     const claimId = textValue(claim, 'ID') || '';
     const activities = Array.from(claim.getElementsByTagName('Activity'));
-    const facilityId = textValue(claim.getElementsByTagName('Encounter')[0], 'FacilityID') || '';
+    const encounterNode = claim.getElementsByTagName('Encounter')[0];
+    const facilityId = textValue(encounterNode, 'FacilityID') || '';
+    const encounterDateStr = textValue(encounterNode, 'Start') || textValue(encounterNode, 'Date') || textValue(encounterNode, 'EncounterDate') || '';
     for (const act of activities) {
       const activityId = textValue(act, 'ID') || '';
       const cpt = firstNonEmpty([ textValue(act,'ActivityCode'), textValue(act,'CPTCode'), textValue(act,'Code') ]).trim();
       const net = firstNonEmpty([ textValue(act,'Net'), textValue(act,'GrossAmount'), textValue(act,'Price') ]).trim();
       const qty = firstNonEmpty([ textValue(act,'Quantity'), textValue(act,'Qty') ]).trim() || '0';
       const clinicianLic = firstNonEmpty([textValue(act, 'OrderingClinician'), textValue(act, 'Clinician')]).trim();
-      records.push({ ClaimID: claimId, ActivityID: activityId, CPT: cpt, Net: net, Quantity: qty, FacilityID: facilityId, ClinicianLic: clinicianLic });
+      records.push({ ClaimID: claimId, ActivityID: activityId, CPT: cpt, Net: net, Quantity: qty, FacilityID: facilityId, ClinicianLic: clinicianLic, EncounterDate: encounterDateStr });
     }
   }
   return records;
 }
+
+// Parse encounter date from "DD/MM/YYYY" or "DD/MM/YYYY HH:MM" format
+function parseEncounterDate(dateStr) {
+  if (!dateStr) return null;
+  const datePart = dateStr.split(' ')[0];
+  const [d, m, y] = datePart.split('/').map(Number);
+  if (isNaN(d) || isNaN(m) || isNaN(y)) return null;
+  return new Date(y, m - 1, d);
+}
+
+// Endo pricing cutoff date: February 20, 2026
+const ENDO_PRICING_CUTOFF = new Date(2026, 1, 20); // Month is 0-indexed
 
 
 // ----------------- Normalization / Matcher -----------------
@@ -258,8 +281,8 @@ function buildResultsTable(rows) {
     // Map status to Bootstrap classes
     const cls = status === 'ok' || status === 'valid' ? 'table-success' : 'table-danger';
     const showClaim = r.ClaimID !== prevClaimId;
-    html += `<tr class="${cls}">
-      <td style="padding:6px;border:1px solid #ccc">${showClaim ? escapeHtml(r.ClaimID) : ''}</td>
+    html += `<tr class="${cls}" data-claim-id="${escapeHtml(r.ClaimID || '')}">
+      <td style="padding:6px;border:1px solid #ccc" class="claim-id-cell">${showClaim ? escapeHtml(r.ClaimID) : ''}</td>
       <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.ActivityID)}</td>
       <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.CPT)}</td>
       <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.ClaimedNet)}</td>

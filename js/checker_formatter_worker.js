@@ -421,7 +421,7 @@ async function combineEligibilities(fileEntries) {
 // ==============================
 // Main reporting combiner (rewritten, uses header maps and robust detection)
 // ==============================
-async function combineReportings(fileEntries, clinicianFile) {
+async function combineReportings(fileEntries) {
   log("Starting combineReportings function");
   if (!XLSX_LOADED) {
     throw new Error("XLSX library not available. Cannot process reporting files.");
@@ -438,9 +438,8 @@ async function combineReportings(fileEntries, clinicianFile) {
 
   // Clinician lookup structures
   const clinicianMapByLicense = new Map(), clinicianMapByName = new Map();
-  let fallbackExcel = [];
 
-  // Load clinician licenses JSON (optional)
+  // Load clinician licenses JSON
   try {
     log("Fetching clinician_licenses.json");
     const resp = await fetch('../json/clinician_licenses.json');
@@ -455,25 +454,6 @@ async function combineReportings(fileEntries, clinicianFile) {
     log(`Loaded clinician licenses: ${clinicianMapByLicense.size} by license`);
   } catch (err) {
     log(`Failed to load clinician_licenses.json: ${err.message}`, 'WARN');
-  }
-
-  // Load fallback clinician file if provided
-  if (clinicianFile) {
-    try {
-      log("Reading fallback clinician file");
-      const wbClin = XLSX.read(clinicianFile, { type: 'array' });
-      const wsClin = wbClin.Sheets[wbClin.SheetNames[0]];
-      fallbackExcel = XLSX.utils.sheet_to_json(wsClin, { defval: '' }).map(r => ({
-        lic: r['Clinician License']?.toString().trim(),
-        nm: (r['Clinician Name'] || '').trim().replace(/\s+/g, ' '),
-        facilityLicense: r['Facility License']?.toString().trim() || '',
-        raw: r
-      }));
-      log(`Fallback clinician entries loaded: ${fallbackExcel.length}`);
-    } catch (err) {
-      log(`Error reading fallback clinician file: ${err.message}`, 'ERROR');
-      fallbackExcel = [];
-    }
   }
 
   // Helpers used only inside combineReportings to keep behavior local & robust
@@ -603,10 +583,6 @@ async function combineReportings(fileEntries, clinicianFile) {
         }
         if (clinName && !clinLicense && clinicianMapByName.has(normalizeName(clinName))) {
           clinLicense = clinicianMapByName.get(normalizeName(clinName))['Phy Lic'];
-        }
-        if ((!clinName || !clinLicense) && clinName && facilityID) {
-          const fb = fallbackClinicianLookupWithFacility(clinName, facilityID, fallbackExcel);
-          if (fb) { clinLicense = fb.license || clinLicense; clinName = fb.name || clinName; }
         }
 
         // Do not skip Odoo rows when clinician info missing
@@ -854,7 +830,7 @@ function convertToExcelDateUniversal(value){ ... }
 // ==============================
 self.onmessage = async (e) => {
   if (e.data.type !== 'start') return;
-  const { mode, files, clinicianFile } = e.data;
+  const { mode, files } = e.data;
   try {
     log(`Processing started in mode: ${mode}, ${files.length} file(s)`);
     
@@ -865,7 +841,7 @@ self.onmessage = async (e) => {
     } else {
       // Handle eligibility and reporting modes - returns workbook
       const combineFn = mode === 'eligibility' ? combineEligibilities : combineReportings;
-      const wb = await combineFn(files, clinicianFile);
+      const wb = await combineFn(files);
       const wbArray = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
       const wbUint8 = new Uint8Array(wbArray);
       self.postMessage({ type: 'result', workbookData: wbUint8 }, [wbUint8.buffer]);

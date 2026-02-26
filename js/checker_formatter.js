@@ -12,7 +12,6 @@ const errorsPanel = document.getElementById('errors-panel');
 
 const eligibilityInput = document.getElementById('eligibility-files');
 const reportingInput = document.getElementById('reporting-files');
-const clinicianInput = document.getElementById('clinician-files'); // NEW clinician input
 const xmlInput = document.getElementById('xml-files');
 
 // Errors panel elements
@@ -202,12 +201,6 @@ combineButton.addEventListener('click', async () => {
       return;
     }
 
-    // If reporting mode, require clinician license file too
-    if (mode === 'reporting' && clinicianInput.files.length === 0) {
-      alert('Please upload the clinician licenses Excel file.');
-      return;
-    }
-
     combineButton.disabled = true;
     downloadButton.disabled = true;
     progressBar.style.width = '0%';
@@ -226,20 +219,6 @@ combineButton.addEventListener('click', async () => {
         reader.readAsArrayBuffer(f);
       });
       fileEntries.push({ name: f.name, buffer });
-    }
-
-    // Read clinician licenses file if reporting mode
-    let clinicianFileEntry = null;
-    if (mode === 'reporting' && clinicianInput.files.length > 0) {
-      const cf = clinicianInput.files[0];
-      messageBox.textContent = `Reading clinician license file: ${cf.name}`;
-      const clinicianBuffer = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = () => reject(new Error('Clinician file read error'));
-        reader.readAsArrayBuffer(cf);
-      });
-      clinicianFileEntry = { name: cf.name, buffer: clinicianBuffer };
     }
 
     messageBox.textContent = 'Files read. Starting processing...';
@@ -265,10 +244,10 @@ combineButton.addEventListener('click', async () => {
     }
 
     // Debug log before posting message to worker
-    console.log('Posting start message to worker', { mode, files: fileEntries.length, clinicianFile: clinicianFileEntry ? clinicianFileEntry.name : 'none' });
+    console.log('Posting start message to worker', { mode, files: fileEntries.length });
 
-    // Post message to worker with clinician file included (for eligibility and reporting modes)
-    worker.postMessage({ type: 'start', mode, files: fileEntries, clinicianFile: clinicianFileEntry });
+    // Post message to worker
+    worker.postMessage({ type: 'start', mode, files: fileEntries });
 
   } catch (err) {
     messageBox.textContent = 'Error reading files: ' + err.message;
