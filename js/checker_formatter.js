@@ -19,7 +19,6 @@ const errorsInput = document.getElementById('errors-input');
 const errorsOutput = document.getElementById('errors-output');
 const errorsUnmatched = document.getElementById('errors-unmatched');
 const unmatchedContainer = document.getElementById('unmatched-container');
-const unmatchedButtonRow = document.getElementById('unmatched-button-row');
 const formatButton = document.getElementById('format-button');
 const copyButton = document.getElementById('copy-button');
 const copyUnmatchedButton = document.getElementById('copy-unmatched-button');
