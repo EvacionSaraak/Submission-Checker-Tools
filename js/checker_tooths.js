@@ -80,17 +80,17 @@ function validateActivityType(code, type, isDentalCode = false) {
   
   // Special validation: A4639 must always be type 4
   if (code === "A4639" && type !== "4") {
-    remarks.push(`Code A4639 must have Type 4, but found Type ${type || '(missing)'}.`);
+    remarks.push(`Code A4639 must have Type 4 but found Type ${type || '(missing)'}.`);
   }
   
   // Special validation: All special medical codes must be type 3
   if (SPECIAL_MEDICAL_CODES_SET.has(code) && type !== "3") {
-    remarks.push(`Code ${code} must have Type 3, but found Type ${type || '(missing)'}.`);
+    remarks.push(`Code ${code} must have Type 3 but found Type ${type || '(missing)'}.`);
   }
   
   // Dental codes (not special medical codes or A4639) must be type 6
   if (isDentalCode && !SPECIAL_MEDICAL_CODES_SET.has(code) && code !== "A4639" && type !== "6") {
-    remarks.push(`Code ${code} is a dental activity and must have Type 6, but found Type ${type || '(missing)'}.`);
+    remarks.push(`Code ${code} is a dental activity and must have Type 6 but found Type ${type || '(missing)'}.`);
   }
   
   // Type 5 code format check
