@@ -54,10 +54,21 @@
     </label>
   </div>
 
+  <div style="display: flex; gap: 15px; margin-bottom: 8px;">
+    <div style="flex: 1;">
+      <button id="format-button" style="width: 100%;">Format</button>
+    </div>
+    <div style="flex: 1;">
+      <button id="copy-button" style="width: 100%;" disabled>Copy to Clipboard</button>
+    </div>
+    <div style="flex: 1;">
+      <button id="copy-unmatched-button" style="width: 100%;">Copy Unmatched Lines</button>
+    </div>
+  </div>
+
   <div style="display: flex; gap: 15px; align-items: flex-start;">
 
     <div style="flex: 1; display: flex; flex-direction: column;">
-      <button id="format-button" style="margin-bottom: 6px;">Format</button>
       <label for="errors-input" style="margin-bottom: 4px; font-size: 13px;">Input (paste your audit logs here):</label>
       <textarea
         id="errors-input"
@@ -67,7 +78,6 @@
     </div>
 
     <div style="flex: 1; display: flex; flex-direction: column;">
-      <button id="copy-button" style="margin-bottom: 6px;" disabled>Copy to Clipboard</button>
       <label for="errors-output" style="margin-bottom: 4px; font-size: 13px;">Output (formatted result):</label>
       <textarea
         id="errors-output"
@@ -78,7 +88,6 @@
     </div>
 
     <div id="unmatched-container" style="flex: 1; display: flex; flex-direction: column;">
-      <button id="copy-unmatched-button" style="margin-bottom: 6px;">Copy Unmatched Lines</button>
       <label for="errors-unmatched" style="margin-bottom: 4px; font-size: 13px;">Lines that didn't match format:</label>
       <textarea
         id="errors-unmatched"
