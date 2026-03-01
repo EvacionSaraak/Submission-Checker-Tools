@@ -538,6 +538,10 @@ async function combineReportings(fileEntries) {
         }
         if (!claimID) continue; // can't work without claim key
 
+        // Skip rows where Codification Status is "Not Seen"
+        const codifStatus = (sourceRow['codificationstatus'] || '').toString().trim().toLowerCase();
+        if (codifStatus === 'not seen') continue;
+
         if (seenClaimIDs.has(claimID) || globalSeenClaimIDs.has(claimID)) continue;
         seenClaimIDs.add(claimID); globalSeenClaimIDs.add(claimID);
 

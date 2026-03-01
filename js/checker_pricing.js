@@ -55,6 +55,14 @@ async function handleRun() {
     showProgress(25, 'Parsing XML & XLSX');
 
     const xmlDoc = parseXml(xmlText);
+
+    // Only process files where ReceiverID in the XML Header is D001
+    const headerNode = xmlDoc.querySelector('Header');
+    const receiverID = headerNode?.querySelector('ReceiverID')?.textContent.trim() || '';
+    console.log(`[PRICING] ReceiverID: ${receiverID || '(MISSING)'}`);
+    if (receiverID !== 'D001') {
+      throw new Error(`Pricing checker only supports files with ReceiverID "D001". Found: "${receiverID || '(MISSING)'}"`);}
+
     const extracted = extractPricingRecords(xmlDoc);
     const matcher = buildPricingMatcher(xlsxObj.rows);
 
@@ -109,6 +117,7 @@ async function handleRun() {
       if ((match || endoEntry) && refPrice !== null && !Number.isNaN(ref) && xmlQty > 0) {
         if (xmlNet === ref) status = 'Valid';
         else if ((xmlNet / xmlQty) === ref) status = 'Valid';
+        else if (xmlNet * 2 === ref) status = 'Valid';
         // Special case for code 42702: allow if XML price is exactly double the reference
         // This code requires special handling where double the reference price is also valid
         else if (normalizeCode(rec.CPT) === '42702' && xmlNet === ref * 2) status = 'Valid';
