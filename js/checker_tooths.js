@@ -75,7 +75,7 @@ function isValidType5Code(code) {
 }
 
 // Type validation function
-function validateActivityType(code, type) {
+function validateActivityType(code, type, isDentalCode = false) {
   const remarks = [];
   
   // Special validation: A4639 must always be type 4
@@ -86,6 +86,11 @@ function validateActivityType(code, type) {
   // Special validation: All special medical codes must be type 3
   if (SPECIAL_MEDICAL_CODES_SET.has(code) && type !== "3") {
     remarks.push(`Code ${code} must have Type 3, but found Type ${type || '(missing)'}.`);
+  }
+  
+  // Dental codes (not special medical codes or A4639) must be type 1
+  if (isDentalCode && !SPECIAL_MEDICAL_CODES_SET.has(code) && code !== "A4639" && type !== "1") {
+    remarks.push(`Code ${code} is a dental activity and must have Type 1, but found Type ${type || '(missing)'}.`);
   }
   
   // Type 5 code format check
@@ -318,8 +323,8 @@ function validateKnownCode({
   let regionKey = null;
   const remarks = [];
 
-  // Validate activity type
-  const typeRemarks = validateActivityType(code, type);
+  // Validate activity type (true = isDentalCode: known codes in the tooths checker are dental)
+  const typeRemarks = validateActivityType(code, type, true);
   remarks.push(...typeRemarks);
 
   // PATCH: If all obsCodes are Drug Patient Share or PDF, mark valid and skip remarks
