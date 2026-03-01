@@ -48,48 +48,46 @@
     <p style="margin: 5px 0; font-size: 12px; color: #999;">
       Type defaults to "Dental" if not specified. Only valid rows with claim IDs are included in output. Visit ID column shows second ID if present.
     </p>
-  </div>
-  
-  <div class="form-row" style="flex-direction: column; align-items: flex-start;">
-    <label for="errors-input" style="margin-bottom: 5px;">Input (paste your audit logs here):</label>
-    <textarea 
-      id="errors-input" 
-      rows="12" 
-      style="width: 100%; max-width: 900px; font-family: monospace; font-size: 13px; padding: 8px; border: 1px solid #ccc; border-radius: 4px;"
-    ></textarea>
-  </div>
-  
-  <div class="form-row" style="margin-top: 10px;">
-    <button id="format-button">Format</button>
-    <button id="copy-button" style="margin-left: 10px;" disabled>Copy to Clipboard</button>
-    <label style="margin-left: 15px; font-size: 14px;">
+    <label style="font-size: 14px; margin-top: 8px; display: inline-block;">
       <input type="checkbox" id="monospace-toggle" checked>
       Monospace Font
     </label>
   </div>
-  
-  <div class="form-row" style="flex-direction: column; align-items: flex-start; margin-top: 15px;">
-    <label for="errors-output" style="margin-bottom: 5px;">Output (formatted result):</label>
-    <textarea 
-      id="errors-output" 
-      rows="12" 
-      readonly
-      style="width: 100%; max-width: 900px; font-family: monospace; font-size: 13px; padding: 8px; border: 1px solid #ccc; border-radius: 4px; background: #f9f9f9;"
-    ></textarea>
-  </div>
-  
-  <div id="unmatched-container" class="form-row" style="flex-direction: column; align-items: flex-start; margin-top: 15px;">
-    <label for="errors-unmatched" style="margin-bottom: 5px;">Lines that didn't match format:</label>
-    <textarea 
-      id="errors-unmatched" 
-      rows="8" 
-      readonly
-      style="width: 100%; max-width: 900px; font-family: monospace; font-size: 13px; padding: 8px; border: 1px solid #ccc; border-radius: 4px; background: #fff3cd;"
-    ></textarea>
-  </div>
-  
-  <div id="unmatched-button-row" class="form-row" style="margin-top: 10px;">
-    <button id="copy-unmatched-button" style="margin-left: 10px;">Copy Unmatched Lines</button>
+
+  <div style="display: flex; gap: 15px; align-items: flex-start;">
+
+    <div style="flex: 1; display: flex; flex-direction: column;">
+      <button id="format-button" style="margin-bottom: 6px;">Format</button>
+      <label for="errors-input" style="margin-bottom: 4px; font-size: 13px;">Input (paste your audit logs here):</label>
+      <textarea
+        id="errors-input"
+        rows="14"
+        style="width: 100%; box-sizing: border-box; font-family: monospace; font-size: 13px; padding: 8px; border: 1px solid #ccc; border-radius: 4px; resize: vertical;"
+      ></textarea>
+    </div>
+
+    <div style="flex: 1; display: flex; flex-direction: column;">
+      <button id="copy-button" style="margin-bottom: 6px;" disabled>Copy to Clipboard</button>
+      <label for="errors-output" style="margin-bottom: 4px; font-size: 13px;">Output (formatted result):</label>
+      <textarea
+        id="errors-output"
+        rows="14"
+        readonly
+        style="width: 100%; box-sizing: border-box; font-family: monospace; font-size: 13px; padding: 8px; border: 1px solid #ccc; border-radius: 4px; background: #f9f9f9; resize: vertical;"
+      ></textarea>
+    </div>
+
+    <div id="unmatched-container" style="flex: 1; display: flex; flex-direction: column;">
+      <button id="copy-unmatched-button" style="margin-bottom: 6px;">Copy Unmatched Lines</button>
+      <label for="errors-unmatched" style="margin-bottom: 4px; font-size: 13px;">Lines that didn't match format:</label>
+      <textarea
+        id="errors-unmatched"
+        rows="14"
+        readonly
+        style="width: 100%; box-sizing: border-box; font-family: monospace; font-size: 13px; padding: 8px; border: 1px solid #ccc; border-radius: 4px; background: #fff3cd; resize: vertical;"
+      ></textarea>
+    </div>
+
   </div>
 </div>
 
