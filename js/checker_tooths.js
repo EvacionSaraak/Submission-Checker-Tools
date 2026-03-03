@@ -60,8 +60,8 @@ const SPECIAL_MEDICAL_CODES = [
   // { code: "11952", description: "Subcutaneous injection of filling material (e.g., collagen); 11 to 50 cc" }
 ];
 
-// Type validation constants
-const SPECIAL_MEDICAL_CODES_SET = new Set(["17999", "96999", "0232T", "J3490", "81479", "41899"]);
+// Type validation constants - derived from SPECIAL_MEDICAL_CODES array
+const SPECIAL_MEDICAL_CODES_SET = new Set(SPECIAL_MEDICAL_CODES.map(item => item.code));
 
 // Root canal codes requiring a Subcode observation from 20-Feb-2026 onward
 const ROOT_CANAL_SUBCODE_CODES = new Set(['33111', '33121', '33131', '33141', '33115', '33125', '33135', '33145']);
