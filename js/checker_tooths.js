@@ -155,6 +155,22 @@ function getSextant(tooth) {
   return 'Unknown';
 }
 
+// Build a set of endodontist clinician IDs from the clinician licenses data
+function buildEndodontistSet(clinicianData) {
+  const set = new Set();
+  if (!Array.isArray(clinicianData)) return set;
+
+  clinicianData.forEach(clinician => {
+    const specialty = (clinician['Specialty'] || clinician.specialty || clinician.specialization || '').toLowerCase();
+    if (specialty.includes('endodont')) {
+      const id = (clinician['Phy Lic'] || clinician.id || clinician.license_number || clinician.clinician_id || '').toString().trim();
+      if (id) set.add(id);
+    }
+  });
+
+  return set;
+}
+
 // Parse encounter date from "DD/MM/YYYY" or "DD/MM/YYYY HH:MM" format
 function parseEncounterDate(dateStr) {
   if (!dateStr) return null;
@@ -508,7 +524,7 @@ function getCombinedRemarks(row) {
 }
 
 // Main activity validation and results rendering
-function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions) {
+function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontistSet) {
   const rows = [];
   const claimSummaries = {};
   const claimRegionTrack = {};
@@ -589,8 +605,26 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions) {
 
       // Check Subcode observation requirement for root canal codes from 20-Feb-2026 onward
       if (afterCutoff && ROOT_CANAL_SUBCODE_CODES.has(code)) {
-        if (!hasSubcodeObservation(obsList)) {
-          row.warnings.push(`Code ${code} is a root canal procedure — please verify the Ordering Clinician is an Endodontist. If so, a Subcode observation (Type: Text, Code: Subcode, Value: 01, ValueType: Text) is required.`);
+        // Extract clinician ID: try Clinician first, fallback to OrderingClinician
+        let clinicianId = act.querySelector('Clinician')?.textContent?.trim();
+        if (!clinicianId) {
+          clinicianId = act.querySelector('OrderingClinician')?.textContent?.trim();
+        }
+
+        // ERROR: No clinician specified at all
+        if (!clinicianId) {
+          row.remarks.push(`Code ${code} is a root canal procedure but no Clinician or OrderingClinician was specified.`);
+        } else {
+          const isEndodontist = endodontistSet.has(clinicianId);
+          const hasSubcode = hasSubcodeObservation(obsList);
+
+          if (!isEndodontist) {
+            // ERROR: Non-endodontist using root canal codes
+            row.remarks.push(`Code ${code} is a root canal procedure and can only be performed by an Endodontist. Clinician ID "${clinicianId}" is not registered as an Endodontist.`);
+          } else if (!hasSubcode) {
+            // ERROR: Endodontist but missing required Subcode observation
+            row.remarks.push(`Code ${code} requires a Subcode observation (Type: Text, Code: Subcode, Value: 01) when performed by an Endodontist.`);
+          }
         }
       }
 
@@ -806,18 +840,24 @@ function parseXML() {
       .then(r => {
         console.log('[TEETH] Fetched auth JSON:', r.ok);
         return r.ok ? r.json() : Promise.reject(`Failed to load checker_auths.json (HTTP ${r.status})`);
+      }),
+    fetch('../json/clinician_licenses.json')
+      .then(r => {
+        console.log('[TEETH] Fetched clinician licenses JSON:', r.ok);
+        return r.ok ? r.json() : Promise.reject(`Failed to load clinician_licenses.json (HTTP ${r.status})`);
       })
   ])
-  .then(([xmlText, toothJson, authJson]) => {
+  .then(([xmlText, toothJson, authJson, clinicianLicenses]) => {
     console.log('[TEETH] All resources loaded, processing...');
     const toothMap = buildCodeMeta(toothJson);
     const authMap  = buildAuthMap(authJson);
+    const endodontistSet = buildEndodontistSet(clinicianLicenses);
     // Preprocess XML to replace unescaped & with "and" for parseability
     const xmlContent = xmlText.replace(/&(?!(amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;))/g, "and");
     const xmlDoc   = new DOMParser().parseFromString(xmlContent, 'application/xml');
     if (xmlDoc.querySelector('parsererror')) throw new Error('Invalid XML file');
     console.log('[TEETH] XML parsed, validating activities...');
-    const rows     = validateActivities(xmlDoc, toothMap, authMap);
+    const rows     = validateActivities(xmlDoc, toothMap, authMap, endodontistSet);
     console.log('[TEETH] Validation complete, building table... (rows:', rows.length, ')');
     const tableElement = buildResultsTable(rows);
     console.log('[TEETH] Table build complete');
