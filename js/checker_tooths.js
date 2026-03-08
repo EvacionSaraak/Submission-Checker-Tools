@@ -618,10 +618,7 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
           const isEndodontist = endodontistSet.has(clinicianId);
           const hasSubcode = hasSubcodeObservation(obsList);
 
-          if (!isEndodontist) {
-            // ERROR: Non-endodontist using root canal codes
-            row.remarks.push(`Code ${code} is a root canal procedure and can only be performed by an Endodontist. Clinician ID "${clinicianId}" is not registered as an Endodontist.`);
-          } else if (!hasSubcode) {
+          if (isEndodontist && !hasSubcode) {
             // ERROR: Endodontist but missing required Subcode observation
             row.remarks.push(`Code ${code} requires a Subcode observation (Type: Text, Code: Subcode, Value: 01) when performed by an Endodontist.`);
           }
