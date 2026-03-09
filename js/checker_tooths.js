@@ -524,7 +524,7 @@ function getCombinedRemarks(row) {
 }
 
 // Main activity validation and results rendering
-function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontistSet) {
+function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontistSet, receiverID = '') {
   const rows = [];
   const claimSummaries = {};
   const claimRegionTrack = {};
@@ -604,7 +604,8 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
       }
 
       // Check Subcode observation requirement for root canal codes from 20-Feb-2026 onward
-      if (afterCutoff && ROOT_CANAL_SUBCODE_CODES.has(code)) {
+      // Only applies when the receiver is D001 (Thiqa)
+      if (receiverID === 'D001' && afterCutoff && ROOT_CANAL_SUBCODE_CODES.has(code)) {
         // Extract clinician ID: try Clinician first, fallback to OrderingClinician
         let clinicianId = act.querySelector('Clinician')?.textContent?.trim();
         if (!clinicianId) {
@@ -853,8 +854,10 @@ function parseXML() {
     const xmlContent = xmlText.replace(/&(?!(amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;))/g, "and");
     const xmlDoc   = new DOMParser().parseFromString(xmlContent, 'application/xml');
     if (xmlDoc.querySelector('parsererror')) throw new Error('Invalid XML file');
+    const header = xmlDoc.querySelector('Header');
+    const receiverID = header?.querySelector('ReceiverID')?.textContent.trim() || '';
     console.log('[TEETH] XML parsed, validating activities...');
-    const rows     = validateActivities(xmlDoc, toothMap, authMap, endodontistSet);
+    const rows     = validateActivities(xmlDoc, toothMap, authMap, endodontistSet, receiverID);
     console.log('[TEETH] Validation complete, building table... (rows:', rows.length, ')');
     const tableElement = buildResultsTable(rows);
     console.log('[TEETH] Table build complete');
