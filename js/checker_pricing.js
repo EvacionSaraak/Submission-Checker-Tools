@@ -113,8 +113,12 @@ async function handleRun() {
       if (!match && !endoEntry) remarks.push('No pricing match found');
       if (endoEntry && refPrice === null) remarks.push(`Code ${rec.CPT} is not available for GP clinicians`);
       if ((match || endoEntry) && refPrice !== null && Number.isNaN(ref)) remarks.push('Reference Net Price is not a number');
-  
-      if ((match || endoEntry) && refPrice !== null && !Number.isNaN(ref) && xmlQty > 0) {
+
+      const hasValidRef = (match || endoEntry) && refPrice !== null && !Number.isNaN(ref);
+      if (hasValidRef && ref === 0) {
+        status = 'Unknown';
+        remarks.push('Reference price is 0 (Unknown)');
+      } else if (hasValidRef && xmlQty > 0) {
         if (xmlNet === ref) status = 'Valid';
         else if ((xmlNet / xmlQty) === ref) status = 'Valid';
         else if (xmlNet * 2 === ref) status = 'Valid';
@@ -287,8 +291,8 @@ function buildResultsTable(rows) {
 
   for (const r of rows) {
     const status = String(r.status || 'Invalid').toLowerCase();
-    // Map status to Bootstrap classes
-    const cls = status === 'ok' || status === 'valid' ? 'table-success' : 'table-danger';
+    // Map status to Bootstrap/custom classes
+    const cls = status === 'ok' || status === 'valid' ? 'table-success' : status === 'unknown' ? 'unknown' : 'table-danger';
     const showClaim = r.ClaimID !== prevClaimId;
     html += `<tr class="${cls}" data-claim-id="${escapeHtml(r.ClaimID || '')}">
       <td style="padding:6px;border:1px solid #ccc" class="claim-id-cell">${showClaim ? escapeHtml(r.ClaimID) : ''}</td>
