@@ -717,7 +717,7 @@ function buildResultsTable(rows) {
             <td style="padding:6px;border:1px solid #ccc">${r.code}</td>
             <td class="description-col" style="padding:6px;border:1px solid #ccc">${r.description}</td>
             <td style="padding:6px;border:1px solid #ccc">${r.details}</td>
-            <td class="description-col" style="padding:6px;border:1px solid #ccc">${allRemarks.join('<br>')}</td>
+            <td class="description-col" style="padding:6px;border:1px solid #ccc">${allRemarks.map(rem => `<div>${rem}</div>`).join('')}</td>
           </tr>`;
       }).join('')}
     </tbody>`;
