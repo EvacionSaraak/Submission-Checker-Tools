@@ -371,6 +371,9 @@ function validateKnownCode({
     remarks.push(`${code} requires at least one observation but none were provided.`);
   }
 
+  // Collect invalid teeth grouped by type for consolidated error messages
+  const invalidTeethByType = {};
+
   const details = obsCodes.length === 0
     ? 'None provided'
     : obsCodes.map(obsCode => {
@@ -380,11 +383,10 @@ function validateKnownCode({
       if (obsCode === 'SUBCODE') {
         return `Subcode observation`;
       }
-      let thisRemark = '';
       if (!meta.teethSet.has(obsCode)) {
         const toothType = getRegionName(obsCode);
-        thisRemark = `${toothType} ${obsCode} not allowed for ${meta.description.match(/anterior|posterior|bicuspid|all/i)?.[0] || 'see code description'} code ${code}.`;
-        remarks.push(thisRemark);
+        if (!invalidTeethByType[toothType]) invalidTeethByType[toothType] = [];
+        invalidTeethByType[toothType].push(obsCode);
       }
 
       if (regionType === 'sextant') {
@@ -395,6 +397,15 @@ function validateKnownCode({
 
       return `${obsCode} - ${getRegionName(obsCode)}`;
     }).join('<br>');
+
+  // Emit one consolidated remark per tooth type
+  const codeCategory = meta.description.match(/anterior|posterior|bicuspid|all/i)?.[0] || 'see code description';
+  for (const [toothType, teeth] of Object.entries(invalidTeethByType)) {
+    const teethStr = teeth.length > 1
+      ? teeth.slice(0, -1).join(' ') + ' and ' + teeth[teeth.length - 1]
+      : teeth[0];
+    remarks.push(`${toothType} ${teethStr} not allowed for ${codeCategory} code ${code}.`);
+  }
 
   // Region duplication check
   if (regionType && regionKey && regionKey !== 'Unknown') {
