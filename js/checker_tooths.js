@@ -53,7 +53,8 @@ const SPECIAL_MEDICAL_CODES = [
   { code: "J3490", description: "Unclassified drugs" },
   { code: "81479", description: "Unlisted molecular pathology procedure" },
   { code: "41899", description: "Unlisted procedure, dentoalveolar structures" },
-  { code: "96999", description: "Unlisted special service, procedure or report" }
+  { code: "96999", description: "Unlisted special service, procedure or report" },
+  { code: "58999", description: "Unlisted procedure, female genital system (nonobstetric)" }
   // { code: "69090", description: "Biopsy of external ear" },
   // { code: "11950", description: "Subcutaneous injection of filling material (e.g., collagen); 1 to 5 cc" },
   // { code: "11951", description: "Subcutaneous injection of filling material (e.g., collagen); 6 to 10 cc" },
