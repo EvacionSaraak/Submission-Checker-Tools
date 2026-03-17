@@ -53,7 +53,8 @@ const SPECIAL_MEDICAL_CODES = [
   { code: "J3490", description: "Unclassified drugs" },
   { code: "81479", description: "Unlisted molecular pathology procedure" },
   { code: "41899", description: "Unlisted procedure, dentoalveolar structures" },
-  { code: "96999", description: "Unlisted special service, procedure or report" }
+  { code: "96999", description: "Unlisted special service, procedure or report" },
+  { code: "58999", description: "Unlisted procedure, female genital system (nonobstetric)" }
   // { code: "69090", description: "Biopsy of external ear" },
   // { code: "11950", description: "Subcutaneous injection of filling material (e.g., collagen); 1 to 5 cc" },
   // { code: "11951", description: "Subcutaneous injection of filling material (e.g., collagen); 6 to 10 cc" },
@@ -153,6 +154,22 @@ function getSextant(tooth) {
     if (set.has(t)) return sextant;
   }
   return 'Unknown';
+}
+
+// Build a set of endodontist clinician IDs from the clinician licenses data
+function buildEndodontistSet(clinicianData) {
+  const set = new Set();
+  if (!Array.isArray(clinicianData)) return set;
+
+  clinicianData.forEach(clinician => {
+    const specialty = (clinician['Specialty'] || clinician.specialty || clinician.specialization || '').toLowerCase();
+    if (specialty.includes('endodont')) {
+      const id = (clinician['Phy Lic'] || clinician.id || clinician.license_number || clinician.clinician_id || '').toString().trim();
+      if (id) set.add(id);
+    }
+  });
+
+  return set;
 }
 
 // Parse encounter date from "DD/MM/YYYY" or "DD/MM/YYYY HH:MM" format
@@ -355,6 +372,9 @@ function validateKnownCode({
     remarks.push(`${code} requires at least one observation but none were provided.`);
   }
 
+  // Collect invalid teeth grouped by type for consolidated error messages
+  const invalidTeethByType = {};
+
   const details = obsCodes.length === 0
     ? 'None provided'
     : obsCodes.map(obsCode => {
@@ -364,11 +384,10 @@ function validateKnownCode({
       if (obsCode === 'SUBCODE') {
         return `Subcode observation`;
       }
-      let thisRemark = '';
       if (!meta.teethSet.has(obsCode)) {
         const toothType = getRegionName(obsCode);
-        thisRemark = `${toothType} ${obsCode} not allowed for ${meta.description.match(/anterior|posterior|bicuspid|all/i)?.[0] || 'see code description'} code ${code}.`;
-        remarks.push(thisRemark);
+        if (!invalidTeethByType[toothType]) invalidTeethByType[toothType] = [];
+        invalidTeethByType[toothType].push(obsCode);
       }
 
       if (regionType === 'sextant') {
@@ -379,6 +398,15 @@ function validateKnownCode({
 
       return `${obsCode} - ${getRegionName(obsCode)}`;
     }).join('<br>');
+
+  // Emit one consolidated remark per tooth type
+  const codeCategory = meta.description.match(/anterior|posterior|bicuspid|all/i)?.[0] || 'see code description';
+  for (const [toothType, teeth] of Object.entries(invalidTeethByType)) {
+    const teethStr = teeth.length > 1
+      ? teeth.slice(0, -1).join(' ') + ' and ' + teeth[teeth.length - 1]
+      : teeth[0];
+    remarks.push(`${toothType} ${teethStr} not allowed for ${codeCategory} code ${code}.`);
+  }
 
   // Region duplication check
   if (regionType && regionKey && regionKey !== 'Unknown') {
@@ -508,7 +536,7 @@ function getCombinedRemarks(row) {
 }
 
 // Main activity validation and results rendering
-function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions) {
+function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontistSet, receiverID = '') {
   const rows = [];
   const claimSummaries = {};
   const claimRegionTrack = {};
@@ -588,9 +616,25 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions) {
       }
 
       // Check Subcode observation requirement for root canal codes from 20-Feb-2026 onward
-      if (afterCutoff && ROOT_CANAL_SUBCODE_CODES.has(code)) {
-        if (!hasSubcodeObservation(obsList)) {
-          row.warnings.push(`Code ${code} is a root canal procedure — please verify the Ordering Clinician is an Endodontist. If so, a Subcode observation (Type: Text, Code: Subcode, Value: 01, ValueType: Text) is required.`);
+      // Only applies when the receiver is D001 (Thiqa)
+      if (receiverID === 'D001' && afterCutoff && ROOT_CANAL_SUBCODE_CODES.has(code)) {
+        // Extract clinician ID: try Clinician first, fallback to OrderingClinician
+        let clinicianId = act.querySelector('Clinician')?.textContent?.trim();
+        if (!clinicianId) {
+          clinicianId = act.querySelector('OrderingClinician')?.textContent?.trim();
+        }
+
+        // ERROR: No clinician specified at all
+        if (!clinicianId) {
+          row.remarks.push(`Code ${code} is a root canal procedure but no Clinician or OrderingClinician was specified.`);
+        } else {
+          const isEndodontist = endodontistSet.has(clinicianId);
+          const hasSubcode = hasSubcodeObservation(obsList);
+
+          if (isEndodontist && !hasSubcode) {
+            // ERROR: Endodontist but missing required Subcode observation
+            row.remarks.push(`Code ${code} requires a Subcode observation (Type: Text, Code: Subcode, Value: 01) when performed by an Endodontist.`);
+          }
         }
       }
 
@@ -674,7 +718,7 @@ function buildResultsTable(rows) {
             <td style="padding:6px;border:1px solid #ccc">${r.code}</td>
             <td class="description-col" style="padding:6px;border:1px solid #ccc">${r.description}</td>
             <td style="padding:6px;border:1px solid #ccc">${r.details}</td>
-            <td class="description-col" style="padding:6px;border:1px solid #ccc">${allRemarks.join('<br>')}</td>
+            <td class="description-col" style="padding:6px;border:1px solid #ccc">${allRemarks.map(rem => `<div>${rem}</div>`).join('')}</td>
           </tr>`;
       }).join('')}
     </tbody>`;
@@ -806,18 +850,26 @@ function parseXML() {
       .then(r => {
         console.log('[TEETH] Fetched auth JSON:', r.ok);
         return r.ok ? r.json() : Promise.reject(`Failed to load checker_auths.json (HTTP ${r.status})`);
+      }),
+    fetch('../json/clinician_licenses.json')
+      .then(r => {
+        console.log('[TEETH] Fetched clinician licenses JSON:', r.ok);
+        return r.ok ? r.json() : Promise.reject(`Failed to load clinician_licenses.json (HTTP ${r.status})`);
       })
   ])
-  .then(([xmlText, toothJson, authJson]) => {
+  .then(([xmlText, toothJson, authJson, clinicianLicenses]) => {
     console.log('[TEETH] All resources loaded, processing...');
     const toothMap = buildCodeMeta(toothJson);
     const authMap  = buildAuthMap(authJson);
+    const endodontistSet = buildEndodontistSet(clinicianLicenses);
     // Preprocess XML to replace unescaped & with "and" for parseability
     const xmlContent = xmlText.replace(/&(?!(amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;))/g, "and");
     const xmlDoc   = new DOMParser().parseFromString(xmlContent, 'application/xml');
     if (xmlDoc.querySelector('parsererror')) throw new Error('Invalid XML file');
+    const header = xmlDoc.querySelector('Header');
+    const receiverID = header?.querySelector('ReceiverID')?.textContent.trim() || '';
     console.log('[TEETH] XML parsed, validating activities...');
-    const rows     = validateActivities(xmlDoc, toothMap, authMap);
+    const rows     = validateActivities(xmlDoc, toothMap, authMap, endodontistSet, receiverID);
     console.log('[TEETH] Validation complete, building table... (rows:', rows.length, ')');
     const tableElement = buildResultsTable(rows);
     console.log('[TEETH] Table build complete');

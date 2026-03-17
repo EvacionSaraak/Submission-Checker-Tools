@@ -514,6 +514,33 @@ async function combineReportings(fileEntries) {
     const totalRows = sheetData.length;
     const seenClaimIDs = new Set();
 
+    // Pre-pass: sum Total Amount across all rows sharing a claim ID so that
+    // the combined output reflects the full claim value, not just the first row.
+    const claimAmountMap = new Map();
+    for (let r = startRow; r < totalRows; r++) {
+      const row = sheetData[r];
+      if (!Array.isArray(row) || row.length === 0) continue;
+      const sourceRow = {};
+      for (let c = 0; c < trimmedHeaderRow.length; c++) {
+        sourceRow[headerSignature(trimmedHeaderRow[c] || '')] = row[c] ?? '';
+      }
+      let claimID = '';
+      if (headerMap) {
+        const claimSrc = Object.keys(headerMap).find(k => headerMap[k] === 'Pri. Claim No');
+        if (claimSrc) claimID = (sourceRow[headerSignature(claimSrc)] ?? '').toString().trim();
+      }
+      if (!claimID) {
+        claimID = (sourceRow['priclaimno'] || sourceRow['claimid'] || sourceRow['priclaimid'] || '')?.toString().trim();
+      }
+      if (!claimID) continue;
+      const codifStatus = (sourceRow['codificationstatus'] || '').toString().trim().toLowerCase();
+      if (codifStatus === 'not seen') continue;
+      const amtSig = targetToSourceSig['Total Amount'];
+      const rawAmt = amtSig ? (sourceRow[amtSig] ?? '') : (sourceRow['totalsponsoramt'] ?? sourceRow['invoiceamount'] ?? sourceRow['totalamount'] ?? '');
+      const amt = parseFloat(String(rawAmt).replace(/,/g, '')) || 0;
+      claimAmountMap.set(claimID, (claimAmountMap.get(claimID) || 0) + amt);
+    }
+
     for (let r = startRow; r < totalRows; r++) {
       const row = sheetData[r];
       if (!Array.isArray(row) || row.length === 0) continue;
@@ -652,9 +679,8 @@ async function combineReportings(fileEntries) {
           else if (tgt === 'Raw Encounter Date') val = rawEncounterVal ?? '';
           else if (tgt === 'Source File') val = name;
           else if (tgt === 'Total Amount') {
-            // ensure Total Amount is captured: prefer mapped header, else common variants
-            const sig = targetToSourceSig['Total Amount'];
-            val = sig ? (sourceRow[sig] ?? '') : (sourceRow['totalsponsoramt'] ?? sourceRow['invoiceamount'] ?? sourceRow['totalamount'] ?? '');
+            // Use the summed total across all rows sharing this claim ID
+            val = claimAmountMap.has(claimID) ? claimAmountMap.get(claimID) : '';
           }
           else {
             const sig = targetToSourceSig[tgt] || null;

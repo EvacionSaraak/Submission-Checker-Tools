@@ -258,6 +258,12 @@
       console.warn('[INIT] Debug log button not found in DOM');
     }
 
+    // Clear All button
+    const clearAllBtn = document.getElementById('clearAllBtn');
+    if (clearAllBtn) {
+      clearAllBtn.addEventListener('click', clearAll);
+    }
+
     console.log('[INIT] Performing initial button state update...');
     updateButtonStates();
     
@@ -289,6 +295,62 @@
       console.log(`[FILE] Cleared: ${fileKey}`);
     }
     updateButtonStates();
+  }
+
+  function clearAll() {
+    console.log('[CLEAR] Clearing all inputs and resetting to defaults...');
+
+    // Clear file data
+    for (const key in files) { files[key] = null; }
+
+    // Clear file input elements and status spans
+    const fileInputMap = [
+      { input: elements.xmlInput,         status: elements.xmlStatus },
+      { input: elements.clinicianInput,   status: elements.clinicianStatus },
+      { input: elements.eligibilityInput, status: elements.eligibilityStatus },
+      { input: elements.authInput,        status: elements.authStatus },
+      { input: elements.statusInput,      status: elements.statusStatus },
+      { input: elements.pricingInput,     status: elements.pricingStatus }
+    ];
+    fileInputMap.forEach(({ input, status }) => {
+      if (input) input.value = '';
+      if (status) {
+        status.textContent = '';
+        status.removeAttribute('style');
+      }
+    });
+
+    // Reset radio buttons to default (Dental)
+    const claimTypeDental = document.getElementById('claimTypeDental');
+    if (claimTypeDental) claimTypeDental.checked = true;
+
+    // Clear results and status message
+    if (elements.uploadStatus) elements.uploadStatus.innerHTML = '';
+    hideAllCheckerContainers();
+    activeChecker = null;
+
+    // Reset filter state
+    filterActive = false;
+    if (elements.floatingFilterBtn) {
+      elements.floatingFilterBtn.classList.remove('active');
+    }
+
+    // Clear file cache
+    if (window.FileCache && typeof window.FileCache.clear === 'function') window.FileCache.clear();
+
+    // Reset debug log and export state
+    debugLog = [];
+    invalidRowsData = [];
+    if (elements.exportInvalidsBtn) {
+      elements.exportInvalidsBtn.disabled = true;
+      updateExportInvalidsTooltip('no-tables');
+    }
+    if (elements.debugLogContainer) {
+      elements.debugLogContainer.style.display = 'none';
+    }
+
+    updateButtonStates();
+    console.log('[CLEAR] All inputs cleared and defaults restored.');
   }
 
   function updateButtonStates() {
