@@ -112,8 +112,11 @@ Validates dental procedure codes for correct tooth and region assignments.
 - Color-coded compliance report; export invalid entries as Excel.
 
 #### 7. Dental Pricing Checker (`checker_pricing`)
-Compares claimed prices against the THIQA Dental Pricing reference list.
-- Upload an XML claim file; a pricing XLSX is optional (defaults to built-in THIQA Dental Pricing resource).
+Compares claimed prices against the built-in dental pricing reference for both Thiqa (D001) and Daman (A001) claims.
+- Upload an XML claim file; a pricing XLSX is optional (overrides built-in pricing when uploaded).
+- Automatically selects the correct price based on `ReceiverID` (Thiqa or Daman) and facility ID.
+- For Daman claims: applies 2025 prices for Khabisi (MF5020) and Al Yahar (MF5357); standard prices for all others.
+- For Thiqa claims: applies Alyahar/Emirates/Al Wagan prices for those facilities; standard prices for all others.
 - Extracts claim line items, compares against the reference price per CPT code.
 - Applies facility-specific pricing and special rules (e.g., endodontic pricing by specialty, code 42702 handling).
 - Marks each activity as **Valid** or **Invalid** with a remarks column.

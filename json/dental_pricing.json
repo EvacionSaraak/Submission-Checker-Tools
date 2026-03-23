@@ -1,0 +1,7492 @@
+[
+  {
+    "code": "1101",
+    "thiqa_other": 70.0,
+    "thiqa_alyahar": 60.0,
+    "daman_default": 70.0,
+    "daman_khabisi_alyahar": 42.0
+  },
+  {
+    "code": "1102",
+    "thiqa_other": 70.0,
+    "thiqa_alyahar": 60.0,
+    "daman_default": 70.0,
+    "daman_khabisi_alyahar": 42.0
+  },
+  {
+    "code": "1103",
+    "thiqa_other": 70.0,
+    "thiqa_alyahar": 60.0,
+    "daman_default": 70.0,
+    "daman_khabisi_alyahar": 42.0
+  },
+  {
+    "code": "1201",
+    "thiqa_other": 70.0,
+    "thiqa_alyahar": 60.0,
+    "daman_default": 70.0,
+    "daman_khabisi_alyahar": 42.0
+  },
+  {
+    "code": "1202",
+    "thiqa_other": 56.0,
+    "thiqa_alyahar": 48.0,
+    "daman_default": 56.0,
+    "daman_khabisi_alyahar": 33.6
+  },
+  {
+    "code": "1204",
+    "thiqa_other": 70.0,
+    "thiqa_alyahar": 60.0,
+    "daman_default": 70.0,
+    "daman_khabisi_alyahar": 42.0
+  },
+  {
+    "code": "1205",
+    "thiqa_other": 70.0,
+    "thiqa_alyahar": 60.0,
+    "daman_default": 70.0,
+    "daman_khabisi_alyahar": 42.0
+  },
+  {
+    "code": "1206",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "1301",
+    "thiqa_other": 175.0,
+    "thiqa_alyahar": 150.0,
+    "daman_default": 175.0,
+    "daman_khabisi_alyahar": 105.0
+  },
+  {
+    "code": "1302",
+    "thiqa_other": 56.0,
+    "thiqa_alyahar": 48.0,
+    "daman_default": 56.0,
+    "daman_khabisi_alyahar": 33.6
+  },
+  {
+    "code": "1401",
+    "thiqa_other": 175.0,
+    "thiqa_alyahar": 150.0,
+    "daman_default": 175.0,
+    "daman_khabisi_alyahar": 105.0
+  },
+  {
+    "code": "1402",
+    "thiqa_other": 70.0,
+    "thiqa_alyahar": 60.0,
+    "daman_default": 70.0,
+    "daman_khabisi_alyahar": 42.0
+  },
+  {
+    "code": "1501",
+    "thiqa_other": 175.0,
+    "thiqa_alyahar": 150.0,
+    "daman_default": 175.0,
+    "daman_khabisi_alyahar": 105.0
+  },
+  {
+    "code": "1502",
+    "thiqa_other": 56.0,
+    "thiqa_alyahar": 48.0,
+    "daman_default": 56.0,
+    "daman_khabisi_alyahar": 33.6
+  },
+  {
+    "code": "1601",
+    "thiqa_other": 175.0,
+    "thiqa_alyahar": 150.0,
+    "daman_default": 175.0,
+    "daman_khabisi_alyahar": 105.0
+  },
+  {
+    "code": "1602",
+    "thiqa_other": 70.0,
+    "thiqa_alyahar": 60.0,
+    "daman_default": 70.0,
+    "daman_khabisi_alyahar": 42.0
+  },
+  {
+    "code": "1701",
+    "thiqa_other": 175.0,
+    "thiqa_alyahar": 150.0,
+    "daman_default": 175.0,
+    "daman_khabisi_alyahar": 105.0
+  },
+  {
+    "code": "1702",
+    "thiqa_other": 70.0,
+    "thiqa_alyahar": 60.0,
+    "daman_default": 70.0,
+    "daman_khabisi_alyahar": 42.0
+  },
+  {
+    "code": "1703",
+    "thiqa_other": 175.0,
+    "thiqa_alyahar": 150.0,
+    "daman_default": 175.0,
+    "daman_khabisi_alyahar": 105.0
+  },
+  {
+    "code": "1801",
+    "thiqa_other": 175.0,
+    "thiqa_alyahar": 150.0,
+    "daman_default": 175.0,
+    "daman_khabisi_alyahar": 105.0
+  },
+  {
+    "code": "1802",
+    "thiqa_other": 70.0,
+    "thiqa_alyahar": 60.0,
+    "daman_default": 70.0,
+    "daman_khabisi_alyahar": 42.0
+  },
+  {
+    "code": "1901",
+    "thiqa_other": 525.0,
+    "thiqa_alyahar": 450.0,
+    "daman_default": 525.0,
+    "daman_khabisi_alyahar": 315.0
+  },
+  {
+    "code": "1902",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 60.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 42.0
+  },
+  {
+    "code": "2101",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "2102",
+    "thiqa_other": 175.0,
+    "thiqa_alyahar": 150.0,
+    "daman_default": 175.0,
+    "daman_khabisi_alyahar": 105.0
+  },
+  {
+    "code": "2111",
+    "thiqa_other": 35.0,
+    "thiqa_alyahar": 30.0,
+    "daman_default": 35.0,
+    "daman_khabisi_alyahar": 21.0
+  },
+  {
+    "code": "2131",
+    "thiqa_other": 35.0,
+    "thiqa_alyahar": 30.0,
+    "daman_default": 35.0,
+    "daman_khabisi_alyahar": 21.0
+  },
+  {
+    "code": "2141",
+    "thiqa_other": 35.0,
+    "thiqa_alyahar": 30.0,
+    "daman_default": 35.0,
+    "daman_khabisi_alyahar": 21.0
+  },
+  {
+    "code": "2201",
+    "thiqa_other": 70.0,
+    "thiqa_alyahar": 60.0,
+    "daman_default": 70.0,
+    "daman_khabisi_alyahar": 42.0
+  },
+  {
+    "code": "2301",
+    "thiqa_other": 70.0,
+    "thiqa_alyahar": 60.0,
+    "daman_default": 70.0,
+    "daman_khabisi_alyahar": 42.0
+  },
+  {
+    "code": "2304",
+    "thiqa_other": 175.0,
+    "thiqa_alyahar": 150.0,
+    "daman_default": 175.0,
+    "daman_khabisi_alyahar": 105.0
+  },
+  {
+    "code": "2401",
+    "thiqa_other": 126.0,
+    "thiqa_alyahar": 108.0,
+    "daman_default": 126.0,
+    "daman_khabisi_alyahar": 75.6
+  },
+  {
+    "code": "2501",
+    "thiqa_other": 70.0,
+    "thiqa_alyahar": 60.0,
+    "daman_default": 70.0,
+    "daman_khabisi_alyahar": 42.0
+  },
+  {
+    "code": "2504",
+    "thiqa_other": 175.0,
+    "thiqa_alyahar": 150.0,
+    "daman_default": 175.0,
+    "daman_khabisi_alyahar": 105.0
+  },
+  {
+    "code": "2509",
+    "thiqa_other": 35.0,
+    "thiqa_alyahar": 30.0,
+    "daman_default": 35.0,
+    "daman_khabisi_alyahar": 21.0
+  },
+  {
+    "code": "2601",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "2701",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "2751",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "2759",
+    "thiqa_other": 56.0,
+    "thiqa_alyahar": 48.0,
+    "daman_default": 56.0,
+    "daman_khabisi_alyahar": 33.6
+  },
+  {
+    "code": "2801",
+    "thiqa_other": 70.0,
+    "thiqa_alyahar": 60.0,
+    "daman_default": 70.0,
+    "daman_khabisi_alyahar": 42.0
+  },
+  {
+    "code": "2809",
+    "thiqa_other": 56.0,
+    "thiqa_alyahar": 48.0,
+    "daman_default": 56.0,
+    "daman_khabisi_alyahar": 33.6
+  },
+  {
+    "code": "2911",
+    "thiqa_other": 35.0,
+    "thiqa_alyahar": 30.0,
+    "daman_default": 35.0,
+    "daman_khabisi_alyahar": 21.0
+  },
+  {
+    "code": "2931",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "2934",
+    "thiqa_other": 420.0,
+    "thiqa_alyahar": 360.0,
+    "daman_default": 420.0,
+    "daman_khabisi_alyahar": 252.0
+  },
+  {
+    "code": "2941",
+    "thiqa_other": 84.0,
+    "thiqa_alyahar": 72.0,
+    "daman_default": 84.0,
+    "daman_khabisi_alyahar": 50.4
+  },
+  {
+    "code": "2951",
+    "thiqa_other": 350.0,
+    "thiqa_alyahar": 300.0,
+    "daman_default": 350.0,
+    "daman_khabisi_alyahar": 210.0
+  },
+  {
+    "code": "2952",
+    "thiqa_other": 350.0,
+    "thiqa_alyahar": 300.0,
+    "daman_default": 350.0,
+    "daman_khabisi_alyahar": 210.0
+  },
+  {
+    "code": "3001",
+    "thiqa_other": 350.0,
+    "thiqa_alyahar": 300.0,
+    "daman_default": 350.0,
+    "daman_khabisi_alyahar": 210.0
+  },
+  {
+    "code": "3002",
+    "thiqa_other": 350.0,
+    "thiqa_alyahar": 300.0,
+    "daman_default": 350.0,
+    "daman_khabisi_alyahar": 210.0
+  },
+  {
+    "code": "4101",
+    "thiqa_other": 84.0,
+    "thiqa_alyahar": 72.0,
+    "daman_default": 84.0,
+    "daman_khabisi_alyahar": 50.4
+  },
+  {
+    "code": "4201",
+    "thiqa_other": 84.0,
+    "thiqa_alyahar": 72.0,
+    "daman_default": 84.0,
+    "daman_khabisi_alyahar": 50.4
+  },
+  {
+    "code": "4311",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "4312",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "4313",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "4321",
+    "thiqa_other": 280.0,
+    "thiqa_alyahar": 240.0,
+    "daman_default": 280.0,
+    "daman_khabisi_alyahar": 168.0
+  },
+  {
+    "code": "4322",
+    "thiqa_other": 280.0,
+    "thiqa_alyahar": 240.0,
+    "daman_default": 280.0,
+    "daman_khabisi_alyahar": 168.0
+  },
+  {
+    "code": "4323",
+    "thiqa_other": 280.0,
+    "thiqa_alyahar": 240.0,
+    "daman_default": 280.0,
+    "daman_khabisi_alyahar": 168.0
+  },
+  {
+    "code": "4501",
+    "thiqa_other": 70.0,
+    "thiqa_alyahar": 60.0,
+    "daman_default": 70.0,
+    "daman_khabisi_alyahar": 42.0
+  },
+  {
+    "code": "4509",
+    "thiqa_other": 56.0,
+    "thiqa_alyahar": 48.0,
+    "daman_default": 56.0,
+    "daman_khabisi_alyahar": 33.6
+  },
+  {
+    "code": "4601",
+    "thiqa_other": 154.0,
+    "thiqa_alyahar": 132.0,
+    "daman_default": 154.0,
+    "daman_khabisi_alyahar": 92.4
+  },
+  {
+    "code": "4602",
+    "thiqa_other": 154.0,
+    "thiqa_alyahar": 132.0,
+    "daman_default": 154.0,
+    "daman_khabisi_alyahar": 92.4
+  },
+  {
+    "code": "4603",
+    "thiqa_other": 154.0,
+    "thiqa_alyahar": 132.0,
+    "daman_default": 154.0,
+    "daman_khabisi_alyahar": 92.4
+  },
+  {
+    "code": "4631",
+    "thiqa_other": 70.0,
+    "thiqa_alyahar": 60.0,
+    "daman_default": 70.0,
+    "daman_khabisi_alyahar": 42.0
+  },
+  {
+    "code": "4639",
+    "thiqa_other": 56.0,
+    "thiqa_alyahar": 48.0,
+    "daman_default": 56.0,
+    "daman_khabisi_alyahar": 33.6
+  },
+  {
+    "code": "4711",
+    "thiqa_other": 210.0,
+    "thiqa_alyahar": 180.0,
+    "daman_default": 210.0,
+    "daman_khabisi_alyahar": 126.0
+  },
+  {
+    "code": "4719",
+    "thiqa_other": 70.0,
+    "thiqa_alyahar": 60.0,
+    "daman_default": 70.0,
+    "daman_khabisi_alyahar": 42.0
+  },
+  {
+    "code": "4721",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "4729",
+    "thiqa_other": 84.0,
+    "thiqa_alyahar": 72.0,
+    "daman_default": 84.0,
+    "daman_khabisi_alyahar": 50.4
+  },
+  {
+    "code": "4801",
+    "thiqa_other": 35.0,
+    "thiqa_alyahar": 30.0,
+    "daman_default": 35.0,
+    "daman_khabisi_alyahar": 21.0
+  },
+  {
+    "code": "4911",
+    "thiqa_other": 70.0,
+    "thiqa_alyahar": 60.0,
+    "daman_default": 70.0,
+    "daman_khabisi_alyahar": 42.0
+  },
+  {
+    "code": "4912",
+    "thiqa_other": 35.0,
+    "thiqa_alyahar": 30.0,
+    "daman_default": 35.0,
+    "daman_khabisi_alyahar": 21.0
+  },
+  {
+    "code": "4921",
+    "thiqa_other": 84.0,
+    "thiqa_alyahar": 72.0,
+    "daman_default": 84.0,
+    "daman_khabisi_alyahar": 50.4
+  },
+  {
+    "code": "4922",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "4923",
+    "thiqa_other": 175.0,
+    "thiqa_alyahar": 150.0,
+    "daman_default": 175.0,
+    "daman_khabisi_alyahar": 105.0
+  },
+  {
+    "code": "4931",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "4941",
+    "thiqa_other": 175.0,
+    "thiqa_alyahar": 150.0,
+    "daman_default": 175.0,
+    "daman_khabisi_alyahar": 105.0
+  },
+  {
+    "code": "6201",
+    "thiqa_other": 56.0,
+    "thiqa_alyahar": 48.0,
+    "daman_default": 56.0,
+    "daman_khabisi_alyahar": 33.6
+  },
+  {
+    "code": "6301",
+    "thiqa_other": 56.0,
+    "thiqa_alyahar": 48.0,
+    "daman_default": 56.0,
+    "daman_khabisi_alyahar": 33.6
+  },
+  {
+    "code": "6401",
+    "thiqa_other": 119.0,
+    "thiqa_alyahar": 102.0,
+    "daman_default": 119.0,
+    "daman_khabisi_alyahar": 71.4
+  },
+  {
+    "code": "6501",
+    "thiqa_other": 56.0,
+    "thiqa_alyahar": 48.0,
+    "daman_default": 56.0,
+    "daman_khabisi_alyahar": 33.6
+  },
+  {
+    "code": "6504",
+    "thiqa_other": 175.0,
+    "thiqa_alyahar": 150.0,
+    "daman_default": 175.0,
+    "daman_khabisi_alyahar": 105.0
+  },
+  {
+    "code": "6601",
+    "thiqa_other": 84.0,
+    "thiqa_alyahar": 72.0,
+    "daman_default": 84.0,
+    "daman_khabisi_alyahar": 50.4
+  },
+  {
+    "code": "6701",
+    "thiqa_other": 77.0,
+    "thiqa_alyahar": 66.0,
+    "daman_default": 77.0,
+    "daman_khabisi_alyahar": 46.2
+  },
+  {
+    "code": "6751",
+    "thiqa_other": 126.0,
+    "thiqa_alyahar": 108.0,
+    "daman_default": 126.0,
+    "daman_khabisi_alyahar": 75.6
+  },
+  {
+    "code": "6759",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "6811",
+    "thiqa_other": 126.0,
+    "thiqa_alyahar": 108.0,
+    "daman_default": 126.0,
+    "daman_khabisi_alyahar": 75.6
+  },
+  {
+    "code": "6819",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "6821",
+    "thiqa_other": 126.0,
+    "thiqa_alyahar": 108.0,
+    "daman_default": 126.0,
+    "daman_khabisi_alyahar": 75.6
+  },
+  {
+    "code": "6829",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "6931",
+    "thiqa_other": 126.0,
+    "thiqa_alyahar": 108.0,
+    "daman_default": 126.0,
+    "daman_khabisi_alyahar": 75.6
+  },
+  {
+    "code": "6934",
+    "thiqa_other": 350.0,
+    "thiqa_alyahar": 300.0,
+    "daman_default": 350.0,
+    "daman_khabisi_alyahar": 210.0
+  },
+  {
+    "code": "6941",
+    "thiqa_other": 56.0,
+    "thiqa_alyahar": 48.0,
+    "daman_default": 56.0,
+    "daman_khabisi_alyahar": 33.6
+  },
+  {
+    "code": "11101",
+    "thiqa_other": 56.0,
+    "thiqa_alyahar": 48.0,
+    "daman_default": 56.0,
+    "daman_khabisi_alyahar": 33.6
+  },
+  {
+    "code": "11109",
+    "thiqa_other": 35.0,
+    "thiqa_alyahar": 30.0,
+    "daman_default": 35.0,
+    "daman_khabisi_alyahar": 21.0
+  },
+  {
+    "code": "11111",
+    "thiqa_other": 70.0,
+    "thiqa_alyahar": 60.0,
+    "daman_default": 70.0,
+    "daman_khabisi_alyahar": 42.0
+  },
+  {
+    "code": "11119",
+    "thiqa_other": 52.5,
+    "thiqa_alyahar": 45.0,
+    "daman_default": 52.5,
+    "daman_khabisi_alyahar": 31.5
+  },
+  {
+    "code": "12101",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "13101",
+    "thiqa_other": 56.0,
+    "thiqa_alyahar": 48.0,
+    "daman_default": 56.0,
+    "daman_khabisi_alyahar": 33.6
+  },
+  {
+    "code": "13109",
+    "thiqa_other": 35.0,
+    "thiqa_alyahar": 30.0,
+    "daman_default": 35.0,
+    "daman_khabisi_alyahar": 21.0
+  },
+  {
+    "code": "13211",
+    "thiqa_other": 35.0,
+    "thiqa_alyahar": 30.0,
+    "daman_default": 35.0,
+    "daman_khabisi_alyahar": 21.0
+  },
+  {
+    "code": "13219",
+    "thiqa_other": 21.0,
+    "thiqa_alyahar": 30.0,
+    "daman_default": 21.0,
+    "daman_khabisi_alyahar": 21.0
+  },
+  {
+    "code": "13401",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "13409",
+    "thiqa_other": 87.5,
+    "thiqa_alyahar": 75.0,
+    "daman_default": 87.5,
+    "daman_khabisi_alyahar": 52.5
+  },
+  {
+    "code": "13411",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "13419",
+    "thiqa_other": 91.0,
+    "thiqa_alyahar": 78.0,
+    "daman_default": 91.0,
+    "daman_khabisi_alyahar": 54.6
+  },
+  {
+    "code": "14101",
+    "thiqa_other": 595.0,
+    "thiqa_alyahar": 510.0,
+    "daman_default": 595.0,
+    "daman_khabisi_alyahar": 357.0
+  },
+  {
+    "code": "14102",
+    "thiqa_other": 595.0,
+    "thiqa_alyahar": 510.0,
+    "daman_default": 595.0,
+    "daman_khabisi_alyahar": 357.0
+  },
+  {
+    "code": "14103",
+    "thiqa_other": 910.0,
+    "thiqa_alyahar": 780.0,
+    "daman_default": 910.0,
+    "daman_khabisi_alyahar": 546.0
+  },
+  {
+    "code": "14201",
+    "thiqa_other": 700.0,
+    "thiqa_alyahar": 600.0,
+    "daman_default": 700.0,
+    "daman_khabisi_alyahar": 420.0
+  },
+  {
+    "code": "14202",
+    "thiqa_other": 700.0,
+    "thiqa_alyahar": 600.0,
+    "daman_default": 700.0,
+    "daman_khabisi_alyahar": 420.0
+  },
+  {
+    "code": "14301",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "14401",
+    "thiqa_other": 175.0,
+    "thiqa_alyahar": 150.0,
+    "daman_default": 175.0,
+    "daman_khabisi_alyahar": 105.0
+  },
+  {
+    "code": "14409",
+    "thiqa_other": 77.0,
+    "thiqa_alyahar": 66.0,
+    "daman_default": 77.0,
+    "daman_khabisi_alyahar": 46.2
+  },
+  {
+    "code": "14501",
+    "thiqa_other": 280.0,
+    "thiqa_alyahar": 240.0,
+    "daman_default": 280.0,
+    "daman_khabisi_alyahar": 168.0
+  },
+  {
+    "code": "14502",
+    "thiqa_other": 560.0,
+    "thiqa_alyahar": 480.0,
+    "daman_default": 560.0,
+    "daman_khabisi_alyahar": 336.0
+  },
+  {
+    "code": "14611",
+    "thiqa_other": 490.0,
+    "thiqa_alyahar": 420.0,
+    "daman_default": 490.0,
+    "daman_khabisi_alyahar": 294.0
+  },
+  {
+    "code": "14612",
+    "thiqa_other": 560.0,
+    "thiqa_alyahar": 480.0,
+    "daman_default": 560.0,
+    "daman_khabisi_alyahar": 336.0
+  },
+  {
+    "code": "14621",
+    "thiqa_other": 175.0,
+    "thiqa_alyahar": 150.0,
+    "daman_default": 175.0,
+    "daman_khabisi_alyahar": 105.0
+  },
+  {
+    "code": "14629",
+    "thiqa_other": 84.0,
+    "thiqa_alyahar": 72.0,
+    "daman_default": 84.0,
+    "daman_khabisi_alyahar": 50.4
+  },
+  {
+    "code": "14631",
+    "thiqa_other": 210.0,
+    "thiqa_alyahar": 180.0,
+    "daman_default": 210.0,
+    "daman_khabisi_alyahar": 126.0
+  },
+  {
+    "code": "14632",
+    "thiqa_other": 315.0,
+    "thiqa_alyahar": 270.0,
+    "daman_default": 315.0,
+    "daman_khabisi_alyahar": 189.0
+  },
+  {
+    "code": "14711",
+    "thiqa_other": 525.0,
+    "thiqa_alyahar": 450.0,
+    "daman_default": 525.0,
+    "daman_khabisi_alyahar": 315.0
+  },
+  {
+    "code": "14712",
+    "thiqa_other": 525.0,
+    "thiqa_alyahar": 450.0,
+    "daman_default": 525.0,
+    "daman_khabisi_alyahar": 315.0
+  },
+  {
+    "code": "14721",
+    "thiqa_other": 525.0,
+    "thiqa_alyahar": 450.0,
+    "daman_default": 525.0,
+    "daman_khabisi_alyahar": 315.0
+  },
+  {
+    "code": "14722",
+    "thiqa_other": 525.0,
+    "thiqa_alyahar": 450.0,
+    "daman_default": 525.0,
+    "daman_khabisi_alyahar": 315.0
+  },
+  {
+    "code": "14731",
+    "thiqa_other": 175.0,
+    "thiqa_alyahar": 150.0,
+    "daman_default": 175.0,
+    "daman_khabisi_alyahar": 105.0
+  },
+  {
+    "code": "14739",
+    "thiqa_other": 84.0,
+    "thiqa_alyahar": 72.0,
+    "daman_default": 84.0,
+    "daman_khabisi_alyahar": 50.4
+  },
+  {
+    "code": "14741",
+    "thiqa_other": 210.0,
+    "thiqa_alyahar": 180.0,
+    "daman_default": 210.0,
+    "daman_khabisi_alyahar": 126.0
+  },
+  {
+    "code": "14742",
+    "thiqa_other": 315.0,
+    "thiqa_alyahar": 270.0,
+    "daman_default": 315.0,
+    "daman_khabisi_alyahar": 189.0
+  },
+  {
+    "code": "14811",
+    "thiqa_other": 700.0,
+    "thiqa_alyahar": 600.0,
+    "daman_default": 700.0,
+    "daman_khabisi_alyahar": 420.0
+  },
+  {
+    "code": "14812",
+    "thiqa_other": 700.0,
+    "thiqa_alyahar": 600.0,
+    "daman_default": 700.0,
+    "daman_khabisi_alyahar": 420.0
+  },
+  {
+    "code": "14821",
+    "thiqa_other": 175.0,
+    "thiqa_alyahar": 150.0,
+    "daman_default": 175.0,
+    "daman_khabisi_alyahar": 105.0
+  },
+  {
+    "code": "14829",
+    "thiqa_other": 84.0,
+    "thiqa_alyahar": 72.0,
+    "daman_default": 84.0,
+    "daman_khabisi_alyahar": 50.4
+  },
+  {
+    "code": "14831",
+    "thiqa_other": 210.0,
+    "thiqa_alyahar": 180.0,
+    "daman_default": 210.0,
+    "daman_khabisi_alyahar": 126.0
+  },
+  {
+    "code": "14832",
+    "thiqa_other": 315.0,
+    "thiqa_alyahar": 270.0,
+    "daman_default": 315.0,
+    "daman_khabisi_alyahar": 189.0
+  },
+  {
+    "code": "15101",
+    "thiqa_other": 350.0,
+    "thiqa_alyahar": 300.0,
+    "daman_default": 350.0,
+    "daman_khabisi_alyahar": 210.0
+  },
+  {
+    "code": "15102",
+    "thiqa_other": 525.0,
+    "thiqa_alyahar": 450.0,
+    "daman_default": 525.0,
+    "daman_khabisi_alyahar": 315.0
+  },
+  {
+    "code": "15103",
+    "thiqa_other": 630.0,
+    "thiqa_alyahar": 540.0,
+    "daman_default": 630.0,
+    "daman_khabisi_alyahar": 378.0
+  },
+  {
+    "code": "15104",
+    "thiqa_other": 840.0,
+    "thiqa_alyahar": 720.0,
+    "daman_default": 840.0,
+    "daman_khabisi_alyahar": 504.0
+  },
+  {
+    "code": "15105",
+    "thiqa_other": 630.0,
+    "thiqa_alyahar": 540.0,
+    "daman_default": 630.0,
+    "daman_khabisi_alyahar": 378.0
+  },
+  {
+    "code": "15201",
+    "thiqa_other": 630.0,
+    "thiqa_alyahar": 540.0,
+    "daman_default": 630.0,
+    "daman_khabisi_alyahar": 378.0
+  },
+  {
+    "code": "15202",
+    "thiqa_other": 875.0,
+    "thiqa_alyahar": 750.0,
+    "daman_default": 875.0,
+    "daman_khabisi_alyahar": 525.0
+  },
+  {
+    "code": "15301",
+    "thiqa_other": 630.0,
+    "thiqa_alyahar": 540.0,
+    "daman_default": 630.0,
+    "daman_khabisi_alyahar": 378.0
+  },
+  {
+    "code": "15302",
+    "thiqa_other": 840.0,
+    "thiqa_alyahar": 720.0,
+    "daman_default": 840.0,
+    "daman_khabisi_alyahar": 504.0
+  },
+  {
+    "code": "15401",
+    "thiqa_other": 455.0,
+    "thiqa_alyahar": 390.0,
+    "daman_default": 455.0,
+    "daman_khabisi_alyahar": 273.0
+  },
+  {
+    "code": "15402",
+    "thiqa_other": 560.0,
+    "thiqa_alyahar": 480.0,
+    "daman_default": 560.0,
+    "daman_khabisi_alyahar": 336.0
+  },
+  {
+    "code": "15403",
+    "thiqa_other": 455.0,
+    "thiqa_alyahar": 390.0,
+    "daman_default": 455.0,
+    "daman_khabisi_alyahar": 273.0
+  },
+  {
+    "code": "15501",
+    "thiqa_other": 525.0,
+    "thiqa_alyahar": 450.0,
+    "daman_default": 525.0,
+    "daman_khabisi_alyahar": 315.0
+  },
+  {
+    "code": "15601",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "15602",
+    "thiqa_other": 175.0,
+    "thiqa_alyahar": 150.0,
+    "daman_default": 175.0,
+    "daman_khabisi_alyahar": 105.0
+  },
+  {
+    "code": "15603",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "15604",
+    "thiqa_other": 70.0,
+    "thiqa_alyahar": 60.0,
+    "daman_default": 70.0,
+    "daman_khabisi_alyahar": 42.0
+  },
+  {
+    "code": "16101",
+    "thiqa_other": 84.0,
+    "thiqa_alyahar": 72.0,
+    "daman_default": 84.0,
+    "daman_khabisi_alyahar": 50.4
+  },
+  {
+    "code": "16109",
+    "thiqa_other": 84.0,
+    "thiqa_alyahar": 72.0,
+    "daman_default": 84.0,
+    "daman_khabisi_alyahar": 50.4
+  },
+  {
+    "code": "16201",
+    "thiqa_other": 70.0,
+    "thiqa_alyahar": 60.0,
+    "daman_default": 70.0,
+    "daman_khabisi_alyahar": 42.0
+  },
+  {
+    "code": "16209",
+    "thiqa_other": 70.0,
+    "thiqa_alyahar": 60.0,
+    "daman_default": 70.0,
+    "daman_khabisi_alyahar": 42.0
+  },
+  {
+    "code": "16301",
+    "thiqa_other": 70.0,
+    "thiqa_alyahar": 60.0,
+    "daman_default": 70.0,
+    "daman_khabisi_alyahar": 42.0
+  },
+  {
+    "code": "16309",
+    "thiqa_other": 70.0,
+    "thiqa_alyahar": 60.0,
+    "daman_default": 70.0,
+    "daman_khabisi_alyahar": 42.0
+  },
+  {
+    "code": "16401",
+    "thiqa_other": 70.0,
+    "thiqa_alyahar": 60.0,
+    "daman_default": 70.0,
+    "daman_khabisi_alyahar": 42.0
+  },
+  {
+    "code": "16409",
+    "thiqa_other": 70.0,
+    "thiqa_alyahar": 60.0,
+    "daman_default": 70.0,
+    "daman_khabisi_alyahar": 42.0
+  },
+  {
+    "code": "16511",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "16519",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "20111",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "20119",
+    "thiqa_other": 70.0,
+    "thiqa_alyahar": 60.0,
+    "daman_default": 70.0,
+    "daman_khabisi_alyahar": 42.0
+  },
+  {
+    "code": "20121",
+    "thiqa_other": 119.0,
+    "thiqa_alyahar": 102.0,
+    "daman_default": 119.0,
+    "daman_khabisi_alyahar": 71.4
+  },
+  {
+    "code": "20129",
+    "thiqa_other": 91.0,
+    "thiqa_alyahar": 78.0,
+    "daman_default": 91.0,
+    "daman_khabisi_alyahar": 54.6
+  },
+  {
+    "code": "20131",
+    "thiqa_other": 56.0,
+    "thiqa_alyahar": 48.0,
+    "daman_default": 56.0,
+    "daman_khabisi_alyahar": 33.6
+  },
+  {
+    "code": "20139",
+    "thiqa_other": 42.0,
+    "thiqa_alyahar": 36.0,
+    "daman_default": 42.0,
+    "daman_khabisi_alyahar": 25.2
+  },
+  {
+    "code": "20141",
+    "thiqa_other": 70.0,
+    "thiqa_alyahar": 60.0,
+    "daman_default": 70.0,
+    "daman_khabisi_alyahar": 42.0
+  },
+  {
+    "code": "20149",
+    "thiqa_other": 63.0,
+    "thiqa_alyahar": 54.0,
+    "daman_default": 63.0,
+    "daman_khabisi_alyahar": 37.8
+  },
+  {
+    "code": "21111",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "21112",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "21113",
+    "thiqa_other": 175.0,
+    "thiqa_alyahar": 150.0,
+    "daman_default": 175.0,
+    "daman_khabisi_alyahar": 105.0
+  },
+  {
+    "code": "21114",
+    "thiqa_other": 245.0,
+    "thiqa_alyahar": 210.0,
+    "daman_default": 245.0,
+    "daman_khabisi_alyahar": 147.0
+  },
+  {
+    "code": "21115",
+    "thiqa_other": 262.5,
+    "thiqa_alyahar": 225.0,
+    "daman_default": 262.5,
+    "daman_khabisi_alyahar": 157.5
+  },
+  {
+    "code": "21211",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "21212",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "21213",
+    "thiqa_other": 175.0,
+    "thiqa_alyahar": 150.0,
+    "daman_default": 175.0,
+    "daman_khabisi_alyahar": 105.0
+  },
+  {
+    "code": "21214",
+    "thiqa_other": 245.0,
+    "thiqa_alyahar": 210.0,
+    "daman_default": 245.0,
+    "daman_khabisi_alyahar": 147.0
+  },
+  {
+    "code": "21215",
+    "thiqa_other": 262.5,
+    "thiqa_alyahar": 225.0,
+    "daman_default": 262.5,
+    "daman_khabisi_alyahar": 157.5
+  },
+  {
+    "code": "21221",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "21222",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "21223",
+    "thiqa_other": 175.0,
+    "thiqa_alyahar": 150.0,
+    "daman_default": 175.0,
+    "daman_khabisi_alyahar": 105.0
+  },
+  {
+    "code": "21224",
+    "thiqa_other": 245.0,
+    "thiqa_alyahar": 210.0,
+    "daman_default": 245.0,
+    "daman_khabisi_alyahar": 147.0
+  },
+  {
+    "code": "21225",
+    "thiqa_other": 262.5,
+    "thiqa_alyahar": 225.0,
+    "daman_default": 262.5,
+    "daman_khabisi_alyahar": 157.5
+  },
+  {
+    "code": "21301",
+    "thiqa_other": 262.5,
+    "thiqa_alyahar": 225.0,
+    "daman_default": 262.5,
+    "daman_khabisi_alyahar": 157.5
+  },
+  {
+    "code": "21401",
+    "thiqa_other": 35.0,
+    "thiqa_alyahar": 30.0,
+    "daman_default": 35.0,
+    "daman_khabisi_alyahar": 21.0
+  },
+  {
+    "code": "21402",
+    "thiqa_other": 52.5,
+    "thiqa_alyahar": 45.0,
+    "daman_default": 52.5,
+    "daman_khabisi_alyahar": 31.5
+  },
+  {
+    "code": "21403",
+    "thiqa_other": 70.0,
+    "thiqa_alyahar": 60.0,
+    "daman_default": 70.0,
+    "daman_khabisi_alyahar": 42.0
+  },
+  {
+    "code": "21404",
+    "thiqa_other": 87.5,
+    "thiqa_alyahar": 75.0,
+    "daman_default": 87.5,
+    "daman_khabisi_alyahar": 52.5
+  },
+  {
+    "code": "21405",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "22211",
+    "thiqa_other": 280.0,
+    "thiqa_alyahar": 240.0,
+    "daman_default": 280.0,
+    "daman_khabisi_alyahar": 168.0
+  },
+  {
+    "code": "22212",
+    "thiqa_other": 350.0,
+    "thiqa_alyahar": 300.0,
+    "daman_default": 350.0,
+    "daman_khabisi_alyahar": 210.0
+  },
+  {
+    "code": "22401",
+    "thiqa_other": 350.0,
+    "thiqa_alyahar": 210.0,
+    "daman_default": 350.0,
+    "daman_khabisi_alyahar": 147.0
+  },
+  {
+    "code": "22411",
+    "thiqa_other": 245.0,
+    "thiqa_alyahar": 210.0,
+    "daman_default": 245.0,
+    "daman_khabisi_alyahar": 147.0
+  },
+  {
+    "code": "22501",
+    "thiqa_other": 245.0,
+    "thiqa_alyahar": 210.0,
+    "daman_default": 245.0,
+    "daman_khabisi_alyahar": 147.0
+  },
+  {
+    "code": "22511",
+    "thiqa_other": 245.0,
+    "thiqa_alyahar": 210.0,
+    "daman_default": 245.0,
+    "daman_khabisi_alyahar": 147.0
+  },
+  {
+    "code": "23101",
+    "thiqa_other": 77.0,
+    "thiqa_alyahar": 60.0,
+    "daman_default": 77.0,
+    "daman_khabisi_alyahar": 42.0
+  },
+  {
+    "code": "23102",
+    "thiqa_other": 154.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 154.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "23103",
+    "thiqa_other": 192.5,
+    "thiqa_alyahar": 150.0,
+    "daman_default": 192.5,
+    "daman_khabisi_alyahar": 105.0
+  },
+  {
+    "code": "23104",
+    "thiqa_other": 269.5,
+    "thiqa_alyahar": 210.0,
+    "daman_default": 269.5,
+    "daman_khabisi_alyahar": 147.0
+  },
+  {
+    "code": "23105",
+    "thiqa_other": 288.75,
+    "thiqa_alyahar": 225.0,
+    "daman_default": 288.75,
+    "daman_khabisi_alyahar": 157.5
+  },
+  {
+    "code": "23111",
+    "thiqa_other": 192.5,
+    "thiqa_alyahar": 150.0,
+    "daman_default": 192.5,
+    "daman_khabisi_alyahar": 105.0
+  },
+  {
+    "code": "23112",
+    "thiqa_other": 231.0,
+    "thiqa_alyahar": 180.0,
+    "daman_default": 231.0,
+    "daman_khabisi_alyahar": 126.0
+  },
+  {
+    "code": "23113",
+    "thiqa_other": 269.5,
+    "thiqa_alyahar": 210.0,
+    "daman_default": 269.5,
+    "daman_khabisi_alyahar": 147.0
+  },
+  {
+    "code": "23114",
+    "thiqa_other": 308.0,
+    "thiqa_alyahar": 240.0,
+    "daman_default": 308.0,
+    "daman_khabisi_alyahar": 168.0
+  },
+  {
+    "code": "23115",
+    "thiqa_other": 346.5,
+    "thiqa_alyahar": 270.0,
+    "daman_default": 346.5,
+    "daman_khabisi_alyahar": 189.0
+  },
+  {
+    "code": "23121",
+    "thiqa_other": 420.0,
+    "thiqa_alyahar": 360.0,
+    "daman_default": 420.0,
+    "daman_khabisi_alyahar": 252.0
+  },
+  {
+    "code": "23122",
+    "thiqa_other": 385.0,
+    "thiqa_alyahar": 300.0,
+    "daman_default": 385.0,
+    "daman_khabisi_alyahar": 210.0
+  },
+  {
+    "code": "23123",
+    "thiqa_other": 231.0,
+    "thiqa_alyahar": 180.0,
+    "daman_default": 231.0,
+    "daman_khabisi_alyahar": 126.0
+  },
+  {
+    "code": "23211",
+    "thiqa_other": 115.5,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 115.5,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "23212",
+    "thiqa_other": 154.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 154.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "23213",
+    "thiqa_other": 192.5,
+    "thiqa_alyahar": 150.0,
+    "daman_default": 192.5,
+    "daman_khabisi_alyahar": 105.0
+  },
+  {
+    "code": "23214",
+    "thiqa_other": 231.0,
+    "thiqa_alyahar": 180.0,
+    "daman_default": 231.0,
+    "daman_khabisi_alyahar": 126.0
+  },
+  {
+    "code": "23215",
+    "thiqa_other": 269.5,
+    "thiqa_alyahar": 210.0,
+    "daman_default": 269.5,
+    "daman_khabisi_alyahar": 147.0
+  },
+  {
+    "code": "23221",
+    "thiqa_other": 115.5,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 115.5,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "23222",
+    "thiqa_other": 154.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 154.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "23223",
+    "thiqa_other": 192.5,
+    "thiqa_alyahar": 150.0,
+    "daman_default": 192.5,
+    "daman_khabisi_alyahar": 105.0
+  },
+  {
+    "code": "23224",
+    "thiqa_other": 231.0,
+    "thiqa_alyahar": 180.0,
+    "daman_default": 231.0,
+    "daman_khabisi_alyahar": 126.0
+  },
+  {
+    "code": "23225",
+    "thiqa_other": 269.5,
+    "thiqa_alyahar": 210.0,
+    "daman_default": 269.5,
+    "daman_khabisi_alyahar": 147.0
+  },
+  {
+    "code": "23311",
+    "thiqa_other": 169.4,
+    "thiqa_alyahar": 132.0,
+    "daman_default": 169.4,
+    "daman_khabisi_alyahar": 92.4
+  },
+  {
+    "code": "23312",
+    "thiqa_other": 207.9,
+    "thiqa_alyahar": 162.0,
+    "daman_default": 207.9,
+    "daman_khabisi_alyahar": 113.4
+  },
+  {
+    "code": "23313",
+    "thiqa_other": 308.0,
+    "thiqa_alyahar": 240.0,
+    "daman_default": 308.0,
+    "daman_khabisi_alyahar": 168.0
+  },
+  {
+    "code": "23314",
+    "thiqa_other": 346.5,
+    "thiqa_alyahar": 270.0,
+    "daman_default": 346.5,
+    "daman_khabisi_alyahar": 189.0
+  },
+  {
+    "code": "23315",
+    "thiqa_other": 385.0,
+    "thiqa_alyahar": 300.0,
+    "daman_default": 385.0,
+    "daman_khabisi_alyahar": 210.0
+  },
+  {
+    "code": "23321",
+    "thiqa_other": 192.5,
+    "thiqa_alyahar": 150.0,
+    "daman_default": 192.5,
+    "daman_khabisi_alyahar": 105.0
+  },
+  {
+    "code": "23322",
+    "thiqa_other": 231.0,
+    "thiqa_alyahar": 180.0,
+    "daman_default": 231.0,
+    "daman_khabisi_alyahar": 126.0
+  },
+  {
+    "code": "23323",
+    "thiqa_other": 308.0,
+    "thiqa_alyahar": 240.0,
+    "daman_default": 308.0,
+    "daman_khabisi_alyahar": 168.0
+  },
+  {
+    "code": "23324",
+    "thiqa_other": 385.0,
+    "thiqa_alyahar": 300.0,
+    "daman_default": 385.0,
+    "daman_khabisi_alyahar": 210.0
+  },
+  {
+    "code": "23325",
+    "thiqa_other": 423.5,
+    "thiqa_alyahar": 330.0,
+    "daman_default": 423.5,
+    "daman_khabisi_alyahar": 231.0
+  },
+  {
+    "code": "23401",
+    "thiqa_other": 77.0,
+    "thiqa_alyahar": 60.0,
+    "daman_default": 77.0,
+    "daman_khabisi_alyahar": 42.0
+  },
+  {
+    "code": "23402",
+    "thiqa_other": 154.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 154.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "23403",
+    "thiqa_other": 192.5,
+    "thiqa_alyahar": 150.0,
+    "daman_default": 192.5,
+    "daman_khabisi_alyahar": 105.0
+  },
+  {
+    "code": "23404",
+    "thiqa_other": 231.0,
+    "thiqa_alyahar": 180.0,
+    "daman_default": 231.0,
+    "daman_khabisi_alyahar": 126.0
+  },
+  {
+    "code": "23405",
+    "thiqa_other": 269.5,
+    "thiqa_alyahar": 210.0,
+    "daman_default": 269.5,
+    "daman_khabisi_alyahar": 147.0
+  },
+  {
+    "code": "23411",
+    "thiqa_other": 115.5,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 115.5,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "23412",
+    "thiqa_other": 154.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 154.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "23413",
+    "thiqa_other": 192.5,
+    "thiqa_alyahar": 150.0,
+    "daman_default": 192.5,
+    "daman_khabisi_alyahar": 105.0
+  },
+  {
+    "code": "23414",
+    "thiqa_other": 231.0,
+    "thiqa_alyahar": 180.0,
+    "daman_default": 231.0,
+    "daman_khabisi_alyahar": 126.0
+  },
+  {
+    "code": "23415",
+    "thiqa_other": 269.5,
+    "thiqa_alyahar": 210.0,
+    "daman_default": 269.5,
+    "daman_khabisi_alyahar": 147.0
+  },
+  {
+    "code": "23501",
+    "thiqa_other": 115.5,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 115.5,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "23502",
+    "thiqa_other": 154.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 154.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "23503",
+    "thiqa_other": 231.0,
+    "thiqa_alyahar": 180.0,
+    "daman_default": 231.0,
+    "daman_khabisi_alyahar": 126.0
+  },
+  {
+    "code": "23504",
+    "thiqa_other": 269.5,
+    "thiqa_alyahar": 210.0,
+    "daman_default": 269.5,
+    "daman_khabisi_alyahar": 147.0
+  },
+  {
+    "code": "23505",
+    "thiqa_other": 308.0,
+    "thiqa_alyahar": 240.0,
+    "daman_default": 308.0,
+    "daman_khabisi_alyahar": 168.0
+  },
+  {
+    "code": "23511",
+    "thiqa_other": 115.5,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 115.5,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "23512",
+    "thiqa_other": 154.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 154.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "23513",
+    "thiqa_other": 192.5,
+    "thiqa_alyahar": 150.0,
+    "daman_default": 192.5,
+    "daman_khabisi_alyahar": 105.0
+  },
+  {
+    "code": "23514",
+    "thiqa_other": 231.0,
+    "thiqa_alyahar": 180.0,
+    "daman_default": 231.0,
+    "daman_khabisi_alyahar": 126.0
+  },
+  {
+    "code": "23515",
+    "thiqa_other": 269.5,
+    "thiqa_alyahar": 210.0,
+    "daman_default": 269.5,
+    "daman_khabisi_alyahar": 147.0
+  },
+  {
+    "code": "23601",
+    "thiqa_other": 308.0,
+    "thiqa_alyahar": 240.0,
+    "daman_default": 308.0,
+    "daman_khabisi_alyahar": 168.0
+  },
+  {
+    "code": "23602",
+    "thiqa_other": 385.0,
+    "thiqa_alyahar": 300.0,
+    "daman_default": 385.0,
+    "daman_khabisi_alyahar": 210.0
+  },
+  {
+    "code": "25111",
+    "thiqa_other": 630.0,
+    "thiqa_alyahar": 540.0,
+    "daman_default": 630.0,
+    "daman_khabisi_alyahar": 378.0
+  },
+  {
+    "code": "25112",
+    "thiqa_other": 840.0,
+    "thiqa_alyahar": 720.0,
+    "daman_default": 840.0,
+    "daman_khabisi_alyahar": 504.0
+  },
+  {
+    "code": "25113",
+    "thiqa_other": 945.0,
+    "thiqa_alyahar": 810.0,
+    "daman_default": 945.0,
+    "daman_khabisi_alyahar": 567.0
+  },
+  {
+    "code": "25114",
+    "thiqa_other": 1120.0,
+    "thiqa_alyahar": 960.0,
+    "daman_default": 1120.0,
+    "daman_khabisi_alyahar": 672.0
+  },
+  {
+    "code": "25121",
+    "thiqa_other": 665.0,
+    "thiqa_alyahar": 570.0,
+    "daman_default": 665.0,
+    "daman_khabisi_alyahar": 399.0
+  },
+  {
+    "code": "25122",
+    "thiqa_other": 875.0,
+    "thiqa_alyahar": 750.0,
+    "daman_default": 875.0,
+    "daman_khabisi_alyahar": 525.0
+  },
+  {
+    "code": "25123",
+    "thiqa_other": 945.0,
+    "thiqa_alyahar": 810.0,
+    "daman_default": 945.0,
+    "daman_khabisi_alyahar": 567.0
+  },
+  {
+    "code": "25124",
+    "thiqa_other": 1120.0,
+    "thiqa_alyahar": 960.0,
+    "daman_default": 1120.0,
+    "daman_khabisi_alyahar": 672.0
+  },
+  {
+    "code": "25141",
+    "thiqa_other": 840.0,
+    "thiqa_alyahar": 720.0,
+    "daman_default": 840.0,
+    "daman_khabisi_alyahar": 504.0
+  },
+  {
+    "code": "25142",
+    "thiqa_other": 1050.0,
+    "thiqa_alyahar": 900.0,
+    "daman_default": 1050.0,
+    "daman_khabisi_alyahar": 630.0
+  },
+  {
+    "code": "25143",
+    "thiqa_other": 1260.0,
+    "thiqa_alyahar": 1080.0,
+    "daman_default": 1260.0,
+    "daman_khabisi_alyahar": 756.0
+  },
+  {
+    "code": "25144",
+    "thiqa_other": 1400.0,
+    "thiqa_alyahar": 1200.0,
+    "daman_default": 1400.0,
+    "daman_khabisi_alyahar": 840.0
+  },
+  {
+    "code": "25511",
+    "thiqa_other": 1050.0,
+    "thiqa_alyahar": 900.0,
+    "daman_default": 1050.0,
+    "daman_khabisi_alyahar": 630.0
+  },
+  {
+    "code": "25512",
+    "thiqa_other": 1120.0,
+    "thiqa_alyahar": 960.0,
+    "daman_default": 1120.0,
+    "daman_khabisi_alyahar": 672.0
+  },
+  {
+    "code": "25521",
+    "thiqa_other": 1050.0,
+    "thiqa_alyahar": 900.0,
+    "daman_default": 1050.0,
+    "daman_khabisi_alyahar": 630.0
+  },
+  {
+    "code": "25531",
+    "thiqa_other": 1190.0,
+    "thiqa_alyahar": 1020.0,
+    "daman_default": 1190.0,
+    "daman_khabisi_alyahar": 714.0
+  },
+  {
+    "code": "25711",
+    "thiqa_other": 560.0,
+    "thiqa_alyahar": 480.0,
+    "daman_default": 560.0,
+    "daman_khabisi_alyahar": 336.0
+  },
+  {
+    "code": "25712",
+    "thiqa_other": 700.0,
+    "thiqa_alyahar": 600.0,
+    "daman_default": 700.0,
+    "daman_khabisi_alyahar": 420.0
+  },
+  {
+    "code": "25713",
+    "thiqa_other": 770.0,
+    "thiqa_alyahar": 660.0,
+    "daman_default": 770.0,
+    "daman_khabisi_alyahar": 462.0
+  },
+  {
+    "code": "25721",
+    "thiqa_other": 420.0,
+    "thiqa_alyahar": 360.0,
+    "daman_default": 420.0,
+    "daman_khabisi_alyahar": 252.0
+  },
+  {
+    "code": "25722",
+    "thiqa_other": 560.0,
+    "thiqa_alyahar": 480.0,
+    "daman_default": 560.0,
+    "daman_khabisi_alyahar": 336.0
+  },
+  {
+    "code": "25723",
+    "thiqa_other": 630.0,
+    "thiqa_alyahar": 540.0,
+    "daman_default": 630.0,
+    "daman_khabisi_alyahar": 378.0
+  },
+  {
+    "code": "25731",
+    "thiqa_other": 175.0,
+    "thiqa_alyahar": 150.0,
+    "daman_default": 175.0,
+    "daman_khabisi_alyahar": 105.0
+  },
+  {
+    "code": "25732",
+    "thiqa_other": 210.0,
+    "thiqa_alyahar": 180.0,
+    "daman_default": 210.0,
+    "daman_khabisi_alyahar": 126.0
+  },
+  {
+    "code": "25733",
+    "thiqa_other": 280.0,
+    "thiqa_alyahar": 240.0,
+    "daman_default": 280.0,
+    "daman_khabisi_alyahar": 168.0
+  },
+  {
+    "code": "25751",
+    "thiqa_other": 385.0,
+    "thiqa_alyahar": 330.0,
+    "daman_default": 385.0,
+    "daman_khabisi_alyahar": 231.0
+  },
+  {
+    "code": "25752",
+    "thiqa_other": 455.0,
+    "thiqa_alyahar": 390.0,
+    "daman_default": 455.0,
+    "daman_khabisi_alyahar": 273.0
+  },
+  {
+    "code": "25753",
+    "thiqa_other": 525.0,
+    "thiqa_alyahar": 450.0,
+    "daman_default": 525.0,
+    "daman_khabisi_alyahar": 315.0
+  },
+  {
+    "code": "25761",
+    "thiqa_other": 385.0,
+    "thiqa_alyahar": 330.0,
+    "daman_default": 385.0,
+    "daman_khabisi_alyahar": 231.0
+  },
+  {
+    "code": "25762",
+    "thiqa_other": 455.0,
+    "thiqa_alyahar": 390.0,
+    "daman_default": 455.0,
+    "daman_khabisi_alyahar": 273.0
+  },
+  {
+    "code": "25763",
+    "thiqa_other": 525.0,
+    "thiqa_alyahar": 450.0,
+    "daman_default": 525.0,
+    "daman_khabisi_alyahar": 315.0
+  },
+  {
+    "code": "25764",
+    "thiqa_other": 385.0,
+    "thiqa_alyahar": 330.0,
+    "daman_default": 385.0,
+    "daman_khabisi_alyahar": 231.0
+  },
+  {
+    "code": "25765",
+    "thiqa_other": 455.0,
+    "thiqa_alyahar": 390.0,
+    "daman_default": 455.0,
+    "daman_khabisi_alyahar": 273.0
+  },
+  {
+    "code": "25766",
+    "thiqa_other": 525.0,
+    "thiqa_alyahar": 450.0,
+    "daman_default": 525.0,
+    "daman_khabisi_alyahar": 315.0
+  },
+  {
+    "code": "25771",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "25781",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "25789",
+    "thiqa_other": 70.0,
+    "thiqa_alyahar": 60.0,
+    "daman_default": 70.0,
+    "daman_khabisi_alyahar": 42.0
+  },
+  {
+    "code": "26101",
+    "thiqa_other": 1050.0,
+    "thiqa_alyahar": 900.0,
+    "daman_default": 1050.0,
+    "daman_khabisi_alyahar": 630.0
+  },
+  {
+    "code": "26102",
+    "thiqa_other": 1050.0,
+    "thiqa_alyahar": 900.0,
+    "daman_default": 1050.0,
+    "daman_khabisi_alyahar": 630.0
+  },
+  {
+    "code": "26103",
+    "thiqa_other": 1050.0,
+    "thiqa_alyahar": 900.0,
+    "daman_default": 1050.0,
+    "daman_khabisi_alyahar": 630.0
+  },
+  {
+    "code": "27111",
+    "thiqa_other": 385.0,
+    "thiqa_alyahar": 300.0,
+    "daman_default": 385.0,
+    "daman_khabisi_alyahar": 210.0
+  },
+  {
+    "code": "27113",
+    "thiqa_other": 350.0,
+    "thiqa_alyahar": 210.0,
+    "daman_default": 350.0,
+    "daman_khabisi_alyahar": 147.0
+  },
+  {
+    "code": "27121",
+    "thiqa_other": 231.0,
+    "thiqa_alyahar": 180.0,
+    "daman_default": 231.0,
+    "daman_khabisi_alyahar": 126.0
+  },
+  {
+    "code": "27125",
+    "thiqa_other": 308.0,
+    "thiqa_alyahar": 240.0,
+    "daman_default": 308.0,
+    "daman_khabisi_alyahar": 168.0
+  },
+  {
+    "code": "27131",
+    "thiqa_other": 840.0,
+    "thiqa_alyahar": 720.0,
+    "daman_default": 840.0,
+    "daman_khabisi_alyahar": 504.0
+  },
+  {
+    "code": "27135",
+    "thiqa_other": 1050.0,
+    "thiqa_alyahar": 900.0,
+    "daman_default": 1050.0,
+    "daman_khabisi_alyahar": 630.0
+  },
+  {
+    "code": "27137",
+    "thiqa_other": 630.0,
+    "thiqa_alyahar": 540.0,
+    "daman_default": 630.0,
+    "daman_khabisi_alyahar": 378.0
+  },
+  {
+    "code": "27138",
+    "thiqa_other": 770.0,
+    "thiqa_alyahar": 660.0,
+    "daman_default": 770.0,
+    "daman_khabisi_alyahar": 462.0
+  },
+  {
+    "code": "27145",
+    "thiqa_other": 245.0,
+    "thiqa_alyahar": 210.0,
+    "daman_default": 245.0,
+    "daman_khabisi_alyahar": 147.0
+  },
+  {
+    "code": "27155",
+    "thiqa_other": 315.0,
+    "thiqa_alyahar": 270.0,
+    "daman_default": 315.0,
+    "daman_khabisi_alyahar": 189.0
+  },
+  {
+    "code": "27201",
+    "thiqa_other": 1540.0,
+    "thiqa_alyahar": 1200.0,
+    "daman_default": 1540.0,
+    "daman_khabisi_alyahar": 840.0
+  },
+  {
+    "code": "27205",
+    "thiqa_other": 1540.0,
+    "thiqa_alyahar": 1200.0,
+    "daman_default": 1540.0,
+    "daman_khabisi_alyahar": 840.0
+  },
+  {
+    "code": "27206",
+    "thiqa_other": 1925.0,
+    "thiqa_alyahar": 1500.0,
+    "daman_default": 1925.0,
+    "daman_khabisi_alyahar": 1050.0
+  },
+  {
+    "code": "27211",
+    "thiqa_other": 924.0,
+    "thiqa_alyahar": 720.0,
+    "daman_default": 924.0,
+    "daman_khabisi_alyahar": 504.0
+  },
+  {
+    "code": "27213",
+    "thiqa_other": 1155.0,
+    "thiqa_alyahar": 900.0,
+    "daman_default": 1155.0,
+    "daman_khabisi_alyahar": 630.0
+  },
+  {
+    "code": "27215",
+    "thiqa_other": 1540.0,
+    "thiqa_alyahar": 1200.0,
+    "daman_default": 1540.0,
+    "daman_khabisi_alyahar": 840.0
+  },
+  {
+    "code": "27216",
+    "thiqa_other": 1232.0,
+    "thiqa_alyahar": 960.0,
+    "daman_default": 1232.0,
+    "daman_khabisi_alyahar": 672.0
+  },
+  {
+    "code": "27217",
+    "thiqa_other": 595.0,
+    "thiqa_alyahar": 510.0,
+    "daman_default": 595.0,
+    "daman_khabisi_alyahar": 357.0
+  },
+  {
+    "code": "27218",
+    "thiqa_other": 700.0,
+    "thiqa_alyahar": 600.0,
+    "daman_default": 700.0,
+    "daman_khabisi_alyahar": 420.0
+  },
+  {
+    "code": "27221",
+    "thiqa_other": 1190.0,
+    "thiqa_alyahar": 1020.0,
+    "daman_default": 1190.0,
+    "daman_khabisi_alyahar": 714.0
+  },
+  {
+    "code": "27301",
+    "thiqa_other": 770.0,
+    "thiqa_alyahar": 600.0,
+    "daman_default": 770.0,
+    "daman_khabisi_alyahar": 420.0
+  },
+  {
+    "code": "27305",
+    "thiqa_other": 1540.0,
+    "thiqa_alyahar": 1200.0,
+    "daman_default": 1540.0,
+    "daman_khabisi_alyahar": 840.0
+  },
+  {
+    "code": "27307",
+    "thiqa_other": 595.0,
+    "thiqa_alyahar": 510.0,
+    "daman_default": 595.0,
+    "daman_khabisi_alyahar": 357.0
+  },
+  {
+    "code": "27308",
+    "thiqa_other": 700.0,
+    "thiqa_alyahar": 600.0,
+    "daman_default": 700.0,
+    "daman_khabisi_alyahar": 420.0
+  },
+  {
+    "code": "27311",
+    "thiqa_other": 805.0,
+    "thiqa_alyahar": 690.0,
+    "daman_default": 805.0,
+    "daman_khabisi_alyahar": 483.0
+  },
+  {
+    "code": "27401",
+    "thiqa_other": 280.0,
+    "thiqa_alyahar": 240.0,
+    "daman_default": 280.0,
+    "daman_khabisi_alyahar": 168.0
+  },
+  {
+    "code": "27409",
+    "thiqa_other": 280.0,
+    "thiqa_alyahar": 240.0,
+    "daman_default": 280.0,
+    "daman_khabisi_alyahar": 168.0
+  },
+  {
+    "code": "27601",
+    "thiqa_other": 700.0,
+    "thiqa_alyahar": 600.0,
+    "daman_default": 700.0,
+    "daman_khabisi_alyahar": 420.0
+  },
+  {
+    "code": "27602",
+    "thiqa_other": 1540.0,
+    "thiqa_alyahar": 1200.0,
+    "daman_default": 1540.0,
+    "daman_khabisi_alyahar": 840.0
+  },
+  {
+    "code": "27711",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "27721",
+    "thiqa_other": 175.0,
+    "thiqa_alyahar": 150.0,
+    "daman_default": 175.0,
+    "daman_khabisi_alyahar": 105.0
+  },
+  {
+    "code": "27722",
+    "thiqa_other": 455.0,
+    "thiqa_alyahar": 390.0,
+    "daman_default": 455.0,
+    "daman_khabisi_alyahar": 273.0
+  },
+  {
+    "code": "27801",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "27809",
+    "thiqa_other": 84.0,
+    "thiqa_alyahar": 72.0,
+    "daman_default": 84.0,
+    "daman_khabisi_alyahar": 50.4
+  },
+  {
+    "code": "28101",
+    "thiqa_other": 210.0,
+    "thiqa_alyahar": 180.0,
+    "daman_default": 210.0,
+    "daman_khabisi_alyahar": 126.0
+  },
+  {
+    "code": "28102",
+    "thiqa_other": 175.0,
+    "thiqa_alyahar": 150.0,
+    "daman_default": 175.0,
+    "daman_khabisi_alyahar": 105.0
+  },
+  {
+    "code": "28103",
+    "thiqa_other": 700.0,
+    "thiqa_alyahar": 600.0,
+    "daman_default": 700.0,
+    "daman_khabisi_alyahar": 420.0
+  },
+  {
+    "code": "28105",
+    "thiqa_other": 700.0,
+    "thiqa_alyahar": 600.0,
+    "daman_default": 700.0,
+    "daman_khabisi_alyahar": 420.0
+  },
+  {
+    "code": "28211",
+    "thiqa_other": 770.0,
+    "thiqa_alyahar": 660.0,
+    "daman_default": 770.0,
+    "daman_khabisi_alyahar": 462.0
+  },
+  {
+    "code": "28215",
+    "thiqa_other": 840.0,
+    "thiqa_alyahar": 720.0,
+    "daman_default": 840.0,
+    "daman_khabisi_alyahar": 504.0
+  },
+  {
+    "code": "28221",
+    "thiqa_other": 1050.0,
+    "thiqa_alyahar": 900.0,
+    "daman_default": 1050.0,
+    "daman_khabisi_alyahar": 630.0
+  },
+  {
+    "code": "28225",
+    "thiqa_other": 1050.0,
+    "thiqa_alyahar": 900.0,
+    "daman_default": 1050.0,
+    "daman_khabisi_alyahar": 630.0
+  },
+  {
+    "code": "29101",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "29109",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "29111",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "29119",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "29301",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "29309",
+    "thiqa_other": 70.0,
+    "thiqa_alyahar": 60.0,
+    "daman_default": 70.0,
+    "daman_khabisi_alyahar": 42.0
+  },
+  {
+    "code": "29311",
+    "thiqa_other": 70.0,
+    "thiqa_alyahar": 60.0,
+    "daman_default": 70.0,
+    "daman_khabisi_alyahar": 42.0
+  },
+  {
+    "code": "29319",
+    "thiqa_other": 35.0,
+    "thiqa_alyahar": 30.0,
+    "daman_default": 35.0,
+    "daman_khabisi_alyahar": 21.0
+  },
+  {
+    "code": "29321",
+    "thiqa_other": 70.0,
+    "thiqa_alyahar": 60.0,
+    "daman_default": 70.0,
+    "daman_khabisi_alyahar": 42.0
+  },
+  {
+    "code": "29329",
+    "thiqa_other": 35.0,
+    "thiqa_alyahar": 30.0,
+    "daman_default": 35.0,
+    "daman_khabisi_alyahar": 21.0
+  },
+  {
+    "code": "29331",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "29339",
+    "thiqa_other": 70.0,
+    "thiqa_alyahar": 60.0,
+    "daman_default": 70.0,
+    "daman_khabisi_alyahar": 42.0
+  },
+  {
+    "code": "29351",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "29359",
+    "thiqa_other": 70.0,
+    "thiqa_alyahar": 60.0,
+    "daman_default": 70.0,
+    "daman_khabisi_alyahar": 42.0
+  },
+  {
+    "code": "32221",
+    "thiqa_other": 210.0,
+    "thiqa_alyahar": 180.0,
+    "daman_default": 210.0,
+    "daman_khabisi_alyahar": 126.0
+  },
+  {
+    "code": "32222",
+    "thiqa_other": 245.0,
+    "thiqa_alyahar": 210.0,
+    "daman_default": 245.0,
+    "daman_khabisi_alyahar": 147.0
+  },
+  {
+    "code": "32231",
+    "thiqa_other": 210.0,
+    "thiqa_alyahar": 180.0,
+    "daman_default": 210.0,
+    "daman_khabisi_alyahar": 126.0
+  },
+  {
+    "code": "32232",
+    "thiqa_other": 122.5,
+    "thiqa_alyahar": 105.0,
+    "daman_default": 122.5,
+    "daman_khabisi_alyahar": 73.5
+  },
+  {
+    "code": "32311",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "32312",
+    "thiqa_other": 175.0,
+    "thiqa_alyahar": 150.0,
+    "daman_default": 175.0,
+    "daman_khabisi_alyahar": 105.0
+  },
+  {
+    "code": "32313",
+    "thiqa_other": 245.0,
+    "thiqa_alyahar": 210.0,
+    "daman_default": 245.0,
+    "daman_khabisi_alyahar": 147.0
+  },
+  {
+    "code": "32314",
+    "thiqa_other": 280.0,
+    "thiqa_alyahar": 240.0,
+    "daman_default": 280.0,
+    "daman_khabisi_alyahar": 168.0
+  },
+  {
+    "code": "32321",
+    "thiqa_other": 175.0,
+    "thiqa_alyahar": 150.0,
+    "daman_default": 175.0,
+    "daman_khabisi_alyahar": 105.0
+  },
+  {
+    "code": "32322",
+    "thiqa_other": 210.0,
+    "thiqa_alyahar": 180.0,
+    "daman_default": 210.0,
+    "daman_khabisi_alyahar": 126.0
+  },
+  {
+    "code": "33111",
+    "thiqa_other": 385.0,
+    "thiqa_alyahar": 300.0,
+    "daman_default": 385.0,
+    "daman_khabisi_alyahar": 210.0
+  },
+  {
+    "code": "33115",
+    "thiqa_other": 455.0,
+    "thiqa_alyahar": 360.0,
+    "daman_default": 455.0,
+    "daman_khabisi_alyahar": 252.0
+  },
+  {
+    "code": "33116",
+    "thiqa_other": 434.0,
+    "thiqa_alyahar": 360.0,
+    "daman_default": 434.0,
+    "daman_khabisi_alyahar": 252.0
+  },
+  {
+    "code": "33121",
+    "thiqa_other": 539.0,
+    "thiqa_alyahar": 420.0,
+    "daman_default": 539.0,
+    "daman_khabisi_alyahar": 294.0
+  },
+  {
+    "code": "33125",
+    "thiqa_other": 654.5,
+    "thiqa_alyahar": 510.0,
+    "daman_default": 654.5,
+    "daman_khabisi_alyahar": 357.0
+  },
+  {
+    "code": "33126",
+    "thiqa_other": 595.0,
+    "thiqa_alyahar": 480.0,
+    "daman_default": 595.0,
+    "daman_khabisi_alyahar": 336.0
+  },
+  {
+    "code": "33131",
+    "thiqa_other": 665.0,
+    "thiqa_alyahar": 510.0,
+    "daman_default": 665.0,
+    "daman_khabisi_alyahar": 357.0
+  },
+  {
+    "code": "33135",
+    "thiqa_other": 924.0,
+    "thiqa_alyahar": 720.0,
+    "daman_default": 924.0,
+    "daman_khabisi_alyahar": 504.0
+  },
+  {
+    "code": "33136",
+    "thiqa_other": 770.0,
+    "thiqa_alyahar": 600.0,
+    "daman_default": 770.0,
+    "daman_khabisi_alyahar": 420.0
+  },
+  {
+    "code": "33141",
+    "thiqa_other": 875.0,
+    "thiqa_alyahar": 660.0,
+    "daman_default": 875.0,
+    "daman_khabisi_alyahar": 462.0
+  },
+  {
+    "code": "33145",
+    "thiqa_other": 980.0,
+    "thiqa_alyahar": 780.0,
+    "daman_default": 980.0,
+    "daman_khabisi_alyahar": 546.0
+  },
+  {
+    "code": "33146",
+    "thiqa_other": 910.0,
+    "thiqa_alyahar": 720.0,
+    "daman_default": 910.0,
+    "daman_khabisi_alyahar": 504.0
+  },
+  {
+    "code": "33401",
+    "thiqa_other": 280.0,
+    "thiqa_alyahar": 240.0,
+    "daman_default": 280.0,
+    "daman_khabisi_alyahar": 168.0
+  },
+  {
+    "code": "33402",
+    "thiqa_other": 350.0,
+    "thiqa_alyahar": 300.0,
+    "daman_default": 350.0,
+    "daman_khabisi_alyahar": 210.0
+  },
+  {
+    "code": "33403",
+    "thiqa_other": 420.0,
+    "thiqa_alyahar": 360.0,
+    "daman_default": 420.0,
+    "daman_khabisi_alyahar": 252.0
+  },
+  {
+    "code": "33601",
+    "thiqa_other": 315.0,
+    "thiqa_alyahar": 270.0,
+    "daman_default": 315.0,
+    "daman_khabisi_alyahar": 189.0
+  },
+  {
+    "code": "33602",
+    "thiqa_other": 385.0,
+    "thiqa_alyahar": 330.0,
+    "daman_default": 385.0,
+    "daman_khabisi_alyahar": 231.0
+  },
+  {
+    "code": "33603",
+    "thiqa_other": 490.0,
+    "thiqa_alyahar": 420.0,
+    "daman_default": 490.0,
+    "daman_khabisi_alyahar": 294.0
+  },
+  {
+    "code": "33604",
+    "thiqa_other": 560.0,
+    "thiqa_alyahar": 480.0,
+    "daman_default": 560.0,
+    "daman_khabisi_alyahar": 336.0
+  },
+  {
+    "code": "33611",
+    "thiqa_other": 175.0,
+    "thiqa_alyahar": 150.0,
+    "daman_default": 175.0,
+    "daman_khabisi_alyahar": 105.0
+  },
+  {
+    "code": "33612",
+    "thiqa_other": 210.0,
+    "thiqa_alyahar": 180.0,
+    "daman_default": 210.0,
+    "daman_khabisi_alyahar": 126.0
+  },
+  {
+    "code": "33613",
+    "thiqa_other": 245.0,
+    "thiqa_alyahar": 210.0,
+    "daman_default": 245.0,
+    "daman_khabisi_alyahar": 147.0
+  },
+  {
+    "code": "33614",
+    "thiqa_other": 280.0,
+    "thiqa_alyahar": 240.0,
+    "daman_default": 280.0,
+    "daman_khabisi_alyahar": 168.0
+  },
+  {
+    "code": "33621",
+    "thiqa_other": 420.0,
+    "thiqa_alyahar": 360.0,
+    "daman_default": 420.0,
+    "daman_khabisi_alyahar": 252.0
+  },
+  {
+    "code": "33622",
+    "thiqa_other": 455.0,
+    "thiqa_alyahar": 390.0,
+    "daman_default": 455.0,
+    "daman_khabisi_alyahar": 273.0
+  },
+  {
+    "code": "33623",
+    "thiqa_other": 560.0,
+    "thiqa_alyahar": 480.0,
+    "daman_default": 560.0,
+    "daman_khabisi_alyahar": 336.0
+  },
+  {
+    "code": "33624",
+    "thiqa_other": 770.0,
+    "thiqa_alyahar": 660.0,
+    "daman_default": 770.0,
+    "daman_khabisi_alyahar": 462.0
+  },
+  {
+    "code": "34111",
+    "thiqa_other": 910.0,
+    "thiqa_alyahar": 780.0,
+    "daman_default": 910.0,
+    "daman_khabisi_alyahar": 546.0
+  },
+  {
+    "code": "34112",
+    "thiqa_other": 1120.0,
+    "thiqa_alyahar": 960.0,
+    "daman_default": 1120.0,
+    "daman_khabisi_alyahar": 672.0
+  },
+  {
+    "code": "34121",
+    "thiqa_other": 910.0,
+    "thiqa_alyahar": 780.0,
+    "daman_default": 910.0,
+    "daman_khabisi_alyahar": 546.0
+  },
+  {
+    "code": "34122",
+    "thiqa_other": 1120.0,
+    "thiqa_alyahar": 960.0,
+    "daman_default": 1120.0,
+    "daman_khabisi_alyahar": 672.0
+  },
+  {
+    "code": "34123",
+    "thiqa_other": 1330.0,
+    "thiqa_alyahar": 1140.0,
+    "daman_default": 1330.0,
+    "daman_khabisi_alyahar": 798.0
+  },
+  {
+    "code": "34131",
+    "thiqa_other": 910.0,
+    "thiqa_alyahar": 780.0,
+    "daman_default": 910.0,
+    "daman_khabisi_alyahar": 546.0
+  },
+  {
+    "code": "34132",
+    "thiqa_other": 1120.0,
+    "thiqa_alyahar": 960.0,
+    "daman_default": 1120.0,
+    "daman_khabisi_alyahar": 672.0
+  },
+  {
+    "code": "34133",
+    "thiqa_other": 1330.0,
+    "thiqa_alyahar": 1140.0,
+    "daman_default": 1330.0,
+    "daman_khabisi_alyahar": 798.0
+  },
+  {
+    "code": "34134",
+    "thiqa_other": 1400.0,
+    "thiqa_alyahar": 1200.0,
+    "daman_default": 1400.0,
+    "daman_khabisi_alyahar": 840.0
+  },
+  {
+    "code": "34141",
+    "thiqa_other": 910.0,
+    "thiqa_alyahar": 780.0,
+    "daman_default": 910.0,
+    "daman_khabisi_alyahar": 546.0
+  },
+  {
+    "code": "34142",
+    "thiqa_other": 1120.0,
+    "thiqa_alyahar": 960.0,
+    "daman_default": 1120.0,
+    "daman_khabisi_alyahar": 672.0
+  },
+  {
+    "code": "34151",
+    "thiqa_other": 910.0,
+    "thiqa_alyahar": 780.0,
+    "daman_default": 910.0,
+    "daman_khabisi_alyahar": 546.0
+  },
+  {
+    "code": "34152",
+    "thiqa_other": 1120.0,
+    "thiqa_alyahar": 960.0,
+    "daman_default": 1120.0,
+    "daman_khabisi_alyahar": 672.0
+  },
+  {
+    "code": "34153",
+    "thiqa_other": 1330.0,
+    "thiqa_alyahar": 1140.0,
+    "daman_default": 1330.0,
+    "daman_khabisi_alyahar": 798.0
+  },
+  {
+    "code": "34161",
+    "thiqa_other": 910.0,
+    "thiqa_alyahar": 780.0,
+    "daman_default": 910.0,
+    "daman_khabisi_alyahar": 546.0
+  },
+  {
+    "code": "34162",
+    "thiqa_other": 1120.0,
+    "thiqa_alyahar": 960.0,
+    "daman_default": 1120.0,
+    "daman_khabisi_alyahar": 672.0
+  },
+  {
+    "code": "34163",
+    "thiqa_other": 1330.0,
+    "thiqa_alyahar": 1140.0,
+    "daman_default": 1330.0,
+    "daman_khabisi_alyahar": 798.0
+  },
+  {
+    "code": "34164",
+    "thiqa_other": 1400.0,
+    "thiqa_alyahar": 1200.0,
+    "daman_default": 1400.0,
+    "daman_khabisi_alyahar": 840.0
+  },
+  {
+    "code": "34211",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "34212",
+    "thiqa_other": 175.0,
+    "thiqa_alyahar": 150.0,
+    "daman_default": 175.0,
+    "daman_khabisi_alyahar": 105.0
+  },
+  {
+    "code": "34221",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "34222",
+    "thiqa_other": 175.0,
+    "thiqa_alyahar": 150.0,
+    "daman_default": 175.0,
+    "daman_khabisi_alyahar": 105.0
+  },
+  {
+    "code": "34223",
+    "thiqa_other": 210.0,
+    "thiqa_alyahar": 180.0,
+    "daman_default": 210.0,
+    "daman_khabisi_alyahar": 126.0
+  },
+  {
+    "code": "34224",
+    "thiqa_other": 245.0,
+    "thiqa_alyahar": 210.0,
+    "daman_default": 245.0,
+    "daman_khabisi_alyahar": 147.0
+  },
+  {
+    "code": "34231",
+    "thiqa_other": 175.0,
+    "thiqa_alyahar": 150.0,
+    "daman_default": 175.0,
+    "daman_khabisi_alyahar": 105.0
+  },
+  {
+    "code": "34232",
+    "thiqa_other": 210.0,
+    "thiqa_alyahar": 180.0,
+    "daman_default": 210.0,
+    "daman_khabisi_alyahar": 126.0
+  },
+  {
+    "code": "34233",
+    "thiqa_other": 245.0,
+    "thiqa_alyahar": 210.0,
+    "daman_default": 245.0,
+    "daman_khabisi_alyahar": 147.0
+  },
+  {
+    "code": "34234",
+    "thiqa_other": 280.0,
+    "thiqa_alyahar": 240.0,
+    "daman_default": 280.0,
+    "daman_khabisi_alyahar": 168.0
+  },
+  {
+    "code": "34241",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "34242",
+    "thiqa_other": 175.0,
+    "thiqa_alyahar": 150.0,
+    "daman_default": 175.0,
+    "daman_khabisi_alyahar": 105.0
+  },
+  {
+    "code": "34251",
+    "thiqa_other": 175.0,
+    "thiqa_alyahar": 150.0,
+    "daman_default": 175.0,
+    "daman_khabisi_alyahar": 105.0
+  },
+  {
+    "code": "34252",
+    "thiqa_other": 210.0,
+    "thiqa_alyahar": 180.0,
+    "daman_default": 210.0,
+    "daman_khabisi_alyahar": 126.0
+  },
+  {
+    "code": "34253",
+    "thiqa_other": 210.0,
+    "thiqa_alyahar": 180.0,
+    "daman_default": 210.0,
+    "daman_khabisi_alyahar": 126.0
+  },
+  {
+    "code": "34254",
+    "thiqa_other": 280.0,
+    "thiqa_alyahar": 240.0,
+    "daman_default": 280.0,
+    "daman_khabisi_alyahar": 168.0
+  },
+  {
+    "code": "34261",
+    "thiqa_other": 175.0,
+    "thiqa_alyahar": 150.0,
+    "daman_default": 175.0,
+    "daman_khabisi_alyahar": 105.0
+  },
+  {
+    "code": "34262",
+    "thiqa_other": 210.0,
+    "thiqa_alyahar": 180.0,
+    "daman_default": 210.0,
+    "daman_khabisi_alyahar": 126.0
+  },
+  {
+    "code": "34263",
+    "thiqa_other": 280.0,
+    "thiqa_alyahar": 240.0,
+    "daman_default": 280.0,
+    "daman_khabisi_alyahar": 168.0
+  },
+  {
+    "code": "34264",
+    "thiqa_other": 350.0,
+    "thiqa_alyahar": 300.0,
+    "daman_default": 350.0,
+    "daman_khabisi_alyahar": 210.0
+  },
+  {
+    "code": "34411",
+    "thiqa_other": 700.0,
+    "thiqa_alyahar": 600.0,
+    "daman_default": 700.0,
+    "daman_khabisi_alyahar": 420.0
+  },
+  {
+    "code": "34412",
+    "thiqa_other": 840.0,
+    "thiqa_alyahar": 720.0,
+    "daman_default": 840.0,
+    "daman_khabisi_alyahar": 504.0
+  },
+  {
+    "code": "34421",
+    "thiqa_other": 420.0,
+    "thiqa_alyahar": 360.0,
+    "daman_default": 420.0,
+    "daman_khabisi_alyahar": 252.0
+  },
+  {
+    "code": "34422",
+    "thiqa_other": 560.0,
+    "thiqa_alyahar": 480.0,
+    "daman_default": 560.0,
+    "daman_khabisi_alyahar": 336.0
+  },
+  {
+    "code": "34423",
+    "thiqa_other": 700.0,
+    "thiqa_alyahar": 600.0,
+    "daman_default": 700.0,
+    "daman_khabisi_alyahar": 420.0
+  },
+  {
+    "code": "34511",
+    "thiqa_other": 280.0,
+    "thiqa_alyahar": 240.0,
+    "daman_default": 280.0,
+    "daman_khabisi_alyahar": 168.0
+  },
+  {
+    "code": "34521",
+    "thiqa_other": 770.0,
+    "thiqa_alyahar": 660.0,
+    "daman_default": 770.0,
+    "daman_khabisi_alyahar": 462.0
+  },
+  {
+    "code": "34522",
+    "thiqa_other": 1050.0,
+    "thiqa_alyahar": 900.0,
+    "daman_default": 1050.0,
+    "daman_khabisi_alyahar": 630.0
+  },
+  {
+    "code": "34523",
+    "thiqa_other": 1190.0,
+    "thiqa_alyahar": 1020.0,
+    "daman_default": 1190.0,
+    "daman_khabisi_alyahar": 714.0
+  },
+  {
+    "code": "39101",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "39201",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "39202",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "39211",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "39212",
+    "thiqa_other": 126.0,
+    "thiqa_alyahar": 108.0,
+    "daman_default": 126.0,
+    "daman_khabisi_alyahar": 75.6
+  },
+  {
+    "code": "39311",
+    "thiqa_other": 210.0,
+    "thiqa_alyahar": 180.0,
+    "daman_default": 210.0,
+    "daman_khabisi_alyahar": 126.0
+  },
+  {
+    "code": "39319",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "41211",
+    "thiqa_other": 126.0,
+    "thiqa_alyahar": 108.0,
+    "daman_default": 126.0,
+    "daman_khabisi_alyahar": 75.6
+  },
+  {
+    "code": "41219",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "41221",
+    "thiqa_other": 126.0,
+    "thiqa_alyahar": 108.0,
+    "daman_default": 126.0,
+    "daman_khabisi_alyahar": 75.6
+  },
+  {
+    "code": "41229",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "41231",
+    "thiqa_other": 126.0,
+    "thiqa_alyahar": 108.0,
+    "daman_default": 126.0,
+    "daman_khabisi_alyahar": 75.6
+  },
+  {
+    "code": "41239",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "41301",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "41309",
+    "thiqa_other": 84.0,
+    "thiqa_alyahar": 72.0,
+    "daman_default": 84.0,
+    "daman_khabisi_alyahar": 50.4
+  },
+  {
+    "code": "42111",
+    "thiqa_other": 420.0,
+    "thiqa_alyahar": 360.0,
+    "daman_default": 420.0,
+    "daman_khabisi_alyahar": 252.0
+  },
+  {
+    "code": "42121",
+    "thiqa_other": 420.0,
+    "thiqa_alyahar": 360.0,
+    "daman_default": 420.0,
+    "daman_khabisi_alyahar": 252.0
+  },
+  {
+    "code": "42201",
+    "thiqa_other": 560.0,
+    "thiqa_alyahar": 480.0,
+    "daman_default": 560.0,
+    "daman_khabisi_alyahar": 336.0
+  },
+  {
+    "code": "42211",
+    "thiqa_other": 560.0,
+    "thiqa_alyahar": 480.0,
+    "daman_default": 560.0,
+    "daman_khabisi_alyahar": 336.0
+  },
+  {
+    "code": "42311",
+    "thiqa_other": 560.0,
+    "thiqa_alyahar": 480.0,
+    "daman_default": 560.0,
+    "daman_khabisi_alyahar": 336.0
+  },
+  {
+    "code": "42331",
+    "thiqa_other": 490.0,
+    "thiqa_alyahar": 420.0,
+    "daman_default": 490.0,
+    "daman_khabisi_alyahar": 294.0
+  },
+  {
+    "code": "42339",
+    "thiqa_other": 315.0,
+    "thiqa_alyahar": 270.0,
+    "daman_default": 315.0,
+    "daman_khabisi_alyahar": 189.0
+  },
+  {
+    "code": "42341",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "42411",
+    "thiqa_other": 1050.0,
+    "thiqa_alyahar": 900.0,
+    "daman_default": 1050.0,
+    "daman_khabisi_alyahar": 630.0
+  },
+  {
+    "code": "42421",
+    "thiqa_other": 1050.0,
+    "thiqa_alyahar": 900.0,
+    "daman_default": 1050.0,
+    "daman_khabisi_alyahar": 630.0
+  },
+  {
+    "code": "42451",
+    "thiqa_other": 1050.0,
+    "thiqa_alyahar": 900.0,
+    "daman_default": 1050.0,
+    "daman_khabisi_alyahar": 630.0
+  },
+  {
+    "code": "42461",
+    "thiqa_other": 1050.0,
+    "thiqa_alyahar": 900.0,
+    "daman_default": 1050.0,
+    "daman_khabisi_alyahar": 630.0
+  },
+  {
+    "code": "42471",
+    "thiqa_other": 1120.0,
+    "thiqa_alyahar": 960.0,
+    "daman_default": 1120.0,
+    "daman_khabisi_alyahar": 672.0
+  },
+  {
+    "code": "42511",
+    "thiqa_other": 1050.0,
+    "thiqa_alyahar": 900.0,
+    "daman_default": 1050.0,
+    "daman_khabisi_alyahar": 630.0
+  },
+  {
+    "code": "42521",
+    "thiqa_other": 1050.0,
+    "thiqa_alyahar": 900.0,
+    "daman_default": 1050.0,
+    "daman_khabisi_alyahar": 630.0
+  },
+  {
+    "code": "42531",
+    "thiqa_other": 1050.0,
+    "thiqa_alyahar": 900.0,
+    "daman_default": 1050.0,
+    "daman_khabisi_alyahar": 630.0
+  },
+  {
+    "code": "42541",
+    "thiqa_other": 1260.0,
+    "thiqa_alyahar": 1080.0,
+    "daman_default": 1260.0,
+    "daman_khabisi_alyahar": 756.0
+  },
+  {
+    "code": "42551",
+    "thiqa_other": 1050.0,
+    "thiqa_alyahar": 900.0,
+    "daman_default": 1050.0,
+    "daman_khabisi_alyahar": 630.0
+  },
+  {
+    "code": "42561",
+    "thiqa_other": 1190.0,
+    "thiqa_alyahar": 1020.0,
+    "daman_default": 1190.0,
+    "daman_khabisi_alyahar": 714.0
+  },
+  {
+    "code": "42571",
+    "thiqa_other": 1260.0,
+    "thiqa_alyahar": 1080.0,
+    "daman_default": 1260.0,
+    "daman_khabisi_alyahar": 756.0
+  },
+  {
+    "code": "42581",
+    "thiqa_other": 1190.0,
+    "thiqa_alyahar": 1020.0,
+    "daman_default": 1190.0,
+    "daman_khabisi_alyahar": 714.0
+  },
+  {
+    "code": "42611",
+    "thiqa_other": 1750.0,
+    "thiqa_alyahar": 1500.0,
+    "daman_default": 1750.0,
+    "daman_khabisi_alyahar": 1050.0
+  },
+  {
+    "code": "42621",
+    "thiqa_other": 1540.0,
+    "thiqa_alyahar": 1320.0,
+    "daman_default": 1540.0,
+    "daman_khabisi_alyahar": 924.0
+  },
+  {
+    "code": "42631",
+    "thiqa_other": 1540.0,
+    "thiqa_alyahar": 1320.0,
+    "daman_default": 1540.0,
+    "daman_khabisi_alyahar": 924.0
+  },
+  {
+    "code": "42701",
+    "thiqa_other": 1470.0,
+    "thiqa_alyahar": 1260.0,
+    "daman_default": 1470.0,
+    "daman_khabisi_alyahar": 882.0
+  },
+  {
+    "code": "42702",
+    "thiqa_other": 1470.0,
+    "thiqa_alyahar": 1260.0,
+    "daman_default": 1470.0,
+    "daman_khabisi_alyahar": 882.0
+  },
+  {
+    "code": "42703",
+    "thiqa_other": 770.0,
+    "thiqa_alyahar": 660.0,
+    "daman_default": 770.0,
+    "daman_khabisi_alyahar": 462.0
+  },
+  {
+    "code": "42811",
+    "thiqa_other": 700.0,
+    "thiqa_alyahar": 600.0,
+    "daman_default": 700.0,
+    "daman_khabisi_alyahar": 420.0
+  },
+  {
+    "code": "42819",
+    "thiqa_other": 875.0,
+    "thiqa_alyahar": 750.0,
+    "daman_default": 875.0,
+    "daman_khabisi_alyahar": 525.0
+  },
+  {
+    "code": "42821",
+    "thiqa_other": 70.0,
+    "thiqa_alyahar": 60.0,
+    "daman_default": 70.0,
+    "daman_khabisi_alyahar": 42.0
+  },
+  {
+    "code": "42829",
+    "thiqa_other": 56.0,
+    "thiqa_alyahar": 48.0,
+    "daman_default": 56.0,
+    "daman_khabisi_alyahar": 33.6
+  },
+  {
+    "code": "42831",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "42839",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "43111",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "43211",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "43221",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "43231",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "43271",
+    "thiqa_other": 280.0,
+    "thiqa_alyahar": 240.0,
+    "daman_default": 280.0,
+    "daman_khabisi_alyahar": 168.0
+  },
+  {
+    "code": "43281",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "43289",
+    "thiqa_other": 84.0,
+    "thiqa_alyahar": 60.0,
+    "daman_default": 84.0,
+    "daman_khabisi_alyahar": 42.0
+  },
+  {
+    "code": "43421",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "43429",
+    "thiqa_other": 84.0,
+    "thiqa_alyahar": 72.0,
+    "daman_default": 84.0,
+    "daman_khabisi_alyahar": 50.4
+  },
+  {
+    "code": "43511",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "43519",
+    "thiqa_other": 84.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 84.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "43521",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 30.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 21.0
+  },
+  {
+    "code": "43529",
+    "thiqa_other": 84.0,
+    "thiqa_alyahar": 15.0,
+    "daman_default": 84.0,
+    "daman_khabisi_alyahar": 10.5
+  },
+  {
+    "code": "49101",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "49109",
+    "thiqa_other": 84.0,
+    "thiqa_alyahar": 72.0,
+    "daman_default": 84.0,
+    "daman_khabisi_alyahar": 50.4
+  },
+  {
+    "code": "49211",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "49219",
+    "thiqa_other": 84.0,
+    "thiqa_alyahar": 72.0,
+    "daman_default": 84.0,
+    "daman_khabisi_alyahar": 50.4
+  },
+  {
+    "code": "49221",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "49229",
+    "thiqa_other": 84.0,
+    "thiqa_alyahar": 72.0,
+    "daman_default": 84.0,
+    "daman_khabisi_alyahar": 50.4
+  },
+  {
+    "code": "51101",
+    "thiqa_other": 1120.0,
+    "thiqa_alyahar": 900.0,
+    "daman_default": 1120.0,
+    "daman_khabisi_alyahar": 630.0
+  },
+  {
+    "code": "51102",
+    "thiqa_other": 1330.0,
+    "thiqa_alyahar": 1080.0,
+    "daman_default": 1330.0,
+    "daman_khabisi_alyahar": 756.0
+  },
+  {
+    "code": "51103",
+    "thiqa_other": 2240.0,
+    "thiqa_alyahar": 1800.0,
+    "daman_default": 2240.0,
+    "daman_khabisi_alyahar": 1260.0
+  },
+  {
+    "code": "51104",
+    "thiqa_other": 280.0,
+    "thiqa_alyahar": 240.0,
+    "daman_default": 280.0,
+    "daman_khabisi_alyahar": 168.0
+  },
+  {
+    "code": "51301",
+    "thiqa_other": 700.0,
+    "thiqa_alyahar": 600.0,
+    "daman_default": 700.0,
+    "daman_khabisi_alyahar": 420.0
+  },
+  {
+    "code": "51302",
+    "thiqa_other": 840.0,
+    "thiqa_alyahar": 720.0,
+    "daman_default": 840.0,
+    "daman_khabisi_alyahar": 504.0
+  },
+  {
+    "code": "51303",
+    "thiqa_other": 1540.0,
+    "thiqa_alyahar": 1320.0,
+    "daman_default": 1540.0,
+    "daman_khabisi_alyahar": 924.0
+  },
+  {
+    "code": "51601",
+    "thiqa_other": 700.0,
+    "thiqa_alyahar": 600.0,
+    "daman_default": 700.0,
+    "daman_khabisi_alyahar": 420.0
+  },
+  {
+    "code": "51602",
+    "thiqa_other": 840.0,
+    "thiqa_alyahar": 720.0,
+    "daman_default": 840.0,
+    "daman_khabisi_alyahar": 504.0
+  },
+  {
+    "code": "51603",
+    "thiqa_other": 1540.0,
+    "thiqa_alyahar": 1320.0,
+    "daman_default": 1540.0,
+    "daman_khabisi_alyahar": 924.0
+  },
+  {
+    "code": "51611",
+    "thiqa_other": 1330.0,
+    "thiqa_alyahar": 1140.0,
+    "daman_default": 1330.0,
+    "daman_khabisi_alyahar": 798.0
+  },
+  {
+    "code": "51612",
+    "thiqa_other": 1610.0,
+    "thiqa_alyahar": 1380.0,
+    "daman_default": 1610.0,
+    "daman_khabisi_alyahar": 966.0
+  },
+  {
+    "code": "51613",
+    "thiqa_other": 2450.0,
+    "thiqa_alyahar": 2100.0,
+    "daman_default": 2450.0,
+    "daman_khabisi_alyahar": 1470.0
+  },
+  {
+    "code": "51711",
+    "thiqa_other": 1400.0,
+    "thiqa_alyahar": 1200.0,
+    "daman_default": 1400.0,
+    "daman_khabisi_alyahar": 840.0
+  },
+  {
+    "code": "51712",
+    "thiqa_other": 1750.0,
+    "thiqa_alyahar": 1500.0,
+    "daman_default": 1750.0,
+    "daman_khabisi_alyahar": 1050.0
+  },
+  {
+    "code": "51713",
+    "thiqa_other": 2800.0,
+    "thiqa_alyahar": 2400.0,
+    "daman_default": 2800.0,
+    "daman_khabisi_alyahar": 1680.0
+  },
+  {
+    "code": "51721",
+    "thiqa_other": 2100.0,
+    "thiqa_alyahar": 1800.0,
+    "daman_default": 2100.0,
+    "daman_khabisi_alyahar": 1260.0
+  },
+  {
+    "code": "51722",
+    "thiqa_other": 2800.0,
+    "thiqa_alyahar": 2400.0,
+    "daman_default": 2800.0,
+    "daman_khabisi_alyahar": 1680.0
+  },
+  {
+    "code": "51723",
+    "thiqa_other": 4200.0,
+    "thiqa_alyahar": 3600.0,
+    "daman_default": 4200.0,
+    "daman_khabisi_alyahar": 2520.0
+  },
+  {
+    "code": "51811",
+    "thiqa_other": 1750.0,
+    "thiqa_alyahar": 1500.0,
+    "daman_default": 1750.0,
+    "daman_khabisi_alyahar": 1050.0
+  },
+  {
+    "code": "51812",
+    "thiqa_other": 1750.0,
+    "thiqa_alyahar": 1500.0,
+    "daman_default": 1750.0,
+    "daman_khabisi_alyahar": 1050.0
+  },
+  {
+    "code": "51813",
+    "thiqa_other": 3150.0,
+    "thiqa_alyahar": 2700.0,
+    "daman_default": 3150.0,
+    "daman_khabisi_alyahar": 1890.0
+  },
+  {
+    "code": "51821",
+    "thiqa_other": 2450.0,
+    "thiqa_alyahar": 2100.0,
+    "daman_default": 2450.0,
+    "daman_khabisi_alyahar": 1470.0
+  },
+  {
+    "code": "51822",
+    "thiqa_other": 2590.0,
+    "thiqa_alyahar": 2220.0,
+    "daman_default": 2590.0,
+    "daman_khabisi_alyahar": 1554.0
+  },
+  {
+    "code": "51823",
+    "thiqa_other": 3850.0,
+    "thiqa_alyahar": 3300.0,
+    "daman_default": 3850.0,
+    "daman_khabisi_alyahar": 2310.0
+  },
+  {
+    "code": "51911",
+    "thiqa_other": 1890.0,
+    "thiqa_alyahar": 1620.0,
+    "daman_default": 1890.0,
+    "daman_khabisi_alyahar": 1134.0
+  },
+  {
+    "code": "51912",
+    "thiqa_other": 2100.0,
+    "thiqa_alyahar": 1800.0,
+    "daman_default": 2100.0,
+    "daman_khabisi_alyahar": 1260.0
+  },
+  {
+    "code": "51913",
+    "thiqa_other": 3150.0,
+    "thiqa_alyahar": 2700.0,
+    "daman_default": 3150.0,
+    "daman_khabisi_alyahar": 1890.0
+  },
+  {
+    "code": "51921",
+    "thiqa_other": 2590.0,
+    "thiqa_alyahar": 2220.0,
+    "daman_default": 2590.0,
+    "daman_khabisi_alyahar": 1554.0
+  },
+  {
+    "code": "51922",
+    "thiqa_other": 2800.0,
+    "thiqa_alyahar": 2400.0,
+    "daman_default": 2800.0,
+    "daman_khabisi_alyahar": 1680.0
+  },
+  {
+    "code": "51923",
+    "thiqa_other": 3500.0,
+    "thiqa_alyahar": 3000.0,
+    "daman_default": 3500.0,
+    "daman_khabisi_alyahar": 2100.0
+  },
+  {
+    "code": "51941",
+    "thiqa_other": 2450.0,
+    "thiqa_alyahar": 2100.0,
+    "daman_default": 2450.0,
+    "daman_khabisi_alyahar": 1470.0
+  },
+  {
+    "code": "51942",
+    "thiqa_other": 2590.0,
+    "thiqa_alyahar": 2220.0,
+    "daman_default": 2590.0,
+    "daman_khabisi_alyahar": 1554.0
+  },
+  {
+    "code": "51943",
+    "thiqa_other": 3850.0,
+    "thiqa_alyahar": 3300.0,
+    "daman_default": 3850.0,
+    "daman_khabisi_alyahar": 2310.0
+  },
+  {
+    "code": "51951",
+    "thiqa_other": 2590.0,
+    "thiqa_alyahar": 2220.0,
+    "daman_default": 2590.0,
+    "daman_khabisi_alyahar": 1554.0
+  },
+  {
+    "code": "51952",
+    "thiqa_other": 2800.0,
+    "thiqa_alyahar": 2400.0,
+    "daman_default": 2800.0,
+    "daman_khabisi_alyahar": 1680.0
+  },
+  {
+    "code": "51953",
+    "thiqa_other": 4200.0,
+    "thiqa_alyahar": 3600.0,
+    "daman_default": 4200.0,
+    "daman_khabisi_alyahar": 2520.0
+  },
+  {
+    "code": "52101",
+    "thiqa_other": 700.0,
+    "thiqa_alyahar": 600.0,
+    "daman_default": 700.0,
+    "daman_khabisi_alyahar": 420.0
+  },
+  {
+    "code": "52102",
+    "thiqa_other": 700.0,
+    "thiqa_alyahar": 600.0,
+    "daman_default": 700.0,
+    "daman_khabisi_alyahar": 420.0
+  },
+  {
+    "code": "52103",
+    "thiqa_other": 1225.0,
+    "thiqa_alyahar": 1050.0,
+    "daman_default": 1225.0,
+    "daman_khabisi_alyahar": 735.0
+  },
+  {
+    "code": "52111",
+    "thiqa_other": 840.0,
+    "thiqa_alyahar": 720.0,
+    "daman_default": 840.0,
+    "daman_khabisi_alyahar": 504.0
+  },
+  {
+    "code": "52112",
+    "thiqa_other": 840.0,
+    "thiqa_alyahar": 720.0,
+    "daman_default": 840.0,
+    "daman_khabisi_alyahar": 504.0
+  },
+  {
+    "code": "52113",
+    "thiqa_other": 1400.0,
+    "thiqa_alyahar": 1200.0,
+    "daman_default": 1400.0,
+    "daman_khabisi_alyahar": 840.0
+  },
+  {
+    "code": "52301",
+    "thiqa_other": 1050.0,
+    "thiqa_alyahar": 900.0,
+    "daman_default": 1050.0,
+    "daman_khabisi_alyahar": 630.0
+  },
+  {
+    "code": "52302",
+    "thiqa_other": 1050.0,
+    "thiqa_alyahar": 900.0,
+    "daman_default": 1050.0,
+    "daman_khabisi_alyahar": 630.0
+  },
+  {
+    "code": "52303",
+    "thiqa_other": 1400.0,
+    "thiqa_alyahar": 1200.0,
+    "daman_default": 1400.0,
+    "daman_khabisi_alyahar": 840.0
+  },
+  {
+    "code": "52511",
+    "thiqa_other": 1050.0,
+    "thiqa_alyahar": 900.0,
+    "daman_default": 1050.0,
+    "daman_khabisi_alyahar": 630.0
+  },
+  {
+    "code": "52512",
+    "thiqa_other": 1050.0,
+    "thiqa_alyahar": 900.0,
+    "daman_default": 1050.0,
+    "daman_khabisi_alyahar": 630.0
+  },
+  {
+    "code": "52513",
+    "thiqa_other": 1750.0,
+    "thiqa_alyahar": 1500.0,
+    "daman_default": 1750.0,
+    "daman_khabisi_alyahar": 1050.0
+  },
+  {
+    "code": "52711",
+    "thiqa_other": 1890.0,
+    "thiqa_alyahar": 1620.0,
+    "daman_default": 1890.0,
+    "daman_khabisi_alyahar": 1134.0
+  },
+  {
+    "code": "52712",
+    "thiqa_other": 2100.0,
+    "thiqa_alyahar": 1800.0,
+    "daman_default": 2100.0,
+    "daman_khabisi_alyahar": 1260.0
+  },
+  {
+    "code": "52713",
+    "thiqa_other": 2800.0,
+    "thiqa_alyahar": 2400.0,
+    "daman_default": 2800.0,
+    "daman_khabisi_alyahar": 1680.0
+  },
+  {
+    "code": "52721",
+    "thiqa_other": 2450.0,
+    "thiqa_alyahar": 2100.0,
+    "daman_default": 2450.0,
+    "daman_khabisi_alyahar": 1470.0
+  },
+  {
+    "code": "52722",
+    "thiqa_other": 2800.0,
+    "thiqa_alyahar": 2400.0,
+    "daman_default": 2800.0,
+    "daman_khabisi_alyahar": 1680.0
+  },
+  {
+    "code": "52723",
+    "thiqa_other": 3850.0,
+    "thiqa_alyahar": 3300.0,
+    "daman_default": 3850.0,
+    "daman_khabisi_alyahar": 2310.0
+  },
+  {
+    "code": "52911",
+    "thiqa_other": 3150.0,
+    "thiqa_alyahar": 2700.0,
+    "daman_default": 3150.0,
+    "daman_khabisi_alyahar": 1890.0
+  },
+  {
+    "code": "52912",
+    "thiqa_other": 3500.0,
+    "thiqa_alyahar": 3000.0,
+    "daman_default": 3500.0,
+    "daman_khabisi_alyahar": 2100.0
+  },
+  {
+    "code": "52913",
+    "thiqa_other": 4900.0,
+    "thiqa_alyahar": 4200.0,
+    "daman_default": 4900.0,
+    "daman_khabisi_alyahar": 2940.0
+  },
+  {
+    "code": "52921",
+    "thiqa_other": 3150.0,
+    "thiqa_alyahar": 2700.0,
+    "daman_default": 3150.0,
+    "daman_khabisi_alyahar": 1890.0
+  },
+  {
+    "code": "52922",
+    "thiqa_other": 3500.0,
+    "thiqa_alyahar": 3000.0,
+    "daman_default": 3500.0,
+    "daman_khabisi_alyahar": 2100.0
+  },
+  {
+    "code": "52923",
+    "thiqa_other": 4900.0,
+    "thiqa_alyahar": 4200.0,
+    "daman_default": 4900.0,
+    "daman_khabisi_alyahar": 2940.0
+  },
+  {
+    "code": "52941",
+    "thiqa_other": 3150.0,
+    "thiqa_alyahar": 2700.0,
+    "daman_default": 3150.0,
+    "daman_khabisi_alyahar": 1890.0
+  },
+  {
+    "code": "52942",
+    "thiqa_other": 3360.0,
+    "thiqa_alyahar": 2880.0,
+    "daman_default": 3360.0,
+    "daman_khabisi_alyahar": 2016.0
+  },
+  {
+    "code": "52943",
+    "thiqa_other": 4900.0,
+    "thiqa_alyahar": 4200.0,
+    "daman_default": 4900.0,
+    "daman_khabisi_alyahar": 2940.0
+  },
+  {
+    "code": "52951",
+    "thiqa_other": 3150.0,
+    "thiqa_alyahar": 2700.0,
+    "daman_default": 3150.0,
+    "daman_khabisi_alyahar": 1890.0
+  },
+  {
+    "code": "52952",
+    "thiqa_other": 3500.0,
+    "thiqa_alyahar": 3000.0,
+    "daman_default": 3500.0,
+    "daman_khabisi_alyahar": 2100.0
+  },
+  {
+    "code": "52953",
+    "thiqa_other": 4900.0,
+    "thiqa_alyahar": 4200.0,
+    "daman_default": 4900.0,
+    "daman_khabisi_alyahar": 2940.0
+  },
+  {
+    "code": "53101",
+    "thiqa_other": 1400.0,
+    "thiqa_alyahar": 1200.0,
+    "daman_default": 1400.0,
+    "daman_khabisi_alyahar": 840.0
+  },
+  {
+    "code": "53102",
+    "thiqa_other": 1400.0,
+    "thiqa_alyahar": 1200.0,
+    "daman_default": 1400.0,
+    "daman_khabisi_alyahar": 840.0
+  },
+  {
+    "code": "53103",
+    "thiqa_other": 2800.0,
+    "thiqa_alyahar": 2400.0,
+    "daman_default": 2800.0,
+    "daman_khabisi_alyahar": 1680.0
+  },
+  {
+    "code": "53111",
+    "thiqa_other": 1540.0,
+    "thiqa_alyahar": 1320.0,
+    "daman_default": 1540.0,
+    "daman_khabisi_alyahar": 924.0
+  },
+  {
+    "code": "53112",
+    "thiqa_other": 1540.0,
+    "thiqa_alyahar": 1320.0,
+    "daman_default": 1540.0,
+    "daman_khabisi_alyahar": 924.0
+  },
+  {
+    "code": "53113",
+    "thiqa_other": 2800.0,
+    "thiqa_alyahar": 2400.0,
+    "daman_default": 2800.0,
+    "daman_khabisi_alyahar": 1680.0
+  },
+  {
+    "code": "53121",
+    "thiqa_other": 2450.0,
+    "thiqa_alyahar": 2100.0,
+    "daman_default": 2450.0,
+    "daman_khabisi_alyahar": 1470.0
+  },
+  {
+    "code": "53122",
+    "thiqa_other": 2450.0,
+    "thiqa_alyahar": 2100.0,
+    "daman_default": 2450.0,
+    "daman_khabisi_alyahar": 1470.0
+  },
+  {
+    "code": "53123",
+    "thiqa_other": 3500.0,
+    "thiqa_alyahar": 3000.0,
+    "daman_default": 3500.0,
+    "daman_khabisi_alyahar": 2100.0
+  },
+  {
+    "code": "53201",
+    "thiqa_other": 1400.0,
+    "thiqa_alyahar": 1200.0,
+    "daman_default": 1400.0,
+    "daman_khabisi_alyahar": 840.0
+  },
+  {
+    "code": "53202",
+    "thiqa_other": 1400.0,
+    "thiqa_alyahar": 1200.0,
+    "daman_default": 1400.0,
+    "daman_khabisi_alyahar": 840.0
+  },
+  {
+    "code": "53203",
+    "thiqa_other": 2450.0,
+    "thiqa_alyahar": 2100.0,
+    "daman_default": 2450.0,
+    "daman_khabisi_alyahar": 1470.0
+  },
+  {
+    "code": "53205",
+    "thiqa_other": 910.0,
+    "thiqa_alyahar": 780.0,
+    "daman_default": 910.0,
+    "daman_khabisi_alyahar": 546.0
+  },
+  {
+    "code": "53211",
+    "thiqa_other": 1750.0,
+    "thiqa_alyahar": 1500.0,
+    "daman_default": 1750.0,
+    "daman_khabisi_alyahar": 1050.0
+  },
+  {
+    "code": "53212",
+    "thiqa_other": 1750.0,
+    "thiqa_alyahar": 1500.0,
+    "daman_default": 1750.0,
+    "daman_khabisi_alyahar": 1050.0
+  },
+  {
+    "code": "53213",
+    "thiqa_other": 2800.0,
+    "thiqa_alyahar": 2400.0,
+    "daman_default": 2800.0,
+    "daman_khabisi_alyahar": 1680.0
+  },
+  {
+    "code": "53215",
+    "thiqa_other": 1050.0,
+    "thiqa_alyahar": 900.0,
+    "daman_default": 1050.0,
+    "daman_khabisi_alyahar": 630.0
+  },
+  {
+    "code": "53401",
+    "thiqa_other": 2100.0,
+    "thiqa_alyahar": 1800.0,
+    "daman_default": 2100.0,
+    "daman_khabisi_alyahar": 1260.0
+  },
+  {
+    "code": "53402",
+    "thiqa_other": 2100.0,
+    "thiqa_alyahar": 1800.0,
+    "daman_default": 2100.0,
+    "daman_khabisi_alyahar": 1260.0
+  },
+  {
+    "code": "53403",
+    "thiqa_other": 3850.0,
+    "thiqa_alyahar": 3300.0,
+    "daman_default": 3850.0,
+    "daman_khabisi_alyahar": 2310.0
+  },
+  {
+    "code": "53501",
+    "thiqa_other": 2100.0,
+    "thiqa_alyahar": 1800.0,
+    "daman_default": 2100.0,
+    "daman_khabisi_alyahar": 1260.0
+  },
+  {
+    "code": "53502",
+    "thiqa_other": 2100.0,
+    "thiqa_alyahar": 1800.0,
+    "daman_default": 2100.0,
+    "daman_khabisi_alyahar": 1260.0
+  },
+  {
+    "code": "53503",
+    "thiqa_other": 3500.0,
+    "thiqa_alyahar": 3000.0,
+    "daman_default": 3500.0,
+    "daman_khabisi_alyahar": 2100.0
+  },
+  {
+    "code": "53711",
+    "thiqa_other": 2100.0,
+    "thiqa_alyahar": 1800.0,
+    "daman_default": 2100.0,
+    "daman_khabisi_alyahar": 1260.0
+  },
+  {
+    "code": "53712",
+    "thiqa_other": 2100.0,
+    "thiqa_alyahar": 1800.0,
+    "daman_default": 2100.0,
+    "daman_khabisi_alyahar": 1260.0
+  },
+  {
+    "code": "53713",
+    "thiqa_other": 3500.0,
+    "thiqa_alyahar": 3000.0,
+    "daman_default": 3500.0,
+    "daman_khabisi_alyahar": 2100.0
+  },
+  {
+    "code": "53721",
+    "thiqa_other": 2100.0,
+    "thiqa_alyahar": 1800.0,
+    "daman_default": 2100.0,
+    "daman_khabisi_alyahar": 1260.0
+  },
+  {
+    "code": "53722",
+    "thiqa_other": 2100.0,
+    "thiqa_alyahar": 1800.0,
+    "daman_default": 2100.0,
+    "daman_khabisi_alyahar": 1260.0
+  },
+  {
+    "code": "53723",
+    "thiqa_other": 3150.0,
+    "thiqa_alyahar": 2700.0,
+    "daman_default": 3150.0,
+    "daman_khabisi_alyahar": 1890.0
+  },
+  {
+    "code": "53811",
+    "thiqa_other": 2450.0,
+    "thiqa_alyahar": 2100.0,
+    "daman_default": 2450.0,
+    "daman_khabisi_alyahar": 1470.0
+  },
+  {
+    "code": "53812",
+    "thiqa_other": 2450.0,
+    "thiqa_alyahar": 2100.0,
+    "daman_default": 2450.0,
+    "daman_khabisi_alyahar": 1470.0
+  },
+  {
+    "code": "53813",
+    "thiqa_other": 3500.0,
+    "thiqa_alyahar": 3000.0,
+    "daman_default": 3500.0,
+    "daman_khabisi_alyahar": 2100.0
+  },
+  {
+    "code": "53821",
+    "thiqa_other": 2800.0,
+    "thiqa_alyahar": 2400.0,
+    "daman_default": 2800.0,
+    "daman_khabisi_alyahar": 1680.0
+  },
+  {
+    "code": "53822",
+    "thiqa_other": 2800.0,
+    "thiqa_alyahar": 2400.0,
+    "daman_default": 2800.0,
+    "daman_khabisi_alyahar": 1680.0
+  },
+  {
+    "code": "53823",
+    "thiqa_other": 3850.0,
+    "thiqa_alyahar": 3300.0,
+    "daman_default": 3850.0,
+    "daman_khabisi_alyahar": 2310.0
+  },
+  {
+    "code": "53941",
+    "thiqa_other": 3150.0,
+    "thiqa_alyahar": 2700.0,
+    "daman_default": 3150.0,
+    "daman_khabisi_alyahar": 1890.0
+  },
+  {
+    "code": "53942",
+    "thiqa_other": 3150.0,
+    "thiqa_alyahar": 2700.0,
+    "daman_default": 3150.0,
+    "daman_khabisi_alyahar": 1890.0
+  },
+  {
+    "code": "53943",
+    "thiqa_other": 4200.0,
+    "thiqa_alyahar": 3600.0,
+    "daman_default": 4200.0,
+    "daman_khabisi_alyahar": 2520.0
+  },
+  {
+    "code": "53951",
+    "thiqa_other": 3150.0,
+    "thiqa_alyahar": 2700.0,
+    "daman_default": 3150.0,
+    "daman_khabisi_alyahar": 1890.0
+  },
+  {
+    "code": "53952",
+    "thiqa_other": 3150.0,
+    "thiqa_alyahar": 2700.0,
+    "daman_default": 3150.0,
+    "daman_khabisi_alyahar": 1890.0
+  },
+  {
+    "code": "53953",
+    "thiqa_other": 4550.0,
+    "thiqa_alyahar": 3900.0,
+    "daman_default": 4550.0,
+    "daman_khabisi_alyahar": 2730.0
+  },
+  {
+    "code": "54201",
+    "thiqa_other": 70.0,
+    "thiqa_alyahar": 60.0,
+    "daman_default": 70.0,
+    "daman_khabisi_alyahar": 42.0
+  },
+  {
+    "code": "54209",
+    "thiqa_other": 52.5,
+    "thiqa_alyahar": 45.0,
+    "daman_default": 52.5,
+    "daman_khabisi_alyahar": 31.5
+  },
+  {
+    "code": "55101",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "55102",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "55201",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "55202",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "55203",
+    "thiqa_other": 245.0,
+    "thiqa_alyahar": 210.0,
+    "daman_default": 245.0,
+    "daman_khabisi_alyahar": 147.0
+  },
+  {
+    "code": "55301",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "55302",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "55401",
+    "thiqa_other": 175.0,
+    "thiqa_alyahar": 150.0,
+    "daman_default": 175.0,
+    "daman_khabisi_alyahar": 105.0
+  },
+  {
+    "code": "55402",
+    "thiqa_other": 175.0,
+    "thiqa_alyahar": 150.0,
+    "daman_default": 175.0,
+    "daman_khabisi_alyahar": 105.0
+  },
+  {
+    "code": "55403",
+    "thiqa_other": 350.0,
+    "thiqa_alyahar": 300.0,
+    "daman_default": 350.0,
+    "daman_khabisi_alyahar": 210.0
+  },
+  {
+    "code": "55501",
+    "thiqa_other": 70.0,
+    "thiqa_alyahar": 60.0,
+    "daman_default": 70.0,
+    "daman_khabisi_alyahar": 42.0
+  },
+  {
+    "code": "55509",
+    "thiqa_other": 52.5,
+    "thiqa_alyahar": 45.0,
+    "daman_default": 52.5,
+    "daman_khabisi_alyahar": 31.5
+  },
+  {
+    "code": "56111",
+    "thiqa_other": 525.0,
+    "thiqa_alyahar": 450.0,
+    "daman_default": 525.0,
+    "daman_khabisi_alyahar": 315.0
+  },
+  {
+    "code": "56112",
+    "thiqa_other": 525.0,
+    "thiqa_alyahar": 450.0,
+    "daman_default": 525.0,
+    "daman_khabisi_alyahar": 315.0
+  },
+  {
+    "code": "56113",
+    "thiqa_other": 1050.0,
+    "thiqa_alyahar": 900.0,
+    "daman_default": 1050.0,
+    "daman_khabisi_alyahar": 630.0
+  },
+  {
+    "code": "56121",
+    "thiqa_other": 525.0,
+    "thiqa_alyahar": 450.0,
+    "daman_default": 525.0,
+    "daman_khabisi_alyahar": 315.0
+  },
+  {
+    "code": "56122",
+    "thiqa_other": 525.0,
+    "thiqa_alyahar": 450.0,
+    "daman_default": 525.0,
+    "daman_khabisi_alyahar": 315.0
+  },
+  {
+    "code": "56123",
+    "thiqa_other": 1050.0,
+    "thiqa_alyahar": 900.0,
+    "daman_default": 1050.0,
+    "daman_khabisi_alyahar": 630.0
+  },
+  {
+    "code": "56211",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "56212",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "56213",
+    "thiqa_other": 280.0,
+    "thiqa_alyahar": 240.0,
+    "daman_default": 280.0,
+    "daman_khabisi_alyahar": 168.0
+  },
+  {
+    "code": "56221",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "56222",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "56223",
+    "thiqa_other": 280.0,
+    "thiqa_alyahar": 240.0,
+    "daman_default": 280.0,
+    "daman_khabisi_alyahar": 168.0
+  },
+  {
+    "code": "56231",
+    "thiqa_other": 315.0,
+    "thiqa_alyahar": 270.0,
+    "daman_default": 315.0,
+    "daman_khabisi_alyahar": 189.0
+  },
+  {
+    "code": "56232",
+    "thiqa_other": 385.0,
+    "thiqa_alyahar": 330.0,
+    "daman_default": 385.0,
+    "daman_khabisi_alyahar": 231.0
+  },
+  {
+    "code": "56233",
+    "thiqa_other": 700.0,
+    "thiqa_alyahar": 600.0,
+    "daman_default": 700.0,
+    "daman_khabisi_alyahar": 420.0
+  },
+  {
+    "code": "56241",
+    "thiqa_other": 315.0,
+    "thiqa_alyahar": 270.0,
+    "daman_default": 315.0,
+    "daman_khabisi_alyahar": 189.0
+  },
+  {
+    "code": "56242",
+    "thiqa_other": 385.0,
+    "thiqa_alyahar": 330.0,
+    "daman_default": 385.0,
+    "daman_khabisi_alyahar": 231.0
+  },
+  {
+    "code": "56243",
+    "thiqa_other": 700.0,
+    "thiqa_alyahar": 600.0,
+    "daman_default": 700.0,
+    "daman_khabisi_alyahar": 420.0
+  },
+  {
+    "code": "56311",
+    "thiqa_other": 420.0,
+    "thiqa_alyahar": 360.0,
+    "daman_default": 420.0,
+    "daman_khabisi_alyahar": 252.0
+  },
+  {
+    "code": "56312",
+    "thiqa_other": 420.0,
+    "thiqa_alyahar": 360.0,
+    "daman_default": 420.0,
+    "daman_khabisi_alyahar": 252.0
+  },
+  {
+    "code": "56313",
+    "thiqa_other": 840.0,
+    "thiqa_alyahar": 720.0,
+    "daman_default": 840.0,
+    "daman_khabisi_alyahar": 504.0
+  },
+  {
+    "code": "56321",
+    "thiqa_other": 350.0,
+    "thiqa_alyahar": 300.0,
+    "daman_default": 350.0,
+    "daman_khabisi_alyahar": 210.0
+  },
+  {
+    "code": "56322",
+    "thiqa_other": 350.0,
+    "thiqa_alyahar": 300.0,
+    "daman_default": 350.0,
+    "daman_khabisi_alyahar": 210.0
+  },
+  {
+    "code": "56323",
+    "thiqa_other": 700.0,
+    "thiqa_alyahar": 600.0,
+    "daman_default": 700.0,
+    "daman_khabisi_alyahar": 420.0
+  },
+  {
+    "code": "56511",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "56512",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "56513",
+    "thiqa_other": 280.0,
+    "thiqa_alyahar": 240.0,
+    "daman_default": 280.0,
+    "daman_khabisi_alyahar": 168.0
+  },
+  {
+    "code": "56521",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "56522",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "56523",
+    "thiqa_other": 280.0,
+    "thiqa_alyahar": 240.0,
+    "daman_default": 280.0,
+    "daman_khabisi_alyahar": 168.0
+  },
+  {
+    "code": "56531",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "56532",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "56533",
+    "thiqa_other": 280.0,
+    "thiqa_alyahar": 240.0,
+    "daman_default": 280.0,
+    "daman_khabisi_alyahar": 168.0
+  },
+  {
+    "code": "56541",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "56542",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "56543",
+    "thiqa_other": 280.0,
+    "thiqa_alyahar": 240.0,
+    "daman_default": 280.0,
+    "daman_khabisi_alyahar": 168.0
+  },
+  {
+    "code": "56551",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "56552",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "56553",
+    "thiqa_other": 280.0,
+    "thiqa_alyahar": 240.0,
+    "daman_default": 280.0,
+    "daman_khabisi_alyahar": 168.0
+  },
+  {
+    "code": "56561",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "56562",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "56563",
+    "thiqa_other": 280.0,
+    "thiqa_alyahar": 240.0,
+    "daman_default": 280.0,
+    "daman_khabisi_alyahar": 168.0
+  },
+  {
+    "code": "56601",
+    "thiqa_other": 175.0,
+    "thiqa_alyahar": 150.0,
+    "daman_default": 175.0,
+    "daman_khabisi_alyahar": 105.0
+  },
+  {
+    "code": "56611",
+    "thiqa_other": 245.0,
+    "thiqa_alyahar": 210.0,
+    "daman_default": 245.0,
+    "daman_khabisi_alyahar": 147.0
+  },
+  {
+    "code": "56621",
+    "thiqa_other": 245.0,
+    "thiqa_alyahar": 210.0,
+    "daman_default": 245.0,
+    "daman_khabisi_alyahar": 147.0
+  },
+  {
+    "code": "57209",
+    "thiqa_other": 700.0,
+    "thiqa_alyahar": 600.0,
+    "daman_default": 700.0,
+    "daman_khabisi_alyahar": 420.0
+  },
+  {
+    "code": "62101",
+    "thiqa_other": 693.0,
+    "thiqa_alyahar": 540.0,
+    "daman_default": 693.0,
+    "daman_khabisi_alyahar": 378.0
+  },
+  {
+    "code": "62102",
+    "thiqa_other": 980.0,
+    "thiqa_alyahar": 840.0,
+    "daman_default": 980.0,
+    "daman_khabisi_alyahar": 588.0
+  },
+  {
+    "code": "62103",
+    "thiqa_other": 700.0,
+    "thiqa_alyahar": 600.0,
+    "daman_default": 700.0,
+    "daman_khabisi_alyahar": 420.0
+  },
+  {
+    "code": "62104",
+    "thiqa_other": 1750.0,
+    "thiqa_alyahar": 1500.0,
+    "daman_default": 1750.0,
+    "daman_khabisi_alyahar": 1050.0
+  },
+  {
+    "code": "62105",
+    "thiqa_other": 1750.0,
+    "thiqa_alyahar": 1500.0,
+    "daman_default": 1750.0,
+    "daman_khabisi_alyahar": 1050.0
+  },
+  {
+    "code": "62107",
+    "thiqa_other": 560.0,
+    "thiqa_alyahar": 480.0,
+    "daman_default": 560.0,
+    "daman_khabisi_alyahar": 336.0
+  },
+  {
+    "code": "62108",
+    "thiqa_other": 700.0,
+    "thiqa_alyahar": 600.0,
+    "daman_default": 700.0,
+    "daman_khabisi_alyahar": 420.0
+  },
+  {
+    "code": "62501",
+    "thiqa_other": 924.0,
+    "thiqa_alyahar": 720.0,
+    "daman_default": 924.0,
+    "daman_khabisi_alyahar": 504.0
+  },
+  {
+    "code": "62502",
+    "thiqa_other": 1540.0,
+    "thiqa_alyahar": 1200.0,
+    "daman_default": 1540.0,
+    "daman_khabisi_alyahar": 840.0
+  },
+  {
+    "code": "62507",
+    "thiqa_other": 560.0,
+    "thiqa_alyahar": 480.0,
+    "daman_default": 560.0,
+    "daman_khabisi_alyahar": 336.0
+  },
+  {
+    "code": "62508",
+    "thiqa_other": 700.0,
+    "thiqa_alyahar": 600.0,
+    "daman_default": 700.0,
+    "daman_khabisi_alyahar": 420.0
+  },
+  {
+    "code": "62701",
+    "thiqa_other": 770.0,
+    "thiqa_alyahar": 660.0,
+    "daman_default": 770.0,
+    "daman_khabisi_alyahar": 462.0
+  },
+  {
+    "code": "62702",
+    "thiqa_other": 192.5,
+    "thiqa_alyahar": 150.0,
+    "daman_default": 192.5,
+    "daman_khabisi_alyahar": 105.0
+  },
+  {
+    "code": "62703",
+    "thiqa_other": 269.5,
+    "thiqa_alyahar": 210.0,
+    "daman_default": 269.5,
+    "daman_khabisi_alyahar": 147.0
+  },
+  {
+    "code": "62704",
+    "thiqa_other": 693.0,
+    "thiqa_alyahar": 540.0,
+    "daman_default": 693.0,
+    "daman_khabisi_alyahar": 378.0
+  },
+  {
+    "code": "62707",
+    "thiqa_other": 560.0,
+    "thiqa_alyahar": 480.0,
+    "daman_default": 560.0,
+    "daman_khabisi_alyahar": 336.0
+  },
+  {
+    "code": "62708",
+    "thiqa_other": 700.0,
+    "thiqa_alyahar": 600.0,
+    "daman_default": 700.0,
+    "daman_khabisi_alyahar": 420.0
+  },
+  {
+    "code": "62801",
+    "thiqa_other": 315.0,
+    "thiqa_alyahar": 270.0,
+    "daman_default": 315.0,
+    "daman_khabisi_alyahar": 189.0
+  },
+  {
+    "code": "62802",
+    "thiqa_other": 350.0,
+    "thiqa_alyahar": 300.0,
+    "daman_default": 350.0,
+    "daman_khabisi_alyahar": 210.0
+  },
+  {
+    "code": "63001",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "63009",
+    "thiqa_other": 84.0,
+    "thiqa_alyahar": 72.0,
+    "daman_default": 84.0,
+    "daman_khabisi_alyahar": 50.4
+  },
+  {
+    "code": "64111",
+    "thiqa_other": 175.0,
+    "thiqa_alyahar": 150.0,
+    "daman_default": 175.0,
+    "daman_khabisi_alyahar": 105.0
+  },
+  {
+    "code": "64131",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "64141",
+    "thiqa_other": 280.0,
+    "thiqa_alyahar": 240.0,
+    "daman_default": 280.0,
+    "daman_khabisi_alyahar": 168.0
+  },
+  {
+    "code": "64301",
+    "thiqa_other": 210.0,
+    "thiqa_alyahar": 180.0,
+    "daman_default": 210.0,
+    "daman_khabisi_alyahar": 126.0
+  },
+  {
+    "code": "64309",
+    "thiqa_other": 210.0,
+    "thiqa_alyahar": 180.0,
+    "daman_default": 210.0,
+    "daman_khabisi_alyahar": 126.0
+  },
+  {
+    "code": "66211",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "66219",
+    "thiqa_other": 84.0,
+    "thiqa_alyahar": 72.0,
+    "daman_default": 84.0,
+    "daman_khabisi_alyahar": 50.4
+  },
+  {
+    "code": "66231",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "66239",
+    "thiqa_other": 84.0,
+    "thiqa_alyahar": 72.0,
+    "daman_default": 84.0,
+    "daman_khabisi_alyahar": 50.4
+  },
+  {
+    "code": "66251",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "66259",
+    "thiqa_other": 84.0,
+    "thiqa_alyahar": 72.0,
+    "daman_default": 84.0,
+    "daman_khabisi_alyahar": 50.4
+  },
+  {
+    "code": "66301",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "66309",
+    "thiqa_other": 84.0,
+    "thiqa_alyahar": 72.0,
+    "daman_default": 84.0,
+    "daman_khabisi_alyahar": 50.4
+  },
+  {
+    "code": "66311",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "66319",
+    "thiqa_other": 84.0,
+    "thiqa_alyahar": 72.0,
+    "daman_default": 84.0,
+    "daman_khabisi_alyahar": 50.4
+  },
+  {
+    "code": "66711",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "66719",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "66721",
+    "thiqa_other": 245.0,
+    "thiqa_alyahar": 210.0,
+    "daman_default": 245.0,
+    "daman_khabisi_alyahar": 147.0
+  },
+  {
+    "code": "66729",
+    "thiqa_other": 119.0,
+    "thiqa_alyahar": 102.0,
+    "daman_default": 119.0,
+    "daman_khabisi_alyahar": 71.4
+  },
+  {
+    "code": "66741",
+    "thiqa_other": 189.0,
+    "thiqa_alyahar": 162.0,
+    "daman_default": 189.0,
+    "daman_khabisi_alyahar": 113.4
+  },
+  {
+    "code": "66749",
+    "thiqa_other": 112.0,
+    "thiqa_alyahar": 96.0,
+    "daman_default": 112.0,
+    "daman_khabisi_alyahar": 67.2
+  },
+  {
+    "code": "67111",
+    "thiqa_other": 693.0,
+    "thiqa_alyahar": 540.0,
+    "daman_default": 693.0,
+    "daman_khabisi_alyahar": 378.0
+  },
+  {
+    "code": "67113",
+    "thiqa_other": 346.5,
+    "thiqa_alyahar": 270.0,
+    "daman_default": 346.5,
+    "daman_khabisi_alyahar": 189.0
+  },
+  {
+    "code": "67115",
+    "thiqa_other": 924.0,
+    "thiqa_alyahar": 720.0,
+    "daman_default": 924.0,
+    "daman_khabisi_alyahar": 504.0
+  },
+  {
+    "code": "67121",
+    "thiqa_other": 192.5,
+    "thiqa_alyahar": 150.0,
+    "daman_default": 192.5,
+    "daman_khabisi_alyahar": 105.0
+  },
+  {
+    "code": "67125",
+    "thiqa_other": 231.0,
+    "thiqa_alyahar": 180.0,
+    "daman_default": 231.0,
+    "daman_khabisi_alyahar": 126.0
+  },
+  {
+    "code": "67131",
+    "thiqa_other": 847.0,
+    "thiqa_alyahar": 660.0,
+    "daman_default": 847.0,
+    "daman_khabisi_alyahar": 462.0
+  },
+  {
+    "code": "67135",
+    "thiqa_other": 1078.0,
+    "thiqa_alyahar": 840.0,
+    "daman_default": 1078.0,
+    "daman_khabisi_alyahar": 588.0
+  },
+  {
+    "code": "67137",
+    "thiqa_other": 490.0,
+    "thiqa_alyahar": 420.0,
+    "daman_default": 490.0,
+    "daman_khabisi_alyahar": 294.0
+  },
+  {
+    "code": "67138",
+    "thiqa_other": 560.0,
+    "thiqa_alyahar": 480.0,
+    "daman_default": 560.0,
+    "daman_khabisi_alyahar": 336.0
+  },
+  {
+    "code": "67145",
+    "thiqa_other": 840.0,
+    "thiqa_alyahar": 720.0,
+    "daman_default": 840.0,
+    "daman_khabisi_alyahar": 504.0
+  },
+  {
+    "code": "67155",
+    "thiqa_other": 1190.0,
+    "thiqa_alyahar": 1020.0,
+    "daman_default": 1190.0,
+    "daman_khabisi_alyahar": 714.0
+  },
+  {
+    "code": "67161",
+    "thiqa_other": 770.0,
+    "thiqa_alyahar": 600.0,
+    "daman_default": 770.0,
+    "daman_khabisi_alyahar": 420.0
+  },
+  {
+    "code": "67171",
+    "thiqa_other": 885.5,
+    "thiqa_alyahar": 690.0,
+    "daman_default": 885.5,
+    "daman_khabisi_alyahar": 483.0
+  },
+  {
+    "code": "67181",
+    "thiqa_other": 1078.0,
+    "thiqa_alyahar": 840.0,
+    "daman_default": 1078.0,
+    "daman_khabisi_alyahar": 588.0
+  },
+  {
+    "code": "67201",
+    "thiqa_other": 1400.0,
+    "thiqa_alyahar": 1080.0,
+    "daman_default": 1400.0,
+    "daman_khabisi_alyahar": 756.0
+  },
+  {
+    "code": "67205",
+    "thiqa_other": 1540.0,
+    "thiqa_alyahar": 1200.0,
+    "daman_default": 1540.0,
+    "daman_khabisi_alyahar": 840.0
+  },
+  {
+    "code": "67211",
+    "thiqa_other": 1386.0,
+    "thiqa_alyahar": 1080.0,
+    "daman_default": 1386.0,
+    "daman_khabisi_alyahar": 756.0
+  },
+  {
+    "code": "67213",
+    "thiqa_other": 1078.0,
+    "thiqa_alyahar": 840.0,
+    "daman_default": 1078.0,
+    "daman_khabisi_alyahar": 588.0
+  },
+  {
+    "code": "67215",
+    "thiqa_other": 1540.0,
+    "thiqa_alyahar": 1200.0,
+    "daman_default": 1540.0,
+    "daman_khabisi_alyahar": 840.0
+  },
+  {
+    "code": "67217",
+    "thiqa_other": 490.0,
+    "thiqa_alyahar": 420.0,
+    "daman_default": 490.0,
+    "daman_khabisi_alyahar": 294.0
+  },
+  {
+    "code": "67218",
+    "thiqa_other": 560.0,
+    "thiqa_alyahar": 480.0,
+    "daman_default": 560.0,
+    "daman_khabisi_alyahar": 336.0
+  },
+  {
+    "code": "67221",
+    "thiqa_other": 462.0,
+    "thiqa_alyahar": 360.0,
+    "daman_default": 462.0,
+    "daman_khabisi_alyahar": 252.0
+  },
+  {
+    "code": "67231",
+    "thiqa_other": 1001.0,
+    "thiqa_alyahar": 780.0,
+    "daman_default": 1001.0,
+    "daman_khabisi_alyahar": 546.0
+  },
+  {
+    "code": "67241",
+    "thiqa_other": 1078.0,
+    "thiqa_alyahar": 840.0,
+    "daman_default": 1078.0,
+    "daman_khabisi_alyahar": 588.0
+  },
+  {
+    "code": "67251",
+    "thiqa_other": 1155.0,
+    "thiqa_alyahar": 900.0,
+    "daman_default": 1155.0,
+    "daman_khabisi_alyahar": 630.0
+  },
+  {
+    "code": "67301",
+    "thiqa_other": 885.5,
+    "thiqa_alyahar": 690.0,
+    "daman_default": 885.5,
+    "daman_khabisi_alyahar": 483.0
+  },
+  {
+    "code": "67305",
+    "thiqa_other": 1078.0,
+    "thiqa_alyahar": 840.0,
+    "daman_default": 1078.0,
+    "daman_khabisi_alyahar": 588.0
+  },
+  {
+    "code": "67307",
+    "thiqa_other": 490.0,
+    "thiqa_alyahar": 420.0,
+    "daman_default": 490.0,
+    "daman_khabisi_alyahar": 294.0
+  },
+  {
+    "code": "67308",
+    "thiqa_other": 665.0,
+    "thiqa_alyahar": 570.0,
+    "daman_default": 665.0,
+    "daman_khabisi_alyahar": 399.0
+  },
+  {
+    "code": "67311",
+    "thiqa_other": 910.0,
+    "thiqa_alyahar": 780.0,
+    "daman_default": 910.0,
+    "daman_khabisi_alyahar": 546.0
+  },
+  {
+    "code": "67341",
+    "thiqa_other": 500.5,
+    "thiqa_alyahar": 390.0,
+    "daman_default": 500.5,
+    "daman_khabisi_alyahar": 273.0
+  },
+  {
+    "code": "67501",
+    "thiqa_other": 315.0,
+    "thiqa_alyahar": 270.0,
+    "daman_default": 315.0,
+    "daman_khabisi_alyahar": 189.0
+  },
+  {
+    "code": "67502",
+    "thiqa_other": 805.0,
+    "thiqa_alyahar": 690.0,
+    "daman_default": 805.0,
+    "daman_khabisi_alyahar": 483.0
+  },
+  {
+    "code": "69101",
+    "thiqa_other": 490.0,
+    "thiqa_alyahar": 420.0,
+    "daman_default": 490.0,
+    "daman_khabisi_alyahar": 294.0
+  },
+  {
+    "code": "69201",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "69811",
+    "thiqa_other": 12600.0,
+    "thiqa_alyahar": 10800.0,
+    "daman_default": 12600.0,
+    "daman_khabisi_alyahar": 7560.0
+  },
+  {
+    "code": "69812",
+    "thiqa_other": 12600.0,
+    "thiqa_alyahar": 10800.0,
+    "daman_default": 12600.0,
+    "daman_khabisi_alyahar": 7560.0
+  },
+  {
+    "code": "69821",
+    "thiqa_other": 17500.0,
+    "thiqa_alyahar": 15000.0,
+    "daman_default": 17500.0,
+    "daman_khabisi_alyahar": 10500.0
+  },
+  {
+    "code": "69822",
+    "thiqa_other": 17500.0,
+    "thiqa_alyahar": 15000.0,
+    "daman_default": 17500.0,
+    "daman_khabisi_alyahar": 10500.0
+  },
+  {
+    "code": "71101",
+    "thiqa_other": 115.5,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 115.5,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "71109",
+    "thiqa_other": 77.0,
+    "thiqa_alyahar": 60.0,
+    "daman_default": 77.0,
+    "daman_khabisi_alyahar": 42.0
+  },
+  {
+    "code": "71201",
+    "thiqa_other": 455.0,
+    "thiqa_alyahar": 360.0,
+    "daman_default": 455.0,
+    "daman_khabisi_alyahar": 252.0
+  },
+  {
+    "code": "71209",
+    "thiqa_other": 269.5,
+    "thiqa_alyahar": 210.0,
+    "daman_default": 269.5,
+    "daman_khabisi_alyahar": 147.0
+  },
+  {
+    "code": "71211",
+    "thiqa_other": 595.0,
+    "thiqa_alyahar": 480.0,
+    "daman_default": 595.0,
+    "daman_khabisi_alyahar": 336.0
+  },
+  {
+    "code": "71219",
+    "thiqa_other": 420.0,
+    "thiqa_alyahar": 330.0,
+    "daman_default": 420.0,
+    "daman_khabisi_alyahar": 231.0
+  },
+  {
+    "code": "72111",
+    "thiqa_other": 700.0,
+    "thiqa_alyahar": 600.0,
+    "daman_default": 700.0,
+    "daman_khabisi_alyahar": 420.0
+  },
+  {
+    "code": "72119",
+    "thiqa_other": 700.0,
+    "thiqa_alyahar": 600.0,
+    "daman_default": 700.0,
+    "daman_khabisi_alyahar": 420.0
+  },
+  {
+    "code": "72211",
+    "thiqa_other": 1050.0,
+    "thiqa_alyahar": 900.0,
+    "daman_default": 1050.0,
+    "daman_khabisi_alyahar": 630.0
+  },
+  {
+    "code": "72219",
+    "thiqa_other": 1050.0,
+    "thiqa_alyahar": 900.0,
+    "daman_default": 1050.0,
+    "daman_khabisi_alyahar": 630.0
+  },
+  {
+    "code": "72221",
+    "thiqa_other": 1050.0,
+    "thiqa_alyahar": 900.0,
+    "daman_default": 1050.0,
+    "daman_khabisi_alyahar": 630.0
+  },
+  {
+    "code": "72229",
+    "thiqa_other": 770.0,
+    "thiqa_alyahar": 660.0,
+    "daman_default": 770.0,
+    "daman_khabisi_alyahar": 462.0
+  },
+  {
+    "code": "72231",
+    "thiqa_other": 1190.0,
+    "thiqa_alyahar": 1020.0,
+    "daman_default": 1190.0,
+    "daman_khabisi_alyahar": 714.0
+  },
+  {
+    "code": "72239",
+    "thiqa_other": 700.0,
+    "thiqa_alyahar": 600.0,
+    "daman_default": 700.0,
+    "daman_khabisi_alyahar": 420.0
+  },
+  {
+    "code": "72311",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "72319",
+    "thiqa_other": 84.0,
+    "thiqa_alyahar": 72.0,
+    "daman_default": 84.0,
+    "daman_khabisi_alyahar": 50.4
+  },
+  {
+    "code": "72321",
+    "thiqa_other": 210.0,
+    "thiqa_alyahar": 180.0,
+    "daman_default": 210.0,
+    "daman_khabisi_alyahar": 126.0
+  },
+  {
+    "code": "72329",
+    "thiqa_other": 175.0,
+    "thiqa_alyahar": 150.0,
+    "daman_default": 175.0,
+    "daman_khabisi_alyahar": 105.0
+  },
+  {
+    "code": "72331",
+    "thiqa_other": 700.0,
+    "thiqa_alyahar": 600.0,
+    "daman_default": 700.0,
+    "daman_khabisi_alyahar": 420.0
+  },
+  {
+    "code": "72339",
+    "thiqa_other": 280.0,
+    "thiqa_alyahar": 240.0,
+    "daman_default": 280.0,
+    "daman_khabisi_alyahar": 168.0
+  },
+  {
+    "code": "72411",
+    "thiqa_other": 455.0,
+    "thiqa_alyahar": 390.0,
+    "daman_default": 455.0,
+    "daman_khabisi_alyahar": 273.0
+  },
+  {
+    "code": "72419",
+    "thiqa_other": 280.0,
+    "thiqa_alyahar": 240.0,
+    "daman_default": 280.0,
+    "daman_khabisi_alyahar": 168.0
+  },
+  {
+    "code": "72421",
+    "thiqa_other": 455.0,
+    "thiqa_alyahar": 390.0,
+    "daman_default": 455.0,
+    "daman_khabisi_alyahar": 273.0
+  },
+  {
+    "code": "72429",
+    "thiqa_other": 280.0,
+    "thiqa_alyahar": 240.0,
+    "daman_default": 280.0,
+    "daman_khabisi_alyahar": 168.0
+  },
+  {
+    "code": "72431",
+    "thiqa_other": 455.0,
+    "thiqa_alyahar": 390.0,
+    "daman_default": 455.0,
+    "daman_khabisi_alyahar": 273.0
+  },
+  {
+    "code": "72439",
+    "thiqa_other": 280.0,
+    "thiqa_alyahar": 240.0,
+    "daman_default": 280.0,
+    "daman_khabisi_alyahar": 168.0
+  },
+  {
+    "code": "72511",
+    "thiqa_other": 280.0,
+    "thiqa_alyahar": 240.0,
+    "daman_default": 280.0,
+    "daman_khabisi_alyahar": 168.0
+  },
+  {
+    "code": "72519",
+    "thiqa_other": 210.0,
+    "thiqa_alyahar": 180.0,
+    "daman_default": 210.0,
+    "daman_khabisi_alyahar": 126.0
+  },
+  {
+    "code": "72521",
+    "thiqa_other": 700.0,
+    "thiqa_alyahar": 600.0,
+    "daman_default": 700.0,
+    "daman_khabisi_alyahar": 420.0
+  },
+  {
+    "code": "72529",
+    "thiqa_other": 420.0,
+    "thiqa_alyahar": 360.0,
+    "daman_default": 420.0,
+    "daman_khabisi_alyahar": 252.0
+  },
+  {
+    "code": "72531",
+    "thiqa_other": 840.0,
+    "thiqa_alyahar": 720.0,
+    "daman_default": 840.0,
+    "daman_khabisi_alyahar": 504.0
+  },
+  {
+    "code": "72539",
+    "thiqa_other": 420.0,
+    "thiqa_alyahar": 360.0,
+    "daman_default": 420.0,
+    "daman_khabisi_alyahar": 252.0
+  },
+  {
+    "code": "72541",
+    "thiqa_other": 910.0,
+    "thiqa_alyahar": 780.0,
+    "daman_default": 910.0,
+    "daman_khabisi_alyahar": 546.0
+  },
+  {
+    "code": "72551",
+    "thiqa_other": 1050.0,
+    "thiqa_alyahar": 900.0,
+    "daman_default": 1050.0,
+    "daman_khabisi_alyahar": 630.0
+  },
+  {
+    "code": "72711",
+    "thiqa_other": 630.0,
+    "thiqa_alyahar": 540.0,
+    "daman_default": 630.0,
+    "daman_khabisi_alyahar": 378.0
+  },
+  {
+    "code": "72719",
+    "thiqa_other": 420.0,
+    "thiqa_alyahar": 360.0,
+    "daman_default": 420.0,
+    "daman_khabisi_alyahar": 252.0
+  },
+  {
+    "code": "73111",
+    "thiqa_other": 350.0,
+    "thiqa_alyahar": 300.0,
+    "daman_default": 350.0,
+    "daman_khabisi_alyahar": 210.0
+  },
+  {
+    "code": "73121",
+    "thiqa_other": 700.0,
+    "thiqa_alyahar": 600.0,
+    "daman_default": 700.0,
+    "daman_khabisi_alyahar": 420.0
+  },
+  {
+    "code": "73152",
+    "thiqa_other": 1050.0,
+    "thiqa_alyahar": 900.0,
+    "daman_default": 1050.0,
+    "daman_khabisi_alyahar": 630.0
+  },
+  {
+    "code": "73153",
+    "thiqa_other": 1050.0,
+    "thiqa_alyahar": 900.0,
+    "daman_default": 1050.0,
+    "daman_khabisi_alyahar": 630.0
+  },
+  {
+    "code": "73154",
+    "thiqa_other": 1400.0,
+    "thiqa_alyahar": 1200.0,
+    "daman_default": 1400.0,
+    "daman_khabisi_alyahar": 840.0
+  },
+  {
+    "code": "73161",
+    "thiqa_other": 875.0,
+    "thiqa_alyahar": 750.0,
+    "daman_default": 875.0,
+    "daman_khabisi_alyahar": 525.0
+  },
+  {
+    "code": "73171",
+    "thiqa_other": 875.0,
+    "thiqa_alyahar": 750.0,
+    "daman_default": 875.0,
+    "daman_khabisi_alyahar": 525.0
+  },
+  {
+    "code": "73172",
+    "thiqa_other": 1400.0,
+    "thiqa_alyahar": 1200.0,
+    "daman_default": 1400.0,
+    "daman_khabisi_alyahar": 840.0
+  },
+  {
+    "code": "73221",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "73222",
+    "thiqa_other": 630.0,
+    "thiqa_alyahar": 540.0,
+    "daman_default": 630.0,
+    "daman_khabisi_alyahar": 378.0
+  },
+  {
+    "code": "73223",
+    "thiqa_other": 525.0,
+    "thiqa_alyahar": 450.0,
+    "daman_default": 525.0,
+    "daman_khabisi_alyahar": 315.0
+  },
+  {
+    "code": "73224",
+    "thiqa_other": 280.0,
+    "thiqa_alyahar": 240.0,
+    "daman_default": 280.0,
+    "daman_khabisi_alyahar": 168.0
+  },
+  {
+    "code": "73231",
+    "thiqa_other": 945.0,
+    "thiqa_alyahar": 810.0,
+    "daman_default": 945.0,
+    "daman_khabisi_alyahar": 567.0
+  },
+  {
+    "code": "73241",
+    "thiqa_other": 420.0,
+    "thiqa_alyahar": 360.0,
+    "daman_default": 420.0,
+    "daman_khabisi_alyahar": 252.0
+  },
+  {
+    "code": "73251",
+    "thiqa_other": 315.0,
+    "thiqa_alyahar": 270.0,
+    "daman_default": 315.0,
+    "daman_khabisi_alyahar": 189.0
+  },
+  {
+    "code": "73421",
+    "thiqa_other": 945.0,
+    "thiqa_alyahar": 810.0,
+    "daman_default": 945.0,
+    "daman_khabisi_alyahar": 567.0
+  },
+  {
+    "code": "73431",
+    "thiqa_other": 700.0,
+    "thiqa_alyahar": 600.0,
+    "daman_default": 700.0,
+    "daman_khabisi_alyahar": 420.0
+  },
+  {
+    "code": "73491",
+    "thiqa_other": 1050.0,
+    "thiqa_alyahar": 900.0,
+    "daman_default": 1050.0,
+    "daman_khabisi_alyahar": 630.0
+  },
+  {
+    "code": "73511",
+    "thiqa_other": 1470.0,
+    "thiqa_alyahar": 1260.0,
+    "daman_default": 1470.0,
+    "daman_khabisi_alyahar": 882.0
+  },
+  {
+    "code": "73521",
+    "thiqa_other": 1750.0,
+    "thiqa_alyahar": 1500.0,
+    "daman_default": 1750.0,
+    "daman_khabisi_alyahar": 1050.0
+  },
+  {
+    "code": "74111",
+    "thiqa_other": 840.0,
+    "thiqa_alyahar": 720.0,
+    "daman_default": 840.0,
+    "daman_khabisi_alyahar": 504.0
+  },
+  {
+    "code": "74112",
+    "thiqa_other": 840.0,
+    "thiqa_alyahar": 720.0,
+    "daman_default": 840.0,
+    "daman_khabisi_alyahar": 504.0
+  },
+  {
+    "code": "74113",
+    "thiqa_other": 980.0,
+    "thiqa_alyahar": 840.0,
+    "daman_default": 980.0,
+    "daman_khabisi_alyahar": 588.0
+  },
+  {
+    "code": "74114",
+    "thiqa_other": 1190.0,
+    "thiqa_alyahar": 1020.0,
+    "daman_default": 1190.0,
+    "daman_khabisi_alyahar": 714.0
+  },
+  {
+    "code": "74115",
+    "thiqa_other": 1400.0,
+    "thiqa_alyahar": 1200.0,
+    "daman_default": 1400.0,
+    "daman_khabisi_alyahar": 840.0
+  },
+  {
+    "code": "74116",
+    "thiqa_other": 1750.0,
+    "thiqa_alyahar": 1500.0,
+    "daman_default": 1750.0,
+    "daman_khabisi_alyahar": 1050.0
+  },
+  {
+    "code": "74117",
+    "thiqa_other": 2100.0,
+    "thiqa_alyahar": 1800.0,
+    "daman_default": 2100.0,
+    "daman_khabisi_alyahar": 1260.0
+  },
+  {
+    "code": "74118",
+    "thiqa_other": 2450.0,
+    "thiqa_alyahar": 2100.0,
+    "daman_default": 2450.0,
+    "daman_khabisi_alyahar": 1470.0
+  },
+  {
+    "code": "74121",
+    "thiqa_other": 910.0,
+    "thiqa_alyahar": 780.0,
+    "daman_default": 910.0,
+    "daman_khabisi_alyahar": 546.0
+  },
+  {
+    "code": "74122",
+    "thiqa_other": 1190.0,
+    "thiqa_alyahar": 1020.0,
+    "daman_default": 1190.0,
+    "daman_khabisi_alyahar": 714.0
+  },
+  {
+    "code": "74123",
+    "thiqa_other": 1680.0,
+    "thiqa_alyahar": 1440.0,
+    "daman_default": 1680.0,
+    "daman_khabisi_alyahar": 1008.0
+  },
+  {
+    "code": "74124",
+    "thiqa_other": 2100.0,
+    "thiqa_alyahar": 1800.0,
+    "daman_default": 2100.0,
+    "daman_khabisi_alyahar": 1260.0
+  },
+  {
+    "code": "74125",
+    "thiqa_other": 2450.0,
+    "thiqa_alyahar": 2100.0,
+    "daman_default": 2450.0,
+    "daman_khabisi_alyahar": 1470.0
+  },
+  {
+    "code": "74126",
+    "thiqa_other": 2800.0,
+    "thiqa_alyahar": 2400.0,
+    "daman_default": 2800.0,
+    "daman_khabisi_alyahar": 1680.0
+  },
+  {
+    "code": "74127",
+    "thiqa_other": 3150.0,
+    "thiqa_alyahar": 2700.0,
+    "daman_default": 3150.0,
+    "daman_khabisi_alyahar": 1890.0
+  },
+  {
+    "code": "74128",
+    "thiqa_other": 3500.0,
+    "thiqa_alyahar": 3000.0,
+    "daman_default": 3500.0,
+    "daman_khabisi_alyahar": 2100.0
+  },
+  {
+    "code": "74211",
+    "thiqa_other": 1400.0,
+    "thiqa_alyahar": 1200.0,
+    "daman_default": 1400.0,
+    "daman_khabisi_alyahar": 840.0
+  },
+  {
+    "code": "74212",
+    "thiqa_other": 1575.0,
+    "thiqa_alyahar": 1350.0,
+    "daman_default": 1575.0,
+    "daman_khabisi_alyahar": 945.0
+  },
+  {
+    "code": "74213",
+    "thiqa_other": 1750.0,
+    "thiqa_alyahar": 1500.0,
+    "daman_default": 1750.0,
+    "daman_khabisi_alyahar": 1050.0
+  },
+  {
+    "code": "74214",
+    "thiqa_other": 1960.0,
+    "thiqa_alyahar": 1680.0,
+    "daman_default": 1960.0,
+    "daman_khabisi_alyahar": 1176.0
+  },
+  {
+    "code": "74215",
+    "thiqa_other": 2240.0,
+    "thiqa_alyahar": 1920.0,
+    "daman_default": 2240.0,
+    "daman_khabisi_alyahar": 1344.0
+  },
+  {
+    "code": "74216",
+    "thiqa_other": 2450.0,
+    "thiqa_alyahar": 2100.0,
+    "daman_default": 2450.0,
+    "daman_khabisi_alyahar": 1470.0
+  },
+  {
+    "code": "74217",
+    "thiqa_other": 2800.0,
+    "thiqa_alyahar": 2400.0,
+    "daman_default": 2800.0,
+    "daman_khabisi_alyahar": 1680.0
+  },
+  {
+    "code": "74218",
+    "thiqa_other": 3150.0,
+    "thiqa_alyahar": 2700.0,
+    "daman_default": 3150.0,
+    "daman_khabisi_alyahar": 1890.0
+  },
+  {
+    "code": "74221",
+    "thiqa_other": 1400.0,
+    "thiqa_alyahar": 1200.0,
+    "daman_default": 1400.0,
+    "daman_khabisi_alyahar": 840.0
+  },
+  {
+    "code": "74222",
+    "thiqa_other": 1750.0,
+    "thiqa_alyahar": 1500.0,
+    "daman_default": 1750.0,
+    "daman_khabisi_alyahar": 1050.0
+  },
+  {
+    "code": "74223",
+    "thiqa_other": 2100.0,
+    "thiqa_alyahar": 1800.0,
+    "daman_default": 2100.0,
+    "daman_khabisi_alyahar": 1260.0
+  },
+  {
+    "code": "74224",
+    "thiqa_other": 2450.0,
+    "thiqa_alyahar": 2100.0,
+    "daman_default": 2450.0,
+    "daman_khabisi_alyahar": 1470.0
+  },
+  {
+    "code": "74225",
+    "thiqa_other": 2800.0,
+    "thiqa_alyahar": 2400.0,
+    "daman_default": 2800.0,
+    "daman_khabisi_alyahar": 1680.0
+  },
+  {
+    "code": "74226",
+    "thiqa_other": 3500.0,
+    "thiqa_alyahar": 3000.0,
+    "daman_default": 3500.0,
+    "daman_khabisi_alyahar": 2100.0
+  },
+  {
+    "code": "74227",
+    "thiqa_other": 4200.0,
+    "thiqa_alyahar": 3600.0,
+    "daman_default": 4200.0,
+    "daman_khabisi_alyahar": 2520.0
+  },
+  {
+    "code": "74228",
+    "thiqa_other": 4900.0,
+    "thiqa_alyahar": 4200.0,
+    "daman_default": 4900.0,
+    "daman_khabisi_alyahar": 2940.0
+  },
+  {
+    "code": "74611",
+    "thiqa_other": 875.0,
+    "thiqa_alyahar": 750.0,
+    "daman_default": 875.0,
+    "daman_khabisi_alyahar": 525.0
+  },
+  {
+    "code": "74612",
+    "thiqa_other": 1050.0,
+    "thiqa_alyahar": 900.0,
+    "daman_default": 1050.0,
+    "daman_khabisi_alyahar": 630.0
+  },
+  {
+    "code": "74613",
+    "thiqa_other": 1400.0,
+    "thiqa_alyahar": 1200.0,
+    "daman_default": 1400.0,
+    "daman_khabisi_alyahar": 840.0
+  },
+  {
+    "code": "74614",
+    "thiqa_other": 1750.0,
+    "thiqa_alyahar": 1500.0,
+    "daman_default": 1750.0,
+    "daman_khabisi_alyahar": 1050.0
+  },
+  {
+    "code": "74615",
+    "thiqa_other": 2240.0,
+    "thiqa_alyahar": 1920.0,
+    "daman_default": 2240.0,
+    "daman_khabisi_alyahar": 1344.0
+  },
+  {
+    "code": "74616",
+    "thiqa_other": 2590.0,
+    "thiqa_alyahar": 2220.0,
+    "daman_default": 2590.0,
+    "daman_khabisi_alyahar": 1554.0
+  },
+  {
+    "code": "74617",
+    "thiqa_other": 3150.0,
+    "thiqa_alyahar": 2700.0,
+    "daman_default": 3150.0,
+    "daman_khabisi_alyahar": 1890.0
+  },
+  {
+    "code": "74618",
+    "thiqa_other": 3850.0,
+    "thiqa_alyahar": 3300.0,
+    "daman_default": 3850.0,
+    "daman_khabisi_alyahar": 2310.0
+  },
+  {
+    "code": "74621",
+    "thiqa_other": 1400.0,
+    "thiqa_alyahar": 1200.0,
+    "daman_default": 1400.0,
+    "daman_khabisi_alyahar": 840.0
+  },
+  {
+    "code": "74631",
+    "thiqa_other": 700.0,
+    "thiqa_alyahar": 600.0,
+    "daman_default": 700.0,
+    "daman_khabisi_alyahar": 420.0
+  },
+  {
+    "code": "74632",
+    "thiqa_other": 840.0,
+    "thiqa_alyahar": 720.0,
+    "daman_default": 840.0,
+    "daman_khabisi_alyahar": 504.0
+  },
+  {
+    "code": "74633",
+    "thiqa_other": 1050.0,
+    "thiqa_alyahar": 900.0,
+    "daman_default": 1050.0,
+    "daman_khabisi_alyahar": 630.0
+  },
+  {
+    "code": "74634",
+    "thiqa_other": 1260.0,
+    "thiqa_alyahar": 1080.0,
+    "daman_default": 1260.0,
+    "daman_khabisi_alyahar": 756.0
+  },
+  {
+    "code": "74635",
+    "thiqa_other": 1540.0,
+    "thiqa_alyahar": 1320.0,
+    "daman_default": 1540.0,
+    "daman_khabisi_alyahar": 924.0
+  },
+  {
+    "code": "74636",
+    "thiqa_other": 2100.0,
+    "thiqa_alyahar": 1800.0,
+    "daman_default": 2100.0,
+    "daman_khabisi_alyahar": 1260.0
+  },
+  {
+    "code": "74637",
+    "thiqa_other": 2800.0,
+    "thiqa_alyahar": 2400.0,
+    "daman_default": 2800.0,
+    "daman_khabisi_alyahar": 1680.0
+  },
+  {
+    "code": "74638",
+    "thiqa_other": 3850.0,
+    "thiqa_alyahar": 3300.0,
+    "daman_default": 3850.0,
+    "daman_khabisi_alyahar": 2310.0
+  },
+  {
+    "code": "75111",
+    "thiqa_other": 350.0,
+    "thiqa_alyahar": 300.0,
+    "daman_default": 350.0,
+    "daman_khabisi_alyahar": 210.0
+  },
+  {
+    "code": "75112",
+    "thiqa_other": 210.0,
+    "thiqa_alyahar": 180.0,
+    "daman_default": 210.0,
+    "daman_khabisi_alyahar": 126.0
+  },
+  {
+    "code": "75113",
+    "thiqa_other": 350.0,
+    "thiqa_alyahar": 300.0,
+    "daman_default": 350.0,
+    "daman_khabisi_alyahar": 210.0
+  },
+  {
+    "code": "75121",
+    "thiqa_other": 700.0,
+    "thiqa_alyahar": 600.0,
+    "daman_default": 700.0,
+    "daman_khabisi_alyahar": 420.0
+  },
+  {
+    "code": "75122",
+    "thiqa_other": 700.0,
+    "thiqa_alyahar": 600.0,
+    "daman_default": 700.0,
+    "daman_khabisi_alyahar": 420.0
+  },
+  {
+    "code": "75123",
+    "thiqa_other": 910.0,
+    "thiqa_alyahar": 780.0,
+    "daman_default": 910.0,
+    "daman_khabisi_alyahar": 546.0
+  },
+  {
+    "code": "75211",
+    "thiqa_other": 910.0,
+    "thiqa_alyahar": 780.0,
+    "daman_default": 910.0,
+    "daman_khabisi_alyahar": 546.0
+  },
+  {
+    "code": "75212",
+    "thiqa_other": 1260.0,
+    "thiqa_alyahar": 1080.0,
+    "daman_default": 1260.0,
+    "daman_khabisi_alyahar": 756.0
+  },
+  {
+    "code": "75221",
+    "thiqa_other": 1470.0,
+    "thiqa_alyahar": 1260.0,
+    "daman_default": 1470.0,
+    "daman_khabisi_alyahar": 882.0
+  },
+  {
+    "code": "75301",
+    "thiqa_other": 1260.0,
+    "thiqa_alyahar": 1080.0,
+    "daman_default": 1260.0,
+    "daman_khabisi_alyahar": 756.0
+  },
+  {
+    "code": "75302",
+    "thiqa_other": 1260.0,
+    "thiqa_alyahar": 1080.0,
+    "daman_default": 1260.0,
+    "daman_khabisi_alyahar": 756.0
+  },
+  {
+    "code": "75303",
+    "thiqa_other": 1260.0,
+    "thiqa_alyahar": 1080.0,
+    "daman_default": 1260.0,
+    "daman_khabisi_alyahar": 756.0
+  },
+  {
+    "code": "75401",
+    "thiqa_other": 910.0,
+    "thiqa_alyahar": 780.0,
+    "daman_default": 910.0,
+    "daman_khabisi_alyahar": 546.0
+  },
+  {
+    "code": "75402",
+    "thiqa_other": 1260.0,
+    "thiqa_alyahar": 1080.0,
+    "daman_default": 1260.0,
+    "daman_khabisi_alyahar": 756.0
+  },
+  {
+    "code": "75403",
+    "thiqa_other": 630.0,
+    "thiqa_alyahar": 540.0,
+    "daman_default": 630.0,
+    "daman_khabisi_alyahar": 378.0
+  },
+  {
+    "code": "76911",
+    "thiqa_other": 840.0,
+    "thiqa_alyahar": 720.0,
+    "daman_default": 840.0,
+    "daman_khabisi_alyahar": 504.0
+  },
+  {
+    "code": "76912",
+    "thiqa_other": 1260.0,
+    "thiqa_alyahar": 1080.0,
+    "daman_default": 1260.0,
+    "daman_khabisi_alyahar": 756.0
+  },
+  {
+    "code": "76913",
+    "thiqa_other": 1470.0,
+    "thiqa_alyahar": 1260.0,
+    "daman_default": 1470.0,
+    "daman_khabisi_alyahar": 882.0
+  },
+  {
+    "code": "76921",
+    "thiqa_other": 910.0,
+    "thiqa_alyahar": 780.0,
+    "daman_default": 910.0,
+    "daman_khabisi_alyahar": 546.0
+  },
+  {
+    "code": "76922",
+    "thiqa_other": 1190.0,
+    "thiqa_alyahar": 1020.0,
+    "daman_default": 1190.0,
+    "daman_khabisi_alyahar": 714.0
+  },
+  {
+    "code": "76923",
+    "thiqa_other": 1470.0,
+    "thiqa_alyahar": 1260.0,
+    "daman_default": 1470.0,
+    "daman_khabisi_alyahar": 882.0
+  },
+  {
+    "code": "76924",
+    "thiqa_other": 1750.0,
+    "thiqa_alyahar": 1500.0,
+    "daman_default": 1750.0,
+    "daman_khabisi_alyahar": 1050.0
+  },
+  {
+    "code": "76931",
+    "thiqa_other": 1190.0,
+    "thiqa_alyahar": 1020.0,
+    "daman_default": 1190.0,
+    "daman_khabisi_alyahar": 714.0
+  },
+  {
+    "code": "76932",
+    "thiqa_other": 1470.0,
+    "thiqa_alyahar": 1260.0,
+    "daman_default": 1470.0,
+    "daman_khabisi_alyahar": 882.0
+  },
+  {
+    "code": "76933",
+    "thiqa_other": 1750.0,
+    "thiqa_alyahar": 1500.0,
+    "daman_default": 1750.0,
+    "daman_khabisi_alyahar": 1050.0
+  },
+  {
+    "code": "76934",
+    "thiqa_other": 2450.0,
+    "thiqa_alyahar": 2100.0,
+    "daman_default": 2450.0,
+    "daman_khabisi_alyahar": 1470.0
+  },
+  {
+    "code": "76941",
+    "thiqa_other": 315.0,
+    "thiqa_alyahar": 270.0,
+    "daman_default": 315.0,
+    "daman_khabisi_alyahar": 189.0
+  },
+  {
+    "code": "76949",
+    "thiqa_other": 280.0,
+    "thiqa_alyahar": 240.0,
+    "daman_default": 280.0,
+    "daman_khabisi_alyahar": 168.0
+  },
+  {
+    "code": "76951",
+    "thiqa_other": 210.0,
+    "thiqa_alyahar": 180.0,
+    "daman_default": 210.0,
+    "daman_khabisi_alyahar": 126.0
+  },
+  {
+    "code": "76959",
+    "thiqa_other": 175.0,
+    "thiqa_alyahar": 150.0,
+    "daman_default": 175.0,
+    "daman_khabisi_alyahar": 105.0
+  },
+  {
+    "code": "76961",
+    "thiqa_other": 245.0,
+    "thiqa_alyahar": 210.0,
+    "daman_default": 245.0,
+    "daman_khabisi_alyahar": 147.0
+  },
+  {
+    "code": "76962",
+    "thiqa_other": 490.0,
+    "thiqa_alyahar": 420.0,
+    "daman_default": 490.0,
+    "daman_khabisi_alyahar": 294.0
+  },
+  {
+    "code": "77415",
+    "thiqa_other": 1190.0,
+    "thiqa_alyahar": 1020.0,
+    "daman_default": 1190.0,
+    "daman_khabisi_alyahar": 714.0
+  },
+  {
+    "code": "77416",
+    "thiqa_other": 1470.0,
+    "thiqa_alyahar": 1260.0,
+    "daman_default": 1470.0,
+    "daman_khabisi_alyahar": 882.0
+  },
+  {
+    "code": "77417",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "77418",
+    "thiqa_other": 350.0,
+    "thiqa_alyahar": 300.0,
+    "daman_default": 350.0,
+    "daman_khabisi_alyahar": 210.0
+  },
+  {
+    "code": "77426",
+    "thiqa_other": 1190.0,
+    "thiqa_alyahar": 1020.0,
+    "daman_default": 1190.0,
+    "daman_khabisi_alyahar": 714.0
+  },
+  {
+    "code": "77427",
+    "thiqa_other": 1470.0,
+    "thiqa_alyahar": 1260.0,
+    "daman_default": 1470.0,
+    "daman_khabisi_alyahar": 882.0
+  },
+  {
+    "code": "77428",
+    "thiqa_other": 154.0,
+    "thiqa_alyahar": 132.0,
+    "daman_default": 154.0,
+    "daman_khabisi_alyahar": 92.4
+  },
+  {
+    "code": "77429",
+    "thiqa_other": 350.0,
+    "thiqa_alyahar": 300.0,
+    "daman_default": 350.0,
+    "daman_khabisi_alyahar": 210.0
+  },
+  {
+    "code": "77604",
+    "thiqa_other": 560.0,
+    "thiqa_alyahar": 480.0,
+    "daman_default": 560.0,
+    "daman_khabisi_alyahar": 336.0
+  },
+  {
+    "code": "77605",
+    "thiqa_other": 560.0,
+    "thiqa_alyahar": 480.0,
+    "daman_default": 560.0,
+    "daman_khabisi_alyahar": 336.0
+  },
+  {
+    "code": "77801",
+    "thiqa_other": 525.0,
+    "thiqa_alyahar": 450.0,
+    "daman_default": 525.0,
+    "daman_khabisi_alyahar": 315.0
+  },
+  {
+    "code": "77802",
+    "thiqa_other": 525.0,
+    "thiqa_alyahar": 450.0,
+    "daman_default": 525.0,
+    "daman_khabisi_alyahar": 315.0
+  },
+  {
+    "code": "77803",
+    "thiqa_other": 525.0,
+    "thiqa_alyahar": 450.0,
+    "daman_default": 525.0,
+    "daman_khabisi_alyahar": 315.0
+  },
+  {
+    "code": "77804",
+    "thiqa_other": 910.0,
+    "thiqa_alyahar": 780.0,
+    "daman_default": 910.0,
+    "daman_khabisi_alyahar": 546.0
+  },
+  {
+    "code": "77805",
+    "thiqa_other": 700.0,
+    "thiqa_alyahar": 600.0,
+    "daman_default": 700.0,
+    "daman_khabisi_alyahar": 420.0
+  },
+  {
+    "code": "77806",
+    "thiqa_other": 700.0,
+    "thiqa_alyahar": 600.0,
+    "daman_default": 700.0,
+    "daman_khabisi_alyahar": 420.0
+  },
+  {
+    "code": "78102",
+    "thiqa_other": 350.0,
+    "thiqa_alyahar": 300.0,
+    "daman_default": 350.0,
+    "daman_khabisi_alyahar": 210.0
+  },
+  {
+    "code": "78103",
+    "thiqa_other": 1190.0,
+    "thiqa_alyahar": 1020.0,
+    "daman_default": 1190.0,
+    "daman_khabisi_alyahar": 714.0
+  },
+  {
+    "code": "78104",
+    "thiqa_other": 630.0,
+    "thiqa_alyahar": 540.0,
+    "daman_default": 630.0,
+    "daman_khabisi_alyahar": 378.0
+  },
+  {
+    "code": "78105",
+    "thiqa_other": 770.0,
+    "thiqa_alyahar": 660.0,
+    "daman_default": 770.0,
+    "daman_khabisi_alyahar": 462.0
+  },
+  {
+    "code": "78106",
+    "thiqa_other": 910.0,
+    "thiqa_alyahar": 780.0,
+    "daman_default": 910.0,
+    "daman_khabisi_alyahar": 546.0
+  },
+  {
+    "code": "78601",
+    "thiqa_other": 175.0,
+    "thiqa_alyahar": 150.0,
+    "daman_default": 175.0,
+    "daman_khabisi_alyahar": 105.0
+  },
+  {
+    "code": "78602",
+    "thiqa_other": 175.0,
+    "thiqa_alyahar": 150.0,
+    "daman_default": 175.0,
+    "daman_khabisi_alyahar": 105.0
+  },
+  {
+    "code": "79123",
+    "thiqa_other": 350.0,
+    "thiqa_alyahar": 300.0,
+    "daman_default": 350.0,
+    "daman_khabisi_alyahar": 210.0
+  },
+  {
+    "code": "79124",
+    "thiqa_other": 490.0,
+    "thiqa_alyahar": 420.0,
+    "daman_default": 490.0,
+    "daman_khabisi_alyahar": 294.0
+  },
+  {
+    "code": "79125",
+    "thiqa_other": 490.0,
+    "thiqa_alyahar": 420.0,
+    "daman_default": 490.0,
+    "daman_khabisi_alyahar": 294.0
+  },
+  {
+    "code": "79311",
+    "thiqa_other": 1190.0,
+    "thiqa_alyahar": 1020.0,
+    "daman_default": 1190.0,
+    "daman_khabisi_alyahar": 714.0
+  },
+  {
+    "code": "79312",
+    "thiqa_other": 910.0,
+    "thiqa_alyahar": 780.0,
+    "daman_default": 910.0,
+    "daman_khabisi_alyahar": 546.0
+  },
+  {
+    "code": "79313",
+    "thiqa_other": 1470.0,
+    "thiqa_alyahar": 1260.0,
+    "daman_default": 1470.0,
+    "daman_khabisi_alyahar": 882.0
+  },
+  {
+    "code": "79331",
+    "thiqa_other": 1050.0,
+    "thiqa_alyahar": 900.0,
+    "daman_default": 1050.0,
+    "daman_khabisi_alyahar": 630.0
+  },
+  {
+    "code": "79333",
+    "thiqa_other": 1050.0,
+    "thiqa_alyahar": 900.0,
+    "daman_default": 1050.0,
+    "daman_khabisi_alyahar": 630.0
+  },
+  {
+    "code": "79341",
+    "thiqa_other": 840.0,
+    "thiqa_alyahar": 720.0,
+    "daman_default": 840.0,
+    "daman_khabisi_alyahar": 504.0
+  },
+  {
+    "code": "79343",
+    "thiqa_other": 910.0,
+    "thiqa_alyahar": 780.0,
+    "daman_default": 910.0,
+    "daman_khabisi_alyahar": 546.0
+  },
+  {
+    "code": "79351",
+    "thiqa_other": 1400.0,
+    "thiqa_alyahar": 1200.0,
+    "daman_default": 1400.0,
+    "daman_khabisi_alyahar": 840.0
+  },
+  {
+    "code": "79352",
+    "thiqa_other": 1750.0,
+    "thiqa_alyahar": 1500.0,
+    "daman_default": 1750.0,
+    "daman_khabisi_alyahar": 1050.0
+  },
+  {
+    "code": "79353",
+    "thiqa_other": 1470.0,
+    "thiqa_alyahar": 1260.0,
+    "daman_default": 1470.0,
+    "daman_khabisi_alyahar": 882.0
+  },
+  {
+    "code": "79354",
+    "thiqa_other": 770.0,
+    "thiqa_alyahar": 660.0,
+    "daman_default": 770.0,
+    "daman_khabisi_alyahar": 462.0
+  },
+  {
+    "code": "79355",
+    "thiqa_other": 1050.0,
+    "thiqa_alyahar": 900.0,
+    "daman_default": 1050.0,
+    "daman_khabisi_alyahar": 630.0
+  },
+  {
+    "code": "79356",
+    "thiqa_other": 1050.0,
+    "thiqa_alyahar": 900.0,
+    "daman_default": 1050.0,
+    "daman_khabisi_alyahar": 630.0
+  },
+  {
+    "code": "79401",
+    "thiqa_other": 154.0,
+    "thiqa_alyahar": 132.0,
+    "daman_default": 154.0,
+    "daman_khabisi_alyahar": 92.4
+  },
+  {
+    "code": "79402",
+    "thiqa_other": 210.0,
+    "thiqa_alyahar": 180.0,
+    "daman_default": 210.0,
+    "daman_khabisi_alyahar": 126.0
+  },
+  {
+    "code": "79403",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "79404",
+    "thiqa_other": 525.0,
+    "thiqa_alyahar": 450.0,
+    "daman_default": 525.0,
+    "daman_khabisi_alyahar": 315.0
+  },
+  {
+    "code": "79511",
+    "thiqa_other": 1470.0,
+    "thiqa_alyahar": 1260.0,
+    "daman_default": 1470.0,
+    "daman_khabisi_alyahar": 882.0
+  },
+  {
+    "code": "79514",
+    "thiqa_other": 630.0,
+    "thiqa_alyahar": 540.0,
+    "daman_default": 630.0,
+    "daman_khabisi_alyahar": 378.0
+  },
+  {
+    "code": "79541",
+    "thiqa_other": 910.0,
+    "thiqa_alyahar": 780.0,
+    "daman_default": 910.0,
+    "daman_khabisi_alyahar": 546.0
+  },
+  {
+    "code": "79601",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "79602",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "79603",
+    "thiqa_other": 350.0,
+    "thiqa_alyahar": 300.0,
+    "daman_default": 350.0,
+    "daman_khabisi_alyahar": 210.0
+  },
+  {
+    "code": "79604",
+    "thiqa_other": 350.0,
+    "thiqa_alyahar": 300.0,
+    "daman_default": 350.0,
+    "daman_khabisi_alyahar": 210.0
+  },
+  {
+    "code": "79605",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "79606",
+    "thiqa_other": 210.0,
+    "thiqa_alyahar": 180.0,
+    "daman_default": 210.0,
+    "daman_khabisi_alyahar": 126.0
+  },
+  {
+    "code": "79931",
+    "thiqa_other": 2100.0,
+    "thiqa_alyahar": 1800.0,
+    "daman_default": 2100.0,
+    "daman_khabisi_alyahar": 1260.0
+  },
+  {
+    "code": "79932",
+    "thiqa_other": 2450.0,
+    "thiqa_alyahar": 2100.0,
+    "daman_default": 2450.0,
+    "daman_khabisi_alyahar": 1470.0
+  },
+  {
+    "code": "79933",
+    "thiqa_other": 3500.0,
+    "thiqa_alyahar": 3000.0,
+    "daman_default": 3500.0,
+    "daman_khabisi_alyahar": 2100.0
+  },
+  {
+    "code": "79934",
+    "thiqa_other": 700.0,
+    "thiqa_alyahar": 600.0,
+    "daman_default": 700.0,
+    "daman_khabisi_alyahar": 420.0
+  },
+  {
+    "code": "79935",
+    "thiqa_other": 980.0,
+    "thiqa_alyahar": 840.0,
+    "daman_default": 980.0,
+    "daman_khabisi_alyahar": 588.0
+  },
+  {
+    "code": "79936",
+    "thiqa_other": 980.0,
+    "thiqa_alyahar": 840.0,
+    "daman_default": 980.0,
+    "daman_khabisi_alyahar": 588.0
+  },
+  {
+    "code": "79941",
+    "thiqa_other": 3150.0,
+    "thiqa_alyahar": 2700.0,
+    "daman_default": 3150.0,
+    "daman_khabisi_alyahar": 1890.0
+  },
+  {
+    "code": "79951",
+    "thiqa_other": 1050.0,
+    "thiqa_alyahar": 900.0,
+    "daman_default": 1050.0,
+    "daman_khabisi_alyahar": 630.0
+  },
+  {
+    "code": "79952",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "79961",
+    "thiqa_other": 280.0,
+    "thiqa_alyahar": 240.0,
+    "daman_default": 280.0,
+    "daman_khabisi_alyahar": 168.0
+  },
+  {
+    "code": "79962",
+    "thiqa_other": 630.0,
+    "thiqa_alyahar": 540.0,
+    "daman_default": 630.0,
+    "daman_khabisi_alyahar": 378.0
+  },
+  {
+    "code": "80601",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "80602",
+    "thiqa_other": 280.0,
+    "thiqa_alyahar": 240.0,
+    "daman_default": 280.0,
+    "daman_khabisi_alyahar": 168.0
+  },
+  {
+    "code": "80631",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "80639",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "80641",
+    "thiqa_other": 210.0,
+    "thiqa_alyahar": 180.0,
+    "daman_default": 210.0,
+    "daman_khabisi_alyahar": 126.0
+  },
+  {
+    "code": "80649",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "80651",
+    "thiqa_other": 210.0,
+    "thiqa_alyahar": 180.0,
+    "daman_default": 210.0,
+    "daman_khabisi_alyahar": 126.0
+  },
+  {
+    "code": "80659",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "80661",
+    "thiqa_other": 210.0,
+    "thiqa_alyahar": 180.0,
+    "daman_default": 210.0,
+    "daman_khabisi_alyahar": 126.0
+  },
+  {
+    "code": "80669",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "80671",
+    "thiqa_other": 210.0,
+    "thiqa_alyahar": 180.0,
+    "daman_default": 210.0,
+    "daman_khabisi_alyahar": 126.0
+  },
+  {
+    "code": "80679",
+    "thiqa_other": 119.0,
+    "thiqa_alyahar": 102.0,
+    "daman_default": 119.0,
+    "daman_khabisi_alyahar": 71.4
+  },
+  {
+    "code": "81111",
+    "thiqa_other": 1225.0,
+    "thiqa_alyahar": 1050.0,
+    "daman_default": 1225.0,
+    "daman_khabisi_alyahar": 735.0
+  },
+  {
+    "code": "81112",
+    "thiqa_other": 1225.0,
+    "thiqa_alyahar": 1050.0,
+    "daman_default": 1225.0,
+    "daman_khabisi_alyahar": 735.0
+  },
+  {
+    "code": "81113",
+    "thiqa_other": 1365.0,
+    "thiqa_alyahar": 1170.0,
+    "daman_default": 1365.0,
+    "daman_khabisi_alyahar": 819.0
+  },
+  {
+    "code": "81114",
+    "thiqa_other": 1365.0,
+    "thiqa_alyahar": 1170.0,
+    "daman_default": 1365.0,
+    "daman_khabisi_alyahar": 819.0
+  },
+  {
+    "code": "81115",
+    "thiqa_other": 1050.0,
+    "thiqa_alyahar": 900.0,
+    "daman_default": 1050.0,
+    "daman_khabisi_alyahar": 630.0
+  },
+  {
+    "code": "81116",
+    "thiqa_other": 1050.0,
+    "thiqa_alyahar": 900.0,
+    "daman_default": 1050.0,
+    "daman_khabisi_alyahar": 630.0
+  },
+  {
+    "code": "81121",
+    "thiqa_other": 770.0,
+    "thiqa_alyahar": 660.0,
+    "daman_default": 770.0,
+    "daman_khabisi_alyahar": 462.0
+  },
+  {
+    "code": "81122",
+    "thiqa_other": 770.0,
+    "thiqa_alyahar": 660.0,
+    "daman_default": 770.0,
+    "daman_khabisi_alyahar": 462.0
+  },
+  {
+    "code": "81123",
+    "thiqa_other": 1050.0,
+    "thiqa_alyahar": 900.0,
+    "daman_default": 1050.0,
+    "daman_khabisi_alyahar": 630.0
+  },
+  {
+    "code": "81124",
+    "thiqa_other": 1050.0,
+    "thiqa_alyahar": 900.0,
+    "daman_default": 1050.0,
+    "daman_khabisi_alyahar": 630.0
+  },
+  {
+    "code": "81131",
+    "thiqa_other": 1225.0,
+    "thiqa_alyahar": 1050.0,
+    "daman_default": 1225.0,
+    "daman_khabisi_alyahar": 735.0
+  },
+  {
+    "code": "81132",
+    "thiqa_other": 1225.0,
+    "thiqa_alyahar": 1050.0,
+    "daman_default": 1225.0,
+    "daman_khabisi_alyahar": 735.0
+  },
+  {
+    "code": "81133",
+    "thiqa_other": 1260.0,
+    "thiqa_alyahar": 1080.0,
+    "daman_default": 1260.0,
+    "daman_khabisi_alyahar": 756.0
+  },
+  {
+    "code": "81134",
+    "thiqa_other": 1260.0,
+    "thiqa_alyahar": 1080.0,
+    "daman_default": 1260.0,
+    "daman_khabisi_alyahar": 756.0
+  },
+  {
+    "code": "81135",
+    "thiqa_other": 1645.0,
+    "thiqa_alyahar": 1410.0,
+    "daman_default": 1645.0,
+    "daman_khabisi_alyahar": 987.0
+  },
+  {
+    "code": "81141",
+    "thiqa_other": 1225.0,
+    "thiqa_alyahar": 1050.0,
+    "daman_default": 1225.0,
+    "daman_khabisi_alyahar": 735.0
+  },
+  {
+    "code": "81142",
+    "thiqa_other": 1225.0,
+    "thiqa_alyahar": 1050.0,
+    "daman_default": 1225.0,
+    "daman_khabisi_alyahar": 735.0
+  },
+  {
+    "code": "81143",
+    "thiqa_other": 1050.0,
+    "thiqa_alyahar": 900.0,
+    "daman_default": 1050.0,
+    "daman_khabisi_alyahar": 630.0
+  },
+  {
+    "code": "81144",
+    "thiqa_other": 1050.0,
+    "thiqa_alyahar": 900.0,
+    "daman_default": 1050.0,
+    "daman_khabisi_alyahar": 630.0
+  },
+  {
+    "code": "81151",
+    "thiqa_other": 1225.0,
+    "thiqa_alyahar": 1050.0,
+    "daman_default": 1225.0,
+    "daman_khabisi_alyahar": 735.0
+  },
+  {
+    "code": "81152",
+    "thiqa_other": 1225.0,
+    "thiqa_alyahar": 1050.0,
+    "daman_default": 1225.0,
+    "daman_khabisi_alyahar": 735.0
+  },
+  {
+    "code": "81153",
+    "thiqa_other": 1050.0,
+    "thiqa_alyahar": 900.0,
+    "daman_default": 1050.0,
+    "daman_khabisi_alyahar": 630.0
+  },
+  {
+    "code": "81154",
+    "thiqa_other": 1050.0,
+    "thiqa_alyahar": 900.0,
+    "daman_default": 1050.0,
+    "daman_khabisi_alyahar": 630.0
+  },
+  {
+    "code": "81211",
+    "thiqa_other": 1470.0,
+    "thiqa_alyahar": 1260.0,
+    "daman_default": 1470.0,
+    "daman_khabisi_alyahar": 882.0
+  },
+  {
+    "code": "81212",
+    "thiqa_other": 1470.0,
+    "thiqa_alyahar": 1260.0,
+    "daman_default": 1470.0,
+    "daman_khabisi_alyahar": 882.0
+  },
+  {
+    "code": "81221",
+    "thiqa_other": 1470.0,
+    "thiqa_alyahar": 1260.0,
+    "daman_default": 1470.0,
+    "daman_khabisi_alyahar": 882.0
+  },
+  {
+    "code": "81222",
+    "thiqa_other": 1470.0,
+    "thiqa_alyahar": 1260.0,
+    "daman_default": 1470.0,
+    "daman_khabisi_alyahar": 882.0
+  },
+  {
+    "code": "81231",
+    "thiqa_other": 1470.0,
+    "thiqa_alyahar": 1260.0,
+    "daman_default": 1470.0,
+    "daman_khabisi_alyahar": 882.0
+  },
+  {
+    "code": "81232",
+    "thiqa_other": 1470.0,
+    "thiqa_alyahar": 1260.0,
+    "daman_default": 1470.0,
+    "daman_khabisi_alyahar": 882.0
+  },
+  {
+    "code": "81241",
+    "thiqa_other": 1470.0,
+    "thiqa_alyahar": 1260.0,
+    "daman_default": 1470.0,
+    "daman_khabisi_alyahar": 882.0
+  },
+  {
+    "code": "81242",
+    "thiqa_other": 1470.0,
+    "thiqa_alyahar": 1260.0,
+    "daman_default": 1470.0,
+    "daman_khabisi_alyahar": 882.0
+  },
+  {
+    "code": "81243",
+    "thiqa_other": 1470.0,
+    "thiqa_alyahar": 1260.0,
+    "daman_default": 1470.0,
+    "daman_khabisi_alyahar": 882.0
+  },
+  {
+    "code": "81251",
+    "thiqa_other": 1470.0,
+    "thiqa_alyahar": 1260.0,
+    "daman_default": 1470.0,
+    "daman_khabisi_alyahar": 882.0
+  },
+  {
+    "code": "81252",
+    "thiqa_other": 1470.0,
+    "thiqa_alyahar": 1260.0,
+    "daman_default": 1470.0,
+    "daman_khabisi_alyahar": 882.0
+  },
+  {
+    "code": "81253",
+    "thiqa_other": 1645.0,
+    "thiqa_alyahar": 1410.0,
+    "daman_default": 1645.0,
+    "daman_khabisi_alyahar": 987.0
+  },
+  {
+    "code": "81254",
+    "thiqa_other": 1750.0,
+    "thiqa_alyahar": 1500.0,
+    "daman_default": 1750.0,
+    "daman_khabisi_alyahar": 1050.0
+  },
+  {
+    "code": "81261",
+    "thiqa_other": 840.0,
+    "thiqa_alyahar": 720.0,
+    "daman_default": 840.0,
+    "daman_khabisi_alyahar": 504.0
+  },
+  {
+    "code": "81262",
+    "thiqa_other": 1470.0,
+    "thiqa_alyahar": 1260.0,
+    "daman_default": 1470.0,
+    "daman_khabisi_alyahar": 882.0
+  },
+  {
+    "code": "81263",
+    "thiqa_other": 980.0,
+    "thiqa_alyahar": 840.0,
+    "daman_default": 980.0,
+    "daman_khabisi_alyahar": 588.0
+  },
+  {
+    "code": "81264",
+    "thiqa_other": 980.0,
+    "thiqa_alyahar": 840.0,
+    "daman_default": 980.0,
+    "daman_khabisi_alyahar": 588.0
+  },
+  {
+    "code": "81271",
+    "thiqa_other": 1470.0,
+    "thiqa_alyahar": 1260.0,
+    "daman_default": 1470.0,
+    "daman_khabisi_alyahar": 882.0
+  },
+  {
+    "code": "81272",
+    "thiqa_other": 1470.0,
+    "thiqa_alyahar": 1260.0,
+    "daman_default": 1470.0,
+    "daman_khabisi_alyahar": 882.0
+  },
+  {
+    "code": "81273",
+    "thiqa_other": 1540.0,
+    "thiqa_alyahar": 1320.0,
+    "daman_default": 1540.0,
+    "daman_khabisi_alyahar": 924.0
+  },
+  {
+    "code": "81274",
+    "thiqa_other": 1540.0,
+    "thiqa_alyahar": 1320.0,
+    "daman_default": 1540.0,
+    "daman_khabisi_alyahar": 924.0
+  },
+  {
+    "code": "81281",
+    "thiqa_other": 210.0,
+    "thiqa_alyahar": 180.0,
+    "daman_default": 210.0,
+    "daman_khabisi_alyahar": 126.0
+  },
+  {
+    "code": "81291",
+    "thiqa_other": 2415.0,
+    "thiqa_alyahar": 2070.0,
+    "daman_default": 2415.0,
+    "daman_khabisi_alyahar": 1449.0
+  },
+  {
+    "code": "81292",
+    "thiqa_other": 2415.0,
+    "thiqa_alyahar": 2070.0,
+    "daman_default": 2415.0,
+    "daman_khabisi_alyahar": 1449.0
+  },
+  {
+    "code": "81293",
+    "thiqa_other": 2415.0,
+    "thiqa_alyahar": 2070.0,
+    "daman_default": 2415.0,
+    "daman_khabisi_alyahar": 1449.0
+  },
+  {
+    "code": "81294",
+    "thiqa_other": 2415.0,
+    "thiqa_alyahar": 2070.0,
+    "daman_default": 2415.0,
+    "daman_khabisi_alyahar": 1449.0
+  },
+  {
+    "code": "83101",
+    "thiqa_other": 840.0,
+    "thiqa_alyahar": 720.0,
+    "daman_default": 840.0,
+    "daman_khabisi_alyahar": 504.0
+  },
+  {
+    "code": "83102",
+    "thiqa_other": 840.0,
+    "thiqa_alyahar": 720.0,
+    "daman_default": 840.0,
+    "daman_khabisi_alyahar": 504.0
+  },
+  {
+    "code": "83103",
+    "thiqa_other": 1190.0,
+    "thiqa_alyahar": 1020.0,
+    "daman_default": 1190.0,
+    "daman_khabisi_alyahar": 714.0
+  },
+  {
+    "code": "83201",
+    "thiqa_other": 560.0,
+    "thiqa_alyahar": 480.0,
+    "daman_default": 560.0,
+    "daman_khabisi_alyahar": 336.0
+  },
+  {
+    "code": "83202",
+    "thiqa_other": 560.0,
+    "thiqa_alyahar": 480.0,
+    "daman_default": 560.0,
+    "daman_khabisi_alyahar": 336.0
+  },
+  {
+    "code": "84101",
+    "thiqa_other": 4200.0,
+    "thiqa_alyahar": 3600.0,
+    "daman_default": 4200.0,
+    "daman_khabisi_alyahar": 2520.0
+  },
+  {
+    "code": "84201",
+    "thiqa_other": 4340.0,
+    "thiqa_alyahar": 3720.0,
+    "daman_default": 4340.0,
+    "daman_khabisi_alyahar": 2604.0
+  },
+  {
+    "code": "84301",
+    "thiqa_other": 4550.0,
+    "thiqa_alyahar": 3900.0,
+    "daman_default": 4550.0,
+    "daman_khabisi_alyahar": 2730.0
+  },
+  {
+    "code": "84401",
+    "thiqa_other": 3150.0,
+    "thiqa_alyahar": 2700.0,
+    "daman_default": 3150.0,
+    "daman_khabisi_alyahar": 1890.0
+  },
+  {
+    "code": "85101",
+    "thiqa_other": 3500.0,
+    "thiqa_alyahar": 3000.0,
+    "daman_default": 3500.0,
+    "daman_khabisi_alyahar": 2100.0
+  },
+  {
+    "code": "85201",
+    "thiqa_other": 3640.0,
+    "thiqa_alyahar": 3120.0,
+    "daman_default": 3640.0,
+    "daman_khabisi_alyahar": 2184.0
+  },
+  {
+    "code": "85301",
+    "thiqa_other": 3850.0,
+    "thiqa_alyahar": 900.0,
+    "daman_default": 3850.0,
+    "daman_khabisi_alyahar": 630.0
+  },
+  {
+    "code": "86101",
+    "thiqa_other": 3150.0,
+    "thiqa_alyahar": 2700.0,
+    "daman_default": 3150.0,
+    "daman_khabisi_alyahar": 1890.0
+  },
+  {
+    "code": "86201",
+    "thiqa_other": 3500.0,
+    "thiqa_alyahar": 3000.0,
+    "daman_default": 3500.0,
+    "daman_khabisi_alyahar": 2100.0
+  },
+  {
+    "code": "86301",
+    "thiqa_other": 3640.0,
+    "thiqa_alyahar": 3120.0,
+    "daman_default": 3640.0,
+    "daman_khabisi_alyahar": 2184.0
+  },
+  {
+    "code": "87101",
+    "thiqa_other": 3850.0,
+    "thiqa_alyahar": 3300.0,
+    "daman_default": 3850.0,
+    "daman_khabisi_alyahar": 2310.0
+  },
+  {
+    "code": "87201",
+    "thiqa_other": 4060.0,
+    "thiqa_alyahar": 3480.0,
+    "daman_default": 4060.0,
+    "daman_khabisi_alyahar": 2436.0
+  },
+  {
+    "code": "87301",
+    "thiqa_other": 4550.0,
+    "thiqa_alyahar": 3900.0,
+    "daman_default": 4550.0,
+    "daman_khabisi_alyahar": 2730.0
+  },
+  {
+    "code": "88101",
+    "thiqa_other": 3850.0,
+    "thiqa_alyahar": 3300.0,
+    "daman_default": 3850.0,
+    "daman_khabisi_alyahar": 2310.0
+  },
+  {
+    "code": "88201",
+    "thiqa_other": 4060.0,
+    "thiqa_alyahar": 3480.0,
+    "daman_default": 4060.0,
+    "daman_khabisi_alyahar": 2436.0
+  },
+  {
+    "code": "88301",
+    "thiqa_other": 4340.0,
+    "thiqa_alyahar": 3720.0,
+    "daman_default": 4340.0,
+    "daman_khabisi_alyahar": 2604.0
+  },
+  {
+    "code": "89101",
+    "thiqa_other": 3640.0,
+    "thiqa_alyahar": 3120.0,
+    "daman_default": 3640.0,
+    "daman_khabisi_alyahar": 2184.0
+  },
+  {
+    "code": "89201",
+    "thiqa_other": 3850.0,
+    "thiqa_alyahar": 3300.0,
+    "daman_default": 3850.0,
+    "daman_khabisi_alyahar": 2310.0
+  },
+  {
+    "code": "89301",
+    "thiqa_other": 3850.0,
+    "thiqa_alyahar": 3300.0,
+    "daman_default": 3850.0,
+    "daman_khabisi_alyahar": 2310.0
+  },
+  {
+    "code": "89501",
+    "thiqa_other": 3500.0,
+    "thiqa_alyahar": 3000.0,
+    "daman_default": 3500.0,
+    "daman_khabisi_alyahar": 2100.0
+  },
+  {
+    "code": "89502",
+    "thiqa_other": 3500.0,
+    "thiqa_alyahar": 3000.0,
+    "daman_default": 3500.0,
+    "daman_khabisi_alyahar": 2100.0
+  },
+  {
+    "code": "89503",
+    "thiqa_other": 3850.0,
+    "thiqa_alyahar": 3300.0,
+    "daman_default": 3850.0,
+    "daman_khabisi_alyahar": 2310.0
+  },
+  {
+    "code": "89504",
+    "thiqa_other": 4200.0,
+    "thiqa_alyahar": 3600.0,
+    "daman_default": 4200.0,
+    "daman_khabisi_alyahar": 2520.0
+  },
+  {
+    "code": "89505",
+    "thiqa_other": 5250.0,
+    "thiqa_alyahar": 4500.0,
+    "daman_default": 5250.0,
+    "daman_khabisi_alyahar": 3150.0
+  },
+  {
+    "code": "89506",
+    "thiqa_other": 5600.0,
+    "thiqa_alyahar": 4800.0,
+    "daman_default": 5600.0,
+    "daman_khabisi_alyahar": 3360.0
+  },
+  {
+    "code": "91111",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "91119",
+    "thiqa_other": 84.0,
+    "thiqa_alyahar": 72.0,
+    "daman_default": 84.0,
+    "daman_khabisi_alyahar": 50.4
+  },
+  {
+    "code": "91231",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "91239",
+    "thiqa_other": 84.0,
+    "thiqa_alyahar": 30.0,
+    "daman_default": 84.0,
+    "daman_khabisi_alyahar": 21.0
+  },
+  {
+    "code": "92222",
+    "thiqa_other": 350.0,
+    "thiqa_alyahar": 300.0,
+    "daman_default": 350.0,
+    "daman_khabisi_alyahar": 210.0
+  },
+  {
+    "code": "92229",
+    "thiqa_other": 175.0,
+    "thiqa_alyahar": 150.0,
+    "daman_default": 175.0,
+    "daman_khabisi_alyahar": 105.0
+  },
+  {
+    "code": "92411",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "92419",
+    "thiqa_other": 105.0,
+    "thiqa_alyahar": 90.0,
+    "daman_default": 105.0,
+    "daman_khabisi_alyahar": 63.0
+  },
+  {
+    "code": "92421",
+    "thiqa_other": 175.0,
+    "thiqa_alyahar": 150.0,
+    "daman_default": 175.0,
+    "daman_khabisi_alyahar": 105.0
+  },
+  {
+    "code": "92429",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "92431",
+    "thiqa_other": 315.0,
+    "thiqa_alyahar": 270.0,
+    "daman_default": 315.0,
+    "daman_khabisi_alyahar": 189.0
+  },
+  {
+    "code": "92439",
+    "thiqa_other": 210.0,
+    "thiqa_alyahar": 180.0,
+    "daman_default": 210.0,
+    "daman_khabisi_alyahar": 126.0
+  },
+  {
+    "code": "92441",
+    "thiqa_other": 280.0,
+    "thiqa_alyahar": 240.0,
+    "daman_default": 280.0,
+    "daman_khabisi_alyahar": 168.0
+  },
+  {
+    "code": "92449",
+    "thiqa_other": 210.0,
+    "thiqa_alyahar": 180.0,
+    "daman_default": 210.0,
+    "daman_khabisi_alyahar": 126.0
+  },
+  {
+    "code": "92451",
+    "thiqa_other": 350.0,
+    "thiqa_alyahar": 300.0,
+    "daman_default": 350.0,
+    "daman_khabisi_alyahar": 210.0
+  },
+  {
+    "code": "92459",
+    "thiqa_other": 315.0,
+    "thiqa_alyahar": 270.0,
+    "daman_default": 315.0,
+    "daman_khabisi_alyahar": 189.0
+  },
+  {
+    "code": "93121",
+    "thiqa_other": 84.0,
+    "thiqa_alyahar": 72.0,
+    "daman_default": 84.0,
+    "daman_khabisi_alyahar": 50.4
+  },
+  {
+    "code": "93122",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "93123",
+    "thiqa_other": 210.0,
+    "thiqa_alyahar": 180.0,
+    "daman_default": 210.0,
+    "daman_khabisi_alyahar": 126.0
+  },
+  {
+    "code": "93211",
+    "thiqa_other": 315.0,
+    "thiqa_alyahar": 270.0,
+    "daman_default": 315.0,
+    "daman_khabisi_alyahar": 189.0
+  },
+  {
+    "code": "93332",
+    "thiqa_other": 420.0,
+    "thiqa_alyahar": 360.0,
+    "daman_default": 420.0,
+    "daman_khabisi_alyahar": 252.0
+  },
+  {
+    "code": "96201",
+    "thiqa_other": 10.5,
+    "thiqa_alyahar": 12.0,
+    "daman_default": 10.5,
+    "daman_khabisi_alyahar": 8.4
+  },
+  {
+    "code": "96202",
+    "thiqa_other": 17.5,
+    "thiqa_alyahar": 18.0,
+    "daman_default": 17.5,
+    "daman_khabisi_alyahar": 12.6
+  },
+  {
+    "code": "97111",
+    "thiqa_other": 630.0,
+    "thiqa_alyahar": 540.0,
+    "daman_default": 630.0,
+    "daman_khabisi_alyahar": 378.0
+  },
+  {
+    "code": "97119",
+    "thiqa_other": 455.0,
+    "thiqa_alyahar": 390.0,
+    "daman_default": 455.0,
+    "daman_khabisi_alyahar": 273.0
+  },
+  {
+    "code": "97121",
+    "thiqa_other": 770.0,
+    "thiqa_alyahar": 660.0,
+    "daman_default": 770.0,
+    "daman_khabisi_alyahar": 462.0
+  },
+  {
+    "code": "97122",
+    "thiqa_other": 770.0,
+    "thiqa_alyahar": 660.0,
+    "daman_default": 770.0,
+    "daman_khabisi_alyahar": 462.0
+  },
+  {
+    "code": "97123",
+    "thiqa_other": 1330.0,
+    "thiqa_alyahar": 1140.0,
+    "daman_default": 1330.0,
+    "daman_khabisi_alyahar": 798.0
+  },
+  {
+    "code": "97131",
+    "thiqa_other": 140.0,
+    "thiqa_alyahar": 120.0,
+    "daman_default": 140.0,
+    "daman_khabisi_alyahar": 84.0
+  },
+  {
+    "code": "97139",
+    "thiqa_other": 84.0,
+    "thiqa_alyahar": 72.0,
+    "daman_default": 84.0,
+    "daman_khabisi_alyahar": 50.4
+  },
+  {
+    "code": "99111",
+    "thiqa_other": 350.0,
+    "thiqa_alyahar": 300.0,
+    "daman_default": 350.0,
+    "daman_khabisi_alyahar": 210.0
+  }
+]
