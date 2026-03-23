@@ -87,7 +87,7 @@ async function handleRun() {
     let refPrice = '';
     if (match) {
       const facility = rec.FacilityID || '';
-      refPrice = (facility === 'MF5357' || facility === 'MF7231' || facility === 'MF232') ?
+      refPrice = (facility === 'MF5357' || facility === 'MF5020') ?
         match._secondaryPrice : match._primaryPrice;
     }
 
