@@ -643,7 +643,7 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
         const valueType = observation.querySelector('ValueType')?.textContent?.trim() || '';
         if (!valueType) {
           const obsCode = observation.querySelector('Code')?.textContent?.trim() || '(no code)';
-          row.remarks.push(`Observation "${obsCode}" has an empty or missing ValueType, which is not allowed.`);
+          row.remarks.push(`Activity ${code} (${activityId}): Observation "${obsCode}" has an empty or missing ValueType.`);
         }
       });
 
