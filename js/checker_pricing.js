@@ -90,18 +90,20 @@ async function handleRun() {
     let refPrice = '';
     let matchRow = null;
 
-    // Compute a human-readable label for whichever pricing schedule applies to this record.
-    // This is set before any match attempt so it is always available in remark messages.
-    let pricingLabel;
+    // Compute a human-readable context string for whichever pricing schedule applies.
+    // This initial value may be overridden by the endo-pricing block below (which runs
+    // after the regular match attempt) when the code falls under Endodontist Pricing.
+    // Every remark message ends with "under ${pricingContext}" so they share the same structure.
+    let pricingContext;
     if (xlsxMatcher) {
       const isAlyaharGroup = facility === 'MF5357' || facility === 'MF7231' || facility === 'MF232';
-      pricingLabel = isAlyaharGroup ? 'XLSX – Alyahar/Emirates/Al Wagan' : 'XLSX – Other Facilities';
+      pricingContext = isAlyaharGroup ? 'XLSX – Alyahar/Emirates/Al Wagan pricing' : 'XLSX – Other Facilities pricing';
     } else if (receiverID === 'A001') {
       const isDamanKhabisiAlyahar = facility === 'MF5020' || facility === 'MF5357';
-      pricingLabel = isDamanKhabisiAlyahar ? 'Daman – Khabisi/Al Yahar' : 'Daman – Standard';
+      pricingContext = isDamanKhabisiAlyahar ? 'Daman – Khabisi/Al Yahar pricing' : 'Daman – Standard pricing';
     } else {
       const isThiqaAlyaharGroup = facility === 'MF5357' || facility === 'MF7231' || facility === 'MF232';
-      pricingLabel = isThiqaAlyaharGroup ? 'Thiqa – Alyahar/Emirates/Al Wagan' : 'Thiqa – Standard';
+      pricingContext = isThiqaAlyaharGroup ? 'Thiqa – Alyahar/Emirates/Al Wagan pricing' : 'Thiqa – Standard pricing';
     }
 
     if (xlsxMatcher) {
@@ -134,40 +136,36 @@ async function handleRun() {
 
     // Override with endo pricing for applicable codes (only for dates on or after Feb 20, 2026)
     const endoEntry = endoPricingMap.get(normalizeCode(rec.CPT));
-    let isGpEndoRate = false; // true when a non-Endodontist is checked against the GP rate of Endodontist pricing
     if (endoEntry) {
       const encounterDate = parseEncounterDate(rec.EncounterDate);
       const isAfterCutoff = encounterDate !== null && encounterDate >= ENDO_PRICING_CUTOFF;
       if (isAfterCutoff) {
         const isEndo = clinicianSpecialtyMap.get(rec.ClinicianLic || '') === 'Endodontics';
         refPrice = isEndo ? endoEntry.endo_price : endoEntry.gp_price;
-        pricingLabel = 'Endodontist Pricing'; // overrides base label
-        isGpEndoRate = !isEndo;
+        // Overrides the base context; the GP qualifier is embedded here so all messages
+        // can share the same "under ${pricingContext}" tail without per-message conditionals.
+        pricingContext = isEndo ? 'Endodontist Pricing' : 'Endodontist Pricing (non-Endodontist clinician)';
       }
     }
 
     const ref = Number(refPrice ?? NaN);
-  
+
     // Claimed net 0 -> Valid (changed from Unknown)
     if (xmlNet === 0) {
       status = 'Valid';
       remarks.push('Claimed Net is 0 (treated as Valid)');
     } else {
       if (xmlQty <= 0) remarks.push(xmlQty === 0 ? 'Quantity is 0 (invalid)' : 'Quantity is less than 0 (invalid)');
-      if (!match && !endoEntry) remarks.push(`No pricing match was found using ${pricingLabel} pricing.`);
-      if (endoEntry && refPrice === null) remarks.push(`Code ${rec.CPT} is not available for GP clinicians under Endodontist Pricing.`);
+      if (!match && !endoEntry) remarks.push(`No pricing match was found under ${pricingContext}.`);
+      if (endoEntry && refPrice === null) remarks.push(`Code ${rec.CPT} has no available price under ${pricingContext}.`);
       if ((match || endoEntry) && refPrice !== null && Number.isNaN(ref)) {
-        remarks.push(isGpEndoRate
-          ? `The reference price is not a valid number for this Endodontist-priced code (non-Endodontist clinician).`
-          : `The reference net price is not a valid number under ${pricingLabel} pricing.`);
+        remarks.push(`The reference price is not a valid number under ${pricingContext}.`);
       }
 
       const hasValidRef = (match || endoEntry) && refPrice !== null && !Number.isNaN(ref);
       if (hasValidRef && ref === 0) {
         status = 'Unknown';
-        remarks.push(isGpEndoRate
-          ? `The reference price is 0 for this Endodontist-priced code (non-Endodontist clinician, status Unknown).`
-          : `The reference price is 0 under ${pricingLabel} pricing (status Unknown).`);
+        remarks.push(`The reference price is 0 under ${pricingContext} (status Unknown).`);
       } else if (hasValidRef && xmlQty > 0) {
         if (xmlNet === ref) status = 'Valid';
         else if ((xmlNet / xmlQty) === ref) status = 'Valid';
@@ -175,11 +173,7 @@ async function handleRun() {
         // Special case for code 42702: allow if XML price is exactly double the reference
         // This code requires special handling where double the reference price is also valid
         else if (normalizeCode(rec.CPT) === '42702' && xmlNet === ref * 2) status = 'Valid';
-        else {
-          remarks.push(isGpEndoRate
-            ? `Non-Endodontist clinician: Claimed Net ${xmlNet} does not match the expected GP rate of ${ref}.`
-            : `Claimed Net ${xmlNet} does not match the reference price of ${ref} under ${pricingLabel} pricing.`);
-        }
+        else remarks.push(`Claimed Net ${xmlNet} does not match the reference price of ${ref} under ${pricingContext}.`);
       }
     }
   
