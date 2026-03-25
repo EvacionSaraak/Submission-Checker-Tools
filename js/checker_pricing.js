@@ -134,13 +134,15 @@ async function handleRun() {
 
     // Override with endo pricing for applicable codes (only for dates on or after Feb 20, 2026)
     const endoEntry = endoPricingMap.get(normalizeCode(rec.CPT));
+    let isGpEndoRate = false; // true when a non-Endodontist is checked against the GP rate of Endodontist pricing
     if (endoEntry) {
       const encounterDate = parseEncounterDate(rec.EncounterDate);
       const isAfterCutoff = encounterDate !== null && encounterDate >= ENDO_PRICING_CUTOFF;
       if (isAfterCutoff) {
         const isEndo = clinicianSpecialtyMap.get(rec.ClinicianLic || '') === 'Endodontics';
         refPrice = isEndo ? endoEntry.endo_price : endoEntry.gp_price;
-        pricingLabel = isEndo ? 'Endodontist Pricing' : 'Endodontist Pricing (GP rate)'; // overrides base label
+        pricingLabel = 'Endodontist Pricing'; // overrides base label
+        isGpEndoRate = !isEndo;
       }
     }
 
@@ -154,12 +156,18 @@ async function handleRun() {
       if (xmlQty <= 0) remarks.push(xmlQty === 0 ? 'Quantity is 0 (invalid)' : 'Quantity is less than 0 (invalid)');
       if (!match && !endoEntry) remarks.push(`No pricing match was found using ${pricingLabel} pricing.`);
       if (endoEntry && refPrice === null) remarks.push(`Code ${rec.CPT} is not available for GP clinicians under Endodontist Pricing.`);
-      if ((match || endoEntry) && refPrice !== null && Number.isNaN(ref)) remarks.push(`The reference net price is not a valid number under ${pricingLabel} pricing.`);
+      if ((match || endoEntry) && refPrice !== null && Number.isNaN(ref)) {
+        remarks.push(isGpEndoRate
+          ? `The reference price is not a valid number for this Endodontist-priced code (non-Endodontist clinician).`
+          : `The reference net price is not a valid number under ${pricingLabel} pricing.`);
+      }
 
       const hasValidRef = (match || endoEntry) && refPrice !== null && !Number.isNaN(ref);
       if (hasValidRef && ref === 0) {
         status = 'Unknown';
-        remarks.push(`The reference price is 0 under ${pricingLabel} pricing (status Unknown).`);
+        remarks.push(isGpEndoRate
+          ? `The reference price is 0 for this Endodontist-priced code (non-Endodontist clinician, status Unknown).`
+          : `The reference price is 0 under ${pricingLabel} pricing (status Unknown).`);
       } else if (hasValidRef && xmlQty > 0) {
         if (xmlNet === ref) status = 'Valid';
         else if ((xmlNet / xmlQty) === ref) status = 'Valid';
@@ -167,7 +175,11 @@ async function handleRun() {
         // Special case for code 42702: allow if XML price is exactly double the reference
         // This code requires special handling where double the reference price is also valid
         else if (normalizeCode(rec.CPT) === '42702' && xmlNet === ref * 2) status = 'Valid';
-        else remarks.push(`Claimed Net ${xmlNet} does not match the reference price of ${ref} under ${pricingLabel} pricing.`);
+        else {
+          remarks.push(isGpEndoRate
+            ? `Non-Endodontist clinician: Claimed Net ${xmlNet} does not match the expected GP rate of ${ref}.`
+            : `Claimed Net ${xmlNet} does not match the reference price of ${ref} under ${pricingLabel} pricing.`);
+        }
       }
     }
   
