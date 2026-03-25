@@ -19,6 +19,10 @@ const PACKAGE_NAME_MAPPING = {
   'Thiqa C1': 'Thiqa 1',
   'Thiqa C2': 'Thiqa 2',
   'Thiqa C3': 'Thiqa 3',
+  // Regional Plus TC variations (equivalent to Thiqa tiers)
+  'Regional Plus TC1': 'Thiqa 1',
+  'Regional Plus TC2': 'Thiqa 2',
+  'Regional Plus TC3': 'Thiqa 3',
   // Add more mappings as needed
 };
 
