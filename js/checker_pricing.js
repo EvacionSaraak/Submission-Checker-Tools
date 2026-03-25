@@ -99,13 +99,13 @@ async function handleRun() {
       // XLSX is a Thiqa-style manual override; use the same Thiqa labels so the source
       // file format does not leak into user-facing messages.
       const isAlyaharGroup = facility === 'MF5357' || facility === 'MF7231' || facility === 'MF232';
-      pricingContext = isAlyaharGroup ? 'Thiqa – Alyahar/Emirates/Al Wagan pricing' : 'Thiqa – Standard pricing';
+      pricingContext = isAlyaharGroup ? 'Alyahar/Emirates/Al Wagan Thiqa Pricing' : 'Standard Thiqa Pricing';
     } else if (receiverID === 'A001') {
       const isDamanKhabisiAlyahar = facility === 'MF5020' || facility === 'MF5357';
       pricingContext = isDamanKhabisiAlyahar ? 'Daman – Khabisi/Al Yahar pricing' : 'Daman – Standard pricing';
     } else {
       const isThiqaAlyaharGroup = facility === 'MF5357' || facility === 'MF7231' || facility === 'MF232';
-      pricingContext = isThiqaAlyaharGroup ? 'Thiqa – Alyahar/Emirates/Al Wagan pricing' : 'Thiqa – Standard pricing';
+      pricingContext = isThiqaAlyaharGroup ? 'Alyahar/Emirates/Al Wagan Thiqa Pricing' : 'Standard Thiqa Pricing';
     }
 
     if (xlsxMatcher) {
@@ -147,7 +147,11 @@ async function handleRun() {
         // Only override pricingContext for Endodontist clinicians.
         // Non-Endodontist clinicians keep the standard Thiqa/Daman label already set above,
         // so messages reference the correct insurer schedule without mentioning "Endodontist".
-        if (isEndo) pricingContext = 'Endodontist Pricing';
+        if (isEndo) {
+          pricingContext = 'Endodontist Pricing';
+        } else {
+          remarks.push('Pricing is using Endo rates for a non-Endodontist.');
+        }
       }
     }
 
