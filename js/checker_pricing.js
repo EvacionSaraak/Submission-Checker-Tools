@@ -152,14 +152,14 @@ async function handleRun() {
       remarks.push('Claimed Net is 0 (treated as Valid)');
     } else {
       if (xmlQty <= 0) remarks.push(xmlQty === 0 ? 'Quantity is 0 (invalid)' : 'Quantity is less than 0 (invalid)');
-      if (!match && !endoEntry) remarks.push(`No pricing match found [${pricingLabel}]`);
-      if (endoEntry && refPrice === null) remarks.push(`Code ${rec.CPT} is not available for GP clinicians [Endodontist Pricing]`);
-      if ((match || endoEntry) && refPrice !== null && Number.isNaN(ref)) remarks.push(`Reference Net Price is not a number [${pricingLabel}]`);
+      if (!match && !endoEntry) remarks.push(`No pricing match was found using ${pricingLabel} pricing.`);
+      if (endoEntry && refPrice === null) remarks.push(`Code ${rec.CPT} is not available for GP clinicians under Endodontist Pricing.`);
+      if ((match || endoEntry) && refPrice !== null && Number.isNaN(ref)) remarks.push(`The reference net price is not a valid number under ${pricingLabel} pricing.`);
 
       const hasValidRef = (match || endoEntry) && refPrice !== null && !Number.isNaN(ref);
       if (hasValidRef && ref === 0) {
         status = 'Unknown';
-        remarks.push(`Reference price is 0 (Unknown) [${pricingLabel}]`);
+        remarks.push(`The reference price is 0 under ${pricingLabel} pricing (status Unknown).`);
       } else if (hasValidRef && xmlQty > 0) {
         if (xmlNet === ref) status = 'Valid';
         else if ((xmlNet / xmlQty) === ref) status = 'Valid';
@@ -167,7 +167,7 @@ async function handleRun() {
         // Special case for code 42702: allow if XML price is exactly double the reference
         // This code requires special handling where double the reference price is also valid
         else if (normalizeCode(rec.CPT) === '42702' && xmlNet === ref * 2) status = 'Valid';
-        else remarks.push(`Claimed Net ${xmlNet} does not match Reference ${ref} [${pricingLabel}]`);
+        else remarks.push(`Claimed Net ${xmlNet} does not match the reference price of ${ref} under ${pricingLabel} pricing.`);
       }
     }
   
