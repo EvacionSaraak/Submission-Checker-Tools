@@ -96,8 +96,10 @@ async function handleRun() {
     // Every remark message ends with "under ${pricingContext}" so they share the same structure.
     let pricingContext;
     if (xlsxMatcher) {
+      // XLSX is a Thiqa-style manual override; use the same Thiqa labels so the source
+      // file format does not leak into user-facing messages.
       const isAlyaharGroup = facility === 'MF5357' || facility === 'MF7231' || facility === 'MF232';
-      pricingContext = isAlyaharGroup ? 'XLSX – Alyahar/Emirates/Al Wagan pricing' : 'XLSX – Other Facilities pricing';
+      pricingContext = isAlyaharGroup ? 'Thiqa – Alyahar/Emirates/Al Wagan pricing' : 'Thiqa – Standard pricing';
     } else if (receiverID === 'A001') {
       const isDamanKhabisiAlyahar = facility === 'MF5020' || facility === 'MF5357';
       pricingContext = isDamanKhabisiAlyahar ? 'Daman – Khabisi/Al Yahar pricing' : 'Daman – Standard pricing';
@@ -142,9 +144,11 @@ async function handleRun() {
       if (isAfterCutoff) {
         const isEndo = clinicianSpecialtyMap.get(rec.ClinicianLic || '') === 'Endodontics';
         refPrice = isEndo ? endoEntry.endo_price : endoEntry.gp_price;
-        // Overrides the base context; the GP qualifier is embedded here so all messages
+        // Overrides the base context; the label is embedded here so all messages
         // can share the same "under ${pricingContext}" tail without per-message conditionals.
-        pricingContext = isEndo ? 'Endodontist Pricing' : 'Endodontist Pricing (non-Endodontist clinician)';
+        // Non-Endodontist clinicians use the GP rate label only, with no "Endodontist" terminology
+        // to avoid confusion when the clinician is not an endodontist.
+        pricingContext = isEndo ? 'Endodontist Pricing' : 'GP rate';
       }
     }
 
