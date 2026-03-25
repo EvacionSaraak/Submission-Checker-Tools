@@ -90,6 +90,20 @@ async function handleRun() {
     let refPrice = '';
     let matchRow = null;
 
+    // Compute a human-readable label for whichever pricing schedule applies to this record.
+    // This is set before any match attempt so it is always available in remark messages.
+    let pricingLabel;
+    if (xlsxMatcher) {
+      const isAlyaharGroup = facility === 'MF5357' || facility === 'MF7231' || facility === 'MF232';
+      pricingLabel = isAlyaharGroup ? 'XLSX – Alyahar/Emirates/Al Wagan' : 'XLSX – Other Facilities';
+    } else if (receiverID === 'A001') {
+      const isDamanKhabisiAlyahar = facility === 'MF5020' || facility === 'MF5357';
+      pricingLabel = isDamanKhabisiAlyahar ? 'Daman – Khabisi/Al Yahar' : 'Daman – Standard';
+    } else {
+      const isThiqaAlyaharGroup = facility === 'MF5357' || facility === 'MF7231' || facility === 'MF232';
+      pricingLabel = isThiqaAlyaharGroup ? 'Thiqa – Alyahar/Emirates/Al Wagan' : 'Thiqa – Standard';
+    }
+
     if (xlsxMatcher) {
       // Manual XLSX override: expects Thiqa-style two-column layout with
       // "Other Facilities" (primary) and "Alyahar, Emirates, Al Wagan" (secondary) columns.
@@ -126,6 +140,7 @@ async function handleRun() {
       if (isAfterCutoff) {
         const isEndo = clinicianSpecialtyMap.get(rec.ClinicianLic || '') === 'Endodontics';
         refPrice = isEndo ? endoEntry.endo_price : endoEntry.gp_price;
+        pricingLabel = isEndo ? 'Endodontist Pricing' : 'Endodontist Pricing (GP rate)'; // overrides base label
       }
     }
 
@@ -137,14 +152,14 @@ async function handleRun() {
       remarks.push('Claimed Net is 0 (treated as Valid)');
     } else {
       if (xmlQty <= 0) remarks.push(xmlQty === 0 ? 'Quantity is 0 (invalid)' : 'Quantity is less than 0 (invalid)');
-      if (!match && !endoEntry) remarks.push('No pricing match found');
-      if (endoEntry && refPrice === null) remarks.push(`Code ${rec.CPT} is not available for GP clinicians`);
-      if ((match || endoEntry) && refPrice !== null && Number.isNaN(ref)) remarks.push('Reference Net Price is not a number');
+      if (!match && !endoEntry) remarks.push(`No pricing match found [${pricingLabel}]`);
+      if (endoEntry && refPrice === null) remarks.push(`Code ${rec.CPT} is not available for GP clinicians [Endodontist Pricing]`);
+      if ((match || endoEntry) && refPrice !== null && Number.isNaN(ref)) remarks.push(`Reference Net Price is not a number [${pricingLabel}]`);
 
       const hasValidRef = (match || endoEntry) && refPrice !== null && !Number.isNaN(ref);
       if (hasValidRef && ref === 0) {
         status = 'Unknown';
-        remarks.push('Reference price is 0 (Unknown)');
+        remarks.push(`Reference price is 0 (Unknown) [${pricingLabel}]`);
       } else if (hasValidRef && xmlQty > 0) {
         if (xmlNet === ref) status = 'Valid';
         else if ((xmlNet / xmlQty) === ref) status = 'Valid';
@@ -152,7 +167,7 @@ async function handleRun() {
         // Special case for code 42702: allow if XML price is exactly double the reference
         // This code requires special handling where double the reference price is also valid
         else if (normalizeCode(rec.CPT) === '42702' && xmlNet === ref * 2) status = 'Valid';
-        else remarks.push(`Claimed Net ${xmlNet} does not match Reference ${ref}`);
+        else remarks.push(`Claimed Net ${xmlNet} does not match Reference ${ref} [${pricingLabel}]`);
       }
     }
   
