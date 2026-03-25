@@ -138,19 +138,20 @@ async function handleRun() {
 
     // Override with endo pricing for applicable codes (only for dates on or after Feb 20, 2026)
     const endoEntry = endoPricingMap.get(normalizeCode(rec.CPT));
+    let nonEndoEndoCase = false;
+    let nonEndoClinicianSpec = '';
     if (endoEntry) {
       const encounterDate = parseEncounterDate(rec.EncounterDate);
       const isAfterCutoff = encounterDate !== null && encounterDate >= ENDO_PRICING_CUTOFF;
       if (isAfterCutoff) {
-        const isEndo = clinicianSpecialtyMap.get(rec.ClinicianLic || '') === 'Endodontics';
+        const clinicianSpec = clinicianSpecialtyMap.get(rec.ClinicianLic || '') || '';
+        const isEndo = clinicianSpec === 'Endodontics';
         refPrice = isEndo ? endoEntry.endo_price : endoEntry.gp_price;
-        // Only override pricingContext for Endodontist clinicians.
-        // Non-Endodontist clinicians keep the standard Thiqa/Daman label already set above,
-        // so messages reference the correct insurer schedule without mentioning "Endodontist".
         if (isEndo) {
           pricingContext = 'Endodontist Pricing';
         } else {
-          remarks.push('Pricing is using Endo rates for a non-Endodontist.');
+          nonEndoEndoCase = true;
+          nonEndoClinicianSpec = clinicianSpec;
         }
       }
     }
@@ -180,7 +181,9 @@ async function handleRun() {
         // Special case for code 42702: allow if XML price is exactly double the reference
         // This code requires special handling where double the reference price is also valid
         else if (normalizeCode(rec.CPT) === '42702' && xmlNet === ref * 2) status = 'Valid';
-        else remarks.push(`Claimed Net ${xmlNet} does not match the reference price of ${ref} under ${pricingContext}.`);
+        else if (nonEndoEndoCase) {
+          remarks.push(`Pricing for ${rec.CPT} is ${ref} following ${pricingContext}. Endo Pricing cannot be used for ${nonEndoClinicianSpec}.`);
+        } else remarks.push(`Claimed Net ${xmlNet} does not match the reference price of ${ref} under ${pricingContext}.`);
       }
     }
   
