@@ -195,7 +195,7 @@ async function handleRun() {
       XmlRow: rec,
       isValid: status === 'Valid',
       status,
-      Remarks: remarks.join('; ')
+      Remarks: remarks.join(' ')
     };
   });
 
