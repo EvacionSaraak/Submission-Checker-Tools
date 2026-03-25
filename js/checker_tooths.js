@@ -638,6 +638,15 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
         }
       }
 
+      // Check for empty or missing ValueType on each Observation
+      Array.from(obsList).forEach(observation => {
+        const valueType = observation.querySelector('ValueType')?.textContent?.trim() || '';
+        if (!valueType) {
+          const obsCode = observation.querySelector('Code')?.textContent?.trim() || '(no code)';
+          row.remarks.push(`Observation "${obsCode}" has an empty or missing ValueType, which is not allowed.`);
+        }
+      });
+
       if (row.remarks && row.remarks.length > 0) claimHasInvalid = true;
       rows.push(row);
     });
