@@ -144,11 +144,10 @@ async function handleRun() {
       if (isAfterCutoff) {
         const isEndo = clinicianSpecialtyMap.get(rec.ClinicianLic || '') === 'Endodontics';
         refPrice = isEndo ? endoEntry.endo_price : endoEntry.gp_price;
-        // Overrides the base context; the label is embedded here so all messages
-        // can share the same "under ${pricingContext}" tail without per-message conditionals.
-        // Non-Endodontist clinicians use the GP rate label only, with no "Endodontist" terminology
-        // to avoid confusion when the clinician is not an endodontist.
-        pricingContext = isEndo ? 'Endodontist Pricing' : 'GP rate';
+        // Only override pricingContext for Endodontist clinicians.
+        // Non-Endodontist clinicians keep the standard Thiqa/Daman label already set above,
+        // so messages reference the correct insurer schedule without mentioning "Endodontist".
+        if (isEndo) pricingContext = 'Endodontist Pricing';
       }
     }
 
