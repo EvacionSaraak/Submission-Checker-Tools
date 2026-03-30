@@ -132,10 +132,11 @@ async function handleRun() {
     return {
       ClaimID: rec.ClaimID || '',
       ActivityID: rec.ActivityID || '',
+      FacilityID: rec.FacilityID || '',
       CPT: rec.CPT || '',
       ClaimedNet: rec.Net || '',
       ClaimedQty: rec.Quantity || '',
-      ReferenceNetPrice: refPrice || '',
+      ReferenceNetPrice: refPrice ?? '',
       PricingRow: match || null,
       XmlRow: rec,
       isValid: status === 'Valid',
@@ -146,7 +147,18 @@ async function handleRun() {
 
     lastResults = output;
     const tableElement = buildResultsTable(output);
-    lastWorkbook = makeWorkbookFromJson(output, 'checker_pricing_results');
+    const downloadData = output.map(r => ({
+      'Claim ID': r.ClaimID,
+      'Activity ID': r.ActivityID,
+      'Facility ID': r.FacilityID,
+      'Code': r.CPT,
+      'Claimed Net': r.ClaimedNet,
+      'Quantity': r.ClaimedQty,
+      'Reference Net Price': r.ReferenceNetPrice,
+      'Status': r.status,
+      'Remarks': r.Remarks
+    }));
+    lastWorkbook = makeWorkbookFromJson(downloadData, 'checker_pricing_results');
     toggleDownload(output.length > 0);
 
    // Count valid rows and show percentage with 2 decimals
@@ -164,7 +176,22 @@ async function handleRun() {
 function handleDownload() {
   if (!lastWorkbook || !lastResults.length) { showError(new Error('Nothing to download')); return; }
   try { XLSX.writeFile(lastWorkbook, 'checker_pricing_results.xlsx'); }
-  catch(err) { try { XLSX.writeFile(makeWorkbookFromJson(lastResults, 'checker_pricing_results'), 'checker_pricing_results.xlsx'); } catch(e) { showError(e); } }
+  catch(err) {
+    try {
+      const fallbackData = lastResults.map(r => ({
+        'Claim ID': r.ClaimID,
+        'Activity ID': r.ActivityID,
+        'Facility ID': r.FacilityID,
+        'Code': r.CPT,
+        'Claimed Net': r.ClaimedNet,
+        'Quantity': r.ClaimedQty,
+        'Reference Net Price': r.ReferenceNetPrice,
+        'Status': r.status,
+        'Remarks': r.Remarks
+      }));
+      XLSX.writeFile(makeWorkbookFromJson(fallbackData, 'checker_pricing_results'), 'checker_pricing_results.xlsx');
+    } catch(e) { showError(e); }
+  }
 }
 
 // ----------------- File helpers -----------------
@@ -280,6 +307,7 @@ function buildResultsTable(rows) {
   let html = `<table class="table table-striped table-bordered" style="width:100%;border-collapse:collapse"><thead><tr>
     <th style="padding:8px;border:1px solid #ccc">Claim ID</th>
     <th style="padding:8px;border:1px solid #ccc">Activity ID</th>
+    <th style="padding:8px;border:1px solid #ccc">Facility ID</th>
     <th style="padding:8px;border:1px solid #ccc">Code</th>
     <th style="padding:8px;border:1px solid #ccc">Claimed Net</th>
     <th style="padding:8px;border:1px solid #ccc">Quantity</th>
@@ -297,6 +325,7 @@ function buildResultsTable(rows) {
     html += `<tr class="${cls}" data-claim-id="${escapeHtml(r.ClaimID || '')}">
       <td style="padding:6px;border:1px solid #ccc" class="claim-id-cell">${showClaim ? escapeHtml(r.ClaimID) : ''}</td>
       <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.ActivityID)}</td>
+      <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.FacilityID)}</td>
       <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.CPT)}</td>
       <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.ClaimedNet)}</td>
       <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.ClaimedQty)}</td>
@@ -319,7 +348,7 @@ function showComparisonModal(index) {
   if (!row) { alert('Row not found'); return; }
   const xml = row.XmlRow || {};
   const xlsx = row.PricingRow || {};
-  const refPrice = String(row.ReferenceNetPrice || '');
+  const refPrice = String(row.ReferenceNetPrice ?? '');
   const xmlNet = Number(xml.Net || 0), xmlQty = Number(xml.Quantity || 0);
   const unitCalc = xmlQty > 0 ? (xmlNet / xmlQty) : null;
   const unitCalcText = unitCalc !== null ? String(unitCalc) : 'N/A';
