@@ -181,11 +181,19 @@ function parseEncounterDate(dateStr) {
   return new Date(y, m - 1, d);
 }
 
-// Check if an activity has a Subcode observation (Observation Code = "Subcode")
+// Check if an activity has a Subcode observation (Observation Code = "Subcode", Value = "01 " with trailing space)
+// DEBUG - prior version (checked Code = "Subcode" only, no value check):
+// function hasSubcodeObservation(obsList) {
+//   return Array.from(obsList).some(obs => {
+//     const code = (obs.querySelector('Code')?.textContent || '').trim().toUpperCase();
+//     return code === 'SUBCODE';
+//   });
+// }
 function hasSubcodeObservation(obsList) {
   return Array.from(obsList).some(obs => {
     const code = (obs.querySelector('Code')?.textContent || '').trim().toUpperCase();
-    return code === 'SUBCODE';
+    const value = obs.querySelector('Value')?.textContent || '';
+    return code === 'SUBCODE' && value === '01 ';
   });
 }
 
@@ -642,7 +650,7 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
 
           if (isEndodontist && !hasSubcode) {
             // ERROR: Endodontist but missing required Subcode observation
-            row.remarks.push(`Code ${code} requires a Subcode observation (Type: Text, Code: Subcode, Value: 01) when performed by an Endodontist.`);
+            row.remarks.push(`Code ${code} requires a Subcode observation (Type: Text, Code: Subcode, Value: "01 ") when performed by an Endodontist.`);
           }
         }
       }
