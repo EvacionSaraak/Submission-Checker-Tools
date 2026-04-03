@@ -656,7 +656,9 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
       }
 
       // Check code_0 observation requirement for endodontist endo codes
-      if (ROOT_CANAL_SUBCODE_CODES.has(code)) {
+      // Only applies when the Subcode observation check does NOT apply (i.e. not D001 after cutoff),
+      // to avoid showing two subcode-related errors for the same activity.
+      if (!(receiverID === 'D001' && afterCutoff) && ROOT_CANAL_SUBCODE_CODES.has(code)) {
         let clinicianId = act.querySelector('Clinician')?.textContent?.trim();
         if (!clinicianId) {
           clinicianId = act.querySelector('OrderingClinician')?.textContent?.trim();
