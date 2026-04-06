@@ -66,9 +66,10 @@ const SPECIAL_MEDICAL_CODES_SET = new Set(SPECIAL_MEDICAL_CODES.map(item => item
 
 // Codes that cannot be submitted - produce a hard error if detected
 const FORBIDDEN_CODES = [
-  { code: "A4649", reason: "Code A4649 cannot be submitted. Please remove this activity or replace it with the correct code." }
+  { code: "A4649", description: "(forbidden code)", reason: "Code A4649 cannot be submitted. Please remove this activity or replace it with the correct code." },
+  { code: "00000", description: "(invalid placeholder code)", reason: 'Code "00000" is invalid. Please ask IT to delete this activity or set it to "In Progress".' }
 ];
-const FORBIDDEN_CODES_MAP = Object.fromEntries(FORBIDDEN_CODES.map(item => [item.code, item.reason]));
+const FORBIDDEN_CODES_MAP = Object.fromEntries(FORBIDDEN_CODES.map(item => [item.code, item]));
 
 // Root canal codes requiring a Subcode observation from 20-Feb-2026 onward
 const ROOT_CANAL_SUBCODE_CODES = new Set(['33111', '33121', '33131', '33141', '33115', '33125', '33135', '33145']);
@@ -584,40 +585,23 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
       const codeLastDigit = code.slice(-1);
 
       // --- Check for codes that cannot be submitted
-      const forbiddenReason = FORBIDDEN_CODES_MAP[code];
-      if (forbiddenReason) {
+      const forbiddenEntry = FORBIDDEN_CODES_MAP[code];
+      if (forbiddenEntry) {
+        const typeRemarks = validateActivityType(code, typeValue);
         const row = buildActivityRow({
           claimId,
           activityId,
           type: typeValue,
           code,
-          description: '(forbidden code)',
+          description: forbiddenEntry.description,
           details: 'N/A',
-          remarks: [forbiddenReason]
+          remarks: [forbiddenEntry.reason, ...typeRemarks]
         });
         claimHasInvalid = true;
         rows.push(row);
         return;
       }
 
-      // --- ADDED: Check for code === "0000"
-      if (code === "00000") {
-        const typeRemarks = validateActivityType(code, typeValue);
-        const allRemarks = ['Code "00000" is invalid. Please ask IT to delete this activity or set it to "In Progress".', ...typeRemarks];
-        const row = buildActivityRow({
-          claimId,
-          activityId,
-          type: typeValue,
-          code,
-          description: '(invalid placeholder code)',
-          details: 'N/A',
-          remarks: allRemarks
-        });
-        claimHasInvalid = true;
-        rows.push(row);
-        return;
-      }
-      
       // --- ADDED: Check for invalid code length ---
       if (code.length !== 5 && !code.includes(`-`)) {
         const typeRemarks = validateActivityType(code, typeValue);
