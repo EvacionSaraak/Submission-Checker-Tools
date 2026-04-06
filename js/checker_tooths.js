@@ -64,6 +64,12 @@ const SPECIAL_MEDICAL_CODES = [
 // Type validation constants - derived from SPECIAL_MEDICAL_CODES array
 const SPECIAL_MEDICAL_CODES_SET = new Set(SPECIAL_MEDICAL_CODES.map(item => item.code));
 
+// Codes that cannot be submitted - produce a hard error if detected
+const FORBIDDEN_CODES = [
+  { code: "A4649", reason: "Code A4649 cannot be submitted. Please remove this activity or replace it with the correct code." }
+];
+const FORBIDDEN_CODES_MAP = Object.fromEntries(FORBIDDEN_CODES.map(item => [item.code, item.reason]));
+
 // Root canal codes requiring a Subcode observation from 20-Feb-2026 onward
 const ROOT_CANAL_SUBCODE_CODES = new Set(['33111', '33121', '33131', '33141', '33115', '33125', '33135', '33145']);
 const SUBCODE_OBS_CUTOFF = new Date(2026, 1, 20); // 20 Feb 2026 (month is 0-indexed)
@@ -577,8 +583,9 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
       const code = rawCode.trim();
       const codeLastDigit = code.slice(-1);
 
-      // --- ADDED: Check for forbidden code A4649
-      if (code === "A4649") {
+      // --- Check for codes that cannot be submitted
+      const forbiddenReason = FORBIDDEN_CODES_MAP[code];
+      if (forbiddenReason) {
         const row = buildActivityRow({
           claimId,
           activityId,
@@ -586,7 +593,7 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
           code,
           description: '(forbidden code)',
           details: 'N/A',
-          remarks: ['Code "A4649" cannot be submitted. Please remove this activity or replace it with the correct code.']
+          remarks: [forbiddenReason]
         });
         claimHasInvalid = true;
         rows.push(row);
