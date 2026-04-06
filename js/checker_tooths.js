@@ -577,6 +577,22 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
       const code = rawCode.trim();
       const codeLastDigit = code.slice(-1);
 
+      // --- ADDED: Check for forbidden code A4649
+      if (code === "A4649") {
+        const row = buildActivityRow({
+          claimId,
+          activityId,
+          type: typeValue,
+          code,
+          description: '(forbidden code)',
+          details: 'N/A',
+          remarks: ['Code "A4649" cannot be submitted. Please remove this activity or replace it with the correct code.']
+        });
+        claimHasInvalid = true;
+        rows.push(row);
+        return;
+      }
+
       // --- ADDED: Check for code === "0000"
       if (code === "00000") {
         const typeRemarks = validateActivityType(code, typeValue);
