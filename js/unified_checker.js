@@ -127,6 +127,7 @@
       
       // Export and filter
       exportBtn: document.getElementById('exportBtn'),
+      exportAllBtn: document.getElementById('exportAllBtn'),
       exportInvalidsBtn: document.getElementById('exportInvalidsBtn'),
       floatingFilterBtn: document.getElementById('floatingFilterBtn'),
       debugLogContainer: document.getElementById('debugLogContainer'),
@@ -241,6 +242,9 @@
     // Export button
     if (elements.exportBtn) elements.exportBtn.addEventListener('click', exportResults);
     
+    // Export All button
+    if (elements.exportAllBtn) elements.exportAllBtn.addEventListener('click', exportResults);
+    
     // Export Invalids button
     if (elements.exportInvalidsBtn) {
       elements.exportInvalidsBtn.addEventListener('click', exportInvalids);
@@ -344,6 +348,10 @@
     if (elements.exportInvalidsBtn) {
       elements.exportInvalidsBtn.disabled = true;
       updateExportInvalidsTooltip('no-tables');
+    }
+    if (elements.exportAllBtn) {
+      elements.exportAllBtn.disabled = true;
+      updateExportAllTooltip('no-tables');
     }
     if (elements.debugLogContainer) {
       elements.debugLogContainer.style.display = 'none';
@@ -523,6 +531,10 @@
       elements.uploadStatus.innerHTML = ''; // Clear status message
       if (elements.exportBtn) {
         elements.exportBtn.disabled = false;
+      }
+      if (elements.exportAllBtn) {
+        elements.exportAllBtn.disabled = false;
+        updateExportAllTooltip();
       }
       console.log(`[DEBUG] ${checkerName} checker completed successfully`);
 
@@ -893,6 +905,12 @@
       updateExportInvalidsTooltip('no-tables'); // Set initial tooltip
     }
     
+    // Disable Export All button initially
+    if (elements.exportAllBtn) {
+      elements.exportAllBtn.disabled = true;
+      updateExportAllTooltip('no-tables');
+    }
+    
     // Hide debug log button initially
     if (elements.debugLogContainer) {
       elements.debugLogContainer.style.display = 'none';
@@ -1206,6 +1224,13 @@
       logDebug('Export Button Enabled', { resultsCount: successCount });
     }
     
+    // Enable Export All button if we have results
+    if (successCount > 0 && elements.exportAllBtn) {
+      elements.exportAllBtn.disabled = false;
+      updateExportAllTooltip();
+      logDebug('Export All Button Enabled', { resultsCount: successCount });
+    }
+    
     // Enable Export Invalids button if we have invalid rows
     if (invalidRowsData.length > 0 && elements.exportInvalidsBtn) {
       elements.exportInvalidsBtn.disabled = false;
@@ -1349,6 +1374,32 @@
     }
     
     // Update speech bubble text and make sure it's visible
+    bubbleText.textContent = tooltipMessage;
+    bubble.style.display = 'block';
+  }
+
+  function updateExportAllTooltip(reason = null) {
+    const bubble = document.getElementById('exportAllBubble');
+    const bubbleText = document.getElementById('exportAllBubbleText');
+    
+    if (!bubble || !bubbleText) {
+      return;
+    }
+    
+    // If button is enabled, hide speech bubble
+    if (elements.exportAllBtn && !elements.exportAllBtn.disabled) {
+      bubble.style.display = 'none';
+      return;
+    }
+    
+    // Button is disabled, show speech bubble with appropriate message
+    let tooltipMessage = '';
+    if (reason === 'error') {
+      tooltipMessage = 'Error occurred during checker execution. Please download debug log for more details.';
+    } else {
+      tooltipMessage = 'No results yet. Please run a checker first.';
+    }
+    
     bubbleText.textContent = tooltipMessage;
     bubble.style.display = 'block';
   }
