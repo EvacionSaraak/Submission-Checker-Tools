@@ -204,15 +204,6 @@ function hasSubcodeObservation(obsList) {
   });
 }
 
-// Check if an activity has a code_0 observation (e.g. "33111_0") for endodontist endo codes
-function hasEndoCodeZeroObservation(code, obsList) {
-  const target = `${code}_0`.toUpperCase();
-  return Array.from(obsList).some(obs => {
-    const obsCode = (obs.querySelector('Code')?.textContent || '').trim().toUpperCase();
-    return obsCode === target;
-  });
-}
-
 // Special code utilities
 function isSpecialMedicalCode(code) {
   return SPECIAL_MEDICAL_CODES.some(item => item.code === code);
@@ -658,21 +649,6 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
           if (isEndodontist && !hasSubcode) {
             // ERROR: Endodontist but missing required Subcode observation
             row.remarks.push(`Code ${code} requires a Subcode observation (Type: Text, Code: Subcode, Value: "01 ") when performed by an Endodontist.`);
-          }
-        }
-      }
-
-      // Check code_0 observation requirement for endodontist endo codes
-      // Only applies when the Subcode observation check does NOT apply (i.e. not D001 after cutoff),
-      // to avoid showing two subcode-related errors for the same activity.
-      if (!(receiverID === 'D001' && afterCutoff) && ROOT_CANAL_SUBCODE_CODES.has(code)) {
-        let clinicianId = act.querySelector('Clinician')?.textContent?.trim();
-        if (!clinicianId) {
-          clinicianId = act.querySelector('OrderingClinician')?.textContent?.trim();
-        }
-        if (clinicianId && endodontistSet.has(clinicianId)) {
-          if (!hasEndoCodeZeroObservation(code, obsList)) {
-            row.remarks.push(`Code ${code} requires an Observation with code "${code}_0" when performed by an Endodontist.`);
           }
         }
       }
