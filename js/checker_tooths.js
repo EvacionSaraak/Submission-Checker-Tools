@@ -64,6 +64,13 @@ const SPECIAL_MEDICAL_CODES = [
 // Type validation constants - derived from SPECIAL_MEDICAL_CODES array
 const SPECIAL_MEDICAL_CODES_SET = new Set(SPECIAL_MEDICAL_CODES.map(item => item.code));
 
+// Codes that cannot be submitted - produce a hard error if detected
+const FORBIDDEN_CODES = [
+  { code: "A4649", description: "(forbidden code)", reason: "Code A4649 cannot be submitted. Please remove this activity or replace it with the correct code." },
+  { code: "00000", description: "(invalid placeholder code)", reason: 'Code "00000" is invalid. Please ask IT to delete this activity or set it to "In Progress".' }
+];
+const FORBIDDEN_CODES_MAP = Object.fromEntries(FORBIDDEN_CODES.map(item => [item.code, item]));
+
 // Root canal codes requiring a Subcode observation from 20-Feb-2026 onward
 const ROOT_CANAL_SUBCODE_CODES = new Set(['33111', '33121', '33131', '33141', '33115', '33125', '33135', '33145']);
 const SUBCODE_OBS_CUTOFF = new Date(2026, 1, 20); // 20 Feb 2026 (month is 0-indexed)
@@ -181,11 +188,19 @@ function parseEncounterDate(dateStr) {
   return new Date(y, m - 1, d);
 }
 
-// Check if an activity has a Subcode observation (Observation Code = "Subcode")
+// Check if an activity has a Subcode observation (Observation Code = "Subcode", Value = "01 " with trailing space)
+// DEBUG - prior version (checked Code = "Subcode" only, no value check):
+// function hasSubcodeObservation(obsList) {
+//   return Array.from(obsList).some(obs => {
+//     const code = (obs.querySelector('Code')?.textContent || '').trim().toUpperCase();
+//     return code === 'SUBCODE';
+//   });
+// }
 function hasSubcodeObservation(obsList) {
   return Array.from(obsList).some(obs => {
     const code = (obs.querySelector('Code')?.textContent || '').trim().toUpperCase();
-    return code === 'SUBCODE';
+    const value = obs.querySelector('Value')?.textContent || '';
+    return code === 'SUBCODE' && value === '01 ';
   });
 }
 
@@ -560,24 +575,24 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
       const code = rawCode.trim();
       const codeLastDigit = code.slice(-1);
 
-      // --- ADDED: Check for code === "0000"
-      if (code === "00000") {
+      // --- Check for codes that cannot be submitted
+      const forbiddenEntry = FORBIDDEN_CODES_MAP[code];
+      if (forbiddenEntry) {
         const typeRemarks = validateActivityType(code, typeValue);
-        const allRemarks = ['Code "00000" is invalid. Please ask IT to delete this activity or set it to "In Progress".', ...typeRemarks];
         const row = buildActivityRow({
           claimId,
           activityId,
           type: typeValue,
           code,
-          description: '(invalid placeholder code)',
+          description: forbiddenEntry.description,
           details: 'N/A',
-          remarks: allRemarks
+          remarks: [forbiddenEntry.reason, ...typeRemarks]
         });
         claimHasInvalid = true;
         rows.push(row);
         return;
       }
-      
+
       // --- ADDED: Check for invalid code length ---
       if (code.length !== 5 && !code.includes(`-`)) {
         const typeRemarks = validateActivityType(code, typeValue);
@@ -633,7 +648,7 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
 
           if (isEndodontist && !hasSubcode) {
             // ERROR: Endodontist but missing required Subcode observation
-            row.remarks.push(`Code ${code} requires a Subcode observation (Type: Text, Code: Subcode, Value: 01) when performed by an Endodontist.`);
+            row.remarks.push(`Code ${code} requires a Subcode observation (Type: Text, Code: Subcode, Value: "01 ") when performed by an Endodontist.`);
           }
         }
       }

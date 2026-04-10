@@ -19,7 +19,18 @@ const PACKAGE_NAME_MAPPING = {
   'Thiqa C1': 'Thiqa 1',
   'Thiqa C2': 'Thiqa 2',
   'Thiqa C3': 'Thiqa 3',
+  // Regional Plus TC variations (equivalent to Thiqa tiers)
+  'Regional Plus TC1': 'Thiqa 1',
+  'Regional Plus TC2': 'Thiqa 2',
+  'Regional Plus TC3': 'Thiqa 3',
   // Add more mappings as needed
+};
+
+// Expected ReceiverID → PayerID rules per insurer type
+const RECEIVER_PAYER_RULES = {
+  'A001': { expectedPayerID: 'A001', label: 'Daman Enhanced' },
+  'D004': { expectedPayerID: 'A001', label: 'Daman Basic' },
+  'D001': { expectedPayerID: 'E001', label: 'Thiqa' },
 };
 
 /**
@@ -31,6 +42,21 @@ function normalizePackageName(packageName) {
   if (!packageName) return packageName;
   const trimmed = packageName.trim();
   return PACKAGE_NAME_MAPPING[trimmed] || trimmed;
+}
+
+/**
+ * Return the expected ReceiverID based on an XLSX package name, or null if undetermined.
+ * @param {string} packageName - The XLSX eligibility Package Name
+ * @returns {string|null}
+ */
+function getExpectedReceiverID(packageName) {
+  if (!packageName) return null;
+  const pkg = packageName.toLowerCase();
+  if (pkg.includes('thiqa')) return 'D001';
+  if (pkg.includes('basic')) return 'D004';
+  if (pkg.includes('daman') || pkg.includes('bronze') || pkg.includes('silver') ||
+      pkg.includes('gold') || pkg.includes('platinum') || pkg.includes('enhanced')) return 'A001';
+  return null;
 }
 
 
@@ -377,6 +403,8 @@ function validateXmlClaims(xmlClaims, eligMap, receiverID = '') {
         claimID: claim.claimID,
         memberID: claim.memberID,
         packageName: claim.packageName,
+        payerID: claim.payerID || '',
+        receiverID: receiverID,
         encounterStart: formattedDate,
         clinician: '',
         xlsxPackageName: '',
@@ -430,10 +458,30 @@ function validateXmlClaims(xmlClaims, eligMap, receiverID = '') {
       }
     }
 
+    // Independent check: PayerID must match the expected value for the given ReceiverID
+    if (claim.payerID && receiverID && RECEIVER_PAYER_RULES[receiverID]) {
+      const { expectedPayerID, label } = RECEIVER_PAYER_RULES[receiverID];
+      if (claim.payerID !== expectedPayerID) {
+        status = 'invalid';
+        remarks.push(`Payer ID "${claim.payerID}" does not match expected "${expectedPayerID}" for ${label}.`);
+      }
+    }
+
+    // Independent check: ReceiverID must match the expected value for the XLSX package type
+    if (eligibility?.['Package Name'] && receiverID) {
+      const expectedReceiverID = getExpectedReceiverID(eligibility['Package Name']);
+      if (expectedReceiverID && receiverID !== expectedReceiverID) {
+        status = 'invalid';
+        remarks.push(`Receiver ID "${receiverID}" does not match expected "${expectedReceiverID}" based on package "${eligibility['Package Name']}".`);
+      }
+    }
+
     return {
       claimID: claim.claimID,
       memberID: claim.memberID,
       packageName: claim.packageName,  // XML PackageName (used for validation)
+      payerID: claim.payerID || '',
+      receiverID: receiverID,
       encounterStart: formattedDate,
       clinician: eligibility?.['Clinician'] || '',
       xlsxPackageName: eligibility?.['Package Name'] || '',  // XLSX "Package Name" column (column AH)
@@ -632,6 +680,7 @@ async function parseXmlFile(file) {
     return {
       claimID: claim.querySelector("ID")?.textContent.trim() || '',
       memberID: claim.querySelector("MemberID")?.textContent.trim() || '',
+      payerID: claim.querySelector("PayerID")?.textContent.trim() || '',
       packageName: packageName,
       encounterStart: claim.querySelector("Encounter Start")?.textContent.trim(),
       clinicians: Array.from(claim.querySelectorAll("Clinician")).map(c => c.textContent.trim())
@@ -870,6 +919,7 @@ function buildResultsTable(results, eligMap) {
       ${!isXmlMode ? '<th style="padding:8px;border:1px solid #ccc">Package</th><th style="padding:8px;border:1px solid #ccc">Provider</th>' : ''}
       <th style="padding:8px;border:1px solid #ccc">Clinician</th>
       ${isXmlMode ? '<th style="padding:8px;border:1px solid #ccc">XML Package Name</th><th style="padding:8px;border:1px solid #ccc">XLSX Package Name</th>' : ''}
+      ${isXmlMode ? '<th style="padding:8px;border:1px solid #ccc">Receiver ID</th><th style="padding:8px;border:1px solid #ccc">Payer ID</th>' : ''}
       <th style="padding:8px;border:1px solid #ccc">Service Category</th>
       <th style="padding:8px;border:1px solid #ccc">Status</th>
       <th class="wrap-col" style="padding:8px;border:1px solid #ccc">Remarks</th>
@@ -930,6 +980,7 @@ function buildResultsTable(results, eligMap) {
       ${!isXmlMode ? `<td class="description-col" style="padding:6px;border:1px solid #ccc">${result.packageName}</td><td class="description-col" style="padding:6px;border:1px solid #ccc">${result.provider}</td>` : ''}
       <td class="description-col" style="padding:6px;border:1px solid #ccc">${result.clinician}</td>
       ${isXmlMode ? `<td class="description-col" style="padding:6px;border:1px solid #ccc">${result.packageName || ''}</td><td class="description-col" style="padding:6px;border:1px solid #ccc">${result.xlsxPackageName || ''}</td>` : ''}
+      ${isXmlMode ? `<td style="padding:6px;border:1px solid #ccc">${result.receiverID || ''}</td><td style="padding:6px;border:1px solid #ccc">${result.payerID || ''}</td>` : ''}
       <td class="description-col" style="padding:6px;border:1px solid #ccc">${result.serviceCategory}</td>
       <td class="description-col" style="padding:6px;border:1px solid #ccc">${statusBadge}</td>
       <td class="wrap-col" style="padding:6px;border:1px solid #ccc">${remarksHTML}</td>
@@ -1164,6 +1215,8 @@ function exportInvalidEntries(results) {
     'Member ID': entry.memberID,
     'XML Package Name': entry.packageName || '',  // XML <Contract><PackageName>
     'XLSX Package Name': entry.xlsxPackageName || '',  // XLSX "Package Name" column (AH)
+    'Receiver ID': entry.receiverID || '',
+    'Payer ID': entry.payerID || '',
     'Encounter Date': entry.encounterStart,
     'Provider': entry.provider || '',
     'Clinician': entry.clinician || '',

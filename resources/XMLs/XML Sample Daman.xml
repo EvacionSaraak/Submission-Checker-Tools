@@ -1,0 +1,65 @@
+<Claim.Submission>
+<Header>
+<SenderID>MF4706</SenderID>
+<ReceiverID>A001</ReceiverID>
+<TransactionDate>23/03/2026 16:29</TransactionDate>
+<RecordCount>1</RecordCount>
+<DispositionFlag>TEST</DispositionFlag>
+</Header>
+<Claim>
+<ID>LURTAC260308173</ID>
+<MemberID>43406146</MemberID>
+<PayerID>A001</PayerID>
+<ProviderID>MF4706</ProviderID>
+<EmiratesIDNumber>784-1982-2541635-7</EmiratesIDNumber>
+<Gross>840</Gross>
+<PatientShare>168</PatientShare>
+<Net>672</Net>
+<VAT>0</VAT>
+<Encounter>
+<FacilityID>MF4706</FacilityID>
+<Type>1</Type>
+<PatientID>TVIP00571154</PatientID>
+<Start>01/03/2026 21:47</Start>
+<End>01/03/2026 22:15</End>
+<StartType>1</StartType>
+<EndType>1</EndType>
+<TransferSource></TransferSource>
+<TransferDestination></TransferDestination>
+</Encounter>
+<Diagnosis>
+<Type>Principal</Type>
+<Code>K08.531</Code>
+</Diagnosis>
+<Diagnosis>
+<Type>Secondary</Type>
+<Code>K02.63</Code>
+</Diagnosis>
+<Diagnosis>
+<Type>Secondary</Type>
+<Code>K02.53</Code>
+</Diagnosis>
+<Diagnosis>
+<Type>Secondary</Type>
+<Code>Z98.818</Code>
+</Diagnosis>
+<Activity>
+<ID>ACT26548568</ID>
+<Start>01/03/2026 22:15</Start>
+<Type>6</Type>
+<Code>27201</Code>
+<Quantity>1</Quantity>
+<Net>672</Net>
+<OrderingClinician>GD44045</OrderingClinician>
+<Clinician>
+GD44045</Clinician>
+<PriorAuthorizationID>130517314</PriorAuthorizationID>
+<Observation>
+<Type>Universal Dental</Type>
+<Code>29</Code>
+<Value>29</Value>
+<ValueType>ToothNumber</ValueType>
+</Observation>
+</Activity>
+</Claim>
+</Claim.Submission>

@@ -7,9 +7,10 @@
 
 document.addEventListener('DOMContentLoaded', () => {
   try {
-    const runBtn = el('run-button'), dlBtn = el('download-button');
+    const runBtn = el('run-button'), dlBtn = el('export-invalids-button'), dlAllBtn = el('export-all-button');
     if (runBtn) runBtn.addEventListener('click', handleRun);
     if (dlBtn) dlBtn.addEventListener('click', handleDownload);
+    if (dlAllBtn) dlAllBtn.addEventListener('click', handleDownloadAll);
     resetUI();
   } catch (error) {
     console.error('[PRICING] DOMContentLoaded initialization error:', error);
@@ -31,40 +32,43 @@ async function handleRun() {
       xlsxFile = window.unifiedCheckerFiles.pricing;
       console.log('[PRICING] Using pricing file from unified cache:', xlsxFile.name);
     }
-    if (!xlsxFile) {
-      try {
-        const resp = await fetch('../resources/THIQA DENTAL PRICING.xlsx');
-        if (!resp.ok) throw new Error('Resource not available');
-        xlsxFile = resp;
-        console.log('[PRICING] Using default THIQA DENTAL PRICING resource');
-      } catch (e) {
-        console.warn('[PRICING] Failed to load default THIQA resource:', e);
-      }
-    }
 
-    if (!xmlFile || !xlsxFile) throw new Error(!xmlFile ? 'Please select an XML file.' : 'Please select an XML file and an XLSX file (the default THIQA Dental Pricing resource could not be loaded).');
+    if (!xmlFile) throw new Error('Please select an XML file.');
 
     showProgress(5, 'Reading files');
 
-    const [xmlText, xlsxObj, clinicianData, endoPricingRaw] = await Promise.all([
+    const [xmlText, dentalPricingRaw, clinicianData, endoPricingRaw] = await Promise.all([
       readFileText(xmlFile),
-      readXlsx(xlsxFile),
+      fetch('../json/dental_pricing.json').then(r => r.json()).catch(e => { console.warn('[PRICING] Failed to load dental_pricing.json:', e); return []; }),
       fetch('../json/clinician_licenses.json').then(r => r.json()).catch(() => []),
       fetch('../json/endo_pricing.json').then(r => r.json()).catch(() => [])
     ]);
-    showProgress(25, 'Parsing XML & XLSX');
+
+    if (!Array.isArray(dentalPricingRaw) || dentalPricingRaw.length === 0) {
+      throw new Error('Dental pricing data could not be loaded. Ensure dental_pricing.json is present in the json/ folder.');
+    }
+
+    // If an XLSX was manually uploaded, build an XLSX-based matcher for override pricing
+    let xlsxMatcher = null;
+    if (xlsxFile) {
+      const xlsxObj = await readXlsx(xlsxFile);
+      xlsxMatcher = buildPricingMatcher(xlsxObj.rows);
+      console.log('[PRICING] Using uploaded XLSX for pricing override');
+    }
+
+    showProgress(25, 'Parsing XML & pricing data');
 
     const xmlDoc = parseXml(xmlText);
 
-    // Only process files where ReceiverID in the XML Header is D001
+    // Only process files where ReceiverID is D001 (Thiqa) or A001 (Daman)
     const headerNode = xmlDoc.querySelector('Header');
     const receiverID = headerNode?.querySelector('ReceiverID')?.textContent.trim() || '';
     console.log(`[PRICING] ReceiverID: ${receiverID || '(MISSING)'}`);
-    if (receiverID !== 'D001') {
-      throw new Error(`Pricing checker only supports files with ReceiverID "D001". Found: "${receiverID || '(MISSING)'}"`);}
+    if (receiverID !== 'D001' && receiverID !== 'A001') {
+      throw new Error(`Pricing checker supports ReceiverID "D001" (Thiqa) or "A001" (Daman). Found: "${receiverID || '(MISSING)'}"`);}
 
     const extracted = extractPricingRecords(xmlDoc);
-    const matcher = buildPricingMatcher(xlsxObj.rows);
+    const jsonMatcher = buildJsonPricingMatcher(dentalPricingRaw);
 
     const clinicianSpecialtyMap = new Map();
     (Array.isArray(clinicianData) ? clinicianData : []).forEach(e => {
@@ -80,44 +84,97 @@ async function handleRun() {
 
     const output = extracted.map(rec => {
     const remarks = []; let status = 'Invalid';
-    const match = matcher.find(rec.CPT);
+    const facility = rec.FacilityID || '';
     const xmlNet = Number(rec.Net || 0), xmlQty = Number(rec.Quantity || 0);
-  
-    // Determine reference price based on Facility ID
+
+    // Determine reference price and the matched pricing row
     let refPrice = '';
-    if (match) {
-      const facility = rec.FacilityID || '';
-      refPrice = (facility === 'MF5357' || facility === 'MF7231' || facility === 'MF232') ?
-        match._secondaryPrice : match._primaryPrice;
+    let matchRow = null;
+
+    // Compute a human-readable context string for whichever pricing schedule applies.
+    // This initial value may be overridden by the endo-pricing block below (which runs
+    // after the regular match attempt) when the code falls under Endodontist Pricing.
+    // Every remark message ends with "under ${pricingContext}" so they share the same structure.
+    let pricingContext;
+    if (xlsxMatcher) {
+      // XLSX is a Thiqa-style manual override; use the same Thiqa labels so the source
+      // file format does not leak into user-facing messages.
+      const isAlyaharGroup = facility === 'MF5357' || facility === 'MF7231' || facility === 'MF232';
+      pricingContext = isAlyaharGroup ? 'Alyahar/Emirates/Al Wagan Thiqa Pricing' : 'Standard Thiqa Pricing';
+    } else if (receiverID === 'A001') {
+      const isDamanKhabisiAlyahar = facility === 'MF5020' || facility === 'MF5357';
+      pricingContext = isDamanKhabisiAlyahar ? 'Daman – Khabisi/Al Yahar pricing' : 'Daman – Standard pricing';
+    } else {
+      const isThiqaAlyaharGroup = facility === 'MF5357' || facility === 'MF7231' || facility === 'MF232';
+      pricingContext = isThiqaAlyaharGroup ? 'Alyahar/Emirates/Al Wagan Thiqa Pricing' : 'Standard Thiqa Pricing';
     }
 
-    // Override with endo pricing for applicable codes (only for dates on or after Feb 20, 2026)
-    const endoEntry = endoPricingMap.get(normalizeCode(rec.CPT));
+    if (xlsxMatcher) {
+      // Manual XLSX override: expects Thiqa-style two-column layout with
+      // "Other Facilities" (primary) and "Alyahar, Emirates, Al Wagan" (secondary) columns.
+      const xlsxMatch = xlsxMatcher.find(rec.CPT);
+      if (xlsxMatch) {
+        const isAlyaharGroup = facility === 'MF5357' || facility === 'MF7231' || facility === 'MF232';
+        refPrice = isAlyaharGroup ? xlsxMatch._secondaryPrice : xlsxMatch._primaryPrice;
+        matchRow = xlsxMatch;
+      }
+    } else {
+      // Default: JSON-based pricing, routed by ReceiverID and FacilityID
+      const jsonMatch = jsonMatcher.find(rec.CPT);
+      if (jsonMatch) {
+        if (receiverID === 'A001') {
+          // Daman: 2025 prices for Khabisi (MF5020) and Al Yahar (MF5357); default otherwise
+          const isDamanKhabisiAlyahar = facility === 'MF5020' || facility === 'MF5357';
+          refPrice = isDamanKhabisiAlyahar ? jsonMatch.daman_khabisi_alyahar : jsonMatch.daman_default;
+        } else {
+          // Thiqa (D001): Alyahar/Emirates/Al Wagan group gets thiqa_alyahar; others get thiqa_other
+          const isThiqaAlyaharGroup = facility === 'MF5357' || facility === 'MF7231' || facility === 'MF232';
+          refPrice = isThiqaAlyaharGroup ? jsonMatch.thiqa_alyahar : jsonMatch.thiqa_other;
+        }
+        matchRow = jsonMatch;
+      }
+    }
+
+    const match = matchRow; // kept for downstream 'no pricing match found' checks
+
+    // Override with endo pricing for applicable codes (only for Thiqa/D001, and only for dates on or after Feb 20, 2026)
+    const endoEntry = receiverID === 'D001' ? endoPricingMap.get(normalizeCode(rec.CPT)) : undefined;
+    let nonEndoEndoCase = false;
+    let nonEndoClinicianSpec = '';
     if (endoEntry) {
       const encounterDate = parseEncounterDate(rec.EncounterDate);
       const isAfterCutoff = encounterDate !== null && encounterDate >= ENDO_PRICING_CUTOFF;
       if (isAfterCutoff) {
-        const isEndo = clinicianSpecialtyMap.get(rec.ClinicianLic || '') === 'Endodontics';
+        const clinicianSpec = clinicianSpecialtyMap.get(rec.ClinicianLic || '') || '';
+        const isEndo = clinicianSpec === 'Endodontics';
         refPrice = isEndo ? endoEntry.endo_price : endoEntry.gp_price;
+        if (isEndo) {
+          pricingContext = 'Endodontist Pricing';
+        } else {
+          nonEndoEndoCase = true;
+          nonEndoClinicianSpec = clinicianSpec;
+        }
       }
     }
 
     const ref = Number(refPrice ?? NaN);
-  
+
     // Claimed net 0 -> Valid (changed from Unknown)
     if (xmlNet === 0) {
       status = 'Valid';
       remarks.push('Claimed Net is 0 (treated as Valid)');
     } else {
       if (xmlQty <= 0) remarks.push(xmlQty === 0 ? 'Quantity is 0 (invalid)' : 'Quantity is less than 0 (invalid)');
-      if (!match && !endoEntry) remarks.push('No pricing match found');
-      if (endoEntry && refPrice === null) remarks.push(`Code ${rec.CPT} is not available for GP clinicians`);
-      if ((match || endoEntry) && refPrice !== null && Number.isNaN(ref)) remarks.push('Reference Net Price is not a number');
+      if (!match && !endoEntry) remarks.push(`No pricing match was found under ${pricingContext}.`);
+      if (endoEntry && refPrice === null) remarks.push(`Code ${rec.CPT} has no available price under ${pricingContext}.`);
+      if ((match || endoEntry) && refPrice !== null && Number.isNaN(ref)) {
+        remarks.push(`The reference price is not a valid number under ${pricingContext}.`);
+      }
 
       const hasValidRef = (match || endoEntry) && refPrice !== null && !Number.isNaN(ref);
       if (hasValidRef && ref === 0) {
         status = 'Unknown';
-        remarks.push('Reference price is 0 (Unknown)');
+        remarks.push(`The reference price is 0 under ${pricingContext} (status Unknown).`);
       } else if (hasValidRef && xmlQty > 0) {
         if (xmlNet === ref) status = 'Valid';
         else if ((xmlNet / xmlQty) === ref) status = 'Valid';
@@ -125,7 +182,9 @@ async function handleRun() {
         // Special case for code 42702: allow if XML price is exactly double the reference
         // This code requires special handling where double the reference price is also valid
         else if (normalizeCode(rec.CPT) === '42702' && xmlNet === ref * 2) status = 'Valid';
-        else remarks.push(`Claimed Net ${xmlNet} does not match Reference ${ref}`);
+        else if (nonEndoEndoCase) {
+          remarks.push(`Pricing for ${rec.CPT} is ${ref} following ${pricingContext}. Endo Pricing cannot be used for ${nonEndoClinicianSpec}.`);
+        } else remarks.push(`Claimed Net ${xmlNet} does not match the reference price of ${ref} under ${pricingContext}.`);
       }
     }
   
@@ -136,11 +195,11 @@ async function handleRun() {
       ClaimedNet: rec.Net || '',
       ClaimedQty: rec.Quantity || '',
       ReferenceNetPrice: refPrice || '',
-      PricingRow: match || null,
+      PricingRow: matchRow || null,
       XmlRow: rec,
       isValid: status === 'Valid',
       status,
-      Remarks: remarks.join('; ')
+      Remarks: remarks.join(' ')
     };
   });
 
@@ -162,6 +221,14 @@ async function handleRun() {
 
 // ----------------- Download -----------------
 function handleDownload() {
+  if (!lastResults.length) { showError(new Error('Nothing to download')); return; }
+  const invalids = lastResults.filter(r => !r.isValid);
+  if (!invalids.length) { showError(new Error('No invalid rows to export')); return; }
+  try { XLSX.writeFile(makeWorkbookFromJson(invalids, 'checker_pricing_invalids'), 'checker_pricing_invalids.xlsx'); }
+  catch(err) { showError(err); }
+}
+
+function handleDownloadAll() {
   if (!lastWorkbook || !lastResults.length) { showError(new Error('Nothing to download')); return; }
   try { XLSX.writeFile(lastWorkbook, 'checker_pricing_results.xlsx'); }
   catch(err) { try { XLSX.writeFile(makeWorkbookFromJson(lastResults, 'checker_pricing_results'), 'checker_pricing_results.xlsx'); } catch(e) { showError(e); } }
@@ -263,6 +330,18 @@ function buildPricingMatcher(rows) {
   };
 }
 
+// ----------------- JSON-based pricing matcher (Thiqa + Daman) -----------------
+function buildJsonPricingMatcher(data) {
+  const index = new Map();
+  (Array.isArray(data) ? data : []).forEach(entry => {
+    const code = normalizeCode(entry.code);
+    if (code) index.set(code, entry);
+  });
+  return {
+    find(code) { return index.get(normalizeCode(code)) || null; }
+  };
+}
+
 // ----------------- Modified: renderResults (hide repeated Claim ID) -----------------
 function buildResultsTable(rows) {
   if (!rows || !rows.length) {
@@ -332,16 +411,16 @@ function showComparisonModal(index) {
     <tr><th>Net ÷ Qty</th><td>${escapeHtml(unitCalcText)}</td></tr>
   </table>`;
 
-  const xlsxTable = `<table class="compare-table">
-    <tr><th colspan="2">XLSX (Pricing)</th></tr>
-    <tr><th>Code</th><td>${escapeHtml(String(firstNonEmptyKey(xlsx, ['Code','CPT']) || ''))}</td></tr>
+  const pricingTable = `<table class="compare-table">
+    <tr><th colspan="2">Pricing Reference</th></tr>
+    <tr><th>Code</th><td>${escapeHtml(String(firstNonEmptyKey(xlsx, ['Code','CPT','code']) || ''))}</td></tr>
     <tr><th>Net Price</th><td>${escapeHtml(refPrice)}</td></tr>
   </table>`;
 
   const modalHtml = `<div class="modal-content pricing-modal modal-scrollable">
     <span class="close" onclick="closeComparisonModal()">&times;</span>
     <h3>Price Comparison</h3>
-    <div style="display:flex;gap:20px;align-items:flex-start;">${xmlTable}${xlsxTable}</div>
+    <div style="display:flex;gap:20px;align-items:flex-start;">${xmlTable}${pricingTable}</div>
     <div style="text-align:right;margin-top:10px;">
       <button class="details-btn" onclick="closeComparisonModal()">Close</button>
     </div>
@@ -374,7 +453,10 @@ function resetUI() {
   toggleDownload(false); message('', ''); showProgress(0, ''); lastResults = []; lastWorkbook = null;
 }
 
-function toggleDownload(enabled) { const dl = el('download-button'); if (!dl) return; dl.disabled = !enabled; }
+function toggleDownload(enabled) {
+  const dl = el('export-invalids-button'); if (dl) dl.disabled = !enabled;
+  const dlAll = el('export-all-button'); if (dlAll) dlAll.disabled = !enabled;
+}
 
 function showProgress(percent, text) {
   const barContainer = el('progress-bar-container'), bar = el('progress-bar'), pText = el('progress-text');

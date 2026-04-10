@@ -462,6 +462,10 @@ async function combineReportings(fileEntries) {
   const rawToSerialMap = {};
   const serialSet = new Set();
   const globalSeenClaimIDs = new Set();
+  // Track claims that were added with a null/zero total amount so a later file
+  // with a real price can replace the row (and supply the correct facility).
+  const globalNullPriceClaims = new Set();
+  const globalNullPriceRowIndex = new Map(); // claimID -> index in combinedRows
 
   for (let i = 0; i < fileEntries.length; i++) {
     const { name, buffer } = fileEntries[i];
@@ -569,8 +573,17 @@ async function combineReportings(fileEntries) {
         const codifStatus = (sourceRow['codificationstatus'] || '').toString().trim().toLowerCase();
         if (codifStatus === 'not seen') continue;
 
-        if (seenClaimIDs.has(claimID) || globalSeenClaimIDs.has(claimID)) continue;
-        seenClaimIDs.add(claimID); globalSeenClaimIDs.add(claimID);
+        if (seenClaimIDs.has(claimID)) continue;
+        seenClaimIDs.add(claimID);
+
+        // Skip if already locked globally with a non-null price.
+        if (globalSeenClaimIDs.has(claimID)) continue;
+
+        // If the claim was seen before with a null/zero price, we still allow
+        // this row to proceed so a non-null price occurrence can replace it.
+        // Note: both null/undefined and genuine zero amounts are treated identically
+        // as "null price" — a claim with a real price (> 0) from any file always wins.
+        const wasSeenWithNullPrice = globalNullPriceClaims.has(claimID);
 
         // Determine facilityID according to schemaType and preference for filename for Odoo
         let facilityID = '';
@@ -690,7 +703,30 @@ async function combineReportings(fileEntries) {
           targetRow.push(val);
         }
 
-        combinedRows.push(targetRow);
+        const totalAmt = claimAmountMap.get(claimID) || 0;
+        if (wasSeenWithNullPrice && totalAmt > 0) {
+          // A better (non-null price) row is available — replace the previous null-price row.
+          const prevIdx = globalNullPriceRowIndex.get(claimID);
+          if (typeof prevIdx === 'number' && prevIdx >= 0 && prevIdx < combinedRows.length) {
+            combinedRows[prevIdx] = targetRow;
+          }
+          globalNullPriceClaims.delete(claimID);
+          globalNullPriceRowIndex.delete(claimID);
+          globalSeenClaimIDs.add(claimID);
+          log(`Replaced null-price row for claim "${claimID}" with non-null price row from "${name}"`);
+        } else if (!wasSeenWithNullPrice) {
+          // First occurrence of this claim across all files.
+          const rowIndex = combinedRows.length;
+          combinedRows.push(targetRow);
+          if (totalAmt === 0) {
+            globalNullPriceClaims.add(claimID);
+            globalNullPriceRowIndex.set(claimID, rowIndex);
+          } else {
+            globalSeenClaimIDs.add(claimID);
+          }
+        }
+        // else: wasSeenWithNullPrice && totalAmt === 0 → this file also has null price;
+        //       keep the first null-price row and skip this duplicate.
 
       } catch (err) {
         log(`Fatal row error in file ${name}, row ${r + 1}: ${err.message}`, 'ERROR');
