@@ -136,8 +136,8 @@ async function handleRun() {
 
     const match = matchRow; // kept for downstream 'no pricing match found' checks
 
-    // Override with endo pricing for applicable codes (only for dates on or after Feb 20, 2026)
-    const endoEntry = endoPricingMap.get(normalizeCode(rec.CPT));
+    // Override with endo pricing for applicable codes (only for Thiqa/D001, and only for dates on or after Feb 20, 2026)
+    const endoEntry = receiverID === 'D001' ? endoPricingMap.get(normalizeCode(rec.CPT)) : undefined;
     let nonEndoEndoCase = false;
     let nonEndoClinicianSpec = '';
     if (endoEntry) {
