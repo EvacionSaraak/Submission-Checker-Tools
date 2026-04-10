@@ -1339,6 +1339,44 @@
     console.log('[FILTER] Filter applied to', tables.length, 'tables');
   }
 
+  /**
+   * Clone a table and fill any blank "Claim ID" cells by propagating the last
+   * non-empty value downward.  The original DOM table is never mutated.
+   * @param {HTMLTableElement} table
+   * @returns {HTMLTableElement}
+   */
+  function fillClaimIdColumn(table) {
+    const clone = table.cloneNode(true);
+
+    // Locate the "Claim ID" column index from the header row
+    let claimIdColIndex = -1;
+    const headerRow = clone.querySelector('thead tr');
+    if (headerRow) {
+      headerRow.querySelectorAll('th').forEach((th, idx) => {
+        if (th.textContent.trim() === 'Claim ID') claimIdColIndex = idx;
+      });
+    }
+
+    if (claimIdColIndex === -1) return clone; // no Claim ID column – nothing to do
+
+    // Walk body rows and propagate the last seen Claim ID into blank cells
+    let lastClaimId = '';
+    clone.querySelectorAll('tbody tr').forEach(row => {
+      const cells = row.querySelectorAll('td');
+      if (claimIdColIndex < cells.length) {
+        const cell = cells[claimIdColIndex];
+        const value = cell.textContent.trim();
+        if (value) {
+          lastClaimId = value;
+        } else if (lastClaimId) {
+          cell.textContent = lastClaimId;
+        }
+      }
+    });
+
+    return clone;
+  }
+
   function exportResults() {
     // Check if this is a Check All export
     if (activeChecker === 'check-all' && window._checkAllResults && window._checkAllResults.length > 0) {
@@ -1347,7 +1385,7 @@
       const wb = XLSX.utils.book_new();
       
       window._checkAllResults.forEach((result, index) => {
-        const ws = XLSX.utils.table_to_sheet(result.table);
+        const ws = XLSX.utils.table_to_sheet(fillClaimIdColumn(result.table));
         // Limit sheet name to 31 characters (Excel limit)
         const sheetName = result.checkerName.substring(0, 31);
         XLSX.utils.book_append_sheet(wb, ws, sheetName);
@@ -1374,7 +1412,7 @@
 
     const wb = XLSX.utils.book_new();
     tables.forEach((table, index) => {
-      const ws = XLSX.utils.table_to_sheet(table);
+      const ws = XLSX.utils.table_to_sheet(fillClaimIdColumn(table));
       const sheetName = activeChecker ? activeChecker.substring(0, 31) : `Sheet${index + 1}`;
       XLSX.utils.book_append_sheet(wb, ws, sheetName);
     });
