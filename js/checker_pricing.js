@@ -7,9 +7,10 @@
 
 document.addEventListener('DOMContentLoaded', () => {
   try {
-    const runBtn = el('run-button'), dlBtn = el('download-button');
+    const runBtn = el('run-button'), dlBtn = el('download-button'), dlAllBtn = el('export-all-button');
     if (runBtn) runBtn.addEventListener('click', handleRun);
     if (dlBtn) dlBtn.addEventListener('click', handleDownload);
+    if (dlAllBtn) dlAllBtn.addEventListener('click', handleDownloadAll);
     resetUI();
   } catch (error) {
     console.error('[PRICING] DOMContentLoaded initialization error:', error);
@@ -220,6 +221,14 @@ async function handleRun() {
 
 // ----------------- Download -----------------
 function handleDownload() {
+  if (!lastResults.length) { showError(new Error('Nothing to download')); return; }
+  const invalids = lastResults.filter(r => !r.isValid);
+  if (!invalids.length) { showError(new Error('No invalid rows to export')); return; }
+  try { XLSX.writeFile(makeWorkbookFromJson(invalids, 'checker_pricing_invalids'), 'checker_pricing_invalids.xlsx'); }
+  catch(err) { showError(err); }
+}
+
+function handleDownloadAll() {
   if (!lastWorkbook || !lastResults.length) { showError(new Error('Nothing to download')); return; }
   try { XLSX.writeFile(lastWorkbook, 'checker_pricing_results.xlsx'); }
   catch(err) { try { XLSX.writeFile(makeWorkbookFromJson(lastResults, 'checker_pricing_results'), 'checker_pricing_results.xlsx'); } catch(e) { showError(e); } }
@@ -444,7 +453,10 @@ function resetUI() {
   toggleDownload(false); message('', ''); showProgress(0, ''); lastResults = []; lastWorkbook = null;
 }
 
-function toggleDownload(enabled) { const dl = el('download-button'); if (!dl) return; dl.disabled = !enabled; }
+function toggleDownload(enabled) {
+  const dl = el('download-button'); if (dl) dl.disabled = !enabled;
+  const dlAll = el('export-all-button'); if (dlAll) dlAll.disabled = !enabled;
+}
 
 function showProgress(percent, text) {
   const barContainer = el('progress-bar-container'), bar = el('progress-bar'), pText = el('progress-text');
