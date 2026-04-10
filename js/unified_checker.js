@@ -347,11 +347,9 @@
     invalidRowsData = [];
     if (elements.exportInvalidsBtn) {
       elements.exportInvalidsBtn.disabled = true;
-      updateExportInvalidsTooltip('no-tables');
     }
     if (elements.exportAllBtn) {
       elements.exportAllBtn.disabled = true;
-      updateExportAllTooltip('no-tables');
     }
     if (elements.debugLogContainer) {
       elements.debugLogContainer.style.display = 'none';
@@ -512,7 +510,6 @@
           if (elements.exportInvalidsBtn) {
             elements.exportInvalidsBtn.disabled = false;
             console.log(`[CHECKER] Export Invalids button enabled (${invalidRows.length} invalid rows)`);
-            updateExportInvalidsTooltip(); // Remove tooltip when enabled
           }
         } else {
           // No invalids found, disable button
@@ -520,7 +517,6 @@
           if (elements.exportInvalidsBtn) {
             elements.exportInvalidsBtn.disabled = true;
             console.log(`[CHECKER] Export Invalids button disabled (no invalid rows)`);
-            updateExportInvalidsTooltip('no-errors'); // Set tooltip explaining no errors found
           }
         }
       }
@@ -534,7 +530,6 @@
       }
       if (elements.exportAllBtn) {
         elements.exportAllBtn.disabled = false;
-        updateExportAllTooltip();
       }
       console.log(`[DEBUG] ${checkerName} checker completed successfully`);
 
@@ -902,13 +897,11 @@
     // Disable Export Invalids button initially
     if (elements.exportInvalidsBtn) {
       elements.exportInvalidsBtn.disabled = true;
-      updateExportInvalidsTooltip('no-tables'); // Set initial tooltip
     }
     
     // Disable Export All button initially
     if (elements.exportAllBtn) {
       elements.exportAllBtn.disabled = true;
-      updateExportAllTooltip('no-tables');
     }
     
     // Hide debug log button initially
@@ -1227,7 +1220,6 @@
     // Enable Export All button if we have results
     if (successCount > 0 && elements.exportAllBtn) {
       elements.exportAllBtn.disabled = false;
-      updateExportAllTooltip();
       logDebug('Export All Button Enabled', { resultsCount: successCount });
     }
     
@@ -1236,29 +1228,9 @@
       elements.exportInvalidsBtn.disabled = false;
       console.log(`[CHECK-ALL] Export Invalids button enabled (${invalidRowsData.length} invalid rows from ${successCount} checkers)`);
       logDebug('Export Invalids Button Enabled', { invalidRowsCount: invalidRowsData.length });
-      updateExportInvalidsTooltip(); // Remove tooltip when enabled
     } else if (elements.exportInvalidsBtn) {
       elements.exportInvalidsBtn.disabled = true;
       console.log(`[CHECK-ALL] Export Invalids button disabled (no invalid rows found)`);
-      
-      // Determine appropriate tooltip reason
-      // Check if ANY tables were generated (even if there were some errors)
-      const anyTablesGenerated = successCount > 0 || totalRun > errorCount;
-      let tooltipReason;
-      
-      if (!anyTablesGenerated) {
-        // No tables generated at all
-        if (errorCount > 0) {
-          tooltipReason = 'error'; // Fatal errors prevented all tables
-        } else {
-          tooltipReason = 'no-tables'; // No checkers ran
-        }
-      } else {
-        // Tables were generated, but no invalids found
-        tooltipReason = 'no-errors';
-      }
-      
-      updateExportInvalidsTooltip(tooltipReason);
     }
     
     // Store results globally for export
@@ -1302,106 +1274,6 @@
     // Always hide loading overlay on error
     hideLoadingOverlay();
   }
-  }
-
-  function updateExportInvalidsTooltip(reason = null) {
-    const bubble = document.getElementById('exportInvalidsBubble');
-    const bubbleText = document.getElementById('exportInvalidsBubbleText');
-    
-    if (!bubble || !bubbleText) {
-      return;
-    }
-    
-    // If button is enabled, hide speech bubble
-    if (elements.exportInvalidsBtn && !elements.exportInvalidsBtn.disabled) {
-      bubble.style.display = 'none';
-      return;
-    }
-    
-    // Button is disabled, show speech bubble with appropriate message
-    let tooltipMessage = '';
-    
-    if (reason === 'no-tables') {
-      tooltipMessage = 'No tables generated. Please run a checker first.';
-    } else if (reason === 'no-errors') {
-      // Get list of checkers that ran successfully but had no errors
-      const checkersWithoutErrors = [];
-      const checkersWithErrors = [];
-      
-      // Check which checkers have tables and categorize them
-      const allContainers = document.querySelectorAll('[id^="checker-container-"]');
-      allContainers.forEach(container => {
-        const tables = container.querySelectorAll('table');
-        if (tables.length > 0) {
-          const invalidRows = container.querySelectorAll('tr.table-danger, tr.table-warning, tr.invalid, tr.unknown');
-          const checkerMatch = container.id.match(/checker-container-(.+)/);
-          if (checkerMatch) {
-            const name = checkerMatch[1].toUpperCase();
-            // Exclude CHECK-ALL from the list (it's a meta-container, not a real checker)
-            if (name !== 'CHECK-ALL') {
-              if (invalidRows.length > 0) {
-                checkersWithErrors.push(name);
-              } else {
-                checkersWithoutErrors.push(name);
-              }
-            }
-          }
-        }
-      });
-      
-      // If there are checkers with errors, show them
-      if (checkersWithErrors.length > 0) {
-        // Format the list with proper grammar: "x, y, and z"
-        let checkerList = '';
-        if (checkersWithErrors.length === 1) {
-          checkerList = checkersWithErrors[0];
-        } else if (checkersWithErrors.length === 2) {
-          checkerList = checkersWithErrors.join(' and ');
-        } else {
-          const lastChecker = checkersWithErrors.pop();
-          checkerList = checkersWithErrors.join(', ') + ', and ' + lastChecker;
-        }
-        tooltipMessage = `Errors found in ${checkerList} checker${checkersWithErrors.length > 1 ? 's' : ''}`;
-      } else if (checkersWithoutErrors.length > 0) {
-        tooltipMessage = `No errors found in all checkers`;
-      } else {
-        tooltipMessage = 'No invalid entries found. Please run a checker first.';
-      }
-    } else if (reason === 'error') {
-      tooltipMessage = 'Error occurred during checker execution. Please download debug log for more details.';
-    } else {
-      tooltipMessage = 'No invalid entries found. Please run a checker first.';
-    }
-    
-    // Update speech bubble text and make sure it's visible
-    bubbleText.textContent = tooltipMessage;
-    bubble.style.display = 'block';
-  }
-
-  function updateExportAllTooltip(reason = null) {
-    const bubble = document.getElementById('exportAllBubble');
-    const bubbleText = document.getElementById('exportAllBubbleText');
-    
-    if (!bubble || !bubbleText) {
-      return;
-    }
-    
-    // If button is enabled, hide speech bubble
-    if (elements.exportAllBtn && !elements.exportAllBtn.disabled) {
-      bubble.style.display = 'none';
-      return;
-    }
-    
-    // Button is disabled, show speech bubble with appropriate message
-    let tooltipMessage = '';
-    if (reason === 'error') {
-      tooltipMessage = 'Error occurred during checker execution. Please download debug log for more details.';
-    } else {
-      tooltipMessage = 'No results yet. Please run a checker first.';
-    }
-    
-    bubbleText.textContent = tooltipMessage;
-    bubble.style.display = 'block';
   }
 
   function applyFilter() {
