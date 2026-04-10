@@ -1385,179 +1385,116 @@
   }
   
   /**
-   * Export only invalid rows to Excel with unified headers
-   * Redesigned to scan all tables and create unified export
+   * Export only invalid rows to Excel with one sheet per checker (matching Export All style).
+   * The Claim ID (first) column is guaranteed to be non-empty in every exported row.
    */
   function exportInvalids() {
-    console.log('[EXPORT-INVALIDS] Starting unified export of invalid rows...');
-    
-    // Step 1: Collect all tables from all containers
-    const allTables = [];
-    
-    // Scan all checker containers
+    console.log('[EXPORT-INVALIDS] Starting per-checker sheet export of invalid rows...');
+
+    const columnsToRemove = new Set(['View Full Entry', 'Valid']);
+
+    // Group tables by resolved checker name
+    const checkerTablesMap = new Map();
     const checkerContainers = document.querySelectorAll('[id^="checker-container-"]');
     checkerContainers.forEach(container => {
       const tables = container.querySelectorAll('table');
       tables.forEach(table => {
-        // Extract checker name - prioritize from parent section, fallback to container ID
         let checkerName = container.id.replace('checker-container-', '');
-        
-        // If in check-all container, find the actual checker from parent section
+
+        // If in check-all container, resolve the actual checker from its section
         if (checkerName === 'check-all') {
           const parentSection = table.closest('[id$="-section"]');
           if (parentSection) {
             checkerName = parentSection.id.replace('-section', '');
+          } else {
+            return; // skip unresolvable tables in check-all container
           }
         }
-        
-        allTables.push({ table, checkerName });
-      });
-    });
-    
-    console.log(`[EXPORT-INVALIDS] Found ${allTables.length} table(s) across all containers`);
-    
-    if (allTables.length === 0) {
-      alert('No tables found. Please run a checker or Check All first.');
-      return;
-    }
-    
-    // Step 2: Extract and merge headers from all tables
-    const allHeadersSet = new Set();
-    const tableHeadersMap = new Map(); // Store headers for each table
-    
-    allTables.forEach(({ table, checkerName }) => {
-      const headers = [];
-      table.querySelectorAll('thead th').forEach(th => {
-        const headerText = th.textContent.trim();
-        if (headerText) {
-          headers.push(headerText);
-          allHeadersSet.add(headerText);
+
+        if (!checkerTablesMap.has(checkerName)) {
+          checkerTablesMap.set(checkerName, []);
         }
+        checkerTablesMap.get(checkerName).push(table);
       });
-      tableHeadersMap.set(table, { headers, checkerName });
-      console.log(`[EXPORT-INVALIDS] Extracted ${headers.length} header(s) from ${checkerName} table`);
     });
-    
-    // Remove unwanted columns and merge similar ones
-    const columnsToRemove = ['View Full Entry', 'Valid'];
-    columnsToRemove.forEach(col => allHeadersSet.delete(col));
-    
-    // Handle Remark/Remarks merge - keep only "Remarks"
-    if (allHeadersSet.has('Remark') || allHeadersSet.has('Remarks')) {
-      allHeadersSet.delete('Remark');
-      allHeadersSet.add('Remarks');
-    }
-    
-    // Convert Set to sorted Array for consistent column order
-    const unifiedHeaders = Array.from(allHeadersSet).sort();
-    console.log(`[EXPORT-INVALIDS] Unified headers (${unifiedHeaders.length} total):`, unifiedHeaders);
-    
-    // Step 3: Collect invalid rows from all tables
-    const invalidRows = [];
-    let totalInvalidCount = 0;
-    
-    allTables.forEach(({ table, checkerName }) => {
-      const tableInfo = tableHeadersMap.get(table);
-      const tableHeaders = tableInfo.headers;
-      
-      // Find all invalid rows
-      const invalidRowElements = table.querySelectorAll('tbody tr.table-danger, tbody tr.table-warning, tbody tr.invalid, tbody tr.unknown');
-      
-      if (invalidRowElements.length > 0) {
-        console.log(`[EXPORT-INVALIDS] Found ${invalidRowElements.length} invalid row(s) in ${checkerName}`);
-        totalInvalidCount += invalidRowElements.length;
-        
+
+    const wb = XLSX.utils.book_new();
+    let totalInvalidRows = 0;
+
+    checkerTablesMap.forEach((tables, checkerName) => {
+      const sheetRows = [];
+      let sheetHeaders = null;
+
+      tables.forEach(table => {
+        // Extract raw column headers
+        const rawHeaders = [];
+        table.querySelectorAll('thead th').forEach(th => {
+          rawHeaders.push(th.textContent.trim());
+        });
+
+        // Compute display headers: remove unwanted columns, normalise Remark -> Remarks
+        const displayHeaders = rawHeaders
+          .filter(h => !columnsToRemove.has(h))
+          .map(h => (h === 'Remark' ? 'Remarks' : h));
+
+        if (!sheetHeaders) sheetHeaders = displayHeaders;
+
+        // Collect only invalid rows
+        const invalidRowElements = table.querySelectorAll(
+          'tbody tr.table-danger, tbody tr.table-warning, tbody tr.invalid, tbody tr.unknown'
+        );
+
         invalidRowElements.forEach(rowElement => {
           const cells = [];
           rowElement.querySelectorAll('td').forEach(td => {
             cells.push(td.textContent.trim());
           });
-          
-          // Extract Claim ID from data attribute first, fallback to first cell
-          let claimId = rowElement.getAttribute('data-claim-id');
-          
-          if (!claimId || claimId === '') {
-            // Fallback to first cell if data attribute not present
-            claimId = cells.length > 0 ? cells[0] : 'Unknown';
+
+          // Resolve Claim ID: prefer data attribute, fall back to first cell
+          let claimId = rowElement.getAttribute('data-claim-id') || '';
+          if (!claimId && cells.length > 0) {
+            claimId = cells[0];
           }
-          
-          // Ensure first cell has the Claim ID for export consistency
-          if (cells.length > 0 && (!cells[0] || cells[0] === '')) {
-            cells[0] = claimId;
-          }
-          
-          invalidRows.push({
-            checkerName,
-            claimId,
-            cells,
-            originalHeaders: tableHeaders
+
+          const rowObj = {};
+          let isFirstKeptColumn = true;
+
+          rawHeaders.forEach((rawHeader, idx) => {
+            if (columnsToRemove.has(rawHeader)) return;
+
+            const displayHeader = rawHeader === 'Remark' ? 'Remarks' : rawHeader;
+            let value = idx < cells.length ? cells[idx] : '';
+
+            // Guarantee the first kept column (Claim ID) is never empty
+            if (isFirstKeptColumn && !value) {
+              value = claimId;
+            }
+            isFirstKeptColumn = false;
+
+            rowObj[displayHeader] = value;
           });
+
+          sheetRows.push(rowObj);
+          totalInvalidRows++;
         });
+      });
+
+      if (sheetRows.length > 0 && sheetHeaders) {
+        const ws = XLSX.utils.json_to_sheet(sheetRows, { header: sheetHeaders });
+        const sheetName = checkerName.toUpperCase().substring(0, 31);
+        XLSX.utils.book_append_sheet(wb, ws, sheetName);
+        console.log(`[EXPORT-INVALIDS] Added sheet "${sheetName}" with ${sheetRows.length} row(s)`);
       }
     });
-    
-    console.log(`[EXPORT-INVALIDS] Total invalid rows collected: ${totalInvalidCount}`);
-    
-    if (invalidRows.length === 0) {
+
+    if (totalInvalidRows === 0) {
       alert('No invalid entries found in any tables.');
       return;
     }
-    
-    // Step 4: Map rows to unified headers
-    const exportData = [];
-    
-    invalidRows.forEach(row => {
-      const rowObj = {};
-      
-      // Add Checker Source as first column
-      rowObj['Checker Source'] = row.checkerName.toUpperCase();
-      
-      // Map each cell to its header
-      unifiedHeaders.forEach(header => {
-        let headerIndex = row.originalHeaders.indexOf(header);
-        let value = '';
-        
-        // Handle merged Remark/Remarks columns
-        if (header === 'Remarks') {
-          const remarksIndex = row.originalHeaders.indexOf('Remarks');
-          const remarkIndex = row.originalHeaders.indexOf('Remark');
-          
-          // Prioritize 'Remarks' if not blank, otherwise use 'Remark'
-          if (remarksIndex >= 0 && remarksIndex < row.cells.length) {
-            value = row.cells[remarksIndex];
-          }
-          if ((!value || value === '') && remarkIndex >= 0 && remarkIndex < row.cells.length) {
-            value = row.cells[remarkIndex];
-          }
-        } else {
-          // Normal header mapping, skip removed columns
-          if (headerIndex >= 0 && headerIndex < row.cells.length) {
-            value = row.cells[headerIndex];
-          }
-        }
-        
-        rowObj[header] = value;
-      });
-      
-      exportData.push(rowObj);
-    });
-    
-    console.log(`[EXPORT-INVALIDS] Export data prepared: ${exportData.length} row(s)`);
-    
-    // Step 5: Export to Excel
-    const wb = XLSX.utils.book_new();
-    
-    // Ensure 'Checker Source' is the first column, followed by sorted unified headers
-    const finalHeaders = ['Checker Source', ...unifiedHeaders];
-    const ws = XLSX.utils.json_to_sheet(exportData, { header: finalHeaders });
-    
-    XLSX.utils.book_append_sheet(wb, ws, 'Invalid Entries');
-    
+
     const filename = `invalid_entries_${new Date().toISOString().slice(0, 10)}.xlsx`;
     XLSX.writeFile(wb, filename);
-    
-    console.log('[EXPORT-INVALIDS] ✓ Invalid entries export complete:', filename);
-    console.log(`[EXPORT-INVALIDS] Exported ${exportData.length} invalid row(s) with ${finalHeaders.length} column(s)`);
+    console.log(`[EXPORT-INVALIDS] ✓ Export complete: ${filename} (${totalInvalidRows} invalid rows)`);
   }
 
   /**
