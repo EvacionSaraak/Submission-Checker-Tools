@@ -7,7 +7,7 @@
 
 document.addEventListener('DOMContentLoaded', () => {
   try {
-    const runBtn = el('run-button'), dlBtn = el('download-button'), dlAllBtn = el('export-all-button');
+    const runBtn = el('run-button'), dlBtn = el('export-invalids-button'), dlAllBtn = el('export-all-button');
     if (runBtn) runBtn.addEventListener('click', handleRun);
     if (dlBtn) dlBtn.addEventListener('click', handleDownload);
     if (dlAllBtn) dlAllBtn.addEventListener('click', handleDownloadAll);
@@ -454,7 +454,7 @@ function resetUI() {
 }
 
 function toggleDownload(enabled) {
-  const dl = el('download-button'); if (dl) dl.disabled = !enabled;
+  const dl = el('export-invalids-button'); if (dl) dl.disabled = !enabled;
   const dlAll = el('export-all-button'); if (dlAll) dlAll.disabled = !enabled;
 }
 
