@@ -493,6 +493,7 @@ function buildResultsTable(results) {
       <th style="padding:8px;border:1px solid #ccc">Member ID</th>
       <th style="padding:8px;border:1px solid #ccc">Activity ID</th>
       <th style="padding:8px;border:1px solid #ccc">Code</th>
+      <th style="padding:8px;border:1px solid #ccc">Qty</th>
       <th style="padding:8px;border:1px solid #ccc">Auth ID</th>
       <th class="description-col" style="padding:8px;border:1px solid #ccc">Description</th>
       <th style="padding:8px;border:1px solid #ccc">Net Total</th>
@@ -598,6 +599,14 @@ function renderRow(r, lastClaimId, idx, codeGroup) {
     td.style.border = "1px solid #ccc";
     tr.appendChild(td);
   });
+
+  // Qty
+  const qtyTd = document.createElement("td");
+  qtyTd.textContent = r.qty || "";
+  qtyTd.className = "nowrap-col";
+  qtyTd.style.padding = "6px";
+  qtyTd.style.border = "1px solid #ccc";
+  tr.appendChild(qtyTd);
 
   // Auth ID (always visible)
   const authTd = document.createElement("td");
@@ -848,7 +857,7 @@ function postProcessResults(results) {
     btn.addEventListener("click", () => {
       // Build array of objects matching your table headers
       const headers = [
-        "Claim ID","Member ID","Activity ID","Code","Description","Net Total",
+        "Claim ID","Member ID","Activity ID","Code","Qty","Description","Net Total",
         "Payer Share","Ordering Clinician","Auth ID","Start Date",
         "Ordered On","Status","Denial Code","Denial Reason","Remarks"
       ];
@@ -860,6 +869,7 @@ function postProcessResults(results) {
           "Member ID": r.memberId,
           "Activity ID": r.id,
           "Code": r.code,
+          "Qty": r.qty || "",
           "Description": r.description,
           "Net Total": r.netTotal,
           "Payer Share": x["Payer Share"] || "",
