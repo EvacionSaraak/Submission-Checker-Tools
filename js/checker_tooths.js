@@ -204,6 +204,15 @@ function hasSubcodeObservation(obsList) {
   });
 }
 
+// Returns true if a Subcode observation exists but has value "01" without the required trailing space
+function hasSubcodeObservationMissingSpace(obsList) {
+  return Array.from(obsList).some(obs => {
+    const code = (obs.querySelector('Code')?.textContent || '').trim().toUpperCase();
+    const value = obs.querySelector('Value')?.textContent || '';
+    return code === 'SUBCODE' && value === '01';
+  });
+}
+
 // Special code utilities
 function isSpecialMedicalCode(code) {
   return SPECIAL_MEDICAL_CODES.some(item => item.code === code);
@@ -648,7 +657,11 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
 
           if (isEndodontist && !hasSubcode) {
             // ERROR: Endodontist but missing required Subcode observation
-            row.remarks.push(`Code ${code} requires a Subcode observation (Type: Text, Code: Subcode, Value: "01 ") when performed by an Endodontist.`);
+            if (hasSubcodeObservationMissingSpace(obsList)) {
+              row.remarks.push(`Subcode is missing space.`);
+            } else {
+              row.remarks.push(`Code ${code} requires a Subcode observation (Type: Text, Code: Subcode, Value: "01 ") when performed by an Endodontist.`);
+            }
           }
         }
       }
