@@ -116,6 +116,16 @@ function normalizeToothCode(code) {
   return code?.toString().trim().toUpperCase() || '';
 }
 
+// Supernumerary teeth are represented as a regular tooth number + 50 (e.g., tooth 79 = supernumerary of tooth 29).
+// Resolve to the base tooth for comparisons; display always uses the original supernumerary number.
+function resolveSupernumeraryTooth(tooth) {
+  const num = parseInt(tooth, 10);
+  if (!isNaN(num) && num >= 51) {
+    return (num - 50).toString();
+  }
+  return tooth;
+}
+
 function buildAuthMap(authData) {
   const map = {};
   authData.forEach(entry => {
@@ -141,14 +151,15 @@ function getTeethSet(region) {
 }
 
 function getRegionName(tooth) {
-  if (ANTERIOR_TEETH.has(tooth))  return 'Anterior';
-  if (BICUSPID_TEETH.has(tooth))  return 'Bicuspid';
-  if (POSTERIOR_TEETH.has(tooth)) return 'Posterior';
+  const t = resolveSupernumeraryTooth(tooth);
+  if (ANTERIOR_TEETH.has(t))  return 'Anterior';
+  if (BICUSPID_TEETH.has(t))  return 'Bicuspid';
+  if (POSTERIOR_TEETH.has(t)) return 'Posterior';
   return 'Unknown';
 }
 
 function getQuadrant(tooth) {
-  const t = normalizeToothCode(tooth);
+  const t = resolveSupernumeraryTooth(normalizeToothCode(tooth));
   for (const [quadrant, set] of Object.entries(QUADRANT_MAP)) {
     if (set.has(t)) return quadrant;
   }
@@ -156,7 +167,7 @@ function getQuadrant(tooth) {
 }
 
 function getSextant(tooth) {
-  const t = normalizeToothCode(tooth);
+  const t = resolveSupernumeraryTooth(normalizeToothCode(tooth));
   for (const [sextant, set] of Object.entries(SEXTANT_MAP)) {
     if (set.has(t)) return sextant;
   }
@@ -288,7 +299,7 @@ function handleSpecialMedicalCode({claimId, activityId, type, code, obsCodes, ob
     ).join('<br>');
 
     const nonPDFObs = obsCodes.filter(oc => !isDrugPatientShareOrPDF(oc));
-    const toothCodesUsed = nonPDFObs.filter(oc => ALL_TEETH.has(oc));
+    const toothCodesUsed = nonPDFObs.filter(oc => ALL_TEETH.has(resolveSupernumeraryTooth(oc)));
     if (toothCodesUsed.length > 0) {
       remarks.push(`${code} cannot be used with tooth codes: ${toothCodesUsed.join(", ")}`);
     }
@@ -408,7 +419,7 @@ function validateKnownCode({
       if (obsCode === 'SUBCODE') {
         return `Subcode observation`;
       }
-      if (!meta.teethSet.has(obsCode)) {
+      if (!meta.teethSet.has(resolveSupernumeraryTooth(obsCode))) {
         const toothType = getRegionName(obsCode);
         if (!invalidTeethByType[toothType]) invalidTeethByType[toothType] = [];
         invalidTeethByType[toothType].push(obsCode);
