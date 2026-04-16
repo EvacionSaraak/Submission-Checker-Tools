@@ -45,12 +45,18 @@ function normalizePackageName(packageName) {
 }
 
 /**
- * Package codes that indicate the ReceiverID cannot be determined from the package name alone.
- * Packages containing any of these codes (EN, CN, GN, RN, SR, WN, VN) as standalone tokens
- * represent international/group plan variants where the receiver is ambiguous.
- * A mismatch should be treated as "unknown" (not "invalid") in this case.
+ * NAS network codes that appear as standalone tokens in package names.
+ * These codes represent the network/benefit tier used by NAS (National Health Insurance Company):
+ *   EN = Emergency Network, CN = Comprehensive Network, GN = General Network,
+ *   RN = Restricted Network, SR = Special Rate, WN = Wide Network, VN = Value Network.
+ * When a NAS receiver ID is in use and the package contains one of these codes,
+ * a ReceiverID mismatch is treated as "unknown" (not "invalid") because the
+ * network code makes the expected receiver ambiguous.
+ * Thiqa (D001) and Daman (A001 / D004) receivers are NOT exempt — mismatches
+ * for those insurers are always invalid regardless of network codes.
  */
-const UNKNOWN_RECEIVER_PACKAGE_PATTERN = /\b(EN|CN|GN|RN|SR|WN|VN)\b/;
+const NAS_RECEIVER_IDS = new Set(['C001']);
+const NAS_NETWORK_CODE_PATTERN = /\b(EN|CN|GN|RN|SR|WN|VN)\b/;
 
 /**
  * Return the expected ReceiverID based on an XLSX package name, or null if undetermined.
@@ -59,9 +65,6 @@ const UNKNOWN_RECEIVER_PACKAGE_PATTERN = /\b(EN|CN|GN|RN|SR|WN|VN)\b/;
  */
 function getExpectedReceiverID(packageName) {
   if (!packageName) return null;
-  // Packages containing international/group plan codes (EN, CN, GN, RN, SR, WN, VN) cannot be
-  // mapped to a specific ReceiverID — treat as unknown (no mismatch error).
-  if (UNKNOWN_RECEIVER_PACKAGE_PATTERN.test(packageName)) return null;
   const pkg = packageName.toLowerCase();
   if (pkg.includes('thiqa')) return 'D001';
   if (pkg.includes('basic')) return 'D004';
@@ -480,10 +483,20 @@ function validateXmlClaims(xmlClaims, eligMap, receiverID = '') {
 
     // Independent check: ReceiverID must match the expected value for the XLSX package type
     if (eligibility?.['Package Name'] && receiverID) {
-      const expectedReceiverID = getExpectedReceiverID(eligibility['Package Name']);
+      const xlsxPackage = eligibility['Package Name'];
+      const expectedReceiverID = getExpectedReceiverID(xlsxPackage);
       if (expectedReceiverID && receiverID !== expectedReceiverID) {
-        status = 'invalid';
-        remarks.push(`Receiver ID "${receiverID}" does not match expected "${expectedReceiverID}" based on package "${eligibility['Package Name']}".`);
+        // For NAS receiver IDs: if the package contains a NAS network code (EN, CN, GN, RN, SR,
+        // WN, VN) the expected receiver is ambiguous — treat the mismatch as unknown, not invalid.
+        // Thiqa (D001) and Daman (A001 / D004) receivers are never exempt from this check.
+        if (NAS_RECEIVER_IDS.has(receiverID) && NAS_NETWORK_CODE_PATTERN.test(xlsxPackage)) {
+          // Don't downgrade an already-invalid status (e.g. from a PayerID mismatch earlier).
+          if (status !== 'invalid') status = 'unknown';
+          remarks.push(`Receiver ID "${receiverID}" does not match expected "${expectedReceiverID}" based on package "${xlsxPackage}" (contains NAS network code — marked unknown).`);
+        } else {
+          status = 'invalid';
+          remarks.push(`Receiver ID "${receiverID}" does not match expected "${expectedReceiverID}" based on package "${xlsxPackage}".`);
+        }
       }
     }
 
