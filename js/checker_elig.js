@@ -45,12 +45,23 @@ function normalizePackageName(packageName) {
 }
 
 /**
+ * Package codes that indicate the ReceiverID cannot be determined from the package name alone.
+ * Packages containing any of these codes (EN, CN, GN, RN, SR, WN, VN) as standalone tokens
+ * represent international/group plan variants where the receiver is ambiguous.
+ * A mismatch should be treated as "unknown" (not "invalid") in this case.
+ */
+const UNKNOWN_RECEIVER_PACKAGE_PATTERN = /\b(EN|CN|GN|RN|SR|WN|VN)\b/;
+
+/**
  * Return the expected ReceiverID based on an XLSX package name, or null if undetermined.
  * @param {string} packageName - The XLSX eligibility Package Name
  * @returns {string|null}
  */
 function getExpectedReceiverID(packageName) {
   if (!packageName) return null;
+  // Packages containing international/group plan codes (EN, CN, GN, RN, SR, WN, VN) cannot be
+  // mapped to a specific ReceiverID — treat as unknown (no mismatch error).
+  if (UNKNOWN_RECEIVER_PACKAGE_PATTERN.test(packageName)) return null;
   const pkg = packageName.toLowerCase();
   if (pkg.includes('thiqa')) return 'D001';
   if (pkg.includes('basic')) return 'D004';
