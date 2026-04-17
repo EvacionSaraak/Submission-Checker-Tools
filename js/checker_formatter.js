@@ -380,7 +380,7 @@ function isDateHeader(line) {
  */
 function isPayerHeader(line) {
   const trimmed = line.trim().toUpperCase();
-  const payers = ['CASH', 'THIQA', 'NAS', 'MEDNET', 'NEXTCARE', 'DAMAN', 'HAAD', 'ADNIC', 'NEURON'];
+  const payers = ['CASH', 'THIQA', 'NAS', 'MEDNET', 'NEXTCARE', 'DAMAN', 'HAAD', 'ADNIC', 'NEURON', 'NGI'];
   return payers.includes(trimmed);
 }
 
