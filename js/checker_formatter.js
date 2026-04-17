@@ -523,7 +523,13 @@ function formatAuditLogs(inputText) {
   }
   
   // Extract the range (or empty array if all lines were empty)
-  const unmatchedLines = startIdx <= endIdx ? unmatchedLinesRaw.slice(startIdx, endIdx + 1) : [];
+  // Then collapse consecutive blank lines into a single blank line
+  const trimmedSlice = startIdx <= endIdx ? unmatchedLinesRaw.slice(startIdx, endIdx + 1) : [];
+  const unmatchedLines = trimmedSlice.reduce((acc, line) => {
+    if (line === '' && acc.length > 0 && acc[acc.length - 1] === '') return acc;
+    acc.push(line);
+    return acc;
+  }, []);
   
   return { formatted: outputLines.join('\n'), unmatchedLines };
 }
