@@ -632,7 +632,8 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
       }
 
       // --- ADDED: Check for invalid code length ---
-      if (code.length !== 5 && !code.includes(`-`)) {
+      // Codes containing a space are treated as unknown (not invalid) since the space may be part of a subcode variant
+      if (code.length !== 5 && !code.includes(`-`) && !rawCode.includes(' ')) {
         const typeRemarks = validateActivityType(code, typeValue);
         const allRemarks = [`Code "${code}" is invalid: it must have exactly 5 characters.`, ...typeRemarks];
         const row = buildActivityRow({
