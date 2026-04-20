@@ -375,6 +375,14 @@ function isDateHeader(line) {
 }
 
 /**
+ * Detects if a line is a DEBT section header (e.g., "DEBTs (Pay 200 per month)")
+ * Lines in this section should be preserved as-is and not processed as audit log rows.
+ */
+function isDEBTSectionHeader(line) {
+  return /^DEBT/i.test(line.trim());
+}
+
+/**
  * Detects if a line is a payer header
  * Common payers: CASH, Thiqa, NAS, Mednet, Nextcare, DAMAN, etc.
  */
@@ -467,6 +475,7 @@ function formatAuditLogs(inputText) {
   let currentType = 'Dental';
   let currentDate = '';
   let currentPayer = '';
+  let inDebtSection = false;
   
   for (let line of lines) {
     const trimmedLine = line.trim();
@@ -477,22 +486,38 @@ function formatAuditLogs(inputText) {
       continue;
     }
     
-    // Update current Type header
+    // Update current Type header (also exits any DEBT section)
     if (isTypeHeader(trimmedLine)) {
       currentType = trimmedLine;
+      inDebtSection = false;
       continue; // Don't output the header itself
     }
     
-    // Update current Date header
+    // Update current Date header (also exits any DEBT section)
     if (isDateHeader(trimmedLine)) {
       currentDate = trimmedLine;
+      inDebtSection = false;
       continue; // Don't output the header itself
     }
     
-    // Update current Payer header
+    // Update current Payer header (also exits any DEBT section)
     if (isPayerHeader(trimmedLine)) {
       currentPayer = trimmedLine;
+      inDebtSection = false;
       continue; // Don't output the header itself
+    }
+    
+    // Detect DEBT section header — preserve it and all following lines as unmatched
+    if (isDEBTSectionHeader(trimmedLine)) {
+      inDebtSection = true;
+      unmatchedLinesRaw.push(line);
+      continue;
+    }
+    
+    // Lines inside a DEBT section are preserved untouched
+    if (inDebtSection) {
+      unmatchedLinesRaw.push(line);
+      continue;
     }
     
     // Process data rows
