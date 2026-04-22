@@ -303,8 +303,17 @@ allocateBtn.addEventListener('click', () => {
     return;
   }
 
+  // Deduplicate by Claim ID — keep only the first occurrence of each ID
+  const seenClaimIds = new Set();
+  const uniqueRows = filteredRows.filter(row => {
+    const id = String(row[claimKey] || '').trim();
+    if (seenClaimIds.has(id)) return false;
+    seenClaimIds.add(id);
+    return true;
+  });
+
   // Cyclically assign coders
-  const allocationRows = filteredRows.map((row, idx) => ({
+  const allocationRows = uniqueRows.map((row, idx) => ({
     'Claim ID':   row[claimKey] || '',
     'Department': deptKey ? String(row[deptKey] || '').trim() : '',
     'Coder':      coders[idx % coders.length],
