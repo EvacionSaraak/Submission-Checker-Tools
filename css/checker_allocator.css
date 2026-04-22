@@ -98,6 +98,17 @@
   padding: 3px 8px;
 }
 
+#payment-mode-controls {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+#payment-mode-controls button {
+  font-size: 12px;
+  padding: 3px 8px;
+}
+
 
   margin-top: 16px;
   overflow-x: auto;

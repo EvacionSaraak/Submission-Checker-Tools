@@ -7,11 +7,14 @@ const presetSelect = document.getElementById('preset-select');
 const codersTextarea = document.getElementById('coders-textarea');
 const deptSection = document.getElementById('dept-section');
 const codifStatusSection = document.getElementById('codif-status-section');
+const paymentModeSection = document.getElementById('payment-mode-section');
 const coderSummary = document.getElementById('coder-summary');
 const selectAllBtn = document.getElementById('select-all-btn');
 const deselectAllBtn = document.getElementById('deselect-all-btn');
 const selectAllCodifBtn = document.getElementById('select-all-codif-btn');
 const deselectAllCodifBtn = document.getElementById('deselect-all-codif-btn');
+const selectAllPaymentBtn = document.getElementById('select-all-payment-btn');
+const deselectAllPaymentBtn = document.getElementById('deselect-all-payment-btn');
 const allocateBtn = document.getElementById('allocate-btn');
 const downloadBtn = document.getElementById('download-btn');
 const allocationPreview = document.getElementById('allocation-preview');
@@ -28,6 +31,7 @@ const CLAIM_ID_CANDIDATES            = ['Pri. Claim ID', 'Pri. Claim No', 'Claim
 const DEPT_CANDIDATES                = ['Admitting Department', 'Department', 'Clinic'];
 const FACILITY_CANDIDATES            = ['Center Name', 'Facility ID', 'Centre Name'];
 const CODIFICATION_STATUS_CANDIDATES = ['Codification Status', 'Codification_Status', 'CodificationStatus'];
+const PAYMENT_MODE_CANDIDATES        = ['Pri. Payment Mode', 'Payment Mode', 'PaymentMode', 'Pri Payment Mode'];
 
 // ==============================
 // Load presets JSON on startup
@@ -64,6 +68,7 @@ fileInput.addEventListener('change', () => {
   coderSummary.innerHTML = '';
   coderSummary.classList.add('hidden');
   codifStatusSection.innerHTML = '';
+  paymentModeSection.innerHTML = '';
   downloadBtn.disabled = true;
   lastAllocationResult = null;
   coderRestrictions = {};
@@ -109,6 +114,10 @@ fileInput.addEventListener('change', () => {
       // Extract unique codification statuses with counts
       const codifKey = findColumnKey(parsedRows, CODIFICATION_STATUS_CANDIDATES);
       renderCodifStatusCheckboxes(getValuesWithCounts(parsedRows, codifKey));
+
+      // Extract unique payment modes with counts
+      const paymentKey = findColumnKey(parsedRows, PAYMENT_MODE_CANDIDATES);
+      renderPaymentModeCheckboxes(getValuesWithCounts(parsedRows, paymentKey));
 
       // Auto-detect facility and apply preset
       const facilityKey = findColumnKey(parsedRows, FACILITY_CANDIDATES);
@@ -212,6 +221,28 @@ function renderCodifStatusCheckboxes(items) {
     label.appendChild(cb);
     label.appendChild(document.createTextNode(`(${count}) ${value}`));
     codifStatusSection.appendChild(label);
+  }
+}
+
+// ==============================
+// Render payment mode checkboxes
+// ==============================
+function renderPaymentModeCheckboxes(items) {
+  paymentModeSection.innerHTML = '';
+  if (!items.length) {
+    paymentModeSection.textContent = 'No payment modes found.';
+    return;
+  }
+  for (const { value, count } of items) {
+    const label = document.createElement('label');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.value = value;
+    cb.checked = true;
+    cb.style.marginRight = '6px';
+    label.appendChild(cb);
+    label.appendChild(document.createTextNode(`(${count}) ${value}`));
+    paymentModeSection.appendChild(label);
   }
 }
 
@@ -333,20 +364,70 @@ function refreshCodifStatusCounts() {
 }
 
 // ==============================
+// Re-render payment mode counts based on currently checked departments
+// ==============================
+function refreshPaymentModeCounts() {
+  const deptKey        = findColumnKey(parsedRows, DEPT_CANDIDATES);
+  const paymentKey     = findColumnKey(parsedRows, PAYMENT_MODE_CANDIDATES);
+
+  // Remember which payment modes are currently checked
+  const checkedModes = new Set();
+  paymentModeSection.querySelectorAll('input[type=checkbox]:checked').forEach(cb => {
+    checkedModes.add(cb.value);
+  });
+
+  // Determine which departments are checked
+  const checkedDepts = new Set();
+  deptSection.querySelectorAll('input[type=checkbox]:checked').forEach(cb => {
+    checkedDepts.add(cb.value);
+  });
+
+  // Rows visible under current department selection
+  const deptFilteredRows = deptKey
+    ? parsedRows.filter(row => checkedDepts.has(String(row[deptKey] || '').trim()))
+    : parsedRows;
+
+  // Re-render with updated counts, restoring checked state
+  const items = getValuesWithCounts(deptFilteredRows, paymentKey);
+  paymentModeSection.innerHTML = '';
+  if (!items.length) {
+    paymentModeSection.textContent = 'No payment modes found.';
+    return;
+  }
+  for (const { value, count } of items) {
+    const label = document.createElement('label');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.value = value;
+    // Preserve previous checked state; default all checked
+    cb.checked = checkedModes.size > 0 ? checkedModes.has(value) : true;
+    cb.style.marginRight = '6px';
+    label.appendChild(cb);
+    label.appendChild(document.createTextNode(`(${count}) ${value}`));
+    paymentModeSection.appendChild(label);
+  }
+}
+
+// ==============================
 // Select / Deselect all departments
 // ==============================
 selectAllBtn.addEventListener('click', () => {
   deptSection.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = true);
   refreshCodifStatusCounts();
+  refreshPaymentModeCounts();
 });
 
 deselectAllBtn.addEventListener('click', () => {
   deptSection.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = false);
   refreshCodifStatusCounts();
+  refreshPaymentModeCounts();
 });
 
 deptSection.addEventListener('change', (e) => {
-  if (e.target.type === 'checkbox') refreshCodifStatusCounts();
+  if (e.target.type === 'checkbox') {
+    refreshCodifStatusCounts();
+    refreshPaymentModeCounts();
+  }
 });
 
 // ==============================
@@ -358,6 +439,17 @@ selectAllCodifBtn.addEventListener('click', () => {
 
 deselectAllCodifBtn.addEventListener('click', () => {
   codifStatusSection.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = false);
+});
+
+// ==============================
+// Select / Deselect all payment modes
+// ==============================
+selectAllPaymentBtn.addEventListener('click', () => {
+  paymentModeSection.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = true);
+});
+
+deselectAllPaymentBtn.addEventListener('click', () => {
+  paymentModeSection.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = false);
 });
 
 // ==============================
@@ -399,10 +491,17 @@ allocateBtn.addEventListener('click', () => {
     checkedCodifStatuses.add(cb.value);
   });
 
+  // Get checked payment modes
+  const checkedPaymentModes = new Set();
+  paymentModeSection.querySelectorAll('input[type=checkbox]:checked').forEach(cb => {
+    checkedPaymentModes.add(cb.value);
+  });
+
   // Find column keys
   const claimKey           = findColumnKey(parsedRows, CLAIM_ID_CANDIDATES);
   const deptKey            = findColumnKey(parsedRows, DEPT_CANDIDATES);
   const codifStatusKey     = findColumnKey(parsedRows, CODIFICATION_STATUS_CANDIDATES);
+  const paymentModeKey     = findColumnKey(parsedRows, PAYMENT_MODE_CANDIDATES);
 
   if (!claimKey) {
     messageBox.textContent = 'Could not find a Claim ID column in the uploaded file.';
@@ -422,12 +521,20 @@ allocateBtn.addEventListener('click', () => {
   }
 
   // Filter rows by checked codification statuses (skip only if column absent)
-  const visibleRows = codifStatusKey
+  const codifFilteredRows = codifStatusKey
     ? filteredRows.filter(row => {
         const status = String(row[codifStatusKey] || '').trim();
         return checkedCodifStatuses.has(status);
       })
     : filteredRows;
+
+  // Filter rows by checked payment modes (skip only if column absent)
+  const visibleRows = paymentModeKey
+    ? codifFilteredRows.filter(row => {
+        const mode = String(row[paymentModeKey] || '').trim();
+        return checkedPaymentModes.has(mode);
+      })
+    : codifFilteredRows;
 
   // Deduplicate by Claim ID — keep only the first occurrence of each ID
   const seenClaimIds = new Set();
