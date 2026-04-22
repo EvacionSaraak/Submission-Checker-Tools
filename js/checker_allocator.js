@@ -21,9 +21,10 @@ let lastAllocationResult = null; // { allocationRows, originalAoA }
 let coderRestrictions = {};
 
 // Column name candidates in priority order (first match wins)
-const CLAIM_ID_CANDIDATES  = ['Pri. Claim ID', 'Pri. Claim No', 'ClaimID', 'Claim ID'];
-const DEPT_CANDIDATES      = ['Admitting Department', 'Department', 'Clinic'];
-const FACILITY_CANDIDATES  = ['Center Name', 'Facility ID', 'Centre Name'];
+const CLAIM_ID_CANDIDATES            = ['Pri. Claim ID', 'Pri. Claim No', 'ClaimID', 'Claim ID'];
+const DEPT_CANDIDATES                = ['Admitting Department', 'Department', 'Clinic'];
+const FACILITY_CANDIDATES            = ['Center Name', 'Facility ID', 'Centre Name'];
+const CODIFICATION_STATUS_CANDIDATES = ['Codification Status', 'Codification_Status', 'CodificationStatus'];
 
 // ==============================
 // Load presets JSON on startup
@@ -297,8 +298,9 @@ allocateBtn.addEventListener('click', () => {
   }
 
   // Find column keys
-  const claimKey = findColumnKey(parsedRows, CLAIM_ID_CANDIDATES);
-  const deptKey  = findColumnKey(parsedRows, DEPT_CANDIDATES);
+  const claimKey           = findColumnKey(parsedRows, CLAIM_ID_CANDIDATES);
+  const deptKey            = findColumnKey(parsedRows, DEPT_CANDIDATES);
+  const codifStatusKey     = findColumnKey(parsedRows, CODIFICATION_STATUS_CANDIDATES);
 
   if (!claimKey) {
     messageBox.textContent = 'Could not find a Claim ID column in the uploaded file.';
@@ -317,9 +319,22 @@ allocateBtn.addEventListener('click', () => {
     return;
   }
 
+  // Skip claims where Codification Status is "Not Seen"
+  const notSeenSkipped = codifStatusKey
+    ? filteredRows.filter(row => String(row[codifStatusKey] || '').trim() === 'Not Seen').length
+    : 0;
+  const visibleRows = codifStatusKey
+    ? filteredRows.filter(row => String(row[codifStatusKey] || '').trim() !== 'Not Seen')
+    : filteredRows;
+
+  if (!visibleRows.length) {
+    messageBox.textContent = 'All matching claims have Codification Status "Not Seen" and were skipped.';
+    return;
+  }
+
   // Deduplicate by Claim ID — keep only the first occurrence of each ID
   const seenClaimIds = new Set();
-  const uniqueRows = filteredRows.filter(row => {
+  const uniqueRows = visibleRows.filter(row => {
     const id = String(row[claimKey] || '').trim();
     if (seenClaimIds.has(id)) return false;
     seenClaimIds.add(id);
@@ -356,7 +371,7 @@ allocateBtn.addEventListener('click', () => {
   lastAllocationResult = { allocationRows, originalAoA: rawSheetData };
 
   renderPreview(allocationRows);
-  renderCoderSummary(allocationRows, coders);
+  renderCoderSummary(allocationRows, coders, notSeenSkipped);
   downloadBtn.disabled = false;
 });
 
@@ -412,7 +427,7 @@ function renderPreview(rows) {
 // ==============================
 // Render coder assignment summary
 // ==============================
-function renderCoderSummary(rows, coders) {
+function renderCoderSummary(rows, coders, notSeenSkipped) {
   coderSummary.innerHTML = '';
   coderSummary.style.marginTop = '12px';
 
@@ -449,6 +464,14 @@ function renderCoderSummary(rows, coders) {
     list.appendChild(li);
   }
   coderSummary.appendChild(list);
+  if (notSeenSkipped > 0) {
+    const note = document.createElement('p');
+    note.style.margin = '6px 0 0 0';
+    note.style.fontSize = '12px';
+    note.style.color = '#888';
+    note.textContent = `${notSeenSkipped} claim${notSeenSkipped === 1 ? '' : 's'} skipped — Codification Status "Not Seen"`;
+    coderSummary.appendChild(note);
+  }
   coderSummary.classList.remove('hidden');
 }
 
