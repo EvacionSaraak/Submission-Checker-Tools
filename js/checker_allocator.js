@@ -368,8 +368,8 @@ allocateBtn.addEventListener('click', () => {
     return;
   }
 
-  // Filter rows by checked codification statuses (skip if column absent)
-  const visibleRows = (codifStatusKey && checkedCodifStatuses.size)
+  // Filter rows by checked codification statuses (skip only if column absent)
+  const visibleRows = codifStatusKey
     ? filteredRows.filter(row => {
         const status = String(row[codifStatusKey] || '').trim();
         return checkedCodifStatuses.has(status);
