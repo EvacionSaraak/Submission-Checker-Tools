@@ -373,6 +373,7 @@ function renderPreview(rows) {
 // ==============================
 function renderCoderSummary(rows, coders) {
   coderSummary.innerHTML = '';
+  coderSummary.style.marginTop = '12px';
 
   const counts = {};
   for (const coder of coders) counts[coder] = 0;
@@ -380,8 +381,6 @@ function renderCoderSummary(rows, coders) {
 
   const label = document.createElement('span');
   label.className = 'section-label';
-  label.style.display = 'block';
-  label.style.marginTop = '12px';
   label.textContent = 'Coder Assignment';
   coderSummary.appendChild(label);
 

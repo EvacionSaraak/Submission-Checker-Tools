@@ -4,17 +4,18 @@
   display: flex;
   gap: 24px;
   align-items: flex-start;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
 #left-panel {
-  flex: 1 1 260px;
+  flex: 0 0 30%;
   min-width: 220px;
-  max-width: 320px;
+  max-width: 360px;
 }
 
 #right-panel {
-  flex: 2 1 400px;
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 #dept-section {
