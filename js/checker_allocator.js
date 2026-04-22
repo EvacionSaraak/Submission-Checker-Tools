@@ -6,6 +6,7 @@ const allocatorMain = document.getElementById('allocator-main');
 const presetSelect = document.getElementById('preset-select');
 const codersTextarea = document.getElementById('coders-textarea');
 const deptSection = document.getElementById('dept-section');
+const coderSummary = document.getElementById('coder-summary');
 const selectAllBtn = document.getElementById('select-all-btn');
 const deselectAllBtn = document.getElementById('deselect-all-btn');
 const allocateBtn = document.getElementById('allocate-btn');
@@ -53,6 +54,8 @@ fileInput.addEventListener('change', () => {
   if (!file) return;
   messageBox.textContent = '';
   allocationPreview.innerHTML = '';
+  coderSummary.innerHTML = '';
+  coderSummary.classList.add('hidden');
   downloadBtn.disabled = true;
   lastAllocationResult = null;
 
@@ -252,6 +255,8 @@ deselectAllBtn.addEventListener('click', () => {
 allocateBtn.addEventListener('click', () => {
   messageBox.textContent = '';
   allocationPreview.innerHTML = '';
+  coderSummary.innerHTML = '';
+  coderSummary.classList.add('hidden');
   downloadBtn.disabled = true;
   lastAllocationResult = null;
 
@@ -300,15 +305,17 @@ allocateBtn.addEventListener('click', () => {
 
   // Cyclically assign coders
   const allocationRows = filteredRows.map((row, idx) => ({
-    'Claim ID': row[claimKey] || '',
-    'Coder':    coders[idx % coders.length],
-    'Query':    '',
-    'Status':   ''
+    'Claim ID':   row[claimKey] || '',
+    'Department': deptKey ? String(row[deptKey] || '').trim() : '',
+    'Coder':      coders[idx % coders.length],
+    'Query':      '',
+    'Status':     ''
   }));
 
   lastAllocationResult = { allocationRows, originalAoA: rawSheetData };
 
   renderPreview(allocationRows);
+  renderCoderSummary(allocationRows, coders);
   downloadBtn.disabled = false;
 });
 
@@ -319,13 +326,15 @@ function renderPreview(rows) {
   allocationPreview.innerHTML = '';
   if (!rows.length) return;
 
+  const COLS = ['Claim ID', 'Department', 'Coder', 'Query', 'Status'];
+
   const PREVIEW_LIMIT = 100;
   const displayRows = rows.slice(0, PREVIEW_LIMIT);
 
   const table = document.createElement('table');
   const thead = document.createElement('thead');
   const headerRow = document.createElement('tr');
-  for (const col of ['Claim ID', 'Coder', 'Query', 'Status']) {
+  for (const col of COLS) {
     const th = document.createElement('th');
     th.textContent = col;
     headerRow.appendChild(th);
@@ -336,7 +345,7 @@ function renderPreview(rows) {
   const tbody = document.createElement('tbody');
   for (const row of displayRows) {
     const tr = document.createElement('tr');
-    for (const col of ['Claim ID', 'Coder', 'Query', 'Status']) {
+    for (const col of COLS) {
       const td = document.createElement('td');
       td.textContent = row[col];
       tr.appendChild(td);
@@ -356,6 +365,35 @@ function renderPreview(rows) {
 }
 
 // ==============================
+// Render coder assignment summary
+// ==============================
+function renderCoderSummary(rows, coders) {
+  coderSummary.innerHTML = '';
+
+  const counts = {};
+  for (const coder of coders) counts[coder] = 0;
+  for (const row of rows) counts[row['Coder']] = (counts[row['Coder']] || 0) + 1;
+
+  const label = document.createElement('span');
+  label.className = 'section-label';
+  label.style.display = 'block';
+  label.style.marginTop = '12px';
+  label.textContent = 'Coder Assignment';
+  coderSummary.appendChild(label);
+
+  const list = document.createElement('ul');
+  list.style.margin = '4px 0 0 0';
+  list.style.paddingLeft = '16px';
+  for (const coder of coders) {
+    const li = document.createElement('li');
+    li.textContent = `${coder}: ${counts[coder] || 0} claim${counts[coder] === 1 ? '' : 's'}`;
+    list.appendChild(li);
+  }
+  coderSummary.appendChild(list);
+  coderSummary.classList.remove('hidden');
+}
+
+// ==============================
 // Download button handler
 // ==============================
 downloadBtn.addEventListener('click', () => {
@@ -367,8 +405,8 @@ downloadBtn.addEventListener('click', () => {
 
   // Sheet 1: Allocation
   const allocationAoA = [
-    ['Claim ID', 'Coder', 'Query', 'Status'],
-    ...allocationRows.map(r => [r['Claim ID'], r['Coder'], r['Query'], r['Status']])
+    ['Claim ID', 'Department', 'Coder', 'Query', 'Status'],
+    ...allocationRows.map(r => [r['Claim ID'], r['Department'], r['Coder'], r['Query'], r['Status']])
   ];
   const wsAllocation = XLSX.utils.aoa_to_sheet(allocationAoA);
   XLSX.utils.book_append_sheet(wb, wsAllocation, 'Allocation');
