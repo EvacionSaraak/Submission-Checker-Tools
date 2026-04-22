@@ -376,11 +376,6 @@ allocateBtn.addEventListener('click', () => {
       })
     : filteredRows;
 
-  if (!visibleRows.length) {
-    messageBox.textContent = 'No claims remain after applying the selected Codification Status filters.';
-    return;
-  }
-
   // Deduplicate by Claim ID — keep only the first occurrence of each ID
   const seenClaimIds = new Set();
   const uniqueRows = visibleRows.filter(row => {
@@ -417,11 +412,11 @@ allocateBtn.addEventListener('click', () => {
     };
   });
 
-  lastAllocationResult = { allocationRows, originalAoA: rawSheetData };
+  lastAllocationResult = allocationRows.length ? { allocationRows, originalAoA: rawSheetData } : null;
 
   renderPreview(allocationRows);
   renderCoderSummary(allocationRows, coders);
-  downloadBtn.disabled = false;
+  downloadBtn.disabled = !allocationRows.length;
 });
 
 // ==============================
@@ -429,7 +424,16 @@ allocateBtn.addEventListener('click', () => {
 // ==============================
 function renderPreview(rows) {
   allocationPreview.innerHTML = '';
-  if (!rows.length) return;
+  if (!rows.length) {
+    const msg = document.createElement('p');
+    msg.style.textAlign = 'center';
+    msg.style.padding = '24px 0';
+    msg.style.fontWeight = 'bold';
+    msg.style.color = '#888';
+    msg.textContent = 'NO CLAIMS TO ALLOCATE';
+    allocationPreview.appendChild(msg);
+    return;
+  }
 
   const COLS = ['Claim ID', 'Department', 'Coder', 'Query', 'Status'];
 
