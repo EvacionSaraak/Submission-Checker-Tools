@@ -328,8 +328,12 @@ function renderPreview(rows) {
 
   const COLS = ['Claim ID', 'Department', 'Coder', 'Query', 'Status'];
 
-  const PREVIEW_LIMIT = 100;
-  const displayRows = rows.slice(0, PREVIEW_LIMIT);
+  const makeMarker = text => {
+    const p = document.createElement('p');
+    p.className = 'preview-marker';
+    p.textContent = text;
+    return p;
+  };
 
   const table = document.createElement('table');
   const thead = document.createElement('thead');
@@ -343,7 +347,7 @@ function renderPreview(rows) {
   table.appendChild(thead);
 
   const tbody = document.createElement('tbody');
-  for (const row of displayRows) {
+  for (const row of rows) {
     const tr = document.createElement('tr');
     for (const col of COLS) {
       const td = document.createElement('td');
@@ -353,15 +357,15 @@ function renderPreview(rows) {
     tbody.appendChild(tr);
   }
   table.appendChild(tbody);
-  allocationPreview.appendChild(table);
 
-  if (rows.length > PREVIEW_LIMIT) {
-    const note = document.createElement('p');
-    note.style.fontSize = '12px';
-    note.style.color = '#888';
-    note.textContent = `Showing first ${PREVIEW_LIMIT} of ${rows.length} allocated claims. Download to see all.`;
-    allocationPreview.appendChild(note);
-  }
+  const scrollContainer = document.createElement('div');
+  scrollContainer.id = 'preview-scroll';
+
+  scrollContainer.appendChild(makeMarker('— START OF PREVIEW —'));
+  scrollContainer.appendChild(table);
+  scrollContainer.appendChild(makeMarker('— END OF PREVIEW —'));
+
+  allocationPreview.appendChild(scrollContainer);
 }
 
 // ==============================
