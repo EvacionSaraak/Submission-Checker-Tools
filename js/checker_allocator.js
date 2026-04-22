@@ -116,17 +116,11 @@ fileInput.addEventListener('change', () => {
       const deptKey = findColumnKey(parsedRows, DEPT_CANDIDATES);
       renderDeptCheckboxes(getValuesWithCounts(parsedRows, deptKey));
 
-      // Extract unique payment modes with counts
-      const paymentKey = findColumnKey(parsedRows, PAYMENT_MODE_CANDIDATES);
-      renderPaymentModeCheckboxes(getValuesWithCounts(parsedRows, paymentKey));
-
-      // Extract unique codification statuses with counts (filtered by all payment modes checked)
-      const codifKey = findColumnKey(parsedRows, CODIFICATION_STATUS_CANDIDATES);
-      renderCodifStatusCheckboxes(getValuesWithCounts(parsedRows, codifKey));
-
-      // Extract unique codified-by names with counts
-      const codifiedByKey = findColumnKey(parsedRows, CODIFIED_BY_CANDIDATES);
-      renderCodifiedByCheckboxes(getValuesWithCounts(parsedRows, codifiedByKey));
+      // Cascade downstream checklists so the initial Dental/Orthodontic-unchecked
+      // default is reflected immediately in payment mode, codif status, and codified-by.
+      refreshPaymentModeCounts();
+      refreshCodifStatusCounts();
+      refreshCodifiedByCounts();
 
       // Auto-detect facility and apply preset
       const facilityKey = findColumnKey(parsedRows, FACILITY_CANDIDATES);
