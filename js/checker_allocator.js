@@ -336,7 +336,7 @@ allocateBtn.addEventListener('click', () => {
   });
 
   if (!checkedDepts.size) {
-    messageBox.textContent = 'Please select at least one department.';
+    renderPreview([]);
     return;
   }
 
@@ -364,7 +364,7 @@ allocateBtn.addEventListener('click', () => {
   });
 
   if (!filteredRows.length) {
-    messageBox.textContent = 'No claims match the selected departments.';
+    renderPreview([]);
     return;
   }
 
