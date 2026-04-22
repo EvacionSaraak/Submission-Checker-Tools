@@ -111,13 +111,13 @@ fileInput.addEventListener('change', () => {
       const deptKey = findColumnKey(parsedRows, DEPT_CANDIDATES);
       renderDeptCheckboxes(getValuesWithCounts(parsedRows, deptKey));
 
-      // Extract unique codification statuses with counts
-      const codifKey = findColumnKey(parsedRows, CODIFICATION_STATUS_CANDIDATES);
-      renderCodifStatusCheckboxes(getValuesWithCounts(parsedRows, codifKey));
-
       // Extract unique payment modes with counts
       const paymentKey = findColumnKey(parsedRows, PAYMENT_MODE_CANDIDATES);
       renderPaymentModeCheckboxes(getValuesWithCounts(parsedRows, paymentKey));
+
+      // Extract unique codification statuses with counts (filtered by all payment modes checked)
+      const codifKey = findColumnKey(parsedRows, CODIFICATION_STATUS_CANDIDATES);
+      renderCodifStatusCheckboxes(getValuesWithCounts(parsedRows, codifKey));
 
       // Auto-detect facility and apply preset
       const facilityKey = findColumnKey(parsedRows, FACILITY_CANDIDATES);
@@ -317,10 +317,11 @@ function applyPreset(name) {
 }
 
 // ==============================
-// Re-render codif status counts based on currently checked departments
+// Re-render codif status counts based on currently checked departments AND payment modes
 // ==============================
 function refreshCodifStatusCounts() {
   const deptKey      = findColumnKey(parsedRows, DEPT_CANDIDATES);
+  const paymentKey   = findColumnKey(parsedRows, PAYMENT_MODE_CANDIDATES);
   const codifKey     = findColumnKey(parsedRows, CODIFICATION_STATUS_CANDIDATES);
 
   // Remember which codif statuses are currently checked
@@ -335,13 +336,24 @@ function refreshCodifStatusCounts() {
     checkedDepts.add(cb.value);
   });
 
-  // Rows visible under current department selection
+  // Determine which payment modes are checked
+  const checkedModes = new Set();
+  paymentModeSection.querySelectorAll('input[type=checkbox]:checked').forEach(cb => {
+    checkedModes.add(cb.value);
+  });
+
+  // Filter by departments first
   const deptFilteredRows = deptKey
     ? parsedRows.filter(row => checkedDepts.has(String(row[deptKey] || '').trim()))
     : parsedRows;
 
+  // Then filter by payment mode
+  const paymentFilteredRows = paymentKey
+    ? deptFilteredRows.filter(row => checkedModes.has(String(row[paymentKey] || '').trim()))
+    : deptFilteredRows;
+
   // Re-render with updated counts, restoring checked state
-  const items = getValuesWithCounts(deptFilteredRows, codifKey);
+  const items = getValuesWithCounts(paymentFilteredRows, codifKey);
   codifStatusSection.innerHTML = '';
   if (!items.length) {
     codifStatusSection.textContent = 'No codification statuses found.';
@@ -446,10 +458,16 @@ deselectAllCodifBtn.addEventListener('click', () => {
 // ==============================
 selectAllPaymentBtn.addEventListener('click', () => {
   paymentModeSection.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = true);
+  refreshCodifStatusCounts();
 });
 
 deselectAllPaymentBtn.addEventListener('click', () => {
   paymentModeSection.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = false);
+  refreshCodifStatusCounts();
+});
+
+paymentModeSection.addEventListener('change', (e) => {
+  if (e.target.type === 'checkbox') refreshCodifStatusCounts();
 });
 
 // ==============================
