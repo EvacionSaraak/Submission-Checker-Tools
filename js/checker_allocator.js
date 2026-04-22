@@ -6,9 +6,12 @@ const allocatorMain = document.getElementById('allocator-main');
 const presetSelect = document.getElementById('preset-select');
 const codersTextarea = document.getElementById('coders-textarea');
 const deptSection = document.getElementById('dept-section');
+const codifStatusSection = document.getElementById('codif-status-section');
 const coderSummary = document.getElementById('coder-summary');
 const selectAllBtn = document.getElementById('select-all-btn');
 const deselectAllBtn = document.getElementById('deselect-all-btn');
+const selectAllCodifBtn = document.getElementById('select-all-codif-btn');
+const deselectAllCodifBtn = document.getElementById('deselect-all-codif-btn');
 const allocateBtn = document.getElementById('allocate-btn');
 const downloadBtn = document.getElementById('download-btn');
 const allocationPreview = document.getElementById('allocation-preview');
@@ -60,6 +63,7 @@ fileInput.addEventListener('change', () => {
   allocationPreview.innerHTML = '';
   coderSummary.innerHTML = '';
   coderSummary.classList.add('hidden');
+  codifStatusSection.innerHTML = '';
   downloadBtn.disabled = true;
   lastAllocationResult = null;
   coderRestrictions = {};
@@ -98,10 +102,13 @@ fileInput.addEventListener('change', () => {
 
       parsedRows = jsonRows;
 
-      // Extract unique departments
+      // Extract unique departments with counts
       const deptKey = findColumnKey(parsedRows, DEPT_CANDIDATES);
-      const depts = getUniqueDepartments(parsedRows, deptKey);
-      renderDeptCheckboxes(depts);
+      renderDeptCheckboxes(getValuesWithCounts(parsedRows, deptKey));
+
+      // Extract unique codification statuses with counts
+      const codifKey = findColumnKey(parsedRows, CODIFICATION_STATUS_CANDIDATES);
+      renderCodifStatusCheckboxes(getValuesWithCounts(parsedRows, codifKey));
 
       // Auto-detect facility and apply preset
       const facilityKey = findColumnKey(parsedRows, FACILITY_CANDIDATES);
@@ -149,37 +156,62 @@ function findColumnKey(rows, candidates) {
 }
 
 // ==============================
-// Extract unique departments
+// Extract unique values with occurrence counts for a column
+// Returns [{value, count}] sorted alphabetically by value
 // ==============================
-function getUniqueDepartments(rows, deptKey) {
-  if (!deptKey) return [];
-  const seen = new Set();
+function getValuesWithCounts(rows, key) {
+  if (!key) return [];
+  const counts = {};
   for (const row of rows) {
-    const val = String(row[deptKey] || '').trim();
-    if (val) seen.add(val);
+    const val = String(row[key] || '').trim();
+    if (val) counts[val] = (counts[val] || 0) + 1;
   }
-  return Array.from(seen).sort();
+  return Object.entries(counts)
+    .map(([value, count]) => ({ value, count }))
+    .sort((a, b) => a.value.localeCompare(b.value));
 }
 
 // ==============================
 // Render department checkboxes
 // ==============================
-function renderDeptCheckboxes(depts) {
+function renderDeptCheckboxes(items) {
   deptSection.innerHTML = '';
-  if (!depts.length) {
+  if (!items.length) {
     deptSection.textContent = 'No departments found.';
     return;
   }
-  for (const dept of depts) {
+  for (const { value, count } of items) {
     const label = document.createElement('label');
     const cb = document.createElement('input');
     cb.type = 'checkbox';
-    cb.value = dept;
+    cb.value = value;
     cb.checked = true;
     cb.style.marginRight = '6px';
     label.appendChild(cb);
-    label.appendChild(document.createTextNode(dept));
+    label.appendChild(document.createTextNode(`(${count}) ${value}`));
     deptSection.appendChild(label);
+  }
+}
+
+// ==============================
+// Render codification status checkboxes
+// ==============================
+function renderCodifStatusCheckboxes(items) {
+  codifStatusSection.innerHTML = '';
+  if (!items.length) {
+    codifStatusSection.textContent = 'No codification statuses found.';
+    return;
+  }
+  for (const { value, count } of items) {
+    const label = document.createElement('label');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.value = value;
+    cb.checked = value !== 'Not Seen'; // Not Seen unchecked by default
+    cb.style.marginRight = '6px';
+    label.appendChild(cb);
+    label.appendChild(document.createTextNode(`(${count}) ${value}`));
+    codifStatusSection.appendChild(label);
   }
 }
 
@@ -265,6 +297,17 @@ deselectAllBtn.addEventListener('click', () => {
 });
 
 // ==============================
+// Select / Deselect all codification statuses
+// ==============================
+selectAllCodifBtn.addEventListener('click', () => {
+  codifStatusSection.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = true);
+});
+
+deselectAllCodifBtn.addEventListener('click', () => {
+  codifStatusSection.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = false);
+});
+
+// ==============================
 // Allocate button handler
 // ==============================
 allocateBtn.addEventListener('click', () => {
@@ -297,6 +340,12 @@ allocateBtn.addEventListener('click', () => {
     return;
   }
 
+  // Get checked codification statuses
+  const checkedCodifStatuses = new Set();
+  codifStatusSection.querySelectorAll('input[type=checkbox]:checked').forEach(cb => {
+    checkedCodifStatuses.add(cb.value);
+  });
+
   // Find column keys
   const claimKey           = findColumnKey(parsedRows, CLAIM_ID_CANDIDATES);
   const deptKey            = findColumnKey(parsedRows, DEPT_CANDIDATES);
@@ -313,23 +362,22 @@ allocateBtn.addEventListener('click', () => {
     const dept = String(row[deptKey] || '').trim();
     return checkedDepts.has(dept);
   });
-  const deptSkipped = parsedRows.length - filteredRows.length;
 
   if (!filteredRows.length) {
     messageBox.textContent = 'No claims match the selected departments.';
     return;
   }
 
-  // Skip claims where Codification Status is "Not Seen"
-  const notSeenSkipped = codifStatusKey
-    ? filteredRows.filter(row => String(row[codifStatusKey] || '').trim() === 'Not Seen').length
-    : 0;
-  const visibleRows = codifStatusKey
-    ? filteredRows.filter(row => String(row[codifStatusKey] || '').trim() !== 'Not Seen')
+  // Filter rows by checked codification statuses (skip if column absent)
+  const visibleRows = (codifStatusKey && checkedCodifStatuses.size)
+    ? filteredRows.filter(row => {
+        const status = String(row[codifStatusKey] || '').trim();
+        return checkedCodifStatuses.has(status);
+      })
     : filteredRows;
 
   if (!visibleRows.length) {
-    messageBox.textContent = 'All matching claims have Codification Status "Not Seen" and were skipped.';
+    messageBox.textContent = 'No claims remain after applying the selected Codification Status filters.';
     return;
   }
 
@@ -372,7 +420,7 @@ allocateBtn.addEventListener('click', () => {
   lastAllocationResult = { allocationRows, originalAoA: rawSheetData };
 
   renderPreview(allocationRows);
-  renderCoderSummary(allocationRows, coders, notSeenSkipped, deptSkipped);
+  renderCoderSummary(allocationRows, coders);
   downloadBtn.disabled = false;
 });
 
@@ -428,7 +476,7 @@ function renderPreview(rows) {
 // ==============================
 // Render coder assignment summary
 // ==============================
-function renderCoderSummary(rows, coders, notSeenSkipped, deptSkipped) {
+function renderCoderSummary(rows, coders) {
   coderSummary.innerHTML = '';
   coderSummary.style.marginTop = '12px';
 
@@ -465,22 +513,6 @@ function renderCoderSummary(rows, coders, notSeenSkipped, deptSkipped) {
     list.appendChild(li);
   }
   coderSummary.appendChild(list);
-  if (notSeenSkipped > 0) {
-    const note = document.createElement('p');
-    note.style.margin = '6px 0 0 0';
-    note.style.fontSize = '12px';
-    note.style.color = '#888';
-    note.textContent = `${notSeenSkipped} claim${notSeenSkipped === 1 ? '' : 's'} skipped — Codification Status "Not Seen"`;
-    coderSummary.appendChild(note);
-  }
-  if (deptSkipped > 0) {
-    const note = document.createElement('p');
-    note.style.margin = '4px 0 0 0';
-    note.style.fontSize = '12px';
-    note.style.color = '#888';
-    note.textContent = `${deptSkipped} claim${deptSkipped === 1 ? '' : 's'} skipped — department not in selected list`;
-    coderSummary.appendChild(note);
-  }
   coderSummary.classList.remove('hidden');
 }
 

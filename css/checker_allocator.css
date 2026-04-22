@@ -67,7 +67,38 @@
   padding: 3px 8px;
 }
 
-#allocation-preview {
+#codif-status-section {
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  padding: 10px;
+  max-height: 200px;
+  overflow-y: auto;
+  background: #fafafa;
+}
+
+#codif-status-section label {
+  display: block;
+  padding: 3px 0;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+#codif-status-section label:hover {
+  background: #f0f0f0;
+}
+
+#codif-status-controls {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+#codif-status-controls button {
+  font-size: 12px;
+  padding: 3px 8px;
+}
+
+
   margin-top: 16px;
   overflow-x: auto;
 }
