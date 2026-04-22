@@ -14,9 +14,13 @@ const allocationPreview = document.getElementById('allocation-preview');
 
 let presetsData = {};       // { facilityName: { license, coders[] } }
 let parsedRows = [];        // array of objects from the uploaded XLSX
-let parsedHeaders = [];     // header row
 let rawSheetData = null;    // raw sheet_to_json array-of-arrays (for original sheet)
-let lastAllocationResult = null; // { rows, originalAoA }
+let lastAllocationResult = null; // { allocationRows, originalAoA }
+
+// Column name candidates in priority order (first match wins)
+const CLAIM_ID_CANDIDATES  = ['Pri. Claim ID', 'Pri. Claim No', 'ClaimID', 'Claim ID'];
+const DEPT_CANDIDATES      = ['Admitting Department', 'Department', 'Clinic'];
+const FACILITY_CANDIDATES  = ['Center Name', 'Facility ID', 'Centre Name'];
 
 // ==============================
 // Load presets JSON on startup
@@ -71,17 +75,14 @@ fileInput.addEventListener('change', () => {
       }
 
       parsedRows = jsonRows;
-      parsedHeaders = rawSheetData[0] ? rawSheetData[0].map(h => String(h).trim()) : [];
 
       // Extract unique departments
-      const deptKey = findColumnKey(parsedRows, 'Department');
+      const deptKey = findColumnKey(parsedRows, DEPT_CANDIDATES);
       const depts = getUniqueDepartments(parsedRows, deptKey);
-
-      // Render department checkboxes
       renderDeptCheckboxes(depts);
 
       // Auto-detect facility and apply preset
-      const facilityKey = findColumnKey(parsedRows, 'Facility ID');
+      const facilityKey = findColumnKey(parsedRows, FACILITY_CANDIDATES);
       autoDetectPreset(parsedRows, facilityKey);
 
       allocatorMain.classList.remove('hidden');
@@ -96,20 +97,32 @@ fileInput.addEventListener('change', () => {
 });
 
 // ==============================
-// Column key finder (case-insensitive fuzzy match)
+// Column key finder
+// Accepts an array of candidate names tried in priority order.
+// Uses exact normalized match first, then partial match.
 // ==============================
-function findColumnKey(rows, targetName) {
+function findColumnKey(rows, candidates) {
   if (!rows.length) return null;
   const keys = Object.keys(rows[0]);
   const norm = s => String(s || '').toLowerCase().replace(/[\s.\-_]/g, '');
-  const targetNorm = norm(targetName);
-  for (const k of keys) {
-    if (norm(k) === targetNorm) return k;
+
+  for (const candidate of candidates) {
+    const targetNorm = norm(candidate);
+    // Exact normalized match
+    for (const k of keys) {
+      if (norm(k) === targetNorm) return k;
+    }
   }
-  // partial match
-  for (const k of keys) {
-    if (norm(k).includes(targetNorm) || targetNorm.includes(norm(k))) return k;
+
+  // Partial match (any candidate)
+  for (const candidate of candidates) {
+    const targetNorm = norm(candidate);
+    for (const k of keys) {
+      const kn = norm(k);
+      if (kn.includes(targetNorm) || targetNorm.includes(kn)) return k;
+    }
   }
+
   return null;
 }
 
@@ -149,40 +162,45 @@ function renderDeptCheckboxes(depts) {
 }
 
 // ==============================
-// Auto-detect preset from Facility ID column
+// Auto-detect preset from facility column
+// Center Name holds a name string, so we match by name similarity.
+// Falls back to license-code match for Facility ID columns.
 // ==============================
 function autoDetectPreset(rows, facilityKey) {
   if (!facilityKey || !Object.keys(presetsData).length) return;
 
-  // Collect facility IDs from data
+  // Count occurrences of each value in the facility column
   const counts = {};
   for (const row of rows) {
-    const val = String(row[facilityKey] || '').trim().toUpperCase();
+    const val = String(row[facilityKey] || '').trim();
     if (val) counts[val] = (counts[val] || 0) + 1;
   }
 
-  // Find the most common facility ID
-  let topId = null;
+  // Pick the most common value
+  let topValue = null;
   let topCount = 0;
-  for (const [id, cnt] of Object.entries(counts)) {
-    if (cnt > topCount) { topCount = cnt; topId = id; }
+  for (const [val, cnt] of Object.entries(counts)) {
+    if (cnt > topCount) { topCount = cnt; topValue = val; }
   }
+  if (!topValue) return;
 
-  if (!topId) return;
+  const norm = s => String(s || '').toLowerCase().replace(/[\s.\-_,()]/g, '');
+  const topNorm = norm(topValue);
 
-  // Match against preset licenses
-  for (const [name, preset] of Object.entries(presetsData)) {
-    if (preset.license && preset.license.toUpperCase() === topId) {
+  // 1) Try matching the value as a facility name (substring either way)
+  for (const [name] of Object.entries(presetsData)) {
+    const nameNorm = norm(name);
+    if (nameNorm === topNorm || nameNorm.includes(topNorm) || topNorm.includes(nameNorm)) {
       presetSelect.value = name;
       applyPreset(name);
       return;
     }
   }
 
-  // Fallback: try partial name match (e.g. Facility ID might be a facility name substring)
-  const lowerTopId = topId.toLowerCase();
+  // 2) Try matching the value as a license code (MF/PF code)
+  const upperValue = topValue.toUpperCase();
   for (const [name, preset] of Object.entries(presetsData)) {
-    if (name.toLowerCase().includes(lowerTopId) || lowerTopId.includes(name.toLowerCase())) {
+    if (preset.license && preset.license.toUpperCase() === upperValue) {
       presetSelect.value = name;
       applyPreset(name);
       return;
@@ -194,21 +212,17 @@ function autoDetectPreset(rows, facilityKey) {
 // Preset change handler
 // ==============================
 presetSelect.addEventListener('change', () => {
-  const selected = presetSelect.value;
-  applyPreset(selected);
+  applyPreset(presetSelect.value);
 });
 
 function applyPreset(name) {
-  if (!name || !presetsData[name]) {
-    // Don't clear coders if preset is empty/none
-    return;
-  }
+  if (!name || !presetsData[name]) return;
   const coders = presetsData[name].coders || [];
   codersTextarea.value = coders.join('\n');
 }
 
 // ==============================
-// Select/Deselect all departments
+// Select / Deselect all departments
 // ==============================
 selectAllBtn.addEventListener('click', () => {
   deptSection.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = true);
@@ -250,17 +264,17 @@ allocateBtn.addEventListener('click', () => {
   }
 
   // Find column keys
-  const claimKey = findColumnKey(parsedRows, 'Pri. Claim No');
-  const deptKey = findColumnKey(parsedRows, 'Department');
+  const claimKey = findColumnKey(parsedRows, CLAIM_ID_CANDIDATES);
+  const deptKey  = findColumnKey(parsedRows, DEPT_CANDIDATES);
 
   if (!claimKey) {
-    messageBox.textContent = 'Could not find "Claim No" column in the uploaded file.';
+    messageBox.textContent = 'Could not find a Claim ID column in the uploaded file.';
     return;
   }
 
   // Filter rows by checked departments
   const filteredRows = parsedRows.filter(row => {
-    if (!deptKey) return true; // if no dept column, include all
+    if (!deptKey) return true;
     const dept = String(row[deptKey] || '').trim();
     return checkedDepts.has(dept);
   });
@@ -273,15 +287,12 @@ allocateBtn.addEventListener('click', () => {
   // Cyclically assign coders
   const allocationRows = filteredRows.map((row, idx) => ({
     'Claim ID': row[claimKey] || '',
-    'Coder': coders[idx % coders.length],
-    'Query': '',
-    'Status': ''
+    'Coder':    coders[idx % coders.length],
+    'Query':    '',
+    'Status':   ''
   }));
 
-  lastAllocationResult = {
-    allocationRows,
-    originalAoA: rawSheetData
-  };
+  lastAllocationResult = { allocationRows, originalAoA: rawSheetData };
 
   renderPreview(allocationRows);
   downloadBtn.disabled = false;
@@ -357,12 +368,11 @@ downloadBtn.addEventListener('click', () => {
   const wbOut = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
   const blob = new Blob([wbOut], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
   const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
-  const filename = `allocation_${timestamp}.xlsx`;
 
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = filename;
+  a.download = `allocation_${timestamp}.xlsx`;
   document.body.appendChild(a);
   a.click();
   setTimeout(() => {
@@ -370,3 +380,4 @@ downloadBtn.addEventListener('click', () => {
     URL.revokeObjectURL(url);
   }, 0);
 });
+

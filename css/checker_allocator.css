@@ -1,0 +1,102 @@
+/* checker_allocator.css */
+
+#allocator-layout {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+#left-panel {
+  flex: 1 1 260px;
+  min-width: 220px;
+  max-width: 320px;
+}
+
+#right-panel {
+  flex: 2 1 400px;
+}
+
+#dept-section {
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  padding: 10px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: #fafafa;
+}
+
+#dept-section label {
+  display: block;
+  padding: 3px 0;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+#dept-section label:hover {
+  background: #f0f0f0;
+}
+
+#coders-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 13px;
+  padding: 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  resize: vertical;
+  font-family: Arial, sans-serif;
+}
+
+.section-label {
+  font-weight: bold;
+  font-size: 13px;
+  margin-bottom: 6px;
+  display: block;
+}
+
+#dept-controls {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+#dept-controls button {
+  font-size: 12px;
+  padding: 3px 8px;
+}
+
+#allocation-preview {
+  margin-top: 16px;
+  overflow-x: auto;
+}
+
+#allocation-preview table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 13px;
+}
+
+#allocation-preview th,
+#allocation-preview td {
+  border: 1px solid #ddd;
+  padding: 4px 8px;
+  text-align: left;
+}
+
+#allocation-preview th {
+  background: #f0f0f0;
+  font-weight: bold;
+}
+
+#allocation-preview tr:nth-child(even) td {
+  background: #f9f9f9;
+}
+
+#preset-select {
+  font-size: 13px;
+  padding: 5px 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  width: 100%;
+}
