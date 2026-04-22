@@ -15,6 +15,9 @@ const selectAllCodifBtn = document.getElementById('select-all-codif-btn');
 const deselectAllCodifBtn = document.getElementById('deselect-all-codif-btn');
 const selectAllPaymentBtn = document.getElementById('select-all-payment-btn');
 const deselectAllPaymentBtn = document.getElementById('deselect-all-payment-btn');
+const codifiedBySection = document.getElementById('codified-by-section');
+const selectAllCodifiedByBtn = document.getElementById('select-all-codified-by-btn');
+const deselectAllCodifiedByBtn = document.getElementById('deselect-all-codified-by-btn');
 const allocateBtn = document.getElementById('allocate-btn');
 const downloadBtn = document.getElementById('download-btn');
 const allocationPreview = document.getElementById('allocation-preview');
@@ -32,6 +35,7 @@ const DEPT_CANDIDATES                = ['Admitting Department', 'Department', 'C
 const FACILITY_CANDIDATES            = ['Center Name', 'Facility ID', 'Centre Name'];
 const CODIFICATION_STATUS_CANDIDATES = ['Codification Status', 'Codification_Status', 'CodificationStatus'];
 const PAYMENT_MODE_CANDIDATES        = ['Pri. Payment Mode', 'Payment Mode', 'PaymentMode', 'Pri Payment Mode'];
+const CODIFIED_BY_CANDIDATES         = ['Codified By', 'CodifiedBy', 'Codified_By', 'Coded By', 'CodedBy'];
 
 // ==============================
 // Load presets JSON on startup
@@ -69,6 +73,7 @@ fileInput.addEventListener('change', () => {
   coderSummary.classList.add('hidden');
   codifStatusSection.innerHTML = '';
   paymentModeSection.innerHTML = '';
+  codifiedBySection.innerHTML = '';
   downloadBtn.disabled = true;
   lastAllocationResult = null;
   coderRestrictions = {};
@@ -118,6 +123,10 @@ fileInput.addEventListener('change', () => {
       // Extract unique codification statuses with counts (filtered by all payment modes checked)
       const codifKey = findColumnKey(parsedRows, CODIFICATION_STATUS_CANDIDATES);
       renderCodifStatusCheckboxes(getValuesWithCounts(parsedRows, codifKey));
+
+      // Extract unique codified-by names with counts
+      const codifiedByKey = findColumnKey(parsedRows, CODIFIED_BY_CANDIDATES);
+      renderCodifiedByCheckboxes(getValuesWithCounts(parsedRows, codifiedByKey));
 
       // Auto-detect facility and apply preset
       const facilityKey = findColumnKey(parsedRows, FACILITY_CANDIDATES);
@@ -243,6 +252,86 @@ function renderPaymentModeCheckboxes(items) {
     label.appendChild(cb);
     label.appendChild(document.createTextNode(`(${count}) ${value}`));
     paymentModeSection.appendChild(label);
+  }
+}
+
+// ==============================
+// Render codified-by checkboxes
+// All checked by default (checked = already coded = exclude from allocation)
+// ==============================
+function renderCodifiedByCheckboxes(items) {
+  codifiedBySection.innerHTML = '';
+  if (!items.length) {
+    codifiedBySection.textContent = 'No codified-by names found.';
+    return;
+  }
+  for (const { value, count } of items) {
+    const label = document.createElement('label');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.value = value;
+    cb.checked = true; // checked = exclude these already-coded rows
+    cb.style.marginRight = '6px';
+    label.appendChild(cb);
+    label.appendChild(document.createTextNode(`(${count}) ${value}`));
+    codifiedBySection.appendChild(label);
+  }
+}
+
+// ==============================
+// Re-render codified-by counts based on currently checked departments,
+// payment modes, and codification statuses
+// ==============================
+function refreshCodifiedByCounts() {
+  const deptKey       = findColumnKey(parsedRows, DEPT_CANDIDATES);
+  const paymentKey    = findColumnKey(parsedRows, PAYMENT_MODE_CANDIDATES);
+  const codifKey      = findColumnKey(parsedRows, CODIFICATION_STATUS_CANDIDATES);
+  const codifiedByKey = findColumnKey(parsedRows, CODIFIED_BY_CANDIDATES);
+
+  // Remember which codified-by names are currently checked
+  const checkedNames = new Set();
+  codifiedBySection.querySelectorAll('input[type=checkbox]:checked').forEach(cb => {
+    checkedNames.add(cb.value);
+  });
+
+  // Collect current upstream selections
+  const checkedDepts = new Set();
+  deptSection.querySelectorAll('input[type=checkbox]:checked').forEach(cb => {
+    checkedDepts.add(cb.value);
+  });
+  const checkedModes = new Set();
+  paymentModeSection.querySelectorAll('input[type=checkbox]:checked').forEach(cb => {
+    checkedModes.add(cb.value);
+  });
+  const checkedCodifStatuses = new Set();
+  codifStatusSection.querySelectorAll('input[type=checkbox]:checked').forEach(cb => {
+    checkedCodifStatuses.add(cb.value);
+  });
+
+  // Apply upstream filters to get the rows in scope
+  let filtered = parsedRows;
+  if (deptKey) filtered = filtered.filter(r => checkedDepts.has(String(r[deptKey] || '').trim()));
+  if (paymentKey) filtered = filtered.filter(r => checkedModes.has(String(r[paymentKey] || '').trim()));
+  if (codifKey) filtered = filtered.filter(r => checkedCodifStatuses.has(String(r[codifKey] || '').trim()));
+
+  // Re-render with updated counts, restoring checked state
+  const items = getValuesWithCounts(filtered, codifiedByKey);
+  codifiedBySection.innerHTML = '';
+  if (!items.length) {
+    codifiedBySection.textContent = 'No codified-by names found.';
+    return;
+  }
+  for (const { value, count } of items) {
+    const label = document.createElement('label');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.value = value;
+    // Preserve previous checked state; fall back to all-checked default
+    cb.checked = checkedNames.size > 0 ? checkedNames.has(value) : true;
+    cb.style.marginRight = '6px';
+    label.appendChild(cb);
+    label.appendChild(document.createTextNode(`(${count}) ${value}`));
+    codifiedBySection.appendChild(label);
   }
 }
 
@@ -427,18 +516,21 @@ selectAllBtn.addEventListener('click', () => {
   deptSection.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = true);
   refreshCodifStatusCounts();
   refreshPaymentModeCounts();
+  refreshCodifiedByCounts();
 });
 
 deselectAllBtn.addEventListener('click', () => {
   deptSection.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = false);
   refreshCodifStatusCounts();
   refreshPaymentModeCounts();
+  refreshCodifiedByCounts();
 });
 
 deptSection.addEventListener('change', (e) => {
   if (e.target.type === 'checkbox') {
     refreshCodifStatusCounts();
     refreshPaymentModeCounts();
+    refreshCodifiedByCounts();
   }
 });
 
@@ -447,10 +539,16 @@ deptSection.addEventListener('change', (e) => {
 // ==============================
 selectAllCodifBtn.addEventListener('click', () => {
   codifStatusSection.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = true);
+  refreshCodifiedByCounts();
 });
 
 deselectAllCodifBtn.addEventListener('click', () => {
   codifStatusSection.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = false);
+  refreshCodifiedByCounts();
+});
+
+codifStatusSection.addEventListener('change', (e) => {
+  if (e.target.type === 'checkbox') refreshCodifiedByCounts();
 });
 
 // ==============================
@@ -459,15 +557,31 @@ deselectAllCodifBtn.addEventListener('click', () => {
 selectAllPaymentBtn.addEventListener('click', () => {
   paymentModeSection.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = true);
   refreshCodifStatusCounts();
+  refreshCodifiedByCounts();
 });
 
 deselectAllPaymentBtn.addEventListener('click', () => {
   paymentModeSection.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = false);
   refreshCodifStatusCounts();
+  refreshCodifiedByCounts();
 });
 
 paymentModeSection.addEventListener('change', (e) => {
-  if (e.target.type === 'checkbox') refreshCodifStatusCounts();
+  if (e.target.type === 'checkbox') {
+    refreshCodifStatusCounts();
+    refreshCodifiedByCounts();
+  }
+});
+
+// ==============================
+// Select / Deselect all codified-by names
+// ==============================
+selectAllCodifiedByBtn.addEventListener('click', () => {
+  codifiedBySection.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = true);
+});
+
+deselectAllCodifiedByBtn.addEventListener('click', () => {
+  codifiedBySection.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = false);
 });
 
 // ==============================
@@ -554,9 +668,23 @@ allocateBtn.addEventListener('click', () => {
       })
     : codifFilteredRows;
 
+  // Exclude rows already coded by a checked name (checked = trusted coder, already done)
+  // Rows with an empty Codified By, or whose coder name is unchecked, are included.
+  const checkedCodifiedBy = new Set();
+  codifiedBySection.querySelectorAll('input[type=checkbox]:checked').forEach(cb => {
+    checkedCodifiedBy.add(cb.value);
+  });
+  const codifiedByKey = findColumnKey(parsedRows, CODIFIED_BY_CANDIDATES);
+  const allocatableRows = codifiedByKey
+    ? visibleRows.filter(row => {
+        const codifier = String(row[codifiedByKey] || '').trim();
+        return !codifier || !checkedCodifiedBy.has(codifier);
+      })
+    : visibleRows;
+
   // Deduplicate by Claim ID — keep only the first occurrence of each ID
   const seenClaimIds = new Set();
-  const uniqueRows = visibleRows.filter(row => {
+  const uniqueRows = allocatableRows.filter(row => {
     const id = String(row[claimKey] || '').trim();
     if (seenClaimIds.has(id)) return false;
     seenClaimIds.add(id);
