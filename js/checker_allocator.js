@@ -67,8 +67,22 @@ fileInput.addEventListener('change', () => {
       // Raw data for the "Original" sheet in the output
       rawSheetData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
 
-      // Parse into objects using the first row as headers
-      const jsonRows = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+      // Headers are in the second row (index 1); data rows start at index 2.
+      // Build an array of objects manually so we are not dependent on XLSX
+      // assuming the first row is the header.
+      if (rawSheetData.length < 2) {
+        messageBox.textContent = 'No data found in the uploaded file.';
+        return;
+      }
+      const headerRow = rawSheetData[1].map(h => String(h == null ? '' : h).trim());
+      const dataRows  = rawSheetData.slice(2);
+
+      const jsonRows = dataRows.map(row => {
+        const obj = {};
+        headerRow.forEach((h, i) => { obj[h] = row[i] == null ? '' : row[i]; });
+        return obj;
+      }).filter(obj => Object.values(obj).some(v => v !== ''));
+
       if (!jsonRows.length) {
         messageBox.textContent = 'No data found in the uploaded file.';
         return;
