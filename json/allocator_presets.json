@@ -1,4 +1,5 @@
 {
+  "_comment": "Each coder entry can be a plain string (unrestricted) or an object: { \"name\": \"...\", \"departments\": [\"Dept A\", \"Dept B\"] }. Restricted coders are only assigned to the listed departments.",
   "Ivory Medical Center": { "license": "MF4456", "coders": [] },
   "Lauretta Medical Center": { "license": "MF4706", "coders": [] },
   "Majestic Dental Center": { "license": "MF1901", "coders": [] },

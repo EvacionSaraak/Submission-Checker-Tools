@@ -17,6 +17,8 @@ let presetsData = {};       // { facilityName: { license, coders[] } }
 let parsedRows = [];        // array of objects from the uploaded XLSX
 let rawSheetData = null;    // raw sheet_to_json array-of-arrays (for original sheet)
 let lastAllocationResult = null; // { allocationRows, originalAoA }
+// { coderName: Set<deptName> } for restricted coders; absent key = unrestricted
+let coderRestrictions = {};
 
 // Column name candidates in priority order (first match wins)
 const CLAIM_ID_CANDIDATES  = ['Pri. Claim ID', 'Pri. Claim No', 'ClaimID', 'Claim ID'];
@@ -39,6 +41,7 @@ fetch('../json/allocator_presets.json')
 function populatePresetDropdown() {
   presetSelect.innerHTML = '<option value="">-- None --</option>';
   for (const name of Object.keys(presetsData)) {
+    if (name.startsWith('_')) continue; // skip meta/comment keys
     const opt = document.createElement('option');
     opt.value = name;
     opt.textContent = name;
@@ -58,6 +61,7 @@ fileInput.addEventListener('change', () => {
   coderSummary.classList.add('hidden');
   downloadBtn.disabled = true;
   lastAllocationResult = null;
+  coderRestrictions = {};
 
   const reader = new FileReader();
   reader.onload = e => {
@@ -206,6 +210,7 @@ function autoDetectPreset(rows, facilityKey) {
 
   // 1) Try matching the value as a facility name (substring either way)
   for (const [name] of Object.entries(presetsData)) {
+    if (name.startsWith('_')) continue;
     const nameNorm = norm(name);
     if (nameNorm === topNorm || nameNorm.includes(topNorm) || topNorm.includes(nameNorm)) {
       presetSelect.value = name;
@@ -217,6 +222,7 @@ function autoDetectPreset(rows, facilityKey) {
   // 2) Try matching the value as a license code (MF/PF code)
   const upperValue = topValue.toUpperCase();
   for (const [name, preset] of Object.entries(presetsData)) {
+    if (name.startsWith('_')) continue;
     if (preset.license && preset.license.toUpperCase() === upperValue) {
       presetSelect.value = name;
       applyPreset(name);
@@ -233,9 +239,17 @@ presetSelect.addEventListener('change', () => {
 });
 
 function applyPreset(name) {
+  coderRestrictions = {};
   if (!name || !presetsData[name]) return;
-  const coders = presetsData[name].coders || [];
-  codersTextarea.value = coders.join('\n');
+  const rawCoders = presetsData[name].coders || [];
+  // Each entry is either a plain string or { name, departments[] }
+  const names = rawCoders.map(c => (typeof c === 'string' ? c : c.name));
+  codersTextarea.value = names.join('\n');
+  for (const c of rawCoders) {
+    if (typeof c === 'object' && Array.isArray(c.departments) && c.departments.length) {
+      coderRestrictions[c.name] = new Set(c.departments);
+    }
+  }
 }
 
 // ==============================
@@ -312,14 +326,32 @@ allocateBtn.addEventListener('click', () => {
     return true;
   });
 
-  // Cyclically assign coders
-  const allocationRows = uniqueRows.map((row, idx) => ({
-    'Claim ID':   row[claimKey] || '',
-    'Department': deptKey ? String(row[deptKey] || '').trim() : '',
-    'Coder':      coders[idx % coders.length],
-    'Query':      '',
-    'Status':     ''
-  }));
+  // Cyclically assign coders, respecting per-coder department restrictions.
+  // Coders with a restrictions entry can only be assigned to their listed departments.
+  // Rows with no eligible coder are marked "(Unassigned)".
+  const poolCounters = {}; // key = eligible coder names joined → rotating index
+  const allocationRows = uniqueRows.map(row => {
+    const dept = deptKey ? String(row[deptKey] || '').trim() : '';
+    const eligible = coders.filter(c =>
+      !coderRestrictions[c] || coderRestrictions[c].has(dept)
+    );
+    let assigned;
+    if (!eligible.length) {
+      assigned = '(Unassigned)';
+    } else {
+      const key = eligible.join('|');
+      if (!(key in poolCounters)) poolCounters[key] = 0;
+      assigned = eligible[poolCounters[key] % eligible.length];
+      poolCounters[key]++;
+    }
+    return {
+      'Claim ID':   row[claimKey] || '',
+      'Department': dept,
+      'Coder':      assigned,
+      'Query':      '',
+      'Status':     ''
+    };
+  });
 
   lastAllocationResult = { allocationRows, originalAoA: rawSheetData };
 
@@ -386,7 +418,11 @@ function renderCoderSummary(rows, coders) {
 
   const counts = {};
   for (const coder of coders) counts[coder] = 0;
-  for (const row of rows) counts[row['Coder']] = (counts[row['Coder']] || 0) + 1;
+  let unassigned = 0;
+  for (const row of rows) {
+    if (row['Coder'] === '(Unassigned)') { unassigned++; continue; }
+    counts[row['Coder']] = (counts[row['Coder']] || 0) + 1;
+  }
 
   const label = document.createElement('span');
   label.className = 'section-label';
@@ -398,7 +434,18 @@ function renderCoderSummary(rows, coders) {
   list.style.paddingLeft = '16px';
   for (const coder of coders) {
     const li = document.createElement('li');
-    li.textContent = `${coder}: ${counts[coder] || 0} claim${counts[coder] === 1 ? '' : 's'}`;
+    const n = counts[coder] || 0;
+    let text = `${coder}: ${n} claim${n === 1 ? '' : 's'}`;
+    if (coderRestrictions[coder]) {
+      text += ` (${Array.from(coderRestrictions[coder]).join(', ')} only)`;
+    }
+    li.textContent = text;
+    list.appendChild(li);
+  }
+  if (unassigned > 0) {
+    const li = document.createElement('li');
+    li.style.color = '#c0392b';
+    li.textContent = `(Unassigned): ${unassigned} claim${unassigned === 1 ? '' : 's'} — no eligible coder for department`;
     list.appendChild(li);
   }
   coderSummary.appendChild(list);
