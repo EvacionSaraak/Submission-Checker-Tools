@@ -87,6 +87,31 @@ async function handleRun() {
     const facility = rec.FacilityID || '';
     const xmlNet = Number(rec.Net || 0), xmlQty = Number(rec.Quantity || 0);
 
+    // Special rule: code 02111 must always have a net price of 0 for Thiqa (D001) and Daman (A001)
+    if (normalizeCode(rec.CPT) === '2111' && (receiverID === 'D001' || receiverID === 'A001')) {
+      const insurerLabel = receiverID === 'D001' ? 'Thiqa' : 'Daman';
+      if (xmlNet === 0) {
+        status = 'Valid';
+        remarks.push(`Code 02111 is correctly priced at 0 for ${insurerLabel}.`);
+      } else {
+        status = 'Invalid';
+        remarks.push(`Code 02111 must always have a net price of 0 for ${insurerLabel}. Claimed Net: ${xmlNet}.`);
+      }
+      return {
+        ClaimID: rec.ClaimID || '',
+        ActivityID: rec.ActivityID || '',
+        CPT: rec.CPT || '',
+        ClaimedNet: rec.Net || '',
+        ClaimedQty: rec.Quantity || '',
+        ReferenceNetPrice: '0',
+        PricingRow: null,
+        XmlRow: rec,
+        isValid: status === 'Valid',
+        status,
+        Remarks: remarks.join(' ')
+      };
+    }
+
     // Determine reference price and the matched pricing row
     let refPrice = '';
     let matchRow = null;

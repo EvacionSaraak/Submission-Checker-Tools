@@ -116,6 +116,16 @@ function normalizeToothCode(code) {
   return code?.toString().trim().toUpperCase() || '';
 }
 
+// Supernumerary teeth are represented as a regular tooth number + 50 (e.g., tooth 79 = supernumerary of tooth 29).
+// Resolve to the base tooth for comparisons; display always uses the original supernumerary number.
+function resolveSupernumeraryTooth(tooth) {
+  const num = parseInt(tooth, 10);
+  if (!isNaN(num) && num >= 51) {
+    return (num - 50).toString();
+  }
+  return tooth;
+}
+
 function buildAuthMap(authData) {
   const map = {};
   authData.forEach(entry => {
@@ -141,14 +151,15 @@ function getTeethSet(region) {
 }
 
 function getRegionName(tooth) {
-  if (ANTERIOR_TEETH.has(tooth))  return 'Anterior';
-  if (BICUSPID_TEETH.has(tooth))  return 'Bicuspid';
-  if (POSTERIOR_TEETH.has(tooth)) return 'Posterior';
+  const t = resolveSupernumeraryTooth(tooth);
+  if (ANTERIOR_TEETH.has(t))  return 'Anterior';
+  if (BICUSPID_TEETH.has(t))  return 'Bicuspid';
+  if (POSTERIOR_TEETH.has(t)) return 'Posterior';
   return 'Unknown';
 }
 
 function getQuadrant(tooth) {
-  const t = normalizeToothCode(tooth);
+  const t = resolveSupernumeraryTooth(normalizeToothCode(tooth));
   for (const [quadrant, set] of Object.entries(QUADRANT_MAP)) {
     if (set.has(t)) return quadrant;
   }
@@ -156,7 +167,7 @@ function getQuadrant(tooth) {
 }
 
 function getSextant(tooth) {
-  const t = normalizeToothCode(tooth);
+  const t = resolveSupernumeraryTooth(normalizeToothCode(tooth));
   for (const [sextant, set] of Object.entries(SEXTANT_MAP)) {
     if (set.has(t)) return sextant;
   }
@@ -204,9 +215,36 @@ function hasSubcodeObservation(obsList) {
   });
 }
 
+// Returns true if a Subcode observation exists but has value "01" without the required trailing space
+function hasSubcodeObservationMissingSpace(obsList) {
+  return Array.from(obsList).some(obs => {
+    const code = (obs.querySelector('Code')?.textContent || '').trim().toUpperCase();
+    const value = obs.querySelector('Value')?.textContent || '';
+    return code === 'SUBCODE' && value === '01';
+  });
+}
+
 // Special code utilities
 function isSpecialMedicalCode(code) {
   return SPECIAL_MEDICAL_CODES.some(item => item.code === code);
+}
+
+// Observation types that are allowed to have a blank/missing ValueType (tooth-number observations)
+const VALUETYPE_EXEMPT_OBS_TYPES = new Set(['universal dental', 'episode']);
+
+// Returns remarks for any observation where ValueType is blank but the observation type requires it.
+// "Universal Dental" and "Episode" observations carry a tooth number and don't need a ValueType.
+function validateObservationValueTypes(obsList) {
+  const remarks = [];
+  Array.from(obsList).forEach((obs, idx) => {
+    const obsType = (obs.querySelector('Type')?.textContent || '').trim();
+    const valueType = (obs.querySelector('ValueType')?.textContent || '').trim();
+    if (!VALUETYPE_EXEMPT_OBS_TYPES.has(obsType.toLowerCase()) && !valueType) {
+      const obsCode = (obs.querySelector('Code')?.textContent || '').trim() || `#${idx + 1}`;
+      remarks.push(`Observation ValueType may not be empty for observation "${obsCode}" (Type: "${obsType || '(missing)'}")`);
+    }
+  });
+  return remarks;
 }
 
 function getSpecialMedicalCodeDescription(code) {
@@ -279,7 +317,7 @@ function handleSpecialMedicalCode({claimId, activityId, type, code, obsCodes, ob
     ).join('<br>');
 
     const nonPDFObs = obsCodes.filter(oc => !isDrugPatientShareOrPDF(oc));
-    const toothCodesUsed = nonPDFObs.filter(oc => ALL_TEETH.has(oc));
+    const toothCodesUsed = nonPDFObs.filter(oc => ALL_TEETH.has(resolveSupernumeraryTooth(oc)));
     if (toothCodesUsed.length > 0) {
       remarks.push(`${code} cannot be used with tooth codes: ${toothCodesUsed.join(", ")}`);
     }
@@ -399,7 +437,7 @@ function validateKnownCode({
       if (obsCode === 'SUBCODE') {
         return `Subcode observation`;
       }
-      if (!meta.teethSet.has(obsCode)) {
+      if (!meta.teethSet.has(resolveSupernumeraryTooth(obsCode))) {
         const toothType = getRegionName(obsCode);
         if (!invalidTeethByType[toothType]) invalidTeethByType[toothType] = [];
         invalidTeethByType[toothType].push(obsCode);
@@ -594,7 +632,8 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
       }
 
       // --- ADDED: Check for invalid code length ---
-      if (code.length !== 5 && !code.includes(`-`)) {
+      // Codes containing a space are treated as unknown (not invalid) since the space may be part of a subcode variant
+      if (code.length !== 5 && !code.includes(`-`) && !rawCode.includes(' ')) {
         const typeRemarks = validateActivityType(code, typeValue);
         const allRemarks = [`Code "${code}" is invalid: it must have exactly 5 characters.`, ...typeRemarks];
         const row = buildActivityRow({
@@ -648,9 +687,19 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
 
           if (isEndodontist && !hasSubcode) {
             // ERROR: Endodontist but missing required Subcode observation
-            row.remarks.push(`Code ${code} requires a Subcode observation (Type: Text, Code: Subcode, Value: "01 ") when performed by an Endodontist.`);
+            if (hasSubcodeObservationMissingSpace(obsList)) {
+              row.remarks.push(`Subcode is missing space.`);
+            } else {
+              row.remarks.push(`Code ${code} requires a Subcode observation (Type: Text, Code: Subcode, Value: "01 ") when performed by an Endodontist.`);
+            }
           }
         }
+      }
+
+      // Validate observation ValueTypes: non-dental/episode observations must have a ValueType
+      const valueTypeRemarks = validateObservationValueTypes(obsList);
+      if (valueTypeRemarks.length > 0) {
+        row.remarks.push(...valueTypeRemarks);
       }
 
       if (row.remarks && row.remarks.length > 0) claimHasInvalid = true;

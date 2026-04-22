@@ -331,6 +331,17 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
   const results = [];
   const claims = xmlDoc.getElementsByTagName("Claim");
 
+  // Pre-scan: find all claim IDs that appear more than once within this submission
+  const claimIdCounts = new Map();
+  Array.from(claims).forEach(claim => {
+    const idEl = claim.getElementsByTagName("ID")[0];
+    const id = idEl && idEl.textContent ? idEl.textContent.trim() : "";
+    if (id) claimIdCounts.set(id, (claimIdCounts.get(id) || 0) + 1);
+  });
+  const duplicateClaimIds = new Set(
+    Array.from(claimIdCounts.entries()).filter(([, count]) => count > 1).map(([id]) => id)
+  );
+
   // Extract ReceiverID from Header element
   // Only check leading zeros for Daman (A001) and Thiqa (D001)
   const header = xmlDoc.querySelector("Header");
@@ -357,6 +368,11 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
 
     // Check if this specific claim had ampersands by comparing with original content
     const claimID = text("ID");
+
+    // Check for duplicate Claim ID within this submission
+    if (claimID && duplicateClaimIds.has(claimID)) {
+      invalidFields.push(`Duplicate Claim ID '${claimID}' found within this submission.`);
+    }
     let claimHadAmpersand = false;
     if (originalXmlContent && claimID) {
       // Find this claim in the original XML by locating its ID tag

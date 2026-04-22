@@ -1477,6 +1477,26 @@
 
         if (!sheetHeaders) sheetHeaders = displayHeaders;
 
+        // Build a claim-ID lookup for every row by scanning all tbody rows in order.
+        // This ensures that when a valid row is the first row of a claim (showing the
+        // claim ID in its first cell) and is followed by an invalid row (whose first
+        // cell is blank), the invalid row still gets the correct claim ID.
+        let lastSeenClaimId = '';
+        const rowClaimIdMap = new Map();
+        table.querySelectorAll('tbody tr').forEach(rowElement => {
+          const dataClaim = rowElement.getAttribute('data-claim-id');
+          if (dataClaim) {
+            // data-claim-id attribute is present and non-empty – use it
+            lastSeenClaimId = dataClaim;
+          } else if (dataClaim === null) {
+            // No data-claim-id attribute – fall back to first cell content
+            const firstTd = rowElement.querySelector('td');
+            const firstCellText = firstTd ? firstTd.textContent.trim() : '';
+            if (firstCellText) lastSeenClaimId = firstCellText;
+          }
+          rowClaimIdMap.set(rowElement, lastSeenClaimId);
+        });
+
         // Collect only invalid rows
         const invalidRowElements = table.querySelectorAll(
           'tbody tr.table-danger, tbody tr.table-warning, tbody tr.invalid, tbody tr.unknown'
@@ -1488,11 +1508,9 @@
             cells.push(td.textContent.trim());
           });
 
-          // Resolve Claim ID: prefer data attribute, fall back to first cell
-          let claimId = rowElement.getAttribute('data-claim-id') || '';
-          if (!claimId && cells.length > 0) {
-            claimId = cells[0];
-          }
+          // Resolve Claim ID from the pre-built lookup (covers both data-attribute
+          // and first-cell patterns, propagating across valid rows that were skipped)
+          const claimId = rowClaimIdMap.get(rowElement) || '';
 
           const rowObj = {};
           let isFirstKeptColumn = true;
