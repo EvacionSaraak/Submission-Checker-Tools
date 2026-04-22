@@ -194,7 +194,7 @@ function renderDeptCheckboxes(items) {
     const cb = document.createElement('input');
     cb.type = 'checkbox';
     cb.value = value;
-    cb.checked = true;
+    cb.checked = value !== 'Dental' && value !== 'Orthodontic';
     cb.style.marginRight = '6px';
     label.appendChild(cb);
     label.appendChild(document.createTextNode(`(${count}) ${value}`));
