@@ -313,6 +313,7 @@ allocateBtn.addEventListener('click', () => {
     const dept = String(row[deptKey] || '').trim();
     return checkedDepts.has(dept);
   });
+  const deptSkipped = parsedRows.length - filteredRows.length;
 
   if (!filteredRows.length) {
     messageBox.textContent = 'No claims match the selected departments.';
@@ -371,7 +372,7 @@ allocateBtn.addEventListener('click', () => {
   lastAllocationResult = { allocationRows, originalAoA: rawSheetData };
 
   renderPreview(allocationRows);
-  renderCoderSummary(allocationRows, coders, notSeenSkipped);
+  renderCoderSummary(allocationRows, coders, notSeenSkipped, deptSkipped);
   downloadBtn.disabled = false;
 });
 
@@ -427,7 +428,7 @@ function renderPreview(rows) {
 // ==============================
 // Render coder assignment summary
 // ==============================
-function renderCoderSummary(rows, coders, notSeenSkipped) {
+function renderCoderSummary(rows, coders, notSeenSkipped, deptSkipped) {
   coderSummary.innerHTML = '';
   coderSummary.style.marginTop = '12px';
 
@@ -470,6 +471,14 @@ function renderCoderSummary(rows, coders, notSeenSkipped) {
     note.style.fontSize = '12px';
     note.style.color = '#888';
     note.textContent = `${notSeenSkipped} claim${notSeenSkipped === 1 ? '' : 's'} skipped — Codification Status "Not Seen"`;
+    coderSummary.appendChild(note);
+  }
+  if (deptSkipped > 0) {
+    const note = document.createElement('p');
+    note.style.margin = '4px 0 0 0';
+    note.style.fontSize = '12px';
+    note.style.color = '#888';
+    note.textContent = `${deptSkipped} claim${deptSkipped === 1 ? '' : 's'} skipped — department not in selected list`;
     coderSummary.appendChild(note);
   }
   coderSummary.classList.remove('hidden');
