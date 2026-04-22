@@ -286,14 +286,67 @@ function applyPreset(name) {
 }
 
 // ==============================
+// Re-render codif status counts based on currently checked departments
+// ==============================
+function refreshCodifStatusCounts() {
+  const deptKey      = findColumnKey(parsedRows, DEPT_CANDIDATES);
+  const codifKey     = findColumnKey(parsedRows, CODIFICATION_STATUS_CANDIDATES);
+
+  // Remember which codif statuses are currently checked
+  const checkedCodifStatuses = new Set();
+  codifStatusSection.querySelectorAll('input[type=checkbox]:checked').forEach(cb => {
+    checkedCodifStatuses.add(cb.value);
+  });
+
+  // Determine which departments are checked
+  const checkedDepts = new Set();
+  deptSection.querySelectorAll('input[type=checkbox]:checked').forEach(cb => {
+    checkedDepts.add(cb.value);
+  });
+
+  // Rows visible under current department selection
+  const deptFilteredRows = deptKey
+    ? parsedRows.filter(row => checkedDepts.has(String(row[deptKey] || '').trim()))
+    : parsedRows;
+
+  // Re-render with updated counts, restoring checked state
+  const items = getValuesWithCounts(deptFilteredRows, codifKey);
+  codifStatusSection.innerHTML = '';
+  if (!items.length) {
+    codifStatusSection.textContent = 'No codification statuses found.';
+    return;
+  }
+  for (const { value, count } of items) {
+    const label = document.createElement('label');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.value = value;
+    // Preserve previous checked state; fall back to "Not Seen = unchecked" default
+    cb.checked = checkedCodifStatuses.size > 0
+      ? checkedCodifStatuses.has(value)
+      : value !== 'Not Seen';
+    cb.style.marginRight = '6px';
+    label.appendChild(cb);
+    label.appendChild(document.createTextNode(`(${count}) ${value}`));
+    codifStatusSection.appendChild(label);
+  }
+}
+
+// ==============================
 // Select / Deselect all departments
 // ==============================
 selectAllBtn.addEventListener('click', () => {
   deptSection.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = true);
+  refreshCodifStatusCounts();
 });
 
 deselectAllBtn.addEventListener('click', () => {
   deptSection.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = false);
+  refreshCodifStatusCounts();
+});
+
+deptSection.addEventListener('change', (e) => {
+  if (e.target.type === 'checkbox') refreshCodifStatusCounts();
 });
 
 // ==============================
