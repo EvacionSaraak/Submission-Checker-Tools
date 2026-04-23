@@ -118,9 +118,12 @@ fileInput.addEventListener('change', () => {
   allocationPreview.innerHTML = '';
   coderSummary.innerHTML = '';
   coderSummary.classList.add('hidden');
+  deptSection.innerHTML = '';
   codifStatusSection.innerHTML = '';
   paymentModeSection.innerHTML = '';
   codifiedBySection.innerHTML = '';
+  codersTextarea.value = '';
+  presetSelect.value = '';
   downloadBtn.disabled = true;
   lastAllocationResult = null;
   coderRestrictions = {};
