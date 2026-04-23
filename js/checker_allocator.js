@@ -536,8 +536,14 @@ function refreshCodifStatusCounts() {
     ? paymentFilteredRows.filter(row => checkedDepts.has(String(row[deptKey] || '').trim()))
     : paymentFilteredRows;
 
+  // When "Include No Bills" is unchecked, exclude no-bill rows from the counts
+  const codifRemarksKey = findColumnKey(parsedRows, CODIF_REMARKS_CANDIDATES);
+  const countableRows = (codifRemarksKey && !includeNoBillCb.checked)
+    ? deptFilteredRows.filter(row => !isNoBillingRemark(row[codifRemarksKey]))
+    : deptFilteredRows;
+
   // Re-render with updated counts, restoring checked state
-  const items = getValuesWithCounts(deptFilteredRows, codifKey);
+  const items = getValuesWithCounts(countableRows, codifKey);
   codifStatusSection.innerHTML = '';
   if (!items.length) {
     codifStatusSection.textContent = 'No codification statuses found.';
@@ -638,6 +644,12 @@ codifStatusSection.addEventListener('change', (e) => {
     refreshCodifiedByCounts();
     refreshNoBillCount();
   }
+});
+
+includeNoBillCb.addEventListener('change', () => {
+  refreshCodifStatusCounts();
+  refreshCodifiedByCounts();
+  refreshNoBillCount();
 });
 
 // ==============================
