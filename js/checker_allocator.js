@@ -718,6 +718,12 @@ allocateBtn.addEventListener('click', () => {
     return true;
   });
 
+  // Build today's date string (DD/MM/YYYY) once for the whole allocation run
+  const today = new Date();
+  const todayStr = String(today.getDate()).padStart(2, '0') + '/'
+    + String(today.getMonth() + 1).padStart(2, '0') + '/'
+    + today.getFullYear();
+
   // Cyclically assign coders, respecting per-coder department restrictions.
   // Coders with a restrictions entry can only be assigned to their listed departments.
   // Rows with no eligible coder are marked "(Unassigned)".
@@ -736,12 +742,14 @@ allocateBtn.addEventListener('click', () => {
       assigned = eligible[poolCounters[key] % eligible.length];
       poolCounters[key]++;
     }
+    const alreadyCoded = codifiedByKey && String(row[codifiedByKey] || '').trim();
     return {
-      'Claim ID':   row[claimKey] || '',
-      'Department': dept,
-      'Coder':      assigned,
-      'Query':      '',
-      'Status':     ''
+      'Claim ID':      row[claimKey] || '',
+      'Department':    dept,
+      'Coder':         assigned,
+      'Date Assigned': alreadyCoded ? 'CODER ALREADY ASSIGNED' : todayStr,
+      'Query':         '',
+      'Status':        ''
     };
   });
 
@@ -768,7 +776,7 @@ function renderPreview(rows) {
     return;
   }
 
-  const COLS = ['Claim ID', 'Department', 'Coder', 'Query', 'Status'];
+  const COLS = ['Claim ID', 'Department', 'Coder', 'Date Assigned', 'Query', 'Status'];
 
   const makeMarker = text => {
     const p = document.createElement('p');
@@ -865,8 +873,8 @@ downloadBtn.addEventListener('click', () => {
 
   // Sheet 1: Allocation
   const allocationAoA = [
-    ['Claim ID', 'Department', 'Coder', 'Query', 'Status'],
-    ...allocationRows.map(r => [r['Claim ID'], r['Department'], r['Coder'], r['Query'], r['Status']])
+    ['Claim ID', 'Department', 'Coder', 'Date Assigned', 'Query', 'Status'],
+    ...allocationRows.map(r => [r['Claim ID'], r['Department'], r['Coder'], r['Date Assigned'], r['Query'], r['Status']])
   ];
   const wsAllocation = XLSX.utils.aoa_to_sheet(allocationAoA);
   XLSX.utils.book_append_sheet(wb, wsAllocation, 'Allocation');
