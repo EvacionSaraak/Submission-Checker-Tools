@@ -21,6 +21,8 @@ const deselectAllCodifiedByBtn = document.getElementById('deselect-all-codified-
 const allocateBtn = document.getElementById('allocate-btn');
 const downloadBtn = document.getElementById('download-btn');
 const allocationPreview = document.getElementById('allocation-preview');
+const includeNoBillCb = document.getElementById('include-no-bill-cb');
+const noBillCountLabel = document.getElementById('no-bill-count-label');
 
 let presetsData = {};       // { facilityName: { license, coders[] } }
 let parsedRows = [];        // array of objects from the uploaded XLSX
@@ -124,6 +126,8 @@ fileInput.addEventListener('change', () => {
   codifiedBySection.innerHTML = '';
   codersTextarea.value = '';
   presetSelect.value = '';
+  includeNoBillCb.checked = false;
+  noBillCountLabel.textContent = '';
   downloadBtn.disabled = true;
   lastAllocationResult = null;
   coderRestrictions = {};
@@ -169,10 +173,11 @@ fileInput.addEventListener('change', () => {
       // Filter preset dropdown to match the checked payment modes.
       refreshPresetDropdown();
 
-      // Cascade downstream: Departments → Codif Status → Codified By.
+      // Cascade downstream: Departments → Codif Status → Codified By → No Bills.
       refreshDeptCounts();
       refreshCodifStatusCounts();
       refreshCodifiedByCounts();
+      refreshNoBillCount();
 
       // Auto-detect facility and apply preset
       const facilityKey = findColumnKey(parsedRows, FACILITY_CANDIDATES);
@@ -555,24 +560,61 @@ function refreshCodifStatusCounts() {
 }
 
 // ==============================
-// Select / Deselect all departments
+// Update the no-bill count label based on current upstream filter selections
 // ==============================
+function refreshNoBillCount() {
+  const codifRemarksKey = findColumnKey(parsedRows, CODIF_REMARKS_CANDIDATES);
+  if (!codifRemarksKey || !parsedRows.length) {
+    noBillCountLabel.textContent = '';
+    return;
+  }
+
+  const paymentKey = findColumnKey(parsedRows, PAYMENT_MODE_CANDIDATES);
+  const deptKey    = findColumnKey(parsedRows, DEPT_CANDIDATES);
+  const codifKey   = findColumnKey(parsedRows, CODIFICATION_STATUS_CANDIDATES);
+
+  const checkedModes = new Set();
+  paymentModeSection.querySelectorAll('input[type=checkbox]:checked').forEach(cb => {
+    checkedModes.add(cb.value);
+  });
+  const checkedDepts = new Set();
+  deptSection.querySelectorAll('input[type=checkbox]:checked').forEach(cb => {
+    checkedDepts.add(cb.value);
+  });
+  const checkedCodifStatuses = new Set();
+  codifStatusSection.querySelectorAll('input[type=checkbox]:checked').forEach(cb => {
+    checkedCodifStatuses.add(cb.value);
+  });
+
+  let filtered = parsedRows;
+  if (paymentKey) filtered = filtered.filter(r => checkedModes.has(String(r[paymentKey] || '').trim()));
+  if (deptKey)    filtered = filtered.filter(r => checkedDepts.has(String(r[deptKey] || '').trim()));
+  if (codifKey)   filtered = filtered.filter(r => checkedCodifStatuses.has(String(r[codifKey] || '').trim()));
+
+  const noBillCount = filtered.filter(row => isNoBillingRemark(row[codifRemarksKey])).length;
+  noBillCountLabel.textContent = `No Bills: ${noBillCount}`;
+}
+
+
 selectAllBtn.addEventListener('click', () => {
   deptSection.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = true);
   refreshCodifStatusCounts();
   refreshCodifiedByCounts();
+  refreshNoBillCount();
 });
 
 deselectAllBtn.addEventListener('click', () => {
   deptSection.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = false);
   refreshCodifStatusCounts();
   refreshCodifiedByCounts();
+  refreshNoBillCount();
 });
 
 deptSection.addEventListener('change', (e) => {
   if (e.target.type === 'checkbox') {
     refreshCodifStatusCounts();
     refreshCodifiedByCounts();
+    refreshNoBillCount();
   }
 });
 
@@ -582,15 +624,20 @@ deptSection.addEventListener('change', (e) => {
 selectAllCodifBtn.addEventListener('click', () => {
   codifStatusSection.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = true);
   refreshCodifiedByCounts();
+  refreshNoBillCount();
 });
 
 deselectAllCodifBtn.addEventListener('click', () => {
   codifStatusSection.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = false);
   refreshCodifiedByCounts();
+  refreshNoBillCount();
 });
 
 codifStatusSection.addEventListener('change', (e) => {
-  if (e.target.type === 'checkbox') refreshCodifiedByCounts();
+  if (e.target.type === 'checkbox') {
+    refreshCodifiedByCounts();
+    refreshNoBillCount();
+  }
 });
 
 // ==============================
@@ -602,6 +649,7 @@ selectAllPaymentBtn.addEventListener('click', () => {
   refreshDeptCounts();
   refreshCodifStatusCounts();
   refreshCodifiedByCounts();
+  refreshNoBillCount();
 });
 
 deselectAllPaymentBtn.addEventListener('click', () => {
@@ -610,6 +658,7 @@ deselectAllPaymentBtn.addEventListener('click', () => {
   refreshDeptCounts();
   refreshCodifStatusCounts();
   refreshCodifiedByCounts();
+  refreshNoBillCount();
 });
 
 paymentModeSection.addEventListener('change', (e) => {
@@ -618,6 +667,7 @@ paymentModeSection.addEventListener('change', (e) => {
     refreshDeptCounts();
     refreshCodifStatusCounts();
     refreshCodifiedByCounts();
+    refreshNoBillCount();
   }
 });
 
@@ -732,7 +782,8 @@ allocateBtn.addEventListener('click', () => {
     : visibleRows;
 
   // Exclude rows whose Codification Remarks indicate no billing / no submission
-  const billingRows = codifRemarksKey
+  // (unless the user has checked "Include No Bills")
+  const billingRows = (codifRemarksKey && !includeNoBillCb.checked)
     ? allocatableRows.filter(row => !isNoBillingRemark(row[codifRemarksKey]))
     : allocatableRows;
 
