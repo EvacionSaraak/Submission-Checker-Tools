@@ -171,13 +171,8 @@ fileInput.addEventListener('change', () => {
       renderPaymentModeCheckboxes(getValuesWithCounts(parsedRows, paymentKey));
 
       // Filter preset dropdown to match the checked payment modes.
-      refreshPresetDropdown();
-
       // Cascade downstream: Departments → Codif Status → Codified By → No Bills.
-      refreshDeptCounts();
-      refreshCodifStatusCounts();
-      refreshCodifiedByCounts();
-      refreshNoBillCount();
+      refreshAll();
 
       // Auto-detect facility and apply preset
       const facilityKey = findColumnKey(parsedRows, FACILITY_CANDIDATES);
@@ -601,26 +596,32 @@ function refreshNoBillCount() {
   noBillCountLabel.textContent = `No Bills: ${noBillCount}`;
 }
 
-
-selectAllBtn.addEventListener('click', () => {
-  deptSection.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = true);
+// ==============================
+// Refresh all filter sections in cascade order:
+// Preset Dropdown → Dept Counts → Codif Status → Codified By → No Bill Count
+// ==============================
+function refreshAll() {
+  refreshPresetDropdown();
+  refreshDeptCounts();
   refreshCodifStatusCounts();
   refreshCodifiedByCounts();
   refreshNoBillCount();
+}
+
+
+selectAllBtn.addEventListener('click', () => {
+  deptSection.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = true);
+  refreshAll();
 });
 
 deselectAllBtn.addEventListener('click', () => {
   deptSection.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = false);
-  refreshCodifStatusCounts();
-  refreshCodifiedByCounts();
-  refreshNoBillCount();
+  refreshAll();
 });
 
 deptSection.addEventListener('change', (e) => {
   if (e.target.type === 'checkbox') {
-    refreshCodifStatusCounts();
-    refreshCodifiedByCounts();
-    refreshNoBillCount();
+    refreshAll();
   }
 });
 
@@ -629,27 +630,22 @@ deptSection.addEventListener('change', (e) => {
 // ==============================
 selectAllCodifBtn.addEventListener('click', () => {
   codifStatusSection.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = true);
-  refreshCodifiedByCounts();
-  refreshNoBillCount();
+  refreshAll();
 });
 
 deselectAllCodifBtn.addEventListener('click', () => {
   codifStatusSection.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = false);
-  refreshCodifiedByCounts();
-  refreshNoBillCount();
+  refreshAll();
 });
 
 codifStatusSection.addEventListener('change', (e) => {
   if (e.target.type === 'checkbox') {
-    refreshCodifiedByCounts();
-    refreshNoBillCount();
+    refreshAll();
   }
 });
 
 includeNoBillCb.addEventListener('change', () => {
-  refreshCodifStatusCounts();
-  refreshCodifiedByCounts();
-  refreshNoBillCount();
+  refreshAll();
 });
 
 // ==============================
@@ -657,29 +653,17 @@ includeNoBillCb.addEventListener('change', () => {
 // ==============================
 selectAllPaymentBtn.addEventListener('click', () => {
   paymentModeSection.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = true);
-  refreshPresetDropdown();
-  refreshDeptCounts();
-  refreshCodifStatusCounts();
-  refreshCodifiedByCounts();
-  refreshNoBillCount();
+  refreshAll();
 });
 
 deselectAllPaymentBtn.addEventListener('click', () => {
   paymentModeSection.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = false);
-  refreshPresetDropdown();
-  refreshDeptCounts();
-  refreshCodifStatusCounts();
-  refreshCodifiedByCounts();
-  refreshNoBillCount();
+  refreshAll();
 });
 
 paymentModeSection.addEventListener('change', (e) => {
   if (e.target.type === 'checkbox') {
-    refreshPresetDropdown();
-    refreshDeptCounts();
-    refreshCodifStatusCounts();
-    refreshCodifiedByCounts();
-    refreshNoBillCount();
+    refreshAll();
   }
 });
 
