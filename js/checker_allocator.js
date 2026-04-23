@@ -45,6 +45,16 @@ function isNoBillingRemark(value) {
   return NO_BILLING_PATTERN.test(String(value || '').trim());
 }
 
+// Codification statuses that are unchecked (excluded) by default, analogous to
+// Dental / Orthodontic in the department checklist.
+const DEFAULT_EXCLUDED_CODIF_STATUSES = new Set([
+  'Not Seen',
+  'Closed',
+  'Completed-Needs Verification',
+  'Under Process',
+  'Verified and Closed',
+]);
+
 // ==============================
 // Load presets JSON on startup
 // ==============================
@@ -258,7 +268,7 @@ function renderCodifStatusCheckboxes(items) {
     const cb = document.createElement('input');
     cb.type = 'checkbox';
     cb.value = value;
-    cb.checked = value !== 'Not Seen'; // Not Seen unchecked by default
+    cb.checked = !DEFAULT_EXCLUDED_CODIF_STATUSES.has(value);
     cb.style.marginRight = '6px';
     label.appendChild(cb);
     label.appendChild(document.createTextNode(`(${count}) ${value}`));
@@ -530,10 +540,10 @@ function refreshCodifStatusCounts() {
     const cb = document.createElement('input');
     cb.type = 'checkbox';
     cb.value = value;
-    // Preserve previous checked state; fall back to "Not Seen = unchecked" default
+    // Preserve previous checked state; fall back to default-excluded statuses being unchecked
     cb.checked = checkedCodifStatuses.size > 0
       ? checkedCodifStatuses.has(value)
-      : value !== 'Not Seen';
+      : !DEFAULT_EXCLUDED_CODIF_STATUSES.has(value);
     cb.style.marginRight = '6px';
     label.appendChild(cb);
     label.appendChild(document.createTextNode(`(${count}) ${value}`));
