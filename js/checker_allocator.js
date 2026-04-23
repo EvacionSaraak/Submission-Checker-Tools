@@ -36,6 +36,14 @@ const FACILITY_CANDIDATES            = ['Center Name', 'Facility ID', 'Centre Na
 const CODIFICATION_STATUS_CANDIDATES = ['Codification Status', 'Codification_Status', 'CodificationStatus'];
 const PAYMENT_MODE_CANDIDATES        = ['Pri. Payment Mode', 'Payment Mode', 'PaymentMode', 'Pri Payment Mode'];
 const CODIFIED_BY_CANDIDATES         = ['Codified By', 'CodifiedBy', 'Codified_By', 'Coded By', 'CodedBy'];
+const CODIF_REMARKS_CANDIDATES       = ['Codification Remarks', 'CodificationRemarks', 'Codification_Remarks', 'Codif Remarks'];
+
+// Returns true when a Codification Remarks value indicates the claim should not
+// be billed/submitted and therefore must be excluded from allocation.
+const NO_BILLING_PATTERN = /no\s*bil|not\s+for\s+(billing|submission)|no\s+submission/i;
+function isNoBillingRemark(value) {
+  return NO_BILLING_PATTERN.test(String(value || '').trim());
+}
 
 // ==============================
 // Load presets JSON on startup
@@ -661,6 +669,7 @@ allocateBtn.addEventListener('click', () => {
   const deptKey            = findColumnKey(parsedRows, DEPT_CANDIDATES);
   const codifStatusKey     = findColumnKey(parsedRows, CODIFICATION_STATUS_CANDIDATES);
   const paymentModeKey     = findColumnKey(parsedRows, PAYMENT_MODE_CANDIDATES);
+  const codifRemarksKey    = findColumnKey(parsedRows, CODIF_REMARKS_CANDIDATES);
 
   if (!claimKey) {
     messageBox.textContent = 'Could not find a Claim ID column in the uploaded file.';
@@ -709,9 +718,14 @@ allocateBtn.addEventListener('click', () => {
       })
     : visibleRows;
 
+  // Exclude rows whose Codification Remarks indicate no billing / no submission
+  const billingRows = codifRemarksKey
+    ? allocatableRows.filter(row => !isNoBillingRemark(row[codifRemarksKey]))
+    : allocatableRows;
+
   // Deduplicate by Claim ID — keep only the first occurrence of each ID
   const seenClaimIds = new Set();
-  const uniqueRows = allocatableRows.filter(row => {
+  const uniqueRows = billingRows.filter(row => {
     const id = String(row[claimKey] || '').trim();
     if (seenClaimIds.has(id)) return false;
     seenClaimIds.add(id);
