@@ -18,151 +18,34 @@
   min-width: 0;
 }
 
-#dept-section {
-  border: 1px solid #ccc;
+/* Scrollable filter boxes (payment mode, depts, codif status, codified by) */
+.filter-scroll-box {
+  border: 1px solid #dee2e6;
   border-radius: 4px;
-  padding: 10px;
+  padding: 8px 10px;
+  max-height: 200px;
+  overflow-y: auto;
+  background: #fafafa;
+}
+
+.filter-scroll-box-tall {
   max-height: 320px;
-  overflow-y: auto;
-  background: #fafafa;
 }
 
-#dept-section label {
-  display: block;
-  padding: 3px 0;
-  font-size: 13px;
-  cursor: pointer;
+.filter-scroll-box .form-check {
+  margin-bottom: 2px;
+  padding-top: 2px;
+  padding-bottom: 2px;
 }
 
-#dept-section label:hover {
+.filter-scroll-box .form-check:hover {
   background: #f0f0f0;
+  border-radius: 3px;
 }
 
-#coders-textarea {
-  width: 100%;
-  box-sizing: border-box;
-  font-size: 13px;
-  padding: 8px;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  resize: vertical;
-  font-family: Arial, sans-serif;
-}
-
-.section-label {
-  font-weight: bold;
-  font-size: 13px;
-  margin-bottom: 6px;
-  display: block;
-}
-
-#dept-controls {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 6px;
-}
-
-#dept-controls button {
-  font-size: 12px;
-  padding: 3px 8px;
-}
-
-#codif-status-section {
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  padding: 10px;
-  max-height: 200px;
-  overflow-y: auto;
-  background: #fafafa;
-}
-
-#codif-status-section label {
-  display: block;
-  padding: 3px 0;
-  font-size: 13px;
+.filter-scroll-box .form-check-label {
   cursor: pointer;
-}
-
-#codif-status-section label:hover {
-  background: #f0f0f0;
-}
-
-#codif-status-controls {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 6px;
-}
-
-#codif-status-controls button {
-  font-size: 12px;
-  padding: 3px 8px;
-}
-
-#payment-mode-section {
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  padding: 10px;
-  max-height: 200px;
-  overflow-y: auto;
-  background: #fafafa;
-}
-
-#payment-mode-section label {
-  display: block;
-  padding: 3px 0;
   font-size: 13px;
-  cursor: pointer;
-}
-
-#payment-mode-section label:hover {
-  background: #f0f0f0;
-}
-
-#payment-mode-controls {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 6px;
-}
-
-#payment-mode-controls button {
-  font-size: 12px;
-  padding: 3px 8px;
-}
-
-#codified-by-section {
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  padding: 10px;
-  max-height: 200px;
-  overflow-y: auto;
-  background: #fafafa;
-}
-
-#codified-by-section label {
-  display: block;
-  padding: 3px 0;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-#codified-by-section label:hover {
-  background: #f0f0f0;
-}
-
-#codified-by-controls {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 6px;
-}
-
-#codified-by-controls button {
-  font-size: 12px;
-  padding: 3px 8px;
-}
-
-
-  margin-top: 16px;
-  overflow-x: auto;
 }
 
 #preview-scroll {
@@ -208,12 +91,4 @@
 
 #allocation-preview tr:nth-child(even) td {
   background: #f9f9f9;
-}
-
-#preset-select {
-  font-size: 13px;
-  padding: 5px 8px;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  width: 100%;
 }

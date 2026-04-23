@@ -4,17 +4,19 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Allocator</title>
+<!-- Bootstrap 5 CSS -->
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" />
 <link rel="stylesheet" href="../css/tables.css" />
 <link rel="stylesheet" href="../css/checker_allocator.css" />
 </head>
 <body>
 
-<div class="form-row">
-  <label for="allocator-file"><strong>Upload XLSX file:</strong></label>
-  <input type="file" id="allocator-file" accept=".xlsx" />
+<div class="mb-3">
+  <label for="allocator-file" class="form-label fw-bold">Upload XLSX file:</label>
+  <input type="file" class="form-control" id="allocator-file" accept=".xlsx" />
 </div>
 
-<div id="messageBox" style="margin-bottom: 10px; color: red; font-weight: bold;"></div>
+<div id="messageBox" class="text-danger fw-bold mb-3"></div>
 
 <div id="allocator-main" class="hidden">
 
@@ -23,65 +25,65 @@
     <!-- Left: Departments + Preset + Coders -->
     <div id="left-panel">
 
-      <div style="margin-bottom: 16px;">
-        <span class="section-label">Facility Preset</span>
-        <select id="preset-select">
+      <div class="mb-3">
+        <label for="preset-select" class="form-label fw-bold small mb-1">Facility Preset</label>
+        <select id="preset-select" class="form-select form-select-sm">
           <option value="">-- None --</option>
         </select>
       </div>
 
-      <div style="margin-bottom: 16px;">
-        <span class="section-label">Coders <span style="font-weight:normal;font-size:12px;">(one per line)</span></span>
-        <textarea id="coders-textarea" rows="6" placeholder="Enter coder names, one per line"></textarea>
+      <div class="mb-3">
+        <label for="coders-textarea" class="form-label fw-bold small mb-1">Coders <span class="fw-normal text-muted">(one per line)</span></label>
+        <textarea id="coders-textarea" class="form-control form-control-sm" rows="6" placeholder="Enter coder names, one per line"></textarea>
       </div>
 
-      <div style="margin-bottom: 16px;">
-        <span class="section-label">Payment Mode</span>
-        <div id="payment-mode-controls">
-          <button id="select-all-payment-btn">All</button>
-          <button id="deselect-all-payment-btn">None</button>
+      <div class="mb-3">
+        <label class="form-label fw-bold small mb-1">Payment Mode</label>
+        <div id="payment-mode-controls" class="d-flex gap-2 mb-1">
+          <button id="select-all-payment-btn" class="btn btn-outline-secondary btn-sm">All</button>
+          <button id="deselect-all-payment-btn" class="btn btn-outline-secondary btn-sm">None</button>
         </div>
-        <div id="payment-mode-section">
+        <div id="payment-mode-section" class="filter-scroll-box">
           <!-- checkboxes injected here -->
         </div>
       </div>
 
-      <div style="margin-bottom: 16px;">
-        <span class="section-label">Departments</span>
-        <div id="dept-controls">
-          <button id="select-all-btn">All</button>
-          <button id="deselect-all-btn">None</button>
+      <div class="mb-3">
+        <label class="form-label fw-bold small mb-1">Departments</label>
+        <div id="dept-controls" class="d-flex gap-2 mb-1">
+          <button id="select-all-btn" class="btn btn-outline-secondary btn-sm">All</button>
+          <button id="deselect-all-btn" class="btn btn-outline-secondary btn-sm">None</button>
         </div>
-        <div id="dept-section">
+        <div id="dept-section" class="filter-scroll-box filter-scroll-box-tall">
           <!-- checkboxes injected here -->
         </div>
       </div>
 
-      <div style="margin-bottom: 16px;">
-        <span class="section-label">Codification Status</span>
-        <div id="codif-status-controls">
-          <button id="select-all-codif-btn">All</button>
-          <button id="deselect-all-codif-btn">None</button>
+      <div class="mb-3">
+        <label class="form-label fw-bold small mb-1">Codification Status</label>
+        <div id="codif-status-controls" class="d-flex gap-2 mb-1">
+          <button id="select-all-codif-btn" class="btn btn-outline-secondary btn-sm">All</button>
+          <button id="deselect-all-codif-btn" class="btn btn-outline-secondary btn-sm">None</button>
         </div>
-        <div id="codif-status-section">
+        <div id="codif-status-section" class="filter-scroll-box">
           <!-- checkboxes injected here -->
         </div>
-        <div id="no-bill-row" style="margin-top: 8px; display: flex; align-items: center; gap: 12px;">
-          <span id="no-bill-count-label" style="font-size: 0.85em; color: #555;"></span>
-          <label style="font-size: 0.85em; cursor: pointer;">
-            <input type="checkbox" id="include-no-bill-cb" style="margin-right: 4px;">
-            Include No Bills
-          </label>
+        <div id="no-bill-row" class="d-flex align-items-center gap-3 mt-2">
+          <span id="no-bill-count-label" class="text-muted small"></span>
+          <div class="form-check mb-0">
+            <input class="form-check-input" type="checkbox" id="include-no-bill-cb">
+            <label class="form-check-label small" for="include-no-bill-cb">Include No Bills</label>
+          </div>
         </div>
       </div>
 
-      <div>
-        <span class="section-label">Codified By</span>
-        <div id="codified-by-controls">
-          <button id="select-all-codified-by-btn">All</button>
-          <button id="deselect-all-codified-by-btn">None</button>
+      <div class="mb-3">
+        <label class="form-label fw-bold small mb-1">Codified By</label>
+        <div id="codified-by-controls" class="d-flex gap-2 mb-1">
+          <button id="select-all-codified-by-btn" class="btn btn-outline-secondary btn-sm">All</button>
+          <button id="deselect-all-codified-by-btn" class="btn btn-outline-secondary btn-sm">None</button>
         </div>
-        <div id="codified-by-section">
+        <div id="codified-by-section" class="filter-scroll-box">
           <!-- checkboxes injected here -->
         </div>
         <div id="coder-summary" class="hidden"></div>
@@ -92,9 +94,9 @@
     <!-- Right: Actions + Preview -->
     <div id="right-panel">
 
-      <div class="form-row">
-        <button id="allocate-btn">Allocate</button>
-        <button id="download-btn" disabled style="margin-left: 10px;">Download Result</button>
+      <div class="d-flex gap-2 mb-3">
+        <button id="allocate-btn" class="btn btn-primary">Allocate</button>
+        <button id="download-btn" class="btn btn-success" disabled>Download Result</button>
       </div>
 
       <div id="allocation-preview"></div>

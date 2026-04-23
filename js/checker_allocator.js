@@ -236,6 +236,25 @@ function getValuesWithCounts(rows, key) {
 }
 
 // ==============================
+// Create a Bootstrap form-check item for a filter section
+// ==============================
+function createCheckItem(value, count, checked) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'form-check';
+  const cb = document.createElement('input');
+  cb.className = 'form-check-input';
+  cb.type = 'checkbox';
+  cb.value = value;
+  cb.checked = checked;
+  const lbl = document.createElement('label');
+  lbl.className = 'form-check-label';
+  lbl.textContent = `(${count}) ${value}`;
+  wrapper.appendChild(cb);
+  wrapper.appendChild(lbl);
+  return wrapper;
+}
+
+// ==============================
 // Render department checkboxes
 // ==============================
 function renderDeptCheckboxes(items) {
@@ -245,20 +264,8 @@ function renderDeptCheckboxes(items) {
     return;
   }
   for (const { value, count } of items) {
-    const label = document.createElement('label');
-    const cb = document.createElement('input');
-    cb.type = 'checkbox';
-    cb.value = value;
-    cb.checked = value !== 'Dental' && value !== 'Orthodontic';
-    cb.style.marginRight = '6px';
-    label.appendChild(cb);
-    label.appendChild(document.createTextNode(`(${count}) ${value}`));
-    deptSection.appendChild(label);
+    deptSection.appendChild(createCheckItem(value, count, value !== 'Dental' && value !== 'Orthodontic'));
   }
-}
-
-// ==============================
-// Render codification status checkboxes
 // ==============================
 function renderCodifStatusCheckboxes(items) {
   codifStatusSection.innerHTML = '';
@@ -267,15 +274,7 @@ function renderCodifStatusCheckboxes(items) {
     return;
   }
   for (const { value, count } of items) {
-    const label = document.createElement('label');
-    const cb = document.createElement('input');
-    cb.type = 'checkbox';
-    cb.value = value;
-    cb.checked = !DEFAULT_EXCLUDED_CODIF_STATUSES.has(value);
-    cb.style.marginRight = '6px';
-    label.appendChild(cb);
-    label.appendChild(document.createTextNode(`(${count}) ${value}`));
-    codifStatusSection.appendChild(label);
+    codifStatusSection.appendChild(createCheckItem(value, count, !DEFAULT_EXCLUDED_CODIF_STATUSES.has(value)));
   }
 }
 
@@ -289,15 +288,7 @@ function renderPaymentModeCheckboxes(items) {
     return;
   }
   for (const { value, count } of items) {
-    const label = document.createElement('label');
-    const cb = document.createElement('input');
-    cb.type = 'checkbox';
-    cb.value = value;
-    cb.checked = true;
-    cb.style.marginRight = '6px';
-    label.appendChild(cb);
-    label.appendChild(document.createTextNode(`(${count}) ${value}`));
-    paymentModeSection.appendChild(label);
+    paymentModeSection.appendChild(createCheckItem(value, count, true));
   }
 }
 
@@ -312,15 +303,7 @@ function renderCodifiedByCheckboxes(items) {
     return;
   }
   for (const { value, count } of items) {
-    const label = document.createElement('label');
-    const cb = document.createElement('input');
-    cb.type = 'checkbox';
-    cb.value = value;
-    cb.checked = true; // checked = exclude these already-coded rows
-    cb.style.marginRight = '6px';
-    label.appendChild(cb);
-    label.appendChild(document.createTextNode(`(${count}) ${value}`));
-    codifiedBySection.appendChild(label);
+    codifiedBySection.appendChild(createCheckItem(value, count, true));
   }
 }
 
@@ -357,18 +340,10 @@ function refreshDeptCounts() {
     return;
   }
   for (const { value, count } of items) {
-    const label = document.createElement('label');
-    const cb = document.createElement('input');
-    cb.type = 'checkbox';
-    cb.value = value;
-    // Preserve previous checked state; fall back to Dental/Orthodontic-unchecked default
-    cb.checked = checkedDepts.size > 0
+    const checked = checkedDepts.size > 0
       ? checkedDepts.has(value)
       : value !== 'Dental' && value !== 'Orthodontic';
-    cb.style.marginRight = '6px';
-    label.appendChild(cb);
-    label.appendChild(document.createTextNode(`(${count}) ${value}`));
-    deptSection.appendChild(label);
+    deptSection.appendChild(createCheckItem(value, count, checked));
   }
 }
 
@@ -413,16 +388,8 @@ function refreshCodifiedByCounts() {
     return;
   }
   for (const { value, count } of items) {
-    const label = document.createElement('label');
-    const cb = document.createElement('input');
-    cb.type = 'checkbox';
-    cb.value = value;
-    // Preserve previous checked state; fall back to all-checked default
-    cb.checked = checkedNames.size > 0 ? checkedNames.has(value) : true;
-    cb.style.marginRight = '6px';
-    label.appendChild(cb);
-    label.appendChild(document.createTextNode(`(${count}) ${value}`));
-    codifiedBySection.appendChild(label);
+    const checked = checkedNames.size > 0 ? checkedNames.has(value) : true;
+    codifiedBySection.appendChild(createCheckItem(value, count, checked));
   }
 }
 
@@ -545,18 +512,10 @@ function refreshCodifStatusCounts() {
     return;
   }
   for (const { value, count } of items) {
-    const label = document.createElement('label');
-    const cb = document.createElement('input');
-    cb.type = 'checkbox';
-    cb.value = value;
-    // Preserve previous checked state; fall back to default-excluded statuses being unchecked
-    cb.checked = checkedCodifStatuses.size > 0
+    const checked = checkedCodifStatuses.size > 0
       ? checkedCodifStatuses.has(value)
       : !DEFAULT_EXCLUDED_CODIF_STATUSES.has(value);
-    cb.style.marginRight = '6px';
-    label.appendChild(cb);
-    label.appendChild(document.createTextNode(`(${count}) ${value}`));
-    codifStatusSection.appendChild(label);
+    codifStatusSection.appendChild(createCheckItem(value, count, checked));
   }
 }
 
