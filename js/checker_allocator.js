@@ -572,7 +572,6 @@ function refreshNoBillCount() {
 
   const paymentKey = findColumnKey(parsedRows, PAYMENT_MODE_CANDIDATES);
   const deptKey    = findColumnKey(parsedRows, DEPT_CANDIDATES);
-  const codifKey   = findColumnKey(parsedRows, CODIFICATION_STATUS_CANDIDATES);
 
   const checkedModes = new Set();
   paymentModeSection.querySelectorAll('input[type=checkbox]:checked').forEach(cb => {
@@ -582,15 +581,14 @@ function refreshNoBillCount() {
   deptSection.querySelectorAll('input[type=checkbox]:checked').forEach(cb => {
     checkedDepts.add(cb.value);
   });
-  const checkedCodifStatuses = new Set();
-  codifStatusSection.querySelectorAll('input[type=checkbox]:checked').forEach(cb => {
-    checkedCodifStatuses.add(cb.value);
-  });
 
+  // Count no-bills from payment-mode + dept filtered rows only.
+  // The codif-status filter and the "Include No Bills" toggle must not affect
+  // this total — the label should always show the true count of no-bill rows
+  // that exist within the current upstream selection.
   let filtered = parsedRows;
   if (paymentKey) filtered = filtered.filter(r => checkedModes.has(String(r[paymentKey] || '').trim()));
   if (deptKey)    filtered = filtered.filter(r => checkedDepts.has(String(r[deptKey] || '').trim()));
-  if (codifKey)   filtered = filtered.filter(r => checkedCodifStatuses.has(String(r[codifKey] || '').trim()));
 
   const noBillCount = filtered.filter(row => isNoBillingRemark(row[codifRemarksKey])).length;
   noBillCountLabel.textContent = `No Bills: ${noBillCount}`;
