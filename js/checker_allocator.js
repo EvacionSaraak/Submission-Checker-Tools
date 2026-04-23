@@ -50,15 +50,44 @@ fetch('../json/allocator_presets.json')
     // silently continue if JSON can't be loaded
   });
 
-function populatePresetDropdown() {
+// Normalise a payment mode string to a category for preset filtering.
+// Values containing "insur" (case-insensitive) map to "insurance"; everything
+// else maps to "self_pay".
+function getPaymentModeCategory(mode) {
+  return /insur/i.test(mode) ? 'insurance' : 'self_pay';
+}
+
+// Rebuild the preset dropdown.
+// activeCategories: optional Set<"insurance"|"self_pay"> derived from the
+// currently checked payment modes.  A preset is shown when:
+//   - it has no payment_mode field (universal), OR
+//   - its payment_mode is in activeCategories (or activeCategories is empty/absent).
+function populatePresetDropdown(activeCategories) {
+  const currentValue = presetSelect.value;
   presetSelect.innerHTML = '<option value="">-- None --</option>';
-  for (const name of Object.keys(presetsData)) {
+  for (const [name, preset] of Object.entries(presetsData)) {
     if (name.startsWith('_')) continue; // skip meta/comment keys
+    if (activeCategories && activeCategories.size > 0 && preset.payment_mode) {
+      if (!activeCategories.has(preset.payment_mode)) continue;
+    }
     const opt = document.createElement('option');
     opt.value = name;
     opt.textContent = name;
     presetSelect.appendChild(opt);
   }
+  // Restore the previously selected value if its option is still present
+  if (currentValue && presetSelect.querySelector(`option[value="${currentValue.replace(/"/g, '\\"')}"]`)) {
+    presetSelect.value = currentValue;
+  }
+}
+
+// Refresh the preset dropdown based on the currently checked payment modes.
+function refreshPresetDropdown() {
+  const activeCategories = new Set();
+  paymentModeSection.querySelectorAll('input[type=checkbox]:checked').forEach(cb => {
+    activeCategories.add(getPaymentModeCategory(cb.value));
+  });
+  populatePresetDropdown(activeCategories);
 }
 
 // ==============================
@@ -112,13 +141,15 @@ fileInput.addEventListener('change', () => {
 
       parsedRows = jsonRows;
 
-      // Extract unique departments with counts
-      const deptKey = findColumnKey(parsedRows, DEPT_CANDIDATES);
-      renderDeptCheckboxes(getValuesWithCounts(parsedRows, deptKey));
+      // Payment Mode is the top of the cascade — render from all rows.
+      const paymentKey = findColumnKey(parsedRows, PAYMENT_MODE_CANDIDATES);
+      renderPaymentModeCheckboxes(getValuesWithCounts(parsedRows, paymentKey));
 
-      // Cascade downstream checklists so the initial Dental/Orthodontic-unchecked
-      // default is reflected immediately in payment mode, codif status, and codified-by.
-      refreshPaymentModeCounts();
+      // Filter preset dropdown to match the checked payment modes.
+      refreshPresetDropdown();
+
+      // Cascade downstream: Departments → Codif Status → Codified By.
+      refreshDeptCounts();
       refreshCodifStatusCounts();
       refreshCodifiedByCounts();
 
@@ -273,9 +304,54 @@ function renderCodifiedByCheckboxes(items) {
 }
 
 // ==============================
-// Re-render codified-by counts based on currently checked departments,
-// payment modes, and codification statuses
+// Re-render department checkboxes based on currently checked payment modes.
+// Preserves existing checked state; falls back to Dental/Orthodontic-unchecked default.
 // ==============================
+function refreshDeptCounts() {
+  const deptKey    = findColumnKey(parsedRows, DEPT_CANDIDATES);
+  const paymentKey = findColumnKey(parsedRows, PAYMENT_MODE_CANDIDATES);
+
+  // Remember which departments are currently checked
+  const checkedDepts = new Set();
+  deptSection.querySelectorAll('input[type=checkbox]:checked').forEach(cb => {
+    checkedDepts.add(cb.value);
+  });
+
+  // Determine which payment modes are checked
+  const checkedModes = new Set();
+  paymentModeSection.querySelectorAll('input[type=checkbox]:checked').forEach(cb => {
+    checkedModes.add(cb.value);
+  });
+
+  // Filter by payment mode (payment mode is upstream of departments)
+  const paymentFilteredRows = paymentKey
+    ? parsedRows.filter(row => checkedModes.has(String(row[paymentKey] || '').trim()))
+    : parsedRows;
+
+  // Re-render with updated counts, restoring checked state
+  const items = getValuesWithCounts(paymentFilteredRows, deptKey);
+  deptSection.innerHTML = '';
+  if (!items.length) {
+    deptSection.textContent = 'No departments found.';
+    return;
+  }
+  for (const { value, count } of items) {
+    const label = document.createElement('label');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.value = value;
+    // Preserve previous checked state; fall back to Dental/Orthodontic-unchecked default
+    cb.checked = checkedDepts.size > 0
+      ? checkedDepts.has(value)
+      : value !== 'Dental' && value !== 'Orthodontic';
+    cb.style.marginRight = '6px';
+    label.appendChild(cb);
+    label.appendChild(document.createTextNode(`(${count}) ${value}`));
+    deptSection.appendChild(label);
+  }
+}
+
+
 function refreshCodifiedByCounts() {
   const deptKey       = findColumnKey(parsedRows, DEPT_CANDIDATES);
   const paymentKey    = findColumnKey(parsedRows, PAYMENT_MODE_CANDIDATES);
@@ -302,11 +378,11 @@ function refreshCodifiedByCounts() {
     checkedCodifStatuses.add(cb.value);
   });
 
-  // Apply upstream filters to get the rows in scope
+  // Apply upstream filters in cascade order: payment → dept → codif status
   let filtered = parsedRows;
-  if (deptKey) filtered = filtered.filter(r => checkedDepts.has(String(r[deptKey] || '').trim()));
   if (paymentKey) filtered = filtered.filter(r => checkedModes.has(String(r[paymentKey] || '').trim()));
-  if (codifKey) filtered = filtered.filter(r => checkedCodifStatuses.has(String(r[codifKey] || '').trim()));
+  if (deptKey)    filtered = filtered.filter(r => checkedDepts.has(String(r[deptKey] || '').trim()));
+  if (codifKey)   filtered = filtered.filter(r => checkedCodifStatuses.has(String(r[codifKey] || '').trim()));
 
   // Re-render with updated counts, restoring checked state
   const items = getValuesWithCounts(filtered, codifiedByKey);
@@ -425,18 +501,17 @@ function refreshCodifStatusCounts() {
     checkedModes.add(cb.value);
   });
 
-  // Filter by departments first
-  const deptFilteredRows = deptKey
-    ? parsedRows.filter(row => checkedDepts.has(String(row[deptKey] || '').trim()))
+  // Filter by payment mode first (top of cascade), then by departments
+  const paymentFilteredRows = paymentKey
+    ? parsedRows.filter(row => checkedModes.has(String(row[paymentKey] || '').trim()))
     : parsedRows;
 
-  // Then filter by payment mode
-  const paymentFilteredRows = paymentKey
-    ? deptFilteredRows.filter(row => checkedModes.has(String(row[paymentKey] || '').trim()))
-    : deptFilteredRows;
+  const deptFilteredRows = deptKey
+    ? paymentFilteredRows.filter(row => checkedDepts.has(String(row[deptKey] || '').trim()))
+    : paymentFilteredRows;
 
   // Re-render with updated counts, restoring checked state
-  const items = getValuesWithCounts(paymentFilteredRows, codifKey);
+  const items = getValuesWithCounts(deptFilteredRows, codifKey);
   codifStatusSection.innerHTML = '';
   if (!items.length) {
     codifStatusSection.textContent = 'No codification statuses found.';
@@ -459,71 +534,23 @@ function refreshCodifStatusCounts() {
 }
 
 // ==============================
-// Re-render payment mode counts based on currently checked departments
-// ==============================
-function refreshPaymentModeCounts() {
-  const deptKey        = findColumnKey(parsedRows, DEPT_CANDIDATES);
-  const paymentKey     = findColumnKey(parsedRows, PAYMENT_MODE_CANDIDATES);
-
-  // Remember which payment modes are currently checked
-  const checkedModes = new Set();
-  paymentModeSection.querySelectorAll('input[type=checkbox]:checked').forEach(cb => {
-    checkedModes.add(cb.value);
-  });
-
-  // Determine which departments are checked
-  const checkedDepts = new Set();
-  deptSection.querySelectorAll('input[type=checkbox]:checked').forEach(cb => {
-    checkedDepts.add(cb.value);
-  });
-
-  // Rows visible under current department selection
-  const deptFilteredRows = deptKey
-    ? parsedRows.filter(row => checkedDepts.has(String(row[deptKey] || '').trim()))
-    : parsedRows;
-
-  // Re-render with updated counts, restoring checked state
-  const items = getValuesWithCounts(deptFilteredRows, paymentKey);
-  paymentModeSection.innerHTML = '';
-  if (!items.length) {
-    paymentModeSection.textContent = 'No payment modes found.';
-    return;
-  }
-  for (const { value, count } of items) {
-    const label = document.createElement('label');
-    const cb = document.createElement('input');
-    cb.type = 'checkbox';
-    cb.value = value;
-    // Preserve previous checked state; default all checked
-    cb.checked = checkedModes.size > 0 ? checkedModes.has(value) : true;
-    cb.style.marginRight = '6px';
-    label.appendChild(cb);
-    label.appendChild(document.createTextNode(`(${count}) ${value}`));
-    paymentModeSection.appendChild(label);
-  }
-}
-
-// ==============================
 // Select / Deselect all departments
 // ==============================
 selectAllBtn.addEventListener('click', () => {
   deptSection.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = true);
   refreshCodifStatusCounts();
-  refreshPaymentModeCounts();
   refreshCodifiedByCounts();
 });
 
 deselectAllBtn.addEventListener('click', () => {
   deptSection.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = false);
   refreshCodifStatusCounts();
-  refreshPaymentModeCounts();
   refreshCodifiedByCounts();
 });
 
 deptSection.addEventListener('change', (e) => {
   if (e.target.type === 'checkbox') {
     refreshCodifStatusCounts();
-    refreshPaymentModeCounts();
     refreshCodifiedByCounts();
   }
 });
@@ -550,18 +577,24 @@ codifStatusSection.addEventListener('change', (e) => {
 // ==============================
 selectAllPaymentBtn.addEventListener('click', () => {
   paymentModeSection.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = true);
+  refreshPresetDropdown();
+  refreshDeptCounts();
   refreshCodifStatusCounts();
   refreshCodifiedByCounts();
 });
 
 deselectAllPaymentBtn.addEventListener('click', () => {
   paymentModeSection.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = false);
+  refreshPresetDropdown();
+  refreshDeptCounts();
   refreshCodifStatusCounts();
   refreshCodifiedByCounts();
 });
 
 paymentModeSection.addEventListener('change', (e) => {
   if (e.target.type === 'checkbox') {
+    refreshPresetDropdown();
+    refreshDeptCounts();
     refreshCodifStatusCounts();
     refreshCodifiedByCounts();
   }
