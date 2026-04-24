@@ -25,69 +25,83 @@
 
     <div id="allocator-main" class="hidden">
 
-      <div class="mb-3">
-        <label for="preset-select" class="form-label fw-bold small mb-1">Facility Preset</label>
-        <select id="preset-select" class="form-select form-select-sm">
-          <option value="">-- None --</option>
-        </select>
-      </div>
+      <div id="sidebar-grid">
 
-      <div class="mb-3">
-        <label for="coders-textarea" class="form-label fw-bold small mb-1">Coders <span class="fw-normal text-muted">(one per line)</span></label>
-        <textarea id="coders-textarea" class="form-control form-control-sm" rows="6" placeholder="Enter coder names, one per line"></textarea>
-      </div>
+        <!-- Left column -->
+        <div class="sidebar-col">
 
-      <div class="mb-3">
-        <label class="form-label fw-bold small mb-1">Payment Mode</label>
-        <div id="payment-mode-controls" class="d-flex gap-2 mb-1">
-          <button id="select-all-payment-btn" class="btn btn-outline-secondary btn-sm">All</button>
-          <button id="deselect-all-payment-btn" class="btn btn-outline-secondary btn-sm">None</button>
-        </div>
-        <div id="payment-mode-section" class="filter-scroll-box">
-          <!-- checkboxes injected here -->
-        </div>
-      </div>
-
-      <div class="mb-3">
-        <label class="form-label fw-bold small mb-1">Departments</label>
-        <div id="dept-controls" class="d-flex gap-2 mb-1">
-          <button id="select-all-btn" class="btn btn-outline-secondary btn-sm">All</button>
-          <button id="deselect-all-btn" class="btn btn-outline-secondary btn-sm">None</button>
-        </div>
-        <div id="dept-section" class="filter-scroll-box filter-scroll-box-tall">
-          <!-- checkboxes injected here -->
-        </div>
-      </div>
-
-      <div class="mb-3">
-        <label class="form-label fw-bold small mb-1">Codification Status</label>
-        <div id="codif-status-controls" class="d-flex gap-2 mb-1">
-          <button id="select-all-codif-btn" class="btn btn-outline-secondary btn-sm">All</button>
-          <button id="deselect-all-codif-btn" class="btn btn-outline-secondary btn-sm">None</button>
-        </div>
-        <div id="codif-status-section" class="filter-scroll-box">
-          <!-- checkboxes injected here -->
-        </div>
-        <div id="no-bill-row" class="d-flex align-items-center gap-3 mt-2">
-          <span id="no-bill-count-label" class="text-muted small"></span>
-          <div class="form-check mb-0">
-            <input class="form-check-input" type="checkbox" id="include-no-bill-cb">
-            <label class="form-check-label small" for="include-no-bill-cb">Include No Bills</label>
+          <div class="mb-3">
+            <label for="preset-select" class="form-label fw-bold small mb-1">Facility Preset</label>
+            <select id="preset-select" class="form-select form-select-sm">
+              <option value="">-- None --</option>
+            </select>
           </div>
-        </div>
-      </div>
 
-      <div class="mb-3">
-        <label class="form-label fw-bold small mb-1">Codified By</label>
-        <div id="codified-by-controls" class="d-flex gap-2 mb-1">
-          <button id="select-all-codified-by-btn" class="btn btn-outline-secondary btn-sm">All</button>
-          <button id="deselect-all-codified-by-btn" class="btn btn-outline-secondary btn-sm">None</button>
+          <div class="mb-3">
+            <label class="form-label fw-bold small mb-1">Payment Mode</label>
+            <div id="payment-mode-controls" class="d-flex gap-2 mb-1">
+              <button id="select-all-payment-btn" class="btn btn-outline-secondary btn-sm">All</button>
+              <button id="deselect-all-payment-btn" class="btn btn-outline-secondary btn-sm">None</button>
+            </div>
+            <div id="payment-mode-section" class="filter-scroll-box">
+              <!-- checkboxes injected here -->
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-bold small mb-1">Codification Status</label>
+            <div id="codif-status-controls" class="d-flex gap-2 mb-1">
+              <button id="select-all-codif-btn" class="btn btn-outline-secondary btn-sm">All</button>
+              <button id="deselect-all-codif-btn" class="btn btn-outline-secondary btn-sm">None</button>
+            </div>
+            <div id="codif-status-section" class="filter-scroll-box">
+              <!-- checkboxes injected here -->
+            </div>
+            <div id="no-bill-row" class="d-flex align-items-center gap-3 mt-2">
+              <span id="no-bill-count-label" class="text-muted small"></span>
+              <div class="form-check mb-0">
+                <input class="form-check-input" type="checkbox" id="include-no-bill-cb">
+                <label class="form-check-label small" for="include-no-bill-cb">Include No Bills</label>
+              </div>
+            </div>
+          </div>
+
         </div>
-        <div id="codified-by-section" class="filter-scroll-box">
-          <!-- checkboxes injected here -->
+
+        <!-- Right column -->
+        <div class="sidebar-col">
+
+          <div class="mb-3">
+            <label for="coders-textarea" class="form-label fw-bold small mb-1">Coders <span class="fw-normal text-muted">(one per line)</span></label>
+            <textarea id="coders-textarea" class="form-control form-control-sm" rows="6" placeholder="Enter coder names, one per line"></textarea>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-bold small mb-1">Departments</label>
+            <div id="dept-controls" class="d-flex gap-2 mb-1">
+              <button id="select-all-btn" class="btn btn-outline-secondary btn-sm">All</button>
+              <button id="deselect-all-btn" class="btn btn-outline-secondary btn-sm">None</button>
+            </div>
+            <div id="dept-section" class="filter-scroll-box">
+              <!-- checkboxes injected here -->
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-bold small mb-1">Codified By</label>
+            <div id="codified-by-controls" class="d-flex gap-2 mb-1">
+              <button id="select-all-codified-by-btn" class="btn btn-outline-secondary btn-sm">All</button>
+              <button id="deselect-all-codified-by-btn" class="btn btn-outline-secondary btn-sm">None</button>
+            </div>
+            <div id="codified-by-section" class="filter-scroll-box">
+              <!-- checkboxes injected here -->
+            </div>
+            <div id="coder-summary" class="hidden"></div>
+          </div>
+
         </div>
-        <div id="coder-summary" class="hidden"></div>
-      </div>
+
+      </div><!-- /sidebar-grid -->
 
       <div class="d-flex gap-2 mb-3">
         <button id="allocate-btn" class="btn btn-primary">Allocate</button>

@@ -9,6 +9,7 @@ html, body {
 
 #page-layout {
   display: flex;
+  flex-direction: row;
   height: 100vh;
   overflow: hidden;
 }
@@ -21,6 +22,18 @@ html, body {
   padding: 16px;
   border-right: 1px solid #dee2e6;
   box-sizing: border-box;
+}
+
+/* 2-column grid inside the sidebar for all controls */
+#sidebar-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 16px;
+  align-items: start;
+}
+
+.sidebar-col {
+  min-width: 0;
 }
 
 /* Right panel: remaining 60%, only the preview table scrolls */
