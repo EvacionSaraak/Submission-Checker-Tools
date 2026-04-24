@@ -75,36 +75,40 @@
 
       </div>
 
-      <!-- Right column: revealed when a file is loaded -->
-      <div id="allocator-right" class="sidebar-col hidden">
+      <!-- Right column: always visible; filters revealed after file load -->
+      <div id="allocator-right" class="sidebar-col">
 
         <div class="d-flex gap-2 mb-3" id="allocator-actions">
-          <button id="allocate-btn" class="btn btn-primary">Allocate</button>
+          <button id="allocate-btn" class="btn btn-primary" disabled>Allocate</button>
           <button id="download-btn" class="btn btn-success" disabled>Download Result</button>
         </div>
 
-        <div class="mb-3">
-          <label class="form-label fw-bold small mb-1">Departments</label>
-          <div id="dept-controls" class="d-flex gap-2 mb-1">
-            <button id="select-all-btn" class="btn btn-outline-secondary btn-sm">All</button>
-            <button id="deselect-all-btn" class="btn btn-outline-secondary btn-sm">None</button>
-          </div>
-          <div id="dept-section" class="filter-scroll-box">
-            <!-- checkboxes injected here -->
-          </div>
-        </div>
+        <div id="allocator-right-filters" class="hidden">
 
-        <div class="mb-3">
-          <label class="form-label fw-bold small mb-1">Codified By</label>
-          <div id="codified-by-controls" class="d-flex gap-2 mb-1">
-            <button id="select-all-codified-by-btn" class="btn btn-outline-secondary btn-sm">All</button>
-            <button id="deselect-all-codified-by-btn" class="btn btn-outline-secondary btn-sm">None</button>
+          <div class="mb-3">
+            <label class="form-label fw-bold small mb-1">Departments</label>
+            <div id="dept-controls" class="d-flex gap-2 mb-1">
+              <button id="select-all-btn" class="btn btn-outline-secondary btn-sm">All</button>
+              <button id="deselect-all-btn" class="btn btn-outline-secondary btn-sm">None</button>
+            </div>
+            <div id="dept-section" class="filter-scroll-box">
+              <!-- checkboxes injected here -->
+            </div>
           </div>
-          <div id="codified-by-section" class="filter-scroll-box">
-            <!-- checkboxes injected here -->
+
+          <div class="mb-3">
+            <label class="form-label fw-bold small mb-1">Codified By</label>
+            <div id="codified-by-controls" class="d-flex gap-2 mb-1">
+              <button id="select-all-codified-by-btn" class="btn btn-outline-secondary btn-sm">All</button>
+              <button id="deselect-all-codified-by-btn" class="btn btn-outline-secondary btn-sm">None</button>
+            </div>
+            <div id="codified-by-section" class="filter-scroll-box">
+              <!-- checkboxes injected here -->
+            </div>
+            <div id="coder-summary" class="hidden"></div>
           </div>
-          <div id="coder-summary" class="hidden"></div>
-        </div>
+
+        </div><!-- /allocator-right-filters -->
 
       </div>
 
