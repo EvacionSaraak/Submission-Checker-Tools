@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Allocator</title>
+<!-- Bootstrap 5 CSS -->
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" />
+<link rel="stylesheet" href="../css/tables.css" />
+<link rel="stylesheet" href="../css/checker_allocator.css" />
+</head>
+<body>
+
+<div class="mb-3">
+  <label for="allocator-file" class="form-label fw-bold">Upload XLSX file:</label>
+  <input type="file" class="form-control" id="allocator-file" accept=".xlsx" />
+</div>
+
+<div id="messageBox" class="text-danger fw-bold mb-3"></div>
+
+<div id="allocator-main" class="hidden">
+
+  <div id="allocator-layout">
+
+    <!-- Left: Departments + Preset + Coders -->
+    <div id="left-panel">
+
+      <div class="mb-3">
+        <label for="preset-select" class="form-label fw-bold small mb-1">Facility Preset</label>
+        <select id="preset-select" class="form-select form-select-sm">
+          <option value="">-- None --</option>
+        </select>
+      </div>
+
+      <div class="mb-3">
+        <label for="coders-textarea" class="form-label fw-bold small mb-1">Coders <span class="fw-normal text-muted">(one per line)</span></label>
+        <textarea id="coders-textarea" class="form-control form-control-sm" rows="6" placeholder="Enter coder names, one per line"></textarea>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label fw-bold small mb-1">Payment Mode</label>
+        <div id="payment-mode-controls" class="d-flex gap-2 mb-1">
+          <button id="select-all-payment-btn" class="btn btn-outline-secondary btn-sm">All</button>
+          <button id="deselect-all-payment-btn" class="btn btn-outline-secondary btn-sm">None</button>
+        </div>
+        <div id="payment-mode-section" class="filter-scroll-box">
+          <!-- checkboxes injected here -->
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label fw-bold small mb-1">Departments</label>
+        <div id="dept-controls" class="d-flex gap-2 mb-1">
+          <button id="select-all-btn" class="btn btn-outline-secondary btn-sm">All</button>
+          <button id="deselect-all-btn" class="btn btn-outline-secondary btn-sm">None</button>
+        </div>
+        <div id="dept-section" class="filter-scroll-box filter-scroll-box-tall">
+          <!-- checkboxes injected here -->
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label fw-bold small mb-1">Codification Status</label>
+        <div id="codif-status-controls" class="d-flex gap-2 mb-1">
+          <button id="select-all-codif-btn" class="btn btn-outline-secondary btn-sm">All</button>
+          <button id="deselect-all-codif-btn" class="btn btn-outline-secondary btn-sm">None</button>
+        </div>
+        <div id="codif-status-section" class="filter-scroll-box">
+          <!-- checkboxes injected here -->
+        </div>
+        <div id="no-bill-row" class="d-flex align-items-center gap-3 mt-2">
+          <span id="no-bill-count-label" class="text-muted small"></span>
+          <div class="form-check mb-0">
+            <input class="form-check-input" type="checkbox" id="include-no-bill-cb">
+            <label class="form-check-label small" for="include-no-bill-cb">Include No Bills</label>
+          </div>
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label fw-bold small mb-1">Codified By</label>
+        <div id="codified-by-controls" class="d-flex gap-2 mb-1">
+          <button id="select-all-codified-by-btn" class="btn btn-outline-secondary btn-sm">All</button>
+          <button id="deselect-all-codified-by-btn" class="btn btn-outline-secondary btn-sm">None</button>
+        </div>
+        <div id="codified-by-section" class="filter-scroll-box">
+          <!-- checkboxes injected here -->
+        </div>
+        <div id="coder-summary" class="hidden"></div>
+      </div>
+
+    </div>
+
+    <!-- Right: Actions + Preview -->
+    <div id="right-panel">
+
+      <div class="d-flex gap-2 mb-3">
+        <button id="allocate-btn" class="btn btn-primary">Allocate</button>
+        <button id="download-btn" class="btn btn-success" disabled>Download Result</button>
+      </div>
+
+      <div id="allocation-preview"></div>
+
+    </div>
+
+  </div>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="../js/checker_allocator.js"></script>
+</body>
+</html>

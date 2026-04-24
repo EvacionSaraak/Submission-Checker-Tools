@@ -1,0 +1,15 @@
+{
+  "_comment": "Each coder entry can be a plain string (unrestricted) or an object: { \"name\": \"...\", \"departments\": [\"Dept A\", \"Dept B\"] }. Restricted coders are only assigned to the listed departments. Optional field 'payment_mode' (\"insurance\" or \"self_pay\") filters when the preset appears in the dropdown: presets with 'insurance' only show when an insurance-type payment mode is checked; 'self_pay' only when a non-insurance mode is checked; omitting the field makes the preset always visible.",
+  "Emirates Medical Center": { "license": "MF232", "coders": [] },
+  "Ivory Medical Center": { "license": "MF4456", "coders": [] },
+  "Lauretta Medical Center": { "license": "MF4706", "coders": [] },
+  "Majestic Dental Center": { "license": "MF1901", "coders": [] },
+  "Nazek Medical Center": { "license": "MF5009", "coders": [] },
+  "New Look Medical Center BR1 (Extramall)": { "license": "MF5090", "coders": [] },
+  "New Look Medical Center BR2 (Khabisi)": { "license": "MF5020", "coders": [] },
+  "New Look Medical Center BR3 (Al Yahar)": { "license": "MF5357", "coders": [] },
+  "Scandcare": { "license": "MF456", "coders": [] },
+  "Talat Medical Center": { "license": "MF494", "coders": [] },
+  "True Life Primary Care Center": { "license": "MF7003", "coders": [] },
+  "Wldy Medical Center": { "license": "MF5339", "coders": [] }
+}
