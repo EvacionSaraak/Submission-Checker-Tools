@@ -266,6 +266,8 @@ function renderDeptCheckboxes(items) {
   for (const { value, count } of items) {
     deptSection.appendChild(createCheckItem(value, count, value !== 'Dental' && value !== 'Orthodontic'));
   }
+}
+
 // ==============================
 function renderCodifStatusCheckboxes(items) {
   codifStatusSection.innerHTML = '';
