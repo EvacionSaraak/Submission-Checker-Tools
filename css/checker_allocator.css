@@ -7,6 +7,11 @@ html, body {
   overflow: hidden;
 }
 
+/* Utility: hidden elements */
+.hidden {
+  display: none !important;
+}
+
 #page-layout {
   display: flex;
   flex-direction: row;
@@ -24,15 +29,14 @@ html, body {
   box-sizing: border-box;
 }
 
-/* 2-column grid inside the sidebar for all controls */
+/* 2-column layout inside the sidebar for all controls */
 #sidebar-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0 16px;
-  align-items: start;
+  display: flex;
+  gap: 12px;
 }
 
 .sidebar-col {
+  flex: 1 1 0;
   min-width: 0;
 }
 
@@ -45,6 +49,84 @@ html, body {
   display: flex;
   flex-direction: column;
 }
+
+#allocation-preview {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Checklist boxes — no individual scroll; sidebar scrolls as a whole */
+.filter-scroll-box {
+  border: 1px solid #dee2e6;
+  border-radius: 4px;
+  padding: 8px 10px;
+  background: #fafafa;
+}
+
+.filter-scroll-box .form-check {
+  margin-bottom: 2px;
+  padding-top: 2px;
+  padding-bottom: 2px;
+}
+
+.filter-scroll-box .form-check:hover {
+  background: #f0f0f0;
+  border-radius: 3px;
+}
+
+.filter-scroll-box .form-check-label {
+  cursor: pointer;
+  font-size: 13px;
+}
+
+/* Scrollable preview table fills the right panel */
+#preview-scroll {
+  flex: 1;
+  overflow-y: auto;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.preview-marker {
+  text-align: center;
+  font-size: 12px;
+  color: #888;
+  font-style: italic;
+  margin: 0;
+  padding: 6px 0;
+  background: #f5f5f5;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.preview-marker:last-child {
+  border-bottom: none;
+  border-top: 1px solid #e0e0e0;
+}
+
+#allocation-preview table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 13px;
+}
+
+#allocation-preview th,
+#allocation-preview td {
+  border: 1px solid #ddd;
+  padding: 4px 8px;
+  text-align: left;
+}
+
+#allocation-preview th {
+  background: #f0f0f0;
+  font-weight: bold;
+}
+
+#allocation-preview tr:nth-child(even) td {
+  background: #f9f9f9;
+}
+
 
 #allocation-preview {
   flex: 1;
