@@ -179,6 +179,8 @@ fileInput.addEventListener('change', () => {
       autoDetectPreset(parsedRows, facilityKey);
 
       allocatorMain.classList.remove('hidden');
+      document.getElementById('allocator-right').classList.remove('hidden');
+      document.getElementById('allocator-actions').classList.remove('hidden');
     } catch (err) {
       messageBox.textContent = 'Error reading file: ' + err.message;
     }

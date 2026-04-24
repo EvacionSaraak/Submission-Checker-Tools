@@ -12,6 +12,11 @@ html, body {
   display: none !important;
 }
 
+/* File input at half the column width */
+.file-input-half {
+  width: 50%;
+}
+
 #page-layout {
   display: flex;
   flex-direction: row;
