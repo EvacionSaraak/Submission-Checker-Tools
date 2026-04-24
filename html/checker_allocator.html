@@ -11,19 +11,19 @@
 </head>
 <body>
 
-<div class="mb-3">
-  <label for="allocator-file" class="form-label fw-bold">Upload XLSX file:</label>
-  <input type="file" class="form-control" id="allocator-file" accept=".xlsx" />
-</div>
+<div id="page-layout">
 
-<div id="messageBox" class="text-danger fw-bold mb-3"></div>
+  <!-- Sidebar: file upload + all controls (40% width) -->
+  <div id="sidebar">
 
-<div id="allocator-main" class="hidden">
+    <div class="mb-3">
+      <label for="allocator-file" class="form-label fw-bold">Upload XLSX file:</label>
+      <input type="file" class="form-control" id="allocator-file" accept=".xlsx" />
+    </div>
 
-  <div id="allocator-layout">
+    <div id="messageBox" class="text-danger fw-bold mb-3"></div>
 
-    <!-- Left: Departments + Preset + Coders -->
-    <div id="left-panel">
+    <div id="allocator-main" class="hidden">
 
       <div class="mb-3">
         <label for="preset-select" class="form-label fw-bold small mb-1">Facility Preset</label>
@@ -89,20 +89,18 @@
         <div id="coder-summary" class="hidden"></div>
       </div>
 
-    </div>
-
-    <!-- Right: Actions + Preview -->
-    <div id="right-panel">
-
       <div class="d-flex gap-2 mb-3">
         <button id="allocate-btn" class="btn btn-primary">Allocate</button>
         <button id="download-btn" class="btn btn-success" disabled>Download Result</button>
       </div>
 
-      <div id="allocation-preview"></div>
-
     </div>
 
+  </div>
+
+  <!-- Right panel: only the scrollable preview table -->
+  <div id="right-panel">
+    <div id="allocation-preview"></div>
   </div>
 
 </div>

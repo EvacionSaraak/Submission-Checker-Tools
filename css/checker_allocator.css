@@ -1,35 +1,51 @@
 /* checker_allocator.css */
 
-#allocator-layout {
+html, body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+#page-layout {
   display: flex;
-  gap: 24px;
-  align-items: flex-start;
-  flex-wrap: nowrap;
+  height: 100vh;
+  overflow: hidden;
 }
 
-#left-panel {
-  flex: 0 0 30%;
-  min-width: 220px;
-  max-width: 360px;
+/* Sidebar: 40% of screen width, scrollable so all controls are accessible */
+#sidebar {
+  flex: 0 0 40%;
+  width: 40%;
+  overflow-y: auto;
+  padding: 16px;
+  border-right: 1px solid #dee2e6;
+  box-sizing: border-box;
 }
 
+/* Right panel: remaining 60%, only the preview table scrolls */
 #right-panel {
-  flex: 1 1 0;
-  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  padding: 16px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
 }
 
-/* Scrollable filter boxes (payment mode, depts, codif status, codified by) */
+#allocation-preview {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Checklist boxes — no individual scroll; sidebar scrolls as a whole */
 .filter-scroll-box {
   border: 1px solid #dee2e6;
   border-radius: 4px;
   padding: 8px 10px;
-  max-height: 200px;
-  overflow-y: auto;
   background: #fafafa;
-}
-
-.filter-scroll-box-tall {
-  max-height: 320px;
 }
 
 .filter-scroll-box .form-check {
@@ -48,8 +64,9 @@
   font-size: 13px;
 }
 
+/* Scrollable preview table fills the right panel */
 #preview-scroll {
-  height: calc(100vh - 200px);
+  flex: 1;
   overflow-y: auto;
   border: 1px solid #ddd;
   border-radius: 4px;
@@ -92,3 +109,4 @@
 #allocation-preview tr:nth-child(even) td {
   background: #f9f9f9;
 }
+
