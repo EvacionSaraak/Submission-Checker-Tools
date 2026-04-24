@@ -78,6 +78,11 @@
       <!-- Right column: revealed when a file is loaded -->
       <div id="allocator-right" class="sidebar-col hidden">
 
+        <div class="d-flex gap-2 mb-3" id="allocator-actions">
+          <button id="allocate-btn" class="btn btn-primary">Allocate</button>
+          <button id="download-btn" class="btn btn-success" disabled>Download Result</button>
+        </div>
+
         <div class="mb-3">
           <label class="form-label fw-bold small mb-1">Departments</label>
           <div id="dept-controls" class="d-flex gap-2 mb-1">
@@ -104,11 +109,6 @@
       </div>
 
     </div><!-- /sidebar-grid -->
-
-    <div id="allocator-actions" class="hidden d-flex gap-2 mb-3">
-      <button id="allocate-btn" class="btn btn-primary">Allocate</button>
-      <button id="download-btn" class="btn btn-success" disabled>Download Result</button>
-    </div>
 
   </div>
 
