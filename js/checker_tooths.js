@@ -444,7 +444,7 @@ function validateKnownCode({
         return `Subcode observation`;
       }
       if (isMultiToothObservation(obsCode)) {
-        remarks.push(`Observation is Invalid due to commas.`);
+        remarks.push(`Observation for ${obsCode} is invalid due to commas.`);
         return `${obsCode} - Invalid (multiple values in one observation)`;
       }
       if (!meta.teethSet.has(resolveSupernumeraryTooth(obsCode))) {
@@ -537,7 +537,7 @@ function validateUnknownCode({
       if (isDrugPatientShareOrPDF(obsCode)) return `${obsCode} (valid - no validation)`;
 
       if (isMultiToothObservation(obsCode)) {
-        remarks.push(`Observation is Invalid due to commas.`);
+        remarks.push(`Observation for ${obsCode} is invalid due to commas.`);
         return `${obsCode} - Invalid (multiple values in one observation)`;
       }
 
@@ -567,7 +567,7 @@ function validateUnknownCode({
     details = obsCodes.map(obsCode => {
       if (isDrugPatientShareOrPDF(obsCode)) return `${obsCode} (valid - no validation)`;
       if (isMultiToothObservation(obsCode)) {
-        remarks.push(`Observation is Invalid due to commas.`);
+        remarks.push(`Observation for ${obsCode} is invalid due to commas.`);
         return `${obsCode} - Invalid (multiple values in one observation)`;
       }
       return obsCode;
