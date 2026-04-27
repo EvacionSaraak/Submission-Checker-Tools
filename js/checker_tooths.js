@@ -370,6 +370,12 @@ function isDrugPatientShareOrPDF(obsCode) {
   return obsCode === 'Drug Patient Share' || obsCode === 'PDF';
 }
 
+// Returns true if an observation code contains multiple comma-separated values.
+// A tooth observation must be a single tooth number, not a list.
+function isMultiToothObservation(obsCode) {
+  return obsCode.includes(',');
+}
+
 function checkRegionDuplication(tracker, code, regionType, regionKey, codeLastDigit) {
   const key = `${regionKey}_${code}`;
   if (tracker[key]) {
@@ -436,6 +442,10 @@ function validateKnownCode({
       }
       if (obsCode === 'SUBCODE') {
         return `Subcode observation`;
+      }
+      if (isMultiToothObservation(obsCode)) {
+        remarks.push(`Observation "${obsCode}" is invalid: a tooth observation must be a single tooth number, not multiple comma-separated values.`);
+        return `${obsCode} - Invalid (multiple values in one observation)`;
       }
       if (!meta.teethSet.has(resolveSupernumeraryTooth(obsCode))) {
         const toothType = getRegionName(obsCode);
@@ -526,6 +536,11 @@ function validateUnknownCode({
     details = obsCodes.map(obsCode => {
       if (isDrugPatientShareOrPDF(obsCode)) return `${obsCode} (valid - no validation)`;
 
+      if (isMultiToothObservation(obsCode)) {
+        remarks.push(`Observation "${obsCode}" is invalid: a tooth observation must be a single tooth number, not multiple comma-separated values.`);
+        return `${obsCode} - Invalid (multiple values in one observation)`;
+      }
+
       let regionRemark = '';
       if (regionType === 'sextant') {
         regionKey = getSextant(obsCode);
@@ -549,9 +564,14 @@ function validateUnknownCode({
       return `${obsCode} - ${regionRemark}`;
     }).join('<br>');
   } else if (obsCodes.length > 0) {
-    details = obsCodes.map(obsCode => (
-      isDrugPatientShareOrPDF(obsCode) ? `${obsCode} (valid - no validation)` : obsCode
-    )).join('<br>');
+    details = obsCodes.map(obsCode => {
+      if (isDrugPatientShareOrPDF(obsCode)) return `${obsCode} (valid - no validation)`;
+      if (isMultiToothObservation(obsCode)) {
+        remarks.push(`Observation "${obsCode}" is invalid: a tooth observation must be a single tooth number, not multiple comma-separated values.`);
+        return `${obsCode} - Invalid (multiple values in one observation)`;
+      }
+      return obsCode;
+    }).join('<br>');
   } else {
     details = 'N/A';
   }
