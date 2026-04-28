@@ -199,27 +199,11 @@ function parseEncounterDate(dateStr) {
   return new Date(y, m - 1, d);
 }
 
-// Check if an activity has a Subcode observation (Observation Code = "Subcode", Value = "01 " with trailing space)
-// DEBUG - prior version (checked Code = "Subcode" only, no value check):
-// function hasSubcodeObservation(obsList) {
-//   return Array.from(obsList).some(obs => {
-//     const code = (obs.querySelector('Code')?.textContent || '').trim().toUpperCase();
-//     return code === 'SUBCODE';
-//   });
-// }
+// Check if an activity has a valid Subcode observation (Observation Code = "Subcode", Value = "01")
 function hasSubcodeObservation(obsList) {
   return Array.from(obsList).some(obs => {
     const code = (obs.querySelector('Code')?.textContent || '').trim().toUpperCase();
-    const value = obs.querySelector('Value')?.textContent || '';
-    return code === 'SUBCODE' && value === '01 ';
-  });
-}
-
-// Returns true if a Subcode observation exists but has value "01" without the required trailing space
-function hasSubcodeObservationMissingSpace(obsList) {
-  return Array.from(obsList).some(obs => {
-    const code = (obs.querySelector('Code')?.textContent || '').trim().toUpperCase();
-    const value = obs.querySelector('Value')?.textContent || '';
+    const value = (obs.querySelector('Value')?.textContent || '').trim();
     return code === 'SUBCODE' && value === '01';
   });
 }
@@ -715,11 +699,7 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
 
           if (isEndodontist && !hasSubcode) {
             // ERROR: Endodontist but missing required Subcode observation
-            if (hasSubcodeObservationMissingSpace(obsList)) {
-              row.remarks.push(`Subcode is missing space.`);
-            } else {
-              row.remarks.push(`Code ${code} requires a Subcode observation (Type: Text, Code: Subcode, Value: "01 ") when performed by an Endodontist.`);
-            }
+            row.remarks.push(`Code ${code} requires a Subcode observation (Type: Text, Code: Subcode, Value: "01") when performed by an Endodontist.`);
           }
 
           // ERROR: More than one Subcode observation is not allowed
