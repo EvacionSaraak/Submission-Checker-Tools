@@ -224,6 +224,14 @@ function hasSubcodeObservationMissingSpace(obsList) {
   });
 }
 
+// Returns the count of Subcode observations (Code = "SUBCODE") in an observation list
+function countSubcodeObservations(obsList) {
+  return Array.from(obsList).filter(obs => {
+    const code = (obs.querySelector('Code')?.textContent || '').trim().toUpperCase();
+    return code === 'SUBCODE';
+  }).length;
+}
+
 // Special code utilities
 function isSpecialMedicalCode(code) {
   return SPECIAL_MEDICAL_CODES.some(item => item.code === code);
@@ -712,6 +720,11 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
             } else {
               row.remarks.push(`Code ${code} requires a Subcode observation (Type: Text, Code: Subcode, Value: "01 ") when performed by an Endodontist.`);
             }
+          }
+
+          // ERROR: More than one Subcode observation is not allowed
+          if (countSubcodeObservations(obsList) > 1) {
+            row.remarks.push(`Code ${code} must have only one Subcode observation.`);
           }
         }
       }
