@@ -497,8 +497,10 @@ function validateUnknownCode({
 
   let regionKey = null;
 
-  // Validate activity type (treat all non-special, non-drug codes as requiring type 6)
-  const typeRemarks = validateActivityType(code, type, true);
+  // Only enforce type 6 when the code has a known dental description (from fallback).
+  // Truly unknown codes (description === '(unknown code)') are treated as non-dental (type 3).
+  const isDentalCode = description !== '(unknown code)';
+  const typeRemarks = validateActivityType(code, type, isDentalCode);
   remarks.push(...typeRemarks);
 
   // PATCH: If all obsCodes are Drug Patient Share or PDF, mark valid and skip remarks
