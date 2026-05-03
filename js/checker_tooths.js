@@ -71,6 +71,12 @@ const FORBIDDEN_CODES = [
 ];
 const FORBIDDEN_CODES_MAP = Object.fromEntries(FORBIDDEN_CODES.map(item => [item.code, item]));
 
+// Codes that are valid as either Type 3 (medical) or Type 6 (dental), depending on context.
+// When submitted with Type 6, the dental description is used. Type 3 is accepted without a type error.
+const DUAL_TYPE_CODES = new Set([
+  '97112' // Type 6 = Bleaching (dental); Type 3 = Neuromuscular reeducation / physiotherapy (medical)
+]);
+
 // Root canal codes requiring a Subcode observation from 20-Feb-2026 onward
 const ROOT_CANAL_SUBCODE_CODES = new Set(['33111', '33121', '33131', '33141', '33115', '33125', '33135', '33145']);
 const SUBCODE_OBS_CUTOFF = new Date(2026, 1, 20); // 20 Feb 2026 (month is 0-indexed)
@@ -96,9 +102,12 @@ function validateActivityType(code, type, isDentalCode = false) {
     remarks.push(`Code ${code} must have Type 3 but found Type ${type || '(missing)'}.`);
   }
   
-  // Dental codes (not special medical codes, A4639, or drug codes at type 5) must be type 6
+  // Dental codes (not special medical codes, A4639, or drug codes at type 5) must be type 6.
+  // Exception: dual-type codes are also valid at type 3 (they serve as both medical and dental procedures).
   if (isDentalCode && !SPECIAL_MEDICAL_CODES_SET.has(code) && code !== "A4639" && type !== "5" && type !== "6") {
-    remarks.push(`Code ${code} must have Type 6 but found Type ${type || '(missing)'}.`);
+    if (!(DUAL_TYPE_CODES.has(code) && type === "3")) {
+      remarks.push(`Code ${code} must have Type 6 but found Type ${type || '(missing)'}.`);
+    }
   }
   
   // Type 5 code format check
