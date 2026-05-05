@@ -68,6 +68,10 @@ function getExpectedReceiverID(packageName) {
   const pkg = packageName.toLowerCase();
   if (pkg.includes('thiqa')) return 'D001';
   if (pkg.includes('basic')) return 'D004';
+  // Packages containing parentheses are not standard Daman packages — skip keyword matching
+  // to avoid false positives (e.g. "AUH(ADIB25_GOLD-C)_RN(UAE,WW)2473" is not a Daman package
+  // despite containing the word "gold").
+  if (packageName.includes('(') || packageName.includes(')')) return null;
   if (pkg.includes('daman') || pkg.includes('bronze') || pkg.includes('silver') ||
       pkg.includes('gold') || pkg.includes('platinum') || pkg.includes('enhanced')) return 'A001';
   return null;
