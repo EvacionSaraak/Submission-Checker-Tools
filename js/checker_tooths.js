@@ -368,7 +368,7 @@ function parseObservationCodes(obsList) {
 }
 
 function isDrugPatientShareOrPDF(obsCode) {
-  return obsCode === 'Drug Patient Share' || obsCode === 'PDF';
+  return obsCode === 'Drug Patient Share' || obsCode === 'PDF' || obsCode.endsWith('.PDF');
 }
 
 // Returns true if an observation code contains multiple comma-separated values.
