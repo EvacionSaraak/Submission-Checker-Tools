@@ -12,9 +12,9 @@ try {
 
 const TARGET_HEADERS = [
   'Pri. Claim No', 'Clinician License', 'Encounter Date', 'Pri. Patient Insurance Card No',
-  'Emirates ID No.', 'Department', 'Visit Id', 'Pri. Plan Type', 'Facility ID',
+  'Department', 'Visit Id', 'Pri. Plan Type', 'Facility ID',
   'Patient Code', 'Clinician Name', 'Opened by', 'Source File', 'Raw Encounter Date',
-  'Total Amount'
+  'Total Amount', 'Emirates ID No.'
 ];
 
 // === Header maps (unchanged) ===
