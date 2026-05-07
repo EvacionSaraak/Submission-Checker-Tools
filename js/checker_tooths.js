@@ -371,6 +371,21 @@ function isDrugPatientShareOrPDF(obsCode) {
   return obsCode === 'Drug Patient Share' || obsCode === 'PDF' || obsCode.endsWith('.PDF');
 }
 
+function isEndodonticDescription(description) {
+  const text = (description || '').toString();
+  return /(root\s*canal|pulpotomy|pulpectomy|endodont)/i.test(text);
+}
+
+function isToothNumberObservationCode(obsCode) {
+  const normalized = normalizeToothCode(obsCode);
+  if (!normalized || isMultiToothObservation(normalized)) return false;
+  return ALL_TEETH.has(resolveSupernumeraryTooth(normalized));
+}
+
+function hasToothNumberObservation(obsList) {
+  return parseObservationCodes(obsList).some(isToothNumberObservationCode);
+}
+
 // Returns true if an observation code contains multiple comma-separated values.
 // A tooth observation must be a single tooth number, not a list.
 function isMultiToothObservation(obsCode) {
@@ -616,6 +631,14 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
   const rows = [];
   const claimSummaries = {};
   const claimRegionTrack = {};
+  const recordedEndodonticCodes = new Set();
+
+  Object.entries(codeToMeta || {}).forEach(([code, meta]) => {
+    if (isEndodonticDescription(meta?.description)) recordedEndodonticCodes.add(code);
+  });
+  Object.entries(fallbackDescriptions || {}).forEach(([code, item]) => {
+    if (isEndodonticDescription(item?.description)) recordedEndodonticCodes.add(code);
+  });
 
   Array.from(xmlDoc.getElementsByTagName('Claim')).forEach(claim => {
     const claimId = claim.querySelector('ID')?.textContent || '(no claim ID)';
@@ -718,6 +741,10 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
             row.remarks.push(`Code ${code} must have only one Subcode observation.`);
           }
         }
+      }
+
+      if (recordedEndodonticCodes.has(code) && !hasToothNumberObservation(obsList)) {
+        row.remarks.push(`Code ${code} requires at least one tooth-number observation.`);
       }
 
       // Validate observation ValueTypes: non-dental/episode observations must have a ValueType
