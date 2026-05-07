@@ -12,7 +12,7 @@ try {
 
 const TARGET_HEADERS = [
   'Pri. Claim No', 'Clinician License', 'Encounter Date', 'Pri. Patient Insurance Card No',
-  'Department', 'Visit Id', 'Pri. Plan Type', 'Facility ID',
+  'Emirates ID No.', 'Department', 'Visit Id', 'Pri. Plan Type', 'Facility ID',
   'Patient Code', 'Clinician Name', 'Opened by', 'Source File', 'Raw Encounter Date',
   'Total Amount'
 ];
@@ -54,6 +54,8 @@ const ODOO_MAP = {
   'Admitting License': 'Clinician License',
   'Adm/Reg. Date': 'Encounter Date',
   'Pri. Member ID': 'Pri. Patient Insurance Card No',
+  'Emirates ID No': 'Emirates ID No.',
+  'Emirates ID No.': 'Emirates ID No.',
   'Admitting Department': 'Department',
   'Visit Id': 'Visit Id',
   'Pri. Plan Type': 'Pri. Plan Type',
@@ -674,6 +676,13 @@ async function combineReportings(fileEntries) {
           else if (tgt === 'Patient Code') {
             const sig = targetToSourceSig['Patient Code'];
             val = sig ? (sourceRow[sig] ?? '') : ((sourceRow['mrno'] ?? sourceRow['fileno'] ?? '') || '');
+          }
+          else if (tgt === 'Emirates ID No.') {
+            const sig = targetToSourceSig['Emirates ID No.'];
+            val = (sig ? (sourceRow[sig] ?? '') : '')
+              || sourceRow[headerSignature('Emirates ID No')]
+              || sourceRow[headerSignature('Emirates ID No.')]
+              || '';
           }
           else if (tgt === 'Clinician License') val = clinLicense || '';
           else if (tgt === 'Clinician Name') val = clinName || '';
