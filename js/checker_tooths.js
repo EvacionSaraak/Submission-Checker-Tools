@@ -74,7 +74,8 @@ const FORBIDDEN_CODES_MAP = Object.fromEntries(FORBIDDEN_CODES.map(item => [item
 // Codes that are valid as either Type 3 (medical) or Type 6 (dental), depending on context.
 // When submitted with Type 6, the dental description is used. Type 3 is accepted without a type error.
 const DUAL_TYPE_CODES = new Set([
-  '97112' // Type 6 = Bleaching (dental); Type 3 = Neuromuscular reeducation / physiotherapy (medical)
+  '97112', // Type 6 = Bleaching (dental); Type 3 = Neuromuscular reeducation / physiotherapy (medical)
+  '76801'  // Type 6 = dental version; Type 3 = medical version
 ]);
 
 // Root canal codes requiring a Subcode observation from 20-Feb-2026 onward
