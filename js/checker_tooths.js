@@ -374,6 +374,7 @@ function isDrugPatientShareOrPDF(obsCode) {
 
 function isEndodonticDescription(description) {
   const text = (description || '').toString();
+  if (/examination/i.test(text)) return false;
   return /(root[\s-]*canal|pulpotomy|pulpectomy|endodont)/i.test(text);
 }
 
