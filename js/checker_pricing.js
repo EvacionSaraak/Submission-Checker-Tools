@@ -267,10 +267,12 @@ async function handleRun() {
             psStatus = 'Valid';
             psRemarks.push(`Patient Share ${actualPS} is correct (Total Ref: ${totalRef}, Total Net: ${totalXmlNet}).`);
             // Promote all non-Valid activity rows — the correct patient share confirms total pricing is accurate.
+            // Also clear any misleading "does not match" remarks: the claimed net is the payer's portion only.
             actRows.forEach(r => {
               if (!r.isValid) {
                 r.status = 'Valid';
                 r.isValid = true;
+                r.Remarks = `Claimed Net is the payer's portion; patient share covers the balance (PS: ${actualPS}).`;
               }
             });
           } else {
