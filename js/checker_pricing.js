@@ -309,7 +309,8 @@ async function handleRun() {
     }
 
     // ---- Patient share validation (non-Thiqa, non-Daman) ----
-    // PS=0 → all rows for that claim are Invalid, EXCEPT for Cash (HAAD) claims where PS=0 is valid.
+    // PS=0 → all rows for that claim are Invalid, EXCEPT for Cash (HAAD/CASH) claims.
+    // For Cash claims: PS=0 with net=0 is treated as Valid; PS=0 with net≠0 stays Unknown.
     if (receiverID !== 'D001' && receiverID !== 'A001') {
       const claimGroups = new Map();
       output.forEach(r => {
@@ -317,7 +318,7 @@ async function handleRun() {
         claimGroups.get(r.ClaimID).push(r);
       });
 
-      const isCash = receiverID.toUpperCase() === 'HAAD';
+      const isCash = receiverID.toUpperCase() === 'HAAD' || receiverID.toUpperCase() === 'CASH';
       for (const [, actRows] of claimGroups) {
         const actualPS = Number(actRows[0].PatientShare || 0);
         if (actualPS === 0 && !isCash) {
@@ -327,6 +328,14 @@ async function handleRun() {
             r.isValid = false;
             r.Remarks = r.Remarks ? `${r.Remarks} ${msg}` : msg;
           });
+        } else if (actualPS === 0 && isCash) {
+          const totalClaimedNet = actRows.reduce((sum, r) => sum + r.xmlNetNum, 0);
+          if (totalClaimedNet === 0) {
+            actRows.forEach(r => {
+              r.status = 'Valid';
+              r.isValid = true;
+            });
+          }
         }
         // PS ≠ 0: rows remain Unknown — compute estimated patient-share split and add to Remarks
         if (actualPS > 0) {
