@@ -525,7 +525,7 @@ function buildResultsTable(rows) {
   for (const r of rows) {
     const status = String(r.status || 'Invalid').toLowerCase();
     // Map status to Bootstrap/custom classes
-    const cls = status === 'ok' || status === 'valid' ? 'table-success' : status === 'unknown' ? 'unknown' : 'table-danger';
+    const cls = status === 'ok' || status === 'valid' ? 'table-success' : status === 'unknown' ? 'table-warning' : 'table-danger';
     const showClaim = r.ClaimID !== prevClaimId;
     html += `<tr class="${cls}" data-claim-id="${escapeHtml(r.ClaimID || '')}">
       <td style="padding:6px;border:1px solid #ccc" class="claim-id-cell">${showClaim ? escapeHtml(r.ClaimID) : ''}</td>
