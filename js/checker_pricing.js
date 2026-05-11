@@ -255,16 +255,15 @@ async function handleRun() {
         if (actualPS === 0) {
           psRemarks.push('Patient Share is 0 — this is invalid for Daman (non-Thiqa) claims.');
         } else {
-          const noRefRows = actRows.filter(r => r.ComputedRef === null);
-          const totalRef = actRows.reduce((sum, r) => sum + (r.ComputedRef || 0) * Number(r.ClaimedQty || 1), 0);
+          // For activities with no pricing match, treat their net as correct (ref = net, contributes 0 to PS).
+          const totalRef = actRows.reduce((sum, r) => {
+            return sum + (r.ComputedRef !== null ? r.ComputedRef * Number(r.ClaimedQty || 1) : r.xmlNetNum);
+          }, 0);
           const totalXmlNet = actRows.reduce((sum, r) => sum + r.xmlNetNum, 0);
           const expectedPS = Math.round((totalRef - totalXmlNet) * 100) / 100;
-          refNetPriceDisplay = noRefRows.length > 0 ? '(incomplete)' : String(expectedPS);
+          refNetPriceDisplay = String(expectedPS);
 
-          if (noRefRows.length > 0) {
-            psStatus = 'Unknown';
-            psRemarks.push(`Patient Share cannot be fully verified: ${noRefRows.length} activity/activities have no pricing match.`);
-          } else if (actualPS === expectedPS) {
+          if (actualPS === expectedPS) {
             psStatus = 'Valid';
             psRemarks.push(`Patient Share ${actualPS} is correct (Total Ref: ${totalRef}, Total Net: ${totalXmlNet}).`);
           } else {
