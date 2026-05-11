@@ -232,7 +232,8 @@ function isSpecialMedicalCode(code) {
 }
 
 // Observation types that are allowed to have a blank/missing ValueType (tooth-number observations)
-const VALUETYPE_EXEMPT_OBS_TYPES = new Set(['universal dental', 'episode']);
+// "Flags" observations (e.g. MedicalTourismUnplanned) carry no value and are always valid without a ValueType.
+const VALUETYPE_EXEMPT_OBS_TYPES = new Set(['universal dental', 'episode', 'flags']);
 
 // Returns remarks for any observation where ValueType is blank but the observation type requires it.
 // "Universal Dental" and "Episode" observations carry a tooth number and don't need a ValueType.
@@ -361,7 +362,13 @@ function buildCodeMeta(data) {
 }
 
 function parseObservationCodes(obsList) {
-  return Array.from(obsList).map(obs => {
+  return Array.from(obsList).filter(obs => {
+    // Skip "Flags" type observations (e.g. MedicalTourismUnplanned) — they are
+    // informational flags, not tooth/region indicators, and should not be validated
+    // as tooth numbers.
+    const obsType = (obs.querySelector('Type')?.textContent || '').trim().toLowerCase();
+    return obsType !== 'flags';
+  }).map(obs => {
     const obsCodeRaw = obs.querySelector('Code')?.textContent.trim() || '';
     if (obsCodeRaw === 'Drug Patient Share') return 'Drug Patient Share';
     return obsCodeRaw.toUpperCase();
