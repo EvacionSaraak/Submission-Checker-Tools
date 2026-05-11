@@ -266,6 +266,13 @@ async function handleRun() {
           if (actualPS === expectedPS) {
             psStatus = 'Valid';
             psRemarks.push(`Patient Share ${actualPS} is correct (Total Ref: ${totalRef}, Total Net: ${totalXmlNet}).`);
+            // Promote unmatched activity rows to Valid — the correct patient share confirms their net is accurate.
+            actRows.forEach(r => {
+              if (r.ComputedRef === null) {
+                r.status = 'Valid';
+                r.isValid = true;
+              }
+            });
           } else {
             psRemarks.push(`Patient Share ${actualPS} is incorrect. Expected: ${expectedPS} (Total Ref: ${totalRef} − Total Net: ${totalXmlNet}).`);
           }
