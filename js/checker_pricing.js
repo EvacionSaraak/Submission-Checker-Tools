@@ -341,12 +341,13 @@ async function handleRun() {
             estimatedPSSum = Math.round((estimatedPSSum + estimatedPS) * 100) / 100;
             r._estimatedTotal = estimatedTotal;
             r._estimatedPS = estimatedPS;
+            r._estimatedPayerNet = Math.round((estimatedTotal - estimatedPS) * 100) / 100;
           });
 
           actRows.forEach(r => {
-            const netMatch = Math.abs(r.xmlNetNum - r._estimatedTotal) < 0.01;
+            const netMatch = Math.abs(r.xmlNetNum - r._estimatedPayerNet) < 0.01;
             const matchOp = netMatch ? '==' : '!=';
-            const remark = `${psPercentagePct}% Patient Share (estimate). Net ${netMatch ? 'Match' : 'Mismatch'} (${r.xmlNetNum} ${matchOp} ${r._estimatedTotal}).`;
+            const remark = `${psPercentagePct}% Copay. Net ${netMatch ? 'Match' : 'Mismatch'} (${r.xmlNetNum} ${matchOp} ${r._estimatedPayerNet}).`;
             r.Remarks = r.Remarks ? `${r.Remarks} ${remark}` : remark;
           });
         }
