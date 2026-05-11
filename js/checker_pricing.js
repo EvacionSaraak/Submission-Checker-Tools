@@ -250,6 +250,7 @@ async function handleRun() {
         const actualPS = Number(actRows[0].PatientShare || 0);
         const psRemarks = [];
         let psStatus = 'Invalid';
+        let refNetPriceDisplay = '';
 
         if (actualPS === 0) {
           psRemarks.push('Patient Share is 0 — this is invalid for Daman (non-Thiqa) claims.');
@@ -258,6 +259,7 @@ async function handleRun() {
           const totalRef = actRows.reduce((sum, r) => sum + (r.ComputedRef || 0) * Number(r.ClaimedQty || 1), 0);
           const totalXmlNet = actRows.reduce((sum, r) => sum + r.xmlNetNum, 0);
           const expectedPS = Math.round((totalRef - totalXmlNet) * 100) / 100;
+          refNetPriceDisplay = noRefRows.length > 0 ? '(incomplete)' : String(expectedPS);
 
           if (noRefRows.length > 0) {
             psStatus = 'Unknown';
@@ -268,35 +270,20 @@ async function handleRun() {
           } else {
             psRemarks.push(`Patient Share ${actualPS} is incorrect. Expected: ${expectedPS} (Total Ref: ${totalRef} − Total Net: ${totalXmlNet}).`);
           }
-
-          psRows.push({
-            ClaimID: claimId,
-            ActivityID: '(Claim)',
-            CPT: 'PatientShare',
-            ClaimedNet: String(actualPS),
-            ClaimedQty: '',
-            ReferenceNetPrice: noRefRows.length > 0 ? '(incomplete)' : String(expectedPS),
-            PricingRow: null, XmlRow: null,
-            isValid: psStatus === 'Valid',
-            status: psStatus,
-            Remarks: psRemarks.join(' '),
-            ComputedRef: null, xmlNetNum: 0, PatientShare: String(actualPS)
-          });
-          continue;
         }
 
         psRows.push({
           ClaimID: claimId,
           ActivityID: '(Claim)',
           CPT: 'PatientShare',
-          ClaimedNet: '0',
+          ClaimedNet: String(actualPS),
           ClaimedQty: '',
-          ReferenceNetPrice: '',
+          ReferenceNetPrice: refNetPriceDisplay,
           PricingRow: null, XmlRow: null,
-          isValid: false,
+          isValid: psStatus === 'Valid',
           status: psStatus,
           Remarks: psRemarks.join(' '),
-          ComputedRef: null, xmlNetNum: 0, PatientShare: '0'
+          ComputedRef: null, xmlNetNum: 0, PatientShare: String(actualPS)
         });
       }
     }
