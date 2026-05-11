@@ -238,7 +238,7 @@ async function handleRun() {
 
     // ---- Patient share validation (Daman A001 only) ----
     // For Daman: expectedPS = Σ(ref × qty) − Σ(activity net); PS = 0 is always an error.
-    const psRows = [];
+    // Errors are surfaced directly in the activity rows' Remarks — no separate summary row is added.
     if (receiverID === 'A001') {
       const claimGroups = new Map();
       output.forEach(r => {
@@ -246,14 +246,16 @@ async function handleRun() {
         claimGroups.get(r.ClaimID).push(r);
       });
 
-      for (const [claimId, actRows] of claimGroups) {
+      for (const [, actRows] of claimGroups) {
         const actualPS = Number(actRows[0].PatientShare || 0);
-        const psRemarks = [];
-        let psStatus = 'Invalid';
-        let refNetPriceDisplay = '';
 
         if (actualPS === 0) {
-          psRemarks.push('Patient Share is 0 — this is invalid for Daman (non-Thiqa) claims.');
+          const msg = 'Patient Share is 0 — this is invalid for Daman (non-Thiqa) claims.';
+          actRows.forEach(r => {
+            r.status = 'Invalid';
+            r.isValid = false;
+            r.Remarks = r.Remarks ? `${r.Remarks} ${msg}` : msg;
+          });
         } else {
           // For activities with no pricing match, treat their net as correct (ref = net, contributes 0 to PS).
           const totalRef = actRows.reduce((sum, r) => {
@@ -261,11 +263,8 @@ async function handleRun() {
           }, 0);
           const totalXmlNet = actRows.reduce((sum, r) => sum + r.xmlNetNum, 0);
           const expectedPS = Math.round((totalRef - totalXmlNet) * 100) / 100;
-          refNetPriceDisplay = String(expectedPS);
 
           if (actualPS === expectedPS) {
-            psStatus = 'Valid';
-            psRemarks.push(`Patient Share ${actualPS} is correct (Total Ref: ${totalRef}, Total Net: ${totalXmlNet}).`);
             // Promote all non-Valid activity rows — the correct patient share confirms total pricing is accurate.
             // Also clear any misleading "does not match" remarks: the claimed net is the payer's portion only.
             actRows.forEach(r => {
@@ -276,40 +275,16 @@ async function handleRun() {
               }
             });
           } else {
-            psRemarks.push(`Patient Share ${actualPS} is incorrect. Expected: ${expectedPS} (Total Ref: ${totalRef} − Total Net: ${totalXmlNet}).`);
+            const msg = `Patient Share ${actualPS} is incorrect. Expected: ${expectedPS} (Total Ref: ${totalRef} − Total Net: ${totalXmlNet}).`;
+            actRows.forEach(r => {
+              r.Remarks = r.Remarks ? `${r.Remarks} ${msg}` : msg;
+            });
           }
         }
-
-        psRows.push({
-          ClaimID: claimId,
-          ActivityID: '(Claim)',
-          CPT: 'PatientShare',
-          ClaimedNet: String(actualPS),
-          ClaimedQty: '',
-          ReferenceNetPrice: refNetPriceDisplay,
-          PricingRow: null, XmlRow: null,
-          isValid: psStatus === 'Valid',
-          status: psStatus,
-          Remarks: psRemarks.join(' '),
-          ComputedRef: null, xmlNetNum: 0, PatientShare: String(actualPS)
-        });
       }
     }
 
-    // Merge patient share rows after each claim's last activity row
-    const psMap = new Map(psRows.map(r => [r.ClaimID, r]));
-    const mergedOutput = [];
-    let curClaimId = null;
-    for (const r of output) {
-      if (curClaimId !== null && r.ClaimID !== curClaimId && psMap.has(curClaimId)) {
-        mergedOutput.push(psMap.get(curClaimId));
-      }
-      mergedOutput.push(r);
-      curClaimId = r.ClaimID;
-    }
-    if (curClaimId !== null && psMap.has(curClaimId)) {
-      mergedOutput.push(psMap.get(curClaimId));
-    }
+    const mergedOutput = output;
 
     lastResults = mergedOutput;
     const tableElement = buildResultsTable(mergedOutput);
