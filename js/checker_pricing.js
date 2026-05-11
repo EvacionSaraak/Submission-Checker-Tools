@@ -60,12 +60,15 @@ async function handleRun() {
 
     const xmlDoc = parseXml(xmlText);
 
-    // Only process files where ReceiverID is D001 (Thiqa) or A001 (Daman)
+    // ReceiverID D001 (Thiqa) and A001 (Daman) get full price-matching.
+    // All other ReceiverIDs are processed as non-Thiqa: activities are marked Unknown,
+    // with Patient Share = 0 being the only check that forces rows to Invalid.
     const headerNode = xmlDoc.querySelector('Header');
     const receiverID = headerNode?.querySelector('ReceiverID')?.textContent.trim() || '';
     console.log(`[PRICING] ReceiverID: ${receiverID || '(MISSING)'}`);
     if (receiverID !== 'D001' && receiverID !== 'A001') {
-      throw new Error(`Pricing checker supports ReceiverID "D001" (Thiqa) or "A001" (Daman). Found: "${receiverID || '(MISSING)'}"`);}
+      console.log(`[PRICING] ReceiverID "${receiverID}" is non-Thiqa/non-Daman — prices will be marked Unknown; PS=0 check will still apply.`);
+    }
 
     const extracted = extractPricingRecords(xmlDoc);
     const jsonMatcher = buildJsonPricingMatcher(dentalPricingRaw);
@@ -86,6 +89,27 @@ async function handleRun() {
     const remarks = []; let status = 'Invalid';
     const facility = rec.FacilityID || '';
     const xmlNet = Number(rec.Net || 0), xmlQty = Number(rec.Quantity || 0);
+
+    // Non-Thiqa, non-Daman: no reference pricing available — mark all as Unknown.
+    // PS=0 → Invalid is enforced in a later pass over claim groups.
+    if (receiverID !== 'D001' && receiverID !== 'A001') {
+      return {
+        ClaimID: rec.ClaimID || '',
+        ActivityID: rec.ActivityID || '',
+        CPT: rec.CPT || '',
+        ClaimedNet: rec.Net || '',
+        ClaimedQty: rec.Quantity || '',
+        ReferenceNetPrice: '',
+        PricingRow: null,
+        XmlRow: rec,
+        isValid: false,
+        status: 'Unknown',
+        Remarks: '',
+        ComputedRef: null,
+        xmlNetNum: xmlNet,
+        PatientShare: rec.PatientShare || '0'
+      };
+    }
 
     // Special rule: code 02111 must always have a net price of 0 for Thiqa (D001) and Daman (A001)
     if (normalizeCode(rec.CPT) === '2111' && (receiverID === 'D001' || receiverID === 'A001')) {
@@ -281,6 +305,29 @@ async function handleRun() {
             });
           }
         }
+      }
+    }
+
+    // ---- Patient share validation (non-Thiqa, non-Daman) ----
+    // PS=0 → all rows for that claim are Invalid; all other rows remain Unknown.
+    if (receiverID !== 'D001' && receiverID !== 'A001') {
+      const claimGroups = new Map();
+      output.forEach(r => {
+        if (!claimGroups.has(r.ClaimID)) claimGroups.set(r.ClaimID, []);
+        claimGroups.get(r.ClaimID).push(r);
+      });
+
+      for (const [, actRows] of claimGroups) {
+        const actualPS = Number(actRows[0].PatientShare || 0);
+        if (actualPS === 0) {
+          const msg = 'Patient Share is 0 — this is invalid for non-Thiqa claims.';
+          actRows.forEach(r => {
+            r.status = 'Invalid';
+            r.isValid = false;
+            r.Remarks = r.Remarks ? `${r.Remarks} ${msg}` : msg;
+          });
+        }
+        // PS ≠ 0: rows remain Unknown — no reference pricing available to validate further
       }
     }
 
