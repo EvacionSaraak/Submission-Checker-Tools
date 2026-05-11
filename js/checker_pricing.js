@@ -331,7 +331,7 @@ async function handleRun() {
         if (actualPS > 0) {
           const totalClaimedNet = actRows.reduce((sum, r) => sum + r.xmlNetNum, 0);
           const psPercentage = actualPS / (actualPS + totalClaimedNet);
-          const psPercentagePct = (psPercentage * 100).toFixed(2);
+          const psPercentagePct = Math.round(psPercentage * 100);
 
           let estimatedPSSum = 0;
           actRows.forEach(r => {
@@ -339,15 +339,17 @@ async function handleRun() {
             const estimatedTotal = psPercentage < 1 ? Math.round((net / (1 - psPercentage)) * 100) / 100 : 0;
             const estimatedPS = Math.round((estimatedTotal - net) * 100) / 100;
             estimatedPSSum = Math.round((estimatedPSSum + estimatedPS) * 100) / 100;
-            const remark = `Patient-share split: ${psPercentagePct}% — Est. gross: ${estimatedTotal.toFixed(2)}, Est. patient share: ${estimatedPS.toFixed(2)}.`;
-            r.Remarks = r.Remarks ? `${r.Remarks} ${remark}` : remark;
+            r._estimatedTotal = estimatedTotal;
+            r._estimatedPS = estimatedPS;
           });
 
           const diff = Math.abs(estimatedPSSum - actualPS);
-          const checkMsg = diff < 0.1
-            ? `Reconstruction check: estimated PS total (${estimatedPSSum.toFixed(2)}) matches declared PS (${actualPS}).`
-            : `Reconstruction check: estimated PS total (${estimatedPSSum.toFixed(2)}) differs from declared PS (${actualPS}).`;
-          actRows.forEach(r => { r.Remarks = r.Remarks ? `${r.Remarks} ${checkMsg}` : checkMsg; });
+          const checkMsg = diff < 0.1 ? 'Claimed Net matches estimated pricing.' : `Reconstruction mismatch: estimated PS total (${estimatedPSSum}) vs declared PS (${actualPS}).`;
+
+          actRows.forEach(r => {
+            const remark = `Patient Share estimated as ${psPercentagePct}%. Total price for this activity is ${r._estimatedTotal}. ${checkMsg}`;
+            r.Remarks = r.Remarks ? `${r.Remarks} ${remark}` : remark;
+          });
         }
       }
     }
@@ -508,7 +510,7 @@ function buildResultsTable(rows) {
 
   const container = document.createElement('div');
   let prevClaimId = null;
-  let html = `<table class="table table-striped table-bordered" style="width:100%;border-collapse:collapse"><thead><tr>
+  let html = `<table class="table table-bordered" style="width:100%;border-collapse:collapse"><thead><tr>
     <th style="padding:8px;border:1px solid #ccc">Claim ID</th>
     <th style="padding:8px;border:1px solid #ccc">Activity ID</th>
     <th style="padding:8px;border:1px solid #ccc">Code</th>
