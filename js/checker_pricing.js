@@ -61,7 +61,8 @@ async function handleRun() {
     const xmlDoc = parseXml(xmlText);
 
     // ReceiverID D001 (Thiqa) and A001 (Daman) get full price-matching.
-    // All other ReceiverIDs are processed as non-Thiqa: activities are marked Unknown,
+    // HAAD: activities are marked Unknown EXCEPT when claimed net is 0, which is always Valid.
+    // All other non-Thiqa/non-Daman ReceiverIDs: activities are marked Unknown,
     // with Patient Share = 0 being the only check that forces rows to Invalid.
     const headerNode = xmlDoc.querySelector('Header');
     const receiverID = headerNode?.querySelector('ReceiverID')?.textContent.trim() || '';
@@ -91,8 +92,11 @@ async function handleRun() {
     const xmlNet = Number(rec.Net || 0), xmlQty = Number(rec.Quantity || 0);
 
     // Non-Thiqa, non-Daman: no reference pricing available — mark all as Unknown.
-    // PS=0 → Invalid is enforced in a later pass over claim groups.
+    // Exception: HAAD with claimed net = 0 is always Valid.
+    // PS=0 → Invalid is enforced in a later pass over claim groups (non-HAAD only).
     if (receiverID !== 'D001' && receiverID !== 'A001') {
+      const isHAAD = receiverID.toUpperCase() === 'HAAD';
+      const netZeroValid = isHAAD && xmlNet === 0;
       return {
         ClaimID: rec.ClaimID || '',
         ActivityID: rec.ActivityID || '',
@@ -102,9 +106,9 @@ async function handleRun() {
         ReferenceNetPrice: '',
         PricingRow: null,
         XmlRow: rec,
-        isValid: false,
-        status: 'Unknown',
-        Remarks: '',
+        isValid: netZeroValid,
+        status: netZeroValid ? 'Valid' : 'Unknown',
+        Remarks: netZeroValid ? 'Claimed Net is 0 (treated as Valid)' : '',
         ComputedRef: null,
         xmlNetNum: xmlNet,
         PatientShare: rec.PatientShare || '0'
