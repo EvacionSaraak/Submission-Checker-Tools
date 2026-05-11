@@ -108,7 +108,10 @@ async function handleRun() {
         XmlRow: rec,
         isValid: status === 'Valid',
         status,
-        Remarks: remarks.join(' ')
+        Remarks: remarks.join(' '),
+        ComputedRef: 0,
+        xmlNetNum: xmlNet,
+        PatientShare: rec.PatientShare || '0'
       };
     }
 
@@ -183,6 +186,8 @@ async function handleRun() {
     }
 
     const ref = Number(refPrice ?? NaN);
+    // ComputedRef is used for per-claim patient share validation
+    const computedRef = (match || endoEntry) && refPrice !== null && !Number.isNaN(ref) ? ref : null;
 
     // Claimed net 0 -> Valid (changed from Unknown)
     if (xmlNet === 0) {
@@ -224,18 +229,101 @@ async function handleRun() {
       XmlRow: rec,
       isValid: status === 'Valid',
       status,
-      Remarks: remarks.join(' ')
+      Remarks: remarks.join(' '),
+      ComputedRef: computedRef,
+      xmlNetNum: xmlNet,
+      PatientShare: rec.PatientShare || '0'
     };
   });
 
-    lastResults = output;
-    const tableElement = buildResultsTable(output);
-    lastWorkbook = makeWorkbookFromJson(output, 'checker_pricing_results');
-    toggleDownload(output.length > 0);
+    // ---- Patient share validation (Daman A001 only) ----
+    // For Daman: expectedPS = Σ(ref × qty) − Σ(activity net); PS = 0 is always an error.
+    const psRows = [];
+    if (receiverID === 'A001') {
+      const claimGroups = new Map();
+      output.forEach(r => {
+        if (!claimGroups.has(r.ClaimID)) claimGroups.set(r.ClaimID, []);
+        claimGroups.get(r.ClaimID).push(r);
+      });
+
+      for (const [claimId, actRows] of claimGroups) {
+        const actualPS = Number(actRows[0].PatientShare || 0);
+        const psRemarks = [];
+        let psStatus = 'Invalid';
+
+        if (actualPS === 0) {
+          psRemarks.push('Patient Share is 0 — this is invalid for Daman (non-Thiqa) claims.');
+        } else {
+          const noRefRows = actRows.filter(r => r.ComputedRef === null);
+          const totalRef = actRows.reduce((sum, r) => sum + (r.ComputedRef || 0) * Number(r.ClaimedQty || 1), 0);
+          const totalXmlNet = actRows.reduce((sum, r) => sum + r.xmlNetNum, 0);
+          const expectedPS = Math.round((totalRef - totalXmlNet) * 100) / 100;
+
+          if (noRefRows.length > 0) {
+            psStatus = 'Unknown';
+            psRemarks.push(`Patient Share cannot be fully verified: ${noRefRows.length} activity/activities have no pricing match.`);
+          } else if (actualPS === expectedPS) {
+            psStatus = 'Valid';
+            psRemarks.push(`Patient Share ${actualPS} is correct (Total Ref: ${totalRef}, Total Net: ${totalXmlNet}).`);
+          } else {
+            psRemarks.push(`Patient Share ${actualPS} is incorrect. Expected: ${expectedPS} (Total Ref: ${totalRef} − Total Net: ${totalXmlNet}).`);
+          }
+
+          psRows.push({
+            ClaimID: claimId,
+            ActivityID: '(Claim)',
+            CPT: 'PatientShare',
+            ClaimedNet: String(actualPS),
+            ClaimedQty: '',
+            ReferenceNetPrice: noRefRows.length > 0 ? '(incomplete)' : String(expectedPS),
+            PricingRow: null, XmlRow: null,
+            isValid: psStatus === 'Valid',
+            status: psStatus,
+            Remarks: psRemarks.join(' '),
+            ComputedRef: null, xmlNetNum: 0, PatientShare: String(actualPS)
+          });
+          continue;
+        }
+
+        psRows.push({
+          ClaimID: claimId,
+          ActivityID: '(Claim)',
+          CPT: 'PatientShare',
+          ClaimedNet: '0',
+          ClaimedQty: '',
+          ReferenceNetPrice: '',
+          PricingRow: null, XmlRow: null,
+          isValid: false,
+          status: psStatus,
+          Remarks: psRemarks.join(' '),
+          ComputedRef: null, xmlNetNum: 0, PatientShare: '0'
+        });
+      }
+    }
+
+    // Merge patient share rows after each claim's last activity row
+    const psMap = new Map(psRows.map(r => [r.ClaimID, r]));
+    const mergedOutput = [];
+    let curClaimId = null;
+    for (const r of output) {
+      if (curClaimId !== null && r.ClaimID !== curClaimId && psMap.has(curClaimId)) {
+        mergedOutput.push(psMap.get(curClaimId));
+      }
+      mergedOutput.push(r);
+      curClaimId = r.ClaimID;
+    }
+    if (curClaimId !== null && psMap.has(curClaimId)) {
+      mergedOutput.push(psMap.get(curClaimId));
+    }
+
+    lastResults = mergedOutput;
+    const tableElement = buildResultsTable(mergedOutput);
+    lastWorkbook = makeWorkbookFromJson(mergedOutput, 'checker_pricing_results');
+    toggleDownload(mergedOutput.length > 0);
 
    // Count valid rows and show percentage with 2 decimals
-  const validCount = output.filter(r => r.isValid).length;
-  const totalCount = output.length;
+  const validCount = mergedOutput.filter(r => r.isValid).length;
+  const totalCount = mergedOutput.length;
   const numericPercent = totalCount ? (validCount / totalCount) * 100 : 0;
   const percentText = totalCount ? numericPercent.toFixed(2) : '0.00';
   const color = numericPercent === 100 ? 'green' : 'orange';
@@ -299,13 +387,14 @@ function extractPricingRecords(xmlDoc) {
     const encounterNode = claim.getElementsByTagName('Encounter')[0];
     const facilityId = textValue(encounterNode, 'FacilityID') || '';
     const encounterDateStr = textValue(encounterNode, 'Start') || textValue(encounterNode, 'Date') || textValue(encounterNode, 'EncounterDate') || '';
+    const claimPatientShare = textValue(claim, 'PatientShare').trim() || '0';
     for (const act of activities) {
       const activityId = textValue(act, 'ID') || '';
       const cpt = firstNonEmpty([ textValue(act,'ActivityCode'), textValue(act,'CPTCode'), textValue(act,'Code') ]).trim();
       const net = firstNonEmpty([ textValue(act,'Net'), textValue(act,'GrossAmount'), textValue(act,'Price') ]).trim();
       const qty = firstNonEmpty([ textValue(act,'Quantity'), textValue(act,'Qty') ]).trim() || '0';
       const clinicianLic = firstNonEmpty([textValue(act, 'OrderingClinician'), textValue(act, 'Clinician')]).trim();
-      records.push({ ClaimID: claimId, ActivityID: activityId, CPT: cpt, Net: net, Quantity: qty, FacilityID: facilityId, ClinicianLic: clinicianLic, EncounterDate: encounterDateStr });
+      records.push({ ClaimID: claimId, ActivityID: activityId, CPT: cpt, Net: net, Quantity: qty, FacilityID: facilityId, ClinicianLic: clinicianLic, EncounterDate: encounterDateStr, PatientShare: claimPatientShare });
     }
   }
   return records;
