@@ -309,7 +309,7 @@ async function handleRun() {
     }
 
     // ---- Patient share validation (non-Thiqa, non-Daman) ----
-    // PS=0 → all rows for that claim are Invalid; all other rows remain Unknown.
+    // PS=0 → all rows for that claim are Invalid, EXCEPT for Cash (HAAD) claims where PS=0 is valid.
     if (receiverID !== 'D001' && receiverID !== 'A001') {
       const claimGroups = new Map();
       output.forEach(r => {
@@ -317,9 +317,10 @@ async function handleRun() {
         claimGroups.get(r.ClaimID).push(r);
       });
 
+      const isCash = receiverID.toUpperCase() === 'HAAD';
       for (const [, actRows] of claimGroups) {
         const actualPS = Number(actRows[0].PatientShare || 0);
-        if (actualPS === 0) {
+        if (actualPS === 0 && !isCash) {
           const msg = 'Patient Share is 0 — this is invalid for non-Thiqa claims.';
           actRows.forEach(r => {
             r.status = 'Invalid';
