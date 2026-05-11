@@ -327,7 +327,28 @@ async function handleRun() {
             r.Remarks = r.Remarks ? `${r.Remarks} ${msg}` : msg;
           });
         }
-        // PS ≠ 0: rows remain Unknown — no reference pricing available to validate further
+        // PS ≠ 0: rows remain Unknown — compute estimated patient-share split and add to Remarks
+        if (actualPS > 0) {
+          const totalClaimedNet = actRows.reduce((sum, r) => sum + r.xmlNetNum, 0);
+          const psPercentage = actualPS / (actualPS + totalClaimedNet);
+          const psPercentagePct = (psPercentage * 100).toFixed(2);
+
+          let estimatedPSSum = 0;
+          actRows.forEach(r => {
+            const net = r.xmlNetNum;
+            const estimatedTotal = psPercentage < 1 ? Math.round((net / (1 - psPercentage)) * 100) / 100 : 0;
+            const estimatedPS = Math.round((estimatedTotal - net) * 100) / 100;
+            estimatedPSSum = Math.round((estimatedPSSum + estimatedPS) * 100) / 100;
+            const remark = `Patient-share split: ${psPercentagePct}% — Est. gross: ${estimatedTotal.toFixed(2)}, Est. patient share: ${estimatedPS.toFixed(2)}.`;
+            r.Remarks = r.Remarks ? `${r.Remarks} ${remark}` : remark;
+          });
+
+          const diff = Math.abs(estimatedPSSum - actualPS);
+          const checkMsg = diff < 0.1
+            ? `Reconstruction check: estimated PS total (${estimatedPSSum.toFixed(2)}) matches declared PS (${actualPS}).`
+            : `Reconstruction check: estimated PS total (${estimatedPSSum.toFixed(2)}) differs from declared PS (${actualPS}).`;
+          actRows.forEach(r => { r.Remarks = r.Remarks ? `${r.Remarks} ${checkMsg}` : checkMsg; });
+        }
       }
     }
 

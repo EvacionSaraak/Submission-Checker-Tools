@@ -217,7 +217,7 @@ td.last-copied {
 .valid         { background: #d5ffd9; }
 .thiqa-only    { background: #e1e9ff; }
 .daman-only    { background: #f3e1ff; }
-.unknown       { background: #ffffbf; }
+.unknown       { background: #ffffbf !important; }
 .invalid       { background: #ffd6d6; }
 
 /* Bootstrap table classes for consistency */
