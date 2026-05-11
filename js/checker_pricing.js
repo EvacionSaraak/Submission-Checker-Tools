@@ -343,11 +343,10 @@ async function handleRun() {
             r._estimatedPS = estimatedPS;
           });
 
-          const diff = Math.abs(estimatedPSSum - actualPS);
-          const checkMsg = diff < 0.1 ? 'Claimed Net matches estimated pricing.' : `Reconstruction mismatch: estimated PS total (${estimatedPSSum}) vs declared PS (${actualPS}).`;
-
           actRows.forEach(r => {
-            const remark = `Patient Share estimated as ${psPercentagePct}%. Total price for this activity is ${r._estimatedTotal}. ${checkMsg}`;
+            const netMatch = Math.abs(r.xmlNetNum - r._estimatedTotal) < 0.01;
+            const matchOp = netMatch ? '==' : '!=';
+            const remark = `${psPercentagePct}% Patient Share (estimate). Net ${netMatch ? 'Match' : 'Mismatch'} (${r.xmlNetNum} ${matchOp} ${r._estimatedTotal}).`;
             r.Remarks = r.Remarks ? `${r.Remarks} ${remark}` : remark;
           });
         }
