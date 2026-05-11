@@ -533,7 +533,7 @@ function buildResultsTable(rows) {
       <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.CPT)}</td>
       <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.ClaimedNet)}</td>
       <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.ClaimedQty)}</td>
-      <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.ReferenceNetPrice)}</td>
+      <td style="padding:6px;border:1px solid #ccc">${r._estimatedTotal != null ? escapeHtml(String(r._estimatedTotal)) + ' (estimate)' : escapeHtml(r.ReferenceNetPrice)}</td>
       <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.status)}</td>
       <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.Remarks || 'OK')}</td>
       <td style="padding:6px;border:1px solid #ccc">${r.PricingRow ? `<button type="button" class="details-btn" onclick="showComparisonModal(${r._originalIndex})">View</button>` : ''}</td>
