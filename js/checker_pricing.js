@@ -348,7 +348,7 @@ async function handleRun() {
           actRows.forEach(r => {
             const netMatch = Math.abs(r.xmlNetNum - r._estimatedPayerNet) < 0.01;
             const matchOp = netMatch ? '==' : '!=';
-            const remark = `${psPercentagePct}% Copay. Net ${netMatch ? 'Match' : 'Mismatch'} ([xml]${r.xmlNetNum} ${matchOp} [estimate]${r._estimatedPayerNet}).`;
+            const remark = `${psPercentagePct}% Copay estimate. Net ${netMatch ? 'Match' : 'Mismatch'} (${r.xmlNetNum} [xml] ${matchOp} ${r._estimatedPayerNet} [estimate]).`;
             r.Remarks = r.Remarks ? `${r.Remarks} ${remark}` : remark;
           });
         }
