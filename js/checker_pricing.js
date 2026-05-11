@@ -271,7 +271,7 @@ async function handleRun() {
               if (!r.isValid) {
                 r.status = 'Valid';
                 r.isValid = true;
-                r.Remarks = `Claimed Net is the payer's portion; patient share covers the balance (PS: ${actualPS}).`;
+                r.Remarks = '';
               }
             });
           } else {
