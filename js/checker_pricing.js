@@ -221,7 +221,7 @@ async function handleRun() {
     if (xmlNet === 0) {
       if (receiverID === 'D001') {
         status = 'Invalid';
-        remarks.push('Claimed Net is 0, which is invalid for Thiqa (D001).');
+        remarks.push(`Kindly change ${rec.CPT} from Covered to Excluded.`);
       } else {
         status = 'Valid';
         remarks.push('Claimed Net is 0 (treated as Valid)');
