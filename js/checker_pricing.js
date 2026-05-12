@@ -217,10 +217,15 @@ async function handleRun() {
     // ComputedRef is used for per-claim patient share validation
     const computedRef = (match || endoEntry) && refPrice !== null && !Number.isNaN(ref) ? ref : null;
 
-    // Claimed net 0 -> Valid (changed from Unknown)
+    // Claimed net 0: Invalid for Thiqa (D001); Valid for all other receivers
     if (xmlNet === 0) {
-      status = 'Valid';
-      remarks.push('Claimed Net is 0 (treated as Valid)');
+      if (receiverID === 'D001') {
+        status = 'Invalid';
+        remarks.push('Claimed Net is 0, which is invalid for Thiqa (D001).');
+      } else {
+        status = 'Valid';
+        remarks.push('Claimed Net is 0 (treated as Valid)');
+      }
     } else {
       if (xmlQty <= 0) remarks.push(xmlQty === 0 ? 'Quantity is 0 (invalid)' : 'Quantity is less than 0 (invalid)');
       if (!match && !endoEntry) remarks.push(`No pricing match was found under ${pricingContext}.`);
