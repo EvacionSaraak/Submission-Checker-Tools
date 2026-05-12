@@ -406,28 +406,41 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
     }
 
     // EmiratesIDNumber checks (improved messages)
-    let hasMedicalTourismEID = false; // Track if EID matches medical tourism format
+    let hasMedicalTourismEID = false;      // Track if EID is 222... (non-national non-resident)
+    let hasResidentPlaceholderEID = false; // Track if EID is 000... or 111... (resident types)
+    let hasAllNinesEID = false;            // Track if EID is 999... (unknown status)
     if (present("EmiratesIDNumber")) {
       const eid = text("EmiratesIDNumber"), p = eid.split("-");
       const eidDigits = eid.replace(/-/g, "");
-      const isMedicalTourism = /^[129]+$/.test(eidDigits);
-      hasMedicalTourismEID = isMedicalTourism;
-      const isNationalWithoutEID = /^0+$/.test(eidDigits);
-      
+      const isAllZeros = /^0+$/.test(eidDigits);
+      const isAllOnes  = /^1+$/.test(eidDigits);
+      const isAllTwos  = /^2+$/.test(eidDigits);
+      const isAllNines = /^9+$/.test(eidDigits);
+      const isPlaceholderEID = isAllZeros || isAllOnes || isAllTwos || isAllNines;
+
+      hasMedicalTourismEID = isAllTwos;
+      hasResidentPlaceholderEID = isAllZeros || isAllOnes;
+      hasAllNinesEID = isAllNines;
+
       if (p.length !== 4) invalidFields.push(`EmiratesIDNumber '${eid}' (must have 4 parts separated by dashes)`);
       else {
-        // Skip 784 validation for Medical Tourism and National without EID cases
-        if (!isMedicalTourism && !isNationalWithoutEID && p[0] !== "784") invalidFields.push(`EmiratesIDNumber '${eid}' (first part must be 784)`);
+        // Skip 784 validation for placeholder EIDs (000, 111, 222, 999)
+        if (!isPlaceholderEID && p[0] !== "784") invalidFields.push(`EmiratesIDNumber '${eid}' (first part must be 784)`);
         if (!/^\d{4}$/.test(p[1])) invalidFields.push(`EmiratesIDNumber '${eid}' (second part must be 4 digits for year)`);
         if (!/^\d{7}$/.test(p[2])) invalidFields.push(`EmiratesIDNumber '${eid}' (third part must be 7 digits)`);
         if (!/^\d{1}$/.test(p[3])) invalidFields.push(`EmiratesIDNumber '${eid}' (fourth part must be 1 digit)`);
       }
-      
-      if (isMedicalTourism) {
-        remarks.push("EmiratesIDNumber (Medical Tourism: all digits 1/2/9)");
-        isUnknown = true; // Mark as unknown status
-      } else if (isNationalWithoutEID) {
-        remarks.push("EmiratesIDNumber (National without EID: all digits 0)");
+
+      if (isAllZeros) {
+        remarks.push("Kindly confirm if the PT is a national resident.");
+      } else if (isAllOnes) {
+        remarks.push("Kindly confirm if the PT is a non-national resident.");
+      } else if (isAllTwos) {
+        remarks.push("Kindly confirm if the PT is a non-national and non-resident.");
+        isUnknown = true;
+      } else if (isAllNines) {
+        remarks.push("Kindly confirm if the PT has an unknown status.");
+        isUnknown = true;
       }
     }
 
@@ -501,11 +514,10 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
       }
     });
     
-    // NEW CHECK: Medical Tourism observation vs EID validation
-    // If any observation contains "MEDICALTOURISM" but EID doesn't match medical tourism format, flag it
-    if (!hasMedicalTourismEID && present("EmiratesIDNumber")) {
+    // EID type vs claim type cross-validation
+    if (present("EmiratesIDNumber")) {
       let hasMedicalTourismObservation = false;
-      
+
       // Use labeled loops for early exit when medical tourism observation is found
       activityLoop: for (const act of activities) {
         const observations = act.getElementsByTagName("Observation");
@@ -514,7 +526,7 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
           const obsDescription = text("Description", obs) || "";
           const obsCode = text("Code", obs) || "";
           const obsValue = text("Value", obs) || "";
-          
+
           const observationText = (obsDescription + obsCode + obsValue).toUpperCase();
           if (observationText.includes("MEDICALTOURISM")) {
             hasMedicalTourismObservation = true;
@@ -522,10 +534,24 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
           }
         }
       }
-      
-      if (hasMedicalTourismObservation) {
-        invalidFields.push("Kindly clarify if patient is Medical Tourism as EID does not reflect this.");
+
+      if (hasResidentPlaceholderEID) {
+        // 000 or 111: resident patient — can only be Self-Pay
+        if (hasMedicalTourismObservation) {
+          invalidFields.push("EID indicates a resident patient (000/111); claim can only be Self-Pay. Kindly remove the Medical Tourism observation.");
+        }
+      } else if (hasMedicalTourismEID) {
+        // 222: non-national non-resident — can only be Medical Tourism
+        if (!hasMedicalTourismObservation) {
+          invalidFields.push("EID indicates a non-national non-resident (222); claim can only be Medical Tourism. Kindly add a Medical Tourism observation.");
+        }
+      } else if (!hasAllNinesEID) {
+        // Regular 784 EID: Medical Tourism observation is inconsistent with EID
+        if (hasMedicalTourismObservation) {
+          invalidFields.push("Kindly clarify if patient is Medical Tourism as EID does not reflect this.");
+        }
       }
+      // 999: can be either Self-Pay or Medical Tourism — no constraint
     }
     
     // Generate consolidated invalid quantity error messages
@@ -634,24 +660,32 @@ function validatePersonSchema(xmlDoc, originalXmlContent = "") {
     if (present("EmiratesIDNumber")) {
       const eid = text("EmiratesIDNumber"), p = eid.split("-");
       const eidDigits = eid.replace(/-/g, "");
-      const isMedicalTourism = /^[129]+$/.test(eidDigits);
-      const isNationalWithoutEID = /^0+$/.test(eidDigits);
-      
+      const isAllZeros = /^0+$/.test(eidDigits);
+      const isAllOnes  = /^1+$/.test(eidDigits);
+      const isAllTwos  = /^2+$/.test(eidDigits);
+      const isAllNines = /^9+$/.test(eidDigits);
+      const isPlaceholderEID = isAllZeros || isAllOnes || isAllTwos || isAllNines;
+
       if (p.length !== 4) {
         invalidFields.push(`EmiratesIDNumber '${eid}' (must have 4 parts separated by dashes)`);
       } else {
-        // Skip 784 validation for Medical Tourism and National without EID cases
-        if (!isMedicalTourism && !isNationalWithoutEID && p[0] !== "784") invalidFields.push(`EmiratesIDNumber '${eid}' (first part must be 784)`);
+        // Skip 784 validation for placeholder EIDs (000, 111, 222, 999)
+        if (!isPlaceholderEID && p[0] !== "784") invalidFields.push(`EmiratesIDNumber '${eid}' (first part must be 784)`);
         if (!/^\d{4}$/.test(p[1])) invalidFields.push(`EmiratesIDNumber '${eid}' (second part must be 4 digits for year)`);
         if (!/^\d{7}$/.test(p[2])) invalidFields.push(`EmiratesIDNumber '${eid}' (third part must be 7 digits)`);
         if (!/^\d{1}$/.test(p[3])) invalidFields.push(`EmiratesIDNumber '${eid}' (fourth part must be 1 digit)`);
       }
-      
-      if (isMedicalTourism) {
-        remarks.push("EmiratesIDNumber (Medical Tourism: all digits 1/2/9)");
-        isUnknown = true; // Mark as unknown status
-      } else if (isNationalWithoutEID) {
-        remarks.push("EmiratesIDNumber (National without EID: all digits 0)");
+
+      if (isAllZeros) {
+        remarks.push("Kindly confirm if the PT is a national resident.");
+      } else if (isAllOnes) {
+        remarks.push("Kindly confirm if the PT is a non-national resident.");
+      } else if (isAllTwos) {
+        remarks.push("Kindly confirm if the PT is a non-national and non-resident.");
+        isUnknown = true;
+      } else if (isAllNines) {
+        remarks.push("Kindly confirm if the PT has an unknown status.");
+        isUnknown = true;
       }
     }
 
