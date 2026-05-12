@@ -78,7 +78,7 @@ async function handleRun() {
         PayerID: rec.PayerID || '',
         EligibilityRow: match || null,
         isValid: remarks.length === 0,
-        Remarks: remarks.join('; ')
+        Remarks: remarks.map(s => s && !s.endsWith('.') ? s + '.' : s).join('; ')
       };
     });
 
@@ -194,7 +194,7 @@ function extractModifierRecords(xmlDoc) {
           PayerID: payerId,
           ObsCode: code,
           VOINumber: voiVal,
-          Remarks: remarks.join('; ')
+          Remarks: remarks.map(s => s && !s.endsWith('.') ? s + '.' : s).join('; ')
         });
       });
     });
@@ -346,7 +346,7 @@ function buildResultsTable(rows) {
       <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.Modifier)}</td>
       <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.VOINumber || '')}</td>
       <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.PayerID)}</td>
-      <td style="padding:6px;border:1px solid #ccc">${escapeHtml(remarks.join('; ') || 'OK')}</td>
+      <td style="padding:6px;border:1px solid #ccc">${escapeHtml(remarks.map(s => s && !s.endsWith('.') ? s + '.' : s).join('; ') || 'OK')}</td>
       <td style="padding:6px;border:1px solid #ccc">${r.EligibilityRow ? `<button type="button" class="details-btn eligibility-details" onclick="showEligibility(${r._originalIndex})">View</button>` : ''}</td>
     </tr>`;
 

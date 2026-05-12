@@ -654,7 +654,7 @@ function renderRow(r, lastClaimId, idx, codeGroup) {
     remarksTd.textContent = r.remarks[0];
   } else if (r.remarks && r.remarks.length) {
     remarksTd.innerHTML = `<div>${r.remarks[0]}${r.remarks.length > 1 ? " (+)" : ""}</div>`;
-    remarksTd.title = r.remarks.join('\n');
+    remarksTd.title = r.remarks.map(s => s && !s.endsWith('.') ? s + '.' : s).join('\n');
   } else {
     remarksTd.textContent = "";
   }
@@ -880,7 +880,7 @@ function postProcessResults(results) {
           "Status": x["Status"] || x.status || "",
           "Denial Code": x["Denial Code (if any)"] || "",
           "Denial Reason": x["Denial Reason (if any)"] || "",
-          "Remarks": r.remarks.join("; ")
+          "Remarks": r.remarks.map(s => s && !s.endsWith('.') ? s + '.' : s).join("; ")
         };
       });
 

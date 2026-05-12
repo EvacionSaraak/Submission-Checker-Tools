@@ -60,12 +60,16 @@ async function handleRun() {
 
     const xmlDoc = parseXml(xmlText);
 
-    // Only process files where ReceiverID is D001 (Thiqa) or A001 (Daman)
+    // ReceiverID D001 (Thiqa) and A001 (Daman) get full price-matching.
+    // HAAD: activities are marked Unknown EXCEPT when claimed net is 0, which is always Valid.
+    // All other non-Thiqa/non-Daman ReceiverIDs: activities are marked Unknown,
+    // with Patient Share = 0 being the only check that forces rows to Invalid.
     const headerNode = xmlDoc.querySelector('Header');
     const receiverID = headerNode?.querySelector('ReceiverID')?.textContent.trim() || '';
     console.log(`[PRICING] ReceiverID: ${receiverID || '(MISSING)'}`);
     if (receiverID !== 'D001' && receiverID !== 'A001') {
-      throw new Error(`Pricing checker supports ReceiverID "D001" (Thiqa) or "A001" (Daman). Found: "${receiverID || '(MISSING)'}"`);}
+      console.log(`[PRICING] ReceiverID "${receiverID}" is non-Thiqa/non-Daman — prices will be marked Unknown; PS=0 check will still apply.`);
+    }
 
     const extracted = extractPricingRecords(xmlDoc);
     const jsonMatcher = buildJsonPricingMatcher(dentalPricingRaw);
@@ -86,6 +90,30 @@ async function handleRun() {
     const remarks = []; let status = 'Invalid';
     const facility = rec.FacilityID || '';
     const xmlNet = Number(rec.Net || 0), xmlQty = Number(rec.Quantity || 0);
+
+    // Non-Thiqa, non-Daman: no reference pricing available — mark all as Unknown.
+    // Exception: HAAD with claimed net = 0 is always Valid.
+    // PS=0 → Invalid is enforced in a later pass over claim groups (non-HAAD only).
+    if (receiverID !== 'D001' && receiverID !== 'A001') {
+      const isHAAD = receiverID.toUpperCase() === 'HAAD';
+      const netZeroValid = isHAAD && xmlNet === 0;
+      return {
+        ClaimID: rec.ClaimID || '',
+        ActivityID: rec.ActivityID || '',
+        CPT: rec.CPT || '',
+        ClaimedNet: rec.Net || '',
+        ClaimedQty: rec.Quantity || '',
+        ReferenceNetPrice: '',
+        PricingRow: null,
+        XmlRow: rec,
+        isValid: netZeroValid,
+        status: netZeroValid ? 'Valid' : 'Unknown',
+        Remarks: netZeroValid ? 'Claimed Net is 0 (treated as Valid).' : '',
+        ComputedRef: null,
+        xmlNetNum: xmlNet,
+        PatientShare: rec.PatientShare || '0'
+      };
+    }
 
     // Special rule: code 02111 must always have a net price of 0 for Thiqa (D001) and Daman (A001)
     if (normalizeCode(rec.CPT) === '2111' && (receiverID === 'D001' || receiverID === 'A001')) {
@@ -108,7 +136,10 @@ async function handleRun() {
         XmlRow: rec,
         isValid: status === 'Valid',
         status,
-        Remarks: remarks.join(' ')
+        Remarks: remarks.map(s => s && !s.endsWith('.') ? s + '.' : s).join(' '),
+        ComputedRef: 0,
+        xmlNetNum: xmlNet,
+        PatientShare: rec.PatientShare || '0'
       };
     }
 
@@ -183,11 +214,18 @@ async function handleRun() {
     }
 
     const ref = Number(refPrice ?? NaN);
+    // ComputedRef is used for per-claim patient share validation
+    const computedRef = (match || endoEntry) && refPrice !== null && !Number.isNaN(ref) ? ref : null;
 
-    // Claimed net 0 -> Valid (changed from Unknown)
+    // Claimed net 0: Invalid for Thiqa (D001); Valid for all other receivers
     if (xmlNet === 0) {
-      status = 'Valid';
-      remarks.push('Claimed Net is 0 (treated as Valid)');
+      if (receiverID === 'D001') {
+        status = 'Invalid';
+        remarks.push(`Kindly change ${rec.CPT} from Covered to Excluded.`);
+      } else {
+        status = 'Valid';
+        remarks.push('Claimed Net is 0 (treated as Valid)');
+      }
     } else {
       if (xmlQty <= 0) remarks.push(xmlQty === 0 ? 'Quantity is 0 (invalid)' : 'Quantity is less than 0 (invalid)');
       if (!match && !endoEntry) remarks.push(`No pricing match was found under ${pricingContext}.`);
@@ -209,6 +247,9 @@ async function handleRun() {
         else if (normalizeCode(rec.CPT) === '42702' && xmlNet === ref * 2) status = 'Valid';
         else if (nonEndoEndoCase) {
           remarks.push(`Pricing for ${rec.CPT} is ${ref} following ${pricingContext}. Endo Pricing cannot be used for ${nonEndoClinicianSpec}.`);
+        } else if (receiverID === 'A001') {
+          const copayPct = Math.round((ref * xmlQty - xmlNet) / (ref * xmlQty) * 10000) / 100;
+          remarks.push(`Copay: ${copayPct}%.`);
         } else remarks.push(`Claimed Net ${xmlNet} does not match the reference price of ${ref} under ${pricingContext}.`);
       }
     }
@@ -224,18 +265,130 @@ async function handleRun() {
       XmlRow: rec,
       isValid: status === 'Valid',
       status,
-      Remarks: remarks.join(' ')
+      Remarks: remarks.map(s => s && !s.endsWith('.') ? s + '.' : s).join(' '),
+      ComputedRef: computedRef,
+      xmlNetNum: xmlNet,
+      PatientShare: rec.PatientShare || '0'
     };
   });
 
-    lastResults = output;
-    const tableElement = buildResultsTable(output);
-    lastWorkbook = makeWorkbookFromJson(output, 'checker_pricing_results');
-    toggleDownload(output.length > 0);
+    // ---- Patient share validation (Daman A001 only) ----
+    // For Daman: expectedPS = Σ(ref × qty) − Σ(activity net); PS = 0 is always an error.
+    // Errors are surfaced directly in the activity rows' Remarks — no separate summary row is added.
+    if (receiverID === 'A001') {
+      const claimGroups = new Map();
+      output.forEach(r => {
+        if (!claimGroups.has(r.ClaimID)) claimGroups.set(r.ClaimID, []);
+        claimGroups.get(r.ClaimID).push(r);
+      });
+
+      for (const [, actRows] of claimGroups) {
+        const actualPS = Number(actRows[0].PatientShare || 0);
+
+        if (actualPS === 0) {
+          const msg = 'Patient Share is 0 — this is invalid for Daman (non-Thiqa) claims.';
+          actRows.forEach(r => {
+            r.status = 'Invalid';
+            r.isValid = false;
+            r.Remarks = r.Remarks ? `${r.Remarks} ${msg}` : msg;
+          });
+        } else {
+          // For activities with no pricing match, treat their net as correct (ref = net, contributes 0 to PS).
+          const totalRef = actRows.reduce((sum, r) => {
+            return sum + (r.ComputedRef !== null ? r.ComputedRef * Number(r.ClaimedQty || 1) : r.xmlNetNum);
+          }, 0);
+          const totalXmlNet = actRows.reduce((sum, r) => sum + r.xmlNetNum, 0);
+          const expectedPS = Math.round((totalRef - totalXmlNet) * 100) / 100;
+
+          if (actualPS === expectedPS) {
+            // Promote all non-Valid activity rows — the correct patient share confirms total pricing is accurate.
+            // Also clear any misleading "does not match" remarks: the claimed net is the payer's portion only.
+            actRows.forEach(r => {
+              if (!r.isValid) {
+                r.status = 'Valid';
+                r.isValid = true;
+                r.Remarks = '';
+              }
+            });
+          } else {
+            const msg = `Patient Share ${actualPS} is incorrect. Expected: ${expectedPS} (Total Ref: ${totalRef} − Total Net: ${totalXmlNet}).`;
+            actRows.forEach(r => {
+              r.status = 'Unknown';
+              r.isValid = false;
+              r.Remarks = r.Remarks ? `${r.Remarks} ${msg}` : msg;
+            });
+          }
+        }
+      }
+    }
+
+    // ---- Patient share validation (non-Thiqa, non-Daman) ----
+    // PS=0 → all rows for that claim are Invalid, EXCEPT for Cash (HAAD/CASH) claims.
+    // For Cash claims: PS=0 with net=0 is treated as Valid; PS=0 with net≠0 stays Unknown.
+    if (receiverID !== 'D001' && receiverID !== 'A001') {
+      const claimGroups = new Map();
+      output.forEach(r => {
+        if (!claimGroups.has(r.ClaimID)) claimGroups.set(r.ClaimID, []);
+        claimGroups.get(r.ClaimID).push(r);
+      });
+
+      const isCash = receiverID.toUpperCase() === 'HAAD' || receiverID.toUpperCase() === 'CASH';
+      for (const [, actRows] of claimGroups) {
+        const actualPS = Number(actRows[0].PatientShare || 0);
+        if (actualPS === 0 && !isCash) {
+          const msg = 'Patient Share is 0 — this is invalid for non-Thiqa claims.';
+          actRows.forEach(r => {
+            r.status = 'Invalid';
+            r.isValid = false;
+            r.Remarks = r.Remarks ? `${r.Remarks} ${msg}` : msg;
+          });
+        } else if (actualPS === 0 && isCash) {
+          const totalClaimedNet = actRows.reduce((sum, r) => sum + r.xmlNetNum, 0);
+          if (totalClaimedNet === 0) {
+            actRows.forEach(r => {
+              r.status = 'Valid';
+              r.isValid = true;
+            });
+          }
+        }
+        // PS ≠ 0: rows remain Unknown — compute estimated patient-share split and add to Remarks
+        if (actualPS > 0) {
+          const totalClaimedNet = actRows.reduce((sum, r) => sum + r.xmlNetNum, 0);
+          const psPercentage = actualPS / (actualPS + totalClaimedNet);
+          const psPercentagePct = Math.round(psPercentage * 100);
+
+          let estimatedPSSum = 0;
+          actRows.forEach(r => {
+            const net = r.xmlNetNum;
+            const estimatedTotal = psPercentage < 1 ? Math.round((net / (1 - psPercentage)) * 100) / 100 : 0;
+            const estimatedPS = Math.round((estimatedTotal - net) * 100) / 100;
+            estimatedPSSum = Math.round((estimatedPSSum + estimatedPS) * 100) / 100;
+            r._estimatedTotal = estimatedTotal;
+            r._estimatedPS = estimatedPS;
+            r._estimatedPayerNet = Math.round((estimatedTotal - estimatedPS) * 100) / 100;
+          });
+
+          actRows.forEach(r => {
+            const netMatch = Math.abs(r.xmlNetNum - r._estimatedPayerNet) < 0.01;
+            const matchOp = netMatch ? '==' : '!=';
+            if (r.xmlNetNum === 0) return;
+            const remark = `${psPercentagePct}% Copay estimate. Net ${netMatch ? 'Match' : 'Mismatch'} (${r.xmlNetNum} [xml] ${matchOp} ${r._estimatedPayerNet} [estimate]).`;
+            r.Remarks = r.Remarks ? `${r.Remarks} ${remark}` : remark;
+          });
+        }
+      }
+    }
+
+    const mergedOutput = output;
+
+    lastResults = mergedOutput;
+    const tableElement = buildResultsTable(mergedOutput);
+    lastWorkbook = makeWorkbookFromJson(mergedOutput, 'checker_pricing_results');
+    toggleDownload(mergedOutput.length > 0);
 
    // Count valid rows and show percentage with 2 decimals
-  const validCount = output.filter(r => r.isValid).length;
-  const totalCount = output.length;
+  const validCount = mergedOutput.filter(r => r.isValid).length;
+  const totalCount = mergedOutput.length;
   const numericPercent = totalCount ? (validCount / totalCount) * 100 : 0;
   const percentText = totalCount ? numericPercent.toFixed(2) : '0.00';
   const color = numericPercent === 100 ? 'green' : 'orange';
@@ -299,13 +452,14 @@ function extractPricingRecords(xmlDoc) {
     const encounterNode = claim.getElementsByTagName('Encounter')[0];
     const facilityId = textValue(encounterNode, 'FacilityID') || '';
     const encounterDateStr = textValue(encounterNode, 'Start') || textValue(encounterNode, 'Date') || textValue(encounterNode, 'EncounterDate') || '';
+    const claimPatientShare = textValue(claim, 'PatientShare').trim() || '0';
     for (const act of activities) {
       const activityId = textValue(act, 'ID') || '';
       const cpt = firstNonEmpty([ textValue(act,'ActivityCode'), textValue(act,'CPTCode'), textValue(act,'Code') ]).trim();
       const net = firstNonEmpty([ textValue(act,'Net'), textValue(act,'GrossAmount'), textValue(act,'Price') ]).trim();
       const qty = firstNonEmpty([ textValue(act,'Quantity'), textValue(act,'Qty') ]).trim() || '0';
       const clinicianLic = firstNonEmpty([textValue(act, 'OrderingClinician'), textValue(act, 'Clinician')]).trim();
-      records.push({ ClaimID: claimId, ActivityID: activityId, CPT: cpt, Net: net, Quantity: qty, FacilityID: facilityId, ClinicianLic: clinicianLic, EncounterDate: encounterDateStr });
+      records.push({ ClaimID: claimId, ActivityID: activityId, CPT: cpt, Net: net, Quantity: qty, FacilityID: facilityId, ClinicianLic: clinicianLic, EncounterDate: encounterDateStr, PatientShare: claimPatientShare });
     }
   }
   return records;
@@ -381,7 +535,7 @@ function buildResultsTable(rows) {
 
   const container = document.createElement('div');
   let prevClaimId = null;
-  let html = `<table class="table table-striped table-bordered" style="width:100%;border-collapse:collapse"><thead><tr>
+  let html = `<table class="table table-bordered" style="width:100%;border-collapse:collapse"><thead><tr>
     <th style="padding:8px;border:1px solid #ccc">Claim ID</th>
     <th style="padding:8px;border:1px solid #ccc">Activity ID</th>
     <th style="padding:8px;border:1px solid #ccc">Code</th>
@@ -396,7 +550,7 @@ function buildResultsTable(rows) {
   for (const r of rows) {
     const status = String(r.status || 'Invalid').toLowerCase();
     // Map status to Bootstrap/custom classes
-    const cls = status === 'ok' || status === 'valid' ? 'table-success' : status === 'unknown' ? 'unknown' : 'table-danger';
+    const cls = status === 'ok' || status === 'valid' ? 'table-success' : status === 'unknown' ? 'table-warning' : 'table-danger';
     const showClaim = r.ClaimID !== prevClaimId;
     html += `<tr class="${cls}" data-claim-id="${escapeHtml(r.ClaimID || '')}">
       <td style="padding:6px;border:1px solid #ccc" class="claim-id-cell">${showClaim ? escapeHtml(r.ClaimID) : ''}</td>
@@ -404,7 +558,7 @@ function buildResultsTable(rows) {
       <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.CPT)}</td>
       <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.ClaimedNet)}</td>
       <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.ClaimedQty)}</td>
-      <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.ReferenceNetPrice)}</td>
+      <td style="padding:6px;border:1px solid #ccc">${r._estimatedTotal != null ? escapeHtml(String(r._estimatedTotal)) + ' (estimate)' : escapeHtml(r.ReferenceNetPrice)}</td>
       <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.status)}</td>
       <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.Remarks || 'OK')}</td>
       <td style="padding:6px;border:1px solid #ccc">${r.PricingRow ? `<button type="button" class="details-btn" onclick="showComparisonModal(${r._originalIndex})">View</button>` : ''}</td>

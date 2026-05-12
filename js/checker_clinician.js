@@ -465,7 +465,7 @@
           <td class="description-col">
             <button class="view-license-history" data-fullhistory="${encodeURIComponent(r.fullHistory)}">View</button>
           </td>
-          <td class="description-col">${r.remarks.join('; ')}</td>
+          <td class="description-col">${r.remarks.map(s => s && !s.endsWith('.') ? s + '.' : s).join('; ')}</td>
         </tr>`;
       }).join('') + '</table>' +
       `<div id="claimIdsModal" class="modal" style="display:none;">
@@ -552,7 +552,7 @@
       r.performingDisplay || '',
       r.recentStatus || '',
       r.fullHistory || '',
-      r.remarks.join('; ')
+      r.remarks.map(s => s && !s.endsWith('.') ? s + '.' : s).join('; ')
     ]);
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);

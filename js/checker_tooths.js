@@ -71,6 +71,13 @@ const FORBIDDEN_CODES = [
 ];
 const FORBIDDEN_CODES_MAP = Object.fromEntries(FORBIDDEN_CODES.map(item => [item.code, item]));
 
+// Codes that are valid as either Type 3 (medical) or Type 6 (dental), depending on context.
+// When submitted with Type 6, the dental description is used. Type 3 is accepted without a type error.
+const DUAL_TYPE_CODES = new Set([
+  '97112', // Type 6 = Bleaching (dental); Type 3 = Neuromuscular reeducation / physiotherapy (medical)
+  '76801'  // Type 6 = dental version; Type 3 = medical version
+]);
+
 // Root canal codes requiring a Subcode observation from 20-Feb-2026 onward
 const ROOT_CANAL_SUBCODE_CODES = new Set(['33111', '33121', '33131', '33141', '33115', '33125', '33135', '33145']);
 const SUBCODE_OBS_CUTOFF = new Date(2026, 1, 20); // 20 Feb 2026 (month is 0-indexed)
@@ -96,9 +103,12 @@ function validateActivityType(code, type, isDentalCode = false) {
     remarks.push(`Code ${code} must have Type 3 but found Type ${type || '(missing)'}.`);
   }
   
-  // Dental codes (not special medical codes or A4639) must be type 6
-  if (isDentalCode && !SPECIAL_MEDICAL_CODES_SET.has(code) && code !== "A4639" && type !== "6") {
-    remarks.push(`Code ${code} is a dental activity and must have Type 6 but found Type ${type || '(missing)'}.`);
+  // Dental codes (not special medical codes, A4639, or drug codes at type 5) must be type 6.
+  // Exception: dual-type codes are also valid at type 3 (they serve as both medical and dental procedures).
+  if (isDentalCode && !SPECIAL_MEDICAL_CODES_SET.has(code) && code !== "A4639" && type !== "5" && type !== "6") {
+    if (!(DUAL_TYPE_CODES.has(code) && type === "3")) {
+      remarks.push(`Code ${code} must have Type 6 but found Type ${type || '(missing)'}.`);
+    }
   }
   
   // Type 5 code format check
@@ -199,29 +209,21 @@ function parseEncounterDate(dateStr) {
   return new Date(y, m - 1, d);
 }
 
-// Check if an activity has a Subcode observation (Observation Code = "Subcode", Value = "01 " with trailing space)
-// DEBUG - prior version (checked Code = "Subcode" only, no value check):
-// function hasSubcodeObservation(obsList) {
-//   return Array.from(obsList).some(obs => {
-//     const code = (obs.querySelector('Code')?.textContent || '').trim().toUpperCase();
-//     return code === 'SUBCODE';
-//   });
-// }
+// Check if an activity has a valid Subcode observation (Observation Code = "Subcode", Value = "01")
 function hasSubcodeObservation(obsList) {
   return Array.from(obsList).some(obs => {
     const code = (obs.querySelector('Code')?.textContent || '').trim().toUpperCase();
-    const value = obs.querySelector('Value')?.textContent || '';
-    return code === 'SUBCODE' && value === '01 ';
+    const value = (obs.querySelector('Value')?.textContent || '').trim();
+    return code === 'SUBCODE' && value === '01';
   });
 }
 
-// Returns true if a Subcode observation exists but has value "01" without the required trailing space
-function hasSubcodeObservationMissingSpace(obsList) {
-  return Array.from(obsList).some(obs => {
+// Returns the count of Subcode observations (Code = "SUBCODE") in an observation list
+function countSubcodeObservations(obsList) {
+  return Array.from(obsList).filter(obs => {
     const code = (obs.querySelector('Code')?.textContent || '').trim().toUpperCase();
-    const value = obs.querySelector('Value')?.textContent || '';
-    return code === 'SUBCODE' && value === '01';
-  });
+    return code === 'SUBCODE';
+  }).length;
 }
 
 // Special code utilities
@@ -230,7 +232,8 @@ function isSpecialMedicalCode(code) {
 }
 
 // Observation types that are allowed to have a blank/missing ValueType (tooth-number observations)
-const VALUETYPE_EXEMPT_OBS_TYPES = new Set(['universal dental', 'episode']);
+// "Flags" observations (e.g. MedicalTourismUnplanned) carry no value and are always valid without a ValueType.
+const VALUETYPE_EXEMPT_OBS_TYPES = new Set(['universal dental', 'episode', 'flags']);
 
 // Returns remarks for any observation where ValueType is blank but the observation type requires it.
 // "Universal Dental" and "Episode" observations carry a tooth number and don't need a ValueType.
@@ -359,7 +362,13 @@ function buildCodeMeta(data) {
 }
 
 function parseObservationCodes(obsList) {
-  return Array.from(obsList).map(obs => {
+  return Array.from(obsList).filter(obs => {
+    // Skip "Flags" type observations (e.g. MedicalTourismUnplanned) — they are
+    // informational flags, not tooth/region indicators, and should not be validated
+    // as tooth numbers.
+    const obsType = (obs.querySelector('Type')?.textContent || '').trim().toLowerCase();
+    return obsType !== 'flags';
+  }).map(obs => {
     const obsCodeRaw = obs.querySelector('Code')?.textContent.trim() || '';
     if (obsCodeRaw === 'Drug Patient Share') return 'Drug Patient Share';
     return obsCodeRaw.toUpperCase();
@@ -367,7 +376,29 @@ function parseObservationCodes(obsList) {
 }
 
 function isDrugPatientShareOrPDF(obsCode) {
-  return obsCode === 'Drug Patient Share' || obsCode === 'PDF';
+  return obsCode === 'Drug Patient Share' || obsCode === 'PDF' || obsCode.endsWith('.PDF');
+}
+
+function isEndodonticDescription(description) {
+  const text = (description || '').toString();
+  if (/examination/i.test(text)) return false;
+  return /(root[\s-]*canal|pulpotomy|pulpectomy|endodont)/i.test(text);
+}
+
+function isToothNumberObservationCode(obsCode) {
+  const normalized = normalizeToothCode(obsCode);
+  if (!normalized || isMultiToothObservation(normalized)) return false;
+  return ALL_TEETH.has(resolveSupernumeraryTooth(normalized));
+}
+
+function hasToothNumberObservation(obsList) {
+  return parseObservationCodes(obsList).some(isToothNumberObservationCode);
+}
+
+// Returns true if an observation code contains multiple comma-separated values.
+// A tooth observation must be a single tooth number, not a list.
+function isMultiToothObservation(obsCode) {
+  return obsCode.includes(',');
 }
 
 function checkRegionDuplication(tracker, code, regionType, regionKey, codeLastDigit) {
@@ -437,6 +468,10 @@ function validateKnownCode({
       if (obsCode === 'SUBCODE') {
         return `Subcode observation`;
       }
+      if (isMultiToothObservation(obsCode)) {
+        remarks.push(`Observation for ${obsCode} is invalid due to commas.`);
+        return `${obsCode} - Invalid (multiple values in one observation)`;
+      }
       if (!meta.teethSet.has(resolveSupernumeraryTooth(obsCode))) {
         const toothType = getRegionName(obsCode);
         if (!invalidTeethByType[toothType]) invalidTeethByType[toothType] = [];
@@ -495,8 +530,10 @@ function validateUnknownCode({
 
   let regionKey = null;
 
-  // Validate activity type
-  const typeRemarks = validateActivityType(code, type);
+  // Only enforce type 6 when the code has a known dental description (from fallback).
+  // Truly unknown codes (description === '(unknown code)') are treated as non-dental (type 3).
+  const isDentalCode = description !== '(unknown code)';
+  const typeRemarks = validateActivityType(code, type, isDentalCode);
   remarks.push(...typeRemarks);
 
   // PATCH: If all obsCodes are Drug Patient Share or PDF, mark valid and skip remarks
@@ -526,6 +563,11 @@ function validateUnknownCode({
     details = obsCodes.map(obsCode => {
       if (isDrugPatientShareOrPDF(obsCode)) return `${obsCode} (valid - no validation)`;
 
+      if (isMultiToothObservation(obsCode)) {
+        remarks.push(`Observation for ${obsCode} is invalid due to commas.`);
+        return `${obsCode} - Invalid (multiple values in one observation)`;
+      }
+
       let regionRemark = '';
       if (regionType === 'sextant') {
         regionKey = getSextant(obsCode);
@@ -549,9 +591,14 @@ function validateUnknownCode({
       return `${obsCode} - ${regionRemark}`;
     }).join('<br>');
   } else if (obsCodes.length > 0) {
-    details = obsCodes.map(obsCode => (
-      isDrugPatientShareOrPDF(obsCode) ? `${obsCode} (valid - no validation)` : obsCode
-    )).join('<br>');
+    details = obsCodes.map(obsCode => {
+      if (isDrugPatientShareOrPDF(obsCode)) return `${obsCode} (valid - no validation)`;
+      if (isMultiToothObservation(obsCode)) {
+        remarks.push(`Observation for ${obsCode} is invalid due to commas.`);
+        return `${obsCode} - Invalid (multiple values in one observation)`;
+      }
+      return obsCode;
+    }).join('<br>');
   } else {
     details = 'N/A';
   }
@@ -593,6 +640,14 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
   const rows = [];
   const claimSummaries = {};
   const claimRegionTrack = {};
+  const recordedEndodonticCodes = new Set();
+
+  Object.entries(codeToMeta || {}).forEach(([code, meta]) => {
+    if (isEndodonticDescription(meta?.description)) recordedEndodonticCodes.add(code);
+  });
+  Object.entries(fallbackDescriptions || {}).forEach(([code, item]) => {
+    if (isEndodonticDescription(item?.description)) recordedEndodonticCodes.add(code);
+  });
 
   Array.from(xmlDoc.getElementsByTagName('Claim')).forEach(claim => {
     const claimId = claim.querySelector('ID')?.textContent || '(no claim ID)';
@@ -687,13 +742,18 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
 
           if (isEndodontist && !hasSubcode) {
             // ERROR: Endodontist but missing required Subcode observation
-            if (hasSubcodeObservationMissingSpace(obsList)) {
-              row.remarks.push(`Subcode is missing space.`);
-            } else {
-              row.remarks.push(`Code ${code} requires a Subcode observation (Type: Text, Code: Subcode, Value: "01 ") when performed by an Endodontist.`);
-            }
+            row.remarks.push(`Code ${code} requires a Subcode observation (Type: Text, Code: Subcode, Value: "01") when performed by an Endodontist.`);
+          }
+
+          // ERROR: More than one Subcode observation is not allowed
+          if (countSubcodeObservations(obsList) > 1) {
+            row.remarks.push(`Code ${code} must have only one Subcode observation.`);
           }
         }
+      }
+
+      if (recordedEndodonticCodes.has(code) && !hasToothNumberObservation(obsList)) {
+        row.remarks.push(`Code ${code} requires at least one tooth-number observation.`);
       }
 
       // Validate observation ValueTypes: non-dental/episode observations must have a ValueType
@@ -782,7 +842,7 @@ function buildResultsTable(rows) {
             <td style="padding:6px;border:1px solid #ccc">${r.code}</td>
             <td class="description-col" style="padding:6px;border:1px solid #ccc">${r.description}</td>
             <td style="padding:6px;border:1px solid #ccc">${r.details}</td>
-            <td class="description-col" style="padding:6px;border:1px solid #ccc">${allRemarks.map(rem => `<div>${rem}</div>`).join('')}</td>
+            <td class="description-col" style="padding:6px;border:1px solid #ccc">${allRemarks.map(rem => `<div>${rem && !rem.endsWith('.') ? rem + '.' : rem}</div>`).join('')}</td>
           </tr>`;
       }).join('')}
     </tbody>`;
@@ -850,7 +910,7 @@ document.getElementById('exportBtn')?.addEventListener('click', () => {
       r.code,
       r.description,
       r.details.replace(/<br>/g, '\n'),
-      getCombinedRemarks(r).join('\n')
+      getCombinedRemarks(r).map(s => s && !s.endsWith('.') ? s + '.' : s).join('\n')
     ])
   ];
   const ws = XLSX.utils.aoa_to_sheet(wsData);

@@ -44,7 +44,7 @@
           ['Claim ID', 'Activity ID', 'Type', 'Encounter Start', 'Encounter End', 'Activity Start', 'Duration', 'Excess', 'Remarks'],
           ...window.invalidRows.map(r => [
             r.claimId, r.activityId, r.type, r.encounterStart, r.encounterEnd,
-            r.start, r.duration, r.excess, r.remarks.join('; ')
+            r.start, r.duration, r.excess, r.remarks.map(s => s && !s.endsWith('.') ? s + '.' : s).join('; ')
           ])
         ];
         XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(wsData), 'Invalid Timings');
