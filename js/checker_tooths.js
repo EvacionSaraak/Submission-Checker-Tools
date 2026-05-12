@@ -842,7 +842,7 @@ function buildResultsTable(rows) {
             <td style="padding:6px;border:1px solid #ccc">${r.code}</td>
             <td class="description-col" style="padding:6px;border:1px solid #ccc">${r.description}</td>
             <td style="padding:6px;border:1px solid #ccc">${r.details}</td>
-            <td class="description-col" style="padding:6px;border:1px solid #ccc">${allRemarks.map(rem => `<div>${rem}</div>`).join('')}</td>
+            <td class="description-col" style="padding:6px;border:1px solid #ccc">${allRemarks.map(rem => `<div>${rem && !rem.endsWith('.') ? rem + '.' : rem}</div>`).join('')}</td>
           </tr>`;
       }).join('')}
     </tbody>`;
@@ -910,7 +910,7 @@ document.getElementById('exportBtn')?.addEventListener('click', () => {
       r.code,
       r.description,
       r.details.replace(/<br>/g, '\n'),
-      getCombinedRemarks(r).join('\n')
+      getCombinedRemarks(r).map(s => s && !s.endsWith('.') ? s + '.' : s).join('\n')
     ])
   ];
   const ws = XLSX.utils.aoa_to_sheet(wsData);

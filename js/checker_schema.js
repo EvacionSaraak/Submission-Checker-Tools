@@ -577,7 +577,7 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
       ClaimID: text("ID") || "Unknown",
       Valid: !missingFields.length && !invalidFields.length,
       Unknown: isUnknown, // Track unknown status for styling
-      Remark: remarks.join("\n"),
+      Remark: remarks.map(s => s && !s.endsWith('.') ? s + '.' : s).join("\n"),
       ClaimXML: claim.outerHTML,
       SchemaType: "claim"
     });
@@ -681,7 +681,7 @@ function validatePersonSchema(xmlDoc, originalXmlContent = "") {
       ClaimID: memberID,
       Valid: !missingFields.length && !invalidFields.length,
       Unknown: isUnknown, // Track unknown status for styling
-      Remark: remarks.join("\n"),
+      Remark: remarks.map(s => s && !s.endsWith('.') ? s + '.' : s).join("\n"),
       ClaimXML: person.outerHTML,
       SchemaType: "person"
     });

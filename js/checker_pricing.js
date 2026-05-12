@@ -108,7 +108,7 @@ async function handleRun() {
         XmlRow: rec,
         isValid: netZeroValid,
         status: netZeroValid ? 'Valid' : 'Unknown',
-        Remarks: netZeroValid ? 'Claimed Net is 0 (treated as Valid)' : '',
+        Remarks: netZeroValid ? 'Claimed Net is 0 (treated as Valid).' : '',
         ComputedRef: null,
         xmlNetNum: xmlNet,
         PatientShare: rec.PatientShare || '0'
@@ -136,7 +136,7 @@ async function handleRun() {
         XmlRow: rec,
         isValid: status === 'Valid',
         status,
-        Remarks: remarks.join(' '),
+        Remarks: remarks.map(s => s && !s.endsWith('.') ? s + '.' : s).join(' '),
         ComputedRef: 0,
         xmlNetNum: xmlNet,
         PatientShare: rec.PatientShare || '0'
@@ -257,7 +257,7 @@ async function handleRun() {
       XmlRow: rec,
       isValid: status === 'Valid',
       status,
-      Remarks: remarks.join(' '),
+      Remarks: remarks.map(s => s && !s.endsWith('.') ? s + '.' : s).join(' '),
       ComputedRef: computedRef,
       xmlNetNum: xmlNet,
       PatientShare: rec.PatientShare || '0'

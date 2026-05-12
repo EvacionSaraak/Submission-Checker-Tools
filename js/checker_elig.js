@@ -1252,7 +1252,7 @@ function exportInvalidEntries(results) {
     'Consultation Status': entry.consultationStatus || '',
     'Eligibility Status': entry.status || '',
     'Final Status': entry.finalStatus,
-    'Remarks': entry.remarks.join('; ')
+    'Remarks': entry.remarks.map(s => s && !s.endsWith('.') ? s + '.' : s).join('; ')
   }));
 
   // Create a new workbook and worksheet
