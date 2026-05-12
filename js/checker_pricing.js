@@ -242,6 +242,9 @@ async function handleRun() {
         else if (normalizeCode(rec.CPT) === '42702' && xmlNet === ref * 2) status = 'Valid';
         else if (nonEndoEndoCase) {
           remarks.push(`Pricing for ${rec.CPT} is ${ref} following ${pricingContext}. Endo Pricing cannot be used for ${nonEndoClinicianSpec}.`);
+        } else if (receiverID === 'A001') {
+          const assumedPS = Math.round((ref * xmlQty - xmlNet) * 100) / 100;
+          remarks.push(`Assumed Patient Share: ${assumedPS}.`);
         } else remarks.push(`Claimed Net ${xmlNet} does not match the reference price of ${ref} under ${pricingContext}.`);
       }
     }
