@@ -41,7 +41,7 @@
   let facilitiesLoaded = false;
   let clinicianDataLoaded = false;
   let statusDataLoaded = false;
-  let isLoadingData = false; // Track if data is currently being loaded
+  let loadingPromise = null; // Cache the loading promise to prevent race conditions
 
   // Load affiliated facilities (small file, load immediately)
   console.log('[INFO] Loading facilities.json...');
@@ -100,9 +100,10 @@
 
   // Lazy load clinician data - only load when needed
   function loadClinicianData() {
-    if (isLoadingData) {
-      console.log('[INFO] Data already loading...');
-      return Promise.resolve();
+    // Return cached promise if already loading
+    if (loadingPromise) {
+      console.log('[INFO] Data already loading, returning cached promise...');
+      return loadingPromise;
     }
     
     if (clinicianDataLoaded && statusDataLoaded) {
@@ -110,7 +111,6 @@
       return Promise.resolve();
     }
     
-    isLoadingData = true;
     console.log('[INFO] Starting lazy load of clinician data...');
     
     // Show loading message
@@ -183,14 +183,15 @@
       );
     }
     
-    return Promise.all(promises)
+    // Cache the promise to prevent race conditions
+    loadingPromise = Promise.all(promises)
       .then(() => {
-        isLoadingData = false;
+        loadingPromise = null; // Clear the cache after successful load
         updateUploadStatus();
         console.log('[INFO] ✓ All clinician data loaded successfully');
       })
       .catch(err => {
-        isLoadingData = false;
+        loadingPromise = null; // Clear the cache on error too
         updateUploadStatus();
         console.error('[CLINICIAN] Failed to load data:', err);
         if (uploadDiv) {
@@ -198,6 +199,8 @@
         }
         throw err;
       });
+    
+    return loadingPromise;
   }
 
   // Remove auto-loading - data will be loaded lazily when clinician checker is opened
@@ -658,6 +661,8 @@
 
       // Create row
       const row = document.createElement('tr');
+      // Use Bootstrap table classes for styling and unified checker compatibility
+      // table-success (green) for valid claims, table-danger (red) for invalid claims
       row.className = claim.valid ? 'table-success' : 'table-danger';
       row.setAttribute('data-claim-id', claim.claimId);
       
@@ -800,13 +805,13 @@
     if (clinicianCount) {
       const source = clinicianDataLoaded ? '(lazy-loaded from JSON)' : '(user-uploaded)';
       messages.push(`${clinicianCount} Clinicians ${source}`);
-    } else if (!clinicianDataLoaded && !isLoadingData) {
+    } else if (!clinicianDataLoaded && !loadingPromise) {
       messages.push('Clinician data: Will load when needed');
     }
     if (historyCount) {
       const source = statusDataLoaded ? '(lazy-loaded)' : '(user-uploaded)';
       messages.push(`${historyCount} License Histories ${source}`);
-    } else if (!statusDataLoaded && !isLoadingData) {
+    } else if (!statusDataLoaded && !loadingPromise) {
       messages.push('License history: Will load when needed');
     }
     if (facilitiesLoaded && affiliatedLicenses.size) {
