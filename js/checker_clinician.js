@@ -161,6 +161,10 @@
                 name: row['Clinician Name'] || row['Name'] || '',
                 category: row['Clinician Category'] || row['Category'] || row['Specialty'] || '',
                 facility: row['Facility'] || row['Facility License Number'] || row['Facility License'] || '',
+                facilityName: row['Facility Name'] || '',
+                status: row['Status'] || '',
+                from: row['From'] || '',
+                to: row['To'] || ''
               };
             });
             clinicianCount = Object.keys(clinicianMap).length;
@@ -425,6 +429,42 @@
     // Otherwise, return as-is (already formatted or invalid)
     return trimmed;
   }
+  
+  // Format facility details message for error reporting
+  function formatFacilityDetails(clinicianId) {
+    const clinician = clinicianMap[clinicianId];
+    if (!clinician) return '';
+    
+    let message = '';
+    
+    // Add status if available
+    if (clinician.status) {
+      message += ` Last Status is \`${clinician.status}\`.`;
+    }
+    
+    // Add facility information if available
+    if (clinician.facilityName) {
+      message += ` Last facility recorded was \`${clinician.facilityName}\``;
+      
+      // Add date range if available
+      if (clinician.from || clinician.to) {
+        const fromDate = clinician.from ? formatEffectiveDate(clinician.from) : '';
+        const toDate = clinician.to ? formatEffectiveDate(clinician.to) : '';
+        
+        if (fromDate && toDate) {
+          message += ` from \`${fromDate}\` to \`${toDate}\``;
+        } else if (fromDate) {
+          message += ` from \`${fromDate}\``;
+        } else if (toDate) {
+          message += ` to \`${toDate}\``;
+        }
+      }
+      
+      message += '.';
+    }
+    
+    return message;
+  }
 
   function formatLicenseHistory(fullHistory) {
     const rows = fullHistory.split(';').map(e => e.trim()).filter(Boolean);
@@ -611,7 +651,8 @@
           if (isPathology) {
             remarks.push('No ACTIVE license for encounter date (pathology profession - affiliation not required)');
           } else {
-            remarks.push('No ACTIVE affiliated facility license for encounter date');
+            const facilityDetails = formatFacilityDetails(pid);
+            remarks.push('No ACTIVE affiliated facility license for encounter date' + (facilityDetails ? '.' + facilityDetails : ''));
           }
         }
 
