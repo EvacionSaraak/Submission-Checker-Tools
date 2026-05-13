@@ -481,7 +481,7 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
     /** @type {Map<string, string[]>} */
     const invalidQuantityErrors = new Map();
     
-    if (!activities.length) missingFields.push("Activity");
+    if (!activities.length) invalidFields.push("Kindly verify activities as there are no codes showing in the XML for this claim.");
     else Array.from(activities).forEach((act, i) => {
       const prefix = `Activity[${i}].`, code = text("Code", act), qty = text("Quantity", act);
       ["Start","Type","Code","Quantity","Net","Clinician"].forEach(tag => invalidIfNull(tag, act, prefix));
