@@ -589,67 +589,111 @@
     const claimGroups = groupResultsByClaim(results);
     const modalData = {};
 
+    // Create container
     const container = document.createElement('div');
-    container.innerHTML =
-      `<div class="${pct > 90 ? 'valid-message' : pct > 70 ? 'warning-message' : 'error-message'}">
-        Validation: ${validCt}/${total} activities valid (${pct}%) across ${claimGroups.length} claim${claimGroups.length === 1 ? '' : 's'}
-      </div>` +
-      '<table><tr>' +
-      '<th>Claim ID</th><th>Activity</th><th>Encounter Start</th><th>Facility License Number</th>' +
-      '<th>Ordering Clinician</th>' +
-      '<th>Performing Clinician</th><th>Recent Performing License</th><th>Full License History</th>' +
-      '<th>Remarks</th></tr>' +
-      claimGroups.map((claim, claimIdx) => {
-        // Build modal content for activities
-        const activityTableRows = claim.activities.map(act => {
-          return `<tr>
-            <td>${act.activityId}</td>
-            <td>${act.orderingDisplay || ''}</td>
-            <td>${act.performingDisplay || ''}</td>
-            <td>${act.recentStatus || ''}</td>
-            <td class="description-col">${act.remarks.map(s => s && !s.endsWith('.') ? s + '.' : s).join('; ')}</td>
-          </tr>`;
-        }).join('');
-        
-        const modalHtml = `
-          <div>
-            <b>Claim ID:</b> ${claim.claimId}
-            <br>
-            <b>Total Activities:</b> ${claim.activities.length}
-            <br><br>
-            <table style="margin:0.5em 0; width:100%;">
-              <tr>
-                <th>Activity ID</th>
-                <th>Ordering Clinician</th>
-                <th>Performing Clinician</th>
-                <th>Recent License</th>
-                <th>Remarks</th>
-              </tr>
-              ${activityTableRows}
-            </table>
-          </div>
-        `;
-
-        const modalId = `activityModal_${claimIdx}`;
-        modalData[modalId] = modalHtml;
-
-        return `<tr class="${claim.valid ? 'valid' : 'invalid'}">
-          <td>${claim.claimId}</td>
-          <td>
-            <button class="view-activities" data-modalid="${modalId}">${claim.activities.length} Activit${claim.activities.length === 1 ? 'y' : 'ies'}</button>
-          </td>
-          <td>${claim.encounterStart}</td>
-          <td>${claim.facilityLicenseNumber}</td>
-          <td>${claim.orderingDisplay}</td>
-          <td>${claim.performingDisplay}</td>
-          <td>${claim.recentStatus}</td>
-          <td class="description-col">
-            <button class="view-license-history" data-fullhistory="${encodeURIComponent(claim.fullHistory)}">View</button>
-          </td>
-          <td class="description-col">${claim.remarksList.map(s => s && !s.endsWith('.') ? s + '.' : s).join('; ')}</td>
+    
+    // Add validation summary
+    const summary = document.createElement('div');
+    summary.className = pct > 90 ? 'valid-message' : pct > 70 ? 'warning-message' : 'error-message';
+    summary.textContent = `Validation: ${validCt}/${total} activities valid (${pct}%) across ${claimGroups.length} claim${claimGroups.length === 1 ? '' : 's'}`;
+    container.appendChild(summary);
+    
+    // Create table with proper structure
+    const table = document.createElement('table');
+    table.className = 'table table-striped table-bordered';
+    table.style.width = '100%';
+    table.style.borderCollapse = 'collapse';
+    
+    // Create thead
+    const thead = document.createElement('thead');
+    thead.innerHTML = `<tr>
+      <th>Claim ID</th>
+      <th>Activity</th>
+      <th>Encounter Start</th>
+      <th>Facility License Number</th>
+      <th>Ordering Clinician</th>
+      <th>Performing Clinician</th>
+      <th>Recent Performing License</th>
+      <th>Full License History</th>
+      <th>Remarks</th>
+    </tr>`;
+    table.appendChild(thead);
+    
+    // Create tbody
+    const tbody = document.createElement('tbody');
+    
+    claimGroups.forEach((claim, claimIdx) => {
+      // Build modal content for activities
+      const activityTableRows = claim.activities.map(act => {
+        return `<tr>
+          <td>${act.activityId}</td>
+          <td>${act.orderingDisplay || ''}</td>
+          <td>${act.performingDisplay || ''}</td>
+          <td>${act.recentStatus || ''}</td>
+          <td class="description-col">${act.remarks.map(s => s && !s.endsWith('.') ? s + '.' : s).join('; ')}</td>
         </tr>`;
-      }).join('') + '</table>' +
-      `<div id="activityModal" class="modal" style="display:none;">
+      }).join('');
+      
+      const modalHtml = `
+        <div>
+          <b>Claim ID:</b> ${claim.claimId}
+          <br>
+          <b>Total Activities:</b> ${claim.activities.length}
+          <br><br>
+          <table style="margin:0.5em 0; width:100%;">
+            <tr>
+              <th>Activity ID</th>
+              <th>Ordering Clinician</th>
+              <th>Performing Clinician</th>
+              <th>Recent License</th>
+              <th>Remarks</th>
+            </tr>
+            ${activityTableRows}
+          </table>
+        </div>
+      `;
+
+      const modalId = `activityModal_${claimIdx}`;
+      modalData[modalId] = modalHtml;
+
+      // Create row
+      const row = document.createElement('tr');
+      row.className = claim.valid ? 'table-success' : 'table-danger';
+      row.setAttribute('data-claim-id', claim.claimId);
+      
+      // Format remarks as divs for Copy Invalids compatibility
+      const remarksHTML = claim.remarksList && claim.remarksList.length > 0
+        ? claim.remarksList.map(r => {
+            const text = (r && !r.endsWith('.')) ? r + '.' : r;
+            return `<div>${text}</div>`;
+          }).join('')
+        : '<div class="source-note">No remarks</div>';
+      
+      row.innerHTML = `
+        <td>${claim.claimId}</td>
+        <td>
+          <button class="view-activities" data-modalid="${modalId}">${claim.activities.length} Activit${claim.activities.length === 1 ? 'y' : 'ies'}</button>
+        </td>
+        <td>${claim.encounterStart}</td>
+        <td>${claim.facilityLicenseNumber}</td>
+        <td>${claim.orderingDisplay}</td>
+        <td>${claim.performingDisplay}</td>
+        <td>${claim.recentStatus}</td>
+        <td class="description-col">
+          <button class="view-license-history" data-fullhistory="${encodeURIComponent(claim.fullHistory)}">View</button>
+        </td>
+        <td class="description-col">${remarksHTML}</td>
+      `;
+      
+      tbody.appendChild(row);
+    });
+    
+    table.appendChild(tbody);
+    container.appendChild(table);
+    
+    // Add modals
+    const modalsHTML = `
+      <div id="activityModal" class="modal" style="display:none;">
         <div class="modal-content">
           <span class="close" id="activityModalClose">&times;</span>
           <h3>Activities</h3>
@@ -662,7 +706,12 @@
           <h3>Full License History</h3>
           <div id="licenseHistoryText"></div>
         </div>
-      </div>`;
+      </div>
+    `;
+    
+    const modalsContainer = document.createElement('div');
+    modalsContainer.innerHTML = modalsHTML;
+    container.appendChild(modalsContainer);
 
     // Attach click handlers for license history modal after a delay (to ensure DOM is ready)
     setTimeout(() => {
