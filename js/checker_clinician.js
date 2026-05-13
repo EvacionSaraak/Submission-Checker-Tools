@@ -37,7 +37,7 @@
 
   // Load affiliated facilities
   console.log('[INFO] Loading facilities.json...');
-  fetch('/Submission-Checker-Tools/json/facilities.json')
+  fetch('../json/facilities.json')
     .then(response => {
       if (!response.ok) {
         throw new Error(`[FACILITIES FETCH ERROR] HTTP status ${response.status} - ${response.statusText}`);
@@ -92,7 +92,7 @@
 
   // Auto-load clinician data from resources
   console.log('[INFO] Auto-loading ClinicianLicenses.xlsx from resources...');
-  fetchExcelFromUrl('/Submission-Checker-Tools/resources/ClinicianLicenses.xlsx', 'Clinicians')
+  fetchExcelFromUrl('../resources/ClinicianLicenses.xlsx', 'Clinicians')
     .then(data => {
       clinicianMap = {};
       data.forEach(row => {
@@ -117,7 +117,7 @@
 
   // Auto-load licensing history from resources
   console.log('[INFO] Auto-loading Clinician Licensing History.xlsx from resources...');
-  fetchExcelFromUrl('/Submission-Checker-Tools/resources/Clinician Licensing History.xlsx', 'Clinician Licensing Status')
+  fetchExcelFromUrl('../resources/Clinician%20Licensing%20History.xlsx', 'Clinician Licensing Status')
     .then(data => {
       clinicianStatusMap = {};
       data.forEach(row => {
