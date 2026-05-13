@@ -26,6 +26,13 @@
     document.head.appendChild(style);
   })();
 
+  // Resource paths configuration
+  const RESOURCE_PATHS = {
+    FACILITIES_JSON: '../json/facilities.json',
+    CLINICIAN_LICENSES_XLSX: '../resources/ClinicianLicenses.xlsx',
+    LICENSING_HISTORY_XLSX: '../resources/Clinician%20Licensing%20History.xlsx'
+  };
+
   let xmlDoc = null, clinicianMap = {}, clinicianStatusMap = {};
   let xmlInput, clinicianInput, statusInput, processBtn, csvBtn, resultsDiv, uploadDiv;
   let claimCount = 0, clinicianCount = 0, historyCount = 0;
@@ -37,7 +44,7 @@
 
   // Load affiliated facilities
   console.log('[INFO] Loading facilities.json...');
-  fetch('../json/facilities.json')
+  fetch(RESOURCE_PATHS.FACILITIES_JSON)
     .then(response => {
       if (!response.ok) {
         throw new Error(`[FACILITIES FETCH ERROR] HTTP status ${response.status} - ${response.statusText}`);
@@ -92,7 +99,7 @@
 
   // Auto-load clinician data from resources
   console.log('[INFO] Auto-loading ClinicianLicenses.xlsx from resources...');
-  fetchExcelFromUrl('../resources/ClinicianLicenses.xlsx', 'Clinicians')
+  fetchExcelFromUrl(RESOURCE_PATHS.CLINICIAN_LICENSES_XLSX, 'Clinicians')
     .then(data => {
       clinicianMap = {};
       data.forEach(row => {
@@ -117,7 +124,7 @@
 
   // Auto-load licensing history from resources
   console.log('[INFO] Auto-loading Clinician Licensing History.xlsx from resources...');
-  fetchExcelFromUrl('../resources/Clinician%20Licensing%20History.xlsx', 'Clinician Licensing Status')
+  fetchExcelFromUrl(RESOURCE_PATHS.LICENSING_HISTORY_XLSX, 'Clinician Licensing Status')
     .then(data => {
       clinicianStatusMap = {};
       data.forEach(row => {
