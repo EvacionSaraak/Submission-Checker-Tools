@@ -29,7 +29,7 @@
   // Resource paths configuration
   const RESOURCE_PATHS = {
     FACILITIES_JSON: '../json/facilities.json',
-    CLINICIAN_LICENSES_XLSX: '../resources/ClinicianLicenses.xlsx',
+    CLINICIAN_LICENSES_JSON: '../json/clinician_licenses.json', // Use JSON instead of Excel
     LICENSING_HISTORY_XLSX: '../resources/Clinician%20Licensing%20History.xlsx'
   };
 
@@ -41,8 +41,9 @@
   let facilitiesLoaded = false;
   let clinicianDataLoaded = false;
   let statusDataLoaded = false;
+  let isLoadingData = false; // Track if data is currently being loaded
 
-  // Load affiliated facilities
+  // Load affiliated facilities (small file, load immediately)
   console.log('[INFO] Loading facilities.json...');
   fetch(RESOURCE_PATHS.FACILITIES_JSON)
     .then(response => {
@@ -97,57 +98,109 @@
       });
   }
 
-  // Auto-load clinician data from resources
-  console.log('[INFO] Auto-loading ClinicianLicenses.xlsx from resources...');
-  fetchExcelFromUrl(RESOURCE_PATHS.CLINICIAN_LICENSES_XLSX, 'Clinicians')
-    .then(data => {
-      clinicianMap = {};
-      data.forEach(row => {
-        const id = (row['Clinician License'] || '').toString().trim();
-        if (!id) return;
-        clinicianMap[id] = {
-          name: row['Clinician Name'] || row['Name'] || '',
-          category: row['Clinician Category'] || row['Category'] || '',
-        };
+  // Lazy load clinician data - only load when needed
+  function loadClinicianData() {
+    if (isLoadingData) {
+      console.log('[INFO] Data already loading...');
+      return Promise.resolve();
+    }
+    
+    if (clinicianDataLoaded && statusDataLoaded) {
+      console.log('[INFO] Data already loaded');
+      return Promise.resolve();
+    }
+    
+    isLoadingData = true;
+    console.log('[INFO] Starting lazy load of clinician data...');
+    
+    // Show loading message
+    if (uploadDiv) {
+      uploadDiv.textContent = 'Loading clinician data... Please wait.';
+    }
+    
+    const promises = [];
+    
+    // Load clinician licenses from JSON (faster than Excel)
+    if (!clinicianDataLoaded) {
+      console.log('[INFO] Loading clinician licenses from JSON...');
+      promises.push(
+        fetch(RESOURCE_PATHS.CLINICIAN_LICENSES_JSON)
+          .then(response => {
+            if (!response.ok) {
+              throw new Error(`HTTP error ${response.status} - ${response.statusText}`);
+            }
+            return response.json();
+          })
+          .then(data => {
+            clinicianMap = {};
+            data.forEach(row => {
+              // JSON structure uses "Phy Lic" instead of "Clinician License"
+              const id = (row['Phy Lic'] || row['Clinician License'] || '').toString().trim();
+              if (!id) return;
+              clinicianMap[id] = {
+                name: row['Clinician Name'] || row['Name'] || '',
+                category: row['Clinician Category'] || row['Category'] || row['Specialty'] || '',
+              };
+            });
+            clinicianCount = Object.keys(clinicianMap).length;
+            clinicianDataLoaded = true;
+            console.log(`[INFO] Loaded ${clinicianCount} clinicians from JSON`);
+          })
+          .catch(err => {
+            clinicianDataLoaded = false;
+            console.warn('[CLINICIAN] Failed to load clinician licenses JSON:', err);
+            throw err;
+          })
+      );
+    }
+    
+    // Load licensing history from Excel (no JSON alternative yet)
+    if (!statusDataLoaded) {
+      console.log('[INFO] Loading licensing history from Excel...');
+      promises.push(
+        fetchExcelFromUrl(RESOURCE_PATHS.LICENSING_HISTORY_XLSX, 'Clinician Licensing Status')
+          .then(data => {
+            clinicianStatusMap = {};
+            data.forEach(row => {
+              const id = (row['License Number'] || '').toString().trim();
+              if (!id) return;
+              clinicianStatusMap[id] = clinicianStatusMap[id] || [];
+              clinicianStatusMap[id].push({
+                facility: row['Facility License Number'] || '',
+                effective: row['Effective Date'] || '',
+                status: row['Status'] || ''
+              });
+            });
+            historyCount = Object.keys(clinicianStatusMap).length;
+            statusDataLoaded = true;
+            console.log(`[INFO] Loaded ${historyCount} license histories from Excel`);
+          })
+          .catch(err => {
+            statusDataLoaded = false;
+            console.warn('[CLINICIAN] Failed to load licensing history Excel:', err);
+            throw err;
+          })
+      );
+    }
+    
+    return Promise.all(promises)
+      .then(() => {
+        isLoadingData = false;
+        updateUploadStatus();
+        console.log('[INFO] ✓ All clinician data loaded successfully');
+      })
+      .catch(err => {
+        isLoadingData = false;
+        updateUploadStatus();
+        console.error('[CLINICIAN] Failed to load data:', err);
+        if (uploadDiv) {
+          uploadDiv.textContent = 'Error loading clinician data. Please try again or upload manually.';
+        }
+        throw err;
       });
-      clinicianCount = Object.keys(clinicianMap).length;
-      clinicianDataLoaded = true;
-      console.log(`[INFO] Auto-loaded ${clinicianCount} clinicians from resources`);
-      updateUploadStatus();
-    })
-    .catch(err => {
-      clinicianDataLoaded = false;
-      console.warn('[CLINICIAN] Failed to auto-load ClinicianLicenses.xlsx:', err);
-      console.log('[CLINICIAN] User will need to manually upload clinician data');
-      updateUploadStatus();
-    });
+  }
 
-  // Auto-load licensing history from resources
-  console.log('[INFO] Auto-loading Clinician Licensing History.xlsx from resources...');
-  fetchExcelFromUrl(RESOURCE_PATHS.LICENSING_HISTORY_XLSX, 'Clinician Licensing Status')
-    .then(data => {
-      clinicianStatusMap = {};
-      data.forEach(row => {
-        const id = (row['License Number'] || '').toString().trim();
-        if (!id) return;
-        clinicianStatusMap[id] = clinicianStatusMap[id] || [];
-        clinicianStatusMap[id].push({
-          facility: row['Facility License Number'] || '',
-          effective: row['Effective Date'] || '',
-          status: row['Status'] || ''
-        });
-      });
-      historyCount = Object.keys(clinicianStatusMap).length;
-      statusDataLoaded = true;
-      console.log(`[INFO] Auto-loaded ${historyCount} license histories from resources`);
-      updateUploadStatus();
-    })
-    .catch(err => {
-      statusDataLoaded = false;
-      console.warn('[CLINICIAN] Failed to auto-load Clinician Licensing History.xlsx:', err);
-      console.log('[CLINICIAN] User will need to manually upload status data');
-      updateUploadStatus();
-    });
+  // Remove auto-loading - data will be loaded lazily when clinician checker is opened
 
   document.addEventListener('DOMContentLoaded', () => {
     try {
@@ -387,7 +440,7 @@
   }
 
   // Main validation logic (now checks any affiliated facility)
-  function validateClinicians() {
+  async function validateClinicians() {
     if (!xmlDoc) {
       logCriticalError('No XML loaded', '');
       return null;
@@ -396,6 +449,15 @@
       logCriticalError('Facility list not loaded. Please check facilities.json and reload.', '');
       return null;
     }
+    
+    // Lazy load clinician data if not already loaded
+    try {
+      await loadClinicianData();
+    } catch (err) {
+      logCriticalError('Failed to load clinician data', err);
+      return null;
+    }
+    
     const claims = xmlDoc.getElementsByTagName('Claim');
     const results = [];
 
@@ -687,12 +749,16 @@
     const messages = [];
     if (claimCount) messages.push(`${claimCount} Claims Loaded`);
     if (clinicianCount) {
-      const source = clinicianDataLoaded ? '(auto-loaded)' : '(user-uploaded)';
+      const source = clinicianDataLoaded ? '(lazy-loaded from JSON)' : '(user-uploaded)';
       messages.push(`${clinicianCount} Clinicians ${source}`);
+    } else if (!clinicianDataLoaded && !isLoadingData) {
+      messages.push('Clinician data: Will load when needed');
     }
     if (historyCount) {
-      const source = statusDataLoaded ? '(auto-loaded)' : '(user-uploaded)';
+      const source = statusDataLoaded ? '(lazy-loaded)' : '(user-uploaded)';
       messages.push(`${historyCount} License Histories ${source}`);
+    } else if (!statusDataLoaded && !isLoadingData) {
+      messages.push('License history: Will load when needed');
     }
     if (facilitiesLoaded && affiliatedLicenses.size) {
       messages.push(`${affiliatedLicenses.size} Facilities Loaded`);
@@ -700,7 +766,8 @@
       messages.push('Facilities not loaded');
     }
     if (uploadDiv) uploadDiv.textContent = messages.join(', ');
-    if (processBtn) processBtn.disabled = !(claimCount && clinicianCount && historyCount && facilitiesLoaded && affiliatedLicenses.size);
+    // Enable process button if XML is loaded (data will be loaded lazily)
+    if (processBtn) processBtn.disabled = !(claimCount && facilitiesLoaded && affiliatedLicenses.size);
   }
 
   // Unified checker entry point
