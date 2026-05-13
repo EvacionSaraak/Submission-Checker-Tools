@@ -33,6 +33,9 @@
     LICENSING_HISTORY_XLSX: '../resources/Clinician%20Licensing%20History.xlsx'
   };
 
+  // Excel date threshold: serial dates above this are likely dates (1000 ≈ Sep 26, 1902)
+  const MIN_EXCEL_SERIAL_DATE = 1000;
+
   let xmlDoc = null, clinicianMap = {}, clinicianStatusMap = {};
   let xmlInput, clinicianInput, statusInput, processBtn, csvBtn, resultsDiv, uploadDiv;
   let claimCount = 0, clinicianCount = 0, historyCount = 0;
@@ -395,8 +398,8 @@
     
     // Check if it's a numeric value (Excel serial date)
     const numericValue = parseFloat(trimmed);
-    if (!isNaN(numericValue) && numericValue > 1000) {
-      // Likely an Excel serial date (dates after 1902)
+    if (!isNaN(numericValue) && numericValue > MIN_EXCEL_SERIAL_DATE) {
+      // Likely an Excel serial date (dates after ~1902)
       const date = excelSerialToDate(numericValue);
       return formatDateDDMMMYYYY(date);
     }
