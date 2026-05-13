@@ -1720,8 +1720,8 @@
       return;
     }
     
-    // Use a Map to deduplicate: key = "ClaimID\t\tRemark", value = true
-    const uniqueResults = new Map();
+    // Use a Map to group remarks by ClaimID: key = claimID, value = Set of remark texts
+    const claimRemarks = new Map();
     
     invalidRows.forEach(row => {
       // Get all cells in the row
@@ -1734,6 +1734,9 @@
       
       // Skip empty claim IDs
       if (!claimID) return;
+      
+      if (!claimRemarks.has(claimID)) claimRemarks.set(claimID, new Set());
+      const remarks = claimRemarks.get(claimID);
       
       // Get the Remarks cell using the dynamically found column index
       const remarksCell = cells[remarksColumnIndex];
@@ -1749,23 +1752,22 @@
           const remarkText = div.textContent.trim();
           // Skip "No remarks" entries and source notes
           if (remarkText && remarkText !== 'No remarks' && !div.classList.contains('source-note')) {
-            // Format: CLAIM_ID\t\tRemark - use as Map key to deduplicate
-            const entry = `${claimID}\t\t${remarkText}`;
-            uniqueResults.set(entry, true);
+            remarks.add(remarkText);
           }
         });
       } else {
         // If no divs, try getting text content directly (some checkers may use plain text)
         const remarkText = remarksCell.textContent.trim();
         if (remarkText && remarkText !== 'No remarks' && remarkText !== '') {
-          const entry = `${claimID}\t\t${remarkText}`;
-          uniqueResults.set(entry, true);
+          remarks.add(remarkText);
         }
       }
     });
     
-    // Convert Map keys to array
-    const results = Array.from(uniqueResults.keys());
+    // Build one line per claim: CLAIM_ID\t\t<all remarks joined with a space>
+    const results = Array.from(claimRemarks.entries())
+      .filter(([, remarks]) => remarks.size > 0)
+      .map(([claimID, remarks]) => `${claimID}\t\t${Array.from(remarks).join(' ')}`);
     
     if (results.length === 0) {
       console.log(`[CLIPBOARD] Invalid rows found in ${checkerName} but no remarks to copy`);
