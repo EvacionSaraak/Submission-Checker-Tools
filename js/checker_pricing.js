@@ -283,7 +283,7 @@ async function handleRun() {
         if (actualPS === 0) {
           const msg = 'Patient Share is 0 — this is invalid for Daman (non-Thiqa) claims.';
           actRows.forEach(r => {
-            r.status = 'Invalid';
+            r.status = 'Unknown';
             r.isValid = false;
             r.Remarks = r.Remarks ? `${r.Remarks} ${msg}` : msg;
           });
@@ -333,7 +333,7 @@ async function handleRun() {
         if (actualPS === 0 && !isCash) {
           const msg = 'Patient Share is 0 — this is invalid for non-Thiqa claims.';
           actRows.forEach(r => {
-            r.status = 'Invalid';
+            r.status = 'Unknown';
             r.isValid = false;
             r.Remarks = r.Remarks ? `${r.Remarks} ${msg}` : msg;
           });
