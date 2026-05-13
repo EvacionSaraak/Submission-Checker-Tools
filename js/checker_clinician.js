@@ -36,15 +36,11 @@
   // Excel date threshold: serial dates above this are likely dates (1000 ≈ Sep 26, 1902)
   const MIN_EXCEL_SERIAL_DATE = 1000;
 
-  // Pathology-related professions exempt from affiliation requirement for performing clinicians
-  const PATHOLOGY_PROFESSIONS = new Set([
+  // Pathology-related profession keywords exempt from affiliation requirement for performing clinicians
+  const PATHOLOGY_KEYWORDS = [
     'PATHOLOGY',
-    'CLINICAL PATHOLOGY',
-    'ANATOMIC PATHOLOGY',
-    'ANATOMIC PATHOLOGY AND CLINICAL PATHOLOGY',
-    'MEDICAL LABORATORY',
-    'CHEMICAL PATHOLOGY'
-  ]);
+    'MEDICAL LABORATORY'
+  ];
 
   // Helper function to check if a clinician's profession is pathology-related
   function isPathologyProfession(clinicianId) {
@@ -52,7 +48,9 @@
     const clinician = clinicianMap[clinicianId];
     if (!clinician || !clinician.category) return false;
     const category = clinician.category.toString().trim().toUpperCase();
-    return PATHOLOGY_PROFESSIONS.has(category);
+    
+    // Check if category contains any of the pathology keywords
+    return PATHOLOGY_KEYWORDS.some(keyword => category.includes(keyword));
   }
 
   let xmlDoc = null, clinicianMap = {}, clinicianStatusMap = {};
