@@ -36,6 +36,25 @@
   // Excel date threshold: serial dates above this are likely dates (1000 ≈ Sep 26, 1902)
   const MIN_EXCEL_SERIAL_DATE = 1000;
 
+  // Pathology-related professions exempt from affiliation requirement for performing clinicians
+  const PATHOLOGY_PROFESSIONS = new Set([
+    'PATHOLOGY',
+    'CLINICAL PATHOLOGY',
+    'ANATOMIC PATHOLOGY',
+    'ANATOMIC PATHOLOGY AND CLINICAL PATHOLOGY',
+    'MEDICAL LABORATORY',
+    'CHEMICAL PATHOLOGY'
+  ]);
+
+  // Helper function to check if a clinician's profession is pathology-related
+  function isPathologyProfession(clinicianId) {
+    if (!clinicianId) return false;
+    const clinician = clinicianMap[clinicianId];
+    if (!clinician || !clinician.category) return false;
+    const category = clinician.category.toString().trim().toUpperCase();
+    return PATHOLOGY_PROFESSIONS.has(category);
+  }
+
   let xmlDoc = null, clinicianMap = {}, clinicianStatusMap = {};
   let xmlInput, clinicianInput, statusInput, processBtn, csvBtn, resultsDiv, uploadDiv;
   let claimCount = 0, clinicianCount = 0, historyCount = 0;
@@ -549,13 +568,24 @@
         const entries = clinicianStatusMap[pid] || [];
         const encounterD = parseDMY(encounterStart);
 
+        // Check if performing clinician is pathology-related (exempt from affiliation requirement)
+        const isPathology = isPathologyProfession(pid);
+
         // -- FIX: Accept license at any affiliated facility --
+        // For pathology professions, accept any active license regardless of facility affiliation
         const eligible = entries.filter(e => {
           const fac = (e.facility || '').toString().trim().toUpperCase();
           const effDate = parseDMY(e.effective);
           const isAffiliated = affiliatedLicenses.has(fac);
           const effOk = !!e.effective && !isNaN(effDate) && effDate <= encounterD;
           const isActive = (e.status || '').toLowerCase() === 'active';
+          
+          // If pathology profession, accept any active license with valid effective date
+          if (isPathology) {
+            return effOk && isActive;
+          }
+          
+          // For non-pathology professions, require affiliated facility
           return isAffiliated && effOk && isActive;
         });
 
@@ -565,7 +595,11 @@
           mostRecent = eligible[0];
           valid = true;
         } else {
-          remarks.push('No ACTIVE affiliated facility license for encounter date');
+          if (isPathology) {
+            remarks.push('No ACTIVE license for encounter date (pathology profession - affiliation not required)');
+          } else {
+            remarks.push('No ACTIVE affiliated facility license for encounter date');
+          }
         }
 
         const fullHistory = entries.map(e =>
