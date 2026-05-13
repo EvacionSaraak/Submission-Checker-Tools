@@ -330,20 +330,58 @@
     return table;
   }
 
-  // --- Grouping logic ---
-  function groupResults(results) {
-    const groups = {};
+  // --- Grouping logic: Group by Claim ID ---
+  function groupResultsByClaim(results) {
+    const claimGroups = {};
     for (const row of results) {
-      const groupKey = JSON.stringify({
-        ...row,
-        claimId: undefined,
-        activityId: undefined,
-        encounterStart: undefined,
+      const claimId = row.claimId;
+      if (!claimGroups[claimId]) {
+        claimGroups[claimId] = {
+          claimId: claimId,
+          activities: [],
+          encounterStart: row.encounterStart,
+          facilityLicenseNumber: row.facilityLicenseNumber,
+          // For claim-level data, we'll take the first activity's data
+          // or aggregate if there are multiple different values
+          orderingClinicians: new Set(),
+          performingClinicians: new Set(),
+          recentStatuses: new Set(),
+          fullHistories: new Set(),
+          remarks: new Set(),
+          valid: true  // Will be set to false if any activity is invalid
+        };
+      }
+      
+      // Add activity to the claim
+      claimGroups[claimId].activities.push({
+        activityId: row.activityId,
+        orderingDisplay: row.orderingDisplay,
+        performingDisplay: row.performingDisplay,
+        recentStatus: row.recentStatus,
+        fullHistory: row.fullHistory,
+        remarks: row.remarks
       });
-      if (!groups[groupKey]) groups[groupKey] = [];
-      groups[groupKey].push(row);
+      
+      // Aggregate unique values
+      if (row.orderingDisplay) claimGroups[claimId].orderingClinicians.add(row.orderingDisplay);
+      if (row.performingDisplay) claimGroups[claimId].performingClinicians.add(row.performingDisplay);
+      if (row.recentStatus) claimGroups[claimId].recentStatuses.add(row.recentStatus);
+      if (row.fullHistory) claimGroups[claimId].fullHistories.add(row.fullHistory);
+      row.remarks.forEach(r => claimGroups[claimId].remarks.add(r));
+      
+      // If any activity is invalid, mark the claim as invalid
+      if (!row.valid) claimGroups[claimId].valid = false;
     }
-    return Object.values(groups);
+    
+    // Convert sets to arrays/strings for display
+    return Object.values(claimGroups).map(claim => ({
+      ...claim,
+      orderingDisplay: Array.from(claim.orderingClinicians).join('; '),
+      performingDisplay: Array.from(claim.performingClinicians).join('; '),
+      recentStatus: Array.from(claim.recentStatuses).join('; '),
+      fullHistory: Array.from(claim.fullHistories).join('; '),
+      remarksList: Array.from(claim.remarks)
+    }));
   }
 
   // Main validation logic (now checks any affiliated facility)
@@ -478,84 +516,80 @@
     return tableElement;
   }
 
-  // --- Streamlined, grouped rendering with modal for Claim IDs ---
+  // --- Streamlined, claim-grouped rendering with modal for Activities ---
   function buildResultsTable(results) {
     let validCt = results.filter(r => r.valid).length;
     let total = results.length;
     let pct = total ? Math.round(validCt / total * 100) : 0;
 
-    const groupedResults = groupResults(results);
+    const claimGroups = groupResultsByClaim(results);
     const modalData = {};
 
     const container = document.createElement('div');
     container.innerHTML =
       `<div class="${pct > 90 ? 'valid-message' : pct > 70 ? 'warning-message' : 'error-message'}">
-        Validation: ${validCt}/${total} valid (${pct}%)
+        Validation: ${validCt}/${total} activities valid (${pct}%)
       </div>` +
       '<table><tr>' +
-      '<th>Claim(s)</th><th>Activity</th><th>Encounter Start(s)</th><th>Facility License Number</th>' +
-      '<th>Ordering</th>' +
-      '<th>Performing</th><th>Recent Performing License Status</th><th>Full License History</th>' +
+      '<th>Claim ID</th><th>Activity</th><th>Encounter Start</th><th>Facility License Number</th>' +
+      '<th>Ordering Clinician</th>' +
+      '<th>Performing Clinician</th><th>Recent Performing License</th><th>Full License History</th>' +
       '<th>Remarks</th></tr>' +
-      groupedResults.map((group, groupIdx) => {
-        const sortedGroup = group.slice().sort((a, b) => parseDMY(a.encounterStart) - parseDMY(b.encounterStart));
-        const claimIds = sortedGroup.map(r => r.claimId);
-        const uniqueClaimIds = Array.from(new Set(claimIds));
-        const activityIds = sortedGroup.map(r => r.activityId);
-        const encounterStarts = sortedGroup.map(r => r.encounterStart);
-        const uniqueEncounterStarts = Array.from(new Set(encounterStarts));
-
-        // Table in modal: claim, activity, encounter start (all three columns)
-        let lastClaimId = null;
-        const tableRows = sortedGroup.map(r => {
-          let claimCell = '';
-          if (r.claimId !== lastClaimId) {
-            claimCell = `<td>${r.claimId}</td>`;
-            lastClaimId = r.claimId;
-          } else {
-            claimCell = `<td></td>`;
-          }
-          return `<tr>${claimCell}<td>${r.activityId}</td><td>${r.encounterStart}</td></tr>`;
+      claimGroups.map((claim, claimIdx) => {
+        // Build modal content for activities
+        const activityTableRows = claim.activities.map(act => {
+          return `<tr>
+            <td>${act.activityId}</td>
+            <td>${act.orderingDisplay || ''}</td>
+            <td>${act.performingDisplay || ''}</td>
+            <td>${act.recentStatus || ''}</td>
+            <td class="description-col">${act.remarks.map(s => s && !s.endsWith('.') ? s + '.' : s).join('; ')}</td>
+          </tr>`;
         }).join('');
+        
         const modalHtml = `
           <div>
-            <b>All Claim IDs:</b> ${uniqueClaimIds.join(', ')}
+            <b>Claim ID:</b> ${claim.claimId}
             <br>
-            <b>All Encounter Starts:</b> ${uniqueEncounterStarts.join(', ')}
-            <br>
-            <b>Table:</b>
-            <table style="margin:0.5em 0;">
-              <tr><th>Claim ID</th><th>Activity ID</th><th>Encounter Start</th></tr>
-              ${tableRows}
+            <b>Total Activities:</b> ${claim.activities.length}
+            <br><br>
+            <table style="margin:0.5em 0; width:100%;">
+              <tr>
+                <th>Activity ID</th>
+                <th>Ordering Clinician</th>
+                <th>Performing Clinician</th>
+                <th>Recent License</th>
+                <th>Remarks</th>
+              </tr>
+              ${activityTableRows}
             </table>
           </div>
         `;
 
-        const modalId = `claimModal_${groupIdx}`;
+        const modalId = `activityModal_${claimIdx}`;
         modalData[modalId] = modalHtml;
 
-        const r = sortedGroup[0];
-        return `<tr class="${r.valid ? 'valid' : 'invalid'}">
+        return `<tr class="${claim.valid ? 'valid' : 'invalid'}">
+          <td>${claim.claimId}</td>
           <td>
-            <button class="view-claims-group" data-modalid="${modalId}">${uniqueClaimIds.length} Claims</button>
+            <button class="view-activities" data-modalid="${modalId}">${claim.activities.length} Activit${claim.activities.length === 1 ? 'y' : 'ies'}</button>
           </td>
-          <td>${activityIds[0]}</td>
-          <td>${uniqueEncounterStarts.join(', ')}</td>
-          <td>${r.facilityLicenseNumber}</td>
-          <td>${r.orderingDisplay}</td>
-          <td>${r.performingDisplay}</td>
-          <td>${r.recentStatus}</td>
+          <td>${claim.encounterStart}</td>
+          <td>${claim.facilityLicenseNumber}</td>
+          <td>${claim.orderingDisplay}</td>
+          <td>${claim.performingDisplay}</td>
+          <td>${claim.recentStatus}</td>
           <td class="description-col">
-            <button class="view-license-history" data-fullhistory="${encodeURIComponent(r.fullHistory)}">View</button>
+            <button class="view-license-history" data-fullhistory="${encodeURIComponent(claim.fullHistory)}">View</button>
           </td>
-          <td class="description-col">${r.remarks.map(s => s && !s.endsWith('.') ? s + '.' : s).join('; ')}</td>
+          <td class="description-col">${claim.remarksList.map(s => s && !s.endsWith('.') ? s + '.' : s).join('; ')}</td>
         </tr>`;
       }).join('') + '</table>' +
-      `<div id="claimIdsModal" class="modal" style="display:none;">
+      `<div id="activityModal" class="modal" style="display:none;">
         <div class="modal-content">
-          <span class="close" id="claimIdsModalClose">&times;</span>
-          <h3>Group Details</h3>
-          <div id="claimIdsModalText"></div>
+          <span class="close" id="activityModalClose">&times;</span>
+          <h3>Activities</h3>
+          <div id="activityModalText"></div>
         </div>
       </div>
       <div id="licenseHistoryModal" class="modal" style="display:none;">
@@ -588,23 +622,23 @@
         };
       }
 
-      // Attach click handlers for claims group modal
-      document.querySelectorAll('.view-claims-group').forEach(btn => {
+      // Attach click handlers for activities modal
+      document.querySelectorAll('.view-activities').forEach(btn => {
         btn.addEventListener('click', function() {
           const modalId = this.getAttribute('data-modalid');
-          document.getElementById('claimIdsModalText').innerHTML = modalData[modalId];
-          document.getElementById('claimIdsModal').style.display = 'block';
+          document.getElementById('activityModalText').innerHTML = modalData[modalId];
+          document.getElementById('activityModal').style.display = 'block';
         });
       });
-      const claimIdsModalClose = document.getElementById('claimIdsModalClose');
-      if (claimIdsModalClose) {
-        claimIdsModalClose.onclick = function() {
-          document.getElementById('claimIdsModal').style.display = 'none';
+      const activityModalClose = document.getElementById('activityModalClose');
+      if (activityModalClose) {
+        activityModalClose.onclick = function() {
+          document.getElementById('activityModal').style.display = 'none';
         };
       }
-      const claimIdsModal = document.getElementById('claimIdsModal');
-      if (claimIdsModal) {
-        claimIdsModal.onclick = function(event) {
+      const activityModal = document.getElementById('activityModal');
+      if (activityModal) {
+        activityModal.onclick = function(event) {
           if (event.target === this) this.style.display = 'none';
         };
       }
@@ -618,24 +652,28 @@
 
   function exportResults() {
     if (!window.XLSX || !lastResults.length) return;
+    
+    // Group results by claim
+    const claimGroups = groupResultsByClaim(lastResults);
+    
     const headers = [
-      'Claim ID', 'Activity ID', 'Encounter Start',
+      'Claim ID', 'Activity Count', 'Encounter Start',
       'Facility License Number',
-      'Ordering',
-      'Performing', 'Recent Performing License Status',
+      'Ordering Clinician',
+      'Performing Clinician', 'Recent Performing License',
       'Full License History',
       'Remarks'
     ];
-    const rows = lastResults.map(r => [
-      r.claimId,
-      r.activityId,
-      r.encounterStart,
-      r.facilityLicenseNumber || '',
-      r.orderingDisplay || '',
-      r.performingDisplay || '',
-      r.recentStatus || '',
-      r.fullHistory || '',
-      r.remarks.map(s => s && !s.endsWith('.') ? s + '.' : s).join('; ')
+    const rows = claimGroups.map(claim => [
+      claim.claimId,
+      claim.activities.length,
+      claim.encounterStart,
+      claim.facilityLicenseNumber || '',
+      claim.orderingDisplay || '',
+      claim.performingDisplay || '',
+      claim.recentStatus || '',
+      claim.fullHistory || '',
+      claim.remarksList.map(s => s && !s.endsWith('.') ? s + '.' : s).join('; ')
     ]);
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
