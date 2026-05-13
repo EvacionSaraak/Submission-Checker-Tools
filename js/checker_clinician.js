@@ -556,7 +556,15 @@
           const oCat = clinicianMap[oid]?.category;
           const pCat = clinicianMap[pid]?.category;
           if (oCat && pCat && oCat !== pCat) {
-            remarks.push('Category mismatch');
+            // Check if either clinician is pathology-related (labs)
+            const isOrderingPathology = isPathologyProfession(oid);
+            const isPerformingPathology = isPathologyProfession(pid);
+            
+            if (isOrderingPathology || isPerformingPathology) {
+              remarks.push('Labs. Category Mismatch disregarded.');
+            } else {
+              remarks.push('Category mismatch');
+            }
           }
         }
 
