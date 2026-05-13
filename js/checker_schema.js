@@ -504,7 +504,7 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
           const obsValueType = text("ValueType", obs);
           
           if (obsType && obsType.toUpperCase() !== "TEXT") {
-            invalidFields.push(`Activity ${code} has invalid Observation Type. Found \`${obsType}\` but must be \`Text\`.`);
+            invalidFields.push(`Activity ${code} has invalid Observation Type of \`${obsType}\` but must be \`Text\`.`);
           }
           
           if (obsValueType && obsValueType.toUpperCase() !== "TEXT") {
