@@ -931,12 +931,12 @@
     // Determine which checkers are available (enabled buttons)
     const availableCheckers = [];
     const checkerButtons = {
-      'clinician': elements.btnClinician,
       'elig': elements.btnElig,
       'auths': elements.btnAuths,
       'timings': elements.btnTimings,
       'teeth': elements.btnTeeth,
       'schema': elements.btnSchema,
+      'clinician': elements.btnClinician,
       'pricing': elements.btnPricing,
       'modifiers': elements.btnModifiers
     };

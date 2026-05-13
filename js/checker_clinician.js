@@ -377,16 +377,15 @@
     return new Date(ms);
   }
 
-  // Format date as "DD-MMM-YYYY" (e.g., "31-Jan-2026")
-  function formatDateDDMMMYYYY(date) {
+  // Format date as "MM/DD/YYYY" (e.g., "08/04/2026")
+  function formatDateMMDDYYYY(date) {
     if (!date || !(date instanceof Date) || isNaN(date.getTime())) return '';
     
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const day = date.getUTCDate();
-    const month = months[date.getUTCMonth()];
+    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(date.getUTCDate()).padStart(2, '0');
     const year = date.getUTCFullYear();
     
-    return `${day}-${month}-${year}`;
+    return `${month}/${day}/${year}`;
   }
 
   // Convert and format effective date (handles Excel serial dates and string dates)
@@ -401,7 +400,7 @@
     if (!isNaN(numericValue) && numericValue > MIN_EXCEL_SERIAL_DATE) {
       // Likely an Excel serial date (dates after ~1902)
       const date = excelSerialToDate(numericValue);
-      return formatDateDDMMMYYYY(date);
+      return formatDateMMDDYYYY(date);
     }
     
     // Otherwise, return as-is (already formatted or invalid)
@@ -640,6 +639,9 @@
 
     const claimGroups = groupResultsByClaim(results);
     const modalData = {};
+    
+    // Generate unique ID for this table's modals to avoid conflicts
+    const uniqueId = `clinician_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
     // Create container
     const container = document.createElement('div');
@@ -726,7 +728,7 @@
       row.innerHTML = `
         <td>${claim.claimId}</td>
         <td>
-          <button class="view-activities" data-modalid="${modalId}">${claim.activities.length} Activit${claim.activities.length === 1 ? 'y' : 'ies'}</button>
+          <button class="view-activities" data-modalid="${modalId}" data-uniqueid="${uniqueId}">${claim.activities.length} Activit${claim.activities.length === 1 ? 'y' : 'ies'}</button>
         </td>
         <td>${claim.encounterStart}</td>
         <td>${claim.facilityLicenseNumber}</td>
@@ -734,7 +736,7 @@
         <td>${claim.performingDisplay}</td>
         <td>${claim.recentStatus}</td>
         <td class="description-col">
-          <button class="view-license-history" data-fullhistory="${encodeURIComponent(claim.fullHistory)}">View</button>
+          <button class="view-license-history" data-fullhistory="${encodeURIComponent(claim.fullHistory)}" data-uniqueid="${uniqueId}">View</button>
         </td>
         <td class="description-col">${remarksHTML}</td>
       `;
@@ -747,18 +749,18 @@
     
     // Add modals
     const modalsHTML = `
-      <div id="activityModal" class="modal" style="display:none;">
+      <div id="activityModal_${uniqueId}" class="modal" style="display:none;">
         <div class="modal-content">
-          <span class="close" id="activityModalClose">&times;</span>
+          <span class="close" id="activityModalClose_${uniqueId}">&times;</span>
           <h3>Activities</h3>
-          <div id="activityModalText"></div>
+          <div id="activityModalText_${uniqueId}"></div>
         </div>
       </div>
-      <div id="licenseHistoryModal" class="modal" style="display:none;">
+      <div id="licenseHistoryModal_${uniqueId}" class="modal" style="display:none;">
         <div class="modal-content">
-          <span class="close" id="licenseHistoryClose">&times;</span>
+          <span class="close" id="licenseHistoryClose_${uniqueId}">&times;</span>
           <h3>Full License History</h3>
-          <div id="licenseHistoryText"></div>
+          <div id="licenseHistoryText_${uniqueId}"></div>
         </div>
       </div>
     `;
@@ -769,18 +771,23 @@
 
     // Attach click handlers for license history modal after a delay (to ensure DOM is ready)
     setTimeout(() => {
-      // Use container-scoped queries to avoid conflicts with previous results
-      const licenseHistoryModal = container.querySelector('#licenseHistoryModal');
-      const licenseHistoryText = container.querySelector('#licenseHistoryText');
-      const licenseHistoryClose = container.querySelector('#licenseHistoryClose');
-      
       container.querySelectorAll('.view-license-history').forEach(btn => {
         btn.addEventListener('click', function() {
+          const uniqueIdFromButton = this.getAttribute('data-uniqueid');
           const fullHistory = decodeURIComponent(this.getAttribute('data-fullhistory'));
+          
+          // Find modals with this unique ID
+          const licenseHistoryModal = container.querySelector(`#licenseHistoryModal_${uniqueIdFromButton}`);
+          const licenseHistoryText = container.querySelector(`#licenseHistoryText_${uniqueIdFromButton}`);
+          
           if (licenseHistoryText) licenseHistoryText.innerHTML = formatLicenseHistory(fullHistory);
           if (licenseHistoryModal) licenseHistoryModal.style.display = 'block';
         });
       });
+      
+      // Attach close handlers for license history modal
+      const licenseHistoryClose = container.querySelector(`#licenseHistoryClose_${uniqueId}`);
+      const licenseHistoryModal = container.querySelector(`#licenseHistoryModal_${uniqueId}`);
       
       if (licenseHistoryClose) {
         licenseHistoryClose.onclick = function() {
@@ -795,17 +802,23 @@
       }
 
       // Attach click handlers for activities modal
-      const activityModal = container.querySelector('#activityModal');
-      const activityModalText = container.querySelector('#activityModalText');
-      const activityModalClose = container.querySelector('#activityModalClose');
-      
       container.querySelectorAll('.view-activities').forEach(btn => {
         btn.addEventListener('click', function() {
+          const uniqueIdFromButton = this.getAttribute('data-uniqueid');
           const modalId = this.getAttribute('data-modalid');
+          
+          // Find modals with this unique ID
+          const activityModal = container.querySelector(`#activityModal_${uniqueIdFromButton}`);
+          const activityModalText = container.querySelector(`#activityModalText_${uniqueIdFromButton}`);
+          
           if (activityModalText) activityModalText.innerHTML = modalData[modalId];
           if (activityModal) activityModal.style.display = 'block';
         });
       });
+      
+      // Attach close handlers for activity modal
+      const activityModalClose = container.querySelector(`#activityModalClose_${uniqueId}`);
+      const activityModal = container.querySelector(`#activityModal_${uniqueId}`);
       
       if (activityModalClose) {
         activityModalClose.onclick = function() {
