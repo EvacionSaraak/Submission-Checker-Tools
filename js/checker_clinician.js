@@ -32,6 +32,8 @@
   let lastResults = [];
   let affiliatedLicenses = new Set();
   let facilitiesLoaded = false;
+  let clinicianDataLoaded = false;
+  let statusDataLoaded = false;
 
   // Load affiliated facilities
   console.log('[INFO] Loading facilities.json...');
@@ -63,6 +65,80 @@
       affiliatedLicenses = new Set();
       facilitiesLoaded = false;
       console.error('[FACILITIES ERROR] Failed to load facilities.json:', err);
+      updateUploadStatus();
+    });
+
+  // Helper function to fetch and parse Excel from URL
+  function fetchExcelFromUrl(url, sheetName) {
+    return fetch(url)
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`HTTP error ${response.status} - ${response.statusText}`);
+        }
+        return response.arrayBuffer();
+      })
+      .then(buffer => {
+        const data = new Uint8Array(buffer);
+        const workbook = XLSX.read(data, { type: 'array' });
+        let sheet;
+        if (sheetName && workbook.SheetNames.includes(sheetName)) {
+          sheet = workbook.Sheets[sheetName];
+        } else {
+          sheet = workbook.Sheets[workbook.SheetNames[0]];
+        }
+        return XLSX.utils.sheet_to_json(sheet);
+      });
+  }
+
+  // Auto-load clinician data from resources
+  console.log('[INFO] Auto-loading ClinicianLicenses.xlsx from resources...');
+  fetchExcelFromUrl('/Submission-Checker-Tools/resources/ClinicianLicenses.xlsx', 'Clinicians')
+    .then(data => {
+      clinicianMap = {};
+      data.forEach(row => {
+        const id = (row['Clinician License'] || '').toString().trim();
+        if (!id) return;
+        clinicianMap[id] = {
+          name: row['Clinician Name'] || row['Name'] || '',
+          category: row['Clinician Category'] || row['Category'] || '',
+        };
+      });
+      clinicianCount = Object.keys(clinicianMap).length;
+      clinicianDataLoaded = true;
+      console.log(`[INFO] Auto-loaded ${clinicianCount} clinicians from resources`);
+      updateUploadStatus();
+    })
+    .catch(err => {
+      clinicianDataLoaded = false;
+      console.warn('[CLINICIAN] Failed to auto-load ClinicianLicenses.xlsx:', err);
+      console.log('[CLINICIAN] User will need to manually upload clinician data');
+      updateUploadStatus();
+    });
+
+  // Auto-load licensing history from resources
+  console.log('[INFO] Auto-loading Clinician Licensing History.xlsx from resources...');
+  fetchExcelFromUrl('/Submission-Checker-Tools/resources/Clinician Licensing History.xlsx', 'Clinician Licensing Status')
+    .then(data => {
+      clinicianStatusMap = {};
+      data.forEach(row => {
+        const id = (row['License Number'] || '').toString().trim();
+        if (!id) return;
+        clinicianStatusMap[id] = clinicianStatusMap[id] || [];
+        clinicianStatusMap[id].push({
+          facility: row['Facility License Number'] || '',
+          effective: row['Effective Date'] || '',
+          status: row['Status'] || ''
+        });
+      });
+      historyCount = Object.keys(clinicianStatusMap).length;
+      statusDataLoaded = true;
+      console.log(`[INFO] Auto-loaded ${historyCount} license histories from resources`);
+      updateUploadStatus();
+    })
+    .catch(err => {
+      statusDataLoaded = false;
+      console.warn('[CLINICIAN] Failed to auto-load Clinician Licensing History.xlsx:', err);
+      console.log('[CLINICIAN] User will need to manually upload status data');
       updateUploadStatus();
     });
 
@@ -563,8 +639,14 @@
   function updateUploadStatus() {
     const messages = [];
     if (claimCount) messages.push(`${claimCount} Claims Loaded`);
-    if (clinicianCount) messages.push(`${clinicianCount} Clinicians Loaded`);
-    if (historyCount) messages.push(`${historyCount} License Histories Loaded`);
+    if (clinicianCount) {
+      const source = clinicianDataLoaded ? '(auto-loaded)' : '(user-uploaded)';
+      messages.push(`${clinicianCount} Clinicians ${source}`);
+    }
+    if (historyCount) {
+      const source = statusDataLoaded ? '(auto-loaded)' : '(user-uploaded)';
+      messages.push(`${historyCount} License Histories ${source}`);
+    }
     if (facilitiesLoaded && affiliatedLicenses.size) {
       messages.push(`${affiliatedLicenses.size} Facilities Loaded`);
     } else {

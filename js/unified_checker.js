@@ -368,7 +368,7 @@
     const isMedical = claimTypeMedical && claimTypeMedical.checked;
     
     const requirements = {
-      clinician: ['xml', 'clinician', 'status'],
+      clinician: ['xml'], // clinician and status files are auto-loaded from resources
       elig: ['xml', 'eligibility'],
       auths: ['xml', 'auth'],
       timings: ['xml'],
@@ -737,7 +737,7 @@
     }
     
     const fileInputMap = {
-      clinician: { xmlFileInput: 'xml', clinicianFileInput: 'clinician', statusFileInput: 'status' },
+      clinician: { xmlFileInput: 'xml' }, // clinician and status files are auto-loaded from resources
       elig: { xmlFileInput: 'xml', eligibilityFileInput: 'eligibility' },
       auths: { xmlInput: 'xml', xlsxInput: 'auth' },
       timings: { xmlFileInput: 'xml' },
