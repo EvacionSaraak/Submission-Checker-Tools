@@ -464,6 +464,7 @@
           // or aggregate if there are multiple different values
           orderingClinicians: new Set(),
           performingClinicians: new Set(),
+          performingProfessions: new Set(),
           recentStatuses: new Set(),
           fullHistories: new Set(),
           remarks: new Set(),
@@ -476,6 +477,7 @@
         activityId: row.activityId,
         orderingDisplay: row.orderingDisplay,
         performingDisplay: row.performingDisplay,
+        performingProfession: row.performingProfession,
         recentStatus: row.recentStatus,
         fullHistory: row.fullHistory,
         remarks: row.remarks
@@ -484,6 +486,7 @@
       // Aggregate unique values
       if (row.orderingDisplay) claimGroups[claimId].orderingClinicians.add(row.orderingDisplay);
       if (row.performingDisplay) claimGroups[claimId].performingClinicians.add(row.performingDisplay);
+      if (row.performingProfession) claimGroups[claimId].performingProfessions.add(row.performingProfession);
       if (row.recentStatus) claimGroups[claimId].recentStatuses.add(row.recentStatus);
       if (row.fullHistory) claimGroups[claimId].fullHistories.add(row.fullHistory);
       if (row.remarks && Array.isArray(row.remarks)) {
@@ -499,6 +502,7 @@
       ...claim,
       orderingDisplay: Array.from(claim.orderingClinicians).join('; '),
       performingDisplay: Array.from(claim.performingClinicians).join('; '),
+      performingProfession: Array.from(claim.performingProfessions).join('; '),
       recentStatus: Array.from(claim.recentStatuses).join('; '),
       fullHistory: Array.from(claim.fullHistories).join('; '),
       remarksList: Array.from(claim.remarks)
@@ -550,6 +554,7 @@
         const performingDisplay = pid ? (
           clinicianMap[pid]?.name ? `${pid} (${clinicianMap[pid].name})` : pid
         ) : '';
+        const performingProfession = pid ? (clinicianMap[pid]?.category || '') : '';
 
         // Category check
         if (oid && pid && oid !== pid) {
@@ -647,6 +652,7 @@
           facilityLicenseNumber: providerId,
           orderingDisplay,
           performingDisplay,
+          performingProfession,
           performingEff,
           performingStatus,
           recentStatus: performingStatusDisplay,
@@ -716,6 +722,7 @@
       <th>Facility License Number</th>
       <th>Ordering Clinician</th>
       <th>Performing Clinician</th>
+      <th>Profession</th>
       <th>Recent Performing License</th>
       <th>Full License History</th>
       <th>Remarks</th>
@@ -732,6 +739,7 @@
           <td>${act.activityId}</td>
           <td>${act.orderingDisplay || ''}</td>
           <td>${act.performingDisplay || ''}</td>
+          <td>${act.performingProfession || ''}</td>
           <td>${act.recentStatus || ''}</td>
           <td class="description-col">${act.remarks.map(s => s && !s.endsWith('.') ? s + '.' : s).join('; ')}</td>
         </tr>`;
@@ -748,6 +756,7 @@
               <th>Activity ID</th>
               <th>Ordering Clinician</th>
               <th>Performing Clinician</th>
+              <th>Profession</th>
               <th>Recent License</th>
               <th>Remarks</th>
             </tr>
@@ -783,6 +792,7 @@
         <td>${claim.facilityLicenseNumber}</td>
         <td>${claim.orderingDisplay}</td>
         <td>${claim.performingDisplay}</td>
+        <td>${claim.performingProfession}</td>
         <td>${claim.recentStatus}</td>
         <td class="description-col">
           <button class="view-license-history" data-fullhistory="${encodeURIComponent(claim.fullHistory)}" data-uniqueid="${uniqueId}">View</button>
@@ -898,7 +908,7 @@
       'Claim ID', 'Activity Count', 'Encounter Start',
       'Facility License Number',
       'Ordering Clinician',
-      'Performing Clinician', 'Recent Performing License',
+      'Performing Clinician', 'Profession', 'Recent Performing License',
       'Full License History',
       'Remarks'
     ];
@@ -909,6 +919,7 @@
       claim.facilityLicenseNumber || '',
       claim.orderingDisplay || '',
       claim.performingDisplay || '',
+      claim.performingProfession || '',
       claim.recentStatus || '',
       claim.fullHistory || '',
       claim.remarksList.map(s => s && !s.endsWith('.') ? s + '.' : s).join('; ')
