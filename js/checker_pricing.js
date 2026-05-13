@@ -530,7 +530,7 @@ function buildResultsTable(rows) {
 
   const container = document.createElement('div');
   let prevClaimId = null;
-  let html = `<table class="table table-bordered" style="width:100%;border-collapse:collapse"><thead><tr>
+  let html = `<table class="table table-striped table-bordered" style="width:100%;border-collapse:collapse"><thead><tr>
     <th style="padding:8px;border:1px solid #ccc">Claim ID</th>
     <th style="padding:8px;border:1px solid #ccc">Activity ID</th>
     <th style="padding:8px;border:1px solid #ccc">Code</th>
