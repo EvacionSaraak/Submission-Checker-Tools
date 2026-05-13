@@ -573,7 +573,9 @@
         if (mostRecent) {
           performingEff = mostRecent.effective || '';
           performingStatus = mostRecent.status || '';
-          performingStatusDisplay = (performingEff ? `${performingEff}${performingStatus ? ' (' + performingStatus + ')' : ''}` : '');
+          // Format the effective date before displaying
+          const formattedEff = formatEffectiveDate(performingEff);
+          performingStatusDisplay = (formattedEff ? `${formattedEff}${performingStatus ? ' (' + performingStatus + ')' : ''}` : '');
         }
 
         // Grouping key: performing clinician, any affiliated facility, and full license history
