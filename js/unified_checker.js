@@ -875,6 +875,109 @@
             };
           });
         }
+      } else if (checkerName === 'clinician') {
+        // Clinician checker uses .view-activities and .view-license-history buttons
+        console.log('[CHECK-ALL] Re-attaching clinician modal event listeners');
+        
+        // Get the parent container that has the modals
+        const parentContainer = clonedTable.closest('#clinician-results') || clonedTable.parentElement;
+        
+        // Re-attach .view-activities button listeners
+        const activityButtons = clonedTable.querySelectorAll('.view-activities');
+        console.log(`[CHECK-ALL] Found ${activityButtons.length} activity buttons`);
+        
+        activityButtons.forEach(btn => {
+          btn.addEventListener('click', function() {
+            const uniqueIdFromButton = this.getAttribute('data-uniqueid');
+            const modalId = this.getAttribute('data-modalid');
+            
+            console.log(`[CHECK-ALL] Activity button clicked: uniqueId=${uniqueIdFromButton}, modalId=${modalId}`);
+            
+            // Get modal data from global storage
+            const modalData = window._clinicianModalData && window._clinicianModalData[uniqueIdFromButton];
+            if (!modalData) {
+              console.error('[CHECK-ALL] Modal data not found for uniqueId:', uniqueIdFromButton);
+              return;
+            }
+            
+            // Find modals with this unique ID in the parent container
+            const activityModal = parentContainer.querySelector(`#activityModal_${uniqueIdFromButton}`);
+            const activityModalText = parentContainer.querySelector(`#activityModalText_${uniqueIdFromButton}`);
+            
+            if (activityModalText && modalData[modalId]) {
+              activityModalText.innerHTML = modalData[modalId];
+            }
+            if (activityModal) {
+              activityModal.style.display = 'block';
+            }
+          });
+        });
+        
+        // Re-attach .view-license-history button listeners
+        const licenseButtons = clonedTable.querySelectorAll('.view-license-history');
+        console.log(`[CHECK-ALL] Found ${licenseButtons.length} license history buttons`);
+        
+        licenseButtons.forEach(btn => {
+          btn.addEventListener('click', function() {
+            const uniqueIdFromButton = this.getAttribute('data-uniqueid');
+            const fullHistory = decodeURIComponent(this.getAttribute('data-fullhistory'));
+            
+            console.log(`[CHECK-ALL] License history button clicked: uniqueId=${uniqueIdFromButton}`);
+            
+            // Find modals with this unique ID in the parent container
+            const licenseHistoryModal = parentContainer.querySelector(`#licenseHistoryModal_${uniqueIdFromButton}`);
+            const licenseHistoryText = parentContainer.querySelector(`#licenseHistoryText_${uniqueIdFromButton}`);
+            
+            if (licenseHistoryText && window._formatClinicianLicenseHistory) {
+              licenseHistoryText.innerHTML = window._formatClinicianLicenseHistory(fullHistory);
+            }
+            if (licenseHistoryModal) {
+              licenseHistoryModal.style.display = 'block';
+            }
+          });
+        });
+        
+        // Re-attach modal close handlers
+        // Find all unique IDs from buttons
+        const uniqueIds = new Set();
+        activityButtons.forEach(btn => uniqueIds.add(btn.getAttribute('data-uniqueid')));
+        licenseButtons.forEach(btn => uniqueIds.add(btn.getAttribute('data-uniqueid')));
+        
+        uniqueIds.forEach(uniqueId => {
+          // Activity modal close handlers
+          const activityModalClose = parentContainer.querySelector(`#activityModalClose_${uniqueId}`);
+          const activityModal = parentContainer.querySelector(`#activityModal_${uniqueId}`);
+          
+          if (activityModalClose && activityModal) {
+            activityModalClose.onclick = function() {
+              activityModal.style.display = 'none';
+            };
+          }
+          
+          if (activityModal) {
+            activityModal.onclick = function(event) {
+              if (event.target === this) this.style.display = 'none';
+            };
+          }
+          
+          // License history modal close handlers
+          const licenseHistoryClose = parentContainer.querySelector(`#licenseHistoryClose_${uniqueId}`);
+          const licenseHistoryModal = parentContainer.querySelector(`#licenseHistoryModal_${uniqueId}`);
+          
+          if (licenseHistoryClose && licenseHistoryModal) {
+            licenseHistoryClose.onclick = function() {
+              licenseHistoryModal.style.display = 'none';
+            };
+          }
+          
+          if (licenseHistoryModal) {
+            licenseHistoryModal.onclick = function(event) {
+              if (event.target === this) this.style.display = 'none';
+            };
+          }
+        });
+        
+        console.log(`[CHECK-ALL] Re-attached event listeners for ${activityButtons.length} activity buttons and ${licenseButtons.length} license buttons`);
       }
       // Add more checker types as needed
     } catch (error) {

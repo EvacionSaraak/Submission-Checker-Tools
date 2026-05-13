@@ -642,6 +642,15 @@
     
     // Generate unique ID for this table's modals to avoid conflicts
     const uniqueId = `clinician_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    // Store modalData globally for Check All to access when re-attaching listeners
+    if (!window._clinicianModalData) {
+      window._clinicianModalData = {};
+    }
+    window._clinicianModalData[uniqueId] = modalData;
+    
+    // Store formatLicenseHistory globally for Check All access
+    window._formatClinicianLicenseHistory = formatLicenseHistory;
 
     // Create container
     const container = document.createElement('div');
