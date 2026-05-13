@@ -160,6 +160,7 @@
               clinicianMap[id] = {
                 name: row['Clinician Name'] || row['Name'] || '',
                 category: row['Clinician Category'] || row['Category'] || row['Specialty'] || '',
+                facility: row['Facility'] || row['Facility License Number'] || row['Facility License'] || '',
               };
             });
             clinicianCount = Object.keys(clinicianMap).length;
@@ -295,6 +296,7 @@
           clinicianMap[id] = {
             name: row['Clinician Name'] || row['Name'] || '',
             category: row['Clinician Category'] || row['Category'] || '',
+            facility: row['Facility'] || row['Facility License Number'] || row['Facility License'] || '',
           };
         });
         clinicianCount = Object.keys(clinicianMap).length;
@@ -428,21 +430,20 @@
     const rows = fullHistory.split(';').map(e => e.trim()).filter(Boolean);
     if (rows.length === 0) return "<em>No history</em>";
     let table = `<table class="modal-license-table"><tr>
-      <th>Facility</th><th>Effective Date</th><th>Status</th></tr>`;
+      <th>Effective Date</th><th>Status</th></tr>`;
     for (const row of rows) {
-      const match = row.match(/^([^:]+):\s*([^\(]+)\s*\(([^)]+)\)$/);
+      // New format: DATE (STATUS)
+      const match = row.match(/^([^\(]+)\s*\(([^)]+)\)$/);
       if (match) {
-        const facility = match[1].trim();
-        const effectiveDate = formatEffectiveDate(match[2].trim());
-        const status = match[3].trim();
+        const effectiveDate = formatEffectiveDate(match[1].trim());
+        const status = match[2].trim();
         
         table += `<tr>
-          <td>${facility}</td>
           <td>${effectiveDate}</td>
           <td>${status}</td>
         </tr>`;
       } else {
-        table += `<tr><td colspan="3">${row}</td></tr>`;
+        table += `<tr><td colspan="2">${row}</td></tr>`;
       }
     }
     table += `</table>`;
@@ -581,12 +582,13 @@
         // Check if performing clinician is pathology-related (exempt from affiliation requirement)
         const isPathology = isPathologyProfession(pid);
 
-        // -- FIX: Accept license at any affiliated facility --
+        // Get facility from ClinicianLicenses (reliable source)
+        const clinicianFacility = (clinicianMap[pid]?.facility || '').toString().trim().toUpperCase();
+
+        // -- FIX: Use facility from ClinicianLicenses instead of License History --
         // For pathology professions, accept any active license regardless of facility affiliation
         const eligible = entries.filter(e => {
-          const fac = (e.facility || '').toString().trim().toUpperCase();
           const effDate = parseDMY(e.effective);
-          const isAffiliated = affiliatedLicenses.has(fac);
           const effOk = !!e.effective && !isNaN(effDate) && effDate <= encounterD;
           const isActive = (e.status || '').toLowerCase() === 'active';
           
@@ -595,7 +597,8 @@
             return effOk && isActive;
           }
           
-          // For non-pathology professions, require affiliated facility
+          // For non-pathology professions, require affiliated facility (from ClinicianLicenses)
+          const isAffiliated = affiliatedLicenses.has(clinicianFacility);
           return isAffiliated && effOk && isActive;
         });
 
@@ -613,7 +616,7 @@
         }
 
         const fullHistory = entries.map(e =>
-          `${(e.facility || '[No Facility]').toString().trim().toUpperCase()}: ${e.effective || '[No Date]'} (${e.status || '[No Status]'})`
+          `${e.effective || '[No Date]'} (${e.status || '[No Status]'})`
         ).join('; ');
 
         if (mostRecent) {
@@ -624,19 +627,22 @@
           performingStatusDisplay = (formattedEff ? `${formattedEff}${performingStatus ? ' (' + performingStatus + ')' : ''}` : '');
         }
 
-        // Grouping key: performing clinician, any affiliated facility, and full license history
-        // (for logging, you may want to group just on pid and fullHistory)
+        // Grouping key: performing clinician and full license history
         const logKey = `${pid}|${fullHistory}`;
 
         if (!clinicianLogs[logKey]) {
+          // Get affiliated status based on facility from ClinicianLicenses
+          const isAffiliated = affiliatedLicenses.has(clinicianFacility);
+          const affiliatedFacilities = clinicianFacility && isAffiliated ? [clinicianFacility] : [];
+          
           clinicianLogs[logKey] = {
             pid,
             performingDisplay,
-            affiliated: Array.from(new Set(entries.map(e => (e.facility || '').toString().trim().toUpperCase()).filter(fac => affiliatedLicenses.has(fac)))),
+            facility: clinicianFacility || '[No Facility in ClinicianLicenses]',
+            affiliated: affiliatedFacilities,
             fullHistory,
             claimIds: [],
             licenses: entries.map(e => ({
-              facility: (e.facility || '').toString().trim().toUpperCase(),
               effective: e.effective,
               status: e.status
             }))
@@ -661,10 +667,10 @@
       }
     }
 
-    // Output single log per clinician/affiliation/license
+    // Output single log per clinician/facility/license
     Object.values(clinicianLogs).forEach(log => {
       console.log(
-        `[Clinician] ${log.performingDisplay} | Affiliated Facilities: [${log.affiliated.join(', ')}] | Claim IDs: [${log.claimIds.join(', ')}] | Licenses:`,
+        `[Clinician] ${log.performingDisplay} | Facility (from ClinicianLicenses): ${log.facility} | Affiliated: ${log.affiliated.length > 0 ? 'Yes' : 'No'} | Claim IDs: [${log.claimIds.join(', ')}] | License History:`,
         log.licenses
       );
     });
