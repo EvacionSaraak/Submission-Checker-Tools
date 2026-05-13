@@ -463,6 +463,7 @@
           // For claim-level data, we'll take the first activity's data
           // or aggregate if there are multiple different values
           orderingClinicians: new Set(),
+          orderingProfessions: new Set(),
           performingClinicians: new Set(),
           performingProfessions: new Set(),
           recentStatuses: new Set(),
@@ -476,6 +477,7 @@
       claimGroups[claimId].activities.push({
         activityId: row.activityId,
         orderingDisplay: row.orderingDisplay,
+        orderingProfession: row.orderingProfession,
         performingDisplay: row.performingDisplay,
         performingProfession: row.performingProfession,
         recentStatus: row.recentStatus,
@@ -485,6 +487,7 @@
       
       // Aggregate unique values
       if (row.orderingDisplay) claimGroups[claimId].orderingClinicians.add(row.orderingDisplay);
+      if (row.orderingProfession) claimGroups[claimId].orderingProfessions.add(row.orderingProfession);
       if (row.performingDisplay) claimGroups[claimId].performingClinicians.add(row.performingDisplay);
       if (row.performingProfession) claimGroups[claimId].performingProfessions.add(row.performingProfession);
       if (row.recentStatus) claimGroups[claimId].recentStatuses.add(row.recentStatus);
@@ -501,6 +504,7 @@
     return Object.values(claimGroups).map(claim => ({
       ...claim,
       orderingDisplay: Array.from(claim.orderingClinicians).join('; '),
+      orderingProfession: Array.from(claim.orderingProfessions).join('; '),
       performingDisplay: Array.from(claim.performingClinicians).join('; '),
       performingProfession: Array.from(claim.performingProfessions).join('; '),
       recentStatus: Array.from(claim.recentStatuses).join('; '),
@@ -551,6 +555,7 @@
         const orderingDisplay = oid ? (
           clinicianMap[oid]?.name ? `${oid} (${clinicianMap[oid].name})` : oid
         ) : '';
+        const orderingProfession = oid ? (clinicianMap[oid]?.category || '') : '';
         const performingDisplay = pid ? (
           clinicianMap[pid]?.name ? `${pid} (${clinicianMap[pid].name})` : pid
         ) : '';
@@ -651,6 +656,7 @@
           encounterStart,
           facilityLicenseNumber: providerId,
           orderingDisplay,
+          orderingProfession,
           performingDisplay,
           performingProfession,
           performingEff,
@@ -721,8 +727,9 @@
       <th>Encounter Start</th>
       <th>Facility License Number</th>
       <th>Ordering Clinician</th>
+      <th>Ordering Profession</th>
       <th>Performing Clinician</th>
-      <th>Profession</th>
+      <th>Performing Profession</th>
       <th>Recent Performing License</th>
       <th>Full License History</th>
       <th>Remarks</th>
@@ -738,6 +745,7 @@
         return `<tr>
           <td>${act.activityId}</td>
           <td>${act.orderingDisplay || ''}</td>
+          <td>${act.orderingProfession || ''}</td>
           <td>${act.performingDisplay || ''}</td>
           <td>${act.performingProfession || ''}</td>
           <td>${act.recentStatus || ''}</td>
@@ -755,8 +763,9 @@
             <tr>
               <th>Activity ID</th>
               <th>Ordering Clinician</th>
+              <th>Ordering Profession</th>
               <th>Performing Clinician</th>
-              <th>Profession</th>
+              <th>Performing Profession</th>
               <th>Recent License</th>
               <th>Remarks</th>
             </tr>
@@ -791,6 +800,7 @@
         <td>${claim.encounterStart}</td>
         <td>${claim.facilityLicenseNumber}</td>
         <td>${claim.orderingDisplay}</td>
+        <td>${claim.orderingProfession}</td>
         <td>${claim.performingDisplay}</td>
         <td>${claim.performingProfession}</td>
         <td>${claim.recentStatus}</td>
@@ -907,8 +917,8 @@
     const headers = [
       'Claim ID', 'Activity Count', 'Encounter Start',
       'Facility License Number',
-      'Ordering Clinician',
-      'Performing Clinician', 'Profession', 'Recent Performing License',
+      'Ordering Clinician', 'Ordering Profession',
+      'Performing Clinician', 'Performing Profession', 'Recent Performing License',
       'Full License History',
       'Remarks'
     ];
@@ -918,6 +928,7 @@
       claim.encounterStart,
       claim.facilityLicenseNumber || '',
       claim.orderingDisplay || '',
+      claim.orderingProfession || '',
       claim.performingDisplay || '',
       claim.performingProfession || '',
       claim.recentStatus || '',
