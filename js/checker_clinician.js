@@ -365,6 +365,46 @@
   }
 
   // Format the license history for modal display as a table
+  // Convert Excel serial date to JavaScript Date
+  function excelSerialToDate(serial) {
+    // Excel serial dates start from 1900-01-01 (serial 1), but Excel has a bug treating 1900 as leap year
+    // Day 1 = 1900-01-01, Day 60 = 1900-02-29 (bug), Day 61 = 1900-03-01
+    const utcDays = Math.floor(serial) - 25569; // 25569 = days between 1900-01-01 and 1970-01-01
+    const ms = utcDays * 86400 * 1000;
+    return new Date(ms);
+  }
+
+  // Format date as "DD-MMM-YYYY" (e.g., "31-Jan-2026")
+  function formatDateDDMMMYYYY(date) {
+    if (!date || !(date instanceof Date) || isNaN(date.getTime())) return '';
+    
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const day = date.getUTCDate();
+    const month = months[date.getUTCMonth()];
+    const year = date.getUTCFullYear();
+    
+    return `${day}-${month}-${year}`;
+  }
+
+  // Convert and format effective date (handles Excel serial dates and string dates)
+  function formatEffectiveDate(dateValue) {
+    if (!dateValue) return '';
+    
+    const trimmed = dateValue.toString().trim();
+    if (!trimmed) return '';
+    
+    // Check if it's a numeric value (Excel serial date)
+    const numericValue = parseFloat(trimmed);
+    if (!isNaN(numericValue) && numericValue > 1000) {
+      // Likely an Excel serial date (dates after 1902)
+      const date = excelSerialToDate(numericValue);
+      return formatDateDDMMMYYYY(date);
+    }
+    
+    // Otherwise, return as-is (already formatted or invalid)
+    return trimmed;
+  }
+
   function formatLicenseHistory(fullHistory) {
     const rows = fullHistory.split(';').map(e => e.trim()).filter(Boolean);
     if (rows.length === 0) return "<em>No history</em>";
@@ -373,10 +413,14 @@
     for (const row of rows) {
       const match = row.match(/^([^:]+):\s*([^\(]+)\s*\(([^)]+)\)$/);
       if (match) {
+        const facility = match[1].trim();
+        const effectiveDate = formatEffectiveDate(match[2].trim());
+        const status = match[3].trim();
+        
         table += `<tr>
-          <td>${match[1].trim()}</td>
-          <td>${match[2].trim()}</td>
-          <td>${match[3].trim()}</td>
+          <td>${facility}</td>
+          <td>${effectiveDate}</td>
+          <td>${status}</td>
         </tr>`;
       } else {
         table += `<tr><td colspan="3">${row}</td></tr>`;
