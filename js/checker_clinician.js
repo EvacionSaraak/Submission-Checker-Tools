@@ -769,20 +769,25 @@
 
     // Attach click handlers for license history modal after a delay (to ensure DOM is ready)
     setTimeout(() => {
-      document.querySelectorAll('.view-license-history').forEach(btn => {
+      // Use container-scoped queries to avoid conflicts with previous results
+      const licenseHistoryModal = container.querySelector('#licenseHistoryModal');
+      const licenseHistoryText = container.querySelector('#licenseHistoryText');
+      const licenseHistoryClose = container.querySelector('#licenseHistoryClose');
+      
+      container.querySelectorAll('.view-license-history').forEach(btn => {
         btn.addEventListener('click', function() {
           const fullHistory = decodeURIComponent(this.getAttribute('data-fullhistory'));
-          document.getElementById('licenseHistoryText').innerHTML = formatLicenseHistory(fullHistory);
-          document.getElementById('licenseHistoryModal').style.display = 'block';
+          if (licenseHistoryText) licenseHistoryText.innerHTML = formatLicenseHistory(fullHistory);
+          if (licenseHistoryModal) licenseHistoryModal.style.display = 'block';
         });
       });
-      const licenseHistoryClose = document.getElementById('licenseHistoryClose');
+      
       if (licenseHistoryClose) {
         licenseHistoryClose.onclick = function() {
-          document.getElementById('licenseHistoryModal').style.display = 'none';
+          if (licenseHistoryModal) licenseHistoryModal.style.display = 'none';
         };
       }
-      const licenseHistoryModal = document.getElementById('licenseHistoryModal');
+      
       if (licenseHistoryModal) {
         licenseHistoryModal.onclick = function(event) {
           if (event.target === this) this.style.display = 'none';
@@ -790,20 +795,24 @@
       }
 
       // Attach click handlers for activities modal
-      document.querySelectorAll('.view-activities').forEach(btn => {
+      const activityModal = container.querySelector('#activityModal');
+      const activityModalText = container.querySelector('#activityModalText');
+      const activityModalClose = container.querySelector('#activityModalClose');
+      
+      container.querySelectorAll('.view-activities').forEach(btn => {
         btn.addEventListener('click', function() {
           const modalId = this.getAttribute('data-modalid');
-          document.getElementById('activityModalText').innerHTML = modalData[modalId];
-          document.getElementById('activityModal').style.display = 'block';
+          if (activityModalText) activityModalText.innerHTML = modalData[modalId];
+          if (activityModal) activityModal.style.display = 'block';
         });
       });
-      const activityModalClose = document.getElementById('activityModalClose');
+      
       if (activityModalClose) {
         activityModalClose.onclick = function() {
-          document.getElementById('activityModal').style.display = 'none';
+          if (activityModal) activityModal.style.display = 'none';
         };
       }
-      const activityModal = document.getElementById('activityModal');
+      
       if (activityModal) {
         activityModal.onclick = function(event) {
           if (event.target === this) this.style.display = 'none';
