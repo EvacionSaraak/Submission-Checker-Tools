@@ -367,7 +367,9 @@
       if (row.performingDisplay) claimGroups[claimId].performingClinicians.add(row.performingDisplay);
       if (row.recentStatus) claimGroups[claimId].recentStatuses.add(row.recentStatus);
       if (row.fullHistory) claimGroups[claimId].fullHistories.add(row.fullHistory);
-      row.remarks.forEach(r => claimGroups[claimId].remarks.add(r));
+      if (row.remarks && Array.isArray(row.remarks)) {
+        row.remarks.forEach(r => claimGroups[claimId].remarks.add(r));
+      }
       
       // If any activity is invalid, mark the claim as invalid
       if (!row.valid) claimGroups[claimId].valid = false;
@@ -528,7 +530,7 @@
     const container = document.createElement('div');
     container.innerHTML =
       `<div class="${pct > 90 ? 'valid-message' : pct > 70 ? 'warning-message' : 'error-message'}">
-        Validation: ${validCt}/${total} activities valid (${pct}%)
+        Validation: ${validCt}/${total} activities valid (${pct}%) across ${claimGroups.length} claim${claimGroups.length === 1 ? '' : 's'}
       </div>` +
       '<table><tr>' +
       '<th>Claim ID</th><th>Activity</th><th>Encounter Start</th><th>Facility License Number</th>' +
