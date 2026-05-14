@@ -101,13 +101,11 @@ function extractClaims(xmlDoc, requiredType = "6") {
     const claimId = claim.querySelector('ID')?.textContent || 'Unknown';
     const enc = claim.querySelector('Encounter');
     const encounterStartStr = enc?.querySelector('Start')?.textContent, encounterEndStr = enc?.querySelector('End')?.textContent;
-    const startType = enc?.querySelector('StartType')?.textContent?.trim();
     if (!encounterStartStr || !encounterEndStr) return;
     const encounterStart = parseDateTime(encounterStartStr), encounterEnd = parseDateTime(encounterEndStr);
     if (!encounterStart || !encounterEnd) return;
     const encMin = Math.floor((encounterEnd - encounterStart) / 60000);
     let baseValid = true, baseRemarks = [];
-    if (startType !== '1') { baseValid = false; baseRemarks.push(`Invalid Encounter StartType: expected 1 but found ${startType || '(missing)'}.`);}
     if (encMin < 0) { baseValid = false; baseRemarks.push('Encounter end is before encounter start.');}
     claim.querySelectorAll('Activity').forEach(activity => {
       const activityId = activity.querySelector('ID')?.textContent || 'Unknown';
