@@ -415,12 +415,14 @@ function getPatternBeforeFirstDigit(str) {
 
 /**
  * Detects if a string looks like an encounter ID
- * Encounter IDs contain letters followed by a digit sequence
+ * Encounter IDs contain letters followed by a digit sequence, no spaces or special chars
  */
 function isEncounterID(str) {
   if (!str || str.length < 5) return false;
   // Must contain at least one letter and one digit
-  return /[A-Z]/i.test(str) && /\d/.test(str);
+  // Must not contain spaces, colons, slashes, or other special chars (except hyphens)
+  // Real encounter IDs: NLYHRC260441907, LURTAC260410485, TMCOP0923806
+  return /[A-Z]/i.test(str) && /\d/.test(str) && /^[A-Z0-9-]+$/i.test(str);
 }
 
 /**
@@ -576,9 +578,12 @@ function formatAuditLogs(inputText) {
     // Process data rows
     const { claimID, visitID, description } = processAuditLogRow(line);
     
-    // Only output valid rows (rows with a claim ID)
-    if (claimID) {
-      const formattedLine = `${currentType}\t\t${currentDate}\t${currentPayer}\t${claimID}\t${visitID}\t${description}`;
+    // Need either a claim ID or visit ID to be valid
+    if (claimID || visitID) {
+      // Output format: Type | (empty) | Date | Payer | ClaimID | VisitID | Description
+      // If it's a Claim ID, put it in the ClaimID column and leave VisitID empty
+      // If it's a Visit ID, leave ClaimID empty and put it in the VisitID column
+      const formattedLine = `${currentType}\t\t${currentDate}\t${currentPayer}\t${claimID}\t${visitID}\t${description}\t`;
       outputLines.push(formattedLine);
     } else {
       // Collect lines that didn't match the format (preserve original line, not trimmed)
