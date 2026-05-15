@@ -1852,7 +1852,8 @@
       // Only include rows that have remarks (not "No remarks")
       if (remarkDivs.length > 0) {
         remarkDivs.forEach(div => {
-          const remarkText = div.textContent.trim();
+          // Replace newlines with spaces to keep everything on one line
+          const remarkText = div.textContent.trim().replace(/\n+/g, ' ').replace(/\s+/g, ' ');
           // Skip "No remarks" entries and source notes
           if (remarkText && remarkText !== 'No remarks' && !div.classList.contains('source-note')) {
             remarks.add(remarkText);
@@ -1860,7 +1861,7 @@
         });
       } else {
         // If no divs, try getting text content directly (some checkers may use plain text)
-        const remarkText = remarksCell.textContent.trim();
+        const remarkText = remarksCell.textContent.trim().replace(/\n+/g, ' ').replace(/\s+/g, ' ');
         if (remarkText && remarkText !== 'No remarks' && remarkText !== '') {
           remarks.add(remarkText);
         }
