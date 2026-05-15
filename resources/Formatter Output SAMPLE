@@ -1,0 +1,16 @@
+Dental		May 15	Thiqa	NLYHRC260441907		Encounter crosses days: 27/04/2026 → 30/04/2026	
+Dental		May 15	Thiqa	NLYHRC260441587		Encounter duration too long (4h 10m). Should be 4 hours maximum.	
+Dental		May 15	Thiqa	NLYHRC260441563		Encounter duration too long (4h 2m). Should be 4 hours maximum.	
+Dental		May 15	Thiqa	NLYHRC260442053		02111 requires at least one observation but none were provided.	
+Dental		May 15	Thiqa	LURTAC260410485		Claim package (Thiqa 1) is different from eligibility (Thiqa 2).	
+Dental		May 15	Thiqa	LURTAC260410465		Claim package (Thiqa 1) is different from eligibility (Thiqa 2).	
+Dental		May 15	Thiqa	LURTAC260410464		Claim package (Thiqa 1) is different from eligibility (Thiqa 2).	
+Dental		May 15	Thiqa	LURTAC260410463		Claim package (Thiqa 1) is different from eligibility (Thiqa 2).	
+Dental		May 15	Thiqa	LURTAC260410459		Claim package (Thiqa 1) is different from eligibility (Thiqa 2).	
+Dental		May 15	Thiqa	LURTAC260410417		Claim package (Thiqa 1) is different from eligibility (Thiqa 2).	
+Dental		May 15	Thiqa	LURTAC260410386		Encounter duration too long (4h 8m). Should be 4 hours maximum.	
+Dental		May 15	Thiqa	LURTAC260410366		Encounter crosses days: 26/04/2026 → 28/04/2026	
+Dental		May 15	Thiqa	LURTAC260410352		Encounter crosses days: 26/04/2026 → 30/04/2026	
+Dental		May 15	Thiqa	LURTAC260410386		Posterior 18 not allowed for Bicuspid code 23311. Posterior 31 not allowed for Bicuspid code 23311.	
+Dental		May 15	CASH		LURTAV260410924	Encounter duration too short (7 min). Should be 10 minutes minimum.
+Dental		May 15	CASH		LURTAV260410902	Kindly confirm if the PT is a non-national and non-resident. EID indicates a non-national non-resident (222); claim can only be Medical Tourism. Kindly add a Medical Tourism observation.	
