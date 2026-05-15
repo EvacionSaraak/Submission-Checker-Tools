@@ -221,9 +221,6 @@
             </button>
           </div>
           <div class="btn-group checker-buttons" role="group" aria-label="Checker buttons">
-            <button type="button" class="btn btn-outline-primary" id="btn-clinician" title="Requires: XML, Clinician List, License Status" disabled>
-              Clinicians
-            </button>
             <button type="button" class="btn btn-outline-primary" id="btn-elig" title="Requires: XML, Eligibility" disabled>
               Eligibility
             </button>
@@ -238,6 +235,9 @@
             </button>
             <button type="button" class="btn btn-outline-primary" id="btn-schema" title="Requires: XML" disabled>
               Schema
+            </button>
+            <button type="button" class="btn btn-outline-primary" id="btn-clinician" title="Requires: XML, Clinician List, License Status" disabled>
+              Clinicians
             </button>
             <button type="button" class="btn btn-outline-primary" id="btn-pricing" title="Requires: XML (uses default pricing if not uploaded)" disabled>
               Pricing
@@ -269,12 +269,12 @@
 
     <!-- Persistent Checker Containers (one per checker, all hidden by default) -->
     <div id="checker-containers">
-      <div id="checker-container-clinician" class="checker-container" style="display:none;"></div>
       <div id="checker-container-elig" class="checker-container" style="display:none;"></div>
       <div id="checker-container-auths" class="checker-container" style="display:none;"></div>
       <div id="checker-container-timings" class="checker-container" style="display:none;"></div>
       <div id="checker-container-teeth" class="checker-container" style="display:none;"></div>
       <div id="checker-container-schema" class="checker-container" style="display:none;"></div>
+      <div id="checker-container-clinician" class="checker-container" style="display:none;"></div>
       <div id="checker-container-pricing" class="checker-container" style="display:none;"></div>
       <div id="checker-container-modifiers" class="checker-container" style="display:none;"></div>
       <div id="checker-container-check-all" class="checker-container" style="display:none;"></div>

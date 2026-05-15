@@ -368,7 +368,7 @@
     const isMedical = claimTypeMedical && claimTypeMedical.checked;
     
     const requirements = {
-      clinician: ['xml', 'clinician', 'status'],
+      clinician: ['xml'], // clinician and status files are auto-loaded from resources
       elig: ['xml', 'eligibility'],
       auths: ['xml', 'auth'],
       timings: ['xml'],
@@ -737,7 +737,7 @@
     }
     
     const fileInputMap = {
-      clinician: { xmlFileInput: 'xml', clinicianFileInput: 'clinician', statusFileInput: 'status' },
+      clinician: { xmlFileInput: 'xml' }, // clinician and status files are auto-loaded from resources
       elig: { xmlFileInput: 'xml', eligibilityFileInput: 'eligibility' },
       auths: { xmlInput: 'xml', xlsxInput: 'auth' },
       timings: { xmlFileInput: 'xml' },
@@ -875,6 +875,109 @@
             };
           });
         }
+      } else if (checkerName === 'clinician') {
+        // Clinician checker uses .view-activities and .view-license-history buttons
+        console.log('[CHECK-ALL] Re-attaching clinician modal event listeners');
+        
+        // Get the parent container that has the modals
+        const parentContainer = clonedTable.closest('#clinician-results') || clonedTable.parentElement;
+        
+        // Re-attach .view-activities button listeners
+        const activityButtons = clonedTable.querySelectorAll('.view-activities');
+        console.log(`[CHECK-ALL] Found ${activityButtons.length} activity buttons`);
+        
+        activityButtons.forEach(btn => {
+          btn.addEventListener('click', function() {
+            const uniqueIdFromButton = this.getAttribute('data-uniqueid');
+            const modalId = this.getAttribute('data-modalid');
+            
+            console.log(`[CHECK-ALL] Activity button clicked: uniqueId=${uniqueIdFromButton}, modalId=${modalId}`);
+            
+            // Get modal data from global storage
+            const modalData = window._clinicianModalData && window._clinicianModalData[uniqueIdFromButton];
+            if (!modalData) {
+              console.error('[CHECK-ALL] Modal data not found for uniqueId:', uniqueIdFromButton);
+              return;
+            }
+            
+            // Find modals with this unique ID in the parent container
+            const activityModal = parentContainer.querySelector(`#activityModal_${uniqueIdFromButton}`);
+            const activityModalText = parentContainer.querySelector(`#activityModalText_${uniqueIdFromButton}`);
+            
+            if (activityModalText && modalData[modalId]) {
+              activityModalText.innerHTML = modalData[modalId];
+            }
+            if (activityModal) {
+              activityModal.style.display = 'block';
+            }
+          });
+        });
+        
+        // Re-attach .view-license-history button listeners
+        const licenseButtons = clonedTable.querySelectorAll('.view-license-history');
+        console.log(`[CHECK-ALL] Found ${licenseButtons.length} license history buttons`);
+        
+        licenseButtons.forEach(btn => {
+          btn.addEventListener('click', function() {
+            const uniqueIdFromButton = this.getAttribute('data-uniqueid');
+            const fullHistory = decodeURIComponent(this.getAttribute('data-fullhistory'));
+            
+            console.log(`[CHECK-ALL] License history button clicked: uniqueId=${uniqueIdFromButton}`);
+            
+            // Find modals with this unique ID in the parent container
+            const licenseHistoryModal = parentContainer.querySelector(`#licenseHistoryModal_${uniqueIdFromButton}`);
+            const licenseHistoryText = parentContainer.querySelector(`#licenseHistoryText_${uniqueIdFromButton}`);
+            
+            if (licenseHistoryText && window._formatClinicianLicenseHistory) {
+              licenseHistoryText.innerHTML = window._formatClinicianLicenseHistory(fullHistory);
+            }
+            if (licenseHistoryModal) {
+              licenseHistoryModal.style.display = 'block';
+            }
+          });
+        });
+        
+        // Re-attach modal close handlers
+        // Find all unique IDs from buttons
+        const uniqueIds = new Set();
+        activityButtons.forEach(btn => uniqueIds.add(btn.getAttribute('data-uniqueid')));
+        licenseButtons.forEach(btn => uniqueIds.add(btn.getAttribute('data-uniqueid')));
+        
+        uniqueIds.forEach(uniqueId => {
+          // Activity modal close handlers
+          const activityModalClose = parentContainer.querySelector(`#activityModalClose_${uniqueId}`);
+          const activityModal = parentContainer.querySelector(`#activityModal_${uniqueId}`);
+          
+          if (activityModalClose && activityModal) {
+            activityModalClose.onclick = function() {
+              activityModal.style.display = 'none';
+            };
+          }
+          
+          if (activityModal) {
+            activityModal.onclick = function(event) {
+              if (event.target === this) this.style.display = 'none';
+            };
+          }
+          
+          // License history modal close handlers
+          const licenseHistoryClose = parentContainer.querySelector(`#licenseHistoryClose_${uniqueId}`);
+          const licenseHistoryModal = parentContainer.querySelector(`#licenseHistoryModal_${uniqueId}`);
+          
+          if (licenseHistoryClose && licenseHistoryModal) {
+            licenseHistoryClose.onclick = function() {
+              licenseHistoryModal.style.display = 'none';
+            };
+          }
+          
+          if (licenseHistoryModal) {
+            licenseHistoryModal.onclick = function(event) {
+              if (event.target === this) this.style.display = 'none';
+            };
+          }
+        });
+        
+        console.log(`[CHECK-ALL] Re-attached event listeners for ${activityButtons.length} activity buttons and ${licenseButtons.length} license buttons`);
       }
       // Add more checker types as needed
     } catch (error) {
@@ -931,12 +1034,12 @@
     // Determine which checkers are available (enabled buttons)
     const availableCheckers = [];
     const checkerButtons = {
-      'clinician': elements.btnClinician,
       'elig': elements.btnElig,
       'auths': elements.btnAuths,
       'timings': elements.btnTimings,
       'teeth': elements.btnTeeth,
       'schema': elements.btnSchema,
+      'clinician': elements.btnClinician,
       'pricing': elements.btnPricing,
       'modifiers': elements.btnModifiers
     };
@@ -1720,8 +1823,8 @@
       return;
     }
     
-    // Use a Map to deduplicate: key = "ClaimID\t\tRemark", value = true
-    const uniqueResults = new Map();
+    // Use a Map to group remarks by ClaimID: key = claimID, value = Set of remark texts
+    const claimRemarks = new Map();
     
     invalidRows.forEach(row => {
       // Get all cells in the row
@@ -1735,6 +1838,9 @@
       // Skip empty claim IDs
       if (!claimID) return;
       
+      if (!claimRemarks.has(claimID)) claimRemarks.set(claimID, new Set());
+      const remarks = claimRemarks.get(claimID);
+      
       // Get the Remarks cell using the dynamically found column index
       const remarksCell = cells[remarksColumnIndex];
       
@@ -1746,26 +1852,26 @@
       // Only include rows that have remarks (not "No remarks")
       if (remarkDivs.length > 0) {
         remarkDivs.forEach(div => {
-          const remarkText = div.textContent.trim();
+          // Replace newlines with spaces to keep everything on one line
+          const remarkText = div.textContent.trim().replace(/\n+/g, ' ').replace(/\s+/g, ' ');
           // Skip "No remarks" entries and source notes
           if (remarkText && remarkText !== 'No remarks' && !div.classList.contains('source-note')) {
-            // Format: CLAIM_ID\t\tRemark - use as Map key to deduplicate
-            const entry = `${claimID}\t\t${remarkText}`;
-            uniqueResults.set(entry, true);
+            remarks.add(remarkText);
           }
         });
       } else {
         // If no divs, try getting text content directly (some checkers may use plain text)
-        const remarkText = remarksCell.textContent.trim();
+        const remarkText = remarksCell.textContent.trim().replace(/\n+/g, ' ').replace(/\s+/g, ' ');
         if (remarkText && remarkText !== 'No remarks' && remarkText !== '') {
-          const entry = `${claimID}\t\t${remarkText}`;
-          uniqueResults.set(entry, true);
+          remarks.add(remarkText);
         }
       }
     });
     
-    // Convert Map keys to array
-    const results = Array.from(uniqueResults.keys());
+    // Build one line per claim: CLAIM_ID\t\t<all remarks joined with a space>
+    const results = Array.from(claimRemarks.entries())
+      .filter(([, remarks]) => remarks.size > 0)
+      .map(([claimID, remarks]) => `${claimID}\t\t${Array.from(remarks).join(' ')}`);
     
     if (results.length === 0) {
       console.log(`[CLIPBOARD] Invalid rows found in ${checkerName} but no remarks to copy`);

@@ -217,15 +217,10 @@ async function handleRun() {
     // ComputedRef is used for per-claim patient share validation
     const computedRef = (match || endoEntry) && refPrice !== null && !Number.isNaN(ref) ? ref : null;
 
-    // Claimed net 0: Invalid for Thiqa (D001); Valid for all other receivers
+    // Claimed net 0: Valid for all receivers
     if (xmlNet === 0) {
-      if (receiverID === 'D001') {
-        status = 'Invalid';
-        remarks.push(`Kindly change ${rec.CPT} from Covered to Excluded.`);
-      } else {
-        status = 'Valid';
-        remarks.push('Claimed Net is 0 (treated as Valid)');
-      }
+      status = 'Valid';
+      remarks.push('Claimed Net is 0 (treated as Valid)');
     } else {
       if (xmlQty <= 0) remarks.push(xmlQty === 0 ? 'Quantity is 0 (invalid)' : 'Quantity is less than 0 (invalid)');
       if (!match && !endoEntry) remarks.push(`No pricing match was found under ${pricingContext}.`);
@@ -288,7 +283,7 @@ async function handleRun() {
         if (actualPS === 0) {
           const msg = 'Patient Share is 0 — this is invalid for Daman (non-Thiqa) claims.';
           actRows.forEach(r => {
-            r.status = 'Invalid';
+            r.status = 'Unknown';
             r.isValid = false;
             r.Remarks = r.Remarks ? `${r.Remarks} ${msg}` : msg;
           });
@@ -338,7 +333,7 @@ async function handleRun() {
         if (actualPS === 0 && !isCash) {
           const msg = 'Patient Share is 0 — this is invalid for non-Thiqa claims.';
           actRows.forEach(r => {
-            r.status = 'Invalid';
+            r.status = 'Unknown';
             r.isValid = false;
             r.Remarks = r.Remarks ? `${r.Remarks} ${msg}` : msg;
           });
@@ -535,7 +530,7 @@ function buildResultsTable(rows) {
 
   const container = document.createElement('div');
   let prevClaimId = null;
-  let html = `<table class="table table-bordered" style="width:100%;border-collapse:collapse"><thead><tr>
+  let html = `<table class="table table-striped table-bordered" style="width:100%;border-collapse:collapse"><thead><tr>
     <th style="padding:8px;border:1px solid #ccc">Claim ID</th>
     <th style="padding:8px;border:1px solid #ccc">Activity ID</th>
     <th style="padding:8px;border:1px solid #ccc">Code</th>
