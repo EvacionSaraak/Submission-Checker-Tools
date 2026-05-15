@@ -394,12 +394,12 @@ function isPayerHeader(line) {
 
 /**
  * Detects if a string looks like an encounter ID
- * Common prefixes: NL, IM, IV, MJ, TM, TA, etc.
+ * Common prefixes: NL, IM, IV, MJ, TM, TA, LURTA, etc.
  */
 function isEncounterID(str) {
   if (!str || str.length < 5) return false;
-  // Encounter IDs typically start with 2-letter prefix followed by alphanumeric
-  const pattern = /^[A-Z]{2}[A-Z0-9]+$/i;
+  // Encounter IDs typically start with 2 or more letters followed by alphanumeric
+  const pattern = /^[A-Z]{2,}[A-Z0-9]+$/i;
   return pattern.test(str);
 }
 
