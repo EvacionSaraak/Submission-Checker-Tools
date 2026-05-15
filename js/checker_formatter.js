@@ -393,15 +393,21 @@ function isPayerHeader(line) {
 }
 
 /**
- * Helper function to get the character immediately before the first digit in a string
- * Returns null if no digit is found or if digit is at position 0
+ * Helper function to get the 1-2 characters immediately before the first digit in a string
+ * Returns an object with single char and two-char patterns, or null if no digit found
+ * Example: "TMCCL0989979" returns { single: 'L', double: 'CL' }
  */
-function getCharBeforeFirstDigit(str) {
+function getPatternBeforeFirstDigit(str) {
   const digitRegex = /\d/;
   for (let i = 0; i < str.length; i++) {
     if (digitRegex.test(str[i])) {
-      // Found first digit, return previous character if it exists
-      return i > 0 ? str[i - 1].toUpperCase() : null;
+      // Found first digit
+      if (i === 0) return null; // Digit at position 0, no pattern before it
+      
+      const single = str[i - 1].toUpperCase();
+      const double = i >= 2 ? str.substring(i - 2, i).toUpperCase() : null;
+      
+      return { single, double };
     }
   }
   return null;
@@ -419,20 +425,26 @@ function isEncounterID(str) {
 
 /**
  * Detects if an encounter ID is a Visit ID
- * Visit IDs have 'V' immediately before the first digit sequence (e.g., NLXMV260408044, LURTAV260410924)
+ * Visit IDs have 'V' or 'OP' immediately before the first digit sequence
+ * Examples: NLXMV260408044, LURTAV260410924, TMCOP0923806
  */
 function isVisitID(str) {
   if (!isEncounterID(str)) return false;
-  return getCharBeforeFirstDigit(str) === 'V';
+  const pattern = getPatternBeforeFirstDigit(str);
+  if (!pattern) return false;
+  return pattern.single === 'V' || pattern.double === 'OP';
 }
 
 /**
  * Detects if an encounter ID is a Claim ID
- * Claim IDs have 'C' immediately before the first digit sequence (e.g., IVMCC260411382)
+ * Claim IDs have 'C' or 'CL' immediately before the first digit sequence
+ * Examples: IVMCC260411382, TMCCL0989979
  */
 function isClaimID(str) {
   if (!isEncounterID(str)) return false;
-  return getCharBeforeFirstDigit(str) === 'C';
+  const pattern = getPatternBeforeFirstDigit(str);
+  if (!pattern) return false;
+  return pattern.single === 'C' || pattern.double === 'CL';
 }
 
 /**
