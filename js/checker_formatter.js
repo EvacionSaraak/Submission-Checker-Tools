@@ -394,35 +394,44 @@ function isPayerHeader(line) {
 
 /**
  * Detects if a string looks like an encounter ID
- * Common prefixes: NL, IM, IV, MJ, TM, TA, LURTA, etc.
+ * Encounter IDs contain letters followed by a digit sequence
  */
 function isEncounterID(str) {
   if (!str || str.length < 5) return false;
-  // Encounter IDs typically start with 2 or more letters followed by alphanumeric
-  const pattern = /^[A-Z]{2,}[A-Z0-9]+$/i;
-  return pattern.test(str);
+  // Must contain at least one letter and one digit
+  return /[A-Z]/i.test(str) && /\d/.test(str);
 }
 
 /**
  * Detects if an encounter ID is a Visit ID
- * Visit IDs have 'V' before the numbers (e.g., NLXMV260408044)
+ * Visit IDs have 'V' immediately before the first digit sequence (e.g., NLXMV260408044, LURTAV260410924)
  */
 function isVisitID(str) {
   if (!isEncounterID(str)) return false;
-  // Look for 'V' followed by digits
-  const pattern = /V\d+$/i;
-  return pattern.test(str);
+  // Find the first digit and check if the character before it is 'V'
+  for (let i = 0; i < str.length; i++) {
+    if (/\d/.test(str[i])) {
+      // Found first digit, check previous character
+      return i > 0 && str[i - 1].toUpperCase() === 'V';
+    }
+  }
+  return false;
 }
 
 /**
  * Detects if an encounter ID is a Claim ID
- * Claim IDs have 'C' before the numbers (e.g., IVMCC260411382)
+ * Claim IDs have 'C' immediately before the first digit sequence (e.g., IVMCC260411382)
  */
 function isClaimID(str) {
   if (!isEncounterID(str)) return false;
-  // Look for 'C' followed by digits
-  const pattern = /C\d+$/i;
-  return pattern.test(str);
+  // Find the first digit and check if the character before it is 'C'
+  for (let i = 0; i < str.length; i++) {
+    if (/\d/.test(str[i])) {
+      // Found first digit, check previous character
+      return i > 0 && str[i - 1].toUpperCase() === 'C';
+    }
+  }
+  return false;
 }
 
 /**
