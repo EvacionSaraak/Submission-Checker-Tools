@@ -404,6 +404,28 @@ function isEncounterID(str) {
 }
 
 /**
+ * Detects if an encounter ID is a Visit ID
+ * Visit IDs have 'V' before the numbers (e.g., NLXMV260408044)
+ */
+function isVisitID(str) {
+  if (!isEncounterID(str)) return false;
+  // Look for 'V' followed by digits
+  const pattern = /V\d+$/i;
+  return pattern.test(str);
+}
+
+/**
+ * Detects if an encounter ID is a Claim ID
+ * Claim IDs have 'C' before the numbers (e.g., IVMCC260411382)
+ */
+function isClaimID(str) {
+  if (!isEncounterID(str)) return false;
+  // Look for 'C' followed by digits
+  const pattern = /C\d+$/i;
+  return pattern.test(str);
+}
+
+/**
  * Detects if a string is a Cash File ID
  * Cash IDs start with T or I (e.g., TMCOP0872245, IMCOP0146458)
  */
@@ -444,12 +466,21 @@ function processAuditLogRow(line) {
     }
   }
   
-  // Take the first ID as Claim ID, second ID (if exists) as Visit ID
-  if (ids.length > 0) {
-    claimID = ids[0];
-  }
-  if (ids.length > 1) {
-    visitID = ids[1];
+  // Distinguish between Claim IDs and Visit IDs based on the letter before the numbers
+  // 'C' before numbers = Claim ID (e.g., IVMCC260411382)
+  // 'V' before numbers = Visit ID (e.g., NLXMV260408044)
+  for (let id of ids) {
+    if (isClaimID(id) && !claimID) {
+      claimID = id;
+    } else if (isVisitID(id) && !visitID) {
+      visitID = id;
+    } else if (!claimID) {
+      // If no specific type marker found, default to Claim ID for the first unassigned ID
+      claimID = id;
+    } else if (!visitID) {
+      // Second unassigned ID defaults to Visit ID
+      visitID = id;
+    }
   }
   description = descParts.join(' ');
   
