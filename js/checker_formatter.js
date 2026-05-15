@@ -393,6 +393,21 @@ function isPayerHeader(line) {
 }
 
 /**
+ * Helper function to get the character immediately before the first digit in a string
+ * Returns null if no digit is found or if digit is at position 0
+ */
+function getCharBeforeFirstDigit(str) {
+  const digitRegex = /\d/;
+  for (let i = 0; i < str.length; i++) {
+    if (digitRegex.test(str[i])) {
+      // Found first digit, return previous character if it exists
+      return i > 0 ? str[i - 1].toUpperCase() : null;
+    }
+  }
+  return null;
+}
+
+/**
  * Detects if a string looks like an encounter ID
  * Encounter IDs contain letters followed by a digit sequence
  */
@@ -408,14 +423,7 @@ function isEncounterID(str) {
  */
 function isVisitID(str) {
   if (!isEncounterID(str)) return false;
-  // Find the first digit and check if the character before it is 'V'
-  for (let i = 0; i < str.length; i++) {
-    if (/\d/.test(str[i])) {
-      // Found first digit, check previous character
-      return i > 0 && str[i - 1].toUpperCase() === 'V';
-    }
-  }
-  return false;
+  return getCharBeforeFirstDigit(str) === 'V';
 }
 
 /**
@@ -424,14 +432,7 @@ function isVisitID(str) {
  */
 function isClaimID(str) {
   if (!isEncounterID(str)) return false;
-  // Find the first digit and check if the character before it is 'C'
-  for (let i = 0; i < str.length; i++) {
-    if (/\d/.test(str[i])) {
-      // Found first digit, check previous character
-      return i > 0 && str[i - 1].toUpperCase() === 'C';
-    }
-  }
-  return false;
+  return getCharBeforeFirstDigit(str) === 'C';
 }
 
 /**
