@@ -399,6 +399,16 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
     // Required fields
     ["ID", "MemberID", "PayerID", "ProviderID", "EmiratesIDNumber", "Gross", "PatientShare", "Net"].forEach(tag => invalidIfNull(tag, claim));
 
+    // PatientShare decimal precision check (must have at most 2 decimal places)
+    const patientShareRaw = text("PatientShare");
+    if (patientShareRaw) {
+      const dotIndex = patientShareRaw.indexOf('.');
+      if (dotIndex !== -1 && patientShareRaw.length - dotIndex - 1 > 2) {
+        const rounded = parseFloat(patientShareRaw).toFixed(2);
+        invalidFields.push(`PatientShare has invalid precision: \`${patientShareRaw}\`. Should be \`${rounded}\`.`);
+      }
+    }
+
     // MemberID check - only check for leading zero if ReceiverID is A001 (Daman) or D001 (Thiqa)
     const memberID = text("MemberID");
     if (shouldCheckLeadingZero && memberID && /^0/.test(memberID)) {
