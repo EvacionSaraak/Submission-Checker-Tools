@@ -7,11 +7,13 @@ const messageBox = document.getElementById('messageBox');
 
 const eligibilityPanel = document.getElementById('eligibility-panel');
 const reportingPanel = document.getElementById('reporting-panel');
+const reportingFullPanel = document.getElementById('reporting-full-panel');
 const xmlPanel = document.getElementById('xml-panel');
 const errorsPanel = document.getElementById('errors-panel');
 
 const eligibilityInput = document.getElementById('eligibility-files');
 const reportingInput = document.getElementById('reporting-files');
+const reportingFullInput = document.getElementById('reporting-full-files');
 const xmlInput = document.getElementById('xml-files');
 
 // Errors panel elements
@@ -35,24 +37,35 @@ document.getElementById('mode-selector').addEventListener('change', e => {
   if (mode === 'eligibility') {
     eligibilityPanel.classList.remove('hidden');
     reportingPanel.classList.add('hidden');
+    reportingFullPanel.classList.add('hidden');
     xmlPanel.classList.add('hidden');
     errorsPanel.classList.add('hidden');
     combineButton.style.display = '';
   } else if (mode === 'reporting') {
     eligibilityPanel.classList.add('hidden');
     reportingPanel.classList.remove('hidden');
+    reportingFullPanel.classList.add('hidden');
+    xmlPanel.classList.add('hidden');
+    errorsPanel.classList.add('hidden');
+    combineButton.style.display = '';
+  } else if (mode === 'reporting_full') {
+    eligibilityPanel.classList.add('hidden');
+    reportingPanel.classList.add('hidden');
+    reportingFullPanel.classList.remove('hidden');
     xmlPanel.classList.add('hidden');
     errorsPanel.classList.add('hidden');
     combineButton.style.display = '';
   } else if (mode === 'xml') {
     eligibilityPanel.classList.add('hidden');
     reportingPanel.classList.add('hidden');
+    reportingFullPanel.classList.add('hidden');
     xmlPanel.classList.remove('hidden');
     errorsPanel.classList.add('hidden');
     combineButton.style.display = '';
   } else if (mode === 'errors') {
     eligibilityPanel.classList.add('hidden');
     reportingPanel.classList.add('hidden');
+    reportingFullPanel.classList.add('hidden');
     xmlPanel.classList.add('hidden');
     errorsPanel.classList.remove('hidden');
     combineButton.style.display = 'none';
@@ -193,6 +206,7 @@ combineButton.addEventListener('click', async () => {
     const mode = document.querySelector('input[name="mode"]:checked').value;
     const inputFiles = mode === 'eligibility' ? eligibilityInput.files : 
                        mode === 'reporting' ? reportingInput.files : 
+                       mode === 'reporting_full' ? reportingFullInput.files :
                        xmlInput.files;
 
     if (!inputFiles.length) {
