@@ -806,7 +806,8 @@ async function combineReportingsFull(fileEntries) {
 
     let wb;
     try {
-      wb = XLSX.read(buffer, { type: 'array', cellDates: true });
+      // Keep native Excel date serials intact (avoid JS Date conversion)
+      wb = XLSX.read(buffer, { type: 'array', cellDates: false });
     } catch (err) {
       log(`Failed to read file ${name}: ${err.message}`, 'ERROR');
       continue;
@@ -818,7 +819,8 @@ async function combineReportingsFull(fileEntries) {
     }
 
     const ws = wb.Sheets[wb.SheetNames[0]];
-    const sheetData = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false });
+    // raw:true preserves numeric serial values from the sheet
+    const sheetData = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: true });
     if (!Array.isArray(sheetData) || sheetData.length === 0) {
       log(`File ${name} skipped: no rows found`, 'WARN');
       continue;
