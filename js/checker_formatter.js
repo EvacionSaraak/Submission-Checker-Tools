@@ -402,7 +402,7 @@ function isDEBTSectionHeader(line) {
  */
 function isPayerHeader(line) {
   const trimmed = line.trim().toUpperCase();
-  const payers = ['CASH', 'THIQA', 'NAS', 'MEDNET', 'NEXTCARE', 'DAMAN', 'HAAD', 'ADNIC', 'NEURON', 'NGI'];
+  const payers = ['CASH', 'THIQA', 'NAS', 'MEDNET', 'NEXTCARE', 'DAMAN', 'HAAD', 'ADNIC', 'NEURON', 'NGI', 'SAICO'];
   return payers.includes(trimmed);
 }
 
