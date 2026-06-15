@@ -22,7 +22,7 @@ async function handleRun() {
   resetUI();
   try {
     let xmlFile = fileEl('xml-file'), xlsxFile = fileEl('xlsx-file');
-    
+
     // Fallback to unified checker files cache
     if (!xmlFile && window.unifiedCheckerFiles && window.unifiedCheckerFiles.xml) {
       xmlFile = window.unifiedCheckerFiles.xml;
@@ -39,13 +39,16 @@ async function handleRun() {
 
     const [xmlText, dentalPricingRaw, clinicianData, endoPricingRaw] = await Promise.all([
       readFileText(xmlFile),
-      fetch('../json/dental_pricing.json').then(r => r.json()).catch(e => { console.warn('[PRICING] Failed to load dental_pricing.json:', e); return []; }),
+      fetch('../json/dental_pricing.json').then(r => r.json()).catch(e => {
+        console.warn('[PRICING] Failed to load dental_pricing.json:', e);
+        return [];
+      }),
       fetch('../json/clinician_licenses.json').then(r => r.json()).catch(() => []),
       fetch('../json/endo_pricing.json').then(r => r.json()).catch(() => [])
     ]);
 
     if (!Array.isArray(dentalPricingRaw) || dentalPricingRaw.length === 0) {
-      throw new Error('Dental pricing data could not be loaded. Ensure dental_pricing.json is present in the json/ folder.');
+      throw new Error('Dental pricing data could not be loaded.\nEnsure dental_pricing.json is present in the json/ folder.');
     }
 
     // If an XLSX was manually uploaded, build an XLSX-based matcher for override pricing
@@ -67,6 +70,7 @@ async function handleRun() {
     const headerNode = xmlDoc.querySelector('Header');
     const receiverID = headerNode?.querySelector('ReceiverID')?.textContent.trim() || '';
     console.log(`[PRICING] ReceiverID: ${receiverID || '(MISSING)'}`);
+
     if (receiverID !== 'D001' && receiverID !== 'A001') {
       console.log(`[PRICING] ReceiverID "${receiverID}" is non-Thiqa/non-Daman — prices will be marked Unknown; PS=0 check will still apply.`);
     }
@@ -79,6 +83,7 @@ async function handleRun() {
       const lic = String(e['Phy Lic'] || '').trim();
       if (lic) clinicianSpecialtyMap.set(lic, String(e['Specialty'] || '').trim());
     });
+
     const endoPricingMap = new Map();
     (Array.isArray(endoPricingRaw) ? endoPricingRaw : []).forEach(e => {
       if (e.code) endoPricingMap.set(normalizeCode(e.code), e);
@@ -87,185 +92,197 @@ async function handleRun() {
     showProgress(50, 'Comparing records');
 
     const output = extracted.map(rec => {
-    const remarks = []; let status = 'Invalid';
-    const facility = rec.FacilityID || '';
-    const xmlNet = Number(rec.Net || 0), xmlQty = Number(rec.Quantity || 0);
+      const remarks = [];
+      let status = 'Invalid';
+      const facility = rec.FacilityID || '';
+      const xmlNet = Number(rec.Net || 0), xmlQty = Number(rec.Quantity || 0);
 
-    // Non-Thiqa, non-Daman: no reference pricing available — mark all as Unknown.
-    // Exception: HAAD with claimed net = 0 is always Valid.
-    // PS=0 → Invalid is enforced in a later pass over claim groups (non-HAAD only).
-    if (receiverID !== 'D001' && receiverID !== 'A001') {
-      const isHAAD = receiverID.toUpperCase() === 'HAAD';
-      const netZeroValid = isHAAD && xmlNet === 0;
-      return {
-        ClaimID: rec.ClaimID || '',
-        ActivityID: rec.ActivityID || '',
-        CPT: rec.CPT || '',
-        ClaimedNet: rec.Net || '',
-        ClaimedQty: rec.Quantity || '',
-        ReferenceNetPrice: '',
-        PricingRow: null,
-        XmlRow: rec,
-        isValid: netZeroValid,
-        status: netZeroValid ? 'Valid' : 'Unknown',
-        Remarks: netZeroValid ? 'Claimed Net is 0 (treated as Valid).' : '',
-        ComputedRef: null,
-        xmlNetNum: xmlNet,
-        PatientShare: rec.PatientShare || '0'
-      };
-    }
+      // Non-Thiqa, non-Daman: no reference pricing available — mark all as Unknown.
+      // Exception: HAAD with claimed net = 0 is always Valid.
+      // PS=0 → Invalid is enforced in a later pass over claim groups (non-HAAD only).
+      if (receiverID !== 'D001' && receiverID !== 'A001') {
+        const isHAAD = receiverID.toUpperCase() === 'HAAD';
+        const netZeroValid = isHAAD && xmlNet === 0;
+        return {
+          ClaimID: rec.ClaimID || '',
+          ActivityID: rec.ActivityID || '',
+          CPT: rec.CPT || '',
+          ClaimedNet: rec.Net || '',
+          ClaimedQty: rec.Quantity || '',
+          ReferenceNetPrice: '',
+          PricingRow: null,
+          XmlRow: rec,
+          isValid: netZeroValid,
+          status: netZeroValid ? 'Valid' : 'Unknown',
+          Remarks: netZeroValid ? 'Claimed Net is 0 (treated as Valid).' : '',
+          ComputedRef: null,
+          xmlNetNum: xmlNet,
+          PatientShare: rec.PatientShare || '0'
+        };
+      }
 
-    // Special rule: code 02111 must always have a net price of 0 for Thiqa (D001) and Daman (A001)
-    if (normalizeCode(rec.CPT) === '2111' && (receiverID === 'D001' || receiverID === 'A001')) {
-      const insurerLabel = receiverID === 'D001' ? 'Thiqa' : 'Daman';
+      // Special rule: code 02111 must always have a net price of 0 for Thiqa (D001) and Daman (A001)
+      if (normalizeCode(rec.CPT) === '2111' && (receiverID === 'D001' || receiverID === 'A001')) {
+        const insurerLabel = receiverID === 'D001' ? 'Thiqa' : 'Daman';
+        if (xmlNet === 0) {
+          status = 'Valid';
+          remarks.push(`Code 02111 is correctly priced at 0 for ${insurerLabel}.`);
+        } else {
+          status = 'Invalid';
+          remarks.push(`Code 02111 must always have a net price of 0 for ${insurerLabel}.\nClaimed Net: ${xmlNet}.`);
+        }
+        return {
+          ClaimID: rec.ClaimID || '',
+          ActivityID: rec.ActivityID || '',
+          CPT: rec.CPT || '',
+          ClaimedNet: rec.Net || '',
+          ClaimedQty: rec.Quantity || '',
+          ReferenceNetPrice: '0',
+          PricingRow: null,
+          XmlRow: rec,
+          isValid: status === 'Valid',
+          status,
+          Remarks: remarks.map(s => s && !s.endsWith('.') ? s + '.' : s).join(' '),
+          ComputedRef: 0,
+          xmlNetNum: xmlNet,
+          PatientShare: rec.PatientShare || '0'
+        };
+      }
+
+      // Determine reference price and the matched pricing row
+      let refPrice = '';
+      let matchRow = null;
+
+      // Compute a human-readable context string for whichever pricing schedule applies.
+      // This initial value may be overridden by the endo-pricing block below when the code falls under Endodontist Pricing.
+      let pricingContext;
+      if (xlsxMatcher) {
+        const isAlyaharGroup = facility === 'MF5357' || facility === 'MF7231' || facility === 'MF232';
+        pricingContext = isAlyaharGroup ? 'Alyahar/Emirates/Al Wagan Thiqa Pricing' : 'Standard Thiqa Pricing';
+      } else if (receiverID === 'A001') {
+        const isDamanKhabisiAlyahar = facility === 'MF5020' || facility === 'MF5357';
+        pricingContext = isDamanKhabisiAlyahar ? 'Daman – Khabisi/Al Yahar pricing' : 'Daman – Standard pricing';
+      } else {
+        const isThiqaAlyaharGroup = facility === 'MF5357' || facility === 'MF7231' || facility === 'MF232';
+        pricingContext = isThiqaAlyaharGroup ? 'Alyahar/Emirates/Al Wagan Thiqa Pricing' : 'Standard Thiqa Pricing';
+      }
+
+      if (xlsxMatcher) {
+        // Manual XLSX override: expects Thiqa-style two-column layout with
+        // "Other Facilities" (primary) and "Alyahar, Emirates, Al Wagan" (secondary) columns.
+        const xlsxMatch = xlsxMatcher.find(rec.CPT);
+        if (xlsxMatch) {
+          const isAlyaharGroup = facility === 'MF5357' || facility === 'MF7231' || facility === 'MF232';
+          refPrice = isAlyaharGroup ? xlsxMatch._secondaryPrice : xlsxMatch._primaryPrice;
+          matchRow = xlsxMatch;
+        }
+      } else {
+        // Default: JSON-based pricing, routed by ReceiverID and FacilityID
+        const jsonMatch = jsonMatcher.find(rec.CPT);
+        if (jsonMatch) {
+          if (receiverID === 'A001') {
+            const isDamanKhabisiAlyahar = facility === 'MF5020' || facility === 'MF5357';
+            refPrice = isDamanKhabisiAlyahar ? jsonMatch.daman_khabisi_alyahar : jsonMatch.daman_default;
+          } else {
+            const isThiqaAlyaharGroup = facility === 'MF5357' || facility === 'MF7231' || facility === 'MF232';
+            refPrice = isThiqaAlyaharGroup ? jsonMatch.thiqa_alyahar : jsonMatch.thiqa_other;
+          }
+          matchRow = jsonMatch;
+        }
+      }
+
+      const match = matchRow; // kept for downstream "no pricing match found" checks
+
+      // Endodontist pricing override:
+      // - Only applies to Thiqa/D001.
+      // - Only applies on/after ENDO_PRICING_CUTOFF.
+      // - Endodontists use endo_price.
+      // - Non-Endodontists keep the regular facility price unless gp_price is explicitly supplied.
+      // - The "Endodontist pricing cannot be used" warning only appears when the XML net appears to be using endo_price.
+      const endoEntry = receiverID === 'D001' ? endoPricingMap.get(normalizeCode(rec.CPT)) : undefined;
+      let nonEndoUsedEndoPrice = false;
+      let nonEndoClinicianSpec = '';
+
+      if (endoEntry) {
+        const encounterDate = parseEncounterDate(rec.EncounterDate);
+        const isAfterCutoff = encounterDate !== null && encounterDate >= ENDO_PRICING_CUTOFF;
+
+        if (isAfterCutoff) {
+          const clinicianSpec = clinicianSpecialtyMap.get(rec.ClinicianLic || '') || '';
+          const isEndo = clinicianSpec === 'Endodontics';
+
+          if (isEndo) {
+            refPrice = endoEntry.endo_price;
+            pricingContext = 'Endodontist Pricing';
+          } else {
+            const endoRef = Number(endoEntry.endo_price);
+            const xmlUnit = xmlQty > 0 ? xmlNet / xmlQty : NaN;
+
+            nonEndoClinicianSpec = clinicianSpec || 'Non-Endodontist';
+            nonEndoUsedEndoPrice =
+              Number.isFinite(endoRef) &&
+              (xmlNet === endoRef || xmlUnit === endoRef || xmlNet * 2 === endoRef);
+
+            if (endoEntry.gp_price !== undefined && endoEntry.gp_price !== null && endoEntry.gp_price !== '') {
+              refPrice = endoEntry.gp_price;
+            }
+          }
+        }
+      }
+
+      const ref = Number(refPrice ?? NaN);
+
+      // ComputedRef is used for per-claim patient share validation
+      const computedRef = (match || endoEntry) && refPrice !== null && !Number.isNaN(ref) ? ref : null;
+
+      // Claimed net 0: Valid for all receivers
       if (xmlNet === 0) {
         status = 'Valid';
-        remarks.push(`Code 02111 is correctly priced at 0 for ${insurerLabel}.`);
+        remarks.push('Claimed Net is 0 (treated as Valid)');
       } else {
-        status = 'Invalid';
-        remarks.push(`Code 02111 must always have a net price of 0 for ${insurerLabel}. Claimed Net: ${xmlNet}.`);
+        if (xmlQty <= 0) remarks.push(xmlQty === 0 ? 'Quantity is 0 (invalid)' : 'Quantity is less than 0 (invalid)');
+        if (!match && !endoEntry) remarks.push(`No pricing match was found under ${pricingContext}.`);
+        if (endoEntry && refPrice === null) remarks.push(`Code ${rec.CPT} has no available price under ${pricingContext}.`);
+        if ((match || endoEntry) && refPrice !== null && Number.isNaN(ref)) remarks.push(`The reference price is not a valid number under ${pricingContext}.`);
+
+        const hasValidRef = (match || endoEntry) && refPrice !== null && !Number.isNaN(ref);
+
+        if (hasValidRef && ref === 0) {
+          status = 'Unknown';
+          remarks.push(`The reference price is 0 under ${pricingContext} (status Unknown).`);
+        } else if (hasValidRef && xmlQty > 0) {
+          if (xmlNet === ref) status = 'Valid';
+          else if ((xmlNet / xmlQty) === ref) status = 'Valid';
+          else if (xmlNet * 2 === ref) status = 'Valid';
+          else if (normalizeCode(rec.CPT) === '42702' && xmlNet === ref * 2) status = 'Valid';
+          else if (nonEndoUsedEndoPrice) {
+            remarks.push(`Pricing for ${rec.CPT} is ${ref} following ${pricingContext}.\nEndodontist pricing cannot be used for ${nonEndoClinicianSpec}.`);
+          } else if (receiverID === 'A001') {
+            const copayPct = Math.round((ref * xmlQty - xmlNet) / (ref * xmlQty) * 10000) / 100;
+            remarks.push(`Copay: ${copayPct}%.`);
+          } else {
+            remarks.push(`Claimed Net ${xmlNet} does not match the reference price of ${ref} under ${pricingContext}.`);
+          }
+        }
       }
+
       return {
         ClaimID: rec.ClaimID || '',
         ActivityID: rec.ActivityID || '',
         CPT: rec.CPT || '',
         ClaimedNet: rec.Net || '',
         ClaimedQty: rec.Quantity || '',
-        ReferenceNetPrice: '0',
-        PricingRow: null,
+        ReferenceNetPrice: refPrice || '',
+        PricingRow: matchRow || null,
         XmlRow: rec,
         isValid: status === 'Valid',
         status,
         Remarks: remarks.map(s => s && !s.endsWith('.') ? s + '.' : s).join(' '),
-        ComputedRef: 0,
+        ComputedRef: computedRef,
         xmlNetNum: xmlNet,
         PatientShare: rec.PatientShare || '0'
       };
-    }
-
-    // Determine reference price and the matched pricing row
-    let refPrice = '';
-    let matchRow = null;
-
-    // Compute a human-readable context string for whichever pricing schedule applies.
-    // This initial value may be overridden by the endo-pricing block below (which runs
-    // after the regular match attempt) when the code falls under Endodontist Pricing.
-    // Every remark message ends with "under ${pricingContext}" so they share the same structure.
-    let pricingContext;
-    if (xlsxMatcher) {
-      // XLSX is a Thiqa-style manual override; use the same Thiqa labels so the source
-      // file format does not leak into user-facing messages.
-      const isAlyaharGroup = facility === 'MF5357' || facility === 'MF7231' || facility === 'MF232';
-      pricingContext = isAlyaharGroup ? 'Alyahar/Emirates/Al Wagan Thiqa Pricing' : 'Standard Thiqa Pricing';
-    } else if (receiverID === 'A001') {
-      const isDamanKhabisiAlyahar = facility === 'MF5020' || facility === 'MF5357';
-      pricingContext = isDamanKhabisiAlyahar ? 'Daman – Khabisi/Al Yahar pricing' : 'Daman – Standard pricing';
-    } else {
-      const isThiqaAlyaharGroup = facility === 'MF5357' || facility === 'MF7231' || facility === 'MF232';
-      pricingContext = isThiqaAlyaharGroup ? 'Alyahar/Emirates/Al Wagan Thiqa Pricing' : 'Standard Thiqa Pricing';
-    }
-
-    if (xlsxMatcher) {
-      // Manual XLSX override: expects Thiqa-style two-column layout with
-      // "Other Facilities" (primary) and "Alyahar, Emirates, Al Wagan" (secondary) columns.
-      const xlsxMatch = xlsxMatcher.find(rec.CPT);
-      if (xlsxMatch) {
-        const isAlyaharGroup = facility === 'MF5357' || facility === 'MF7231' || facility === 'MF232';
-        refPrice = isAlyaharGroup ? xlsxMatch._secondaryPrice : xlsxMatch._primaryPrice;
-        matchRow = xlsxMatch;
-      }
-    } else {
-      // Default: JSON-based pricing, routed by ReceiverID and FacilityID
-      const jsonMatch = jsonMatcher.find(rec.CPT);
-      if (jsonMatch) {
-        if (receiverID === 'A001') {
-          // Daman: 2025 prices for Khabisi (MF5020) and Al Yahar (MF5357); default otherwise
-          const isDamanKhabisiAlyahar = facility === 'MF5020' || facility === 'MF5357';
-          refPrice = isDamanKhabisiAlyahar ? jsonMatch.daman_khabisi_alyahar : jsonMatch.daman_default;
-        } else {
-          // Thiqa (D001): Alyahar/Emirates/Al Wagan group gets thiqa_alyahar; others get thiqa_other
-          const isThiqaAlyaharGroup = facility === 'MF5357' || facility === 'MF7231' || facility === 'MF232';
-          refPrice = isThiqaAlyaharGroup ? jsonMatch.thiqa_alyahar : jsonMatch.thiqa_other;
-        }
-        matchRow = jsonMatch;
-      }
-    }
-
-    const match = matchRow; // kept for downstream 'no pricing match found' checks
-
-    // Override with endo pricing for applicable codes (only for Thiqa/D001, and only for dates on or after Feb 20, 2026)
-    const endoEntry = receiverID === 'D001' ? endoPricingMap.get(normalizeCode(rec.CPT)) : undefined;
-    let nonEndoEndoCase = false;
-    let nonEndoClinicianSpec = '';
-    if (endoEntry) {
-      const encounterDate = parseEncounterDate(rec.EncounterDate);
-      const isAfterCutoff = encounterDate !== null && encounterDate >= ENDO_PRICING_CUTOFF;
-      if (isAfterCutoff) {
-        const clinicianSpec = clinicianSpecialtyMap.get(rec.ClinicianLic || '') || '';
-        const isEndo = clinicianSpec === 'Endodontics';
-        refPrice = isEndo ? endoEntry.endo_price : endoEntry.gp_price;
-        if (isEndo) {
-          pricingContext = 'Endodontist Pricing';
-        } else {
-          nonEndoEndoCase = true;
-          nonEndoClinicianSpec = clinicianSpec;
-        }
-      }
-    }
-
-    const ref = Number(refPrice ?? NaN);
-    // ComputedRef is used for per-claim patient share validation
-    const computedRef = (match || endoEntry) && refPrice !== null && !Number.isNaN(ref) ? ref : null;
-
-    // Claimed net 0: Valid for all receivers
-    if (xmlNet === 0) {
-      status = 'Valid';
-      remarks.push('Claimed Net is 0 (treated as Valid)');
-    } else {
-      if (xmlQty <= 0) remarks.push(xmlQty === 0 ? 'Quantity is 0 (invalid)' : 'Quantity is less than 0 (invalid)');
-      if (!match && !endoEntry) remarks.push(`No pricing match was found under ${pricingContext}.`);
-      if (endoEntry && refPrice === null) remarks.push(`Code ${rec.CPT} has no available price under ${pricingContext}.`);
-      if ((match || endoEntry) && refPrice !== null && Number.isNaN(ref)) {
-        remarks.push(`The reference price is not a valid number under ${pricingContext}.`);
-      }
-
-      const hasValidRef = (match || endoEntry) && refPrice !== null && !Number.isNaN(ref);
-      if (hasValidRef && ref === 0) {
-        status = 'Unknown';
-        remarks.push(`The reference price is 0 under ${pricingContext} (status Unknown).`);
-      } else if (hasValidRef && xmlQty > 0) {
-        if (xmlNet === ref) status = 'Valid';
-        else if ((xmlNet / xmlQty) === ref) status = 'Valid';
-        else if (xmlNet * 2 === ref) status = 'Valid';
-        // Special case for code 42702: allow if XML price is exactly double the reference
-        // This code requires special handling where double the reference price is also valid
-        else if (normalizeCode(rec.CPT) === '42702' && xmlNet === ref * 2) status = 'Valid';
-        else if (nonEndoEndoCase) {
-          remarks.push(`Pricing for ${rec.CPT} is ${ref} following ${pricingContext}. Endo Pricing cannot be used for ${nonEndoClinicianSpec}.`);
-        } else if (receiverID === 'A001') {
-          const copayPct = Math.round((ref * xmlQty - xmlNet) / (ref * xmlQty) * 10000) / 100;
-          remarks.push(`Copay: ${copayPct}%.`);
-        } else remarks.push(`Claimed Net ${xmlNet} does not match the reference price of ${ref} under ${pricingContext}.`);
-      }
-    }
-  
-    return {
-      ClaimID: rec.ClaimID || '',
-      ActivityID: rec.ActivityID || '',
-      CPT: rec.CPT || '',
-      ClaimedNet: rec.Net || '',
-      ClaimedQty: rec.Quantity || '',
-      ReferenceNetPrice: refPrice || '',
-      PricingRow: matchRow || null,
-      XmlRow: rec,
-      isValid: status === 'Valid',
-      status,
-      Remarks: remarks.map(s => s && !s.endsWith('.') ? s + '.' : s).join(' '),
-      ComputedRef: computedRef,
-      xmlNetNum: xmlNet,
-      PatientShare: rec.PatientShare || '0'
-    };
-  });
+    });
 
     // ---- Patient share validation (Daman A001 only) ----
     // For Daman: expectedPS = Σ(ref × qty) − Σ(activity net); PS = 0 is always an error.
@@ -292,6 +309,7 @@ async function handleRun() {
           const totalRef = actRows.reduce((sum, r) => {
             return sum + (r.ComputedRef !== null ? r.ComputedRef * Number(r.ClaimedQty || 1) : r.xmlNetNum);
           }, 0);
+
           const totalXmlNet = actRows.reduce((sum, r) => sum + r.xmlNetNum, 0);
           const expectedPS = Math.round((totalRef - totalXmlNet) * 100) / 100;
 
@@ -306,7 +324,7 @@ async function handleRun() {
               }
             });
           } else {
-            const msg = `Patient Share ${actualPS} is incorrect. Expected: ${expectedPS} (Total Ref: ${totalRef} − Total Net: ${totalXmlNet}).`;
+            const msg = `Patient Share ${actualPS} is incorrect.\nExpected: ${expectedPS} (Total Ref: ${totalRef} − Total Net: ${totalXmlNet}).`;
             actRows.forEach(r => {
               r.status = 'Unknown';
               r.isValid = false;
@@ -328,8 +346,10 @@ async function handleRun() {
       });
 
       const isCash = receiverID.toUpperCase() === 'HAAD' || receiverID.toUpperCase() === 'CASH';
+
       for (const [, actRows] of claimGroups) {
         const actualPS = Number(actRows[0].PatientShare || 0);
+
         if (actualPS === 0 && !isCash) {
           const msg = 'Patient Share is 0 — this is invalid for non-Thiqa claims.';
           actRows.forEach(r => {
@@ -346,6 +366,7 @@ async function handleRun() {
             });
           }
         }
+
         // PS ≠ 0: rows remain Unknown — compute estimated patient-share split and add to Remarks
         if (actualPS > 0) {
           const totalClaimedNet = actRows.reduce((sum, r) => sum + r.xmlNetNum, 0);
@@ -367,7 +388,7 @@ async function handleRun() {
             const netMatch = Math.abs(r.xmlNetNum - r._estimatedPayerNet) < 0.01;
             const matchOp = netMatch ? '==' : '!=';
             if (r.xmlNetNum === 0) return;
-            const remark = `${psPercentagePct}% Copay estimate. Net ${netMatch ? 'Match' : 'Mismatch'} (${r.xmlNetNum} [xml] ${matchOp} ${r._estimatedPayerNet} [estimate]).`;
+            const remark = `${psPercentagePct}% Copay estimate.\nNet ${netMatch ? 'Match' : 'Mismatch'} (${r.xmlNetNum} [xml] ${matchOp} ${r._estimatedPayerNet} [estimate]).`;
             r.Remarks = r.Remarks ? `${r.Remarks} ${remark}` : remark;
           });
         }
@@ -375,20 +396,21 @@ async function handleRun() {
     }
 
     const mergedOutput = output;
-
     lastResults = mergedOutput;
+
     const tableElement = buildResultsTable(mergedOutput);
     lastWorkbook = makeWorkbookFromJson(mergedOutput, 'checker_pricing_results');
     toggleDownload(mergedOutput.length > 0);
 
-   // Count valid rows and show percentage with 2 decimals
-  const validCount = mergedOutput.filter(r => r.isValid).length;
-  const totalCount = mergedOutput.length;
-  const numericPercent = totalCount ? (validCount / totalCount) * 100 : 0;
-  const percentText = totalCount ? numericPercent.toFixed(2) : '0.00';
-  const color = numericPercent === 100 ? 'green' : 'orange';
-  message(`Completed — ${validCount}/${totalCount} rows correct (${percentText}%)`, color);
-  return tableElement;
+    // Count valid rows and show percentage with 2 decimals
+    const validCount = mergedOutput.filter(r => r.isValid).length;
+    const totalCount = mergedOutput.length;
+    const numericPercent = totalCount ? (validCount / totalCount) * 100 : 0;
+    const percentText = totalCount ? numericPercent.toFixed(2) : '0.00';
+    const color = numericPercent === 100 ? 'green' : 'orange';
+
+    message(`Completed — ${validCount}/${totalCount} rows correct (${percentText}%)`, color);
+    return tableElement;
   } catch (err) { showError(err); return null; }
 }
 
