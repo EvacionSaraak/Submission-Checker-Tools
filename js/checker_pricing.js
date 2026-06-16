@@ -209,25 +209,37 @@
 
           const match = matchRow; // kept for downstream "no pricing match found" checks
 
-          // Endodontist pricing override:
+          // Endodontist / GP pricing override:
           // - Only applies to Thiqa/D001.
           // - Only applies on/after ENDO_PRICING_CUTOFF.
-          // - Only applies when clinician specialty is exactly "Endodontics".
-          // - Non-Endodontists do not compare against endo_pricing.json at all.
+          // - Endodontics uses endo_price.
+          // - Non-Endodontics/GD uses gp_price when available.
+          // - Non-Endodontics never compares against endo_price and never shows an Endo restriction message.
           let endoEntry = null;
-
+          
           if (receiverID === 'D001') {
             const encounterDate = parseEncounterDate(rec.EncounterDate);
             const isAfterCutoff = encounterDate !== null && encounterDate >= ENDO_PRICING_CUTOFF;
             const clinicianSpec = clinicianSpecialtyMap.get(rec.ClinicianLic || '') || '';
             const isEndo = clinicianSpec === 'Endodontics';
-
-            if (isAfterCutoff && isEndo) {
-              endoEntry = endoPricingMap.get(normalizeCode(rec.CPT)) || null;
-
-              if (endoEntry) {
-                refPrice = endoEntry.endo_price;
-                pricingContext = 'Endodontist Pricing';
+          
+            if (isAfterCutoff) {
+              const pricingEntry = endoPricingMap.get(normalizeCode(rec.CPT)) || null;
+          
+              if (pricingEntry) {
+                if (isEndo) {
+                  endoEntry = pricingEntry;
+                  refPrice = pricingEntry.endo_price;
+                  pricingContext = 'Endodontist Pricing';
+                } else if (
+                  pricingEntry.gp_price !== undefined &&
+                  pricingEntry.gp_price !== null &&
+                  pricingEntry.gp_price !== ''
+                ) {
+                  endoEntry = pricingEntry;
+                  refPrice = pricingEntry.gp_price;
+                  pricingContext = `${pricingContext} GP Pricing`;
+                }
               }
             }
           }
