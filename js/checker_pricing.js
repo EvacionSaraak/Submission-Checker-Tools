@@ -214,8 +214,11 @@
           // - Only applies on/after ENDO_PRICING_CUTOFF.
           // - Endodontics uses endo_price.
           // - Non-Endodontics/GD uses gp_price when available.
-          // - Non-Endodontics never compares against endo_price and never shows an Endo restriction message.
+          // - If gp_price is null, GD stays on normal dental_pricing.json.
+          // - The Endo warning appears only when non-Endo claimed net appears to match endo_price.
           let endoEntry = null;
+          let nonEndoUsedEndoPrice = false;
+          let nonEndoClinicianSpec = '';
           
           if (receiverID === 'D001') {
             const encounterDate = parseEncounterDate(rec.EncounterDate);
@@ -227,18 +230,32 @@
               const pricingEntry = endoPricingMap.get(normalizeCode(rec.CPT)) || null;
           
               if (pricingEntry) {
+                const endoRef = Number(pricingEntry.endo_price);
+                const xmlUnit = xmlQty > 0 ? xmlNet / xmlQty : NaN;
+          
                 if (isEndo) {
                   endoEntry = pricingEntry;
                   refPrice = pricingEntry.endo_price;
                   pricingContext = 'Endodontist Pricing';
-                } else if (
-                  pricingEntry.gp_price !== undefined &&
-                  pricingEntry.gp_price !== null &&
-                  pricingEntry.gp_price !== ''
-                ) {
-                  endoEntry = pricingEntry;
-                  refPrice = pricingEntry.gp_price;
-                  pricingContext = `${pricingContext} GP Pricing`;
+                } else {
+                  nonEndoClinicianSpec = clinicianSpec || 'General Dentist';
+                  nonEndoUsedEndoPrice =
+                    Number.isFinite(endoRef) &&
+                    (
+                      xmlNet === endoRef ||
+                      xmlUnit === endoRef ||
+                      xmlNet * 2 === endoRef
+                    );
+          
+                  if (
+                    pricingEntry.gp_price !== undefined &&
+                    pricingEntry.gp_price !== null &&
+                    pricingEntry.gp_price !== ''
+                  ) {
+                    endoEntry = pricingEntry;
+                    refPrice = pricingEntry.gp_price;
+                    pricingContext = `${pricingContext} GP Pricing`;
+                  }
                 }
               }
             }
@@ -284,12 +301,14 @@
                 status = 'Valid';
               } else if (normalizeCode(rec.CPT) === '42702' && xmlNet === ref * 2) {
                 status = 'Valid';
-              } else if (receiverID === 'A001') {
-                const copayPct = Math.round((ref * xmlQty - xmlNet) / (ref * xmlQty) * 10000) / 100;
-                remarks.push(`Copay: ${copayPct}%.`);
-              } else {
-                remarks.push(`Claimed Net ${xmlNet} does not match the reference price of ${ref} under ${pricingContext}.`);
-              }
+							} else if (nonEndoUsedEndoPrice) {
+							  remarks.push(`Pricing for ${rec.CPT} is ${ref} following ${pricingContext}.\nEndo Pricing cannot be used for ${nonEndoClinicianSpec}.`);
+							} else if (receiverID === 'A001') {
+							  const copayPct = Math.round((ref * xmlQty - xmlNet) / (ref * xmlQty) * 10000) / 100;
+							  remarks.push(`Copay: ${copayPct}%.`);
+							} else {
+							  remarks.push(`Claimed Net ${xmlNet} does not match the reference price of ${ref} under ${pricingContext}.`);
+							}
             }
           }
 
