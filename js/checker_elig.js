@@ -407,6 +407,15 @@ function isServiceCategoryValid(serviceCategory, consultationStatus, rawPackage)
   return { valid: true };
 }
 
+function getInvalidTcEligibilityRemark(packageName) {
+  const rawPackage = String(packageName || '').trim();
+  if (!rawPackage) return null;
+  const tcMatch = rawPackage.match(/\b(TC\s*[1-4])\b/i);
+  if (!tcMatch) return null;
+  const tcLabel = tcMatch[1].replace(/\s+/g, '').toUpperCase();
+  return `${tcLabel} are not acceptible as eligibilities`;
+}
+
 function validateXmlClaims(xmlClaims, eligMap, receiverID = '') {
   console.log(`Validating ${xmlClaims.length} XML claims`);
   
@@ -504,6 +513,12 @@ function validateXmlClaims(xmlClaims, eligMap, receiverID = '') {
       }
     }
 
+    const invalidTcRemark = getInvalidTcEligibilityRemark(eligibility?.['Package Name']);
+    if (invalidTcRemark) {
+      status = 'invalid';
+      remarks.push(invalidTcRemark);
+    }
+
     return {
       claimID: claim.claimID,
       memberID: claim.memberID,
@@ -599,6 +614,12 @@ function validateReportClaims(reportData, eligMap) {
         status = 'valid';
       }
       // If hasLeadingZero, status remains 'invalid'
+    }
+
+    const invalidTcRemark = getInvalidTcEligibilityRemark(eligibility?.['Package Name']);
+    if (invalidTcRemark) {
+      status = 'invalid';
+      remarks.push(invalidTcRemark);
     }
 
     return {
