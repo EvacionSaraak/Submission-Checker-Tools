@@ -11,6 +11,7 @@
 <div id="mode-selector" class="form-row">
   <label><input type="radio" name="mode" value="eligibility" checked> Eligibility</label>
   <label><input type="radio" name="mode" value="reporting"> Reporting</label>
+  <label><input type="radio" name="mode" value="reporting_full"> Reporting (full)</label>
   <label><input type="radio" name="mode" value="xml"> XML</label>
   <label><input type="radio" name="mode" value="errors"> Errors</label>
 </div>
@@ -26,6 +27,13 @@
   <div class="form-row">
     <label for="reporting-files">Upload Reporting XLS or CSV files:</label>
     <input type="file" id="reporting-files" multiple accept=".xls,.xlsx,.csv" />
+  </div>
+</div>
+
+<div id="reporting-full-panel" class="hidden">
+  <div class="form-row">
+    <label for="reporting-full-files">Upload Reporting (full) XLS or CSV files:</label>
+    <input type="file" id="reporting-full-files" multiple accept=".xls,.xlsx,.csv" />
   </div>
 </div>
 

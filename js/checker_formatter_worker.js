@@ -772,6 +772,104 @@ async function combineReportings(fileEntries) {
 }
 
 // ==============================
+// Reporting (full) combiner
+// ==============================
+async function combineReportingsFull(fileEntries) {
+  log("Starting combineReportingsFull function");
+  if (!XLSX_LOADED) {
+    throw new Error("XLSX library not available. Cannot process reporting files.");
+  }
+  if (!Array.isArray(fileEntries) || fileEntries.length === 0) {
+    throw new Error("No input files provided");
+  }
+
+  const XLSX = (typeof window !== "undefined" ? window.XLSX : self.XLSX);
+  const combinedRows = [];
+  let headerRow = null;
+  let dataRowCount = 0;
+
+  const isRowEmpty = (row) => {
+    if (!Array.isArray(row)) return true;
+    return row.every(cell => {
+      const val = cell === null || cell === undefined ? '' : String(cell).trim();
+      return val === '';
+    });
+  };
+
+  const rowSignature = (row) => JSON.stringify(
+    (row || []).map(cell => (cell === null || cell === undefined ? '' : String(cell).trim()))
+  );
+
+  for (let i = 0; i < fileEntries.length; i++) {
+    const { name, buffer } = fileEntries[i];
+    log(`Reading reporting(full) file: ${name}`);
+
+    let wb;
+    try {
+      // Keep native Excel date serials intact (avoid JS Date conversion)
+      wb = XLSX.read(buffer, { type: 'array', cellDates: false });
+    } catch (err) {
+      log(`Failed to read file ${name}: ${err.message}`, 'ERROR');
+      continue;
+    }
+
+    if (!wb.SheetNames || wb.SheetNames.length === 0) {
+      log(`File ${name} skipped: no sheets found`, 'WARN');
+      continue;
+    }
+
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    // raw:true preserves numeric serial values from the sheet
+    const sheetData = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: true });
+    if (!Array.isArray(sheetData) || sheetData.length === 0) {
+      log(`File ${name} skipped: no rows found`, 'WARN');
+      continue;
+    }
+
+    const mergedRows = new Set();
+    const merges = ws['!merges'] || [];
+    for (const merge of merges) {
+      if (merge && merge.s && merge.e) {
+        for (let r = merge.s.r; r <= merge.e.r; r++) mergedRows.add(r);
+      }
+    }
+
+    const existingHeaderSig = headerRow ? rowSignature(headerRow) : null;
+
+    for (let r = 0; r < sheetData.length; r++) {
+      if (mergedRows.has(r)) continue;
+      const row = sheetData[r];
+      if (isRowEmpty(row)) continue;
+
+      if (!headerRow) {
+        headerRow = row.slice();
+        combinedRows.push(headerRow);
+        continue;
+      }
+
+      if (existingHeaderSig && rowSignature(row) === existingHeaderSig) continue;
+
+      combinedRows.push(row.slice());
+      dataRowCount++;
+    }
+
+    const progress = 50 + Math.floor(((i + 1) / fileEntries.length) * 50);
+    self.postMessage({ type: 'progress', progress });
+  }
+
+  if (!headerRow) {
+    throw new Error('No non-merged rows found in uploaded files');
+  }
+
+  const wsOut = XLSX.utils.aoa_to_sheet(combinedRows);
+  const wbOut = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wbOut, wsOut, 'Combined Reporting Full');
+  log(`Combined reporting(full) workbook created with ${dataRowCount} data rows`);
+  self.postMessage({ type: 'progress', progress: 100 });
+  return wbOut;
+}
+
+// ==============================
 // combineXMLs function
 // ==============================
 async function combineXMLs(fileEntries) {
@@ -917,8 +1015,10 @@ self.onmessage = async (e) => {
       log('XML mode should be processed in main thread, not worker', 'WARN');
       throw new Error('XML mode should be processed in main thread');
     } else {
-      // Handle eligibility and reporting modes - returns workbook
-      const combineFn = mode === 'eligibility' ? combineEligibilities : combineReportings;
+      // Handle eligibility/reporting modes - returns workbook
+      let combineFn = combineReportings;
+      if (mode === 'eligibility') combineFn = combineEligibilities;
+      else if (mode === 'reporting_full') combineFn = combineReportingsFull;
       const wb = await combineFn(files);
       const wbArray = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
       const wbUint8 = new Uint8Array(wbArray);

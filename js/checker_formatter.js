@@ -7,11 +7,13 @@ const messageBox = document.getElementById('messageBox');
 
 const eligibilityPanel = document.getElementById('eligibility-panel');
 const reportingPanel = document.getElementById('reporting-panel');
+const reportingFullPanel = document.getElementById('reporting-full-panel');
 const xmlPanel = document.getElementById('xml-panel');
 const errorsPanel = document.getElementById('errors-panel');
 
 const eligibilityInput = document.getElementById('eligibility-files');
 const reportingInput = document.getElementById('reporting-files');
+const reportingFullInput = document.getElementById('reporting-full-files');
 const xmlInput = document.getElementById('xml-files');
 
 // Errors panel elements
@@ -35,24 +37,35 @@ document.getElementById('mode-selector').addEventListener('change', e => {
   if (mode === 'eligibility') {
     eligibilityPanel.classList.remove('hidden');
     reportingPanel.classList.add('hidden');
+    reportingFullPanel.classList.add('hidden');
     xmlPanel.classList.add('hidden');
     errorsPanel.classList.add('hidden');
     combineButton.style.display = '';
   } else if (mode === 'reporting') {
     eligibilityPanel.classList.add('hidden');
     reportingPanel.classList.remove('hidden');
+    reportingFullPanel.classList.add('hidden');
+    xmlPanel.classList.add('hidden');
+    errorsPanel.classList.add('hidden');
+    combineButton.style.display = '';
+  } else if (mode === 'reporting_full') {
+    eligibilityPanel.classList.add('hidden');
+    reportingPanel.classList.add('hidden');
+    reportingFullPanel.classList.remove('hidden');
     xmlPanel.classList.add('hidden');
     errorsPanel.classList.add('hidden');
     combineButton.style.display = '';
   } else if (mode === 'xml') {
     eligibilityPanel.classList.add('hidden');
     reportingPanel.classList.add('hidden');
+    reportingFullPanel.classList.add('hidden');
     xmlPanel.classList.remove('hidden');
     errorsPanel.classList.add('hidden');
     combineButton.style.display = '';
   } else if (mode === 'errors') {
     eligibilityPanel.classList.add('hidden');
     reportingPanel.classList.add('hidden');
+    reportingFullPanel.classList.add('hidden');
     xmlPanel.classList.add('hidden');
     errorsPanel.classList.remove('hidden');
     combineButton.style.display = 'none';
@@ -193,6 +206,7 @@ combineButton.addEventListener('click', async () => {
     const mode = document.querySelector('input[name="mode"]:checked').value;
     const inputFiles = mode === 'eligibility' ? eligibilityInput.files : 
                        mode === 'reporting' ? reportingInput.files : 
+                       mode === 'reporting_full' ? reportingFullInput.files :
                        xmlInput.files;
 
     if (!inputFiles.length) {
@@ -388,41 +402,65 @@ function isDEBTSectionHeader(line) {
  */
 function isPayerHeader(line) {
   const trimmed = line.trim().toUpperCase();
-  const payers = ['CASH', 'THIQA', 'NAS', 'MEDNET', 'NEXTCARE', 'DAMAN', 'HAAD', 'ADNIC', 'NEURON', 'NGI'];
+  const payers = ['CASH', 'THIQA', 'NAS', 'MEDNET', 'NEXTCARE', 'DAMAN', 'HAAD', 'ADNIC', 'NEURON', 'NGI', 'SAICO'];
   return payers.includes(trimmed);
 }
 
 /**
+ * Helper function to get the 1-2 characters immediately before the first digit in a string
+ * Returns an object with single char and two-char patterns, or null if no digit found
+ * Example: "TMCCL0989979" returns { single: 'L', double: 'CL' }
+ */
+function getPatternBeforeFirstDigit(str) {
+  const digitRegex = /\d/;
+  for (let i = 0; i < str.length; i++) {
+    if (digitRegex.test(str[i])) {
+      // Found first digit
+      if (i === 0) return null; // Digit at position 0, no pattern before it
+      
+      const single = str[i - 1].toUpperCase();
+      const double = i >= 2 ? str.substring(i - 2, i).toUpperCase() : null;
+      
+      return { single, double };
+    }
+  }
+  return null;
+}
+
+/**
  * Detects if a string looks like an encounter ID
- * Common prefixes: NL, IM, IV, MJ, TM, TA, etc.
+ * Encounter IDs contain letters followed by a digit sequence, no spaces or special chars
  */
 function isEncounterID(str) {
   if (!str || str.length < 5) return false;
-  // Encounter IDs typically start with 2-letter prefix followed by alphanumeric
-  const pattern = /^[A-Z]{2}[A-Z0-9]+$/i;
-  return pattern.test(str);
+  // Must contain at least one letter and one digit
+  // Must not contain spaces, colons, slashes, or other special chars (except hyphens)
+  // Real encounter IDs: NLYHRC260441907, LURTAC260410485, TMCOP0923806
+  return /[A-Z]/i.test(str) && /\d/.test(str) && /^[A-Z0-9-]+$/i.test(str);
 }
 
 /**
  * Detects if an encounter ID is a Visit ID
- * Visit IDs have 'V' before the numbers (e.g., NLXMV260408044)
+ * Visit IDs have 'V' or 'OP' immediately before the first digit sequence
+ * Examples: NLXMV260408044, LURTAV260410924, TMCOP0923806
  */
 function isVisitID(str) {
   if (!isEncounterID(str)) return false;
-  // Look for 'V' followed by digits
-  const pattern = /V\d+$/i;
-  return pattern.test(str);
+  const pattern = getPatternBeforeFirstDigit(str);
+  if (!pattern) return false;
+  return pattern.single === 'V' || pattern.double === 'OP';
 }
 
 /**
  * Detects if an encounter ID is a Claim ID
- * Claim IDs have 'C' before the numbers (e.g., IVMCC260411382)
+ * Claim IDs have 'C' or 'CL' immediately before the first digit sequence
+ * Examples: IVMCC260411382, TMCCL0989979
  */
 function isClaimID(str) {
   if (!isEncounterID(str)) return false;
-  // Look for 'C' followed by digits
-  const pattern = /C\d+$/i;
-  return pattern.test(str);
+  const pattern = getPatternBeforeFirstDigit(str);
+  if (!pattern) return false;
+  return pattern.single === 'C' || pattern.double === 'CL';
 }
 
 /**
@@ -554,9 +592,12 @@ function formatAuditLogs(inputText) {
     // Process data rows
     const { claimID, visitID, description } = processAuditLogRow(line);
     
-    // Only output valid rows (rows with a claim ID)
-    if (claimID) {
-      const formattedLine = `${currentType}\t\t${currentDate}\t${currentPayer}\t${claimID}\t${visitID}\t${description}`;
+    // Need either a claim ID or visit ID to be valid
+    if (claimID || visitID) {
+      // Output format: Type | (empty) | Date | Payer | ClaimID | VisitID | Description
+      // If it's a Claim ID, put it in the ClaimID column and leave VisitID empty
+      // If it's a Visit ID, leave ClaimID empty and put it in the VisitID column
+      const formattedLine = `${currentType}\t\t${currentDate}\t${currentPayer}\t${claimID}\t${visitID}\t${description}\t`;
       outputLines.push(formattedLine);
     } else {
       // Collect lines that didn't match the format (preserve original line, not trimmed)
