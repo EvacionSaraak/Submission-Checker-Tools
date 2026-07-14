@@ -274,9 +274,13 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId, claimType = ''
   const rawAuthText = rawAuthEl && rawAuthEl.textContent ? rawAuthEl.textContent : "";
   const authID   = rawAuthText.trim();
 
-  const rule     = authRules[code] || {};
-  const needsAuth= codeRequiresAuthorization(code, rule);
   const isMedicalClaim = String(claimType || '').trim() === '3';
+  const rule     = authRules[code] || {};
+  // For medical claims (Type 3) only the explicit medical auth list applies;
+  // dental authRules from checker_auths.json are not relevant.
+  const needsAuth = isMedicalClaim
+    ? MEDICAL_CODES_REQUIRING_AUTH.has(String(code || '').trim())
+    : codeRequiresAuthorization(code, rule);
 
   if (!needsAuth && !authID) {
     return {
@@ -291,6 +295,7 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId, claimType = ''
       authID,
       start,
       xlsRow: {},
+      xlsAllAuthRows: [],
       denialCode: "",
       denialReason: "",
       remarks: [],
@@ -311,6 +316,7 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId, claimType = ''
       authID,
       start,
       xlsRow: {},
+      xlsAllAuthRows: [],
       denialCode: "",
       denialReason: "",
       remarks: [],
@@ -320,6 +326,8 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId, claimType = ''
 
   // Try to find rows for this authID; mapXLSXData maps by trimmed AuthorizationID as primary key.
   const rows = xlsxMap[authID] || [];
+  // All rows sharing this authorization (for "View" modal display)
+  const xlsAllAuthRows = rows;
   const matchedRow = rows.find(r =>
     String(r["Item Code"] || "").trim() === code &&
     String(r["Card Number / DHA Member ID"] || "").trim() === memberId
@@ -385,6 +393,7 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId, claimType = ''
       authID,
       start,
       xlsRow: matchedRow,
+      xlsAllAuthRows,
       denialCode,
       denialReason,
       remarks,
@@ -404,6 +413,7 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId, claimType = ''
     authID,
     start,
     xlsRow: matchedRow,
+    xlsAllAuthRows,
     denialCode,
     denialReason,
     remarks,
@@ -830,6 +840,27 @@ function setupDetailsModal(results, claimCodeSums) {
           <tr><th>Denial Reason</th><td>${r.denialReason || ""}</td></tr>
           <tr><th>All Remarks</th><td>${(r.remarks || []).map(m => `<div>${m}</div>`).join("") || ""}</td></tr>
         </table>
+        ${r.xlsAllAuthRows && r.xlsAllAuthRows.length > 0 ? `
+          <h4 style="margin-top:1.5em;">All Codes Listed in Approval${r.authID ? " — " + r.authID : ""}</h4>
+          <table class="modal-license-table">
+            <tr>
+              <th>Item Code</th>
+              <th>Member ID</th>
+              <th>Status</th>
+              <th>Payer Share</th>
+              <th>Ordered On</th>
+            </tr>
+            ${r.xlsAllAuthRows.map(row => `
+              <tr>
+                <td>${row["Item Code"] || ""}</td>
+                <td>${row["Card Number / DHA Member ID"] || ""}</td>
+                <td>${row["Status"] || row["status"] || ""}</td>
+                <td>${row["Payer Share"] || ""}</td>
+                <td>${(row["Ordered On"] || "").split(' ')[0]}</td>
+              </tr>
+            `).join("")}
+          </table>
+        ` : ""}
         ${codeGroup && codeGroup.activities.length > 1 ? `
           <h4 style="margin-top:2em;">Grouped Calculation for Code <b>${codeGroup.activities[0].code}</b> (this claim)</h4>
           <table class="modal-license-table">

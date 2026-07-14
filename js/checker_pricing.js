@@ -20,6 +20,7 @@ async function handleRun() {
   try {
     let xmlFile = fileEl('xml-file');
     let xlsxFile = fileEl('xlsx-file');
+    let drugsFile = fileEl('drugs-file');
 
     if (!xmlFile && window.unifiedCheckerFiles && window.unifiedCheckerFiles.xml) {
       xmlFile = window.unifiedCheckerFiles.xml;
@@ -29,25 +30,42 @@ async function handleRun() {
       xlsxFile = window.unifiedCheckerFiles.pricing;
       console.log('[PRICING] Using pricing file from unified cache:', xlsxFile.name);
     }
+    if (!drugsFile && window.unifiedCheckerFiles && window.unifiedCheckerFiles.drugs) {
+      drugsFile = window.unifiedCheckerFiles.drugs;
+      console.log('[PRICING] Using drugs file from unified cache:', drugsFile.name);
+    }
 
     if (!xmlFile) throw new Error('Please select an XML file.');
     showProgress(5, 'Reading files');
 
-    const [xmlText, dentalPricingRaw, clinicianData, endoPricingRaw, medicalPricingRaw] = await Promise.all([
+    const [xmlText, dentalPricingRaw, clinicianData, endoPricingRaw, medicalPricingRaw, minorProceduresRaw] = await Promise.all([
       readFileText(xmlFile),
       fetch('../json/dental_pricing.json').then(r => r.json()).catch(e => { console.warn('[PRICING] Failed to load dental_pricing.json:', e); return []; }),
       fetch('../json/clinician_licenses.json').then(r => r.json()).catch(() => []),
       fetch('../json/endo_pricing.json').then(r => r.json()).catch(() => []),
-      fetch('../json/medical_pricing.json').then(r => r.json()).catch(e => { console.warn('[PRICING] Failed to load medical_pricing.json:', e); return []; })
+      fetch('../json/medical_pricing.json').then(r => r.json()).catch(e => { console.warn('[PRICING] Failed to load medical_pricing.json:', e); return []; }),
+      fetch('../json/minor_procedures.json').then(r => r.json()).catch(() => [])
     ]);
 
     if (!Array.isArray(dentalPricingRaw) || dentalPricingRaw.length === 0) throw new Error('Dental pricing data could not be loaded.\nEnsure dental_pricing.json is present in the json/ folder.');
+
+    // Build set of minor procedure codes for modifier 50 multiplier
+    const minorProcedureCodes = new Set((Array.isArray(minorProceduresRaw) ? minorProceduresRaw : [])
+      .map(item => normalizeCode(typeof item === 'string' ? item : (item && item.code) ? item.code : ''))
+      .filter(Boolean));
 
     let xlsxMatcher = null;
     if (xlsxFile) {
       const xlsxObj = await readXlsx(xlsxFile);
       xlsxMatcher = buildPricingMatcher(xlsxObj.rows);
       console.log('[PRICING] Using uploaded XLSX for pricing override');
+    }
+
+    // Load drug pricing from Drugs XLSX ("Drugs" sheet) if provided
+    let drugsMap = null;
+    if (drugsFile) {
+      drugsMap = await loadDrugsMap(drugsFile);
+      console.log('[PRICING] Drugs map loaded, entries:', drugsMap ? drugsMap.size : 0);
     }
 
     showProgress(25, 'Parsing XML & pricing data');
@@ -177,6 +195,21 @@ async function handleRun() {
         }
       }
 
+      // Drug pricing: if code is found in drugs map and no pricing match yet, use drug unit markup
+      if (drugsMap && (!matchRow) && drugsMap.has(normalizeCode(rec.CPT))) {
+        const drug = drugsMap.get(normalizeCode(rec.CPT));
+        const unitMarkupVal = drug['Unit Markup'];
+        const unitPriceVal = drug['Unit Price to Public'];
+        const drugUnitPrice = (unitMarkupVal !== '' && unitMarkupVal !== undefined)
+          ? Number(unitMarkupVal)
+          : Number(unitPriceVal);
+        if (!isNaN(drugUnitPrice) && drugUnitPrice > 0) {
+          refPrice = drugUnitPrice;
+          matchRow = drug;
+          pricingContext = 'Drug Pricing';
+        }
+      }
+
       let endoEntry = null;
       let nonEndoUsedEndoPrice = false;
       let nonEndoClinicianSpec = '';
@@ -213,8 +246,23 @@ async function handleRun() {
       }
 
       const match = matchRow;
-      const ref = Number(refPrice ?? NaN);
-      const computedRef = (match || endoEntry) && refPrice !== null && !Number.isNaN(ref) ? ref : null;
+      let ref = Number(refPrice ?? NaN);
+      let effectiveRef = ref; // ref after applying modifier multipliers
+
+      // Apply modifier price multipliers before comparison
+      if (!Number.isNaN(ref) && ref > 0 && rec.Modifier) {
+        if (rec.Modifier === '52') {
+          // Consultation price halved
+          effectiveRef = Math.round(ref * 0.5 * 100) / 100;
+        } else if (rec.Modifier === '50') {
+          // Minor procedure: ×1.5 for A001, ×(1.3×1.5) for D001
+          const mult = effectivePayerID === 'D001' ? 1.3 * 1.5 : 1.5;
+          effectiveRef = Math.round(ref * mult * 100) / 100;
+        }
+        // Modifier 25 and 24: no price change
+      }
+
+      const computedRef = (match || endoEntry) && refPrice !== null && !Number.isNaN(ref) ? effectiveRef : null;
 
       if (xmlNet === 0) {
         status = 'Valid';
@@ -226,25 +274,27 @@ async function handleRun() {
         if ((match || endoEntry) && refPrice !== null && Number.isNaN(ref)) remarks.push(`The reference price is not a valid number under ${pricingContext}.`);
 
         const hasValidRef = (match || endoEntry) && refPrice !== null && !Number.isNaN(ref);
-        if (hasValidRef && ref === 0) {
+        if (hasValidRef && effectiveRef === 0) {
           status = 'Unknown';
           remarks.push(`The reference price is 0 under ${pricingContext} (status Unknown).`);
         } else if (hasValidRef && xmlQty > 0) {
-          if (xmlNet === ref) {
+          const modifierNote = rec.Modifier && rec.Modifier !== '24' && rec.Modifier !== '25'
+            ? ` (modifier ${rec.Modifier} applied)` : '';
+          if (xmlNet === effectiveRef) {
             status = 'Valid';
-          } else if ((xmlNet / xmlQty) === ref) {
+          } else if ((xmlNet / xmlQty) === effectiveRef) {
             status = 'Valid';
-          } else if (xmlNet * 2 === ref) {
+          } else if (xmlNet * 2 === effectiveRef) {
             status = 'Valid';
-          } else if (normalizeCode(rec.CPT) === '42702' && xmlNet === ref * 2) {
+          } else if (normalizeCode(rec.CPT) === '42702' && xmlNet === effectiveRef * 2) {
             status = 'Valid';
           } else if (nonEndoUsedEndoPrice) {
-            remarks.push(`Pricing for ${rec.CPT} is ${ref} following ${pricingContext}.\nEndo Pricing cannot be used for ${nonEndoClinicianSpec}.`);
+            remarks.push(`Pricing for ${rec.CPT} is ${effectiveRef} following ${pricingContext}.\nEndo Pricing cannot be used for ${nonEndoClinicianSpec}.`);
           } else if (receiverID === 'A001') {
-            const copayPct = Math.round((ref * xmlQty - xmlNet) / (ref * xmlQty) * 10000) / 100;
+            const copayPct = Math.round((effectiveRef * xmlQty - xmlNet) / (effectiveRef * xmlQty) * 10000) / 100;
             remarks.push(`Copay: ${copayPct}%.`);
           } else {
-            remarks.push(`Claimed Net ${xmlNet} does not match the reference price of ${ref} under ${pricingContext}.`);
+            remarks.push(`Claimed Net ${xmlNet} does not match the reference price of ${effectiveRef} under ${pricingContext}${modifierNote}.`);
           }
         }
       }
@@ -281,7 +331,7 @@ async function handleRun() {
         CPT: rec.CPT || '',
         ClaimedNet: rec.Net || '',
         ClaimedQty: rec.Quantity || '',
-        ReferenceNetPrice: refPrice || '',
+        ReferenceNetPrice: Number.isNaN(effectiveRef) ? (refPrice || '') : String(effectiveRef),
         PricingRow: endoEntry || matchRow || null,
         XmlRow: rec,
         isValid: status === 'Valid',
@@ -460,6 +510,27 @@ async function readXlsx(file) {
   return { rows, sheetName };
 }
 
+// Load drug pricing from a Drugs XLSX file (expects a "Drugs" sheet)
+async function loadDrugsMap(file) {
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const wb = XLSX.read(arrayBuffer, { type: 'array' });
+    const sheetName = wb.SheetNames.find(n => n.trim().toLowerCase() === 'drugs') || wb.SheetNames[0];
+    if (!sheetName) return null;
+    const ws = wb.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+    const map = new Map();
+    rows.forEach(r => {
+      const code = normalizeCode(String(r['Drug Code'] || '').trim());
+      if (code) map.set(code, r);
+    });
+    return map;
+  } catch (e) {
+    console.warn('[PRICING] Failed to load drugs file:', e);
+    return null;
+  }
+}
+
 // ----------------- XML parsing & extraction -----------------
 function parseXml(text) {
   const xmlContent = text.replace(/&(?!(amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;))/g, 'and');
@@ -506,6 +577,20 @@ function extractPricingRecords(xmlDoc) {
         textValue(act, 'Clinician')
       ]).trim();
 
+      // Extract CPT modifier from Observation (ValueType = 'Modifiers')
+      let modifier = '';
+      const observations = Array.from(act.getElementsByTagName('Observation'));
+      for (const obs of observations) {
+        const valueType = textValue(obs, 'ValueType') || '';
+        if (valueType.trim().toLowerCase() === 'modifiers') {
+          const voiVal = (textValue(obs, 'Value') || textValue(obs, 'ValueText') || '').toUpperCase().replace(/[_\s]/g, '');
+          if (voiVal === 'VOID' || voiVal === '24') { modifier = '24'; break; }
+          if (voiVal === 'VOIEF1' || voiVal === '52') { modifier = '52'; break; }
+          if (voiVal === '25') { modifier = '25'; break; }
+          if (voiVal === '50') { modifier = '50'; break; }
+        }
+      }
+
       records.push({
         ClaimID: claimId,
         ActivityID: activityId,
@@ -516,7 +601,8 @@ function extractPricingRecords(xmlDoc) {
         ClinicianLic: clinicianLic,
         EncounterDate: encounterDateStr,
         PatientShare: claimPatientShare,
-        PayerID: payerId
+        PayerID: payerId,
+        Modifier: modifier
       });
     }
   }

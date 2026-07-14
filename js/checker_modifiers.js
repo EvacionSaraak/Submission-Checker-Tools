@@ -92,6 +92,9 @@ async function handleRun() {
       }
 
       if (!match) remarks.push('No matching eligibility found');
+
+      const payer = String(rec.PayerID || '').trim().toUpperCase();
+      const isUnknownPayer = payer !== 'A001' && payer !== 'D001';
     
       return {
         ClaimID: rec.ClaimID || '',
@@ -106,7 +109,8 @@ async function handleRun() {
         VOINumber: voiNumber,
         PayerID: rec.PayerID || '',
         EligibilityRow: match || null,
-        isValid: remarks.length === 0,
+        isUnknown: isUnknownPayer,
+        isValid: !isUnknownPayer && remarks.length === 0,
         Remarks: remarks.map(s => s && !s.endsWith('.') ? s + '.' : s).join('; ')
       };
     });
@@ -116,11 +120,12 @@ async function handleRun() {
     lastWorkbook = makeWorkbookFromJson(output, 'checker_modifiers_results');
     toggleDownload(output.length > 0);
 
-    // Count valid rows and display percentage
-    const validCount = output.filter(r => r.isValid).length;
-    const totalCount = output.length;
+    // Count valid rows and display percentage (unknown payer rows excluded from percent)
+    const knownRows = output.filter(r => !r.isUnknown);
+    const validCount = knownRows.filter(r => r.isValid).length;
+    const totalCount = knownRows.length;
     const percent = totalCount ? Math.round((validCount / totalCount) * 100) : 0;
-    message(`Completed — ${validCount}/${totalCount} rows correct (${percent}%)`, percent === 100 ? 'green' : 'orange');
+    message(`Completed — ${validCount}/${totalCount} rows correct (${percent}%)${output.length > knownRows.length ? ` · ${output.length - knownRows.length} unknown payer row(s)` : ''}`, percent === 100 ? 'green' : 'orange');
 
     return tableElement;
   } catch (err) {
@@ -343,24 +348,11 @@ function buildResultsTable(rows) {
   const payerSet = new Set(rows.map(r => String(r.PayerID || '').trim().toUpperCase()).filter(x => x));
   console.info('[DEBUG] unique Payer IDs in results:', Array.from(payerSet).join(', ') || '(none)');
 
-  // Filter only A001 and D001 (case-insensitive)
-  const filteredRows = rows.filter(r => {
-    const payer = String(r.PayerID || '').trim().toUpperCase();
-    return payer === 'A001' || payer === 'D001';
-  });
-
-  if (!filteredRows.length) {
-    const emptyDiv = document.createElement('div');
-    emptyDiv.textContent = 'No matching claims (only A001 and D001 shown)';
-    return emptyDiv;
-  }
-
-  // Map filtered rows back to original lastResults indices for modal linking
-  filteredRows.forEach(r => { r._originalIndex = rows.indexOf(r); });
+  // Show all rows; assign an _originalIndex for modal linking
+  rows.forEach((r, i) => { r._originalIndex = i; });
 
   const container = document.createElement('div');
   let prevClaimId = null, prevMemberId = null, prevActivityId = null;
-  let validCount = 0;
 
   let html = `<table class="table table-striped table-bordered" style="width:100%;border-collapse:collapse">
     <thead>
@@ -379,17 +371,25 @@ function buildResultsTable(rows) {
     </thead>
     <tbody>`;
 
-  filteredRows.forEach(r => {
+  rows.forEach(r => {
     const showClaim = r.ClaimID !== prevClaimId;
     const showMember = showClaim || r.MemberID !== prevMemberId;
     const showActivity = showMember || r.ActivityID !== prevActivityId;
 
-    const remarks = String(r.Remarks || '')
-      .split(';')
-      .map(s => s.trim())
-      .filter(Boolean);
-    const isValid = remarks.length === 0;
-    html += `<tr class="${isValid ? 'table-success' : 'table-danger'}">
+    let rowClass;
+    if (r.isUnknown) {
+      rowClass = 'table-warning';
+    } else {
+      const remarks = String(r.Remarks || '').split(';').map(s => s.trim()).filter(Boolean);
+      rowClass = remarks.length === 0 ? 'table-success' : 'table-danger';
+    }
+
+    const remarksText = r.isUnknown
+      ? 'Unknown payer (not A001 or D001).'
+      : (String(r.Remarks || '').split(';').map(s => s.trim()).filter(Boolean)
+          .map(s => s && !s.endsWith('.') ? s + '.' : s).join('; ') || 'OK');
+
+    html += `<tr class="${rowClass}">
       <td style="padding:6px;border:1px solid #ccc">${showClaim ? escapeHtml(r.ClaimID) : ''}</td>
       <td style="padding:6px;border:1px solid #ccc">${showMember ? escapeHtml(r.MemberID) : ''}</td>
       <td style="padding:6px;border:1px solid #ccc">${showActivity ? escapeHtml(r.ActivityID) : ''}</td>
@@ -398,7 +398,7 @@ function buildResultsTable(rows) {
       <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.Modifier)}</td>
       <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.VOINumber || '')}</td>
       <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.PayerID)}</td>
-      <td style="padding:6px;border:1px solid #ccc">${escapeHtml(remarks.map(s => s && !s.endsWith('.') ? s + '.' : s).join('; ') || 'OK')}</td>
+      <td style="padding:6px;border:1px solid #ccc">${escapeHtml(remarksText)}</td>
       <td style="padding:6px;border:1px solid #ccc">${r.EligibilityRow ? `<button type="button" class="details-btn eligibility-details" onclick="showEligibility(${r._originalIndex})">View</button>` : ''}</td>
     </tr>`;
 
