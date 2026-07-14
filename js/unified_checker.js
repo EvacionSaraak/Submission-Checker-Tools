@@ -119,7 +119,7 @@
       btnElig: document.getElementById('btn-elig'),
       btnAuths: document.getElementById('btn-auths'),
       btnTimings: document.getElementById('btn-timings'),
-      btnTeeth: document.getElementById('btn-teeth'),
+      btnObservations: document.getElementById('btn-observations'),
       btnSchema: document.getElementById('btn-schema'),
       btnExclusion: document.getElementById('btn-exclusion'),
       btnPricing: document.getElementById('btn-pricing'),
@@ -194,8 +194,8 @@
     elements.btnTimings.addEventListener('click', () => {
       runChecker('timings');
     });
-    elements.btnTeeth.addEventListener('click', () => {
-      runChecker('teeth');
+    elements.btnObservations.addEventListener('click', () => {
+      runChecker('observations');
     });
     elements.btnSchema.addEventListener('click', () => {
       runChecker('schema');
@@ -376,7 +376,7 @@
       elig: ['xml', 'eligibility'],
       auths: ['xml', 'auth'],
       timings: ['xml'],
-      teeth: ['xml'],
+      observations: ['xml'],
       schema: ['xml'],
       exclusion: ['xml'],
       pricing: ['xml'],
@@ -567,7 +567,7 @@
   // Bug #6: Memory cleanup for inactive containers
   function cleanupInactiveContainers(activeCheckerName) {
     console.log(`[DEBUG] Cleaning up inactive containers (keeping ${activeCheckerName})`);
-    const allCheckers = ['schema', 'exclusion', 'timings', 'teeth', 'elig', 'auths', 'clinician', 'pricing', 'modifiers'];
+    const allCheckers = ['schema', 'exclusion', 'timings', 'observations', 'elig', 'auths', 'clinician', 'pricing', 'modifiers'];
     
     allCheckers.forEach(checkerName => {
       if (checkerName !== activeCheckerName) {
@@ -607,7 +607,7 @@
           <div id="results"></div>
         `;
       },
-      teeth: `
+      observations: `
         <input type="file" id="xmlFile" accept=".xml" style="display:none" />
         <button id="exportBtn" class="btn btn-secondary" style="display:none;">Export Invalid Activities</button>
         <div id="messageBox" style="color: red; font-weight: bold;"></div>
@@ -751,7 +751,7 @@
       elig: { xmlFileInput: 'xml', eligibilityFileInput: 'eligibility' },
       auths: { xmlInput: 'xml', xlsxInput: 'auth' },
       timings: { xmlFileInput: 'xml' },
-      teeth: { xmlFile: 'xml' },
+      observations: { xmlFile: 'xml' },
       schema: { xmlFile: 'xml' },
       exclusion: { xmlFile: 'xml' },
       pricing: { 'xml-file': 'xml', 'xlsx-file': 'pricing' },
@@ -791,7 +791,7 @@
         schema: validateXmlSchema,
         exclusion: runExclusionCheck,
         timings: validateTimingsAsync,
-        teeth: parseXML,
+        observations: parseXML,
         elig: runEligCheck,
         auths: runAuthsCheck,
         clinician: runClinicianCheck,
@@ -828,7 +828,7 @@
   function setActiveButton(checkerName) {
     const allButtons = [
       elements.btnClinician, elements.btnElig, elements.btnAuths,
-      elements.btnTimings, elements.btnTeeth, elements.btnSchema,
+      elements.btnTimings, elements.btnObservations, elements.btnSchema,
       elements.btnExclusion, elements.btnPricing, elements.btnModifiers,
       elements.btnCheckAll
     ];
@@ -1049,7 +1049,7 @@
       'elig': elements.btnElig,
       'auths': elements.btnAuths,
       'timings': elements.btnTimings,
-      'teeth': elements.btnTeeth,
+      'observations': elements.btnObservations,
       'schema': elements.btnSchema,
       'exclusion': elements.btnExclusion,
       'clinician': elements.btnClinician,

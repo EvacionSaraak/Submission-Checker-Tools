@@ -43,7 +43,7 @@ async function handleRun() {
     const xmlDoc = parseXml(xmlText);
     const extracted = extractModifierRecords(xmlDoc);
     const minorProcedureCodes = new Set((Array.isArray(minorProceduresRaw) ? minorProceduresRaw : [])
-      .map(code => normalizeCode(code))
+      .map(item => normalizeCode(typeof item === 'string' ? item : (item && item.code) ? item.code : ''))
       .filter(Boolean));
     const claimModifierContext = buildClaimModifierContext(extracted, minorProcedureCodes);
 
@@ -82,12 +82,12 @@ async function handleRun() {
         remarks.push('Modifier 24 requires eligibility containing Vol D.');
       }
       if (rec.Modifier === '25') {
-        if (!claimCtx.hasMinorProcedure) remarks.push('Modifier 25 requires a code from minor_procedures.json in the same claim.');
+        if (!claimCtx.hasMinorProcedure) remarks.push('Modifier 25 requires a minor procedure in the same claim.');
         if (!claimCtx.hasPricedConsultation) remarks.push('Modifier 25 requires a consultation code with price in the same claim.');
       }
       if (rec.Modifier === '50') {
         if (!minorProcedureCodes.has(normalizeCode(rec.ActivityCode))) {
-          remarks.push('Modifier 50 must only be on a code from minor_procedures.json.');
+          remarks.push(`Modifier 50 cannot be used on \`${rec.ActivityCode || '(unknown)'}\`.`);
         }
       }
 

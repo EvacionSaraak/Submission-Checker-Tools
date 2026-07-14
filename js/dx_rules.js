@@ -214,7 +214,7 @@
             ruleType: 'Excludes1',
             ruleId: DX_EXCLUDES1,
             note,
-            message: `Excludes1 Error: ${left.displayCode} and ${right.displayCode} should not normally be reported together. Review only if documentation clearly supports unrelated conditions.`
+            message: `${left.displayCode} and ${right.displayCode} cannot be used together in diagnosis.`
           });
           break;
         }

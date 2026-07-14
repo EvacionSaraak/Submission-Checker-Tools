@@ -178,8 +178,8 @@ const TableRenderer = {
       dynamic: true
     },
 
-    teeth: {
-      // Teeth checker format
+    observations: {
+      // Observations checker format
       dynamic: true
     },
 

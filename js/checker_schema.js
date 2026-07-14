@@ -642,20 +642,24 @@ function validateConsultationAndSpecialtyRules(activities, text, invalidFields, 
     }
 
     if (/^8/.test(ctx.code) && !specialtyContains(ctx.clinicianSpecialty, 'Pathology')) {
-      invalidFields.push(`Activity ${ctx.code} requires Clinician specialty containing Pathology`);
+      const spec = ctx.clinicianSpecialty || 'Unknown';
+      invalidFields.push(`Activity ${ctx.code} requires Clinician specialty containing Pathology (Currently \`${spec}\`)`);
     }
 
     if ((ctx.code === '97802' || ctx.code === '97803') && !specialtyContains(ctx.clinicianSpecialty, 'Dietician')) {
-      invalidFields.push(`Activity ${ctx.code} requires Clinician specialty containing Dietician`);
+      const spec = ctx.clinicianSpecialty || 'Unknown';
+      invalidFields.push(`Activity ${ctx.code} requires Clinician specialty containing Dietician (Currently \`${spec}\`)`);
     }
 
     if (GP_992_REQUIRED_CODES.has(ctx.code) && !specialtyContains(ctx.orderingSpecialty, 'General Practitioner')) {
-      invalidFields.push(`Activity ${ctx.code} requires OrderingClinician specialty as General Practitioner`);
+      const spec = ctx.orderingSpecialty || 'Unknown';
+      invalidFields.push(`Activity ${ctx.code} requires OrderingClinician specialty as General Practitioner (Currently \`${spec}\`)`);
     }
 
     if (GP_992_FORBIDDEN_CODES.has(ctx.code)) {
       if (specialtyContains(ctx.orderingSpecialty, 'General Practitioner')) {
-        invalidFields.push(`Activity ${ctx.code} requires OrderingClinician specialty to NOT be General Practitioner`);
+        const spec = ctx.orderingSpecialty || 'Unknown';
+        invalidFields.push(`Activity ${ctx.code} requires OrderingClinician specialty to NOT be General Practitioner (Currently \`${spec}\`)`);
         if (ctx.net !== 0) {
           invalidFields.push(`Activity ${ctx.code} must have Net = 0 when specialty is General Practitioner`);
         }

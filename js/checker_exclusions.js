@@ -202,7 +202,7 @@
                 diagnosis1: conflict.diagnosis1,
                 diagnosis2: conflict.diagnosis2,
                 ruleType: conflict.ruleType,
-                remarks: `${conflict.message}${conflict.note ? ` Note: ${conflict.note}` : ''} [${conflict.ruleId}]`
+                remarks: conflict.message
               });
             });
           });
