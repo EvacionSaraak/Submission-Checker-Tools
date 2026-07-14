@@ -399,6 +399,13 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
     // Required fields
     ["ID", "MemberID", "PayerID", "ProviderID", "EmiratesIDNumber", "Gross", "PatientShare", "Net"].forEach(tag => invalidIfNull(tag, claim));
 
+    // ADNIC auto-rejection rule: PayerID A02 with total sponsor price (Net) under 500
+    const payerID = text("PayerID");
+    const claimNet = parseFloat(text("Net"));
+    if (payerID === "A02" && !Number.isNaN(claimNet) && claimNet < 500) {
+      invalidFields.push("ADNIC (A02) claim is auto-rejected because total sponsor price is under 500.");
+    }
+
     // PatientShare decimal precision check (must have at most 2 decimal places)
     const patientShareRaw = text("PatientShare");
     if (patientShareRaw) {
