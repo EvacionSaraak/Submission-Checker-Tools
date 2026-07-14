@@ -121,6 +121,7 @@
       btnTimings: document.getElementById('btn-timings'),
       btnTeeth: document.getElementById('btn-teeth'),
       btnSchema: document.getElementById('btn-schema'),
+      btnExclusion: document.getElementById('btn-exclusion'),
       btnPricing: document.getElementById('btn-pricing'),
       btnModifiers: document.getElementById('btn-modifiers'),
       btnCheckAll: document.getElementById('btn-check-all'),
@@ -198,6 +199,9 @@
     });
     elements.btnSchema.addEventListener('click', () => {
       runChecker('schema');
+    });
+    elements.btnExclusion.addEventListener('click', () => {
+      runChecker('exclusion');
     });
     elements.btnClinician.addEventListener('click', () => {
       runChecker('clinician');
@@ -374,6 +378,7 @@
       timings: ['xml'],
       teeth: ['xml'],
       schema: ['xml'],
+      exclusion: ['xml'],
       pricing: ['xml'],
       modifiers: ['xml', 'eligibility']
     };
@@ -562,7 +567,7 @@
   // Bug #6: Memory cleanup for inactive containers
   function cleanupInactiveContainers(activeCheckerName) {
     console.log(`[DEBUG] Cleaning up inactive containers (keeping ${activeCheckerName})`);
-    const allCheckers = ['schema', 'timings', 'teeth', 'elig', 'auths', 'clinician', 'pricing', 'modifiers'];
+    const allCheckers = ['schema', 'exclusion', 'timings', 'teeth', 'elig', 'auths', 'clinician', 'pricing', 'modifiers'];
     
     allCheckers.forEach(checkerName => {
       if (checkerName !== activeCheckerName) {
@@ -610,6 +615,11 @@
         <div id="results"></div>
       `,
       schema: `
+        <input type="file" id="xmlFile" accept=".xml" style="display:none" />
+        <div id="uploadStatus" aria-live="polite"></div>
+        <div id="results"></div>
+      `,
+      exclusion: `
         <input type="file" id="xmlFile" accept=".xml" style="display:none" />
         <div id="uploadStatus" aria-live="polite"></div>
         <div id="results"></div>
@@ -743,6 +753,7 @@
       timings: { xmlFileInput: 'xml' },
       teeth: { xmlFile: 'xml' },
       schema: { xmlFile: 'xml' },
+      exclusion: { xmlFile: 'xml' },
       pricing: { 'xml-file': 'xml', 'xlsx-file': 'pricing' },
       modifiers: { 'xml-file': 'xml', 'xlsx-file': 'eligibility' }
     };
@@ -778,6 +789,7 @@
       
       const checkerFunctions = {
         schema: validateXmlSchema,
+        exclusion: runExclusionCheck,
         timings: validateTimingsAsync,
         teeth: parseXML,
         elig: runEligCheck,
@@ -817,7 +829,7 @@
     const allButtons = [
       elements.btnClinician, elements.btnElig, elements.btnAuths,
       elements.btnTimings, elements.btnTeeth, elements.btnSchema,
-      elements.btnPricing, elements.btnModifiers,
+      elements.btnExclusion, elements.btnPricing, elements.btnModifiers,
       elements.btnCheckAll
     ];
     
@@ -1039,6 +1051,7 @@
       'timings': elements.btnTimings,
       'teeth': elements.btnTeeth,
       'schema': elements.btnSchema,
+      'exclusion': elements.btnExclusion,
       'clinician': elements.btnClinician,
       'pricing': elements.btnPricing,
       'modifiers': elements.btnModifiers

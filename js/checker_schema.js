@@ -327,6 +327,200 @@ function checkGTLicenseValidation(activities, facilityID, getText, invalidFields
   }
 }
 
+
+const CLAIM_NOT_MERGED = "CLAIM_NOT_MERGED";
+const DEFAULT_NOT_MERGED_PAYER_IDS = ["A02"];
+const NOT_MERGED_PAYER_IDS = new Set(
+  (Array.isArray(window.NOT_MERGED_PAYER_IDS) && window.NOT_MERGED_PAYER_IDS.length
+    ? window.NOT_MERGED_PAYER_IDS
+    : DEFAULT_NOT_MERGED_PAYER_IDS
+  ).map(id => String(id || '').trim().toUpperCase()).filter(Boolean)
+);
+
+function safeTextByTag(parent, tag) {
+  if (!parent) return "";
+  const el = parent.getElementsByTagName(tag)[0];
+  return el && el.textContent ? el.textContent.trim() : "";
+}
+
+function parseEncounterDateTime(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+
+  const match = /^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})$/.exec(raw);
+  if (!match) {
+    return null;
+  }
+
+  const day = parseInt(match[1], 10);
+  const month = parseInt(match[2], 10);
+  const year = parseInt(match[3], 10);
+  const hour = parseInt(match[4], 10);
+  const minute = parseInt(match[5], 10);
+
+  if (month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59) {
+    return null;
+  }
+
+  const date = new Date(Date.UTC(year, month - 1, day, hour, minute));
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return null;
+  }
+
+  return {
+    raw,
+    dateKey: `${year.toString().padStart(4, '0')}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`,
+    timestamp: date.getTime()
+  };
+}
+
+function collectNotMergedClaimContext(claim) {
+  const claimID = safeTextByTag(claim, 'ID');
+  const memberID = safeTextByTag(claim, 'MemberID').toUpperCase();
+  const payerID = safeTextByTag(claim, 'PayerID').toUpperCase();
+  const providerID = safeTextByTag(claim, 'ProviderID').toUpperCase();
+  const encounter = claim.getElementsByTagName('Encounter')[0] || null;
+  const facilityID = safeTextByTag(encounter, 'FacilityID').toUpperCase();
+
+  const encounterStartRaw = safeTextByTag(encounter, 'Start');
+  const encounterEndRaw = safeTextByTag(encounter, 'End');
+  const parsedStart = parseEncounterDateTime(encounterStartRaw);
+  const parsedEnd = parseEncounterDateTime(encounterEndRaw);
+  const encounterDate = parsedStart ? parsedStart.dateKey : (parsedEnd ? parsedEnd.dateKey : null);
+
+  const activities = claim.getElementsByTagName('Activity');
+  const clinicians = new Set();
+  Array.from(activities).forEach(activity => {
+    const orderingClinician = safeTextByTag(activity, 'OrderingClinician').toUpperCase();
+    const activityClinician = safeTextByTag(activity, 'Clinician').toUpperCase();
+    const selectedClinician = orderingClinician || activityClinician;
+    if (selectedClinician) {
+      clinicians.add(selectedClinician);
+    }
+  });
+
+  const diagnosisCodes = new Set();
+  const diagnoses = claim.getElementsByTagName('Diagnosis');
+  Array.from(diagnoses).forEach(diagnosis => {
+    const code = safeTextByTag(diagnosis, 'Code').toUpperCase().replace(/\./g, '');
+    if (code) {
+      diagnosisCodes.add(code);
+    }
+  });
+
+  return {
+    claimID,
+    memberID,
+    payerID,
+    providerID,
+    facilityID,
+    encounterDate,
+    encounterStartRaw,
+    encounterEndRaw,
+    parsedStart,
+    parsedEnd,
+    clinicians,
+    diagnosisCodes
+  };
+}
+
+function buildNotMergedRemarksFromContexts(contexts) {
+  const grouped = new Map();
+  (contexts || []).forEach(ctx => {
+    if (!ctx.payerID || !NOT_MERGED_PAYER_IDS.has(ctx.payerID)) return;
+    if (!ctx.memberID || !ctx.providerID || !ctx.facilityID || !ctx.encounterDate) return;
+
+    const groupKey = [ctx.payerID, ctx.memberID, ctx.providerID, ctx.facilityID, ctx.encounterDate].join('|');
+    if (!grouped.has(groupKey)) {
+      grouped.set(groupKey, []);
+    }
+    grouped.get(groupKey).push(ctx);
+  });
+
+  const remarksByClaimId = new Map();
+  const pairKeys = new Set();
+
+  grouped.forEach(groupClaims => {
+    for (let i = 0; i < groupClaims.length; i += 1) {
+      for (let j = i + 1; j < groupClaims.length; j += 1) {
+        const first = groupClaims[i];
+        const second = groupClaims[j];
+
+        if (!first.claimID || !second.claimID || first.claimID === second.claimID) {
+          continue;
+        }
+
+        if (!first.parsedStart || !first.parsedEnd || !second.parsedStart || !second.parsedEnd) {
+          continue;
+        }
+
+        const hasEncounterOverlap = first.parsedStart.timestamp <= second.parsedEnd.timestamp && second.parsedStart.timestamp <= first.parsedEnd.timestamp;
+        if (!hasEncounterOverlap) {
+          continue;
+        }
+
+        const sharedClinicians = Array.from(first.clinicians).filter(clinician => second.clinicians.has(clinician));
+        if (sharedClinicians.length === 0) {
+          continue;
+        }
+
+        const sharedDiagnoses = Array.from(first.diagnosisCodes).filter(code => second.diagnosisCodes.has(code));
+        if (sharedDiagnoses.length === 0) {
+          continue;
+        }
+
+        const pairKey = [first.claimID, second.claimID].sort().join('|');
+        if (pairKeys.has(pairKey)) {
+          continue;
+        }
+        pairKeys.add(pairKey);
+
+        const sharedDxDisplay = sharedDiagnoses.map(code => {
+          if (code.length > 3) {
+            return `${code.slice(0, 3)}.${code.slice(3)}`;
+          }
+          return code;
+        }).join(', ');
+
+        const baseRemark = `Potential Not Merged Error with related claim ID ${second.claimID}: Same payer/member/provider/facility/service date (${first.encounterDate}), encounter overlap (${first.encounterStartRaw} - ${first.encounterEndRaw} vs ${second.encounterStartRaw} - ${second.encounterEndRaw}), shared ordering clinician(s): ${sharedClinicians.join(', ')}, shared diagnosis(es): ${sharedDxDisplay}. [${CLAIM_NOT_MERGED}]`;
+        const reverseRemark = `Potential Not Merged Error with related claim ID ${first.claimID}: Same payer/member/provider/facility/service date (${first.encounterDate}), encounter overlap (${first.encounterStartRaw} - ${first.encounterEndRaw} vs ${second.encounterStartRaw} - ${second.encounterEndRaw}), shared ordering clinician(s): ${sharedClinicians.join(', ')}, shared diagnosis(es): ${sharedDxDisplay}. [${CLAIM_NOT_MERGED}]`;
+
+        if (!remarksByClaimId.has(first.claimID)) {
+          remarksByClaimId.set(first.claimID, []);
+        }
+        if (!remarksByClaimId.has(second.claimID)) {
+          remarksByClaimId.set(second.claimID, []);
+        }
+
+        remarksByClaimId.get(first.claimID).push(baseRemark);
+        remarksByClaimId.get(second.claimID).push(reverseRemark);
+      }
+    }
+  });
+
+  return remarksByClaimId;
+}
+
+function detectNotMergedRemarksByClaim(claims) {
+  const warnings = [];
+  const contexts = Array.from(claims || []).map((claim, index) => {
+    try {
+      return collectNotMergedClaimContext(claim);
+    } catch (error) {
+      warnings.push(`Claim index ${index}: ${error.message}`);
+      return null;
+    }
+  }).filter(Boolean);
+
+  warnings.forEach(msg => console.warn('[SCHEMA][NOT_MERGED]', msg));
+
+  return buildNotMergedRemarksFromContexts(contexts);
+}
+
 function validateClaimSchema(xmlDoc, originalXmlContent = "") {
   const results = [];
   const claims = xmlDoc.getElementsByTagName("Claim");
@@ -341,6 +535,8 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
   const duplicateClaimIds = new Set(
     Array.from(claimIdCounts.entries()).filter(([, count]) => count > 1).map(([id]) => id)
   );
+
+  const notMergedRemarksByClaim = detectNotMergedRemarksByClaim(claims);
 
   // Extract ReceiverID from Header element
   // Only check leading zeros for Daman (A001) and Thiqa (D001)
@@ -605,6 +801,12 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
     // Mark claim as invalid if it had ampersands
     if (claimHadAmpersand) {
       invalidFields.push(AMPERSAND_REPLACEMENT_ERROR);
+    }
+
+    // Additive cross-claim Not Merged detection
+    if (claimID && notMergedRemarksByClaim.has(claimID)) {
+      const notMergedRemarks = notMergedRemarksByClaim.get(claimID) || [];
+      notMergedRemarks.forEach(remark => invalidFields.push(remark));
     }
 
     // Compile remarks
@@ -907,6 +1109,12 @@ function exportErrorsToXLSX(data, schemaType) {
     window.hideModal = hideModal;
     window.claimToHtmlTable = claimToHtmlTable;
     window.ensureModal = ensureModal;
+    window.NOT_MERGED_PAYER_IDS = Array.from(NOT_MERGED_PAYER_IDS);
+    window._schemaNotMergedUtils = {
+      CLAIM_NOT_MERGED,
+      parseEncounterDateTime,
+      buildNotMergedRemarksFromContexts
+    };
 
   } catch (error) {
     console.error('[CHECKER-ERROR] Failed to load checker:', error);

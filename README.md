@@ -102,16 +102,24 @@ Validates the overall XML structure for `Claim.Submission` and `Person.Register`
 - Checks presence and correctness of all required fields.
 - Flags format errors, missing/duplicate diagnosis codes.
 - Detects medical tourism and national-without-EID scenarios.
+- Includes additive cross-claim potential not-merged detection (`CLAIM_NOT_MERGED`) for configured payer scopes.
 - Results displayed in tables with per-entry modals; supports XLSX export.
 
-#### 6. Dental Code & Tooth Number Validator (`checker_tooths`)
+#### 6. ICD-10-CM Exclusion Checker (`checker_exclusions`)
+Validates claim-level ICD-10-CM diagnosis conflicts based on Excludes1 relationships.
+- Evaluates Principal, Secondary, and ReasonForVisit direct diagnosis entries only.
+- Uses JSON-driven rules (`json/icd10cm_exclusions_2026.json`) with exact/category/prefix/range support.
+- Reports claim-level exclusion conflicts (`DX_EXCLUDES1`) with deduplicated diagnosis pairs.
+- Current rules file is a seed subset and is intentionally not a complete ICD database.
+
+#### 7. Dental Code & Tooth Number Validator (`checker_tooths`)
 Validates dental procedure codes for correct tooth and region assignments.
 - Cross-references activity codes with metadata for tooth, sextant, or quadrant requirements.
 - Detects region duplication and inappropriate observation codes.
 - Provides anatomical context (anterior, bicuspid, posterior) per tooth.
 - Color-coded compliance report; export invalid entries as Excel.
 
-#### 7. Dental Pricing Checker (`checker_pricing`)
+#### 8. Dental Pricing Checker (`checker_pricing`)
 Compares claimed prices against the built-in dental pricing reference for both Thiqa (D001) and Daman (A001) claims.
 - Upload an XML claim file; a pricing XLSX is optional (overrides built-in pricing when uploaded).
 - Automatically selects the correct price based on `ReceiverID` (Thiqa or Daman) and facility ID.
@@ -122,7 +130,7 @@ Compares claimed prices against the built-in dental pricing reference for both T
 - Marks each activity as **Valid** or **Invalid** with a remarks column.
 - Progress bar during processing; download results as Excel.
 
-#### 8. Timing Validity Checker (`checker_timings`)
+#### 9. Timing Validity Checker (`checker_timings`)
 Validates timing-related elements in XML claim submissions.
 - Supports both **Dental** and **Medical** claim types.
 - Checks that service dates, encounter times, and activity durations follow the required logic and ordering rules.
