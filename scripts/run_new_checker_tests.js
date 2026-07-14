@@ -254,12 +254,12 @@ await run('Not merged skips invalid encounter date and missing data', () => {
   assert(findings.size === 0, 'Expected no findings for invalid/missing date and clinician/diagnosis');
 });
 
-await run('Not merged skips payer out of scope', () => {
+await run('Not merged applies to all payers regardless of PayerID', () => {
   const findings = schemaUtils.buildNotMergedRemarksFromContexts([
     context({ claimID: 'C1', payerID: 'B01' }),
-    context({ claimID: 'C2', payerID: 'B01' })
+    context({ claimID: 'C2', payerID: 'B01', encounterStartRaw: '01/01/2026 10:10', encounterEndRaw: '01/01/2026 10:40', parsedStart: ts('01/01/2026 10:10'), parsedEnd: ts('01/01/2026 10:40') })
   ]);
-  assert(findings.size === 0, 'Expected no findings for payer not in NOT_MERGED_PAYER_IDS');
+  assert(findings.has('C1') && findings.has('C2'), 'Expected findings for all payers (PayerID filter removed)');
 });
 
 if (process.exitCode) {

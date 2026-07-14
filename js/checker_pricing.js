@@ -33,11 +33,12 @@ async function handleRun() {
     if (!xmlFile) throw new Error('Please select an XML file.');
     showProgress(5, 'Reading files');
 
-    const [xmlText, dentalPricingRaw, clinicianData, endoPricingRaw] = await Promise.all([
+    const [xmlText, dentalPricingRaw, clinicianData, endoPricingRaw, medicalPricingRaw] = await Promise.all([
       readFileText(xmlFile),
       fetch('../json/dental_pricing.json').then(r => r.json()).catch(e => { console.warn('[PRICING] Failed to load dental_pricing.json:', e); return []; }),
       fetch('../json/clinician_licenses.json').then(r => r.json()).catch(() => []),
-      fetch('../json/endo_pricing.json').then(r => r.json()).catch(() => [])
+      fetch('../json/endo_pricing.json').then(r => r.json()).catch(() => []),
+      fetch('../json/medical_pricing.json').then(r => r.json()).catch(e => { console.warn('[PRICING] Failed to load medical_pricing.json:', e); return []; })
     ]);
 
     if (!Array.isArray(dentalPricingRaw) || dentalPricingRaw.length === 0) throw new Error('Dental pricing data could not be loaded.\nEnsure dental_pricing.json is present in the json/ folder.');
@@ -60,6 +61,7 @@ async function handleRun() {
 
     const extracted = extractPricingRecords(xmlDoc);
     const jsonMatcher = buildJsonPricingMatcher(dentalPricingRaw);
+    const medicalMatcher = buildMedicalPricingMatcher(medicalPricingRaw);
 
     const clinicianSpecialtyMap = new Map();
     (Array.isArray(clinicianData) ? clinicianData : []).forEach(e => {
@@ -165,6 +167,13 @@ async function handleRun() {
             refPrice = isThiqaAlyaharGroup ? jsonMatch.thiqa_alyahar : jsonMatch.thiqa_other;
           }
           matchRow = jsonMatch;
+        } else {
+          const medicalMatch = medicalMatcher.find(rec.CPT);
+          if (medicalMatch) {
+            refPrice = medicalMatch.price;
+            matchRow = medicalMatch;
+            pricingContext = 'Mandatory Tariff Standard Pricing';
+          }
         }
       }
 
@@ -564,6 +573,21 @@ function buildPricingMatcher(rows) {
 }
 
 function buildJsonPricingMatcher(data) {
+  const index = new Map();
+
+  (Array.isArray(data) ? data : []).forEach(entry => {
+    const code = normalizeCode(entry.code);
+    if (code) index.set(code, entry);
+  });
+
+  return {
+    find(code) {
+      return index.get(normalizeCode(code)) || null;
+    }
+  };
+}
+
+function buildMedicalPricingMatcher(data) {
   const index = new Map();
 
   (Array.isArray(data) ? data : []).forEach(entry => {

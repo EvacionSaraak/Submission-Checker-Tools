@@ -460,7 +460,6 @@ function collectNotMergedClaimContext(claim) {
 function buildNotMergedRemarksFromContexts(contexts) {
   const grouped = new Map();
   (contexts || []).forEach(ctx => {
-    if (!ctx.payerID || !NOT_MERGED_PAYER_IDS.has(ctx.payerID)) return;
     if (!ctx.memberID || !ctx.providerID || !ctx.facilityID || !ctx.encounterDate) return;
 
     const groupKey = [ctx.payerID, ctx.memberID, ctx.providerID, ctx.facilityID, ctx.encounterDate].join('|');
@@ -577,8 +576,8 @@ function buildMergedClaimRemarksByClaim(claims) {
 
   Array.from(claims || []).forEach(claim => {
     const claimID = safeTextByTag(claim, 'ID');
+    if (!claimID) return;
     const payerID = safeTextByTag(claim, 'PayerID').toUpperCase();
-    if (!claimID || !REQUIRED_MERGE_PAYER_IDS.has(payerID)) return;
 
     const memberID = safeTextByTag(claim, 'MemberID').toUpperCase();
     const encounter = claim.getElementsByTagName('Encounter')[0] || null;

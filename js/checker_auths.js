@@ -35,7 +35,7 @@ const MEDICAL_CODES_REQUIRING_AUTH = new Set([
 
 function codeRequiresAuthorization(code, rule = {}) {
   return MEDICAL_CODES_REQUIRING_AUTH.has(String(code || '').trim()) ||
-    !/NOT\s+REQUIRED/i.test(rule.approval_details || "");
+    (rule.approval_details !== undefined && !/NOT\s+REQUIRED/i.test(rule.approval_details));
 }
 
 function getText(parent, tag) {
