@@ -3,6 +3,7 @@
 
   const DX_EXCLUDES1 = 'DX_EXCLUDES1';
   const DEFAULT_RULES_PATH = '../json/icd10cm_exclusions_2026.json';
+  const SUPPORTED_DIAGNOSIS_TYPES = new Set(['PRINCIPAL', 'SECONDARY']);
 
   let rulesCachePromise = null;
 
@@ -169,7 +170,9 @@
     const normalizedDiagnoses = (Array.isArray(diagnoses) ? diagnoses : [])
       .map((diagnosis, index) => {
         const normalizedCode = normalizeDiagnosisCode(diagnosis.code);
+        const normalizedType = String(diagnosis.type || '').toUpperCase().trim();
         if (!normalizedCode) return null;
+        if (!SUPPORTED_DIAGNOSIS_TYPES.has(normalizedType)) return null;
         return {
           index,
           code: normalizedCode,

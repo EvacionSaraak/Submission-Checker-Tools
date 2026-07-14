@@ -240,7 +240,7 @@ function logInvalidRow(xlsRow, context, remarks) {
   }
 }
 
-function validateActivity(activityEl, xlsxMap, claimId, memberId) {
+function validateActivity(activityEl, xlsxMap, claimId, memberId, claimType = '') {
   const id       = getText(activityEl, "ID");
   const code     = getText(activityEl, "Code");
   const start    = getText(activityEl, "Start");
@@ -255,6 +255,7 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId) {
 
   const rule     = authRules[code] || {};
   const needsAuth= !/NOT\s+REQUIRED/i.test(rule.approval_details || "");
+  const isMedicalClaim = String(claimType || '').trim() === '3';
 
   if (!needsAuth && !authID) {
     return {
@@ -339,9 +340,11 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId) {
     const matchResult = validateXLSXMatch(matchedRow, context);
     remarks.push(...matchResult.remarks);
     if (matchResult.clinicianMismatch) {
-      unknown = true;
       clinicianMismatchMsg = `Clinician mismatch: XML=[${matchResult.xmlClinician}], XLSX=[${matchResult.xlsClinician}]`;
       remarks.unshift(clinicianMismatchMsg);
+      if (!isMedicalClaim) {
+        unknown = true;
+      }
     }
     const dateStatusResult = validateDateAndStatus(matchedRow, start);
     remarks.push(...dateStatusResult.remarks);
@@ -435,7 +438,22 @@ function validateClaims(xmlDoc, xlsxData, receiverID = '') {
     const cid = getText(claimEl, "ID");
     const mid = getText(claimEl, "MemberID");
     const acts = Array.from(claimEl.getElementsByTagName("Activity"));
-    acts.forEach(a => results.push(validateActivity(a, xlsxMap, cid, mid)));
+    const encounter = claimEl.getElementsByTagName("Encounter")[0];
+    const claimType = getText(encounter || claimEl, "Type");
+    const isMedicalClaim = String(claimType || '').trim() === '3';
+
+    const orderingClinicians = acts
+      .map(a => getText(a, "OrderingClinician").trim().toUpperCase())
+      .filter(Boolean);
+    const uniqueOrderingClinicians = new Set(orderingClinicians);
+
+    acts.forEach(a => results.push(validateActivity(a, xlsxMap, cid, mid, claimType)));
+
+    if (isMedicalClaim && uniqueOrderingClinicians.size > 1) {
+      results
+        .filter(r => r.claimId === cid)
+        .forEach(r => r.remarks.push('Medical claim has multiple OrderingClinician values; ordering clinician must be unique.'));
+    }
   });
   return results;
 }

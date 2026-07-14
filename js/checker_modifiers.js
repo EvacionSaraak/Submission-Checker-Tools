@@ -35,9 +35,17 @@ async function handleRun() {
     
     if (!xmlFile || !xlsxFile) throw new Error('Please select both an XML file and an XLSX file.');
 
-    const [xmlText, xlsxObj] = await Promise.all([readFileText(xmlFile), readXlsx(xlsxFile)]);
+    const [xmlText, xlsxObj, minorProceduresRaw] = await Promise.all([
+      readFileText(xmlFile),
+      readXlsx(xlsxFile),
+      fetch('../json/minor_procedures.json').then(r => r.ok ? r.json() : []).catch(() => [])
+    ]);
     const xmlDoc = parseXml(xmlText);
     const extracted = extractModifierRecords(xmlDoc);
+    const minorProcedureCodes = new Set((Array.isArray(minorProceduresRaw) ? minorProceduresRaw : [])
+      .map(code => normalizeCode(code))
+      .filter(Boolean));
+    const claimModifierContext = buildClaimModifierContext(extracted, minorProcedureCodes);
 
     const matcher = buildXlsxMatcher(xlsxObj.rows);
 
@@ -64,7 +72,25 @@ async function handleRun() {
       const voiNorm = normForCompare(voiNumber);
       if (rec.Modifier === '52' && voiNorm !== normForCompare('VOI_EF1')) remarks.push(`Modifier 52 does not match VOI (expected VOI_EF1).`);
       if (rec.Modifier === '24' && voiNorm !== normForCompare('VOI_D')) remarks.push(`Modifier 24 does not match VOI (expected VOI_D).`);
-    
+      if (rec.Quantity !== 1) remarks.push('Qty must be 1 for modifiers.');
+
+      const claimCtx = claimModifierContext.get(rec.ClaimID) || { hasMinorProcedure: false, hasPricedConsultation: false };
+      if ((rec.Modifier === '24' || rec.Modifier === '25' || rec.Modifier === '52') && !isConsultationCode(rec.ActivityCode)) {
+        remarks.push(`Modifier ${rec.Modifier} must only be on consultation codes.`);
+      }
+      if (rec.Modifier === '24' && !normForCompare(voiNumber).includes(normForCompare('Vol D'))) {
+        remarks.push('Modifier 24 requires eligibility containing Vol D.');
+      }
+      if (rec.Modifier === '25') {
+        if (!claimCtx.hasMinorProcedure) remarks.push('Modifier 25 requires a code from minor_procedures.json in the same claim.');
+        if (!claimCtx.hasPricedConsultation) remarks.push('Modifier 25 requires a consultation code with price in the same claim.');
+      }
+      if (rec.Modifier === '50') {
+        if (!minorProcedureCodes.has(normalizeCode(rec.ActivityCode))) {
+          remarks.push('Modifier 50 must only be on a code from minor_procedures.json.');
+        }
+      }
+
       if (!match) remarks.push('No matching eligibility found');
     
       return {
@@ -73,6 +99,9 @@ async function handleRun() {
         ActivityID: rec.ActivityID || '',
         OrderingClinician: rec.OrderingClinician || '',
         Modifier: rec.Modifier || '',
+        ActivityCode: rec.ActivityCode || '',
+        Quantity: rec.Quantity,
+        Net: rec.Net,
         ObsCode: rec.ObsCode || '',
         VOINumber: voiNumber,
         PayerID: rec.PayerID || '',
@@ -171,11 +200,17 @@ function extractModifierRecords(xmlDoc) {
         // Only accept observations with ValueType of "Modifiers"
         if (!valueType || valueType.trim().toLowerCase() !== 'modifiers') return;
 
-        // Only accept valid VOI values
+        const activityCode = textValue(act, 'Code');
+        const quantity = Number(textValue(act, 'Quantity') || '0');
+        const net = Number(textValue(act, 'Net') || '0');
+
+        // Only accept valid modifier values
         let modifier = '';
         const voiNorm = (voiVal || '').toUpperCase().replace(/[_\s]/g, '');
         if (voiNorm === 'VOI_D' || voiNorm === '24') modifier = '24';
         else if (voiNorm === 'VOI_EF1' || voiNorm === '52') modifier = '52';
+        else if (voiNorm === '25') modifier = '25';
+        else if (voiNorm === '50') modifier = '50';
         else return; // skip anything else
 
         // Check for exact Observation Code match
@@ -191,6 +226,9 @@ function extractModifierRecords(xmlDoc) {
           Date: encDate,
           OrderingClinician: clinician,
           Modifier: modifier,
+          ActivityCode: activityCode,
+          Quantity: quantity,
+          Net: net,
           PayerID: payerId,
           ObsCode: code,
           VOINumber: voiVal,
@@ -263,9 +301,28 @@ function buildXlsxMatcher(rows) {
 }
 
 // ----------------- Validation / business rules -----------------
-function isModifierTarget(val) { const v = String(val || '').trim(); return v === '24' || v === '52'; }
+function isModifierTarget(val) { const v = String(val || '').trim(); return v === '24' || v === '25' || v === '50' || v === '52'; }
 function normForCompare(s) { return String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
 function escapeRegex(s) { return String(s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+function isConsultationCode(code) { return /^(92|992)/.test(String(code || '').trim()); }
+function normalizeCode(code) { return String(code || '').trim().replace(/^0+/, ''); }
+
+function buildClaimModifierContext(records, minorProcedureCodes) {
+  const byClaim = new Map();
+  (records || []).forEach(rec => {
+    if (!byClaim.has(rec.ClaimID)) {
+      byClaim.set(rec.ClaimID, {
+        hasMinorProcedure: false,
+        hasPricedConsultation: false
+      });
+    }
+    const ctx = byClaim.get(rec.ClaimID);
+    const activityCode = normalizeCode(rec.ActivityCode);
+    if (minorProcedureCodes.has(activityCode)) ctx.hasMinorProcedure = true;
+    if (isConsultationCode(rec.ActivityCode) && Number(rec.Net || 0) > 0) ctx.hasPricedConsultation = true;
+  });
+  return byClaim;
+}
 function expectedModifierForVOI(voi) {
   if (!voi) return '';
   const v = String(voi || '').toUpperCase().replace(/[_\s]/g, '');
@@ -286,15 +343,15 @@ function buildResultsTable(rows) {
   const payerSet = new Set(rows.map(r => String(r.PayerID || '').trim().toUpperCase()).filter(x => x));
   console.info('[DEBUG] unique Payer IDs in results:', Array.from(payerSet).join(', ') || '(none)');
 
-  // Filter only A001 and E001 (case-insensitive)
+  // Filter only A001 and D001 (case-insensitive)
   const filteredRows = rows.filter(r => {
     const payer = String(r.PayerID || '').trim().toUpperCase();
-    return payer === 'A001' || payer === 'E001';
+    return payer === 'A001' || payer === 'D001';
   });
 
   if (!filteredRows.length) {
     const emptyDiv = document.createElement('div');
-    emptyDiv.textContent = 'No matching claims (only A001 and E001 shown)';
+    emptyDiv.textContent = 'No matching claims (only A001 and D001 shown)';
     return emptyDiv;
   }
 
@@ -327,15 +384,10 @@ function buildResultsTable(rows) {
     const showMember = showClaim || r.MemberID !== prevMemberId;
     const showActivity = showMember || r.ActivityID !== prevActivityId;
 
-    // Build remarks
-    const remarks = [];
-    if (r.ObsCode !== 'CPT modifier') remarks.push(`Observation Code is "${r.ObsCode}" (expected "CPT modifier").`);
-
-    const voiNorm = normForCompare(r.VOINumber || '');
-    if (r.Modifier === '52' && voiNorm !== normForCompare('VOI_EF1')) remarks.push(`Modifier 52 does not match VOI (expected VOI_EF1).`);
-    if (r.Modifier === '24' && voiNorm !== normForCompare('VOI_D')) remarks.push(`Modifier 24 does not match VOI (expected VOI_D).`);
-    if (!r.EligibilityRow) remarks.push('No matching eligibility found.');
-
+    const remarks = String(r.Remarks || '')
+      .split(';')
+      .map(s => s.trim())
+      .filter(Boolean);
     const isValid = remarks.length === 0;
     html += `<tr class="${isValid ? 'table-success' : 'table-danger'}">
       <td style="padding:6px;border:1px solid #ccc">${showClaim ? escapeHtml(r.ClaimID) : ''}</td>

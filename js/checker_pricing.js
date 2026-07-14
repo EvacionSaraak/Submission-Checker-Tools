@@ -80,6 +80,7 @@ async function handleRun() {
       const facility = rec.FacilityID || '';
       const xmlNet = Number(rec.Net || 0);
       const xmlQty = Number(rec.Quantity || 0);
+      const effectivePayerID = (rec.PayerID || receiverID || '').toUpperCase();
 
       if (receiverID !== 'D001' && receiverID !== 'A001') {
         const isHAAD = receiverID.toUpperCase() === 'HAAD';
@@ -98,7 +99,8 @@ async function handleRun() {
           Remarks: netZeroValid ? 'Claimed Net is 0 (treated as Valid).' : '',
           ComputedRef: null,
           xmlNetNum: xmlNet,
-          PatientShare: rec.PatientShare || '0'
+          PatientShare: rec.PatientShare || '0',
+          PayerID: effectivePayerID
         };
       }
 
@@ -125,7 +127,8 @@ async function handleRun() {
           Remarks: remarks.map(s => s && !s.endsWith('.') ? s + '.' : s).join(' '),
           ComputedRef: 0,
           xmlNetNum: xmlNet,
-          PatientShare: rec.PatientShare || '0'
+          PatientShare: rec.PatientShare || '0',
+          PayerID: effectivePayerID
         };
       }
 
@@ -237,6 +240,32 @@ async function handleRun() {
         }
       }
 
+      const normalizedCode = normalizeCode(rec.CPT);
+      if ((normalizedCode === '87400' || normalizedCode === '87804') && xmlQty !== 2) {
+        status = 'Invalid';
+        remarks.push(`Code ${rec.CPT} must always have quantity 2.`);
+      }
+
+      if ((normalizedCode === '82307' || normalizedCode === '82652') && !['A001', 'D001'].includes(effectivePayerID) && xmlNet !== 0) {
+        status = 'Invalid';
+        remarks.push(`Code ${rec.CPT} must have net price 0 for payer ${effectivePayerID || '(missing)'}.`);
+      }
+
+      if (normalizedCode === '92015' && effectivePayerID !== 'D001' && xmlNet !== 0) {
+        status = 'Invalid';
+        remarks.push(`Code 92015 can only have price for payer D001.`);
+      }
+
+      if (normalizedCode === '99173' && xmlNet !== 0) {
+        status = 'Invalid';
+        remarks.push('Code 99173 cannot have price.');
+      }
+
+      if (normalizedCode === '36415' && ['A001', 'D001', 'A025'].includes(effectivePayerID) && xmlNet !== 0) {
+        status = 'Invalid';
+        remarks.push(`Code 36415 must have net price 0 for payer ${effectivePayerID}.`);
+      }
+
       return {
         ClaimID: rec.ClaimID || '',
         ActivityID: rec.ActivityID || '',
@@ -251,7 +280,8 @@ async function handleRun() {
         Remarks: remarks.map(s => s && !s.endsWith('.') ? s + '.' : s).join(' '),
         ComputedRef: computedRef,
         xmlNetNum: xmlNet,
-        PatientShare: rec.PatientShare || '0'
+        PatientShare: rec.PatientShare || '0',
+        PayerID: effectivePayerID
       };
     });
 
@@ -436,6 +466,7 @@ function extractPricingRecords(xmlDoc) {
 
   for (const claim of claims) {
     const claimId = textValue(claim, 'ID') || '';
+    const payerId = textValue(claim, 'PayerID') || '';
     const activities = Array.from(claim.getElementsByTagName('Activity'));
     const encounterNode = claim.getElementsByTagName('Encounter')[0];
     const facilityId = textValue(encounterNode, 'FacilityID') || '';
@@ -475,7 +506,8 @@ function extractPricingRecords(xmlDoc) {
         FacilityID: facilityId,
         ClinicianLic: clinicianLic,
         EncounterDate: encounterDateStr,
-        PatientShare: claimPatientShare
+        PatientShare: claimPatientShare,
+        PayerID: payerId
       });
     }
   }

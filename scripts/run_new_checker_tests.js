@@ -88,7 +88,7 @@ await run('Exclusion prefix and range match', () => {
   assert(findings.length === 1, 'Expected prefix/range conflict');
 });
 
-await run('Exclusion detects ReasonForVisit conflicts', () => {
+await run('Exclusion ignores ReasonForVisit diagnosis type', () => {
   const compiled = dxRules.compileExclusionRules({
     rules: [{ code: 'A00.1', excludes1: [{ code: 'B00.0' }] }]
   });
@@ -96,7 +96,7 @@ await run('Exclusion detects ReasonForVisit conflicts', () => {
     { code: 'A00.1', type: 'ReasonForVisit' },
     { code: 'B00.0', type: 'Secondary' }
   ], compiled);
-  assert(findings.length === 1, 'Expected non-principal/ReasonForVisit conflict');
+  assert(findings.length === 0, 'Expected ReasonForVisit diagnoses to be excluded');
 });
 
 await run('Exclusion no-conflict path', () => {

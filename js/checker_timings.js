@@ -94,6 +94,13 @@ function parseXML(xmlString) {
   return doc;
 }
 
+function minMinutesFor97Quantity(quantity) {
+  if (quantity >= 4) return 53;
+  if (quantity === 3) return 38;
+  if (quantity === 2) return 23;
+  return 8;
+}
+
 // --- Claims Extraction/Validation ---
 function extractClaims(xmlDoc, requiredType = "6") {
   const results = [];
@@ -107,11 +114,25 @@ function extractClaims(xmlDoc, requiredType = "6") {
     const encMin = Math.floor((encounterEnd - encounterStart) / 60000);
     let baseValid = true, baseRemarks = [];
     if (encMin < 0) { baseValid = false; baseRemarks.push('Encounter end is before encounter start.');}
-    claim.querySelectorAll('Activity').forEach(activity => {
+    const activities = Array.from(claim.querySelectorAll('Activity'));
+    const timeBased97Activities = activities
+      .map(activity => ({
+        code: activity.querySelector('Code')?.textContent?.trim() || '',
+        quantity: Number(activity.querySelector('Quantity')?.textContent?.trim() || '0')
+      }))
+      .filter(activity => /^97/.test(activity.code));
+    const totalRequired97Minutes = timeBased97Activities.reduce((sum, activity) => {
+      const quantity = Number.isFinite(activity.quantity) && activity.quantity > 0 ? activity.quantity : 1;
+      return sum + minMinutesFor97Quantity(quantity);
+    }, 0);
+    const notEnough97Time = timeBased97Activities.length > 0 && encMin < totalRequired97Minutes;
+
+    activities.forEach(activity => {
       const activityId = activity.querySelector('ID')?.textContent || 'Unknown';
       const activityStartStr = activity.querySelector('Start')?.textContent;
       const typeValue = activity.querySelector('Type')?.textContent?.trim() || '';
       const codeValue = activity.querySelector('Code')?.textContent?.trim() || '';
+      const qtyValue = Number(activity.querySelector('Quantity')?.textContent?.trim() || '0');
       let isValid = baseValid, remarks = [...baseRemarks];
       
       // Type validation has been moved to the teeths checker
@@ -142,6 +163,11 @@ function extractClaims(xmlDoc, requiredType = "6") {
           const hours = Math.floor(encMin / 60), minutes = encMin % 60;
           remarks.push(`Encounter duration too long (${hours}h ${minutes}m). Should be 4 hours maximum.`);
         }
+      }
+      if (notEnough97Time && /^97/.test(codeValue)) {
+        isValid = false;
+        const safeQty = Number.isFinite(qtyValue) && qtyValue > 0 ? qtyValue : 1;
+        remarks.push(`Not enough time for ${safeQty} quantity of ${codeValue}`);
       }
       results.push({
         claimId, activityId, type: typeValue, encounterStart: encounterStartStr, encounterEnd: encounterEndStr,

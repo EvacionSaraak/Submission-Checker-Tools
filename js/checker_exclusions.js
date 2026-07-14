@@ -1,7 +1,7 @@
 (function() {
   'use strict';
 
-  const SUPPORTED_DIAGNOSIS_TYPES = new Set(['PRINCIPAL', 'SECONDARY', 'REASONFORVISIT']);
+  const SUPPORTED_DIAGNOSIS_TYPES = new Set(['PRINCIPAL', 'SECONDARY']);
 
   function getDirectChildrenByLocalName(parent, targetName) {
     if (!parent || !parent.children) return [];
