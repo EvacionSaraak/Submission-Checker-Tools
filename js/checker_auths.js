@@ -17,6 +17,27 @@ let parsedReceiverID = '';
 
 // === UTILITIES ===
 
+const MEDICAL_CODES_REQUIRING_AUTH = new Set([
+  '70336', '70450', '70460', '70470', '70480', '70481', '70482', '70486', '70487', '70488',
+  '70490', '70491', '70492', '70496', '70498', '70540', '70542', '70543', '70544', '70545',
+  '70546', '70547', '70548', '70549', '70551', '70552', '70553', '70554', '70555', '70557',
+  '70558', '70559', '71250', '71260', '71270', '71271', '71275', '71550', '71551', '71552',
+  '71555', '72125', '72126', '72127', '72128', '72129', '72130', '72131', '72132', '72133',
+  '72141', '72142', '72146', '72147', '72148', '72149', '72156', '72157', '72158', '72159',
+  '72191', '72192', '72193', '72194', '72195', '72196', '72197', '72198', '73200', '73201',
+  '73202', '73206', '73218', '73219', '73220', '73221', '73222', '73223', '73225', '73700',
+  '73701', '73702', '73706', '73718', '73719', '73720', '73721', '73722', '73723', '73725',
+  '74150', '74160', '74170', '74174', '74175', '74176', '74177', '74178', '74181', '74182',
+  '74183', '74185', '74261', '74262', '74263', '74712', '74713', '75571', '75572', '75573',
+  '75574', '75635', '76380', '76390', '76391', '77011', '77012', '77013', '77014', '77021',
+  '77022', '77046', '77047', '77048', '77049', '77078', '77084'
+]);
+
+function codeRequiresAuthorization(code, rule = {}) {
+  return MEDICAL_CODES_REQUIRING_AUTH.has(String(code || '').trim()) ||
+    !/NOT\s+REQUIRED/i.test(rule.approval_details || "");
+}
+
 function getText(parent, tag) {
   const el = parent.querySelector(tag);
   return el && el.textContent ? el.textContent.trim() : "";
@@ -170,7 +191,7 @@ function preprocessClaimCodeSums(results) {
 function validateApprovalRequirement(code, authID) {
   const remarks = [];
   const rule = authRules[code] || {};
-  const needsAuth = !/NOT\s+REQUIRED/i.test(rule.approval_details || "");
+  const needsAuth = codeRequiresAuthorization(code, rule);
   if (needsAuth) {
     if (!authID) remarks.push(`Missing required AuthorizationID for ${code}`);
   } else {
@@ -254,7 +275,7 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId, claimType = ''
   const authID   = rawAuthText.trim();
 
   const rule     = authRules[code] || {};
-  const needsAuth= !/NOT\s+REQUIRED/i.test(rule.approval_details || "");
+  const needsAuth= codeRequiresAuthorization(code, rule);
   const isMedicalClaim = String(claimType || '').trim() === '3';
 
   if (!needsAuth && !authID) {
