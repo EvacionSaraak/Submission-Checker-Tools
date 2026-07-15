@@ -9,6 +9,9 @@
   const ERROR_FEEDBACK_DURATION_EXTENSION_FACTOR = 1.5; // Extend error messages display time by 50%
   const INVALID_ROW_CLASSES = 'tbody tr.table-danger, tbody tr.table-warning';
 
+  // Checkers that are only applicable in Medical mode
+  const MEDICAL_ONLY_CHECKERS = new Set(['exclusion', 'modifiers']);
+
   // Initialize session counter immediately
   (function initSessionCounter() {
     let sessionCount = sessionStorage.getItem('checkerSessionCount');
@@ -59,6 +62,28 @@
     };
     debugLog.push(logEntry);
     console.log(`[DEBUG-LOG] ${timestamp} - ${message}`, data || '');
+  }
+
+  // Returns true when the Medical claim-type radio is checked
+  function isMedicalModeSelected() {
+    return Boolean(document.getElementById('claimTypeMedical')?.checked);
+  }
+
+  // Returns the sidebar button element for a given checker name
+  function getCheckerButton(checker) {
+    const btnName = `btn${checker.charAt(0).toUpperCase() + checker.slice(1)}`;
+    return elements[btnName] || null;
+  }
+
+  // Hides the checker container and clears its content if it is currently active
+  function hideAndClearChecker(checker) {
+    const container = document.getElementById(`checker-container-${checker}`);
+    if (container && activeChecker === checker) {
+      container.style.display = 'none';
+      container.innerHTML = '';
+      activeChecker = null;
+      console.log(`[BUTTON] Cleared ${checker} container (switched to DENTAL)`);
+    }
   }
 
   // Loading overlay functions
@@ -275,12 +300,6 @@
     console.log('[INIT] Performing initial button state update...');
     updateButtonStates();
     
-    // Bug #29 fix: Ensure Modifiers button is hidden on page load if Dental is selected
-    if (claimTypeDental && claimTypeDental.checked && elements.btnModifiers) {
-      console.log('[INIT] DENTAL selected on page load - ensuring Modifiers button is hidden');
-      elements.btnModifiers.style.display = 'none';
-    }
-    
     console.log('[INIT] ✓ Initialization complete! Ready for file uploads.');
   }
 
@@ -367,9 +386,7 @@
     console.log('[BUTTON] Updating button states based on available files and claim type...');
     console.log('[BUTTON] Current files state:', JSON.stringify(files));
     
-    // Check claim type selection
-    const claimTypeMedical = document.getElementById('claimTypeMedical');
-    const isMedical = claimTypeMedical && claimTypeMedical.checked;
+    const isMedical = isMedicalModeSelected();
     
     const requirements = {
       clinician: ['xml'], // clinician and status files are auto-loaded from resources
@@ -384,46 +401,38 @@
     };
 
     for (const [checker, reqs] of Object.entries(requirements)) {
-      const btnName = `btn${checker.charAt(0).toUpperCase() + checker.slice(1)}`;
-      const button = elements[btnName];
-      console.log(`[BUTTON] Checking ${checker}: button element found = ${!!button}, btnName = ${btnName}`);
+      const button = getCheckerButton(checker);
+      console.log(`[BUTTON] Checking ${checker}: button element found = ${!!button}`);
+
+      if (!button) {
+        console.log(`[BUTTON] ${checker}: BUTTON ELEMENT NOT FOUND`);
+        continue;
+      }
+
+      // Medical-only checkers are hidden and disabled when Dental is selected
+      const isMedicalOnly = MEDICAL_ONLY_CHECKERS.has(checker);
+      if (isMedicalOnly && !isMedical) {
+        button.disabled = true;
+        button.style.display = 'none';
+        hideAndClearChecker(checker);
+        console.log(`[BUTTON] ${checker}: HIDDEN (claim type is DENTAL, ${checker} only available for MEDICAL)`);
+        continue;
+      }
+
+      button.style.display = ''; // Restore from possible Medical-only hide
+
+      const hasAll = reqs.every(req => {
+        const hasFile = files[req] !== null && files[req] !== undefined;
+        console.log(`[BUTTON]   - Checking requirement '${req}': ${hasFile ? 'YES' : 'NO'} (value: ${files[req] ? 'File object' : files[req]})`);
+        return hasFile;
+      });
+      button.disabled = !hasAll;
       
-      if (button) {
-        // Special handling for Modifiers - only available for Medical claims
-        if (checker === 'modifiers' && !isMedical) {
-          button.disabled = true;
-          button.style.display = 'none';
-          
-          // Also hide the modifiers container if it's currently active
-          const modifiersContainer = document.getElementById('checker-container-modifiers');
-          if (modifiersContainer && activeChecker === 'modifiers') {
-            modifiersContainer.style.display = 'none';
-            modifiersContainer.innerHTML = ''; // Clear the content
-            activeChecker = null;
-            console.log('[BUTTON] Cleared modifiers container (switched to DENTAL)');
-          }
-          
-          console.log(`[BUTTON] ${checker}: HIDDEN (claim type is DENTAL, modifiers only available for MEDICAL)`);
-          continue;
-        } else if (checker === 'modifiers' && isMedical) {
-          button.style.display = '';  // Show button when Medical
-        }
-        
-        const hasAll = reqs.every(req => {
-          const hasFile = files[req] !== null && files[req] !== undefined;
-          console.log(`[BUTTON]   - Checking requirement '${req}': ${hasFile ? 'YES' : 'NO'} (value: ${files[req] ? 'File object' : files[req]})`);
-          return hasFile;
-        });
-        button.disabled = !hasAll;
-        
-        const missingFiles = reqs.filter(req => !files[req]);
-        if (hasAll) {
-          console.log(`[BUTTON] ${checker}: ENABLED (has all required: ${reqs.join(', ')})`);
-        } else {
-          console.log(`[BUTTON] ${checker}: DISABLED (missing: ${missingFiles.join(', ')})`);
-        }
+      const missingFiles = reqs.filter(req => !files[req]);
+      if (hasAll) {
+        console.log(`[BUTTON] ${checker}: ENABLED (has all required: ${reqs.join(', ')})`);
       } else {
-        console.log(`[BUTTON] ${checker}: BUTTON ELEMENT NOT FOUND (looking for #${btnName})`);
+        console.log(`[BUTTON] ${checker}: DISABLED (missing: ${missingFiles.join(', ')})`);
       }
     }
 
@@ -443,15 +452,14 @@
     console.log(`[DEBUG] runChecker called with: ${checkerName}`);
     console.log(`[DEBUG] Files available:`, Object.keys(files).filter(k => files[k]));
     
-    // Safety check: Don't allow running Modifiers checker when Dental is selected
-    if (checkerName === 'modifiers') {
-      const claimTypeMedical = document.getElementById('claimTypeMedical');
-      const isMedical = claimTypeMedical && claimTypeMedical.checked;
-      if (!isMedical) {
-        console.error('[ERROR] Cannot run Modifiers checker - only available for MEDICAL claims');
-        elements.uploadStatus.innerHTML = '<div class="status-message error">Modifiers checker is only available for Medical claims. Please select Medical claim type.</div>';
-        return;
-      }
+    // Safety guard: Medical-only checkers must not run when Dental is selected.
+    // This protects against stale or programmatic execution even when the button is hidden.
+    if (MEDICAL_ONLY_CHECKERS.has(checkerName) && !isMedicalModeSelected()) {
+      console.warn(
+        `[CHECKER] Skipped ${checkerName}: ` +
+        'Medical mode is not selected.'
+      );
+      return null;
     }
     
     try {
@@ -990,6 +998,16 @@
         });
         
         console.log(`[CHECK-ALL] Re-attached event listeners for ${activityButtons.length} activity buttons and ${licenseButtons.length} license buttons`);
+      } else if (checkerName === 'pricing') {
+        // Pricing checker uses Compare buttons with data-pricing-index
+        const compareBtns = clonedTable.querySelectorAll('[data-pricing-index]');
+        compareBtns.forEach(btn => {
+          const idx = parseInt(btn.dataset.pricingIndex, 10);
+          if (!isNaN(idx)) {
+            btn.onclick = () => window.showPricingComparison(idx);
+          }
+        });
+        console.log(`[CHECK-ALL] Re-attached ${compareBtns.length} pricing compare button(s)`);
       }
       // Add more checker types as needed
     } catch (error) {
@@ -1057,8 +1075,13 @@
       'modifiers': elements.btnModifiers
     };
     
-    // Find all enabled checkers
+    // Find all enabled checkers, explicitly skipping Medical-only checkers in Dental mode
+    const isMedical = isMedicalModeSelected();
     for (const [checkerName, button] of Object.entries(checkerButtons)) {
+      if (MEDICAL_ONLY_CHECKERS.has(checkerName) && !isMedical) {
+        logDebug(`Checker Skipped: ${checkerName}`, { reason: 'Medical-only checker' });
+        continue;
+      }
       if (button && !button.disabled) {
         availableCheckers.push(checkerName);
         logDebug(`Checker Available: ${checkerName}`, { 
@@ -1413,6 +1436,9 @@
       const shownClaimIds = new Set();
       
       rows.forEach(row => {
+        // Skip the "no invalids" placeholder — handled separately below
+        if (row.classList.contains('no-invalids-placeholder')) return;
+
         if (filterEnabled) {
           // Check for invalid/error indicators based on CSS classes only
           // CSS classes are set by the checker logic based on whether remarks exist
@@ -1451,6 +1477,19 @@
           row.style.display = '';
         }
       });
+
+      // Show the "no invalids" placeholder row only when filtering reveals no invalid rows
+      const placeholder = table.querySelector('tbody tr.no-invalids-placeholder');
+      if (placeholder) {
+        if (filterEnabled) {
+          const hasVisibleInvalid = Array.from(
+            table.querySelectorAll('tbody tr.table-danger, tbody tr.table-warning, tbody tr.invalid, tbody tr.unknown')
+          ).some(r => r.style.display !== 'none');
+          placeholder.style.display = hasVisibleInvalid ? 'none' : '';
+        } else {
+          placeholder.style.display = 'none';
+        }
+      }
     });
 
     console.log('[FILTER] Filter applied to', tables.length, 'tables');
