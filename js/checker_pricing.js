@@ -2,6 +2,9 @@
 let lastResults = [];
 let lastWorkbook = null;
 
+// Payer IDs that have a defined factor in Factors.xlsx and are valid for Medical mode
+const MEDICAL_CONFIGURED_PAYERS = new Set(['D001', 'A001', 'D004', 'A025', 'A024', 'C002', 'C004']);
+
 document.addEventListener('DOMContentLoaded', () => {
   try {
     const runBtn = el('run-button');
@@ -73,11 +76,11 @@ async function handleRun() {
       console.log('[PRICING] Bundled drugs map loaded, entries:', drugsMap ? drugsMap.size : 0);
     }
 
-    // Load factor map from bundled resources/Factor.xlsx (used for medical pricing only)
-    const factorMap = await loadBundledFactorMap();
-    console.log('[PRICING] Factor map loaded, entries:', factorMap ? factorMap.size : 0);
-
     const isMedicalMode = getSelectedClaimTypeMode() === 'MEDICAL';
+
+    // Load factor rules from bundled resources/Factors.xlsx (Medical mode only; throws user-facing error if unavailable in medical mode)
+    const factorRules = await loadBundledFactorRules(isMedicalMode);
+    console.log('[PRICING] Factor rules loaded, count:', factorRules ? factorRules.length : 0);
 
     showProgress(25, 'Parsing XML & pricing data');
 
@@ -115,27 +118,58 @@ async function handleRun() {
       const isDrugActivity = String(rec.ActivityType || '').trim() === '5';
 
       if (receiverID !== 'D001' && receiverID !== 'A001') {
-        const isHAAD = receiverID.toUpperCase() === 'HAAD';
-        const netZeroValid = isHAAD && xmlNet === 0;
-        return {
-          ClaimID: rec.ClaimID || '',
-          ActivityID: rec.ActivityID || '',
-          CPT: rec.CPT || '',
-          ClaimedNet: rec.Net || '',
-          ClaimedQty: rec.Quantity || '',
-          Modifiers: rec.Modifiers || '',
-          ReferenceNetPrice: '',
-          FactoredReference: '',
-          PricingRow: null,
-          XmlRow: rec,
-          isValid: netZeroValid,
-          status: netZeroValid ? 'Valid' : 'Unknown',
-          Remarks: netZeroValid ? 'Claimed Net is 0 (treated as Valid).' : '',
-          ComputedRef: null,
-          xmlNetNum: xmlNet,
-          PatientShare: rec.PatientShare || '0',
-          PayerID: effectivePayerID
-        };
+        if (isMedicalMode && MEDICAL_CONFIGURED_PAYERS.has(effectivePayerID)) {
+          // Configured medical payer — fall through to medical pricing
+        } else if (isMedicalMode) {
+          // Unconfigured payer in Medical mode
+          return {
+            ClaimID: rec.ClaimID || '',
+            ActivityID: rec.ActivityID || '',
+            CPT: rec.CPT || '',
+            ClaimedNet: rec.Net || '',
+            ClaimedQty: rec.Quantity || '',
+            Modifiers: rec.Modifiers || '',
+            ReferenceNetPrice: '',
+            AppliedFactor: '',
+            FactoredReference: '',
+            PricingRow: null,
+            XmlRow: rec,
+            isValid: false,
+            status: 'Unknown',
+            Remarks: `No medical pricing factor configuration is available for payer ${effectivePayerID || '(missing)'}.`,
+            ComputedRef: null,
+            xmlNetNum: xmlNet,
+            PatientShare: rec.PatientShare || '0',
+            PayerID: effectivePayerID,
+            _matchedFactorRule: null,
+            _modifierMultiplier: 1
+          };
+        } else {
+          const isHAAD = receiverID.toUpperCase() === 'HAAD';
+          const netZeroValid = isHAAD && xmlNet === 0;
+          return {
+            ClaimID: rec.ClaimID || '',
+            ActivityID: rec.ActivityID || '',
+            CPT: rec.CPT || '',
+            ClaimedNet: rec.Net || '',
+            ClaimedQty: rec.Quantity || '',
+            Modifiers: rec.Modifiers || '',
+            ReferenceNetPrice: '',
+            AppliedFactor: '',
+            FactoredReference: '',
+            PricingRow: null,
+            XmlRow: rec,
+            isValid: netZeroValid,
+            status: netZeroValid ? 'Valid' : 'Unknown',
+            Remarks: netZeroValid ? 'Claimed Net is 0 (treated as Valid).' : '',
+            ComputedRef: null,
+            xmlNetNum: xmlNet,
+            PatientShare: rec.PatientShare || '0',
+            PayerID: effectivePayerID,
+            _matchedFactorRule: null,
+            _modifierMultiplier: 1
+          };
+        }
       }
 
       if (normalizeCode(rec.CPT) === '2111' && (receiverID === 'D001' || receiverID === 'A001')) {
@@ -155,6 +189,7 @@ async function handleRun() {
           ClaimedQty: rec.Quantity || '',
           Modifiers: rec.Modifiers || '',
           ReferenceNetPrice: '0',
+          AppliedFactor: '',
           FactoredReference: '0',
           PricingRow: null,
           XmlRow: rec,
@@ -164,7 +199,9 @@ async function handleRun() {
           ComputedRef: 0,
           xmlNetNum: xmlNet,
           PatientShare: rec.PatientShare || '0',
-          PayerID: effectivePayerID
+          PayerID: effectivePayerID,
+          _matchedFactorRule: null,
+          _modifierMultiplier: 1
         };
       }
 
@@ -265,20 +302,34 @@ async function handleRun() {
 
       const match = matchRow;
       let ref = Number(refPrice ?? NaN);
-      let effectiveRef = ref; // ref after applying modifier multipliers
+      let effectiveRef = ref; // ref after applying factor and modifier multipliers
       let referenceFactor = 1;
+      let appliedFactor = 1;
+      let modifierMultiplier = 1;
+      let matchedFactorRule = null;
 
-      // When in medical mode, apply per-code factor from Factor.xlsx (overrides modifier multipliers)
-      const medicalFactor = (isMedicalMode && isMedicalPricingMatch && factorMap)
-        ? factorMap.get(normalizeCode(rec.CPT)) ?? null
-        : null;
+      if (isMedicalMode && isMedicalPricingMatch) {
+        // Step 1: look up the facility/payer factor from Factors.xlsx rules
+        const factorResult = findFactorFromRules(factorRules || [], rec.FacilityID, rec.CPT, effectivePayerID);
+        appliedFactor = factorResult.factor;
+        matchedFactorRule = factorResult.rule;
 
-      if (medicalFactor !== null && !Number.isNaN(ref) && ref > 0) {
-        // Factor from Factor.xlsx supersedes standard modifier multipliers for medical codes
-        referenceFactor = medicalFactor;
-        effectiveRef = Math.round(ref * referenceFactor * 100) / 100;
+        // Step 2: modifier multiplier is a separate adjustment on top of the factor
+        if (rec.Modifier === '52') modifierMultiplier = 0.5;
+        else if (rec.Modifier === '50') modifierMultiplier = 1.5;
+        // Modifiers 24 and 25: no price change (multiplier stays 1)
+
+        referenceFactor = appliedFactor * modifierMultiplier;
+        if (!Number.isNaN(ref) && ref > 0) {
+          effectiveRef = Math.round(ref * referenceFactor * 100) / 100;
+        }
+
+        // Update pricing context with matched rule details for remark/audit
+        if (matchedFactorRule) {
+          pricingContext = `Mandatory Tariff [${matchedFactorRule.serviceType || matchedFactorRule.matchType}; Factor ${appliedFactor} for ${effectivePayerID}]`;
+        }
       } else if (!Number.isNaN(ref) && ref > 0 && rec.Modifier) {
-        // Apply modifier price multipliers before comparison
+        // Apply modifier price multipliers (dental/non-medical pricing, existing behavior)
         if (rec.Modifier === '52') {
           // Consultation price halved
           referenceFactor = 0.5;
@@ -375,6 +426,7 @@ async function handleRun() {
         ClaimedQty: rec.Quantity || '',
         Modifiers: rec.Modifiers || '',
         ReferenceNetPrice: Number.isNaN(ref) ? (refPrice || '') : String(ref),
+        AppliedFactor: (isMedicalMode && isMedicalPricingMatch) ? String(appliedFactor) : '',
         FactoredReference: Number.isNaN(effectiveRef) ? '' : String(effectiveRef),
         PricingRow: endoEntry || matchRow || null,
         XmlRow: rec,
@@ -384,7 +436,9 @@ async function handleRun() {
         ComputedRef: computedRef,
         xmlNetNum: xmlNet,
         PatientShare: rec.PatientShare || '0',
-        PayerID: effectivePayerID
+        PayerID: effectivePayerID,
+        _matchedFactorRule: matchedFactorRule,
+        _modifierMultiplier: modifierMultiplier
       };
     });
 
@@ -592,31 +646,115 @@ function buildDrugsMapFromWorkbook(wb) {
   return map;
 }
 
-async function loadBundledFactorMap() {
+async function loadBundledFactorRules(isMedicalMode) {
   try {
-    const response = await fetch('../resources/Factor.xlsx');
-    if (!response.ok) return null;
+    const response = await fetch('../resources/Factors.xlsx');
+    if (!response.ok) {
+      if (isMedicalMode) throw new Error(`Factors.xlsx could not be loaded (HTTP ${response.status}). Medical factor pricing is unavailable.`);
+      console.warn('[PRICING] Failed to load Factors.xlsx:', response.status);
+      return null;
+    }
     const arrayBuffer = await response.arrayBuffer();
     const wb = XLSX.read(arrayBuffer, { type: 'array' });
-    return buildFactorMapFromWorkbook(wb);
+    return buildFactorRulesFromWorkbook(wb);
   } catch (e) {
-    console.warn('[PRICING] Failed to load bundled Factor.xlsx:', e);
+    if (isMedicalMode) throw e;
+    console.warn('[PRICING] Failed to load bundled Factors.xlsx:', e);
     return null;
   }
 }
 
-function buildFactorMapFromWorkbook(wb) {
-  const sheetName = wb.SheetNames.find(n => n.trim().toLowerCase() === 'factor') || wb.SheetNames[0];
-  if (!sheetName) return null;
-  const ws = wb.Sheets[sheetName];
+function buildFactorRulesFromWorkbook(wb) {
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  if (!ws) return [];
   const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
-  const map = new Map();
-  rows.forEach(r => {
-    const code = normalizeCode(String(r['Code'] || '').trim());
-    const factor = Number(r['Factor']);
-    if (code && !isNaN(factor) && factor > 0) map.set(code, factor);
+
+  // Discover payer columns by extracting IDs from parentheses in column headers (e.g. "Thiqa (D001)" → D001)
+  const payerColumns = [];
+  if (rows.length > 0) {
+    Object.keys(rows[0]).forEach(colKey => {
+      const m = colKey.match(/\(([^)]+)\)/);
+      if (m) {
+        const payerId = m[1].trim().toUpperCase();
+        if (/^[A-Z]\d{3,4}$/.test(payerId)) payerColumns.push({ colKey, payerId });
+      }
+    });
+  }
+
+  const rules = [];
+  rows.forEach(row => {
+    const facilityId = String(row['Facility ID'] || '').trim();
+    const matchType = String(row['Code Match Type'] || '').trim();
+    const matchValueRaw = String(row['Code Match Value'] || '').trim();
+
+    if (!facilityId || !matchType || !matchValueRaw) return;
+
+    const facility = String(row['Facility'] || '').trim();
+    const serviceType = String(row['Service Type'] || '').trim();
+
+    let matchValues = [];
+    if (matchType === 'Exact List') {
+      matchValues = matchValueRaw.split(',').map(v => normalizeCode(v.trim())).filter(Boolean);
+    } else if (matchType === 'Starts With') {
+      // Support values like "8", "97", or "1, 2, 3, 4, 5, or 6"
+      matchValues = matchValueRaw.split(/[\s,]+/).map(v => v.replace(/^or$/i, '').trim()).filter(v => /^\d+$/.test(v));
+    }
+
+    if (!matchValues.length) return;
+
+    const factors = {};
+    payerColumns.forEach(({ colKey, payerId }) => {
+      const val = row[colKey];
+      if (val !== '' && val !== undefined) {
+        const num = Number(val);
+        if (!isNaN(num)) factors[payerId] = num;
+      }
+    });
+
+    rules.push({ facility, facilityId, serviceType, matchType, matchValues, factors });
   });
-  return map;
+
+  return rules;
+}
+
+function findFactorFromRules(rules, facilityId, code, payerId) {
+  if (!rules || !rules.length) return { factor: 1, rule: null };
+
+  const normCode = normalizeCode(code);
+  const normFacility = String(facilityId || '').trim().toUpperCase();
+  const normPayer = String(payerId || '').toUpperCase();
+
+  const facilityRules = rules.filter(r => r.facilityId.trim().toUpperCase() === normFacility);
+  if (!facilityRules.length) return { factor: 1, rule: null };
+
+  // Exact List has priority over Starts With
+  let matchedRule = null;
+  for (const rule of facilityRules) {
+    if (rule.matchType === 'Exact List' && rule.matchValues.includes(normCode)) {
+      matchedRule = rule;
+      break;
+    }
+  }
+
+  // Fallback: Starts With
+  if (!matchedRule) {
+    for (const rule of facilityRules) {
+      if (rule.matchType === 'Starts With' && rule.matchValues.some(prefix => normCode.startsWith(prefix))) {
+        matchedRule = rule;
+        break;
+      }
+    }
+  }
+
+  if (!matchedRule) return { factor: 1, rule: null };
+
+  const factorVal = matchedRule.factors[normPayer];
+  if (factorVal === undefined || factorVal === null || isNaN(factorVal)) {
+    console.warn(`[PRICING] Factor rule matched (facility=${facilityId}, code=${code}, payer=${payerId}) but factor cell is empty/invalid — defaulting to 1.`);
+    return { factor: 1, rule: matchedRule };
+  }
+
+  return { factor: factorVal, rule: matchedRule };
 }
 
 function getSelectedClaimTypeMode() {
@@ -814,6 +952,7 @@ function buildResultsTable(rows) {
           <th>Quantity</th>
           <th>Modifiers</th>
           <th>Reference Net Price</th>
+          <th>Applied Factor</th>
           <th>Factored Reference</th>
           <th>Status</th>
           <th>Remarks</th>
@@ -837,6 +976,7 @@ function buildResultsTable(rows) {
         <td>${escapeHtml(r.ClaimedQty)}</td>
         <td>${escapeHtml(r.Modifiers || '')}</td>
         <td>${r._estimatedTotal != null ? escapeHtml(String(r._estimatedTotal)) + ' (estimate)' : escapeHtml(r.ReferenceNetPrice)}</td>
+        <td>${escapeHtml(r.AppliedFactor || '')}</td>
         <td>${escapeHtml(r.FactoredReference || '')}</td>
         <td>${escapeHtml(r.status)}</td>
         <td>${escapeHtml(r.Remarks || 'OK')}</td>
@@ -884,14 +1024,32 @@ function showComparisonModal(index) {
     </table>
   `;
 
-  const pricingTable = `
+  const pricingTable = (() => {
+    const factorRule = row._matchedFactorRule;
+    const modMult = row._modifierMultiplier != null ? row._modifierMultiplier : 1;
+    const rowAppliedFactor = row.AppliedFactor || '';
+    const facilityId = (row.XmlRow || {}).FacilityID || '';
+
+    const factorRows = factorRule
+      ? `<tr><th>Facility</th><td>${escapeHtml(factorRule.facility)} (${escapeHtml(facilityId)})</td></tr>
+         <tr><th>Matched Service</th><td>${escapeHtml(factorRule.serviceType || factorRule.matchType)}</td></tr>
+         <tr><th>Payer</th><td>${escapeHtml(row.PayerID || '')}</td></tr>
+         <tr><th>Applied Factor</th><td>${escapeHtml(rowAppliedFactor)}</td></tr>
+         <tr><th>Modifier Multiplier</th><td>${escapeHtml(String(modMult))}</td></tr>`
+      : (rowAppliedFactor
+          ? `<tr><th>Applied Factor</th><td>${escapeHtml(rowAppliedFactor)}</td></tr>`
+          : '');
+
+    return `
     <h4>Pricing Reference</h4>
     <table class="table table-bordered table-sm">
       <tr><th>Code</th><td>${escapeHtml(String(firstNonEmptyKey(pricing, ['Code', 'CPT', 'code']) || ''))}</td></tr>
-      <tr><th>Unfactored Net Price</th><td>${escapeHtml(refPrice)}</td></tr>
+      <tr><th>Mandatory Tariff Base</th><td>${escapeHtml(refPrice)}</td></tr>
+      ${factorRows}
       <tr><th>Factored Net Price</th><td>${escapeHtml(factoredRefPrice)}</td></tr>
     </table>
   `;
+  })();
 
   const modalHtml = `
     <div class="modal-content">
