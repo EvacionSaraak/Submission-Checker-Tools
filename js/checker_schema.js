@@ -35,6 +35,14 @@ function loadClinicianSpecialtyMap() {
   return clinicianSpecialtyMapPromise;
 }
 
+function getSelectedClaimTypeMode() {
+  const claimTypeDental = document.getElementById('claimTypeDental');
+  const claimTypeMedical = document.getElementById('claimTypeMedical');
+  if (claimTypeMedical && claimTypeMedical.checked) return 'MEDICAL';
+  if (claimTypeDental && claimTypeDental.checked) return 'DENTAL';
+  return null;
+}
+
 function validateXmlSchema() {
   const status = document.getElementById("uploadStatus");
   const resultsDiv = document.getElementById("results");
@@ -83,7 +91,8 @@ function validateXmlSchema() {
           schemaType = "claim";
           console.log('[SCHEMA] Validating Claim schema');
           const clinicianSpecialtyMap = await loadClinicianSpecialtyMap();
-          results = validateClaimSchema(xmlDoc, originalXmlContent, { clinicianSpecialtyMap });
+          const claimTypeMode = getSelectedClaimTypeMode();
+          results = validateClaimSchema(xmlDoc, originalXmlContent, { clinicianSpecialtyMap, claimTypeMode });
           console.log('[SCHEMA] Claim validation complete, results count:', results.length);
         } else if (xmlDoc.documentElement.nodeName === "Person.Register") {
           schemaType = "person";
@@ -615,7 +624,10 @@ function buildMergedClaimRemarksByClaim(claims) {
   return remarksByClaimId;
 }
 
-function validateConsultationAndSpecialtyRules(activities, text, invalidFields, clinicianSpecialtyMap) {
+function validateConsultationAndSpecialtyRules(activities, text, invalidFields, clinicianSpecialtyMap, options = {}) {
+  const isMedicalClaim = options.isMedicalClaim === true;
+  if (!isMedicalClaim) return;
+
   const activityContexts = Array.from(activities || []).map((act, index) => {
     const code = text('Code', act);
     const quantityRaw = text('Quantity', act);
@@ -964,7 +976,12 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "", options = {}) {
     // NEW CHECK: GT license validation for Ordering Clinician
     const facilityID = encounter ? text("FacilityID", encounter) : "";
     checkGTLicenseValidation(activities, facilityID, text, invalidFields);
-    validateConsultationAndSpecialtyRules(activities, text, invalidFields, clinicianSpecialtyMap);
+    const encounterType = encounter ? text("Type", encounter) : "";
+    const selectedClaimTypeMode = String(options.claimTypeMode || '').trim().toUpperCase();
+    const isMedicalClaim = selectedClaimTypeMode
+      ? selectedClaimTypeMode === 'MEDICAL'
+      : String(encounterType || '').trim() === '3';
+    validateConsultationAndSpecialtyRules(activities, text, invalidFields, clinicianSpecialtyMap, { isMedicalClaim });
 
     // Contract optional
     const contract = claim.getElementsByTagName("Contract")[0];
