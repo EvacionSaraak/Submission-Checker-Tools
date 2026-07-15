@@ -87,9 +87,10 @@ async function handleRun() {
     const xmlDoc = parseXml(xmlText);
     const headerNode = xmlDoc.querySelector('Header');
     const receiverID = headerNode?.querySelector('ReceiverID')?.textContent.trim() || '';
+    const pricingReceiverID = receiverID.toUpperCase();
 
-    console.log(`[PRICING] ReceiverID: ${receiverID || '(MISSING)'}`);
-    if (receiverID !== 'D001' && receiverID !== 'A001') console.log(`[PRICING] ReceiverID "${receiverID}" is non-Thiqa/non-Daman — prices will be marked Unknown; PS=0 check will still apply.`);
+    console.log(`[PRICING] ReceiverID: ${pricingReceiverID || '(MISSING)'}`);
+    if (pricingReceiverID !== 'D001' && pricingReceiverID !== 'A001') console.log(`[PRICING] ReceiverID "${pricingReceiverID}" is non-Thiqa/non-Daman — prices will be marked Unknown; PS=0 check will still apply.`);
 
     const extracted = extractPricingRecords(xmlDoc);
     const jsonMatcher = buildJsonPricingMatcher(dentalPricingRaw);
@@ -114,14 +115,15 @@ async function handleRun() {
       const facility = rec.FacilityID || '';
       const xmlNet = Number(rec.Net || 0);
       const xmlQty = Number(rec.Quantity || 0);
-      const effectivePayerID = (rec.PayerID || receiverID || '').toUpperCase();
+      const claimPayerID = String(rec.PayerID || '').trim().toUpperCase();
       const isDrugActivity = String(rec.ActivityType || '').trim() === '5';
 
-      if (receiverID !== 'D001' && receiverID !== 'A001') {
-        if (isMedicalMode && MEDICAL_CONFIGURED_PAYERS.has(effectivePayerID)) {
+      if (pricingReceiverID !== 'D001' && pricingReceiverID !== 'A001') {
+        if (isMedicalMode && MEDICAL_CONFIGURED_PAYERS.has(pricingReceiverID)) {
           // Configured medical payer — fall through to medical pricing
         } else if (isMedicalMode) {
           // Unconfigured payer in Medical mode
+          const missingReceiver = !pricingReceiverID;
           return {
             ClaimID: rec.ClaimID || '',
             ActivityID: rec.ActivityID || '',
@@ -136,16 +138,20 @@ async function handleRun() {
             XmlRow: rec,
             isValid: false,
             status: 'Unknown',
-            Remarks: `No medical pricing factor configuration is available for payer ${effectivePayerID || '(missing)'}.`,
+            Remarks: missingReceiver
+              ? 'Header ReceiverID is missing. Medical factor pricing requires ReceiverID from the submission header.'
+              : `No medical pricing factor configuration is available for receiver ${pricingReceiverID}.`,
             ComputedRef: null,
             xmlNetNum: xmlNet,
             PatientShare: rec.PatientShare || '0',
-            PayerID: effectivePayerID,
+            ReceiverID: pricingReceiverID,
+            ClaimPayerID: claimPayerID,
+            PayerID: pricingReceiverID,
             _matchedFactorRule: null,
             _modifierMultiplier: 1
           };
         } else {
-          const isHAAD = receiverID.toUpperCase() === 'HAAD';
+          const isHAAD = pricingReceiverID === 'HAAD';
           const netZeroValid = isHAAD && xmlNet === 0;
           return {
             ClaimID: rec.ClaimID || '',
@@ -165,15 +171,17 @@ async function handleRun() {
             ComputedRef: null,
             xmlNetNum: xmlNet,
             PatientShare: rec.PatientShare || '0',
-            PayerID: effectivePayerID,
+            ReceiverID: pricingReceiverID,
+            ClaimPayerID: claimPayerID,
+            PayerID: pricingReceiverID,
             _matchedFactorRule: null,
             _modifierMultiplier: 1
           };
         }
       }
 
-      if (normalizeCode(rec.CPT) === '2111' && (receiverID === 'D001' || receiverID === 'A001')) {
-        const insurerLabel = receiverID === 'D001' ? 'Thiqa' : 'Daman';
+      if (normalizeCode(rec.CPT) === '2111' && (pricingReceiverID === 'D001' || pricingReceiverID === 'A001')) {
+        const insurerLabel = pricingReceiverID === 'D001' ? 'Thiqa' : 'Daman';
         if (xmlNet === 0) {
           status = 'Valid';
           remarks.push(`Code 02111 is correctly priced at 0 for ${insurerLabel}.`);
@@ -199,7 +207,9 @@ async function handleRun() {
           ComputedRef: 0,
           xmlNetNum: xmlNet,
           PatientShare: rec.PatientShare || '0',
-          PayerID: effectivePayerID,
+          ReceiverID: pricingReceiverID,
+          ClaimPayerID: claimPayerID,
+          PayerID: pricingReceiverID,
           _matchedFactorRule: null,
           _modifierMultiplier: 1
         };
@@ -213,7 +223,7 @@ async function handleRun() {
       if (xlsxMatcher) {
         const isAlyaharGroup = facility === 'MF5357' || facility === 'MF7231' || facility === 'MF232';
         pricingContext = isAlyaharGroup ? 'Alyahar/Emirates/Al Wagan Thiqa Pricing' : 'Standard Thiqa Pricing';
-      } else if (receiverID === 'A001') {
+      } else if (pricingReceiverID === 'A001') {
         const isDamanKhabisiAlyahar = facility === 'MF5020' || facility === 'MF5357';
         pricingContext = isDamanKhabisiAlyahar ? 'Daman – Khabisi/Al Yahar pricing' : 'Daman – Standard pricing';
       } else {
@@ -232,7 +242,7 @@ async function handleRun() {
         // In Medical mode, skip dental pricing and use medical pricing directly
         const jsonMatch = !isMedicalMode ? jsonMatcher.find(rec.CPT) : null;
         if (jsonMatch) {
-          if (receiverID === 'A001') {
+          if (pricingReceiverID === 'A001') {
             const isDamanKhabisiAlyahar = facility === 'MF5020' || facility === 'MF5357';
             refPrice = isDamanKhabisiAlyahar ? jsonMatch.daman_khabisi_alyahar : jsonMatch.daman_default;
           } else {
@@ -270,7 +280,7 @@ async function handleRun() {
       let nonEndoUsedEndoPrice = false;
       let nonEndoClinicianSpec = '';
 
-      if (receiverID === 'D001') {
+      if (pricingReceiverID === 'D001') {
         const encounterDate = parseEncounterDate(rec.EncounterDate);
         const isAfterCutoff = encounterDate !== null && encounterDate >= ENDO_PRICING_CUTOFF;
         const clinicianSpec = clinicianSpecialtyMap.get(rec.ClinicianLic || '') || '';
@@ -311,7 +321,7 @@ async function handleRun() {
 
       if (isMedicalMode && isMedicalPricingMatch) {
         // Step 1: look up the facility/payer factor from Factors.xlsx rules
-        const factorResult = findFactorFromRules(factorRules || [], rec.FacilityID, rec.CPT, effectivePayerID);
+        const factorResult = findFactorFromRules(factorRules || [], rec.FacilityID, rec.CPT, pricingReceiverID);
         appliedFactor = factorResult.factor;
         matchedFactorRule = factorResult.rule;
 
@@ -327,7 +337,7 @@ async function handleRun() {
 
         // Update pricing context with matched rule details for remark/audit
         if (matchedFactorRule) {
-          pricingContext = `Mandatory Tariff [${matchedFactorRule.serviceType || matchedFactorRule.matchType}; Factor ${appliedFactor} for ${effectivePayerID}]`;
+          pricingContext = `Mandatory Tariff [${matchedFactorRule.serviceType || matchedFactorRule.matchType}; Factor ${appliedFactor} for ${pricingReceiverID}]`;
         }
       } else if (!Number.isNaN(ref) && ref > 0 && rec.Modifier) {
         // Apply modifier price multipliers (dental/non-medical pricing, existing behavior)
@@ -337,7 +347,7 @@ async function handleRun() {
           effectiveRef = Math.round(ref * referenceFactor * 100) / 100;
         } else if (rec.Modifier === '50') {
           // Minor procedure: ×1.5 for A001, ×(1.3×1.5) for D001
-          const mult = effectivePayerID === 'D001' ? 1.3 * 1.5 : 1.5;
+          const mult = pricingReceiverID === 'D001' ? 1.3 * 1.5 : 1.5;
           referenceFactor = mult;
           effectiveRef = Math.round(ref * referenceFactor * 100) / 100;
         }
@@ -384,7 +394,7 @@ async function handleRun() {
             status = 'Valid';
           } else if (nonEndoUsedEndoPrice) {
             remarks.push(`Pricing for ${rec.CPT} is ${effectiveRef} following ${pricingContext}.\nEndo Pricing cannot be used for ${nonEndoClinicianSpec}.`);
-          } else if (receiverID === 'A001') {
+          } else if (pricingReceiverID === 'A001') {
             const copayPct = Math.round((effectiveRef * xmlQty - xmlNet) / (effectiveRef * xmlQty) * 10000) / 100;
             remarks.push(`Copay: ${copayPct}%.`);
           } else {
@@ -399,12 +409,12 @@ async function handleRun() {
         remarks.push(`Code ${rec.CPT} must always have quantity 2.`);
       }
 
-      if ((normalizedCode === '82307' || normalizedCode === '82652') && !['A001', 'D001'].includes(effectivePayerID) && xmlNet !== 0) {
+      if ((normalizedCode === '82307' || normalizedCode === '82652') && !['A001', 'D001'].includes(pricingReceiverID) && xmlNet !== 0) {
         status = 'Invalid';
-        remarks.push(`Code ${rec.CPT} must have net price 0 for payer ${effectivePayerID || '(missing)'}.`);
+        remarks.push(`Code ${rec.CPT} must have net price 0 for payer ${pricingReceiverID || '(missing)'}.`);
       }
 
-      if (normalizedCode === '92015' && effectivePayerID !== 'D001' && xmlNet !== 0) {
+      if (normalizedCode === '92015' && pricingReceiverID !== 'D001' && xmlNet !== 0) {
         status = 'Invalid';
         remarks.push(`Code 92015 can only have price for payer D001.`);
       }
@@ -414,9 +424,9 @@ async function handleRun() {
         remarks.push('Code 99173 cannot have price.');
       }
 
-      if (normalizedCode === '36415' && ['A001', 'D001', 'A025'].includes(effectivePayerID) && xmlNet !== 0) {
+      if (normalizedCode === '36415' && ['A001', 'D001', 'A025'].includes(pricingReceiverID) && xmlNet !== 0) {
         status = 'Invalid';
-        remarks.push(`Code 36415 must have net price 0 for payer ${effectivePayerID}.`);
+        remarks.push(`Code 36415 must have net price 0 for payer ${pricingReceiverID}.`);
       }
 
       return {
@@ -437,13 +447,15 @@ async function handleRun() {
         ComputedRef: computedRef,
         xmlNetNum: xmlNet,
         PatientShare: rec.PatientShare || '0',
-        PayerID: effectivePayerID,
+        ReceiverID: pricingReceiverID,
+        ClaimPayerID: claimPayerID,
+        PayerID: pricingReceiverID,
         _matchedFactorRule: matchedFactorRule,
         _modifierMultiplier: modifierMultiplier
       };
     });
 
-    if (receiverID === 'A001') {
+    if (pricingReceiverID === 'A001') {
       const claimGroups = new Map();
       output.forEach(r => {
         if (!claimGroups.has(r.ClaimID)) claimGroups.set(r.ClaimID, []);
@@ -484,14 +496,14 @@ async function handleRun() {
       }
     }
 
-    if (receiverID !== 'D001' && receiverID !== 'A001') {
+    if (pricingReceiverID !== 'D001' && pricingReceiverID !== 'A001') {
       const claimGroups = new Map();
       output.forEach(r => {
         if (!claimGroups.has(r.ClaimID)) claimGroups.set(r.ClaimID, []);
         claimGroups.get(r.ClaimID).push(r);
       });
 
-      const isCash = receiverID.toUpperCase() === 'HAAD' || receiverID.toUpperCase() === 'CASH';
+      const isCash = pricingReceiverID === 'HAAD' || pricingReceiverID === 'CASH';
 
       for (const [, actRows] of claimGroups) {
         const actualPS = Number(actRows[0].PatientShare || 0);
@@ -1034,7 +1046,8 @@ function showComparisonModal(index) {
     const factorRows = factorRule
       ? `<tr><th>Facility</th><td>${escapeHtml(factorRule.facility)} (${escapeHtml(facilityId)})</td></tr>
          <tr><th>Matched Service</th><td>${escapeHtml(factorRule.serviceType || factorRule.matchType)}</td></tr>
-         <tr><th>Payer</th><td>${escapeHtml(row.PayerID || '')}</td></tr>
+         <tr><th>Receiver ID</th><td>${escapeHtml(row.ReceiverID || row.PayerID || '')}</td></tr>
+         <tr><th>Claim Payer ID</th><td>${escapeHtml(row.ClaimPayerID || '')}</td></tr>
          <tr><th>Applied Factor</th><td>${escapeHtml(rowAppliedFactor)}</td></tr>
          <tr><th>Modifier Multiplier</th><td>${escapeHtml(String(modMult))}</td></tr>`
       : (rowAppliedFactor
