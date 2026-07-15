@@ -117,6 +117,7 @@ async function handleRun() {
           CPT: rec.CPT || '',
           ClaimedNet: rec.Net || '',
           ClaimedQty: rec.Quantity || '',
+          Modifiers: rec.Modifiers || '',
           ReferenceNetPrice: '',
           FactoredReference: '',
           PricingRow: null,
@@ -146,6 +147,7 @@ async function handleRun() {
           CPT: rec.CPT || '',
           ClaimedNet: rec.Net || '',
           ClaimedQty: rec.Quantity || '',
+          Modifiers: rec.Modifiers || '',
           ReferenceNetPrice: '0',
           FactoredReference: '0',
           PricingRow: null,
@@ -354,6 +356,7 @@ async function handleRun() {
         CPT: rec.CPT || '',
         ClaimedNet: rec.Net || '',
         ClaimedQty: rec.Quantity || '',
+        Modifiers: rec.Modifiers || '',
         ReferenceNetPrice: Number.isNaN(ref) ? (refPrice || '') : String(ref),
         FactoredReference: Number.isNaN(effectiveRef) ? '' : String(effectiveRef),
         PricingRow: endoEntry || matchRow || null,
@@ -618,19 +621,22 @@ function extractPricingRecords(xmlDoc) {
         textValue(act, 'Clinician')
       ]).trim();
 
-      // Extract CPT modifier from Observation (ValueType = 'Modifiers')
-      let modifier = '';
+      // Extract CPT modifiers from Observation (ValueType = 'Modifiers')
+      const modifierSet = new Set();
       const observations = Array.from(act.getElementsByTagName('Observation'));
       for (const obs of observations) {
         const valueType = textValue(obs, 'ValueType') || '';
         if (valueType.trim().toLowerCase() === 'modifiers') {
           const voiVal = (textValue(obs, 'Value') || textValue(obs, 'ValueText') || '').toUpperCase().replace(/[_\s]/g, '');
-          if (voiVal === 'VOID' || voiVal === '24') { modifier = '24'; break; }
-          if (voiVal === 'VOIEF1' || voiVal === '52') { modifier = '52'; break; }
-          if (voiVal === '25') { modifier = '25'; break; }
-          if (voiVal === '50') { modifier = '50'; break; }
+          if (voiVal === 'VOID' || voiVal === '24') modifierSet.add('24');
+          if (voiVal === 'VOIEF1' || voiVal === '52') modifierSet.add('52');
+          if (voiVal === '25') modifierSet.add('25');
+          if (voiVal === '50') modifierSet.add('50');
         }
       }
+      const modifierList = ['24', '25', '50', '52'].filter(m => modifierSet.has(m));
+      const modifiers = modifierList.join(', ');
+      const modifier = modifierList[0] || '';
 
       records.push({
         ClaimID: claimId,
@@ -644,6 +650,7 @@ function extractPricingRecords(xmlDoc) {
         EncounterDate: encounterDateStr,
         PatientShare: claimPatientShare,
         PayerID: payerId,
+        Modifiers: modifiers,
         Modifier: modifier
       });
     }
@@ -753,6 +760,7 @@ function buildResultsTable(rows) {
           <th>Code</th>
           <th>Claimed Net</th>
           <th>Quantity</th>
+          <th>Modifiers</th>
           <th>Reference Net Price</th>
           <th>Factored Reference</th>
           <th>Status</th>
@@ -775,6 +783,7 @@ function buildResultsTable(rows) {
         <td>${escapeHtml(r.CPT)}</td>
         <td>${escapeHtml(r.ClaimedNet)}</td>
         <td>${escapeHtml(r.ClaimedQty)}</td>
+        <td>${escapeHtml(r.Modifiers || '')}</td>
         <td>${r._estimatedTotal != null ? escapeHtml(String(r._estimatedTotal)) + ' (estimate)' : escapeHtml(r.ReferenceNetPrice)}</td>
         <td>${escapeHtml(r.FactoredReference || '')}</td>
         <td>${escapeHtml(r.status)}</td>
