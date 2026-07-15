@@ -229,7 +229,8 @@ async function handleRun() {
           matchRow = xlsxMatch;
         }
       } else {
-        const jsonMatch = jsonMatcher.find(rec.CPT);
+        // In Medical mode, skip dental pricing and use medical pricing directly
+        const jsonMatch = !isMedicalMode ? jsonMatcher.find(rec.CPT) : null;
         if (jsonMatch) {
           if (receiverID === 'A001') {
             const isDamanKhabisiAlyahar = facility === 'MF5020' || facility === 'MF5357';
