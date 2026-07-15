@@ -5,6 +5,41 @@ let lastWorkbook = null;
 // Payer IDs that have a defined factor in Factors.xlsx and are valid for Medical mode
 const MEDICAL_CONFIGURED_PAYERS = new Set(['D001', 'A001', 'D004', 'A025', 'A024', 'C002', 'C004']);
 
+// Activity Type → Mandatory Tariff Type mapping
+const ACTIVITY_TYPE_TO_TARIFF_TYPE = {
+  '3': 'CPT',
+  '6': 'USCLS',
+  '8': 'SERVICE'
+};
+
+// ---- Monetary helpers ----
+function moneyToCents(value) {
+  const number = Number(value);
+  return Number.isFinite(number)
+    ? Math.round((number + Number.EPSILON) * 100)
+    : null;
+}
+
+function moneyEqual(a, b) {
+  const centsA = moneyToCents(a);
+  const centsB = moneyToCents(b);
+  return centsA !== null && centsB !== null && centsA === centsB;
+}
+
+function formatMoney(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? String(n) : String(value);
+}
+
+function buildModifierPriceMismatchRemark({ claimedNet, code, modifier, expectedPrice }) {
+  return (
+    `Claimed Net ${formatMoney(claimedNet)} ` +
+    `(for ${code}) does not match the price under ` +
+    `modifier ${modifier} ` +
+    `(should be ${formatMoney(expectedPrice)}).`
+  );
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   try {
     const runBtn = el('run-button');
@@ -251,7 +286,7 @@ async function handleRun() {
           }
           matchRow = jsonMatch;
         } else {
-          const medicalMatch = medicalMatcher.find(rec.CPT);
+          const medicalMatch = medicalMatcher.find(rec.ActivityType, rec.CPT);
           if (medicalMatch) {
             refPrice = medicalMatch.price;
             matchRow = medicalMatch;
@@ -299,7 +334,7 @@ async function handleRun() {
               pricingContext = 'Endodontist Pricing';
             } else {
               nonEndoClinicianSpec = clinicianSpec || 'General Dentist';
-              nonEndoUsedEndoPrice = Number.isFinite(endoRef) && (xmlNet === endoRef || xmlUnit === endoRef || xmlNet * 2 === endoRef);
+              nonEndoUsedEndoPrice = Number.isFinite(endoRef) && (moneyEqual(xmlNet, endoRef) || moneyEqual(xmlUnit, endoRef) || moneyEqual(xmlNet * 2, endoRef));
 
               if (gpRef !== undefined && gpRef !== null && gpRef !== '') {
                 endoEntry = pricingEntry;
@@ -382,23 +417,42 @@ async function handleRun() {
           status = 'Unknown';
           remarks.push(`The reference price is 0 under ${pricingContext} (status Unknown).`);
         } else if (hasValidRef && xmlQty > 0) {
-          const modifierNote = rec.Modifier && rec.Modifier !== '24' && rec.Modifier !== '25'
-            ? ` (modifier ${rec.Modifier} applied)` : '';
-          if (xmlNet === effectiveRef) {
+          // Price-changing modifiers (52 = ×0.5, 50 = ×1.5); 24 and 25 do not change the price
+          const isPriceModifier = rec.Modifier === '52' || rec.Modifier === '50';
+          if (moneyEqual(xmlNet, effectiveRef)) {
             status = 'Valid';
-          } else if ((xmlNet / xmlQty) === effectiveRef) {
+          } else if (moneyEqual(xmlNet / xmlQty, effectiveRef)) {
             status = 'Valid';
-          } else if (xmlNet * 2 === effectiveRef) {
+          } else if (moneyEqual(xmlNet * 2, effectiveRef)) {
             status = 'Valid';
-          } else if (normalizeCode(rec.CPT) === '42702' && xmlNet === effectiveRef * 2) {
+          } else if (normalizeCode(rec.CPT) === '42702' && moneyEqual(xmlNet, effectiveRef * 2)) {
             status = 'Valid';
           } else if (nonEndoUsedEndoPrice) {
             remarks.push(`Pricing for ${rec.CPT} is ${effectiveRef} following ${pricingContext}.\nEndo Pricing cannot be used for ${nonEndoClinicianSpec}.`);
           } else if (pricingReceiverID === 'A001') {
             const copayPct = Math.round((effectiveRef * xmlQty - xmlNet) / (effectiveRef * xmlQty) * 10000) / 100;
             remarks.push(`Copay: ${copayPct}%.`);
+          } else if (isPriceModifier) {
+            // Modifier is present but the claimed price doesn't match — use simplified message
+            remarks.push(buildModifierPriceMismatchRemark({
+              claimedNet: xmlNet,
+              code: rec.CPT,
+              modifier: rec.Modifier,
+              expectedPrice: effectiveRef
+            }));
           } else {
-            remarks.push(`Claimed Net ${xmlNet} (for ${rec.CPT}) does not match the reference price of ${effectiveRef} under ${pricingContext}${modifierNote}.`);
+            // No price-changing modifier present — check if claimed price matches a modifier-adjusted alternative
+            const baseForModCheck = isMedicalMode && isMedicalPricingMatch ? ref * appliedFactor : effectiveRef;
+            const mod50Price = Math.round(baseForModCheck * 1.5 * 100) / 100;
+            const mod52Price = Math.round(baseForModCheck * 0.5 * 100) / 100;
+            const modifiersPresent = String(rec.Modifiers || '');
+            if (moneyEqual(xmlNet, mod50Price) && !modifiersPresent.includes('50')) {
+              remarks.push(`Claimed Net ${formatMoney(xmlNet)} for ${rec.CPT} matches modifier 50 pricing, but modifier 50 is missing.`);
+            } else if (moneyEqual(xmlNet, mod52Price) && !modifiersPresent.includes('52')) {
+              remarks.push(`Claimed Net ${formatMoney(xmlNet)} for ${rec.CPT} matches modifier 52 pricing, but modifier 52 is missing.`);
+            } else {
+              remarks.push(`Claimed Net ${formatMoney(xmlNet)} (for ${rec.CPT}) does not match the reference price of ${formatMoney(effectiveRef)} under ${pricingContext}.`);
+            }
           }
         }
       }
@@ -925,17 +979,26 @@ function buildJsonPricingMatcher(data) {
   };
 }
 
+function normalizeTariffType(value) {
+  return String(value || '').trim().toUpperCase();
+}
+
 function buildMedicalPricingMatcher(data) {
   const index = new Map();
 
   (Array.isArray(data) ? data : []).forEach(entry => {
     const code = normalizeCode(entry.code);
-    if (code) index.set(code, entry);
+    if (!code) return;
+    const type = normalizeTariffType(entry.type || 'CPT');
+    const key = `${type}|${code}`;
+    if (!index.has(key)) index.set(key, entry);
   });
 
   return {
-    find(code) {
-      return index.get(normalizeCode(code)) || null;
+    find(activityType, code) {
+      const tariffType = ACTIVITY_TYPE_TO_TARIFF_TYPE[String(activityType || '').trim()] || 'CPT';
+      const key = `${tariffType}|${normalizeCode(code)}`;
+      return index.get(key) || null;
     }
   };
 }

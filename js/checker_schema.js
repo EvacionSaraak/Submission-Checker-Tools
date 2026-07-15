@@ -24,7 +24,11 @@ function loadClinicianSpecialtyMap() {
       (Array.isArray(rows) ? rows : []).forEach(row => {
         const license = String(row['Phy Lic'] || '').trim().toUpperCase();
         if (!license) return;
-        map.set(license, String(row['Specialty'] || '').trim());
+        const newSpec = String(row['Specialty'] || '').trim();
+        // Do not overwrite a valid specialty with an empty one (guards against duplicate entries)
+        if (!map.has(license) || newSpec) {
+          map.set(license, newSpec);
+        }
       });
       return map;
     })
@@ -668,12 +672,9 @@ function validateConsultationAndSpecialtyRules(activities, text, invalidFields, 
     }
 
     if (GP_992_FORBIDDEN_CODES.has(ctx.code)) {
-      if (specialtyContains(ctx.orderingSpecialty, 'General Practitioner')) {
+      if (ctx.net !== 0 && specialtyContains(ctx.orderingSpecialty, 'General Practitioner')) {
         const spec = ctx.orderingSpecialty || 'Unknown';
         invalidFields.push(`Activity ${ctx.code} requires OrderingClinician specialty to NOT be General Practitioner (Currently \`${spec}\`)`);
-        if (ctx.net !== 0) {
-          invalidFields.push(`Activity ${ctx.code} must have Net = 0 when specialty is General Practitioner`);
-        }
       }
 
       if (isOphthalmologyOrPsychiatrySpecialty(ctx.orderingSpecialty)) {
