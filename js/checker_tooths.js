@@ -78,6 +78,7 @@ const DUAL_TYPE_CODES = new Set([
   '76801', // Type 6 = dental version; Type 3 = medical version
   '92511'  // Type 6 = dental version; Type 3 = medical version
 ]);
+const AUTH_DEPENDENT_DUAL_CODES = new Set(['86301', '73521']);
 
 // Root canal codes requiring a Subcode observation from 20-Feb-2026 onward
 const ROOT_CANAL_SUBCODE_CODES = new Set(['33111', '33121', '33131', '33141', '33115', '33125', '33135', '33145']);
@@ -528,7 +529,7 @@ function validateKnownCode({
 }
 
 function validateUnknownCode({
-  claimId, activityId, type, code, obsCodes, description, claimRegionTrack, codeLastDigit, obsList, isMedical = false
+  claimId, activityId, type, code, obsCodes, description, claimRegionTrack, codeLastDigit, obsList, isMedical = false, authClassifiedDental = null
 }) {
   let remarks = [];
   let details = '';
@@ -543,7 +544,9 @@ function validateUnknownCode({
 
   // Only enforce type 6 when the code has a known dental description (from fallback) AND not in Medical mode.
   // Truly unknown codes (description === '(unknown code)') are treated as non-dental (type 3).
-  const isDentalCode = !isMedical && description !== '(unknown code)';
+  const isDentalCode = authClassifiedDental === null
+    ? (!isMedical && description !== '(unknown code)')
+    : (!isMedical && authClassifiedDental);
   const typeRemarks = validateActivityType(code, type, isDentalCode);
   remarks.push(...typeRemarks);
 
@@ -726,8 +729,10 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
         if (fallback && fallback.description) {
           description = fallback.description;
         }
+        const authId = (act.querySelector('PriorAuthorizationID')?.textContent || act.querySelector('PriorAuthorization')?.textContent || '').trim();
+        const authClassifiedDental = AUTH_DEPENDENT_DUAL_CODES.has(code) ? Boolean(authId) : null;
         row = validateUnknownCode({
-          claimId, activityId, type: typeValue, code, obsCodes, description, claimRegionTrack: claimRegionTrack[claimId], codeLastDigit, obsList, isMedical
+          claimId, activityId, type: typeValue, code, obsCodes, description, claimRegionTrack: claimRegionTrack[claimId], codeLastDigit, obsList, isMedical, authClassifiedDental
         });
       } else {
         row = validateKnownCode({

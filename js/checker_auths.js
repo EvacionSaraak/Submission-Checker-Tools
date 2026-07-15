@@ -33,6 +33,16 @@ const MEDICAL_CODES_REQUIRING_AUTH = new Set([
   '77022', '77046', '77047', '77048', '77049', '77078', '77084'
 ]);
 
+const AUTH_PRESENCE_CLASSIFIED_CODES = new Set(['86301', '73521']);
+
+function normalizeProcedureCode(value) {
+  return String(value || '').trim().replace(/^0+/, '');
+}
+
+function normalizeMemberId(value) {
+  return String(value || '').trim().replace(/\.0+$/, '');
+}
+
 function codeRequiresAuthorization(code, rule = {}) {
   return MEDICAL_CODES_REQUIRING_AUTH.has(String(code || '').trim()) ||
     (rule.approval_details !== undefined && !/NOT\s+REQUIRED/i.test(rule.approval_details));
@@ -206,9 +216,9 @@ function validateXLSXMatch(row, { memberId, code, netTotal, ordering, authID }) 
   let clinicianMismatch = false;
   let xmlClinician = ordering || "";
   let xlsClinician = (row["Ordering Clinician"] || "");
-  if ((row["Card Number / DHA Member ID"] || "").trim() !== memberId.trim())
+  if (normalizeMemberId(row["Card Number / DHA Member ID"]) !== normalizeMemberId(memberId))
     remarks.push(`MemberID mismatch: XLSX=${row["Card Number / DHA Member ID"]}`);
-  if ((row["Item Code"] || "").trim() !== code.trim())
+  if (normalizeProcedureCode(row["Item Code"]) !== normalizeProcedureCode(code))
     remarks.push(`Item Code mismatch: XLSX=${row["Item Code"]}`);
   const xOrdering = xlsClinician.trim().toUpperCase();
   if (xOrdering !== (xmlClinician || "").trim().toUpperCase())
@@ -276,11 +286,14 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId, claimType = ''
 
   const isMedicalClaim = String(claimType || '').trim() === '3';
   const rule     = authRules[code] || {};
+  const isAuthPresenceClassifiedCode = AUTH_PRESENCE_CLASSIFIED_CODES.has(String(code || '').trim());
   // For medical claims (Type 3) only the explicit medical auth list applies;
   // dental authRules from checker_auths.json are not relevant.
-  const needsAuth = isMedicalClaim
-    ? MEDICAL_CODES_REQUIRING_AUTH.has(String(code || '').trim())
-    : codeRequiresAuthorization(code, rule);
+  const needsAuth = isAuthPresenceClassifiedCode
+    ? Boolean(authID)
+    : (isMedicalClaim
+      ? MEDICAL_CODES_REQUIRING_AUTH.has(String(code || '').trim())
+      : codeRequiresAuthorization(code, rule));
 
   if (!needsAuth && !authID) {
     return {
@@ -328,10 +341,14 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId, claimType = ''
   const rows = xlsxMap[authID] || [];
   // All rows sharing this authorization (for "View" modal display)
   const xlsAllAuthRows = rows;
-  const matchedRow = rows.find(r =>
-    String(r["Item Code"] || "").trim() === code &&
-    String(r["Card Number / DHA Member ID"] || "").trim() === memberId
-  ) || {};
+  const matchedRowByCodeAndMember = rows.find(r =>
+    normalizeProcedureCode(r["Item Code"]) === normalizeProcedureCode(code) &&
+    normalizeMemberId(r["Card Number / DHA Member ID"]) === normalizeMemberId(memberId)
+  );
+  const matchedRowByCode = rows.find(r =>
+    normalizeProcedureCode(r["Item Code"]) === normalizeProcedureCode(code)
+  );
+  const matchedRow = matchedRowByCodeAndMember || matchedRowByCode || {};
 
   const denialCode   = matchedRow["Denial Code (If any)"]   || "";
   const denialReason = matchedRow["Denial Reason (If any)"] || "";

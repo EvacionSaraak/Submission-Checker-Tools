@@ -61,11 +61,16 @@ async function handleRun() {
       console.log('[PRICING] Using uploaded XLSX for pricing override');
     }
 
-    // Load drug pricing from Drugs XLSX ("Drugs" sheet) if provided
+    // Load drug pricing from Drugs XLSX ("Drugs" sheet), then fallback to bundled resources/Drugs.xlsx
     let drugsMap = null;
+    let usingBundledDrugs = false;
     if (drugsFile) {
       drugsMap = await loadDrugsMap(drugsFile);
       console.log('[PRICING] Drugs map loaded, entries:', drugsMap ? drugsMap.size : 0);
+    } else {
+      drugsMap = await loadBundledDrugsMap();
+      usingBundledDrugs = !!drugsMap;
+      console.log('[PRICING] Bundled drugs map loaded, entries:', drugsMap ? drugsMap.size : 0);
     }
 
     showProgress(25, 'Parsing XML & pricing data');
@@ -101,6 +106,7 @@ async function handleRun() {
       const xmlNet = Number(rec.Net || 0);
       const xmlQty = Number(rec.Quantity || 0);
       const effectivePayerID = (rec.PayerID || receiverID || '').toUpperCase();
+      const isDrugActivity = String(rec.ActivityType || '').trim() === '5';
 
       if (receiverID !== 'D001' && receiverID !== 'A001') {
         const isHAAD = receiverID.toUpperCase() === 'HAAD';
@@ -112,6 +118,7 @@ async function handleRun() {
           ClaimedNet: rec.Net || '',
           ClaimedQty: rec.Quantity || '',
           ReferenceNetPrice: '',
+          FactoredReference: '',
           PricingRow: null,
           XmlRow: rec,
           isValid: netZeroValid,
@@ -140,6 +147,7 @@ async function handleRun() {
           ClaimedNet: rec.Net || '',
           ClaimedQty: rec.Quantity || '',
           ReferenceNetPrice: '0',
+          FactoredReference: '0',
           PricingRow: null,
           XmlRow: rec,
           isValid: status === 'Valid',
@@ -248,16 +256,19 @@ async function handleRun() {
       const match = matchRow;
       let ref = Number(refPrice ?? NaN);
       let effectiveRef = ref; // ref after applying modifier multipliers
+      let referenceFactor = 1;
 
       // Apply modifier price multipliers before comparison
       if (!Number.isNaN(ref) && ref > 0 && rec.Modifier) {
         if (rec.Modifier === '52') {
           // Consultation price halved
-          effectiveRef = Math.round(ref * 0.5 * 100) / 100;
+          referenceFactor = 0.5;
+          effectiveRef = Math.round(ref * referenceFactor * 100) / 100;
         } else if (rec.Modifier === '50') {
           // Minor procedure: ×1.5 for A001, ×(1.3×1.5) for D001
           const mult = effectivePayerID === 'D001' ? 1.3 * 1.5 : 1.5;
-          effectiveRef = Math.round(ref * mult * 100) / 100;
+          referenceFactor = mult;
+          effectiveRef = Math.round(ref * referenceFactor * 100) / 100;
         }
         // Modifier 25 and 24: no price change
       }
@@ -269,7 +280,19 @@ async function handleRun() {
         remarks.push('Claimed Net is 0 (treated as Valid)');
       } else {
         if (xmlQty <= 0) remarks.push(xmlQty === 0 ? 'Quantity is 0 (invalid)' : 'Quantity is less than 0 (invalid)');
-        if (!match && !endoEntry) remarks.push(`No pricing match was found under ${pricingContext}.`);
+        if (!match && !endoEntry) {
+          if (isDrugActivity) {
+            status = 'Unknown';
+            if (drugsMap) {
+              const drugListSource = usingBundledDrugs ? 'resources/Drugs.xlsx' : 'the uploaded Drugs sheet';
+              remarks.push(`Drug code ${rec.CPT} was not found in ${drugListSource}.`);
+            } else {
+              remarks.push('Drug list could not be loaded; pricing status is Unknown for this drug code.');
+            }
+          } else {
+            remarks.push(`No pricing match was found under ${pricingContext}.`);
+          }
+        }
         if (endoEntry && refPrice === null) remarks.push(`Code ${rec.CPT} has no available price under ${pricingContext}.`);
         if ((match || endoEntry) && refPrice !== null && Number.isNaN(ref)) remarks.push(`The reference price is not a valid number under ${pricingContext}.`);
 
@@ -331,7 +354,8 @@ async function handleRun() {
         CPT: rec.CPT || '',
         ClaimedNet: rec.Net || '',
         ClaimedQty: rec.Quantity || '',
-        ReferenceNetPrice: Number.isNaN(effectiveRef) ? (refPrice || '') : String(effectiveRef),
+        ReferenceNetPrice: Number.isNaN(ref) ? (refPrice || '') : String(ref),
+        FactoredReference: Number.isNaN(effectiveRef) ? '' : String(effectiveRef),
         PricingRow: endoEntry || matchRow || null,
         XmlRow: rec,
         isValid: status === 'Valid',
@@ -515,20 +539,37 @@ async function loadDrugsMap(file) {
   try {
     const arrayBuffer = await file.arrayBuffer();
     const wb = XLSX.read(arrayBuffer, { type: 'array' });
-    const sheetName = wb.SheetNames.find(n => n.trim().toLowerCase() === 'drugs') || wb.SheetNames[0];
-    if (!sheetName) return null;
-    const ws = wb.Sheets[sheetName];
-    const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
-    const map = new Map();
-    rows.forEach(r => {
-      const code = normalizeCode(String(r['Drug Code'] || '').trim());
-      if (code) map.set(code, r);
-    });
-    return map;
+    return buildDrugsMapFromWorkbook(wb);
   } catch (e) {
     console.warn('[PRICING] Failed to load drugs file:', e);
     return null;
   }
+}
+
+async function loadBundledDrugsMap() {
+  try {
+    const response = await fetch('../resources/Drugs.xlsx');
+    if (!response.ok) return null;
+    const arrayBuffer = await response.arrayBuffer();
+    const wb = XLSX.read(arrayBuffer, { type: 'array' });
+    return buildDrugsMapFromWorkbook(wb);
+  } catch (e) {
+    console.warn('[PRICING] Failed to load bundled Drugs.xlsx:', e);
+    return null;
+  }
+}
+
+function buildDrugsMapFromWorkbook(wb) {
+  const sheetName = wb.SheetNames.find(n => n.trim().toLowerCase() === 'drugs') || wb.SheetNames[0];
+  if (!sheetName) return null;
+  const ws = wb.Sheets[sheetName];
+  const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+  const map = new Map();
+  rows.forEach(r => {
+    const code = normalizeCode(String(r['Drug Code'] || '').trim());
+    if (code) map.set(code, r);
+  });
+  return map;
 }
 
 // ----------------- XML parsing & extraction -----------------
@@ -594,6 +635,7 @@ function extractPricingRecords(xmlDoc) {
       records.push({
         ClaimID: claimId,
         ActivityID: activityId,
+        ActivityType: (textValue(act, 'Type') || '').trim(),
         CPT: cpt,
         Net: net,
         Quantity: qty,
@@ -712,6 +754,7 @@ function buildResultsTable(rows) {
           <th>Claimed Net</th>
           <th>Quantity</th>
           <th>Reference Net Price</th>
+          <th>Factored Reference</th>
           <th>Status</th>
           <th>Remarks</th>
           <th>Compare</th>
@@ -733,6 +776,7 @@ function buildResultsTable(rows) {
         <td>${escapeHtml(r.ClaimedNet)}</td>
         <td>${escapeHtml(r.ClaimedQty)}</td>
         <td>${r._estimatedTotal != null ? escapeHtml(String(r._estimatedTotal)) + ' (estimate)' : escapeHtml(r.ReferenceNetPrice)}</td>
+        <td>${escapeHtml(r.FactoredReference || '')}</td>
         <td>${escapeHtml(r.status)}</td>
         <td>${escapeHtml(r.Remarks || 'OK')}</td>
         <td>${r.PricingRow ? `<button type="button" onclick="window.showPricingComparison(${r._originalIndex})">View</button>` : ''}</td>
@@ -763,6 +807,7 @@ function showComparisonModal(index) {
   const xml = row.XmlRow || {};
   const pricing = row.PricingRow || {};
   const refPrice = String(row.ReferenceNetPrice || '');
+  const factoredRefPrice = String(row.FactoredReference || '');
   const xmlNet = Number(xml.Net || 0);
   const xmlQty = Number(xml.Quantity || 0);
   const unitCalc = xmlQty > 0 ? (xmlNet / xmlQty) : null;
@@ -782,7 +827,8 @@ function showComparisonModal(index) {
     <h4>Pricing Reference</h4>
     <table class="table table-bordered table-sm">
       <tr><th>Code</th><td>${escapeHtml(String(firstNonEmptyKey(pricing, ['Code', 'CPT', 'code']) || ''))}</td></tr>
-      <tr><th>Net Price</th><td>${escapeHtml(refPrice)}</td></tr>
+      <tr><th>Unfactored Net Price</th><td>${escapeHtml(refPrice)}</td></tr>
+      <tr><th>Factored Net Price</th><td>${escapeHtml(factoredRefPrice)}</td></tr>
     </table>
   `;
 
