@@ -73,6 +73,12 @@ async function handleRun() {
       console.log('[PRICING] Bundled drugs map loaded, entries:', drugsMap ? drugsMap.size : 0);
     }
 
+    // Load factor map from bundled resources/Factor.xlsx (used for medical pricing only)
+    const factorMap = await loadBundledFactorMap();
+    console.log('[PRICING] Factor map loaded, entries:', factorMap ? factorMap.size : 0);
+
+    const isMedicalMode = getSelectedClaimTypeMode() === 'MEDICAL';
+
     showProgress(25, 'Parsing XML & pricing data');
 
     const xmlDoc = parseXml(xmlText);
@@ -165,6 +171,7 @@ async function handleRun() {
       let refPrice = '';
       let matchRow = null;
       let pricingContext;
+      let isMedicalPricingMatch = false;
 
       if (xlsxMatcher) {
         const isAlyaharGroup = facility === 'MF5357' || facility === 'MF7231' || facility === 'MF232';
@@ -201,6 +208,7 @@ async function handleRun() {
             refPrice = medicalMatch.price;
             matchRow = medicalMatch;
             pricingContext = 'Mandatory Tariff Standard Pricing';
+            isMedicalPricingMatch = true;
           }
         }
       }
@@ -260,8 +268,17 @@ async function handleRun() {
       let effectiveRef = ref; // ref after applying modifier multipliers
       let referenceFactor = 1;
 
-      // Apply modifier price multipliers before comparison
-      if (!Number.isNaN(ref) && ref > 0 && rec.Modifier) {
+      // When in medical mode, apply per-code factor from Factor.xlsx (overrides modifier multipliers)
+      const medicalFactor = (isMedicalMode && isMedicalPricingMatch && factorMap)
+        ? factorMap.get(normalizeCode(rec.CPT)) ?? null
+        : null;
+
+      if (medicalFactor !== null && !Number.isNaN(ref) && ref > 0) {
+        // Factor from Factor.xlsx supersedes standard modifier multipliers for medical codes
+        referenceFactor = medicalFactor;
+        effectiveRef = Math.round(ref * referenceFactor * 100) / 100;
+      } else if (!Number.isNaN(ref) && ref > 0 && rec.Modifier) {
+        // Apply modifier price multipliers before comparison
         if (rec.Modifier === '52') {
           // Consultation price halved
           referenceFactor = 0.5;
@@ -319,7 +336,7 @@ async function handleRun() {
             const copayPct = Math.round((effectiveRef * xmlQty - xmlNet) / (effectiveRef * xmlQty) * 10000) / 100;
             remarks.push(`Copay: ${copayPct}%.`);
           } else {
-            remarks.push(`Claimed Net ${xmlNet} does not match the reference price of ${effectiveRef} under ${pricingContext}${modifierNote}.`);
+            remarks.push(`Claimed Net ${xmlNet} (for ${rec.CPT}) does not match the reference price of ${effectiveRef} under ${pricingContext}${modifierNote}.`);
           }
         }
       }
@@ -573,6 +590,41 @@ function buildDrugsMapFromWorkbook(wb) {
     if (code) map.set(code, r);
   });
   return map;
+}
+
+async function loadBundledFactorMap() {
+  try {
+    const response = await fetch('../resources/Factor.xlsx');
+    if (!response.ok) return null;
+    const arrayBuffer = await response.arrayBuffer();
+    const wb = XLSX.read(arrayBuffer, { type: 'array' });
+    return buildFactorMapFromWorkbook(wb);
+  } catch (e) {
+    console.warn('[PRICING] Failed to load bundled Factor.xlsx:', e);
+    return null;
+  }
+}
+
+function buildFactorMapFromWorkbook(wb) {
+  const sheetName = wb.SheetNames.find(n => n.trim().toLowerCase() === 'factor') || wb.SheetNames[0];
+  if (!sheetName) return null;
+  const ws = wb.Sheets[sheetName];
+  const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+  const map = new Map();
+  rows.forEach(r => {
+    const code = normalizeCode(String(r['Code'] || '').trim());
+    const factor = Number(r['Factor']);
+    if (code && !isNaN(factor) && factor > 0) map.set(code, factor);
+  });
+  return map;
+}
+
+function getSelectedClaimTypeMode() {
+  const claimTypeDental = document.getElementById('claimTypeDental');
+  const claimTypeMedical = document.getElementById('claimTypeMedical');
+  if (claimTypeMedical && claimTypeMedical.checked) return 'MEDICAL';
+  if (claimTypeDental && claimTypeDental.checked) return 'DENTAL';
+  return null;
 }
 
 // ----------------- XML parsing & extraction -----------------
