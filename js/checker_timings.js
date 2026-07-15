@@ -23,8 +23,19 @@
     const checkedRadio = document.querySelector('input[name="claimTypeGlobal"]:checked');
     const selectedType = checkedRadio?.value || "DENTAL";
     const requiredType = (selectedType === "DENTAL") ? "6" : "3";
+    const receiverID =
+      xmlDoc
+        .querySelector('Header > ReceiverID')
+        ?.textContent
+        ?.trim()
+        ?.toUpperCase()
+      || '';
     
-    const claims = extractClaims(xmlDoc, requiredType);
+    const claims = extractClaims(xmlDoc, {
+      requiredType,
+      claimMode: selectedType,
+      receiverID
+    });
     
     // Update summary status
     const invalidRows = claims.filter(r => !r.isValid);
@@ -75,7 +86,18 @@ async function onFileChange(event) {
                          document.querySelector('input[name="claimTypeGlobal"]:checked')?.value || 
                          "DENTAL";
     const requiredType = (selectedType === "DENTAL") ? "6" : "3";
-    const claims = extractClaims(xmlDoc, requiredType);
+    const receiverID =
+      xmlDoc
+        .querySelector('Header > ReceiverID')
+        ?.textContent
+        ?.trim()
+        ?.toUpperCase()
+      || '';
+    const claims = extractClaims(xmlDoc, {
+      requiredType,
+      claimMode: selectedType,
+      receiverID
+    });
     renderResults(document.getElementById('results'), claims);
   } catch (err) {
     renderMessage(`❌ Error: ${sanitize(String(err.message))}`);
@@ -102,7 +124,23 @@ function minMinutesFor97Quantity(quantity) {
 }
 
 // --- Claims Extraction/Validation ---
-function extractClaims(xmlDoc, requiredType = "6") {
+function getMaximumEncounterMinutes({ claimMode, receiverID }) {
+  const isMedical = String(claimMode || '').trim().toUpperCase() === 'MEDICAL';
+  const isHaad = String(receiverID || '').trim().toUpperCase() === 'HAAD';
+
+  if (isMedical && !isHaad) {
+    return 360;
+  }
+
+  return 240;
+}
+
+function extractClaims(xmlDoc, options = {}) {
+  const requiredType = options.requiredType || "6";
+  const claimMode = options.claimMode || "DENTAL";
+  const receiverID = options.receiverID || '';
+  const maximumEncounterMinutes = getMaximumEncounterMinutes({ claimMode, receiverID });
+  const maximumEncounterHours = Math.floor(maximumEncounterMinutes / 60);
   const results = [];
   xmlDoc.querySelectorAll('Claim').forEach(claim => {
     const claimId = claim.querySelector('ID')?.textContent || 'Unknown';
@@ -154,14 +192,14 @@ function extractClaims(xmlDoc, requiredType = "6") {
       if (activityStart && activityStart < encounterStart) { isValid = false; remarks.push('Activity start is before encounter start.'); }
       if (activityStart && activityStart > encounterEnd) { isValid = false; remarks.push('Activity start is after encounter end.'); }
       if (encMin >= 0 && encMin < 10) { isValid = false; remarks.push(`Encounter duration too short (${encMin} min). Should be 10 minutes minimum.`);}
-      else if (encMin > 240) {
+      else if (encMin > maximumEncounterMinutes) {
         isValid = false;
         if (encMin >= 1440) {
           const [startDate] = encounterStartStr.split(' '), [endDate] = encounterEndStr.split(' ');
           remarks.push(`Encounter crosses days: ${startDate} → ${endDate}`);
         } else {
           const hours = Math.floor(encMin / 60), minutes = encMin % 60;
-          remarks.push(`Encounter duration too long (${hours}h ${minutes}m). Should be 4 hours maximum.`);
+          remarks.push(`Encounter duration too long (${hours}h ${minutes}m). Should be ${maximumEncounterHours} hours maximum.`);
         }
       }
       if (notEnough97Time && /^97/.test(codeValue)) {

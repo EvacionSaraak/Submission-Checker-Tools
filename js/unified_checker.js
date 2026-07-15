@@ -1423,8 +1423,9 @@
                             row.classList.contains('table-warning') ||
                             row.classList.contains('invalid') ||
                             row.classList.contains('unknown');
+          const hideForInvalidOnly = row.getAttribute('data-hide-invalid-only') === 'true';
           
-          if (hasInvalid) {
+          if (hasInvalid && !hideForInvalidOnly) {
             // Show all invalid rows
             row.style.display = '';
             

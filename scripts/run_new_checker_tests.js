@@ -202,6 +202,8 @@ await run('Not merged overlap with shared dx and clinician', () => {
     context({ claimID: 'C2', encounterStartRaw: '01/01/2026 10:15', encounterEndRaw: '01/01/2026 10:45', parsedStart: ts('01/01/2026 10:15'), parsedEnd: ts('01/01/2026 10:45') })
   ]);
   assert(findings.has('C1') && findings.has('C2'), 'Expected both claims to receive not-merged remarks');
+  assert((findings.get('C1') || [])[0] === 'C1 must be merged with C2.', 'Expected simplified forward merge remark');
+  assert((findings.get('C2') || [])[0] === 'C2 must be merged with C1.', 'Expected simplified reverse merge remark');
 });
 
 await run('Not merged rejects non-overlap', () => {

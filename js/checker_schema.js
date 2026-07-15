@@ -520,15 +520,18 @@ function buildNotMergedRemarksFromContexts(contexts) {
         }
         pairKeys.add(pairKey);
 
-        const sharedDxDisplay = sharedDiagnoses.map(code => {
-          if (code.length > 3) {
-            return `${code.slice(0, 3)}.${code.slice(3)}`;
-          }
-          return code;
-        }).join(', ');
+        const baseRemark = `${first.claimID} must be merged with ${second.claimID}.`;
+        const reverseRemark = `${second.claimID} must be merged with ${first.claimID}.`;
 
-        const baseRemark = `Potential Not Merged Error with related claim ID ${second.claimID}: Same payer/member/provider/facility/service date (${first.encounterDate}), encounter overlap (${first.encounterStartRaw} - ${first.encounterEndRaw} vs ${second.encounterStartRaw} - ${second.encounterEndRaw}), shared ordering clinician(s): ${sharedClinicians.join(', ')}, shared diagnosis(es): ${sharedDxDisplay}. [${CLAIM_NOT_MERGED}]`;
-        const reverseRemark = `Potential Not Merged Error with related claim ID ${first.claimID}: Same payer/member/provider/facility/service date (${first.encounterDate}), encounter overlap (${first.encounterStartRaw} - ${first.encounterEndRaw} vs ${second.encounterStartRaw} - ${second.encounterEndRaw}), shared ordering clinician(s): ${sharedClinicians.join(', ')}, shared diagnosis(es): ${sharedDxDisplay}. [${CLAIM_NOT_MERGED}]`;
+        console.debug('[SCHEMA][NOT_MERGED][PAIR]', {
+          firstClaimID: first.claimID,
+          secondClaimID: second.claimID,
+          encounterDate: first.encounterDate,
+          firstEncounter: `${first.encounterStartRaw} - ${first.encounterEndRaw}`,
+          secondEncounter: `${second.encounterStartRaw} - ${second.encounterEndRaw}`,
+          sharedClinicians,
+          sharedDiagnoses
+        });
 
         if (!remarksByClaimId.has(first.claimID)) {
           remarksByClaimId.set(first.claimID, []);
@@ -726,12 +729,10 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "", options = {}) {
   const mergedClaimRemarksByClaim = buildMergedClaimRemarksByClaim(claims);
 
   // Extract ReceiverID from Header element
-  // Only check leading zeros for Daman (A001) and Thiqa (D001)
   const header = xmlDoc.querySelector("Header");
   const receiverID = header?.querySelector("ReceiverID")?.textContent.trim() || '';
-  const shouldCheckLeadingZero = receiverID === 'A001' || receiverID === 'D001';
   const missingReceiverID = !receiverID; // Flag if ReceiverID is missing or empty
-  console.log(`[SCHEMA] ReceiverID: ${receiverID || '(MISSING)'}, shouldCheckLeadingZero: ${shouldCheckLeadingZero}`);
+  console.log(`[SCHEMA] ReceiverID: ${receiverID || '(MISSING)'}`);
 
   for (const claim of claims) {
     let missingFields = [], invalidFields = [], remarks = [];
@@ -797,12 +798,6 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "", options = {}) {
         const rounded = parseFloat(patientShareRaw).toFixed(2);
         invalidFields.push(`PatientShare has invalid precision: \`${patientShareRaw}\`. Should be \`${rounded}\`.`);
       }
-    }
-
-    // MemberID check - only check for leading zero if ReceiverID is A001 (Daman) or D001 (Thiqa)
-    const memberID = text("MemberID");
-    if (shouldCheckLeadingZero && memberID && /^0/.test(memberID)) {
-      invalidFields.push("MemberID (starts with 0)");
     }
 
     // EmiratesIDNumber checks (improved messages)

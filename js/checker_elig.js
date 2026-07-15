@@ -213,8 +213,15 @@ const DateHandler = {
  * DATA NORMALIZATION FUNCTIONS *
  *****************************/
 function normalizeMemberID(id) {
-  if (!id) return '';
-  return String(id).trim().replace(/^0+/, '');
+  const raw = String(id || '').trim().replace(/\.0+$/, '');
+  if (!raw) return '';
+  const withoutLeadingZeroes = raw.replace(/^0+/, '');
+  return withoutLeadingZeroes || '0';
+}
+
+function hasLeadingMemberIDZero(value) {
+  const raw = String(value || '').trim().replace(/\.0+$/, '');
+  return /^0+\d+$/.test(raw);
 }
 
 function normalizeClinician(name) {
@@ -291,7 +298,7 @@ function prepareEligibilityMap(eligData) {
 
     if (!rawID) return;
 
-    const memberID = normalizeMemberID(rawID); // ✅ only strips leading zeroes
+    const memberID = normalizeMemberID(rawID);
 
     if (!eligMap.has(memberID)) eligMap.set(memberID, []);
 
@@ -316,7 +323,7 @@ function prepareEligibilityMap(eligData) {
 }
 
 function findEligibilityForClaim(eligMap, claimDate, memberID, claimClinicians = []) {
-  const normalizedID = String(memberID || '').trim();
+  const normalizedID = normalizeMemberID(memberID);
   const eligList = eligMap.get(normalizedID) || []; // PATCHED: use Map.get
 
   if (!eligList.length) return null;
@@ -451,38 +458,43 @@ function validateXmlClaims(xmlClaims, eligMap, receiverID = '') {
     const memberID = claim.memberID;
     const packageName = claim.packageName;
 
-    // Check for leading zero in original memberID
-    const hasLeadingZero = memberID.match(/^0+\d+$/);
+    const hasLeadingZero = hasLeadingMemberIDZero(memberID);
 
     const eligibility = findEligibilityForClaim(eligMap, claimDate, memberID, claim.clinicians);
 
     let status = 'valid';  // Start with valid, invalidate on failures
     const remarks = [];
 
-    if (hasLeadingZero) {
-      status = 'invalid';
-      remarks.push('Member ID has a leading zero; claim marked as invalid.');
-    } else if (!eligibility) {
+    if (!eligibility) {
       status = 'invalid';
       remarks.push(`No matching eligibility found for ${memberID} on ${formattedDate}`);
-    } else if (eligibility.Status?.toLowerCase() !== 'eligible') {
-      status = 'invalid';
-      remarks.push(`Eligibility status: ${eligibility.Status}`);
-    } else if (!checkClinicianMatch(claim.clinicians, eligibility.Clinician)) {
-      status = 'unknown';
-      remarks.push('Clinician mismatch');
-    } else if (packageName && eligibility['Package Name']) {
-      // Only validate if both XML and XLSX have PackageName values (skip if XML has no PackageName)
-      const normalizedXmlPackage = normalizePackageName(packageName);
-      const normalizedEligPackage = normalizePackageName(eligibility['Package Name']);
-      
-      if (normalizedXmlPackage !== normalizedEligPackage) {
-        // Package Name mismatch is treated as 'invalid' (not 'unknown') because it's a definitive
-        // data mismatch that indicates the wrong eligibility record or incorrect package in the claim.
-        // Compares: XML <Contract><PackageName> vs XLSX eligibility "Package Name" column (column AH)
-        status = 'invalid';
-        remarks.push(`Claim package (${normalizedXmlPackage}) is different from eligibility (${normalizedEligPackage}).`);
+    } else {
+      if (hasLeadingZero) {
+        remarks.push('Member ID contains leading zeroes; eligibility was matched after removing them.');
       }
+      if (eligibility.Status?.toLowerCase() !== 'eligible') {
+        status = 'invalid';
+        remarks.push(`Eligibility status: ${eligibility.Status}`);
+      } else if (!checkClinicianMatch(claim.clinicians, eligibility.Clinician)) {
+        status = 'unknown';
+        remarks.push('Clinician mismatch');
+      } else if (packageName && eligibility['Package Name']) {
+        // Only validate if both XML and XLSX have PackageName values (skip if XML has no PackageName)
+        const normalizedXmlPackage = normalizePackageName(packageName);
+        const normalizedEligPackage = normalizePackageName(eligibility['Package Name']);
+      
+        if (normalizedXmlPackage !== normalizedEligPackage) {
+          // Package Name mismatch is treated as 'invalid' (not 'unknown') because it's a definitive
+          // data mismatch that indicates the wrong eligibility record or incorrect package in the claim.
+          // Compares: XML <Contract><PackageName> vs XLSX eligibility "Package Name" column (column AH)
+          status = 'invalid';
+          remarks.push(`Claim package (${normalizedXmlPackage}) is different from eligibility (${normalizedEligPackage}).`);
+        }
+      }
+    }
+
+    if (hasLeadingZero && eligibility && status === 'valid') {
+      status = 'unknown';
     }
 
     // Independent check: PayerID must match the expected value for the given ReceiverID
@@ -569,19 +581,13 @@ function validateReportClaims(reportData, eligMap) {
       };
     }
 
-    // Check for leading zero in original memberID
-    const hasLeadingZero = memberID.match(/^0+\d+$/);
+    const hasLeadingZero = hasLeadingMemberIDZero(memberID);
 
     // Proceed with normal eligibility lookup
     const eligibility = findEligibilityForClaim(eligMap, claimDate, memberID, [row.clinician]);
     let status = 'invalid';
     const remarks = [];
     const department = (row.department || row.clinic || '').toLowerCase();
-
-    // If leading zero, mark invalid and add remark
-    if (hasLeadingZero) {
-      remarks.push('Member ID has a leading zero; claim marked as invalid.');
-    }
 
     if (!eligibility) {
       remarks.push(`No matching eligibility found for ${memberID} on ${formattedDate}`);
@@ -609,11 +615,16 @@ function validateReportClaims(reportData, eligMap) {
 
       if (!matchesCategory) {
         remarks.push(`Invalid for category: ${serviceCategory}, department: ${row.department || row.clinic}`);
-      } else if (!hasLeadingZero) {
-        // Only mark as valid if there is no leading zero
+      } else {
         status = 'valid';
       }
-      // If hasLeadingZero, status remains 'invalid'
+    }
+
+    if (hasLeadingZero && eligibility) {
+      remarks.push('Member ID contains leading zeroes; eligibility was matched after removing them.');
+      if (status !== 'invalid') {
+        status = 'unknown';
+      }
     }
 
     const invalidTcRemark = getInvalidTcEligibilityRemark(eligibility?.['Package Name']);

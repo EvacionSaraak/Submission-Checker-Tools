@@ -40,6 +40,13 @@ function buildModifierPriceMismatchRemark({ claimedNet, code, modifier, expected
   );
 }
 
+function buildMissingModifierRemark({ modifier, code, multiplier }) {
+  return (
+    `Modifier ${modifier} is missing from ${code} ` +
+    `but price was changed with ${multiplier} quantity.`
+  );
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   try {
     const runBtn = el('run-button');
@@ -447,9 +454,17 @@ async function handleRun() {
             const mod52Price = Math.round(baseForModCheck * 0.5 * 100) / 100;
             const modifiersPresent = String(rec.Modifiers || '');
             if (moneyEqual(xmlNet, mod50Price) && !modifiersPresent.includes('50')) {
-              remarks.push(`Claimed Net ${formatMoney(xmlNet)} for ${rec.CPT} matches modifier 50 pricing, but modifier 50 is missing.`);
+              remarks.push(buildMissingModifierRemark({
+                modifier: '50',
+                code: rec.CPT,
+                multiplier: '1.5'
+              }));
             } else if (moneyEqual(xmlNet, mod52Price) && !modifiersPresent.includes('52')) {
-              remarks.push(`Claimed Net ${formatMoney(xmlNet)} for ${rec.CPT} matches modifier 52 pricing, but modifier 52 is missing.`);
+              remarks.push(buildMissingModifierRemark({
+                modifier: '52',
+                code: rec.CPT,
+                multiplier: '0.5'
+              }));
             } else {
               remarks.push(`Claimed Net ${formatMoney(xmlNet)} (for ${rec.CPT}) does not match the reference price of ${formatMoney(effectiveRef)} under ${pricingContext}.`);
             }

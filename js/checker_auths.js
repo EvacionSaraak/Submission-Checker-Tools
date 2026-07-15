@@ -40,7 +40,24 @@ function normalizeProcedureCode(value) {
 }
 
 function normalizeMemberId(value) {
-  return String(value || '').trim().replace(/\.0+$/, '');
+  const raw = String(value || '').trim().replace(/\.0+$/, '');
+  if (!raw) return '';
+  const withoutLeadingZeroes = raw.replace(/^0+/, '');
+  return withoutLeadingZeroes || '0';
+}
+
+function isRemarkFreePartiallyApproved(row) {
+  const status = String(
+    row?.xlsRow?.Status ||
+    row?.xlsRow?.status ||
+    ''
+  ).trim().toLowerCase();
+
+  const remarks = Array.isArray(row?.remarks)
+    ? row.remarks.filter(remark => String(remark || '').trim())
+    : [];
+
+  return status === 'partially approved' && remarks.length === 0;
 }
 
 function codeRequiresAuthorization(code, rule = {}) {
@@ -634,6 +651,7 @@ function fillMissingClaimIds() {
 // MODIFIED: set class to unknown if r.unknown
 function renderRow(r, lastClaimId, idx, codeGroup) {
   const tr = document.createElement("tr");
+  const remarkFreePartiallyApproved = isRemarkFreePartiallyApproved(r);
   // Use Bootstrap classes for row coloring
   if (r.unknown) {
     tr.classList.add('table-warning'); // Yellow for unknown
@@ -645,6 +663,7 @@ function renderRow(r, lastClaimId, idx, codeGroup) {
   
   // Add data attribute for claim ID
   tr.setAttribute('data-claim-id', r.claimId || '');
+  tr.setAttribute('data-hide-invalid-only', remarkFreePartiallyApproved ? 'true' : 'false');
 
   const xls = r.xlsRow || {};
 
