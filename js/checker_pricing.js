@@ -529,12 +529,6 @@ async function handleRun() {
                 code: rec.CPT,
                 multiplier: '1.5'
               }));
-            } else if (moneyEqual(xmlNet, mod52Price) && !modifiersPresent.includes('52')) {
-              remarks.push(buildMissingModifierRemark({
-                modifier: '52',
-                code: rec.CPT,
-                multiplier: '0.5'
-              }));
             } else {
               remarks.push(`Claimed Net ${formatMoney(xmlNet)} (for ${rec.CPT}) does not match the reference price of ${formatMoney(effectiveRef)} under ${pricingContext}.`);
             }
@@ -563,7 +557,7 @@ async function handleRun() {
         remarks.push('Code 99173 cannot have price.');
       }
 
-      if (normalizedCode === '36415' && ['A001', 'D001', 'A025'].includes(pricingReceiverID) && xmlNet !== 0) {
+      if (normalizedCode === '36415' && ['A001', 'D001', 'D004', 'A025'].includes(pricingReceiverID) && xmlNet !== 0) {
         status = 'Invalid';
         remarks.push(`Code 36415 must have net price 0 for payer ${pricingReceiverID}.`);
       }

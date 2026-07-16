@@ -1,0 +1,104 @@
+{
+  "payers": {
+    "D001": {
+      "name": "Thiqa",
+      "expectedClaimPayerIDs": ["E001"]
+    },
+    "A001": {
+      "name": "Daman Enhanced",
+      "expectedClaimPayerIDs": ["A001"]
+    },
+    "D004": {
+      "name": "Daman Basic",
+      "expectedClaimPayerIDs": ["A001"]
+    },
+    "A025": {
+      "name": "NGI"
+    },
+    "C002": {
+      "name": "Nextcare"
+    }
+  },
+  "claimMerging": {
+    "receivers": ["D001", "A001", "D004"]
+  },
+  "therapyCodeGroups": {
+    "OCCUPATIONAL_THERAPY_CODES": ["97166", "97168", "97530", "97533", "97535", "97129"],
+    "PHYSIOTHERAPY_CODES": ["97161", "97164", "97110", "97140", "97032", "97530", "97112", "97116"],
+    "SPEECH_THERAPY_CODES": ["92523", "92507"],
+    "DIETICIAN_CODES": ["97802", "97803"]
+  },
+  "authorizationRequiredCodes": {
+    "fixed": ["76816", "97802", "97803", "96360", "96365", "96374"],
+    "prefixes": ["97"]
+  },
+  "specialtyRestrictions": {
+    "pathologyLabCodePrefixes": ["8"],
+    "dieticianCodes": ["97802", "97803"]
+  },
+  "mutuallyExclusiveCodes": [
+    ["31231", "31575"],
+    ["30901", "31231"],
+    ["76770", "76775"],
+    ["86140", "85651"]
+  ],
+  "zeroPriceCodes": {
+    "always": ["99173"],
+    "byReceiver": {
+      "D001": ["36415"],
+      "A001": ["36415"],
+      "D004": ["36415"],
+      "A025": ["36415"]
+    }
+  },
+  "coverageExclusions": {
+    "insuredOnlyBlockedCodes": ["87635"],
+    "receiverCodeExclusions": {
+      "D004": ["86703", "82785", "L70.0"],
+      "A001": ["82785", "L70.0"]
+    }
+  },
+  "diagnosisRules": {
+    "excludesWithDiagnosis": [["J30.9", "J45.9"]],
+    "z68OCodeExceptions": []
+  },
+  "historicalFrequencyRules": {
+    "83036Days": 90,
+    "lab800Months": 6,
+    "otherLabDays": 3,
+    "exceptionGroups": {
+      "CBC": [],
+      "CRP": [],
+      "BHCG": []
+    }
+  },
+  "drugRules": {
+    "formularyReceivers": {
+      "thiqa": ["D001"],
+      "damanBasic": ["D004"]
+    },
+    "specificReceiverOnly": {
+      "L88-5151-05757-02": ["D001"]
+    },
+    "quantityAuditorReceivers": ["D001", "A001", "D004"],
+    "amountAuditorThresholdAED": 500
+  },
+  "modifierRules": {
+    "mandatoryWhenPriced": ["25", "50"],
+    "optionalIfAbsent": ["24", "52"],
+    "quantityMustBeOne": ["24", "25", "50", "52"]
+  },
+  "timing": {
+    "series97": {
+      "bands": [
+        { "min": 8, "max": 22, "quantity": 1 },
+        { "min": 23, "max": 37, "quantity": 2 },
+        { "min": 38, "max": 52, "quantity": 3 },
+        { "min": 53, "max": 67, "quantity": 4 }
+      ],
+      "maxSupportedQuantity": 4,
+      "codePrefixes": ["97"]
+    }
+  },
+  "duplicateActivityExceptions": []
+}

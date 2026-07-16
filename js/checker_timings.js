@@ -116,11 +116,15 @@ function parseXML(xmlString) {
   return doc;
 }
 
-function minMinutesFor97Quantity(quantity) {
-  if (quantity >= 4) return 53;
-  if (quantity === 3) return 38;
-  if (quantity === 2) return 23;
-  return 8;
+const SERIES_97_BANDS = [
+  { min: 8, max: 22, quantity: 1 },
+  { min: 23, max: 37, quantity: 2 },
+  { min: 38, max: 52, quantity: 3 },
+  { min: 53, max: 67, quantity: 4 }
+];
+
+function get97BandForDuration(durationMinutes) {
+  return SERIES_97_BANDS.find(band => durationMinutes >= band.min && durationMinutes <= band.max) || null;
 }
 
 // --- Claims Extraction/Validation ---
@@ -159,11 +163,15 @@ function extractClaims(xmlDoc, options = {}) {
         quantity: Number(activity.querySelector('Quantity')?.textContent?.trim() || '0')
       }))
       .filter(activity => /^97/.test(activity.code));
-    const totalRequired97Minutes = timeBased97Activities.reduce((sum, activity) => {
-      const quantity = Number.isFinite(activity.quantity) && activity.quantity > 0 ? activity.quantity : 1;
-      return sum + minMinutesFor97Quantity(quantity);
+    const total97Quantity = timeBased97Activities.reduce((sum, activity) => {
+      const quantity = Number.isFinite(activity.quantity) ? activity.quantity : 0;
+      return sum + quantity;
     }, 0);
-    const notEnough97Time = timeBased97Activities.length > 0 && encMin < totalRequired97Minutes;
+    const has97Activities = timeBased97Activities.length > 0;
+    const matched97Band = get97BandForDuration(encMin);
+    const has97OutOfRangeDuration = has97Activities && (encMin < SERIES_97_BANDS[0].min || encMin > SERIES_97_BANDS[SERIES_97_BANDS.length - 1].max);
+    const has97OutOfRangeQuantity = has97Activities && total97Quantity > SERIES_97_BANDS[SERIES_97_BANDS.length - 1].quantity;
+    const has97QuantityMismatch = has97Activities && matched97Band && total97Quantity !== matched97Band.quantity;
 
     activities.forEach(activity => {
       const activityId = activity.querySelector('ID')?.textContent || 'Unknown';
@@ -202,10 +210,15 @@ function extractClaims(xmlDoc, options = {}) {
           remarks.push(`Encounter duration too long (${hours}h ${minutes}m). Should be ${maximumEncounterHours} hours maximum.`);
         }
       }
-      if (notEnough97Time && /^97/.test(codeValue)) {
+      if (/^97/.test(codeValue) && has97Activities) {
         isValid = false;
-        const safeQty = Number.isFinite(qtyValue) && qtyValue > 0 ? qtyValue : 1;
-        remarks.push(`Not enough time for ${safeQty} quantity of ${codeValue}`);
+        if (has97OutOfRangeDuration || has97OutOfRangeQuantity) {
+          remarks.push(`97-series duration/quantity is out of supported range (Duration ${encMin} minutes, total quantity ${total97Quantity}).`);
+        } else if (has97QuantityMismatch && matched97Band) {
+          remarks.push(`97-series duration ${encMin} minutes requires total quantity ${matched97Band.quantity}, but found ${total97Quantity}.`);
+        } else {
+          isValid = baseValid;
+        }
       }
       results.push({
         claimId, activityId, type: typeValue, encounterStart: encounterStartStr, encounterEnd: encounterEndStr,

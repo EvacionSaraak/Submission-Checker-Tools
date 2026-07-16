@@ -515,9 +515,10 @@ function validateClaims(xmlDoc, xlsxData, receiverID = '') {
     acts.forEach(a => results.push(validateActivity(a, xlsxMap, cid, mid, claimType)));
 
     if (isMedicalClaim && uniqueOrderingClinicians.size > 1) {
-      results
-        .filter(r => r.claimId === cid)
-        .forEach(r => r.remarks.push('Medical claim has multiple OrderingClinician values; ordering clinician must be unique.'));
+      const claimRows = results.filter(r => r.claimId === cid);
+      if (claimRows.length > 0) {
+        claimRows[0].remarks.push(`Claim ${cid} has multiple Ordering Clinicians: ${Array.from(uniqueOrderingClinicians).join(', ')}.`);
+      }
     }
   });
   return results;

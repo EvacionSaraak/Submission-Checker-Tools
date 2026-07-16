@@ -6,6 +6,7 @@ const vm = require('vm');
 
 const dxRules = require(path.join(__dirname, '..', 'js', 'dx_rules.js'));
 const exclusionHelpers = require(path.join(__dirname, '..', 'js', 'checker_exclusions.js'));
+const medicalShared = require(path.join(__dirname, '..', 'js', 'medical_validation_shared.js'));
 
 (async () => {
 
@@ -181,6 +182,7 @@ function ts(input) {
 function context(overrides) {
   return {
     claimID: 'C1',
+    receiverID: 'D001',
     memberID: 'M1',
     payerID: 'A02',
     providerID: 'P1',
@@ -256,12 +258,77 @@ await run('Not merged skips invalid encounter date and missing data', () => {
   assert(findings.size === 0, 'Expected no findings for invalid/missing date and clinician/diagnosis');
 });
 
-await run('Not merged applies to all payers regardless of PayerID', () => {
+await run('Not merged applies only to configured ReceiverID', () => {
   const findings = schemaUtils.buildNotMergedRemarksFromContexts([
-    context({ claimID: 'C1', payerID: 'B01' }),
-    context({ claimID: 'C2', payerID: 'B01', encounterStartRaw: '01/01/2026 10:10', encounterEndRaw: '01/01/2026 10:40', parsedStart: ts('01/01/2026 10:10'), parsedEnd: ts('01/01/2026 10:40') })
+    context({ claimID: 'C1', receiverID: 'C002' }),
+    context({ claimID: 'C2', receiverID: 'C002', encounterStartRaw: '01/01/2026 10:10', encounterEndRaw: '01/01/2026 10:40', parsedStart: ts('01/01/2026 10:10'), parsedEnd: ts('01/01/2026 10:40') })
   ]);
-  assert(findings.has('C1') && findings.has('C2'), 'Expected findings for all payers (PayerID filter removed)');
+  assert(!findings.has('C1') && !findings.has('C2'), 'Expected findings to be skipped for non-configured receivers');
+});
+
+await run('Medical payer mapping allows Thiqa receiver and E001 claim payer', () => {
+  const findings = medicalShared.validateClaimPayerAndPlan({
+    receiverID: 'D001',
+    claimPayerID: 'E001',
+    packageName: 'Thiqa C1',
+    claimID: 'C1'
+  }, { payers: medicalShared.DEFAULT_MEDICAL_PAYER_CONFIG }, 'THIQA C1');
+  assert(findings.length === 0, 'Expected D001/E001 payer mapping to be valid');
+});
+
+await run('Medical payer mapping rejects D004 with wrong claim payer', () => {
+  const findings = medicalShared.validateClaimPayerAndPlan({
+    receiverID: 'D004',
+    claimPayerID: 'D004',
+    packageName: 'Basic',
+    claimID: 'C1'
+  }, { payers: medicalShared.DEFAULT_MEDICAL_PAYER_CONFIG }, 'Basic');
+  assert(findings.some(f => f.ruleId === 'MED_PAYER_MISMATCH'), 'Expected D004 payer mismatch finding');
+});
+
+await run('97-series timing accepts 22 minutes quantity 1', () => {
+  const findings = medicalShared.validate97SeriesQuantityBands({
+    claimID: 'C1',
+    parsedEncounterStart: medicalShared.parseEncounterDateTime('01/01/2026 10:00'),
+    parsedEncounterEnd: medicalShared.parseEncounterDateTime('01/01/2026 10:22'),
+    activities: [{ normalizedCode: '97161', quantity: 1 }]
+  }, { timing: { series97: { bands: [
+    { min: 8, max: 22, quantity: 1 },
+    { min: 23, max: 37, quantity: 2 },
+    { min: 38, max: 52, quantity: 3 },
+    { min: 53, max: 67, quantity: 4 }
+  ], maxSupportedQuantity: 4, codePrefixes: ['97'] } } });
+  assert(findings.length === 0, 'Expected 22 minutes with quantity 1 to pass');
+});
+
+await run('97-series timing rejects 23 minutes quantity 1', () => {
+  const findings = medicalShared.validate97SeriesQuantityBands({
+    claimID: 'C1',
+    parsedEncounterStart: medicalShared.parseEncounterDateTime('01/01/2026 10:00'),
+    parsedEncounterEnd: medicalShared.parseEncounterDateTime('01/01/2026 10:23'),
+    activities: [{ normalizedCode: '97161', quantity: 1 }]
+  }, { timing: { series97: { bands: [
+    { min: 8, max: 22, quantity: 1 },
+    { min: 23, max: 37, quantity: 2 },
+    { min: 38, max: 52, quantity: 3 },
+    { min: 53, max: 67, quantity: 4 }
+  ], maxSupportedQuantity: 4, codePrefixes: ['97'] } } });
+  assert(findings.some(f => f.ruleId === 'MED_97_QUANTITY_MISMATCH'), 'Expected mismatch finding for 23 minutes quantity 1');
+});
+
+await run('97-series timing rejects 68 minutes quantity 4 as out-of-range', () => {
+  const findings = medicalShared.validate97SeriesQuantityBands({
+    claimID: 'C1',
+    parsedEncounterStart: medicalShared.parseEncounterDateTime('01/01/2026 10:00'),
+    parsedEncounterEnd: medicalShared.parseEncounterDateTime('01/01/2026 11:08'),
+    activities: [{ normalizedCode: '97161', quantity: 4 }]
+  }, { timing: { series97: { bands: [
+    { min: 8, max: 22, quantity: 1 },
+    { min: 23, max: 37, quantity: 2 },
+    { min: 38, max: 52, quantity: 3 },
+    { min: 53, max: 67, quantity: 4 }
+  ], maxSupportedQuantity: 4, codePrefixes: ['97'] } } });
+  assert(findings.some(f => f.ruleId === 'MED_97_DURATION_RANGE'), 'Expected out-of-range finding for 68 minutes');
 });
 
 if (process.exitCode) {
