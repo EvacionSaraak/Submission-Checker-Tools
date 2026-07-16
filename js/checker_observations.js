@@ -1,0 +1,1145 @@
+(function() {
+  try {
+    const repoJsonUrl = '../json/checker_tooths.json';
+
+    // Tooth region maps and sets
+    const SEXTANT_MAP = {
+  // Permanent Dentition
+  'Upper Right Sextant': new Set(['1', '2', '3', '4', '5']),
+  'Upper Anterior Sextant': new Set(['6', '7', '8', '9', '10', '11']),
+  'Upper Left Sextant': new Set(['12', '13', '14', '15', '16']),
+  'Lower Left Sextant': new Set(['17', '18', '19', '20', '21']),
+  'Lower Anterior Sextant': new Set(['22', '23', '24', '25', '26', '27']),
+  'Lower Right Sextant': new Set(['28', '29', '30', '31', '32']),
+
+  // Primary Dentition
+  'Upper Right Sextant (Primary)': new Set(['A', 'B', 'C']),
+  'Upper Anterior Sextant (Primary)': new Set(['D', 'E', 'F', 'G']),
+  'Upper Left Sextant (Primary)': new Set(['H', 'I', 'J']),
+  'Lower Left Sextant (Primary)': new Set(['K', 'L', 'M']),
+  'Lower Anterior Sextant (Primary)': new Set(['N', 'O', 'P', 'Q']),
+  'Lower Right Sextant (Primary)': new Set(['R', 'S', 'T'])
+};
+
+const QUADRANT_MAP = {
+  'Upper Right': new Set(['1','2','3','4','5','6','7','8','9','10','11','A','B','C','D','E']),
+  'Upper Left': new Set(['12','13','14','15','16','17','18','19','20','21','22','F','G','H','I','J']),
+  'Lower Left': new Set(['23','24','25','26','27','28','29','30','31','32','K','L','M','N','O']),
+  'Lower Right': new Set(['33','34','35','36','37','38','39','40','41','42','43','44','45','46','47','48','P','Q','R','S','T'])
+};
+
+const ANTERIOR_TEETH = new Set([
+  '6','7','8','9','10','11',
+  '22','23','24','25','26','27',
+  'C','D','E','F','G','H',
+  'M','N','O','P','Q','R'
+]);
+const BICUSPID_TEETH = new Set([
+  '4','5','12','13',
+  '20','21','28','29'
+]);
+const POSTERIOR_TEETH = new Set([
+  '1','2','3','14','15','16',
+  '17','18','19','30','31','32',
+  'A','B','I','J',
+  'K','L','S','T'
+]);
+const ALL_TEETH = new Set([...ANTERIOR_TEETH, ...BICUSPID_TEETH, ...POSTERIOR_TEETH]);
+
+// Special medical codes (global array)
+const SPECIAL_MEDICAL_CODES = [
+  { code: "17999", description: "Unlisted procedure, skin, mucous membrane, and subcutaneous tissue" },
+  { code: "0232T", description: "Injection(s), platelet-rich plasma, any site, including image guidance, harvesting and preparation when performed" },
+  { code: "J3490", description: "Unclassified drugs" },
+  { code: "81479", description: "Unlisted molecular pathology procedure" },
+  { code: "41899", description: "Unlisted procedure, dentoalveolar structures" },
+  { code: "96999", description: "Unlisted special service, procedure or report" },
+  { code: "58999", description: "Unlisted procedure, female genital system (nonobstetric)" }
+  // { code: "69090", description: "Biopsy of external ear" },
+  // { code: "11950", description: "Subcutaneous injection of filling material (e.g., collagen); 1 to 5 cc" },
+  // { code: "11951", description: "Subcutaneous injection of filling material (e.g., collagen); 6 to 10 cc" },
+  // { code: "11952", description: "Subcutaneous injection of filling material (e.g., collagen); 11 to 50 cc" }
+];
+
+// Type validation constants - derived from SPECIAL_MEDICAL_CODES array
+const SPECIAL_MEDICAL_CODES_SET = new Set(SPECIAL_MEDICAL_CODES.map(item => item.code));
+
+// Codes that cannot be submitted - produce a hard error if detected
+const FORBIDDEN_CODES = [
+  { code: "A4649", description: "(forbidden code)", reason: "Code A4649 cannot be submitted. Please remove this activity or replace it with the correct code." },
+  { code: "00000", description: "(invalid placeholder code)", reason: 'Code "00000" is invalid. Please ask IT to delete this activity or set it to "In Progress".' }
+];
+const FORBIDDEN_CODES_MAP = Object.fromEntries(FORBIDDEN_CODES.map(item => [item.code, item]));
+
+// Codes that are valid as either Type 3 (medical) or Type 6 (dental), depending on context.
+// When submitted with Type 6, the dental description is used. Type 3 is accepted without a type error.
+const DUAL_TYPE_CODES = new Set([
+  '97112', // Type 6 = Bleaching (dental); Type 3 = Neuromuscular reeducation / physiotherapy (medical)
+  '76801', // Type 6 = dental version; Type 3 = medical version
+  '92511'  // Type 6 = dental version; Type 3 = medical version
+]);
+const AUTH_DEPENDENT_DUAL_CODES = new Set(['86301', '73521']);
+
+// Root canal codes requiring a Subcode observation from 20-Feb-2026 onward
+const ROOT_CANAL_SUBCODE_CODES = new Set(['33111', '33121', '33131', '33141', '33115', '33125', '33135', '33145']);
+const SUBCODE_OBS_CUTOFF = new Date(2026, 1, 20); // 20 Feb 2026 (month is 0-indexed)
+
+// Type 5 code format validator
+// Expected format: XXX-XXXX-XXXXX-XX (3-4-5-2 digits separated by hyphens)
+function isValidType5Code(code) {
+  const parts = code.split("-");
+  return (parts.length === 4 && parts[0].length === 3 && parts[1].length === 4 && parts[2].length === 5 && parts[3].length === 2);
+}
+
+const TARIFF_TYPE_TO_ACTIVITY_TYPE = {
+  CPT: '3',
+  HCPCS: '4',
+  USCLS: '6',
+  SERVICE: '8'
+};
+
+function normalizeTariffCode(code) {
+  return String(code || '').trim().replace(/^0+/, '').toUpperCase();
+}
+
+function buildTariffCodeTypeMap(workbook) {
+  const tariffCodeTypeMap = new Map();
+  if (!workbook || !Array.isArray(workbook.SheetNames)) {
+    return tariffCodeTypeMap;
+  }
+
+  workbook.SheetNames.forEach(sheetName => {
+    if (!/mandatory tariff/i.test(sheetName)) return;
+    const sheet = workbook.Sheets[sheetName];
+    if (!sheet) return;
+
+    const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+    rows.forEach(row => {
+      const tariffType = String(row.Type || row['Type'] || '').trim().toUpperCase();
+      const normalizedCode = normalizeTariffCode(row.Code || row['Code'] || '');
+      if (!normalizedCode || !TARIFF_TYPE_TO_ACTIVITY_TYPE[tariffType]) return;
+      if (!tariffCodeTypeMap.has(normalizedCode)) {
+        tariffCodeTypeMap.set(normalizedCode, tariffType);
+      }
+    });
+  });
+
+  return tariffCodeTypeMap;
+}
+
+function getTypeMismatchRemark(code, type, tariffCodeTypeMap) {
+  const normalizedCode = normalizeTariffCode(code);
+  const tariffType = tariffCodeTypeMap.get(normalizedCode);
+  if (!tariffType) return null;
+
+  const expectedType = TARIFF_TYPE_TO_ACTIVITY_TYPE[tariffType];
+  if (!expectedType) return null;
+  if (String(type || '').trim() === expectedType) return null;
+
+  return `Invalid ${tariffType} Type for ${code} (should be ${expectedType}).`;
+}
+
+// Type validation function
+function validateActivityType(code, type, isDentalCode = false, tariffCodeTypeMap = new Map()) {
+  const remarks = [];
+  
+  // Special validation: A4639 must always be type 4
+  if (code === "A4639" && type !== "4") {
+    remarks.push(`Code A4639 must have Type 4 but found Type ${type || '(missing)'}.`);
+  }
+  
+  // Special validation: All special medical codes must be type 3
+  if (SPECIAL_MEDICAL_CODES_SET.has(code) && type !== "3") {
+    remarks.push(`Code ${code} must have Type 3 but found Type ${type || '(missing)'}.`);
+  }
+  
+  // Dental codes (not special medical codes, A4639, or drug codes at type 5) must be type 6.
+  // Exception: dual-type codes are also valid at type 3 (they serve as both medical and dental procedures).
+  if (isDentalCode && !SPECIAL_MEDICAL_CODES_SET.has(code) && code !== "A4639" && type !== "5" && type !== "6") {
+    if (!(DUAL_TYPE_CODES.has(code) && type === "3")) {
+      remarks.push(`Code ${code} must have Type 6 but found Type ${type || '(missing)'}.`);
+    }
+  }
+  
+  // Type 5 code format check
+  if (type === "5") {
+    const typeMismatchRemark = getTypeMismatchRemark(code, type, tariffCodeTypeMap);
+    if (typeMismatchRemark) {
+      remarks.push(typeMismatchRemark);
+    } else if (!isValidType5Code(code)) {
+      remarks.push(`Type 5 activity with invalid or missing Code: "${code}".`);
+    }
+  }
+  
+  return remarks;
+}
+
+// Utility functions: normalization, region/teeth lookup, and code/meta mapping
+function normalizeToothCode(code) {
+  return code?.toString().trim().toUpperCase() || '';
+}
+
+// Supernumerary teeth are represented as a regular tooth number + 50 (e.g., tooth 79 = supernumerary of tooth 29).
+// Resolve to the base tooth for comparisons; display always uses the original supernumerary number.
+function resolveSupernumeraryTooth(tooth) {
+  const num = parseInt(tooth, 10);
+  if (!isNaN(num) && num >= 51) {
+    return (num - 50).toString();
+  }
+  return tooth;
+}
+
+function buildAuthMap(authData) {
+  const map = {};
+  authData.forEach(entry => {
+    const code = entry.code?.toString().trim();
+    if (code) {
+      map[code] = {
+        description: entry.description?.trim() || ''
+      };
+    }
+  });
+  return map;
+}
+
+function getTeethSet(region) {
+  if (!region) return ALL_TEETH;
+  const lc = region.toLowerCase().trim();
+  if (lc === 'all') return ALL_TEETH;
+  const s = new Set();
+  if (lc.includes('anterior'))  ANTERIOR_TEETH.forEach(t=>s.add(t));
+  if (lc.includes('bicuspid'))  BICUSPID_TEETH.forEach(t=>s.add(t));
+  if (lc.includes('posterior')) POSTERIOR_TEETH.forEach(t=>s.add(t));
+  return s.size ? s : ALL_TEETH;
+}
+
+function getRegionName(tooth) {
+  const t = resolveSupernumeraryTooth(tooth);
+  if (ANTERIOR_TEETH.has(t))  return 'Anterior';
+  if (BICUSPID_TEETH.has(t))  return 'Bicuspid';
+  if (POSTERIOR_TEETH.has(t)) return 'Posterior';
+  return 'Unknown';
+}
+
+function getQuadrant(tooth) {
+  const t = resolveSupernumeraryTooth(normalizeToothCode(tooth));
+  for (const [quadrant, set] of Object.entries(QUADRANT_MAP)) {
+    if (set.has(t)) return quadrant;
+  }
+  return 'Unknown';
+}
+
+function getSextant(tooth) {
+  const t = resolveSupernumeraryTooth(normalizeToothCode(tooth));
+  for (const [sextant, set] of Object.entries(SEXTANT_MAP)) {
+    if (set.has(t)) return sextant;
+  }
+  return 'Unknown';
+}
+
+// Build a set of endodontist clinician IDs from the clinician licenses data
+function buildEndodontistSet(clinicianData) {
+  const set = new Set();
+  if (!Array.isArray(clinicianData)) return set;
+
+  clinicianData.forEach(clinician => {
+    const specialty = (clinician['Specialty'] || clinician.specialty || clinician.specialization || '').toLowerCase();
+    if (specialty.includes('endodont')) {
+      const id = (clinician['Phy Lic'] || clinician.id || clinician.license_number || clinician.clinician_id || '').toString().trim();
+      if (id) set.add(id);
+    }
+  });
+
+  return set;
+}
+
+// Parse encounter date from "DD/MM/YYYY" or "DD/MM/YYYY HH:MM" format
+function parseEncounterDate(dateStr) {
+  if (!dateStr) return null;
+  const datePart = dateStr.split(' ')[0];
+  const [d, m, y] = datePart.split('/').map(Number);
+  if (isNaN(d) || isNaN(m) || isNaN(y)) return null;
+  return new Date(y, m - 1, d);
+}
+
+// Check if an activity has a valid Subcode observation (Observation Code = "Subcode", Value = "01")
+function hasSubcodeObservation(obsList) {
+  return Array.from(obsList).some(obs => {
+    const code = (obs.querySelector('Code')?.textContent || '').trim().toUpperCase();
+    const value = (obs.querySelector('Value')?.textContent || '').trim();
+    return code === 'SUBCODE' && value === '01';
+  });
+}
+
+// Returns the count of Subcode observations (Code = "SUBCODE") in an observation list
+function countSubcodeObservations(obsList) {
+  return Array.from(obsList).filter(obs => {
+    const code = (obs.querySelector('Code')?.textContent || '').trim().toUpperCase();
+    return code === 'SUBCODE';
+  }).length;
+}
+
+// Special code utilities
+function isSpecialMedicalCode(code) {
+  return SPECIAL_MEDICAL_CODES.some(item => item.code === code);
+}
+
+// Observation types that are allowed to have a blank/missing ValueType (tooth-number observations)
+// "Flags" observations (e.g. MedicalTourismUnplanned) carry no value and are always valid without a ValueType.
+const VALUETYPE_EXEMPT_OBS_TYPES = new Set(['universal dental', 'episode', 'flags']);
+
+// Returns remarks for any observation where ValueType is blank but the observation type requires it.
+// "Universal Dental" and "Episode" observations carry a tooth number and don't need a ValueType.
+function validateObservationValueTypes(obsList) {
+  const remarks = [];
+  Array.from(obsList).forEach((obs, idx) => {
+    const obsType = (obs.querySelector('Type')?.textContent || '').trim();
+    const valueType = (obs.querySelector('ValueType')?.textContent || '').trim();
+    if (!VALUETYPE_EXEMPT_OBS_TYPES.has(obsType.toLowerCase()) && !valueType) {
+      const obsCode = (obs.querySelector('Code')?.textContent || '').trim() || `#${idx + 1}`;
+      remarks.push(`Observation ValueType may not be empty for observation "${obsCode}" (Type: "${obsType || '(missing)'}")`);
+    }
+  });
+  return remarks;
+}
+
+function getSpecialMedicalCodeDescription(code) {
+  const item = SPECIAL_MEDICAL_CODES.find(item => item.code === code);
+  return item?.description || "";
+}
+
+function hasValidActivityDescription(obsList) {
+  function normalizeDesc(s) {
+    if (!s) return '';
+    // normalize unicode, collapse whitespace, trim and uppercase
+    return s.normalize('NFKC').replace(/\s+/g, ' ').trim().toUpperCase();
+  }
+
+  return Array.from(obsList).some(obs => {
+    const rawDesc = obs.querySelector('Description')?.textContent;
+    const rawCode = obs.querySelector('Code')?.textContent;
+    const desc = normalizeDesc(rawDesc);
+    const code = normalizeDesc(rawCode);
+    console.log('hasValidActivityDescription check -> Description:', JSON.stringify(rawDesc), 'Code:', JSON.stringify(rawCode), '=>', desc, code);
+    return desc === "ACTIVITY DESCRIPTION" || code === "ACTIVITY DESCRIPTION";
+  });
+}
+
+// Special code handler
+function handleSpecialMedicalCode({claimId, activityId, type, code, obsCodes, obsList}) {
+  const remarks = [];
+  let details = "";
+
+  // Keep existing exception: if ALL observations are PDF or Drug Patient Share, accept.
+  const allDrugShareOrPDF = obsCodes.length > 0 && obsCodes.every(isDrugPatientShareOrPDF);
+  if (allDrugShareOrPDF) {
+    details = obsCodes.map(oc =>
+      oc === 'Drug Patient Share' ? 'Drug Patient Share (valid - no validation)' : 'PDF (valid - no validation)'
+    ).join('<br>');
+    return buildActivityRow({
+      claimId,
+      activityId,
+      type,
+      code,
+      description: getSpecialMedicalCodeDescription(code),
+      details,
+      remarks: []
+    });
+  }
+
+  // Require exact ACTIVITY DESCRIPTION (in either Description or Code)
+  const hasExactActivityDescription = hasValidActivityDescription(obsList);
+  if (hasExactActivityDescription) {
+    details = 'Valid: ACTIVITY DESCRIPTION observation present';
+    return buildActivityRow({
+      claimId,
+      activityId,
+      type,
+      code,
+      description: getSpecialMedicalCodeDescription(code),
+      details,
+      remarks: []
+    });
+  }
+
+  // Not valid: build appropriate remarks and details
+  if (obsCodes.length === 0) {
+    remarks.push(`${code} requires at least one observation code but none were provided.`);
+    details = 'None provided';
+  } else {
+    // Show observations (mark PDF / Drug Patient Share specially)
+    details = obsCodes.map(oc =>
+      isDrugPatientShareOrPDF(oc) ? (oc === 'Drug Patient Share' ? 'Drug Patient Share (valid - no validation)' : 'PDF (valid - no validation)') : oc
+    ).join('<br>');
+
+    const nonPDFObs = obsCodes.filter(oc => !isDrugPatientShareOrPDF(oc));
+    const toothCodesUsed = nonPDFObs.filter(oc => ALL_TEETH.has(resolveSupernumeraryTooth(oc)));
+    if (toothCodesUsed.length > 0) {
+      remarks.push(`${code} cannot be used with tooth codes: ${toothCodesUsed.join(", ")}`);
+    }
+
+    // Always require the exact phrase for special medical codes (unless all-DRUG/PDF)
+    remarks.push(`${code} requires an Observation with Description or Code exactly "ACTIVITY DESCRIPTION".`);
+  }
+
+  return buildActivityRow({
+    claimId,
+    activityId,
+    type,
+    code,
+    description: getSpecialMedicalCodeDescription(code),
+    details,
+    remarks
+  });
+}
+
+// Parsing and validation functions
+function buildCodeMeta(data) {
+  const map = {};
+  data.forEach(entry => {
+    const codesArray = Array.isArray(entry.codes) ? entry.codes : (
+      entry.codes ? [entry.codes] : (
+        entry.code ? [entry.code] : []
+      )
+    );
+    const teethSet = getTeethSet(entry.affiliated_teeth);
+    codesArray.forEach(rawCode => {
+      const code = rawCode.toString().trim();
+      map[code] = {
+        teethSet,
+        description: entry.description || '(no description)'
+      };
+    });
+  });
+  return map;
+}
+
+function parseObservationCodes(obsList) {
+  return Array.from(obsList).filter(obs => {
+    // Skip "Flags" type observations (e.g. MedicalTourismUnplanned) — they are
+    // informational flags, not tooth/region indicators, and should not be validated
+    // as tooth numbers.
+    const obsType = (obs.querySelector('Type')?.textContent || '').trim().toLowerCase();
+    return obsType !== 'flags';
+  }).map(obs => {
+    const obsCodeRaw = obs.querySelector('Code')?.textContent.trim() || '';
+    if (obsCodeRaw === 'Drug Patient Share') return 'Drug Patient Share';
+    return obsCodeRaw.toUpperCase();
+  }).filter(Boolean);
+}
+
+function isDrugPatientShareOrPDF(obsCode) {
+  return obsCode === 'Drug Patient Share' || obsCode === 'PDF' || obsCode.endsWith('.PDF');
+}
+
+function isEndodonticDescription(description) {
+  const text = (description || '').toString();
+  if (/examination/i.test(text)) return false;
+  return /(root[\s-]*canal|pulpotomy|pulpectomy|endodont)/i.test(text);
+}
+
+function isToothNumberObservationCode(obsCode) {
+  const normalized = normalizeToothCode(obsCode);
+  if (!normalized || isMultiToothObservation(normalized)) return false;
+  return ALL_TEETH.has(resolveSupernumeraryTooth(normalized));
+}
+
+function hasToothNumberObservation(obsList) {
+  return parseObservationCodes(obsList).some(isToothNumberObservationCode);
+}
+
+// Returns true if an observation code contains multiple comma-separated values.
+// A tooth observation must be a single tooth number, not a list.
+function isMultiToothObservation(obsCode) {
+  return obsCode.includes(',');
+}
+
+function checkRegionDuplication(tracker, code, regionType, regionKey, codeLastDigit) {
+  const key = `${regionKey}_${code}`;
+  if (tracker[key]) {
+    if (codeLastDigit !== '9') {
+      return [`Duplicate ${regionType} code "${code}" in ${regionKey}`];
+    }
+    return [];
+  }
+  tracker[key] = true;
+  return [];
+}
+
+// Activity validation functions
+function validateKnownCode({
+  claimId, activityId, type, code, obsCodes, meta, claimRegionTrack, codeLastDigit, obsList, isMedical = false, tariffCodeTypeMap = new Map()
+}) {
+  const regionType = meta.description.toLowerCase().includes('sextant') ? 'sextant'
+    : meta.description.toLowerCase().includes('quadrant') ? 'quadrant'
+    : null;
+
+  let regionKey = null;
+  const remarks = [];
+
+  // Validate activity type: known codes are dental unless in Medical mode
+  const typeRemarks = validateActivityType(code, type, !isMedical, tariffCodeTypeMap);
+  remarks.push(...typeRemarks);
+
+  // PATCH: If all obsCodes are Drug Patient Share or PDF, mark valid and skip remarks
+  const allDrugShareOrPDF = obsCodes.length > 0 && obsCodes.every(isDrugPatientShareOrPDF);
+  if (allDrugShareOrPDF) {
+    return buildActivityRow({
+      claimId,
+      activityId,
+      type,
+      code,
+      description: meta.description,
+      details: obsCodes.map(obsCode =>
+        obsCode === 'Drug Patient Share'
+          ? 'Drug Patient Share (valid - no validation)'
+          : 'PDF (valid - no validation)'
+      ).join('<br>'),
+      remarks: typeRemarks  // Include type validation remarks even for Drug/PDF
+    });
+  }
+
+  // Special Medical Code Handling
+  if (isSpecialMedicalCode(code)) {
+    return handleSpecialMedicalCode({claimId, activityId, type, code, obsCodes, obsList});
+  }
+
+  // In Medical mode, skip dental-specific observation requirements
+  if (isMedical) {
+    return buildActivityRow({
+      claimId, activityId, type, code,
+      description: meta.description,
+      details: obsCodes.length ? obsCodes.join('<br>') : 'N/A',
+      remarks
+    });
+  }
+
+  // Mark as invalid if no observations
+  if (obsCodes.length === 0) {
+    remarks.push(`${code} requires at least one observation but none were provided.`);
+  }
+
+  // Collect invalid teeth grouped by type for consolidated error messages
+  const invalidTeethByType = {};
+
+  const details = obsCodes.length === 0
+    ? 'None provided'
+    : obsCodes.map(obsCode => {
+      if (isDrugPatientShareOrPDF(obsCode)) {
+        return `${obsCode} (valid - no validation)`;
+      }
+      if (obsCode === 'SUBCODE') {
+        return `Subcode observation`;
+      }
+      if (isMultiToothObservation(obsCode)) {
+        remarks.push(`Observation for ${obsCode} is invalid due to commas.`);
+        return `${obsCode} - Invalid (multiple values in one observation)`;
+      }
+      if (!meta.teethSet.has(resolveSupernumeraryTooth(obsCode))) {
+        const toothType = getRegionName(obsCode);
+        if (!invalidTeethByType[toothType]) invalidTeethByType[toothType] = [];
+        invalidTeethByType[toothType].push(obsCode);
+      }
+
+      if (regionType === 'sextant') {
+        regionKey = getSextant(obsCode);
+      } else if (regionType === 'quadrant') {
+        regionKey = getQuadrant(obsCode);
+      }
+
+      return `${obsCode} - ${getRegionName(obsCode)}`;
+    }).join('<br>');
+
+  // Emit one consolidated remark per tooth type
+  const codeCategory = meta.description.match(/anterior|posterior|bicuspid|all/i)?.[0] || 'see code description';
+  for (const [toothType, teeth] of Object.entries(invalidTeethByType)) {
+    const teethStr = teeth.length > 1
+      ? teeth.slice(0, -1).join(' ') + ' and ' + teeth[teeth.length - 1]
+      : teeth[0];
+    remarks.push(`${toothType} ${teethStr} not allowed for ${codeCategory} code ${code}.`);
+  }
+
+  // Region duplication check
+  if (regionType && regionKey && regionKey !== 'Unknown') {
+    const tracker = claimRegionTrack[regionType];
+    const dupRemarks = checkRegionDuplication(tracker, code, regionType, regionKey, codeLastDigit);
+    if (dupRemarks.length) {
+      remarks.push(...dupRemarks);
+    }
+  }
+
+  return buildActivityRow({
+    claimId,
+    activityId,
+    type,
+    code,
+    description: meta.description,
+    details,
+    remarks
+  });
+}
+
+function validateUnknownCode({
+  claimId, activityId, type, code, obsCodes, description, claimRegionTrack, codeLastDigit, obsList, isMedical = false, authClassifiedDental = null, tariffCodeTypeMap = new Map()
+}) {
+  let remarks = [];
+  let details = '';
+  const isRegion = description.toLowerCase().includes('sextant') || description.toLowerCase().includes('quadrant');
+  let regionType = null;
+
+  if (isRegion) {
+    regionType = description.toLowerCase().includes('sextant') ? 'sextant' : 'quadrant';
+  }
+
+  let regionKey = null;
+
+  // Only enforce type 6 when the code has a known dental description (from fallback) AND not in Medical mode.
+  // Truly unknown codes (description === '(unknown code)') are treated as non-dental (type 3).
+  const isDentalCode = authClassifiedDental === null
+    ? (!isMedical && description !== '(unknown code)')
+    : (!isMedical && authClassifiedDental);
+  const typeRemarks = validateActivityType(code, type, isDentalCode, tariffCodeTypeMap);
+  remarks.push(...typeRemarks);
+
+  // PATCH: If all obsCodes are Drug Patient Share or PDF, mark valid and skip remarks
+  const allDrugShareOrPDF = obsCodes.length > 0 && obsCodes.every(isDrugPatientShareOrPDF);
+  if (allDrugShareOrPDF) {
+    details = obsCodes.map(obsCode =>
+      obsCode === 'Drug Patient Share'
+        ? 'Drug Patient Share (valid - no validation)'
+        : 'PDF (valid - no validation)'
+    ).join('<br>');
+    return buildActivityRow({
+      claimId,
+      activityId,
+      code,
+      description,
+      details,
+      remarks: typeRemarks  // Include type validation remarks even for Drug/PDF
+    });
+  }
+
+  // Special Medical Code Handling
+  if (isSpecialMedicalCode(code)) {
+    return handleSpecialMedicalCode({claimId, activityId, type, code, obsCodes, obsList});
+  }
+
+  if (isRegion && obsCodes.length > 0) {
+    details = obsCodes.map(obsCode => {
+      if (isDrugPatientShareOrPDF(obsCode)) return `${obsCode} (valid - no validation)`;
+
+      if (isMultiToothObservation(obsCode)) {
+        remarks.push(`Observation for ${obsCode} is invalid due to commas.`);
+        return `${obsCode} - Invalid (multiple values in one observation)`;
+      }
+
+      let regionRemark = '';
+      if (regionType === 'sextant') {
+        regionKey = getSextant(obsCode);
+      } else if (regionType === 'quadrant') {
+        regionKey = getQuadrant(obsCode);
+      }
+
+      if (regionType && regionKey && regionKey !== 'Unknown') {
+        const tracker = claimRegionTrack[regionType];
+        const dupRemarks = checkRegionDuplication(tracker, code, regionType, regionKey, codeLastDigit);
+        if (dupRemarks.length) {
+          remarks.push(...dupRemarks);
+          regionRemark = dupRemarks[0];
+        } else {
+          regionRemark = `Valid - ${obsCode}`;
+        }
+      } else {
+        regionRemark = `Valid - ${obsCode}`;
+      }
+
+      return `${obsCode} - ${regionRemark}`;
+    }).join('<br>');
+  } else if (obsCodes.length > 0) {
+    details = obsCodes.map(obsCode => {
+      if (isDrugPatientShareOrPDF(obsCode)) return `${obsCode} (valid - no validation)`;
+      if (isMultiToothObservation(obsCode)) {
+        remarks.push(`Observation for ${obsCode} is invalid due to commas.`);
+        return `${obsCode} - Invalid (multiple values in one observation)`;
+      }
+      return obsCode;
+    }).join('<br>');
+  } else {
+    details = 'N/A';
+  }
+
+  if (!isMedical && obsCodes.length === 0 && isRegion) {
+    remarks.push(`No tooth (Observation) specified for unknown code "${code}" (region type: ${regionType}).`);
+  }
+
+  return buildActivityRow({
+    claimId,
+    activityId,
+    type,
+    code,
+    description,
+    details,
+    remarks
+  });
+}
+
+function buildActivityRow({claimId, activityId, type, code, description, details, remarks}) {
+  return {
+    claimId,
+    activityId,
+    type,
+    code,
+    description,
+    details,
+    remarks,
+    warnings: []
+  };
+}
+
+function getCombinedRemarks(row) {
+  return [...(row.remarks || []), ...(row.warnings || [])];
+}
+
+// Main activity validation and results rendering
+function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontistSet, receiverID = '', isMedical = false, tariffCodeTypeMap = new Map()) {
+  const rows = [];
+  const claimSummaries = {};
+  const claimRegionTrack = {};
+  const recordedEndodonticCodes = new Set();
+
+  Object.entries(codeToMeta || {}).forEach(([code, meta]) => {
+    if (isEndodonticDescription(meta?.description)) recordedEndodonticCodes.add(code);
+  });
+  Object.entries(fallbackDescriptions || {}).forEach(([code, item]) => {
+    if (isEndodonticDescription(item?.description)) recordedEndodonticCodes.add(code);
+  });
+
+  Array.from(xmlDoc.getElementsByTagName('Claim')).forEach(claim => {
+    const claimId = claim.querySelector('ID')?.textContent || '(no claim ID)';
+    claimRegionTrack[claimId] = { sextant: {}, quadrant: {} };
+
+    // Determine if encounter date is on or after the Subcode observation cutoff (20-Feb-2026)
+    const encounterStartStr = claim.querySelector('Encounter > Start')?.textContent || '';
+    const encounterDate = parseEncounterDate(encounterStartStr);
+    const afterCutoff = encounterDate !== null && encounterDate >= SUBCODE_OBS_CUTOFF;
+
+    let claimHasInvalid = false;
+
+    Array.from(claim.getElementsByTagName('Activity')).forEach(act => {
+      const obsList = act.getElementsByTagName('Observation');
+      const activityId = act.querySelector('ID')?.textContent || '';
+      const typeValue = act.querySelector('Type')?.textContent?.trim() || '';
+      const rawCode = act.querySelector('Code')?.textContent || '';
+      const code = rawCode.trim();
+      const codeLastDigit = code.slice(-1);
+
+      // --- Check for codes that cannot be submitted
+      const forbiddenEntry = FORBIDDEN_CODES_MAP[code];
+      if (forbiddenEntry) {
+        // For forbidden codes, only show the forbidden reason - no additional type validation
+        const row = buildActivityRow({
+          claimId,
+          activityId,
+          type: typeValue,
+          code,
+          description: forbiddenEntry.description,
+          details: 'N/A',
+          remarks: [forbiddenEntry.reason]
+        });
+        claimHasInvalid = true;
+        rows.push(row);
+        return;
+      }
+
+      // --- ADDED: Check for invalid code length ---
+      // Codes containing a space are treated as unknown (not invalid) since the space may be part of a subcode variant
+      if (code.length !== 5 && !code.includes(`-`) && !rawCode.includes(' ')) {
+        const typeRemarks = validateActivityType(code, typeValue, false, tariffCodeTypeMap);
+        const allRemarks = [`Code "${code}" is invalid: it must have exactly 5 characters.`, ...typeRemarks];
+        const row = buildActivityRow({
+          claimId,
+          activityId,
+          type: typeValue,
+          code,
+          description: '(invalid code length)',
+          details: 'N/A',
+          remarks: allRemarks
+        });
+        claimHasInvalid = true;
+        rows.push(row);
+        return;
+      }
+
+      let meta = codeToMeta[code];
+      let fallback = fallbackDescriptions?.[code];
+      const obsCodes = parseObservationCodes(obsList);
+
+      let row;
+      if (!meta) {
+        let description = '(unknown code)';
+        if (fallback && fallback.description) {
+          description = fallback.description;
+        }
+        const authId = (act.querySelector('PriorAuthorizationID')?.textContent || act.querySelector('PriorAuthorization')?.textContent || '').trim();
+        const authClassifiedDental = AUTH_DEPENDENT_DUAL_CODES.has(code) ? Boolean(authId) : null;
+        row = validateUnknownCode({
+          claimId, activityId, type: typeValue, code, obsCodes, description, claimRegionTrack: claimRegionTrack[claimId], codeLastDigit, obsList, isMedical, authClassifiedDental, tariffCodeTypeMap
+        });
+      } else {
+        row = validateKnownCode({
+          claimId, activityId, type: typeValue, code, obsCodes, meta, claimRegionTrack: claimRegionTrack[claimId], codeLastDigit, obsList, isMedical, tariffCodeTypeMap
+        });
+      }
+
+      // Check Subcode observation requirement for root canal codes from 20-Feb-2026 onward
+      // Only applies when the receiver is D001 (Thiqa) and not in Medical mode
+      if (!isMedical && receiverID === 'D001' && afterCutoff && ROOT_CANAL_SUBCODE_CODES.has(code)) {
+        // Extract clinician ID: try Clinician first, fallback to OrderingClinician
+        let clinicianId = act.querySelector('Clinician')?.textContent?.trim();
+        if (!clinicianId) {
+          clinicianId = act.querySelector('OrderingClinician')?.textContent?.trim();
+        }
+
+        // ERROR: No clinician specified at all
+        if (!clinicianId) {
+          row.remarks.push(`Code ${code} is a root canal procedure but no Clinician or OrderingClinician was specified.`);
+        } else {
+          const isEndodontist = endodontistSet.has(clinicianId);
+          const hasSubcode = hasSubcodeObservation(obsList);
+
+          if (isEndodontist && !hasSubcode) {
+            // ERROR: Endodontist but missing required Subcode observation
+            row.remarks.push(`Code ${code} requires a Subcode observation (Type: Text, Code: Subcode, Value: "01") when performed by an Endodontist.`);
+          }
+
+          // ERROR: More than one Subcode observation is not allowed
+          if (countSubcodeObservations(obsList) > 1) {
+            row.remarks.push(`Code ${code} must have only one Subcode observation.`);
+          }
+        }
+      }
+
+      if (!isMedical && recordedEndodonticCodes.has(code) && !hasToothNumberObservation(obsList)) {
+        row.remarks.push(`Code ${code} requires at least one tooth-number observation.`);
+      }
+
+      // Validate observation ValueTypes: non-dental/episode observations must have a ValueType
+      const valueTypeRemarks = validateObservationValueTypes(obsList);
+      if (valueTypeRemarks.length > 0) {
+        row.remarks.push(...valueTypeRemarks);
+      }
+
+      if (row.remarks && row.remarks.length > 0) claimHasInvalid = true;
+      rows.push(row);
+    });
+
+    claimSummaries[claimId] = claimHasInvalid;
+  });
+
+  rows.__claimSummaries = claimSummaries;
+  return rows;
+}
+
+function buildResultsTable(rows) {
+  // Defensive check: ensure rows is an array
+  if (!Array.isArray(rows)) {
+    console.error('[TEETH] Invalid results - expected array, got:', typeof rows, rows);
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'alert alert-danger';
+    errorDiv.textContent = 'Error: Invalid data structure for results table';
+    const summaryBox = document.getElementById('resultsSummary');
+    if (summaryBox) summaryBox.textContent = '';
+    const exportBtn = document.getElementById('exportBtn');
+    if (exportBtn) exportBtn.style.display = 'none';
+    return errorDiv;
+  }
+  
+  const summaryBox = document.getElementById('resultsSummary');
+  if (!rows.length) {
+    if (summaryBox) summaryBox.textContent = '';
+    const exportBtn = document.getElementById('exportBtn');
+    if (exportBtn) exportBtn.style.display = 'none';
+    const emptyDiv = document.createElement('p');
+    emptyDiv.textContent = 'No activities found.';
+    return emptyDiv;
+  }
+
+  let lastClaimId = null;
+  window.invalidRows = rows.filter(r => (r.remarks && r.remarks.length > 0) || (r.warnings && r.warnings.length > 0));
+  const exportBtn = document.getElementById('exportBtn');
+  if (exportBtn) exportBtn.style.display = window.invalidRows.length ? 'inline-block' : 'none';
+
+  const claimSummaries = rows.__claimSummaries || {};
+  const totalClaims = Object.keys(claimSummaries).length;
+  const validClaims = Object.values(claimSummaries).filter(isInvalid => !isInvalid).length;
+  const percentage = totalClaims === 0 ? "0.0" : ((validClaims / totalClaims) * 100).toFixed(1);
+
+  if (summaryBox) summaryBox.textContent = `Valid claims: ${validClaims} / ${totalClaims} (${percentage}%)`;
+
+  const table = document.createElement('table');
+  table.className = 'table table-striped table-bordered';
+  table.style.width = '100%';
+  table.style.borderCollapse = 'collapse';
+
+  const html = `
+    <thead>
+      <tr>
+        <th style="padding:8px;border:1px solid #ccc">Claim ID</th>
+        <th style="padding:8px;border:1px solid #ccc">Activity ID</th>
+        <th style="padding:8px;border:1px solid #ccc">Type</th>
+        <th style="padding:8px;border:1px solid #ccc">Code</th>
+        <th class="description-col" style="padding:8px;border:1px solid #ccc">Description</th>
+        <th style="padding:8px;border:1px solid #ccc">Observations</th>
+        <th class="description-col" style="padding:8px;border:1px solid #ccc">Remarks</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rows.map(r => {
+        const showClaimId = r.claimId !== lastClaimId;
+        lastClaimId = r.claimId;
+        const hasErrors = r.remarks && r.remarks.length > 0;
+        const hasWarnings = r.warnings && r.warnings.length > 0;
+        const rowClass = hasErrors ? 'table-danger' : (hasWarnings ? 'table-warning' : 'table-success');
+        const allRemarks = getCombinedRemarks(r);
+        return `
+          <tr class="${rowClass}" data-claim-id="${r.claimId || ''}">
+            <td style="padding:6px;border:1px solid #ccc" class="claim-id-cell">${showClaimId ? r.claimId : ''}</td>
+            <td style="padding:6px;border:1px solid #ccc">${r.activityId}</td>
+            <td style="padding:6px;border:1px solid #ccc">${r.type || ''}</td>
+            <td style="padding:6px;border:1px solid #ccc">${r.code}</td>
+            <td class="description-col" style="padding:6px;border:1px solid #ccc">${r.description}</td>
+            <td style="padding:6px;border:1px solid #ccc">${r.details}</td>
+            <td class="description-col" style="padding:6px;border:1px solid #ccc">${allRemarks.map(rem => `<div>${rem && !rem.endsWith('.') ? rem + '.' : rem}</div>`).join('')}</td>
+          </tr>`;
+      }).join('')}
+    </tbody>`;
+
+  table.innerHTML = html;
+  
+  // Add observer to fill in Claim IDs when filtering hides rows
+  const observer = new MutationObserver(() => {
+    fillMissingClaimIds();
+  });
+  
+  const tbody = table.querySelector('tbody');
+  if (tbody) {
+    observer.observe(tbody, { attributes: true, attributeFilter: ['style'], subtree: true });
+  }
+  
+  setTimeout(() => fillMissingClaimIds(), 0);
+  
+  return table;
+}
+
+// Helper function to fill in missing Claim IDs when rows are filtered
+function fillMissingClaimIds() {
+  const table = document.querySelector('#results table');
+  if (!table) return;
+  
+  const rows = Array.from(table.querySelectorAll('tbody tr'));
+  let lastVisibleClaimId = null;
+  
+  rows.forEach(row => {
+    const isHidden = row.style.display === 'none';
+    const claimIdCell = row.querySelector('.claim-id-cell');
+    const claimId = row.getAttribute('data-claim-id');
+    
+    if (!claimIdCell || !claimId) return;
+    
+    if (!isHidden) {
+      // Row is visible
+      if (claimIdCell.textContent.trim() === '') {
+        // Empty claim ID cell - fill it in for filtered view
+        claimIdCell.textContent = claimId;
+        claimIdCell.style.color = '#666'; // Lighter color to indicate it's auto-filled
+        claimIdCell.style.fontStyle = 'italic';
+      } else {
+        // Has claim ID - this is a new claim
+        lastVisibleClaimId = claimId;
+        claimIdCell.style.color = '';
+        claimIdCell.style.fontStyle = '';
+      }
+    }
+  });
+}
+
+// UI event handlers removed - teeth checker is now called directly from unified interface via parseXML()
+
+document.getElementById('exportBtn')?.addEventListener('click', () => {
+  if (!window.invalidRows || !window.invalidRows.length) return;
+
+  const wb = XLSX.utils.book_new();
+  const wsData = [
+    ["Claim ID", "Activity ID", "Code", "Description", "Observations", "Remarks"],
+    ...window.invalidRows.map(r => [
+      r.claimId,
+      r.activityId,
+      r.code,
+      r.description,
+      r.details.replace(/<br>/g, '\n'),
+      getCombinedRemarks(r).map(s => s && !s.endsWith('.') ? s + '.' : s).join('\n')
+    ])
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(wsData);
+  XLSX.utils.book_append_sheet(wb, ws, "Invalid Activities");
+  XLSX.writeFile(wb, "invalid_tooths.xlsx");
+});
+
+// Read XML file text with one automatic retry for transient file-read failures.
+// Only the file-read step is retried; XML parsing errors are not retried.
+async function readXmlWithRetry(file, attempts = 2) {
+  let lastError;
+
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      const text = await file.text();
+
+      if (!text) {
+        throw new Error('The XML file was read but returned empty text.');
+      }
+
+      return text;
+    } catch (error) {
+      lastError = error;
+
+      console.warn(`[XML] Read attempt ${attempt} failed`, {
+        name: error?.name,
+        message: error?.message,
+        fileName: file?.name,
+        fileSize: file?.size,
+        fileType: file?.type
+      });
+
+      if (attempt < attempts) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    }
+  }
+
+  throw new Error(
+    `Unable to read XML file "${file?.name || 'unknown'}": ` +
+    `${lastError?.name || 'ReadError'}` +
+    `${lastError?.message ? ` — ${lastError.message}` : ''}`
+  );
+}
+
+// Helper wrappers to keep Promise.all readable
+function loadToothJson() {
+  return fetch(repoJsonUrl).then(r => {
+    console.log('[TEETH] Fetched tooth JSON:', r.ok);
+    return r.ok ? r.json() : Promise.reject(new Error(`Failed to load ${repoJsonUrl} (HTTP ${r.status})`));
+  });
+}
+
+function loadAuthJson() {
+  return fetch('../json/checker_auths.json').then(r => {
+    console.log('[TEETH] Fetched auth JSON:', r.ok);
+    return r.ok ? r.json() : Promise.reject(new Error(`Failed to load checker_auths.json (HTTP ${r.status})`));
+  });
+}
+
+function loadClinicianLicenses() {
+  return fetch('../json/clinician_licenses.json').then(r => {
+    console.log('[TEETH] Fetched clinician licenses JSON:', r.ok);
+    return r.ok ? r.json() : Promise.reject(new Error(`Failed to load clinician_licenses.json (HTTP ${r.status})`));
+  });
+}
+
+function loadMandatoryTariff() {
+  return fetch('../resources/Mandatory Tariff  Updated.xlsx').then(r => {
+    console.log('[TEETH] Fetched mandatory tariff workbook:', r.ok);
+    return r.ok ? r.arrayBuffer() : Promise.reject(new Error(`Failed to load Mandatory Tariff workbook (HTTP ${r.status})`));
+  });
+}
+
+// Main XML parsing function - returns Promise<HTMLTableElement>
+// suppliedFile: explicit File object passed by the unified controller (preferred).
+// Falls back to window.unifiedCheckerFiles.xml, then to a scoped local input.
+// Does NOT use a global getElementById('xmlFile') to avoid duplicate-ID collisions.
+async function parseXML(suppliedFile = null) {
+  const messageBox = document.getElementById('messageBox');
+  if (messageBox) messageBox.textContent = '';
+
+  console.log('[TEETH] parseXML() called');
+
+  // Resolve file: explicit → unified shared → scoped local input
+  const localInput = document.querySelector(
+    '#checker-container-observations #xmlFile'
+  );
+  const file =
+    suppliedFile ||
+    window.unifiedCheckerFiles?.xml ||
+    localInput?.files?.[0] ||
+    null;
+
+  console.log('[TEETH] File to process:', file ? file.name : 'NO FILE');
+
+  if (!file) {
+    const msg = 'Please upload an XML file.';
+    console.error('[TEETH]', msg);
+    if (messageBox) messageBox.textContent = msg;
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'alert alert-warning';
+    errorDiv.textContent = msg;
+    return errorDiv;
+  }
+
+  console.log('[TEETH] Starting file processing...');
+
+  // Use cached XML text when the unified controller provides it, otherwise read directly.
+  const xmlTextPromise =
+    (typeof window.getUnifiedXmlText === 'function' && (suppliedFile || window.unifiedCheckerFiles?.xml))
+      ? window.getUnifiedXmlText()
+      : readXmlWithRetry(file);
+
+  const [xmlText, toothJson, authJson, clinicianLicenses, mandatoryTariffBuffer] =
+    await Promise.all([
+      xmlTextPromise,
+      loadToothJson(),
+      loadAuthJson(),
+      loadClinicianLicenses(),
+      loadMandatoryTariff()
+    ]);
+
+  console.log('[TEETH] All resources loaded, processing...');
+  const toothMap = buildCodeMeta(toothJson);
+  const authMap  = buildAuthMap(authJson);
+  const endodontistSet = buildEndodontistSet(clinicianLicenses);
+  const mandatoryTariffWorkbook = XLSX.read(mandatoryTariffBuffer, { type: 'array' });
+  const tariffCodeTypeMap = buildTariffCodeTypeMap(mandatoryTariffWorkbook);
+
+  // Preprocess XML to replace unescaped & with "and" for parseability
+  const xmlContent = xmlText.replace(/&(?!(amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;))/g, 'and');
+  const xmlDoc = new DOMParser().parseFromString(xmlContent, 'application/xml');
+  if (xmlDoc.querySelector('parsererror')) throw new Error('Invalid XML file');
+
+  const header = xmlDoc.querySelector('Header');
+  const receiverID = header?.querySelector('ReceiverID')?.textContent.trim() || '';
+
+  // Read the claim type radio button (global)
+  const medicalRadio = document.getElementById('claimTypeMedical');
+  const isMedical = !!(medicalRadio && medicalRadio.checked);
+  console.log('[TEETH] XML parsed, validating activities... isMedical:', isMedical);
+
+  const rows = validateActivities(xmlDoc, toothMap, authMap, endodontistSet, receiverID, isMedical, tariffCodeTypeMap);
+  console.log('[TEETH] Validation complete, building table... (rows:', rows.length, ')');
+
+  const tableElement = buildResultsTable(rows);
+  console.log('[TEETH] Table build complete');
+  return tableElement;
+}
+
+// ----------- SUPERFLUOUS FUNCTIONS (no longer used, kept for reference) -----------
+// function getTeethSet(region) { ... }
+// function getRegionName(tooth) { ... }
+// function getQuadrant(tooth) { ... }
+// function getSextant(tooth) { ... }
+
+    // Expose function globally for unified checker
+    window.parseXML = parseXML;
+
+  } catch (error) {
+    console.error('[CHECKER-ERROR] Failed to load checker:', error);
+    console.error(error.stack);
+  }
+})();

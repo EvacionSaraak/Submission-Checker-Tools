@@ -6,6 +6,46 @@
 
     // Error message constants
     const AMPERSAND_REPLACEMENT_ERROR = "Please replace `&` in the observations to `and` because this will cause error.";
+    let clinicianSpecialtyMapPromise = null;
+
+function normalizeSpecialty(value) {
+  return String(value || '').trim().toUpperCase();
+}
+
+function loadClinicianSpecialtyMap() {
+  if (clinicianSpecialtyMapPromise) return clinicianSpecialtyMapPromise;
+  clinicianSpecialtyMapPromise = fetch('../json/clinician_licenses.json')
+    .then(res => {
+      if (!res.ok) throw new Error(`Failed to load clinician specialties (${res.status})`);
+      return res.json();
+    })
+    .then(rows => {
+      const map = new Map();
+      (Array.isArray(rows) ? rows : []).forEach(row => {
+        const license = String(row['Phy Lic'] || '').trim().toUpperCase();
+        if (!license) return;
+        const newSpec = String(row['Specialty'] || '').trim();
+        // Do not overwrite a valid specialty with an empty one (guards against duplicate entries)
+        if (!map.has(license) || newSpec) {
+          map.set(license, newSpec);
+        }
+      });
+      return map;
+    })
+    .catch(error => {
+      console.warn('[SCHEMA] Failed to load clinician specialties:', error.message);
+      return new Map();
+    });
+  return clinicianSpecialtyMapPromise;
+}
+
+function getSelectedClaimTypeMode() {
+  const claimTypeDental = document.getElementById('claimTypeDental');
+  const claimTypeMedical = document.getElementById('claimTypeMedical');
+  if (claimTypeMedical && claimTypeMedical.checked) return 'MEDICAL';
+  if (claimTypeDental && claimTypeDental.checked) return 'DENTAL';
+  return null;
+}
 
 function validateXmlSchema() {
   const status = document.getElementById("uploadStatus");
@@ -29,7 +69,7 @@ function validateXmlSchema() {
 
   return new Promise((resolve) => {
     const reader = new FileReader();
-    reader.onload = function (e) {
+    reader.onload = async function (e) {
       try {
         const originalXmlContent = e.target.result;
         
@@ -54,7 +94,9 @@ function validateXmlSchema() {
         if (xmlDoc.documentElement.nodeName === "Claim.Submission") {
           schemaType = "claim";
           console.log('[SCHEMA] Validating Claim schema');
-          results = validateClaimSchema(xmlDoc, originalXmlContent);
+          const clinicianSpecialtyMap = await loadClinicianSpecialtyMap();
+          const claimTypeMode = getSelectedClaimTypeMode();
+          results = validateClaimSchema(xmlDoc, originalXmlContent, { clinicianSpecialtyMap, claimTypeMode });
           console.log('[SCHEMA] Claim validation complete, results count:', results.length);
         } else if (xmlDoc.documentElement.nodeName === "Person.Register") {
           schemaType = "person";
@@ -327,9 +369,350 @@ function checkGTLicenseValidation(activities, facilityID, getText, invalidFields
   }
 }
 
-function validateClaimSchema(xmlDoc, originalXmlContent = "") {
+
+const CLAIM_NOT_MERGED = "CLAIM_NOT_MERGED";
+const DEFAULT_NOT_MERGED_PAYER_IDS = ["A02"];
+const NOT_MERGED_PAYER_IDS = new Set(
+  (Array.isArray(window.NOT_MERGED_PAYER_IDS) && window.NOT_MERGED_PAYER_IDS.length
+    ? window.NOT_MERGED_PAYER_IDS
+    : DEFAULT_NOT_MERGED_PAYER_IDS
+  ).map(id => String(id || '').trim().toUpperCase()).filter(Boolean)
+);
+
+function safeTextByTag(parent, tag) {
+  if (!parent) return "";
+  const el = parent.getElementsByTagName(tag)[0];
+  return el && el.textContent ? el.textContent.trim() : "";
+}
+
+function parseEncounterDateTime(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+
+  const match = /^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})$/.exec(raw);
+  if (!match) {
+    return null;
+  }
+
+  const day = parseInt(match[1], 10);
+  const month = parseInt(match[2], 10);
+  const year = parseInt(match[3], 10);
+  const hour = parseInt(match[4], 10);
+  const minute = parseInt(match[5], 10);
+
+  if (month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59) {
+    return null;
+  }
+
+  const date = new Date(Date.UTC(year, month - 1, day, hour, minute));
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return null;
+  }
+
+  return {
+    raw,
+    dateKey: `${year.toString().padStart(4, '0')}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`,
+    timestamp: date.getTime()
+  };
+}
+
+function collectNotMergedClaimContext(claim) {
+  const claimID = safeTextByTag(claim, 'ID');
+  const memberID = safeTextByTag(claim, 'MemberID').toUpperCase();
+  const payerID = safeTextByTag(claim, 'PayerID').toUpperCase();
+  const providerID = safeTextByTag(claim, 'ProviderID').toUpperCase();
+  const encounter = claim.getElementsByTagName('Encounter')[0] || null;
+  const facilityID = safeTextByTag(encounter, 'FacilityID').toUpperCase();
+
+  const encounterStartRaw = safeTextByTag(encounter, 'Start');
+  const encounterEndRaw = safeTextByTag(encounter, 'End');
+  const parsedStart = parseEncounterDateTime(encounterStartRaw);
+  const parsedEnd = parseEncounterDateTime(encounterEndRaw);
+  const encounterDate = parsedStart ? parsedStart.dateKey : (parsedEnd ? parsedEnd.dateKey : null);
+
+  const activities = claim.getElementsByTagName('Activity');
+  const clinicians = new Set();
+  Array.from(activities).forEach(activity => {
+    const orderingClinician = safeTextByTag(activity, 'OrderingClinician').toUpperCase();
+    const activityClinician = safeTextByTag(activity, 'Clinician').toUpperCase();
+    const selectedClinician = orderingClinician || activityClinician;
+    if (selectedClinician) {
+      clinicians.add(selectedClinician);
+    }
+  });
+
+  const diagnosisCodes = new Set();
+  const diagnoses = claim.getElementsByTagName('Diagnosis');
+  Array.from(diagnoses).forEach(diagnosis => {
+    const code = safeTextByTag(diagnosis, 'Code').toUpperCase().replace(/\./g, '');
+    if (code) {
+      diagnosisCodes.add(code);
+    }
+  });
+
+  return {
+    claimID,
+    memberID,
+    payerID,
+    providerID,
+    facilityID,
+    encounterDate,
+    encounterStartRaw,
+    encounterEndRaw,
+    parsedStart,
+    parsedEnd,
+    clinicians,
+    diagnosisCodes
+  };
+}
+
+function buildNotMergedRemarksFromContexts(contexts) {
+  const grouped = new Map();
+  (contexts || []).forEach(ctx => {
+    if (!ctx.memberID || !ctx.providerID || !ctx.facilityID || !ctx.encounterDate) return;
+
+    const groupKey = [ctx.payerID, ctx.memberID, ctx.providerID, ctx.facilityID, ctx.encounterDate].join('|');
+    if (!grouped.has(groupKey)) {
+      grouped.set(groupKey, []);
+    }
+    grouped.get(groupKey).push(ctx);
+  });
+
+  const remarksByClaimId = new Map();
+  const pairKeys = new Set();
+
+  grouped.forEach(groupClaims => {
+    for (let i = 0; i < groupClaims.length; i += 1) {
+      for (let j = i + 1; j < groupClaims.length; j += 1) {
+        const first = groupClaims[i];
+        const second = groupClaims[j];
+
+        if (!first.claimID || !second.claimID || first.claimID === second.claimID) {
+          continue;
+        }
+
+        if (!first.parsedStart || !first.parsedEnd || !second.parsedStart || !second.parsedEnd) {
+          continue;
+        }
+
+        const hasEncounterOverlap = first.parsedStart.timestamp <= second.parsedEnd.timestamp && second.parsedStart.timestamp <= first.parsedEnd.timestamp;
+        if (!hasEncounterOverlap) {
+          continue;
+        }
+
+        const sharedClinicians = Array.from(first.clinicians).filter(clinician => second.clinicians.has(clinician));
+        if (sharedClinicians.length === 0) {
+          continue;
+        }
+
+        const sharedDiagnoses = Array.from(first.diagnosisCodes).filter(code => second.diagnosisCodes.has(code));
+        if (sharedDiagnoses.length === 0) {
+          continue;
+        }
+
+        const pairKey = [first.claimID, second.claimID].sort().join('|');
+        if (pairKeys.has(pairKey)) {
+          continue;
+        }
+        pairKeys.add(pairKey);
+
+        const baseRemark = `${first.claimID} must be merged with ${second.claimID}.`;
+        const reverseRemark = `${second.claimID} must be merged with ${first.claimID}.`;
+
+        console.debug('[SCHEMA][NOT_MERGED][PAIR]', {
+          firstClaimID: first.claimID,
+          secondClaimID: second.claimID,
+          encounterDate: first.encounterDate,
+          firstEncounter: `${first.encounterStartRaw} - ${first.encounterEndRaw}`,
+          secondEncounter: `${second.encounterStartRaw} - ${second.encounterEndRaw}`,
+          sharedClinicians,
+          sharedDiagnoses
+        });
+
+        if (!remarksByClaimId.has(first.claimID)) {
+          remarksByClaimId.set(first.claimID, []);
+        }
+        if (!remarksByClaimId.has(second.claimID)) {
+          remarksByClaimId.set(second.claimID, []);
+        }
+
+        remarksByClaimId.get(first.claimID).push(baseRemark);
+        remarksByClaimId.get(second.claimID).push(reverseRemark);
+      }
+    }
+  });
+
+  return remarksByClaimId;
+}
+
+function detectNotMergedRemarksByClaim(claims) {
+  const warnings = [];
+  const contexts = Array.from(claims || []).map((claim, index) => {
+    try {
+      return collectNotMergedClaimContext(claim);
+    } catch (error) {
+      warnings.push(`Claim index ${index}: ${error.message}`);
+      return null;
+    }
+  }).filter(Boolean);
+
+  warnings.forEach(msg => console.warn('[SCHEMA][NOT_MERGED]', msg));
+
+  return buildNotMergedRemarksFromContexts(contexts);
+}
+
+const REQUIRED_MERGE_PAYER_IDS = new Set(['A001', 'D001']);
+const CONSULATION_CODE_REGEX = /^(92|992)/;
+const GP_992_REQUIRED_CODES = new Set(['99202', '99212']);
+const GP_992_FORBIDDEN_CODES = new Set(['99203', '99213']);
+const GP_992_CODES = new Set(['99202', '99203', '99212', '99213']);
+const MUTUALLY_EXCLUSIVE_INFUSION_CODES = new Set(['96360', '96365', '96374']);
+const INVALID_ACTIVITY_CODES = new Set(['36591']);
+
+function isConsultationCode(code) {
+  return CONSULATION_CODE_REGEX.test(String(code || '').trim());
+}
+
+function specialtyContains(specialty, searchText) {
+  return normalizeSpecialty(specialty).includes(normalizeSpecialty(searchText));
+}
+
+function isOphthalmologyOrPsychiatrySpecialty(specialty) {
+  const normalized = normalizeSpecialty(specialty);
+  return normalized.includes('OPTHALMOLOGY') || normalized.includes('OPHTHALMOLOGY') || normalized.includes('PSYCHIATRY');
+}
+
+function buildMergedClaimRemarksByClaim(claims) {
+  const grouped = new Map();
+  const remarksByClaimId = new Map();
+
+  Array.from(claims || []).forEach(claim => {
+    const claimID = safeTextByTag(claim, 'ID');
+    if (!claimID) return;
+    const payerID = safeTextByTag(claim, 'PayerID').toUpperCase();
+
+    const memberID = safeTextByTag(claim, 'MemberID').toUpperCase();
+    const encounter = claim.getElementsByTagName('Encounter')[0] || null;
+    const mrNumber = safeTextByTag(encounter, 'PatientID').toUpperCase();
+    const serviceDateRaw = safeTextByTag(encounter, 'Start') || safeTextByTag(encounter, 'End');
+    const serviceDate = parseEncounterDateTime(serviceDateRaw)?.dateKey || '';
+    const activities = Array.from(claim.getElementsByTagName('Activity'));
+    const mergedClinicians = new Set();
+
+    activities.forEach(activity => {
+      const code = safeTextByTag(activity, 'Code').trim();
+      if (!/^97/.test(code)) return;
+      const orderingClinician = safeTextByTag(activity, 'OrderingClinician').toUpperCase();
+      if (orderingClinician) mergedClinicians.add(orderingClinician);
+    });
+
+    if (!memberID || !mrNumber || !serviceDate || mergedClinicians.size === 0) return;
+
+    mergedClinicians.forEach(orderingClinician => {
+      const groupKey = [payerID, memberID, mrNumber, serviceDate, orderingClinician].join('|');
+      if (!grouped.has(groupKey)) grouped.set(groupKey, []);
+      grouped.get(groupKey).push(claimID);
+    });
+  });
+
+  grouped.forEach(claimIds => {
+    const uniqueClaims = Array.from(new Set(claimIds));
+    if (uniqueClaims.length < 2) return;
+    uniqueClaims.forEach(claimID => {
+      if (!remarksByClaimId.has(claimID)) remarksByClaimId.set(claimID, []);
+      remarksByClaimId.get(claimID).push('Claim must be Merged');
+    });
+  });
+
+  return remarksByClaimId;
+}
+
+function validateConsultationAndSpecialtyRules(activities, text, invalidFields, clinicianSpecialtyMap, options = {}) {
+  const isMedicalClaim = options.isMedicalClaim === true;
+  if (!isMedicalClaim) return;
+
+  const activityContexts = Array.from(activities || []).map((act, index) => {
+    const code = text('Code', act);
+    const quantityRaw = text('Quantity', act);
+    const quantity = Number(quantityRaw || 0);
+    const net = Number(text('Net', act) || 0);
+    const clinician = (text('Clinician', act) || '').trim().toUpperCase();
+    const orderingClinician = (text('OrderingClinician', act) || '').trim().toUpperCase();
+    const clinicianSpecialty = clinicianSpecialtyMap.get(clinician) || '';
+    const orderingSpecialty = clinicianSpecialtyMap.get(orderingClinician) || '';
+    return { act, index, code, quantity, quantityRaw, net, clinician, orderingClinician, clinicianSpecialty, orderingSpecialty };
+  });
+
+  const infusionCodesInClaim = new Set();
+  const code992Found = new Set();
+
+  activityContexts.forEach(ctx => {
+    if (!ctx.code) return;
+    if (MUTUALLY_EXCLUSIVE_INFUSION_CODES.has(ctx.code)) infusionCodesInClaim.add(ctx.code);
+    if (GP_992_CODES.has(ctx.code)) code992Found.add(ctx.code);
+
+    if (INVALID_ACTIVITY_CODES.has(ctx.code)) {
+      invalidFields.push(`Activity ${ctx.code} is invalid and cannot be used`);
+    }
+
+    if (/^8/.test(ctx.code) && !specialtyContains(ctx.clinicianSpecialty, 'Pathology')) {
+      const spec = ctx.clinicianSpecialty || 'Unknown';
+      invalidFields.push(`Activity ${ctx.code} requires Clinician specialty containing Pathology (Currently \`${spec}\`)`);
+    }
+
+    if ((ctx.code === '97802' || ctx.code === '97803') && !specialtyContains(ctx.clinicianSpecialty, 'Dietician')) {
+      const spec = ctx.clinicianSpecialty || 'Unknown';
+      invalidFields.push(`Activity ${ctx.code} requires Clinician specialty containing Dietician (Currently \`${spec}\`)`);
+    }
+
+    if (GP_992_REQUIRED_CODES.has(ctx.code) && !specialtyContains(ctx.orderingSpecialty, 'General Practitioner')) {
+      const spec = ctx.orderingSpecialty || 'Unknown';
+      invalidFields.push(`Activity ${ctx.code} requires OrderingClinician specialty as General Practitioner (Currently \`${spec}\`)`);
+    }
+
+    if (GP_992_FORBIDDEN_CODES.has(ctx.code)) {
+      if (ctx.net !== 0 && specialtyContains(ctx.orderingSpecialty, 'General Practitioner')) {
+        const spec = ctx.orderingSpecialty || 'Unknown';
+        invalidFields.push(`Activity ${ctx.code} requires OrderingClinician specialty to NOT be General Practitioner (Currently \`${spec}\`)`);
+      }
+
+      if (isOphthalmologyOrPsychiatrySpecialty(ctx.orderingSpecialty)) {
+        invalidFields.push(`${ctx.orderingSpecialty || 'OrderingClinician Specialty'} cannot be used for ${ctx.code}`);
+      }
+    }
+
+    if (specialtyContains(ctx.orderingSpecialty, 'Opthalmology') || specialtyContains(ctx.orderingSpecialty, 'Ophthalmology')) {
+      if (isConsultationCode(ctx.code) && ctx.code.startsWith('992')) {
+        invalidFields.push(`Ophthalmology consultation codes must start with 92, not ${ctx.code}`);
+      }
+    }
+
+    if (MUTUALLY_EXCLUSIVE_INFUSION_CODES.has(ctx.code)) {
+      if (ctx.quantityRaw && ctx.quantity !== 1) {
+        invalidFields.push(`Activity ${ctx.code} must have Quantity of 1`);
+      }
+    }
+  });
+
+  const hasNewPatientCombo = code992Found.has('99202') || code992Found.has('99203');
+  const hasEstablishedCombo = code992Found.has('99212') || code992Found.has('99213');
+  if (hasNewPatientCombo && hasEstablishedCombo) {
+    invalidFields.push('99202/99203 cannot be combined with 99212/99213 in the same claim');
+  }
+
+  if (infusionCodesInClaim.size > 1) {
+    invalidFields.push(`Codes ${Array.from(infusionCodesInClaim).join(', ')} cannot coexist in the same claim`);
+  }
+}
+
+function validateClaimSchema(xmlDoc, originalXmlContent = "", options = {}) {
   const results = [];
   const claims = xmlDoc.getElementsByTagName("Claim");
+  const clinicianSpecialtyMap = options.clinicianSpecialtyMap instanceof Map ? options.clinicianSpecialtyMap : new Map();
 
   // Pre-scan: find all claim IDs that appear more than once within this submission
   const claimIdCounts = new Map();
@@ -342,13 +725,14 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
     Array.from(claimIdCounts.entries()).filter(([, count]) => count > 1).map(([id]) => id)
   );
 
+  const notMergedRemarksByClaim = detectNotMergedRemarksByClaim(claims);
+  const mergedClaimRemarksByClaim = buildMergedClaimRemarksByClaim(claims);
+
   // Extract ReceiverID from Header element
-  // Only check leading zeros for Daman (A001) and Thiqa (D001)
   const header = xmlDoc.querySelector("Header");
   const receiverID = header?.querySelector("ReceiverID")?.textContent.trim() || '';
-  const shouldCheckLeadingZero = receiverID === 'A001' || receiverID === 'D001';
   const missingReceiverID = !receiverID; // Flag if ReceiverID is missing or empty
-  console.log(`[SCHEMA] ReceiverID: ${receiverID || '(MISSING)'}, shouldCheckLeadingZero: ${shouldCheckLeadingZero}`);
+  console.log(`[SCHEMA] ReceiverID: ${receiverID || '(MISSING)'}`);
 
   for (const claim of claims) {
     let missingFields = [], invalidFields = [], remarks = [];
@@ -414,12 +798,6 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
         const rounded = parseFloat(patientShareRaw).toFixed(2);
         invalidFields.push(`PatientShare has invalid precision: \`${patientShareRaw}\`. Should be \`${rounded}\`.`);
       }
-    }
-
-    // MemberID check - only check for leading zero if ReceiverID is A001 (Daman) or D001 (Thiqa)
-    const memberID = text("MemberID");
-    if (shouldCheckLeadingZero && memberID && /^0/.test(memberID)) {
-      invalidFields.push("MemberID (starts with 0)");
     }
 
     // EmiratesIDNumber checks (improved messages)
@@ -594,6 +972,12 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
     // NEW CHECK: GT license validation for Ordering Clinician
     const facilityID = encounter ? text("FacilityID", encounter) : "";
     checkGTLicenseValidation(activities, facilityID, text, invalidFields);
+    const encounterType = encounter ? text("Type", encounter) : "";
+    const selectedClaimTypeMode = String(options.claimTypeMode || '').trim().toUpperCase();
+    const isMedicalClaim = selectedClaimTypeMode
+      ? selectedClaimTypeMode === 'MEDICAL'
+      : String(encounterType || '').trim() === '3';
+    validateConsultationAndSpecialtyRules(activities, text, invalidFields, clinicianSpecialtyMap, { isMedicalClaim });
 
     // Contract optional
     const contract = claim.getElementsByTagName("Contract")[0];
@@ -605,6 +989,16 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "") {
     // Mark claim as invalid if it had ampersands
     if (claimHadAmpersand) {
       invalidFields.push(AMPERSAND_REPLACEMENT_ERROR);
+    }
+
+    // Additive cross-claim Not Merged detection
+    if (claimID && notMergedRemarksByClaim.has(claimID)) {
+      const notMergedRemarks = notMergedRemarksByClaim.get(claimID) || [];
+      notMergedRemarks.forEach(remark => invalidFields.push(remark));
+    }
+    if (claimID && mergedClaimRemarksByClaim.has(claimID)) {
+      const mergedRemarks = mergedClaimRemarksByClaim.get(claimID) || [];
+      mergedRemarks.forEach(remark => invalidFields.push(remark));
     }
 
     // Compile remarks
@@ -907,6 +1301,13 @@ function exportErrorsToXLSX(data, schemaType) {
     window.hideModal = hideModal;
     window.claimToHtmlTable = claimToHtmlTable;
     window.ensureModal = ensureModal;
+    window.NOT_MERGED_PAYER_IDS = Array.from(NOT_MERGED_PAYER_IDS);
+    window._schemaNotMergedUtils = {
+      CLAIM_NOT_MERGED,
+      parseEncounterDateTime,
+      buildNotMergedRemarksFromContexts,
+      buildMergedClaimRemarksByClaim
+    };
 
   } catch (error) {
     console.error('[CHECKER-ERROR] Failed to load checker:', error);

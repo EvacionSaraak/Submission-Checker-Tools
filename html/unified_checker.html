@@ -143,7 +143,7 @@
             </div>
             
             <div class="file-input-group">
-              <label class="form-label">Claim Type (for Timings checker):</label>
+              <label class="form-label">Claim Type (for Timings and Observation checkers):</label>
               <div>
                 <div class="form-check form-check-inline">
                   <input class="form-check-input" type="radio" name="claimTypeGlobal" id="claimTypeDental" value="DENTAL" checked>
@@ -230,11 +230,14 @@
             <button type="button" class="btn btn-outline-primary" id="btn-timings" title="Requires: XML" disabled>
               Timings
             </button>
-            <button type="button" class="btn btn-outline-primary" id="btn-teeth" title="Requires: XML" disabled>
-              Teeth
+            <button type="button" class="btn btn-outline-primary" id="btn-observations" title="Requires: XML" disabled>
+              Observations
             </button>
             <button type="button" class="btn btn-outline-primary" id="btn-schema" title="Requires: XML" disabled>
               Schema
+            </button>
+            <button type="button" class="btn btn-outline-primary" id="btn-exclusion" title="Requires: XML" disabled>
+              Exclusion
             </button>
             <button type="button" class="btn btn-outline-primary" id="btn-clinician" title="Requires: XML, Clinician List, License Status" disabled>
               Clinicians
@@ -272,8 +275,9 @@
       <div id="checker-container-elig" class="checker-container" style="display:none;"></div>
       <div id="checker-container-auths" class="checker-container" style="display:none;"></div>
       <div id="checker-container-timings" class="checker-container" style="display:none;"></div>
-      <div id="checker-container-teeth" class="checker-container" style="display:none;"></div>
+      <div id="checker-container-observations" class="checker-container" style="display:none;"></div>
       <div id="checker-container-schema" class="checker-container" style="display:none;"></div>
+      <div id="checker-container-exclusion" class="checker-container" style="display:none;"></div>
       <div id="checker-container-clinician" class="checker-container" style="display:none;"></div>
       <div id="checker-container-pricing" class="checker-container" style="display:none;"></div>
       <div id="checker-container-modifiers" class="checker-container" style="display:none;"></div>
@@ -299,8 +303,10 @@
   <script src="../js/checker_elig.js"></script>
   <script src="../js/checker_auths.js"></script>
   <script src="../js/checker_timings.js"></script>
-  <script src="../js/checker_tooths.js"></script>
+  <script src="../js/checker_observations.js"></script>
   <script src="../js/checker_schema.js"></script>
+  <script src="../js/dx_rules.js"></script>
+  <script src="../js/checker_exclusions.js"></script>
   <script src="../js/checker_pricing.js"></script>
   <script src="../js/checker_modifiers.js"></script>
   

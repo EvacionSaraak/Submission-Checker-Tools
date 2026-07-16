@@ -9,6 +9,9 @@
   const ERROR_FEEDBACK_DURATION_EXTENSION_FACTOR = 1.5; // Extend error messages display time by 50%
   const INVALID_ROW_CLASSES = 'tbody tr.table-danger, tbody tr.table-warning';
 
+  // Checkers that are only applicable in Medical mode
+  const MEDICAL_ONLY_CHECKERS = new Set(['exclusion', 'modifiers']);
+
   // Initialize session counter immediately
   (function initSessionCounter() {
     let sessionCount = sessionStorage.getItem('checkerSessionCount');
@@ -38,6 +41,56 @@
   // Expose files globally for checkers to access
   window.unifiedCheckerFiles = files;
 
+  // XML text cache: reads each uploaded File object at most once.
+  // Keyed by File identity (object reference) so that two files with the
+  // same name but different content are never confused.
+  const parsedFileCache = {
+    xmlFile: null,
+    xmlTextPromise: null
+  };
+
+  function getXmlText(file) {
+    if (!file) {
+      return Promise.reject(new Error('No XML file uploaded.'));
+    }
+
+    // If the cached entry belongs to a different File object, invalidate it.
+    if (parsedFileCache.xmlFile !== file) {
+      parsedFileCache.xmlFile = file;
+      parsedFileCache.xmlTextPromise = file.text();
+    }
+
+    return parsedFileCache.xmlTextPromise;
+  }
+
+  function clearXmlTextCache() {
+    parsedFileCache.xmlFile = null;
+    parsedFileCache.xmlTextPromise = null;
+  }
+
+  // Expose so the Observation checker can reuse the already-read text.
+  window.getUnifiedXmlText = () => getXmlText(files.xml);
+
+  /**
+   * Normalise a value returned by any checker into { root, table }.
+   *  - If the checker returned a <table> directly, root === table.
+   *  - If the checker returned a wrapper <div> that contains a <table>,
+   *    root is the wrapper and table is the first contained <table>.
+   *  - Returns null when neither condition holds (checker produced no result).
+   */
+  function resolveCheckerResult(resultElement) {
+    if (resultElement instanceof HTMLTableElement) {
+      return { root: resultElement, table: resultElement };
+    }
+    if (resultElement instanceof HTMLElement) {
+      const table = resultElement.querySelector('table');
+      if (table instanceof HTMLTableElement) {
+        return { root: resultElement, table };
+      }
+    }
+    return null;
+  }
+
   let activeChecker = null;
   
   // Filter state for floating button
@@ -59,6 +112,28 @@
     };
     debugLog.push(logEntry);
     console.log(`[DEBUG-LOG] ${timestamp} - ${message}`, data || '');
+  }
+
+  // Returns true when the Medical claim-type radio is checked
+  function isMedicalModeSelected() {
+    return Boolean(document.getElementById('claimTypeMedical')?.checked);
+  }
+
+  // Returns the sidebar button element for a given checker name
+  function getCheckerButton(checker) {
+    const btnName = `btn${checker.charAt(0).toUpperCase() + checker.slice(1)}`;
+    return elements[btnName] || null;
+  }
+
+  // Hides the checker container and clears its content if it is currently active
+  function hideAndClearChecker(checker) {
+    const container = document.getElementById(`checker-container-${checker}`);
+    if (container && activeChecker === checker) {
+      container.style.display = 'none';
+      container.innerHTML = '';
+      activeChecker = null;
+      console.log(`[BUTTON] Cleared ${checker} container (switched to DENTAL)`);
+    }
   }
 
   // Loading overlay functions
@@ -119,8 +194,9 @@
       btnElig: document.getElementById('btn-elig'),
       btnAuths: document.getElementById('btn-auths'),
       btnTimings: document.getElementById('btn-timings'),
-      btnTeeth: document.getElementById('btn-teeth'),
+      btnObservations: document.getElementById('btn-observations'),
       btnSchema: document.getElementById('btn-schema'),
+      btnExclusion: document.getElementById('btn-exclusion'),
       btnPricing: document.getElementById('btn-pricing'),
       btnModifiers: document.getElementById('btn-modifiers'),
       btnCheckAll: document.getElementById('btn-check-all'),
@@ -193,11 +269,14 @@
     elements.btnTimings.addEventListener('click', () => {
       runChecker('timings');
     });
-    elements.btnTeeth.addEventListener('click', () => {
-      runChecker('teeth');
+    elements.btnObservations.addEventListener('click', () => {
+      runChecker('observations');
     });
     elements.btnSchema.addEventListener('click', () => {
       runChecker('schema');
+    });
+    elements.btnExclusion.addEventListener('click', () => {
+      runChecker('exclusion');
     });
     elements.btnClinician.addEventListener('click', () => {
       runChecker('clinician');
@@ -271,12 +350,6 @@
     console.log('[INIT] Performing initial button state update...');
     updateButtonStates();
     
-    // Bug #29 fix: Ensure Modifiers button is hidden on page load if Dental is selected
-    if (claimTypeDental && claimTypeDental.checked && elements.btnModifiers) {
-      console.log('[INIT] DENTAL selected on page load - ensuring Modifiers button is hidden');
-      elements.btnModifiers.style.display = 'none';
-    }
-    
     console.log('[INIT] ✓ Initialization complete! Ready for file uploads.');
   }
 
@@ -291,12 +364,21 @@
       
       // Console log
       console.log(`[FILE] Uploaded: ${fileKey} = "${file.name}" (${(file.size / 1024).toFixed(1)} KB, type: ${file.type})`);
+
+      // Invalidate XML text cache whenever a new XML file is selected.
+      if (fileKey === 'xml') {
+        clearXmlTextCache();
+      }
     } else {
       files[fileKey] = null;
       statusElement.textContent = '';
       statusElement.style.backgroundColor = '';
       
       console.log(`[FILE] Cleared: ${fileKey}`);
+
+      if (fileKey === 'xml') {
+        clearXmlTextCache();
+      }
     }
     updateButtonStates();
   }
@@ -342,6 +424,9 @@
     // Clear file cache
     if (window.FileCache && typeof window.FileCache.clear === 'function') window.FileCache.clear();
 
+    // Clear XML text cache
+    clearXmlTextCache();
+
     // Reset debug log and export state
     debugLog = [];
     invalidRowsData = [];
@@ -363,62 +448,53 @@
     console.log('[BUTTON] Updating button states based on available files and claim type...');
     console.log('[BUTTON] Current files state:', JSON.stringify(files));
     
-    // Check claim type selection
-    const claimTypeMedical = document.getElementById('claimTypeMedical');
-    const isMedical = claimTypeMedical && claimTypeMedical.checked;
+    const isMedical = isMedicalModeSelected();
     
     const requirements = {
       clinician: ['xml'], // clinician and status files are auto-loaded from resources
       elig: ['xml', 'eligibility'],
       auths: ['xml', 'auth'],
       timings: ['xml'],
-      teeth: ['xml'],
+      observations: ['xml'],
       schema: ['xml'],
+      exclusion: ['xml'],
       pricing: ['xml'],
       modifiers: ['xml', 'eligibility']
     };
 
     for (const [checker, reqs] of Object.entries(requirements)) {
-      const btnName = `btn${checker.charAt(0).toUpperCase() + checker.slice(1)}`;
-      const button = elements[btnName];
-      console.log(`[BUTTON] Checking ${checker}: button element found = ${!!button}, btnName = ${btnName}`);
+      const button = getCheckerButton(checker);
+      console.log(`[BUTTON] Checking ${checker}: button element found = ${!!button}`);
+
+      if (!button) {
+        console.log(`[BUTTON] ${checker}: BUTTON ELEMENT NOT FOUND`);
+        continue;
+      }
+
+      // Medical-only checkers are hidden and disabled when Dental is selected
+      const isMedicalOnly = MEDICAL_ONLY_CHECKERS.has(checker);
+      if (isMedicalOnly && !isMedical) {
+        button.disabled = true;
+        button.style.display = 'none';
+        hideAndClearChecker(checker);
+        console.log(`[BUTTON] ${checker}: HIDDEN (claim type is DENTAL, ${checker} only available for MEDICAL)`);
+        continue;
+      }
+
+      button.style.display = ''; // Restore from possible Medical-only hide
+
+      const hasAll = reqs.every(req => {
+        const hasFile = files[req] !== null && files[req] !== undefined;
+        console.log(`[BUTTON]   - Checking requirement '${req}': ${hasFile ? 'YES' : 'NO'} (value: ${files[req] ? 'File object' : files[req]})`);
+        return hasFile;
+      });
+      button.disabled = !hasAll;
       
-      if (button) {
-        // Special handling for Modifiers - only available for Medical claims
-        if (checker === 'modifiers' && !isMedical) {
-          button.disabled = true;
-          button.style.display = 'none';
-          
-          // Also hide the modifiers container if it's currently active
-          const modifiersContainer = document.getElementById('checker-container-modifiers');
-          if (modifiersContainer && activeChecker === 'modifiers') {
-            modifiersContainer.style.display = 'none';
-            modifiersContainer.innerHTML = ''; // Clear the content
-            activeChecker = null;
-            console.log('[BUTTON] Cleared modifiers container (switched to DENTAL)');
-          }
-          
-          console.log(`[BUTTON] ${checker}: HIDDEN (claim type is DENTAL, modifiers only available for MEDICAL)`);
-          continue;
-        } else if (checker === 'modifiers' && isMedical) {
-          button.style.display = '';  // Show button when Medical
-        }
-        
-        const hasAll = reqs.every(req => {
-          const hasFile = files[req] !== null && files[req] !== undefined;
-          console.log(`[BUTTON]   - Checking requirement '${req}': ${hasFile ? 'YES' : 'NO'} (value: ${files[req] ? 'File object' : files[req]})`);
-          return hasFile;
-        });
-        button.disabled = !hasAll;
-        
-        const missingFiles = reqs.filter(req => !files[req]);
-        if (hasAll) {
-          console.log(`[BUTTON] ${checker}: ENABLED (has all required: ${reqs.join(', ')})`);
-        } else {
-          console.log(`[BUTTON] ${checker}: DISABLED (missing: ${missingFiles.join(', ')})`);
-        }
+      const missingFiles = reqs.filter(req => !files[req]);
+      if (hasAll) {
+        console.log(`[BUTTON] ${checker}: ENABLED (has all required: ${reqs.join(', ')})`);
       } else {
-        console.log(`[BUTTON] ${checker}: BUTTON ELEMENT NOT FOUND (looking for #${btnName})`);
+        console.log(`[BUTTON] ${checker}: DISABLED (missing: ${missingFiles.join(', ')})`);
       }
     }
 
@@ -438,15 +514,14 @@
     console.log(`[DEBUG] runChecker called with: ${checkerName}`);
     console.log(`[DEBUG] Files available:`, Object.keys(files).filter(k => files[k]));
     
-    // Safety check: Don't allow running Modifiers checker when Dental is selected
-    if (checkerName === 'modifiers') {
-      const claimTypeMedical = document.getElementById('claimTypeMedical');
-      const isMedical = claimTypeMedical && claimTypeMedical.checked;
-      if (!isMedical) {
-        console.error('[ERROR] Cannot run Modifiers checker - only available for MEDICAL claims');
-        elements.uploadStatus.innerHTML = '<div class="status-message error">Modifiers checker is only available for Medical claims. Please select Medical claim type.</div>';
-        return;
-      }
+    // Safety guard: Medical-only checkers must not run when Dental is selected.
+    // This protects against stale or programmatic execution even when the button is hidden.
+    if (MEDICAL_ONLY_CHECKERS.has(checkerName) && !isMedicalModeSelected()) {
+      console.warn(
+        `[CHECKER] Skipped ${checkerName}: ` +
+        'Medical mode is not selected.'
+      );
+      return null;
     }
     
     try {
@@ -562,7 +637,7 @@
   // Bug #6: Memory cleanup for inactive containers
   function cleanupInactiveContainers(activeCheckerName) {
     console.log(`[DEBUG] Cleaning up inactive containers (keeping ${activeCheckerName})`);
-    const allCheckers = ['schema', 'timings', 'teeth', 'elig', 'auths', 'clinician', 'pricing', 'modifiers'];
+    const allCheckers = ['schema', 'exclusion', 'timings', 'observations', 'elig', 'auths', 'clinician', 'pricing', 'modifiers'];
     
     allCheckers.forEach(checkerName => {
       if (checkerName !== activeCheckerName) {
@@ -602,7 +677,7 @@
           <div id="results"></div>
         `;
       },
-      teeth: `
+      observations: `
         <input type="file" id="xmlFile" accept=".xml" style="display:none" />
         <button id="exportBtn" class="btn btn-secondary" style="display:none;">Export Invalid Activities</button>
         <div id="messageBox" style="color: red; font-weight: bold;"></div>
@@ -610,6 +685,11 @@
         <div id="results"></div>
       `,
       schema: `
+        <input type="file" id="xmlFile" accept=".xml" style="display:none" />
+        <div id="uploadStatus" aria-live="polite"></div>
+        <div id="results"></div>
+      `,
+      exclusion: `
         <input type="file" id="xmlFile" accept=".xml" style="display:none" />
         <div id="uploadStatus" aria-live="polite"></div>
         <div id="results"></div>
@@ -741,8 +821,9 @@
       elig: { xmlFileInput: 'xml', eligibilityFileInput: 'eligibility' },
       auths: { xmlInput: 'xml', xlsxInput: 'auth' },
       timings: { xmlFileInput: 'xml' },
-      teeth: { xmlFile: 'xml' },
+      observations: { xmlFile: 'xml' },
       schema: { xmlFile: 'xml' },
+      exclusion: { xmlFile: 'xml' },
       pricing: { 'xml-file': 'xml', 'xlsx-file': 'pricing' },
       modifiers: { 'xml-file': 'xml', 'xlsx-file': 'eligibility' }
     };
@@ -778,11 +859,14 @@
       
       const checkerFunctions = {
         schema: validateXmlSchema,
+        exclusion: runExclusionCheck,
         timings: validateTimingsAsync,
-        teeth: parseXML,
+        observations: () => parseXML(files.xml),
         elig: runEligCheck,
         auths: runAuthsCheck,
-        clinician: runClinicianCheck,
+        // Pass the shared XML file directly so the clinician checker can read it
+        // without depending on an asynchronous dispatched-event side-effect.
+        clinician: () => runClinicianCheck(files.xml),
         pricing: runPricingCheck,
         modifiers: runModifiersCheck
       };
@@ -794,18 +878,27 @@
       }
       
       console.log(`[DEBUG] Executing ${checkerName} checker function`);
-      const tableElement = await checkerFn();  // GET the returned table
-      
-      // ✅ NEW: Render the returned table
-      if (tableElement && resultsDiv) {
-        console.log(`[DEBUG] Rendering table returned from ${checkerName}`);
-        resultsDiv.appendChild(tableElement);
-      } else if (!tableElement) {
-        console.log(`[DEBUG] ${checkerName} returned no table (may have rendered status message instead)`);
+      const resultElement = await checkerFn();  // GET the returned element
+
+      // Resolve the element into { root, table } if possible.
+      // This handles checkers that return a wrapper <div> (e.g. clinician) as well
+      // as checkers that return a <table> directly.
+      const checkerResult = resolveCheckerResult(resultElement);
+
+      if (checkerResult && resultsDiv) {
+        // Render the full root element (preserves summary, modals, etc.)
+        console.log(`[DEBUG] Rendering result from ${checkerName}`);
+        resultsDiv.appendChild(checkerResult.root);
+      } else if (resultElement && !checkerResult && resultsDiv) {
+        // Result exists but contains no table — render as-is (informational/warning element)
+        console.log(`[DEBUG] Rendering non-table result from ${checkerName}`);
+        resultsDiv.appendChild(resultElement);
+      } else if (!resultElement) {
+        console.log(`[DEBUG] ${checkerName} returned no result (may have rendered status message instead)`);
       }
       
-      // Return the table element so Check All can use it
-      return tableElement;
+      // Return the raw result element so Check All can resolve it independently.
+      return resultElement;
       
     } catch (error) {
       console.error(`[DEBUG] Error executing ${checkerName}:`, error);
@@ -816,8 +909,8 @@
   function setActiveButton(checkerName) {
     const allButtons = [
       elements.btnClinician, elements.btnElig, elements.btnAuths,
-      elements.btnTimings, elements.btnTeeth, elements.btnSchema,
-      elements.btnPricing, elements.btnModifiers,
+      elements.btnTimings, elements.btnObservations, elements.btnSchema,
+      elements.btnExclusion, elements.btnPricing, elements.btnModifiers,
       elements.btnCheckAll
     ];
     
@@ -876,14 +969,16 @@
           });
         }
       } else if (checkerName === 'clinician') {
-        // Clinician checker uses .view-activities and .view-license-history buttons
+        // Clinician checker uses .view-activities and .view-license-history buttons.
+        // clonedTable is the full cloned root element (a <div> that contains the
+        // <table>, summary, and modal elements).  All lookups must be scoped to
+        // this root so they find the modals that were cloned along with it.
         console.log('[CHECK-ALL] Re-attaching clinician modal event listeners');
         
-        // Get the parent container that has the modals
-        const parentContainer = clonedTable.closest('#clinician-results') || clonedTable.parentElement;
+        const rootElement = clonedTable; // full cloned wrapper div
         
         // Re-attach .view-activities button listeners
-        const activityButtons = clonedTable.querySelectorAll('.view-activities');
+        const activityButtons = rootElement.querySelectorAll('.view-activities');
         console.log(`[CHECK-ALL] Found ${activityButtons.length} activity buttons`);
         
         activityButtons.forEach(btn => {
@@ -900,9 +995,9 @@
               return;
             }
             
-            // Find modals with this unique ID in the parent container
-            const activityModal = parentContainer.querySelector(`#activityModal_${uniqueIdFromButton}`);
-            const activityModalText = parentContainer.querySelector(`#activityModalText_${uniqueIdFromButton}`);
+            // Modals are inside the cloned root element
+            const activityModal = rootElement.querySelector(`#activityModal_${uniqueIdFromButton}`);
+            const activityModalText = rootElement.querySelector(`#activityModalText_${uniqueIdFromButton}`);
             
             if (activityModalText && modalData[modalId]) {
               activityModalText.innerHTML = modalData[modalId];
@@ -914,7 +1009,7 @@
         });
         
         // Re-attach .view-license-history button listeners
-        const licenseButtons = clonedTable.querySelectorAll('.view-license-history');
+        const licenseButtons = rootElement.querySelectorAll('.view-license-history');
         console.log(`[CHECK-ALL] Found ${licenseButtons.length} license history buttons`);
         
         licenseButtons.forEach(btn => {
@@ -924,9 +1019,9 @@
             
             console.log(`[CHECK-ALL] License history button clicked: uniqueId=${uniqueIdFromButton}`);
             
-            // Find modals with this unique ID in the parent container
-            const licenseHistoryModal = parentContainer.querySelector(`#licenseHistoryModal_${uniqueIdFromButton}`);
-            const licenseHistoryText = parentContainer.querySelector(`#licenseHistoryText_${uniqueIdFromButton}`);
+            // Modals are inside the cloned root element
+            const licenseHistoryModal = rootElement.querySelector(`#licenseHistoryModal_${uniqueIdFromButton}`);
+            const licenseHistoryText = rootElement.querySelector(`#licenseHistoryText_${uniqueIdFromButton}`);
             
             if (licenseHistoryText && window._formatClinicianLicenseHistory) {
               licenseHistoryText.innerHTML = window._formatClinicianLicenseHistory(fullHistory);
@@ -945,8 +1040,8 @@
         
         uniqueIds.forEach(uniqueId => {
           // Activity modal close handlers
-          const activityModalClose = parentContainer.querySelector(`#activityModalClose_${uniqueId}`);
-          const activityModal = parentContainer.querySelector(`#activityModal_${uniqueId}`);
+          const activityModalClose = rootElement.querySelector(`#activityModalClose_${uniqueId}`);
+          const activityModal = rootElement.querySelector(`#activityModal_${uniqueId}`);
           
           if (activityModalClose && activityModal) {
             activityModalClose.onclick = function() {
@@ -961,8 +1056,8 @@
           }
           
           // License history modal close handlers
-          const licenseHistoryClose = parentContainer.querySelector(`#licenseHistoryClose_${uniqueId}`);
-          const licenseHistoryModal = parentContainer.querySelector(`#licenseHistoryModal_${uniqueId}`);
+          const licenseHistoryClose = rootElement.querySelector(`#licenseHistoryClose_${uniqueId}`);
+          const licenseHistoryModal = rootElement.querySelector(`#licenseHistoryModal_${uniqueId}`);
           
           if (licenseHistoryClose && licenseHistoryModal) {
             licenseHistoryClose.onclick = function() {
@@ -978,6 +1073,16 @@
         });
         
         console.log(`[CHECK-ALL] Re-attached event listeners for ${activityButtons.length} activity buttons and ${licenseButtons.length} license buttons`);
+      } else if (checkerName === 'pricing') {
+        // Pricing checker uses Compare buttons with data-pricing-index
+        const compareBtns = clonedTable.querySelectorAll('[data-pricing-index]');
+        compareBtns.forEach(btn => {
+          const idx = parseInt(btn.dataset.pricingIndex, 10);
+          if (!isNaN(idx)) {
+            btn.onclick = () => window.showPricingComparison(idx);
+          }
+        });
+        console.log(`[CHECK-ALL] Re-attached ${compareBtns.length} pricing compare button(s)`);
       }
       // Add more checker types as needed
     } catch (error) {
@@ -1037,15 +1142,21 @@
       'elig': elements.btnElig,
       'auths': elements.btnAuths,
       'timings': elements.btnTimings,
-      'teeth': elements.btnTeeth,
+      'observations': elements.btnObservations,
       'schema': elements.btnSchema,
+      'exclusion': elements.btnExclusion,
       'clinician': elements.btnClinician,
       'pricing': elements.btnPricing,
       'modifiers': elements.btnModifiers
     };
     
-    // Find all enabled checkers
+    // Find all enabled checkers, explicitly skipping Medical-only checkers in Dental mode
+    const isMedical = isMedicalModeSelected();
     for (const [checkerName, button] of Object.entries(checkerButtons)) {
+      if (MEDICAL_ONLY_CHECKERS.has(checkerName) && !isMedical) {
+        logDebug(`Checker Skipped: ${checkerName}`, { reason: 'Medical-only checker' });
+        continue;
+      }
       if (button && !button.disabled) {
         availableCheckers.push(checkerName);
         logDebug(`Checker Available: ${checkerName}`, { 
@@ -1178,7 +1289,7 @@
           // IMPORTANT: Ensure checker container stays hidden during Check All
           checkerContainer.style.display = 'none';
           
-          // Execute the checker and get returned table element (Bug #10 fix: removed duplicate initialization check)
+          // Execute the checker and get returned element (Bug #10 fix: removed duplicate initialization check)
           logDebug(`Executing Checker: ${checkerName}`);
           table = await executeChecker(checkerName, checkerContainer);
           
@@ -1190,14 +1301,20 @@
         
         // Get section results container (needed for both success and failure cases)
         const sectionResults = document.getElementById(`${checkerName}-results`);
+
+        // Accept either a <table> directly or a wrapper element that contains a <table>
+        // (e.g. the clinician checker returns a <div> with summary, table, and modals).
+        const checkerResult = resolveCheckerResult(table);
         
-        if (table) {
+        if (checkerResult) {
           successCount++;
-          const rowCount = table.querySelectorAll('tbody tr').length;
+          const tableEl = checkerResult.table;
+          const rootEl  = checkerResult.root;
+          const rowCount = tableEl.querySelectorAll('tbody tr').length;
           console.log(`[CHECK-ALL] ✓ ${checkerName} checker completed successfully`);
           
-          // Collect invalid rows from this table
-          const invalidRows = table.querySelectorAll('tbody tr.table-danger, tbody tr.table-warning, tbody tr.invalid, tbody tr.unknown');
+          // Collect invalid rows from the resolved table
+          const invalidRows = tableEl.querySelectorAll('tbody tr.table-danger, tbody tr.table-warning, tbody tr.invalid, tbody tr.unknown');
           if (invalidRows.length > 0) {
             console.log(`[CHECK-ALL] Found ${invalidRows.length} invalid rows in ${checkerName}`);
             invalidRows.forEach(row => {
@@ -1212,13 +1329,14 @@
             });
           }
           
-          // Copy table to check-all results section
-          if (sectionResults && table) {
-            const clonedTable = table.cloneNode(true);
-            sectionResults.appendChild(clonedTable);
+          // Copy the full root element (preserves wrapper, summary, and modals for checkers
+          // like clinician that return a <div> instead of a bare <table>).
+          if (sectionResults && rootEl) {
+            const clonedRoot = rootEl.cloneNode(true);
+            sectionResults.appendChild(clonedRoot);
             
             // Re-attach event listeners that were lost during cloning
-            reattachEventListeners(clonedTable, checkerName);
+            reattachEventListeners(clonedRoot, checkerName);
           }
           
           logDebug(`Checker Success: ${checkerName}`, {
@@ -1235,10 +1353,10 @@
             rowCount: rowCount
           });
           
-          // Store table for combined export
+          // Store the resolved table (not the wrapper) for combined export
           allResults.push({
             checkerName: checkerName,
-            table: table.cloneNode(true)
+            table: tableEl.cloneNode(true)
           });
         } else {
           errorCount++;
@@ -1400,6 +1518,9 @@
       const shownClaimIds = new Set();
       
       rows.forEach(row => {
+        // Skip the "no invalids" placeholder — handled separately below
+        if (row.classList.contains('no-invalids-placeholder')) return;
+
         if (filterEnabled) {
           // Check for invalid/error indicators based on CSS classes only
           // CSS classes are set by the checker logic based on whether remarks exist
@@ -1410,8 +1531,9 @@
                             row.classList.contains('table-warning') ||
                             row.classList.contains('invalid') ||
                             row.classList.contains('unknown');
+          const hideForInvalidOnly = row.getAttribute('data-hide-invalid-only') === 'true';
           
-          if (hasInvalid) {
+          if (hasInvalid && !hideForInvalidOnly) {
             // Show all invalid rows
             row.style.display = '';
             
@@ -1437,6 +1559,19 @@
           row.style.display = '';
         }
       });
+
+      // Show the "no invalids" placeholder row only when filtering reveals no invalid rows
+      const placeholder = table.querySelector('tbody tr.no-invalids-placeholder');
+      if (placeholder) {
+        if (filterEnabled) {
+          const hasVisibleInvalid = Array.from(
+            table.querySelectorAll('tbody tr.table-danger, tbody tr.table-warning, tbody tr.invalid, tbody tr.unknown')
+          ).some(r => r.style.display !== 'none');
+          placeholder.style.display = hasVisibleInvalid ? 'none' : '';
+        } else {
+          placeholder.style.display = 'none';
+        }
+      }
     });
 
     console.log('[FILTER] Filter applied to', tables.length, 'tables');

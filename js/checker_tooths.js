@@ -78,6 +78,7 @@ const DUAL_TYPE_CODES = new Set([
   '76801', // Type 6 = dental version; Type 3 = medical version
   '92511'  // Type 6 = dental version; Type 3 = medical version
 ]);
+const AUTH_DEPENDENT_DUAL_CODES = new Set(['86301', '73521']);
 
 // Root canal codes requiring a Subcode observation from 20-Feb-2026 onward
 const ROOT_CANAL_SUBCODE_CODES = new Set(['33111', '33121', '33131', '33141', '33115', '33125', '33135', '33145']);
@@ -90,8 +91,56 @@ function isValidType5Code(code) {
   return (parts.length === 4 && parts[0].length === 3 && parts[1].length === 4 && parts[2].length === 5 && parts[3].length === 2);
 }
 
+const TARIFF_TYPE_TO_ACTIVITY_TYPE = {
+  CPT: '3',
+  HCPCS: '4',
+  USCLS: '6',
+  SERVICE: '8'
+};
+
+function normalizeTariffCode(code) {
+  return String(code || '').trim().replace(/^0+/, '').toUpperCase();
+}
+
+function buildTariffCodeTypeMap(workbook) {
+  const tariffCodeTypeMap = new Map();
+  if (!workbook || !Array.isArray(workbook.SheetNames)) {
+    return tariffCodeTypeMap;
+  }
+
+  workbook.SheetNames.forEach(sheetName => {
+    if (!/mandatory tariff/i.test(sheetName)) return;
+    const sheet = workbook.Sheets[sheetName];
+    if (!sheet) return;
+
+    const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+    rows.forEach(row => {
+      const tariffType = String(row.Type || row['Type'] || '').trim().toUpperCase();
+      const normalizedCode = normalizeTariffCode(row.Code || row['Code'] || '');
+      if (!normalizedCode || !TARIFF_TYPE_TO_ACTIVITY_TYPE[tariffType]) return;
+      if (!tariffCodeTypeMap.has(normalizedCode)) {
+        tariffCodeTypeMap.set(normalizedCode, tariffType);
+      }
+    });
+  });
+
+  return tariffCodeTypeMap;
+}
+
+function getTypeMismatchRemark(code, type, tariffCodeTypeMap) {
+  const normalizedCode = normalizeTariffCode(code);
+  const tariffType = tariffCodeTypeMap.get(normalizedCode);
+  if (!tariffType) return null;
+
+  const expectedType = TARIFF_TYPE_TO_ACTIVITY_TYPE[tariffType];
+  if (!expectedType) return null;
+  if (String(type || '').trim() === expectedType) return null;
+
+  return `Invalid ${tariffType} Type for ${code} (should be ${expectedType}).`;
+}
+
 // Type validation function
-function validateActivityType(code, type, isDentalCode = false) {
+function validateActivityType(code, type, isDentalCode = false, tariffCodeTypeMap = new Map()) {
   const remarks = [];
   
   // Special validation: A4639 must always be type 4
@@ -114,7 +163,10 @@ function validateActivityType(code, type, isDentalCode = false) {
   
   // Type 5 code format check
   if (type === "5") {
-    if (!isValidType5Code(code)) {
+    const typeMismatchRemark = getTypeMismatchRemark(code, type, tariffCodeTypeMap);
+    if (typeMismatchRemark) {
+      remarks.push(typeMismatchRemark);
+    } else if (!isValidType5Code(code)) {
       remarks.push(`Type 5 activity with invalid or missing Code: "${code}".`);
     }
   }
@@ -416,7 +468,7 @@ function checkRegionDuplication(tracker, code, regionType, regionKey, codeLastDi
 
 // Activity validation functions
 function validateKnownCode({
-  claimId, activityId, type, code, obsCodes, meta, claimRegionTrack, codeLastDigit, obsList
+  claimId, activityId, type, code, obsCodes, meta, claimRegionTrack, codeLastDigit, obsList, isMedical = false, tariffCodeTypeMap = new Map()
 }) {
   const regionType = meta.description.toLowerCase().includes('sextant') ? 'sextant'
     : meta.description.toLowerCase().includes('quadrant') ? 'quadrant'
@@ -425,8 +477,8 @@ function validateKnownCode({
   let regionKey = null;
   const remarks = [];
 
-  // Validate activity type (true = isDentalCode: known codes in the tooths checker are dental)
-  const typeRemarks = validateActivityType(code, type, true);
+  // Validate activity type: known codes are dental unless in Medical mode
+  const typeRemarks = validateActivityType(code, type, !isMedical, tariffCodeTypeMap);
   remarks.push(...typeRemarks);
 
   // PATCH: If all obsCodes are Drug Patient Share or PDF, mark valid and skip remarks
@@ -450,6 +502,16 @@ function validateKnownCode({
   // Special Medical Code Handling
   if (isSpecialMedicalCode(code)) {
     return handleSpecialMedicalCode({claimId, activityId, type, code, obsCodes, obsList});
+  }
+
+  // In Medical mode, skip dental-specific observation requirements
+  if (isMedical) {
+    return buildActivityRow({
+      claimId, activityId, type, code,
+      description: meta.description,
+      details: obsCodes.length ? obsCodes.join('<br>') : 'N/A',
+      remarks
+    });
   }
 
   // Mark as invalid if no observations
@@ -518,7 +580,7 @@ function validateKnownCode({
 }
 
 function validateUnknownCode({
-  claimId, activityId, type, code, obsCodes, description, claimRegionTrack, codeLastDigit, obsList
+  claimId, activityId, type, code, obsCodes, description, claimRegionTrack, codeLastDigit, obsList, isMedical = false, authClassifiedDental = null, tariffCodeTypeMap = new Map()
 }) {
   let remarks = [];
   let details = '';
@@ -531,10 +593,12 @@ function validateUnknownCode({
 
   let regionKey = null;
 
-  // Only enforce type 6 when the code has a known dental description (from fallback).
+  // Only enforce type 6 when the code has a known dental description (from fallback) AND not in Medical mode.
   // Truly unknown codes (description === '(unknown code)') are treated as non-dental (type 3).
-  const isDentalCode = description !== '(unknown code)';
-  const typeRemarks = validateActivityType(code, type, isDentalCode);
+  const isDentalCode = authClassifiedDental === null
+    ? (!isMedical && description !== '(unknown code)')
+    : (!isMedical && authClassifiedDental);
+  const typeRemarks = validateActivityType(code, type, isDentalCode, tariffCodeTypeMap);
   remarks.push(...typeRemarks);
 
   // PATCH: If all obsCodes are Drug Patient Share or PDF, mark valid and skip remarks
@@ -604,7 +668,7 @@ function validateUnknownCode({
     details = 'N/A';
   }
 
-  if (obsCodes.length === 0 && isRegion) {
+  if (!isMedical && obsCodes.length === 0 && isRegion) {
     remarks.push(`No tooth (Observation) specified for unknown code "${code}" (region type: ${regionType}).`);
   }
 
@@ -637,7 +701,7 @@ function getCombinedRemarks(row) {
 }
 
 // Main activity validation and results rendering
-function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontistSet, receiverID = '') {
+function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontistSet, receiverID = '', isMedical = false, tariffCodeTypeMap = new Map()) {
   const rows = [];
   const claimSummaries = {};
   const claimRegionTrack = {};
@@ -672,7 +736,7 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
       // --- Check for codes that cannot be submitted
       const forbiddenEntry = FORBIDDEN_CODES_MAP[code];
       if (forbiddenEntry) {
-        const typeRemarks = validateActivityType(code, typeValue);
+        // For forbidden codes, only show the forbidden reason - no additional type validation
         const row = buildActivityRow({
           claimId,
           activityId,
@@ -680,7 +744,7 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
           code,
           description: forbiddenEntry.description,
           details: 'N/A',
-          remarks: [forbiddenEntry.reason, ...typeRemarks]
+          remarks: [forbiddenEntry.reason]
         });
         claimHasInvalid = true;
         rows.push(row);
@@ -690,7 +754,7 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
       // --- ADDED: Check for invalid code length ---
       // Codes containing a space are treated as unknown (not invalid) since the space may be part of a subcode variant
       if (code.length !== 5 && !code.includes(`-`) && !rawCode.includes(' ')) {
-        const typeRemarks = validateActivityType(code, typeValue);
+        const typeRemarks = validateActivityType(code, typeValue, false, tariffCodeTypeMap);
         const allRemarks = [`Code "${code}" is invalid: it must have exactly 5 characters.`, ...typeRemarks];
         const row = buildActivityRow({
           claimId,
@@ -716,18 +780,20 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
         if (fallback && fallback.description) {
           description = fallback.description;
         }
+        const authId = (act.querySelector('PriorAuthorizationID')?.textContent || act.querySelector('PriorAuthorization')?.textContent || '').trim();
+        const authClassifiedDental = AUTH_DEPENDENT_DUAL_CODES.has(code) ? Boolean(authId) : null;
         row = validateUnknownCode({
-          claimId, activityId, type: typeValue, code, obsCodes, description, claimRegionTrack: claimRegionTrack[claimId], codeLastDigit, obsList
+          claimId, activityId, type: typeValue, code, obsCodes, description, claimRegionTrack: claimRegionTrack[claimId], codeLastDigit, obsList, isMedical, authClassifiedDental, tariffCodeTypeMap
         });
       } else {
         row = validateKnownCode({
-          claimId, activityId, type: typeValue, code, obsCodes, meta, claimRegionTrack: claimRegionTrack[claimId], codeLastDigit, obsList
+          claimId, activityId, type: typeValue, code, obsCodes, meta, claimRegionTrack: claimRegionTrack[claimId], codeLastDigit, obsList, isMedical, tariffCodeTypeMap
         });
       }
 
       // Check Subcode observation requirement for root canal codes from 20-Feb-2026 onward
-      // Only applies when the receiver is D001 (Thiqa)
-      if (receiverID === 'D001' && afterCutoff && ROOT_CANAL_SUBCODE_CODES.has(code)) {
+      // Only applies when the receiver is D001 (Thiqa) and not in Medical mode
+      if (!isMedical && receiverID === 'D001' && afterCutoff && ROOT_CANAL_SUBCODE_CODES.has(code)) {
         // Extract clinician ID: try Clinician first, fallback to OrderingClinician
         let clinicianId = act.querySelector('Clinician')?.textContent?.trim();
         if (!clinicianId) {
@@ -753,7 +819,7 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
         }
       }
 
-      if (recordedEndodonticCodes.has(code) && !hasToothNumberObservation(obsList)) {
+      if (!isMedical && recordedEndodonticCodes.has(code) && !hasToothNumberObservation(obsList)) {
         row.remarks.push(`Code ${code} requires at least one tooth-number observation.`);
       }
 
@@ -980,21 +1046,31 @@ function parseXML() {
       .then(r => {
         console.log('[TEETH] Fetched clinician licenses JSON:', r.ok);
         return r.ok ? r.json() : Promise.reject(`Failed to load clinician_licenses.json (HTTP ${r.status})`);
+      }),
+    fetch('../resources/Mandatory Tariff  Updated.xlsx')
+      .then(r => {
+        console.log('[TEETH] Fetched mandatory tariff workbook:', r.ok);
+        return r.ok ? r.arrayBuffer() : Promise.reject(`Failed to load Mandatory Tariff workbook (HTTP ${r.status})`);
       })
   ])
-  .then(([xmlText, toothJson, authJson, clinicianLicenses]) => {
+  .then(([xmlText, toothJson, authJson, clinicianLicenses, mandatoryTariffBuffer]) => {
     console.log('[TEETH] All resources loaded, processing...');
     const toothMap = buildCodeMeta(toothJson);
     const authMap  = buildAuthMap(authJson);
     const endodontistSet = buildEndodontistSet(clinicianLicenses);
+    const mandatoryTariffWorkbook = XLSX.read(mandatoryTariffBuffer, { type: 'array' });
+    const tariffCodeTypeMap = buildTariffCodeTypeMap(mandatoryTariffWorkbook);
     // Preprocess XML to replace unescaped & with "and" for parseability
     const xmlContent = xmlText.replace(/&(?!(amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;))/g, "and");
     const xmlDoc   = new DOMParser().parseFromString(xmlContent, 'application/xml');
     if (xmlDoc.querySelector('parsererror')) throw new Error('Invalid XML file');
     const header = xmlDoc.querySelector('Header');
     const receiverID = header?.querySelector('ReceiverID')?.textContent.trim() || '';
-    console.log('[TEETH] XML parsed, validating activities...');
-    const rows     = validateActivities(xmlDoc, toothMap, authMap, endodontistSet, receiverID);
+    // Read the claim type radio button (global or local)
+    const medicalRadio = document.getElementById('claimTypeMedical');
+    const isMedical = !!(medicalRadio && medicalRadio.checked);
+    console.log('[TEETH] XML parsed, validating activities... isMedical:', isMedical);
+    const rows     = validateActivities(xmlDoc, toothMap, authMap, endodontistSet, receiverID, isMedical, tariffCodeTypeMap);
     console.log('[TEETH] Validation complete, building table... (rows:', rows.length, ')');
     const tableElement = buildResultsTable(rows);
     console.log('[TEETH] Table build complete');

@@ -17,6 +17,54 @@ let parsedReceiverID = '';
 
 // === UTILITIES ===
 
+const MEDICAL_CODES_REQUIRING_AUTH = new Set([
+  '70336', '70450', '70460', '70470', '70480', '70481', '70482', '70486', '70487', '70488',
+  '70490', '70491', '70492', '70496', '70498', '70540', '70542', '70543', '70544', '70545',
+  '70546', '70547', '70548', '70549', '70551', '70552', '70553', '70554', '70555', '70557',
+  '70558', '70559', '71250', '71260', '71270', '71271', '71275', '71550', '71551', '71552',
+  '71555', '72125', '72126', '72127', '72128', '72129', '72130', '72131', '72132', '72133',
+  '72141', '72142', '72146', '72147', '72148', '72149', '72156', '72157', '72158', '72159',
+  '72191', '72192', '72193', '72194', '72195', '72196', '72197', '72198', '73200', '73201',
+  '73202', '73206', '73218', '73219', '73220', '73221', '73222', '73223', '73225', '73700',
+  '73701', '73702', '73706', '73718', '73719', '73720', '73721', '73722', '73723', '73725',
+  '74150', '74160', '74170', '74174', '74175', '74176', '74177', '74178', '74181', '74182',
+  '74183', '74185', '74261', '74262', '74263', '74712', '74713', '75571', '75572', '75573',
+  '75574', '75635', '76380', '76390', '76391', '77011', '77012', '77013', '77014', '77021',
+  '77022', '77046', '77047', '77048', '77049', '77078', '77084'
+]);
+
+const AUTH_PRESENCE_CLASSIFIED_CODES = new Set(['86301', '73521']);
+
+function normalizeProcedureCode(value) {
+  return String(value || '').trim().replace(/^0+/, '');
+}
+
+function normalizeMemberId(value) {
+  const raw = String(value || '').trim().replace(/\.0+$/, '');
+  if (!raw) return '';
+  const withoutLeadingZeroes = raw.replace(/^0+/, '');
+  return withoutLeadingZeroes || '0';
+}
+
+function isRemarkFreePartiallyApproved(row) {
+  const status = String(
+    row?.xlsRow?.Status ||
+    row?.xlsRow?.status ||
+    ''
+  ).trim().toLowerCase();
+
+  const remarks = Array.isArray(row?.remarks)
+    ? row.remarks.filter(remark => String(remark || '').trim())
+    : [];
+
+  return status === 'partially approved' && remarks.length === 0;
+}
+
+function codeRequiresAuthorization(code, rule = {}) {
+  return MEDICAL_CODES_REQUIRING_AUTH.has(String(code || '').trim()) ||
+    (rule.approval_details !== undefined && !/NOT\s+REQUIRED/i.test(rule.approval_details));
+}
+
 function getText(parent, tag) {
   const el = parent.querySelector(tag);
   return el && el.textContent ? el.textContent.trim() : "";
@@ -170,7 +218,7 @@ function preprocessClaimCodeSums(results) {
 function validateApprovalRequirement(code, authID) {
   const remarks = [];
   const rule = authRules[code] || {};
-  const needsAuth = !/NOT\s+REQUIRED/i.test(rule.approval_details || "");
+  const needsAuth = codeRequiresAuthorization(code, rule);
   if (needsAuth) {
     if (!authID) remarks.push(`Missing required AuthorizationID for ${code}`);
   } else {
@@ -185,9 +233,9 @@ function validateXLSXMatch(row, { memberId, code, netTotal, ordering, authID }) 
   let clinicianMismatch = false;
   let xmlClinician = ordering || "";
   let xlsClinician = (row["Ordering Clinician"] || "");
-  if ((row["Card Number / DHA Member ID"] || "").trim() !== memberId.trim())
+  if (normalizeMemberId(row["Card Number / DHA Member ID"]) !== normalizeMemberId(memberId))
     remarks.push(`MemberID mismatch: XLSX=${row["Card Number / DHA Member ID"]}`);
-  if ((row["Item Code"] || "").trim() !== code.trim())
+  if (normalizeProcedureCode(row["Item Code"]) !== normalizeProcedureCode(code))
     remarks.push(`Item Code mismatch: XLSX=${row["Item Code"]}`);
   const xOrdering = xlsClinician.trim().toUpperCase();
   if (xOrdering !== (xmlClinician || "").trim().toUpperCase())
@@ -240,7 +288,7 @@ function logInvalidRow(xlsRow, context, remarks) {
   }
 }
 
-function validateActivity(activityEl, xlsxMap, claimId, memberId) {
+function validateActivity(activityEl, xlsxMap, claimId, memberId, claimType = '') {
   const id       = getText(activityEl, "ID");
   const code     = getText(activityEl, "Code");
   const start    = getText(activityEl, "Start");
@@ -253,8 +301,16 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId) {
   const rawAuthText = rawAuthEl && rawAuthEl.textContent ? rawAuthEl.textContent : "";
   const authID   = rawAuthText.trim();
 
+  const isMedicalClaim = String(claimType || '').trim() === '3';
   const rule     = authRules[code] || {};
-  const needsAuth= !/NOT\s+REQUIRED/i.test(rule.approval_details || "");
+  const isAuthPresenceClassifiedCode = AUTH_PRESENCE_CLASSIFIED_CODES.has(String(code || '').trim());
+  // For medical claims (Type 3) only the explicit medical auth list applies;
+  // dental authRules from checker_auths.json are not relevant.
+  const needsAuth = isAuthPresenceClassifiedCode
+    ? Boolean(authID)
+    : (isMedicalClaim
+      ? MEDICAL_CODES_REQUIRING_AUTH.has(String(code || '').trim())
+      : codeRequiresAuthorization(code, rule));
 
   if (!needsAuth && !authID) {
     return {
@@ -269,6 +325,7 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId) {
       authID,
       start,
       xlsRow: {},
+      xlsAllAuthRows: [],
       denialCode: "",
       denialReason: "",
       remarks: [],
@@ -289,6 +346,7 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId) {
       authID,
       start,
       xlsRow: {},
+      xlsAllAuthRows: [],
       denialCode: "",
       denialReason: "",
       remarks: [],
@@ -298,10 +356,16 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId) {
 
   // Try to find rows for this authID; mapXLSXData maps by trimmed AuthorizationID as primary key.
   const rows = xlsxMap[authID] || [];
-  const matchedRow = rows.find(r =>
-    String(r["Item Code"] || "").trim() === code &&
-    String(r["Card Number / DHA Member ID"] || "").trim() === memberId
-  ) || {};
+  // All rows sharing this authorization (for "View" modal display)
+  const xlsAllAuthRows = rows;
+  const matchedRowByCodeAndMember = rows.find(r =>
+    normalizeProcedureCode(r["Item Code"]) === normalizeProcedureCode(code) &&
+    normalizeMemberId(r["Card Number / DHA Member ID"]) === normalizeMemberId(memberId)
+  );
+  const matchedRowByCode = rows.find(r =>
+    normalizeProcedureCode(r["Item Code"]) === normalizeProcedureCode(code)
+  );
+  const matchedRow = matchedRowByCodeAndMember || matchedRowByCode || {};
 
   const denialCode   = matchedRow["Denial Code (If any)"]   || "";
   const denialReason = matchedRow["Denial Reason (If any)"] || "";
@@ -339,9 +403,11 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId) {
     const matchResult = validateXLSXMatch(matchedRow, context);
     remarks.push(...matchResult.remarks);
     if (matchResult.clinicianMismatch) {
-      unknown = true;
       clinicianMismatchMsg = `Clinician mismatch: XML=[${matchResult.xmlClinician}], XLSX=[${matchResult.xlsClinician}]`;
       remarks.unshift(clinicianMismatchMsg);
+      if (!isMedicalClaim) {
+        unknown = true;
+      }
     }
     const dateStatusResult = validateDateAndStatus(matchedRow, start);
     remarks.push(...dateStatusResult.remarks);
@@ -361,6 +427,7 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId) {
       authID,
       start,
       xlsRow: matchedRow,
+      xlsAllAuthRows,
       denialCode,
       denialReason,
       remarks,
@@ -380,6 +447,7 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId) {
     authID,
     start,
     xlsRow: matchedRow,
+    xlsAllAuthRows,
     denialCode,
     denialReason,
     remarks,
@@ -435,7 +503,22 @@ function validateClaims(xmlDoc, xlsxData, receiverID = '') {
     const cid = getText(claimEl, "ID");
     const mid = getText(claimEl, "MemberID");
     const acts = Array.from(claimEl.getElementsByTagName("Activity"));
-    acts.forEach(a => results.push(validateActivity(a, xlsxMap, cid, mid)));
+    const encounter = claimEl.getElementsByTagName("Encounter")[0];
+    const claimType = getText(encounter || claimEl, "Type");
+    const isMedicalClaim = String(claimType || '').trim() === '3';
+
+    const orderingClinicians = acts
+      .map(a => getText(a, "OrderingClinician").trim().toUpperCase())
+      .filter(Boolean);
+    const uniqueOrderingClinicians = new Set(orderingClinicians);
+
+    acts.forEach(a => results.push(validateActivity(a, xlsxMap, cid, mid, claimType)));
+
+    if (isMedicalClaim && uniqueOrderingClinicians.size > 1) {
+      results
+        .filter(r => r.claimId === cid)
+        .forEach(r => r.remarks.push('Medical claim has multiple OrderingClinician values; ordering clinician must be unique.'));
+    }
   });
   return results;
 }
@@ -568,6 +651,7 @@ function fillMissingClaimIds() {
 // MODIFIED: set class to unknown if r.unknown
 function renderRow(r, lastClaimId, idx, codeGroup) {
   const tr = document.createElement("tr");
+  const remarkFreePartiallyApproved = isRemarkFreePartiallyApproved(r);
   // Use Bootstrap classes for row coloring
   if (r.unknown) {
     tr.classList.add('table-warning'); // Yellow for unknown
@@ -579,6 +663,7 @@ function renderRow(r, lastClaimId, idx, codeGroup) {
   
   // Add data attribute for claim ID
   tr.setAttribute('data-claim-id', r.claimId || '');
+  tr.setAttribute('data-hide-invalid-only', remarkFreePartiallyApproved ? 'true' : 'false');
 
   const xls = r.xlsRow || {};
 
@@ -791,6 +876,27 @@ function setupDetailsModal(results, claimCodeSums) {
           <tr><th>Denial Reason</th><td>${r.denialReason || ""}</td></tr>
           <tr><th>All Remarks</th><td>${(r.remarks || []).map(m => `<div>${m}</div>`).join("") || ""}</td></tr>
         </table>
+        ${r.xlsAllAuthRows && r.xlsAllAuthRows.length > 0 ? `
+          <h4 style="margin-top:1.5em;">All Codes Listed in Approval${r.authID ? " — " + r.authID : ""}</h4>
+          <table class="modal-license-table">
+            <tr>
+              <th>Item Code</th>
+              <th>Member ID</th>
+              <th>Status</th>
+              <th>Payer Share</th>
+              <th>Ordered On</th>
+            </tr>
+            ${r.xlsAllAuthRows.map(row => `
+              <tr>
+                <td>${row["Item Code"] || ""}</td>
+                <td>${row["Card Number / DHA Member ID"] || ""}</td>
+                <td>${row["Status"] || row["status"] || ""}</td>
+                <td>${row["Payer Share"] || ""}</td>
+                <td>${(row["Ordered On"] || "").split(' ')[0]}</td>
+              </tr>
+            `).join("")}
+          </table>
+        ` : ""}
         ${codeGroup && codeGroup.activities.length > 1 ? `
           <h4 style="margin-top:2em;">Grouped Calculation for Code <b>${codeGroup.activities[0].code}</b> (this claim)</h4>
           <table class="modal-license-table">

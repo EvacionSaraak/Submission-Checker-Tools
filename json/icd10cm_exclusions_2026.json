@@ -1,0 +1,55 @@
+{
+  "metadata": {
+    "system": "ICD-10-CM",
+    "release": "2026",
+    "rule_type": "Excludes1",
+    "effective_date": "2025-10-01",
+    "coverage": "partial_seed_rules"
+  },
+  "rules": [
+    {
+      "code": "J30.2",
+      "display": "J30.2",
+      "note": "Allergic rhinitis and chronic rhinitis should be coded separately only when clearly unrelated.",
+      "excludes1": [
+        {
+          "code": "J31.0",
+          "display": "J31.0",
+          "note": "Allergic and chronic rhinitis are generally mutually exclusive in a single encounter context."
+        }
+      ]
+    },
+    {
+      "category": "E10",
+      "display": "E10",
+      "note": "Type 1 and Type 2 diabetes categories are mutually exclusive for a single diagnosis context.",
+      "excludes1": [
+        {
+          "category": "E11",
+          "display": "E11"
+        }
+      ]
+    },
+    {
+      "prefix": "K35-",
+      "display": "K35-",
+      "excludes1": [
+        {
+          "range": "K36-K38",
+          "display": "K36-K38",
+          "note": "Appendicitis grouping conflict (seed prefix-range demonstration)."
+        }
+      ]
+    },
+    {
+      "range": "A00-A09",
+      "display": "A00-A09",
+      "excludes1": [
+        {
+          "code": "B00.0",
+          "display": "B00.0"
+        }
+      ]
+    }
+  ]
+}
