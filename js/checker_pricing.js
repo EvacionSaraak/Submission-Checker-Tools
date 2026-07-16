@@ -97,6 +97,21 @@ function buildMissingModifierRemark({ modifier, code, multiplier }) {
   );
 }
 
+function asMedicalFinding({ ruleId, status, remark, claimID, activityID, code }) {
+  return {
+    ruleId: ruleId || 'PRICING',
+    status: status || 'Invalid',
+    remark: remark || '',
+    claimID: claimID || '',
+    activityID: activityID || '',
+    code: code || ''
+  };
+}
+
+function findingKey(claimID, activityID) {
+  return `${String(claimID || '')}|${String(activityID || '')}`;
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   try {
     const runBtn = el('run-button');
@@ -199,6 +214,63 @@ async function handleRun() {
       if (e.code) endoPricingMap.set(normalizeCode(e.code), e);
     });
 
+    const medicalShared = window.MedicalValidationShared || null;
+    let medicalRules = null;
+    const businessFindingsByRowKey = new Map();
+    const claimLevelBusinessFindings = new Map();
+
+    if (isMedicalMode) {
+      if (!medicalShared) {
+        throw new Error('Medical validation shared module is unavailable.');
+      }
+      medicalRules = await medicalShared.loadMedicalValidationRules();
+      if (!medicalRules || typeof medicalRules !== 'object') {
+        throw new Error('Unable to load Medical validation rules.');
+      }
+      const modifierRules = medicalRules.modifierRules || {};
+      if (!Array.isArray(modifierRules.minorProcedureCodes) || modifierRules.minorProcedureCodes.length === 0) {
+        modifierRules.minorProcedureCodes = Array.from(minorProcedureCodes || []);
+      }
+      medicalRules.modifierRules = modifierRules;
+
+      const historicalIndex = null;
+      const contexts = medicalShared.parseMedicalClaimContexts(xmlDoc, {
+        requiredEncounterType: '3',
+        clinicianSpecialtyMap
+      });
+
+      contexts.forEach(ctx => {
+        const sharedFindings = medicalShared.mergeFindingsBySeverity(
+          medicalShared.validateClaimPayerAndPlan(ctx, medicalRules),
+          medicalShared.validateSingleOrderingClinician(ctx),
+          medicalShared.validateDuplicateCodeOrdering(ctx, medicalRules),
+          medicalShared.validate97SeriesQuantityBands(ctx, medicalRules),
+          medicalShared.validateSpecialtyRules(ctx, medicalRules),
+          medicalShared.validateFixedQuantityRules(ctx, medicalRules),
+          medicalShared.validateCodeCombinationRules(ctx, medicalRules),
+          medicalShared.validateActivityCoverageRules(ctx, medicalRules),
+          medicalShared.validateDiagnosisRules(ctx, medicalRules),
+          medicalShared.validateAuthorizationRules(ctx, medicalRules, { approvalIndex: null }),
+          medicalShared.validateModifierRules(ctx, medicalRules),
+          medicalShared.validateDrugRules(ctx, medicalRules, { drugsMap }),
+          medicalShared.validateHistoricalFrequencyRules(ctx, medicalRules, { historicalIndex }),
+          medicalShared.validateMaternityRules(ctx, medicalRules),
+          medicalShared.validateTherapyRules(ctx, medicalRules)
+        );
+
+        sharedFindings.forEach(finding => {
+          const key = findingKey(finding.claimID || ctx.claimID, finding.activityID || '');
+          if (!finding.activityID) {
+            if (!claimLevelBusinessFindings.has(ctx.claimID)) claimLevelBusinessFindings.set(ctx.claimID, []);
+            claimLevelBusinessFindings.get(ctx.claimID).push(finding);
+            return;
+          }
+          if (!businessFindingsByRowKey.has(key)) businessFindingsByRowKey.set(key, []);
+          businessFindingsByRowKey.get(key).push(finding);
+        });
+      });
+    }
+
     showProgress(50, 'Comparing records');
 
     const output = extracted.map(rec => {
@@ -243,8 +315,6 @@ async function handleRun() {
             _modifierMultiplier: 1
           };
         } else {
-          const isHAAD = pricingReceiverID === 'HAAD';
-          const netZeroValid = isHAAD && xmlNet === 0;
           return {
             ClaimID: rec.ClaimID || '',
             ActivityID: rec.ActivityID || '',
@@ -257,9 +327,9 @@ async function handleRun() {
             FactoredReference: '',
             PricingRow: null,
             XmlRow: rec,
-            isValid: netZeroValid,
-            status: netZeroValid ? 'Valid' : 'Unknown',
-            Remarks: netZeroValid ? 'Claimed Net is 0 (treated as Valid).' : '',
+            isValid: false,
+            status: 'Unknown',
+            Remarks: '',
             ComputedRef: null,
             xmlNetNum: xmlNet,
             PatientShare: rec.PatientShare || '0',
@@ -452,30 +522,26 @@ async function handleRun() {
 
       const computedRef = (match || endoEntry) && refPrice !== null && !Number.isNaN(ref) ? effectiveRef : null;
 
-      if (xmlNet === 0) {
-        status = 'Valid';
-        remarks.push('Claimed Net is 0 (treated as Valid)');
-      } else {
-        if (xmlQty <= 0) remarks.push(xmlQty === 0 ? 'Quantity is 0 (invalid)' : 'Quantity is less than 0 (invalid)');
-        if (!match && !endoEntry) {
-          if (isDrugActivity) {
-            status = 'Unknown';
-            if (drugsMap) {
-              const drugListSource = usingBundledDrugs ? 'resources/Drugs.xlsx' : 'the uploaded Drugs sheet';
-              remarks.push(`Drug code ${rec.CPT} was not found in ${drugListSource}.`);
-            } else {
-              remarks.push('Drug list could not be loaded; pricing status is Unknown for this drug code.');
-            }
+      if (xmlQty <= 0) remarks.push(xmlQty === 0 ? 'Quantity is 0 (invalid)' : 'Quantity is less than 0 (invalid)');
+      if (!match && !endoEntry) {
+        if (isDrugActivity) {
+          status = 'Unknown';
+          if (drugsMap) {
+            const drugListSource = usingBundledDrugs ? 'resources/Drugs.xlsx' : 'the uploaded Drugs sheet';
+            remarks.push(`Drug code ${rec.CPT} was not found in ${drugListSource}.`);
           } else {
-            remarks.push(`No pricing match was found under ${pricingContext}.`);
+            remarks.push('Drug list could not be loaded; pricing status is Unknown for this drug code.');
           }
+        } else {
+          remarks.push(`No pricing match was found under ${pricingContext}.`);
         }
-        if (endoEntry && refPrice === null) remarks.push(`Code ${rec.CPT} has no available price under ${pricingContext}.`);
-        if ((match || endoEntry) && refPrice !== null && Number.isNaN(ref)) remarks.push(`The reference price is not a valid number under ${pricingContext}.`);
+      }
+      if (endoEntry && refPrice === null) remarks.push(`Code ${rec.CPT} has no available price under ${pricingContext}.`);
+      if ((match || endoEntry) && refPrice !== null && Number.isNaN(ref)) remarks.push(`The reference price is not a valid number under ${pricingContext}.`);
 
-        const hasValidRef = (match || endoEntry) && refPrice !== null && !Number.isNaN(ref);
+      const hasValidRef = (match || endoEntry) && refPrice !== null && !Number.isNaN(ref);
 
-        if (drugPricingMeta !== null && hasValidRef && xmlQty > 0) {
+      if (drugPricingMeta !== null && hasValidRef && xmlQty > 0) {
           // Drug-specific comparison: expected net = selected price × quantity
           const drugExpectedNet = roundMoney(drugPricingMeta.pricePerBasis * xmlQty);
           if (drugExpectedNet !== null && moneyEqual(xmlNet, drugExpectedNet)) {
@@ -490,10 +556,10 @@ async function handleRun() {
           } else {
             remarks.push(`Drug pricing value is unavailable for ${rec.CPT}.`);
           }
-        } else if (hasValidRef && effectiveRef === 0) {
-          status = 'Unknown';
-          remarks.push(`The reference price is 0 under ${pricingContext} (status Unknown).`);
-        } else if (hasValidRef && xmlQty > 0) {
+      } else if (hasValidRef && effectiveRef === 0) {
+        status = 'Unknown';
+        remarks.push(`The reference price is 0 under ${pricingContext} (status Unknown).`);
+      } else if (hasValidRef && xmlQty > 0) {
           // Price-changing modifiers (52 = ×0.5, 50 = ×1.5); 24 and 25 do not change the price
           const isPriceModifier = rec.Modifier === '52' || rec.Modifier === '50';
           if (moneyEqual(xmlNet, effectiveRef)) {
@@ -531,7 +597,6 @@ async function handleRun() {
               }));
             } else {
               remarks.push(`Claimed Net ${formatMoney(xmlNet)} (for ${rec.CPT}) does not match the reference price of ${formatMoney(effectiveRef)} under ${pricingContext}.`);
-            }
           }
         }
       }
@@ -590,6 +655,31 @@ async function handleRun() {
       };
     });
 
+    output.forEach(row => {
+      const pricingRemark = String(row.Remarks || '').trim();
+      const pricingStatus = String(row.status || '').trim() || 'Invalid';
+      row.findings = [];
+
+      if (pricingStatus !== 'Valid' || pricingRemark) {
+        row.findings.push(asMedicalFinding({
+          ruleId: 'PRICING',
+          status: pricingStatus,
+          remark: pricingRemark || (pricingStatus === 'Unknown' ? 'Pricing result is Unknown.' : 'Pricing result is Invalid.'),
+          claimID: row.ClaimID,
+          activityID: row.ActivityID,
+          code: row.CPT
+        }));
+      }
+
+      if (isMedicalMode && medicalShared && medicalRules) {
+        const rowKey = findingKey(row.ClaimID, row.ActivityID);
+        const activityFindings = businessFindingsByRowKey.get(rowKey) || [];
+        const claimFindings = claimLevelBusinessFindings.get(row.ClaimID) || [];
+        row.findings = medicalShared.mergeFindingsBySeverity(row.findings, activityFindings, claimFindings);
+        medicalShared.applyFinalStatus(row);
+      }
+    });
+
     if (pricingReceiverID === 'A001') {
       const claimGroups = new Map();
       output.forEach(r => {
@@ -602,9 +692,24 @@ async function handleRun() {
         if (actualPS === 0) {
           const msg = 'Patient Share is 0 — this is invalid for Daman (non-Thiqa) claims.';
           actRows.forEach(r => {
-            r.status = 'Unknown';
-            r.isValid = false;
-            r.Remarks = r.Remarks ? `${r.Remarks} ${msg}` : msg;
+            if (isMedicalMode && medicalShared && medicalRules) {
+              r.findings = medicalShared.mergeFindingsBySeverity(
+                r.findings,
+                [asMedicalFinding({
+                  ruleId: 'MED_PATIENT_SHARE_ZERO',
+                  status: 'Unknown',
+                  remark: msg,
+                  claimID: r.ClaimID,
+                  activityID: r.ActivityID,
+                  code: r.CPT
+                })]
+              );
+              medicalShared.applyFinalStatus(r);
+            } else {
+              r.status = 'Unknown';
+              r.isValid = false;
+              r.Remarks = r.Remarks ? `${r.Remarks} ${msg}` : msg;
+            }
           });
         } else {
           const totalRef = actRows.reduce((sum, r) => sum + (r.ComputedRef !== null ? r.ComputedRef * Number(r.ClaimedQty || 1) : r.xmlNetNum), 0);
@@ -613,7 +718,20 @@ async function handleRun() {
 
           if (actualPS === expectedPS) {
             actRows.forEach(r => {
-              if (!r.isValid) {
+              if (isMedicalMode && medicalShared && medicalRules) {
+                r.findings = medicalShared.mergeFindingsBySeverity(
+                  r.findings,
+                  [asMedicalFinding({
+                    ruleId: 'MED_PATIENT_SHARE_MATCH',
+                    status: 'Valid',
+                    remark: `Patient Share ${actualPS} matches expected amount.`,
+                    claimID: r.ClaimID,
+                    activityID: r.ActivityID,
+                    code: r.CPT
+                  })]
+                );
+                medicalShared.applyFinalStatus(r);
+              } else if (!r.isValid) {
                 r.status = 'Valid';
                 r.isValid = true;
                 r.Remarks = '';
@@ -622,9 +740,24 @@ async function handleRun() {
           } else {
             const msg = `Patient Share ${actualPS} is incorrect.\nExpected: ${expectedPS} (Total Ref: ${totalRef} − Total Net: ${totalXmlNet}).`;
             actRows.forEach(r => {
-              r.status = 'Unknown';
-              r.isValid = false;
-              r.Remarks = r.Remarks ? `${r.Remarks} ${msg}` : msg;
+              if (isMedicalMode && medicalShared && medicalRules) {
+                r.findings = medicalShared.mergeFindingsBySeverity(
+                  r.findings,
+                  [asMedicalFinding({
+                    ruleId: 'MED_PATIENT_SHARE_MISMATCH',
+                    status: 'Unknown',
+                    remark: msg,
+                    claimID: r.ClaimID,
+                    activityID: r.ActivityID,
+                    code: r.CPT
+                  })]
+                );
+                medicalShared.applyFinalStatus(r);
+              } else {
+                r.status = 'Unknown';
+                r.isValid = false;
+                r.Remarks = r.Remarks ? `${r.Remarks} ${msg}` : msg;
+              }
             });
           }
         }

@@ -29,8 +29,15 @@
     "DIETICIAN_CODES": ["97802", "97803"]
   },
   "authorizationRequiredCodes": {
-    "fixed": ["76816", "97802", "97803", "96360", "96365", "96374"],
+    "fixed": ["76816", "97802", "97803"],
     "prefixes": ["97"]
+  },
+  "fixedQuantityRules": {
+    "96360": 1,
+    "96365": 1,
+    "96374": 1,
+    "87400": 2,
+    "87804": 2
   },
   "specialtyRestrictions": {
     "pathologyLabCodePrefixes": ["8"],
@@ -40,7 +47,8 @@
     ["31231", "31575"],
     ["30901", "31231"],
     ["76770", "76775"],
-    ["86140", "85651"]
+    ["86140", "85651"],
+    ["82150", "83690"]
   ],
   "zeroPriceCodes": {
     "always": ["99173"],
@@ -52,10 +60,19 @@
     }
   },
   "coverageExclusions": {
-    "insuredOnlyBlockedCodes": ["87635"],
-    "receiverCodeExclusions": {
-      "D004": ["86703", "82785", "L70.0"],
-      "A001": ["82785", "L70.0"]
+    "insuredOnlyBlockedCodes": ["87635"]
+  },
+  "activityCoverageExclusions": {
+    "D004": ["86703", "82785"],
+    "A001": ["82785"],
+    "D001": []
+  },
+  "diagnosisCoverageExclusions": {
+    "D004": {
+      "principal": ["L70.0"]
+    },
+    "A001": {
+      "principal": ["L70.0"]
     }
   },
   "diagnosisRules": {
@@ -86,7 +103,8 @@
   "modifierRules": {
     "mandatoryWhenPriced": ["25", "50"],
     "optionalIfAbsent": ["24", "52"],
-    "quantityMustBeOne": ["24", "25", "50", "52"]
+    "quantityMustBeOne": ["24", "25", "50", "52"],
+    "minorProcedureCodes": []
   },
   "timing": {
     "series97": {

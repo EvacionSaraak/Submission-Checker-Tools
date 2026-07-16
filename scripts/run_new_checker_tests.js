@@ -331,6 +331,180 @@ await run('97-series timing rejects 68 minutes quantity 4 as out-of-range', () =
   assert(findings.some(f => f.ruleId === 'MED_97_DURATION_RANGE'), 'Expected out-of-range finding for 68 minutes');
 });
 
+await run('Medical rules loader fails with explicit error', async () => {
+  const sharedPath = path.join(__dirname, '..', 'js', 'medical_validation_shared.js');
+  delete require.cache[require.resolve(sharedPath)];
+  const isolatedShared = require(sharedPath);
+  const originalFetch = global.fetch;
+  global.fetch = async () => ({ ok: false, status: 500 });
+  let failed = false;
+  try {
+    await isolatedShared.loadMedicalValidationRules('/missing-rules.json');
+  } catch (error) {
+    failed = /Unable to load Medical validation rules\./.test(error.message);
+  } finally {
+    global.fetch = originalFetch;
+  }
+  assert(failed, 'Expected explicit medical rules load error');
+});
+
+function makeMedicalContext(overrides = {}) {
+  return {
+    claimID: 'MC1',
+    receiverID: 'D004',
+    claimPayerID: 'A001',
+    packageName: 'Basic',
+    memberID: '12345',
+    serviceDate: '2026-01-15',
+    parsedEncounterStart: medicalShared.parseEncounterDateTime('15/01/2026 10:00'),
+    parsedEncounterEnd: medicalShared.parseEncounterDateTime('15/01/2026 10:30'),
+    diagnoses: [],
+    activities: [],
+    ...overrides
+  };
+}
+
+await run('Fixed quantity rules enforce infusion qty=1', () => {
+  const ctx = makeMedicalContext({
+    activities: [{ id: 'A1', code: '96360', normalizedCode: '96360', quantity: 2, modifiers: [], net: 10 }]
+  });
+  const findings = medicalShared.validateFixedQuantityRules(ctx, { fixedQuantityRules: { '96360': 1 } });
+  assert(findings.some(f => f.ruleId === 'MED_FIXED_QTY'), 'Expected fixed quantity finding for 96360');
+});
+
+await run('Activity and diagnosis exclusions stay separated', () => {
+  const ctx = makeMedicalContext({
+    receiverID: 'D004',
+    diagnoses: [{ code: 'L70.0', normalizedCode: 'L70', type: 'Principal' }],
+    activities: [{ id: 'A1', code: '82785', normalizedCode: '82785', quantity: 1, modifiers: [], net: 10 }]
+  });
+  const rules = {
+    activityCoverageExclusions: { D004: ['82785'] },
+    diagnosisCoverageExclusions: { D004: { principal: ['L70.0'] } }
+  };
+  const activityFindings = medicalShared.validateActivityCoverageRules(ctx, rules);
+  const diagnosisFindings = medicalShared.validateDiagnosisRules(ctx, rules);
+  assert(activityFindings.some(f => f.ruleId === 'MED_ACTIVITY_EXCLUSION'), 'Expected activity exclusion finding');
+  assert(diagnosisFindings.some(f => f.ruleId === 'MED_DX_COVERAGE_PRINCIPAL'), 'Expected diagnosis exclusion finding');
+});
+
+await run('Severity merge keeps invalid over valid patient share', () => {
+  const findings = medicalShared.mergeFindingsBySeverity(
+    [{ ruleId: 'PRICE', status: 'Invalid', remark: 'Coverage violation', claimID: 'C1', activityID: 'A1' }],
+    [{ ruleId: 'PS', status: 'Valid', remark: 'Patient Share matches', claimID: 'C1', activityID: 'A1' }]
+  );
+  const finalStatus = medicalShared.getFinalStatusFromFindings(findings);
+  assert(finalStatus === 'Invalid', 'Expected invalid to dominate after merging');
+});
+
+await run('Patient Share valid does not erase unrelated invalid finding', () => {
+  const row = {
+    findings: [
+      { ruleId: 'MED_ACTIVITY_EXCLUSION', status: 'Invalid', remark: 'Code 82785 is not covered.' },
+      { ruleId: 'MED_PATIENT_SHARE_MATCH', status: 'Valid', remark: 'Patient Share matches expected amount.' }
+    ]
+  };
+  medicalShared.applyFinalStatus(row);
+  assert(row.status === 'Invalid', 'Expected row to remain Invalid');
+  assert(/82785/.test(row.Remarks), 'Expected invalid remark to remain');
+});
+
+await run('Zero-net with specialty violation remains invalid after merge', () => {
+  const findings = medicalShared.mergeFindingsBySeverity(
+    [{ ruleId: 'PRICING', status: 'Valid', remark: 'Zero price accepted', claimID: 'C1', activityID: 'A1' }],
+    [{ ruleId: 'MED_SPEC_PATHOLOGY_REQUIRED', status: 'Invalid', remark: 'Lab code requires Pathology', claimID: 'C1', activityID: 'A1' }]
+  );
+  assert(medicalShared.getFinalStatusFromFindings(findings) === 'Invalid', 'Expected specialty invalid to dominate zero-net pricing valid');
+});
+
+await run('Code combinations reject 31231 with 31575', () => {
+  const ctx = makeMedicalContext({
+    activities: [
+      { id: 'A1', code: '31231', normalizedCode: '31231', quantity: 1, modifiers: [], net: 10 },
+      { id: 'A2', code: '31575', normalizedCode: '31575', quantity: 1, modifiers: [], net: 10 }
+    ]
+  });
+  const findings = medicalShared.validateCodeCombinationRules(ctx, { mutuallyExclusiveCodes: [['31231', '31575']] });
+  assert(findings.some(f => f.ruleId === 'MED_COMBO_ACTIVITY'), 'Expected incompatible combination finding');
+});
+
+await run('Specialty rules enforce dietician both directions', () => {
+  const ctx = makeMedicalContext({
+    activities: [
+      { id: 'A1', code: '97802', normalizedCode: '97802', quantity: 1, net: 100, clinicianSpecialty: 'General Practitioner', orderingSpecialty: 'General Practitioner', modifiers: [] },
+      { id: 'A2', code: '99213', normalizedCode: '99213', quantity: 1, net: 100, clinicianSpecialty: 'Dietician', orderingSpecialty: 'General Practitioner', modifiers: [] }
+    ]
+  });
+  const findings = medicalShared.validateSpecialtyRules(ctx, { specialtyRestrictions: { pathologyLabCodePrefixes: ['8'], dieticianCodes: ['97802', '97803'] } });
+  assert(findings.some(f => f.ruleId === 'MED_SPEC_DIETICIAN_REQUIRED'), 'Expected dietician required finding');
+  assert(findings.some(f => f.ruleId === 'MED_SPEC_DIETICIAN_RESTRICTED'), 'Expected dietician restricted finding');
+});
+
+await run('Modifier rules enforce qty and missing modifier 25', () => {
+  const ctx = makeMedicalContext({
+    diagnoses: [{ code: 'J00', normalizedCode: 'J00', type: 'Principal' }],
+    activities: [
+      { id: 'A1', code: '99213', normalizedCode: '99213', quantity: 1, net: 150, modifiers: [], orderingSpecialty: 'General Practitioner' },
+      { id: 'A2', code: '12001', normalizedCode: '12001', quantity: 1, net: 100, modifiers: ['50'], orderingSpecialty: 'General Practitioner' }
+    ]
+  });
+  const findings = medicalShared.validateModifierRules(ctx, { modifierRules: { minorProcedureCodes: ['12001'] } });
+  assert(findings.some(f => f.ruleId === 'MED_MODIFIER_25_MISSING'), 'Expected missing modifier 25 finding');
+});
+
+await run('Authorization returns unknown when approval source missing', () => {
+  const ctx = makeMedicalContext({
+    receiverID: 'C002',
+    activities: [{ id: 'A1', code: '97161', normalizedCode: '97161', quantity: 1, net: 100, priorAuthorizationID: 'PA-1', orderingClinician: 'OC1', modifiers: [] }]
+  });
+  const findings = medicalShared.validateAuthorizationRules(ctx, {
+    authorizationRequiredCodes: { fixed: [], prefixes: ['97'] },
+    therapyCodeGroups: { PHYSIOTHERAPY_CODES: ['97161'], OCCUPATIONAL_THERAPY_CODES: [], SPEECH_THERAPY_CODES: [] }
+  }, { approvalIndex: new Map() });
+  assert(findings.some(f => f.status === 'Unknown'), 'Expected unknown finding when approval evidence is unavailable');
+});
+
+await run('Diagnosis rules mark unknown for incomplete Z68/O exceptions', () => {
+  const ctx = makeMedicalContext({
+    diagnoses: [
+      { code: 'O99.21', normalizedCode: 'O9921', type: 'Secondary' },
+      { code: 'Z68.30', normalizedCode: 'Z6830', type: 'Secondary' }
+    ]
+  });
+  const findings = medicalShared.validateDiagnosisRules(ctx, { diagnosisRules: { z68OCodeExceptions: [] }, diagnosisCoverageExclusions: {} });
+  assert(findings.some(f => f.ruleId === 'MED_DX_Z68_EXCEPTION_CONFIG' && f.status === 'Unknown'), 'Expected unknown finding for incomplete exceptions');
+});
+
+await run('Drug rules flag Thiqa-only and audit unknown thresholds', () => {
+  const ctx = makeMedicalContext({
+    receiverID: 'A001',
+    activities: [
+      { id: 'A1', type: '5', code: 'L88-5151-05757-02', normalizedCode: 'L88-5151-05757-02', quantity: 2, net: 700 },
+      { id: 'A2', type: '5', code: 'O1234', normalizedCode: 'O1234', quantity: 1, net: 50 }
+    ]
+  });
+  const findings = medicalShared.validateDrugRules(ctx, {
+    drugRules: {
+      formularyReceivers: { thiqa: ['D001'], damanBasic: ['D004'] },
+      quantityAuditorReceivers: ['D001', 'A001', 'D004'],
+      amountAuditorThresholdAED: 500
+    }
+  }, { drugsMap: null });
+  assert(findings.some(f => f.ruleId === 'MED_DRUG_THIQA_ONLY'), 'Expected Thiqa-only drug finding');
+  assert(findings.some(f => f.ruleId === 'MED_DRUG_AUDIT_AMOUNT' && f.status === 'Unknown'), 'Expected amount audit unknown finding');
+  assert(findings.some(f => f.ruleId === 'MED_DRUG_AUDIT_QUANTITY' && f.status === 'Unknown'), 'Expected quantity audit unknown finding');
+});
+
+await run('Historical rules return unknown when chronology input missing', () => {
+  const ctx = makeMedicalContext({
+    activities: [{ id: 'A1', code: '83036', normalizedCode: '83036', quantity: 1, net: 100 }]
+  });
+  const findings = medicalShared.validateHistoricalFrequencyRules(ctx, {
+    historicalFrequencyRules: { '83036Days': 90, lab800Months: 6, otherLabDays: 3, exceptionGroups: { CBC: [], CRP: [], BHCG: [] } }
+  }, { historicalIndex: null });
+  assert(findings.some(f => f.ruleId === 'MED_HISTORICAL_INPUT_MISSING' && f.status === 'Unknown'), 'Expected unknown historical finding without chronology input');
+});
+
 if (process.exitCode) {
   process.exit(process.exitCode);
 }
