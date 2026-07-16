@@ -71,6 +71,26 @@
   // Expose so the Observation checker can reuse the already-read text.
   window.getUnifiedXmlText = () => getXmlText(files.xml);
 
+  /**
+   * Normalise a value returned by any checker into { root, table }.
+   *  - If the checker returned a <table> directly, root === table.
+   *  - If the checker returned a wrapper <div> that contains a <table>,
+   *    root is the wrapper and table is the first contained <table>.
+   *  - Returns null when neither condition holds (checker produced no result).
+   */
+  function resolveCheckerResult(resultElement) {
+    if (resultElement instanceof HTMLTableElement) {
+      return { root: resultElement, table: resultElement };
+    }
+    if (resultElement instanceof HTMLElement) {
+      const table = resultElement.querySelector('table');
+      if (table instanceof HTMLTableElement) {
+        return { root: resultElement, table };
+      }
+    }
+    return null;
+  }
+
   let activeChecker = null;
   
   // Filter state for floating button
@@ -844,7 +864,9 @@
         observations: () => parseXML(files.xml),
         elig: runEligCheck,
         auths: runAuthsCheck,
-        clinician: runClinicianCheck,
+        // Pass the shared XML file directly so the clinician checker can read it
+        // without depending on an asynchronous dispatched-event side-effect.
+        clinician: () => runClinicianCheck(files.xml),
         pricing: runPricingCheck,
         modifiers: runModifiersCheck
       };
@@ -856,22 +878,27 @@
       }
       
       console.log(`[DEBUG] Executing ${checkerName} checker function`);
-      const tableElement = await checkerFn();  // GET the returned table
-      
-      // ✅ NEW: Render the returned table
-      if (tableElement instanceof HTMLTableElement && resultsDiv) {
-        console.log(`[DEBUG] Rendering table returned from ${checkerName}`);
-        resultsDiv.appendChild(tableElement);
-      } else if (tableElement && !(tableElement instanceof HTMLTableElement) && resultsDiv) {
-        // Non-table result (e.g. alert/warning div) — render it but do not count as success
+      const resultElement = await checkerFn();  // GET the returned element
+
+      // Resolve the element into { root, table } if possible.
+      // This handles checkers that return a wrapper <div> (e.g. clinician) as well
+      // as checkers that return a <table> directly.
+      const checkerResult = resolveCheckerResult(resultElement);
+
+      if (checkerResult && resultsDiv) {
+        // Render the full root element (preserves summary, modals, etc.)
+        console.log(`[DEBUG] Rendering result from ${checkerName}`);
+        resultsDiv.appendChild(checkerResult.root);
+      } else if (resultElement && !checkerResult && resultsDiv) {
+        // Result exists but contains no table — render as-is (informational/warning element)
         console.log(`[DEBUG] Rendering non-table result from ${checkerName}`);
-        resultsDiv.appendChild(tableElement);
-      } else if (!tableElement) {
-        console.log(`[DEBUG] ${checkerName} returned no table (may have rendered status message instead)`);
+        resultsDiv.appendChild(resultElement);
+      } else if (!resultElement) {
+        console.log(`[DEBUG] ${checkerName} returned no result (may have rendered status message instead)`);
       }
       
-      // Return the table element so Check All can use it
-      return tableElement;
+      // Return the raw result element so Check All can resolve it independently.
+      return resultElement;
       
     } catch (error) {
       console.error(`[DEBUG] Error executing ${checkerName}:`, error);
@@ -942,14 +969,16 @@
           });
         }
       } else if (checkerName === 'clinician') {
-        // Clinician checker uses .view-activities and .view-license-history buttons
+        // Clinician checker uses .view-activities and .view-license-history buttons.
+        // clonedTable is the full cloned root element (a <div> that contains the
+        // <table>, summary, and modal elements).  All lookups must be scoped to
+        // this root so they find the modals that were cloned along with it.
         console.log('[CHECK-ALL] Re-attaching clinician modal event listeners');
         
-        // Get the parent container that has the modals
-        const parentContainer = clonedTable.closest('#clinician-results') || clonedTable.parentElement;
+        const rootElement = clonedTable; // full cloned wrapper div
         
         // Re-attach .view-activities button listeners
-        const activityButtons = clonedTable.querySelectorAll('.view-activities');
+        const activityButtons = rootElement.querySelectorAll('.view-activities');
         console.log(`[CHECK-ALL] Found ${activityButtons.length} activity buttons`);
         
         activityButtons.forEach(btn => {
@@ -966,9 +995,9 @@
               return;
             }
             
-            // Find modals with this unique ID in the parent container
-            const activityModal = parentContainer.querySelector(`#activityModal_${uniqueIdFromButton}`);
-            const activityModalText = parentContainer.querySelector(`#activityModalText_${uniqueIdFromButton}`);
+            // Modals are inside the cloned root element
+            const activityModal = rootElement.querySelector(`#activityModal_${uniqueIdFromButton}`);
+            const activityModalText = rootElement.querySelector(`#activityModalText_${uniqueIdFromButton}`);
             
             if (activityModalText && modalData[modalId]) {
               activityModalText.innerHTML = modalData[modalId];
@@ -980,7 +1009,7 @@
         });
         
         // Re-attach .view-license-history button listeners
-        const licenseButtons = clonedTable.querySelectorAll('.view-license-history');
+        const licenseButtons = rootElement.querySelectorAll('.view-license-history');
         console.log(`[CHECK-ALL] Found ${licenseButtons.length} license history buttons`);
         
         licenseButtons.forEach(btn => {
@@ -990,9 +1019,9 @@
             
             console.log(`[CHECK-ALL] License history button clicked: uniqueId=${uniqueIdFromButton}`);
             
-            // Find modals with this unique ID in the parent container
-            const licenseHistoryModal = parentContainer.querySelector(`#licenseHistoryModal_${uniqueIdFromButton}`);
-            const licenseHistoryText = parentContainer.querySelector(`#licenseHistoryText_${uniqueIdFromButton}`);
+            // Modals are inside the cloned root element
+            const licenseHistoryModal = rootElement.querySelector(`#licenseHistoryModal_${uniqueIdFromButton}`);
+            const licenseHistoryText = rootElement.querySelector(`#licenseHistoryText_${uniqueIdFromButton}`);
             
             if (licenseHistoryText && window._formatClinicianLicenseHistory) {
               licenseHistoryText.innerHTML = window._formatClinicianLicenseHistory(fullHistory);
@@ -1011,8 +1040,8 @@
         
         uniqueIds.forEach(uniqueId => {
           // Activity modal close handlers
-          const activityModalClose = parentContainer.querySelector(`#activityModalClose_${uniqueId}`);
-          const activityModal = parentContainer.querySelector(`#activityModal_${uniqueId}`);
+          const activityModalClose = rootElement.querySelector(`#activityModalClose_${uniqueId}`);
+          const activityModal = rootElement.querySelector(`#activityModal_${uniqueId}`);
           
           if (activityModalClose && activityModal) {
             activityModalClose.onclick = function() {
@@ -1027,8 +1056,8 @@
           }
           
           // License history modal close handlers
-          const licenseHistoryClose = parentContainer.querySelector(`#licenseHistoryClose_${uniqueId}`);
-          const licenseHistoryModal = parentContainer.querySelector(`#licenseHistoryModal_${uniqueId}`);
+          const licenseHistoryClose = rootElement.querySelector(`#licenseHistoryClose_${uniqueId}`);
+          const licenseHistoryModal = rootElement.querySelector(`#licenseHistoryModal_${uniqueId}`);
           
           if (licenseHistoryClose && licenseHistoryModal) {
             licenseHistoryClose.onclick = function() {
@@ -1260,7 +1289,7 @@
           // IMPORTANT: Ensure checker container stays hidden during Check All
           checkerContainer.style.display = 'none';
           
-          // Execute the checker and get returned table element (Bug #10 fix: removed duplicate initialization check)
+          // Execute the checker and get returned element (Bug #10 fix: removed duplicate initialization check)
           logDebug(`Executing Checker: ${checkerName}`);
           table = await executeChecker(checkerName, checkerContainer);
           
@@ -1272,14 +1301,20 @@
         
         // Get section results container (needed for both success and failure cases)
         const sectionResults = document.getElementById(`${checkerName}-results`);
+
+        // Accept either a <table> directly or a wrapper element that contains a <table>
+        // (e.g. the clinician checker returns a <div> with summary, table, and modals).
+        const checkerResult = resolveCheckerResult(table);
         
-        if (table instanceof HTMLTableElement) {
+        if (checkerResult) {
           successCount++;
-          const rowCount = table.querySelectorAll('tbody tr').length;
+          const tableEl = checkerResult.table;
+          const rootEl  = checkerResult.root;
+          const rowCount = tableEl.querySelectorAll('tbody tr').length;
           console.log(`[CHECK-ALL] ✓ ${checkerName} checker completed successfully`);
           
-          // Collect invalid rows from this table
-          const invalidRows = table.querySelectorAll('tbody tr.table-danger, tbody tr.table-warning, tbody tr.invalid, tbody tr.unknown');
+          // Collect invalid rows from the resolved table
+          const invalidRows = tableEl.querySelectorAll('tbody tr.table-danger, tbody tr.table-warning, tbody tr.invalid, tbody tr.unknown');
           if (invalidRows.length > 0) {
             console.log(`[CHECK-ALL] Found ${invalidRows.length} invalid rows in ${checkerName}`);
             invalidRows.forEach(row => {
@@ -1294,13 +1329,14 @@
             });
           }
           
-          // Copy table to check-all results section
-          if (sectionResults && table) {
-            const clonedTable = table.cloneNode(true);
-            sectionResults.appendChild(clonedTable);
+          // Copy the full root element (preserves wrapper, summary, and modals for checkers
+          // like clinician that return a <div> instead of a bare <table>).
+          if (sectionResults && rootEl) {
+            const clonedRoot = rootEl.cloneNode(true);
+            sectionResults.appendChild(clonedRoot);
             
             // Re-attach event listeners that were lost during cloning
-            reattachEventListeners(clonedTable, checkerName);
+            reattachEventListeners(clonedRoot, checkerName);
           }
           
           logDebug(`Checker Success: ${checkerName}`, {
@@ -1317,10 +1353,10 @@
             rowCount: rowCount
           });
           
-          // Store table for combined export
+          // Store the resolved table (not the wrapper) for combined export
           allResults.push({
             checkerName: checkerName,
-            table: table.cloneNode(true)
+            table: tableEl.cloneNode(true)
           });
         } else {
           errorCount++;

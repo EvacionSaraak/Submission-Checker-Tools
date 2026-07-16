@@ -245,7 +245,18 @@
       if (statusInput) statusInput.addEventListener('change', handleStatusInput);
 
       if (processBtn) {
-        processBtn.addEventListener('click', validateClinicians);
+        processBtn.addEventListener('click', async () => {
+          try {
+            // Pass the locally selected file so runClinicianCheck reads it directly.
+            const file = xmlInput?.files?.[0];
+            await runClinicianCheck(file);
+          } catch (err) {
+            console.error('[CLINICIAN] Validation error:', err);
+            if (resultsDiv) {
+              resultsDiv.innerHTML = `<span style="color:red">${err.message}</span>`;
+            }
+          }
+        });
         processBtn.disabled = true;
       }
       if (csvBtn) {
@@ -549,21 +560,14 @@
   // Main validation logic (now checks any affiliated facility)
   async function validateClinicians() {
     if (!xmlDoc) {
-      logCriticalError('No XML loaded', '');
-      return null;
+      throw new Error('No XML document was loaded.');
     }
     if (!facilitiesLoaded || affiliatedLicenses.size === 0) {
-      logCriticalError('Facility list not loaded. Please check facilities.json and reload.', '');
-      return null;
+      throw new Error('Facility list not loaded. Please check facilities.json and reload.');
     }
     
-    // Lazy load clinician data if not already loaded
-    try {
-      await loadClinicianData();
-    } catch (err) {
-      logCriticalError('Failed to load clinician data', err);
-      return null;
-    }
+    // Lazy load clinician data if not already loaded; propagate any load error.
+    await loadClinicianData();
     
     const claims = xmlDoc.getElementsByTagName('Claim');
     const results = [];
@@ -996,21 +1000,44 @@
   }
 
   // Unified checker entry point
-  window.runClinicianCheck = async function() {
-    xmlInput = document.getElementById('xmlFileInput');
-    clinicianInput = document.getElementById('clinicianFileInput');
-    statusInput = document.getElementById('statusFileInput');
-    processBtn = document.getElementById('processBtn');
-    csvBtn = document.getElementById('csvBtn');
-    resultsDiv = document.getElementById('results');
-    uploadDiv = document.getElementById('uploadStatus');
-    
-    if (typeof validateClinicians === 'function') {
-      return validateClinicians();
-    } else {
-      console.error('validateClinicians function not found');
-      return null;
+  window.runClinicianCheck = async function(suppliedFile = null) {
+    // Scope DOM lookups to the clinician checker container so we never accidentally
+    // read from or write to another checker's hidden inputs or results div.
+    const clinicianContainer = document.getElementById('checker-container-clinician');
+    const scope = clinicianContainer || document;
+
+    xmlInput   = scope.querySelector('#xmlFileInput');
+    clinicianInput = scope.querySelector('#clinicianFileInput');
+    statusInput = scope.querySelector('#statusFileInput');
+    processBtn  = scope.querySelector('#processBtn');
+    csvBtn      = scope.querySelector('#exportCsvBtn') || scope.querySelector('#csvBtn');
+    resultsDiv  = scope.querySelector('#results');
+    uploadDiv   = scope.querySelector('#uploadStatus');
+
+    if (suppliedFile) {
+      // Read and parse the XML file directly instead of relying on an
+      // asynchronous dispatched-event side-effect that may not have completed.
+      const xmlText = await suppliedFile.text();
+      // Preprocess: replace unescaped & so the parser doesn't choke
+      const xmlContent = xmlText.replace(
+        /&(?!(amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;))/g,
+        'and'
+      );
+      const parsedXml = new DOMParser().parseFromString(xmlContent, 'application/xml');
+
+      if (parsedXml.querySelector('parsererror')) {
+        throw new Error('Invalid XML file');
+      }
+
+      xmlDoc = parsedXml;
+      claimCount = xmlDoc.getElementsByTagName('Claim').length;
     }
+
+    if (!xmlDoc) {
+      throw new Error('No XML document was loaded.');
+    }
+
+    return validateClinicians();
   };
 
   } catch (error) {
