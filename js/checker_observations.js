@@ -985,28 +985,95 @@ document.getElementById('exportBtn')?.addEventListener('click', () => {
   XLSX.writeFile(wb, "invalid_tooths.xlsx");
 });
 
-// Main XML parsing function - returns Promise<Element>
-function parseXML() {
-  const xmlInput    = document.getElementById('xmlFile');
-  const messageBox  = document.getElementById('messageBox');
-  
-  // Defensive null checks
-  if (messageBox) messageBox.textContent = '';
-  
-  console.log('[TEETH] parseXML() called');
-  console.log('[TEETH] xmlInput element:', !!xmlInput);
-  console.log('[TEETH] messageBox element:', !!messageBox);
+// Read XML file text with one automatic retry for transient file-read failures.
+// Only the file-read step is retried; XML parsing errors are not retried.
+async function readXmlWithRetry(file, attempts = 2) {
+  let lastError;
 
-  let file = xmlInput?.files?.[0];
-  
-  // Fallback to unified checker files cache
-  if (!file && window.unifiedCheckerFiles && window.unifiedCheckerFiles.xml) {
-    file = window.unifiedCheckerFiles.xml;
-    console.log('[TEETH] Using XML file from unified cache:', file.name);
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      const text = await file.text();
+
+      if (!text) {
+        throw new Error('The XML file was read but returned empty text.');
+      }
+
+      return text;
+    } catch (error) {
+      lastError = error;
+
+      console.warn(`[XML] Read attempt ${attempt} failed`, {
+        name: error?.name,
+        message: error?.message,
+        fileName: file?.name,
+        fileSize: file?.size,
+        fileType: file?.type
+      });
+
+      if (attempt < attempts) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    }
   }
-  
+
+  throw new Error(
+    `Unable to read XML file "${file?.name || 'unknown'}": ` +
+    `${lastError?.name || 'ReadError'}` +
+    `${lastError?.message ? ` — ${lastError.message}` : ''}`
+  );
+}
+
+// Helper wrappers to keep Promise.all readable
+function loadToothJson() {
+  return fetch(repoJsonUrl).then(r => {
+    console.log('[TEETH] Fetched tooth JSON:', r.ok);
+    return r.ok ? r.json() : Promise.reject(new Error(`Failed to load ${repoJsonUrl} (HTTP ${r.status})`));
+  });
+}
+
+function loadAuthJson() {
+  return fetch('../json/checker_auths.json').then(r => {
+    console.log('[TEETH] Fetched auth JSON:', r.ok);
+    return r.ok ? r.json() : Promise.reject(new Error(`Failed to load checker_auths.json (HTTP ${r.status})`));
+  });
+}
+
+function loadClinicianLicenses() {
+  return fetch('../json/clinician_licenses.json').then(r => {
+    console.log('[TEETH] Fetched clinician licenses JSON:', r.ok);
+    return r.ok ? r.json() : Promise.reject(new Error(`Failed to load clinician_licenses.json (HTTP ${r.status})`));
+  });
+}
+
+function loadMandatoryTariff() {
+  return fetch('../resources/Mandatory Tariff  Updated.xlsx').then(r => {
+    console.log('[TEETH] Fetched mandatory tariff workbook:', r.ok);
+    return r.ok ? r.arrayBuffer() : Promise.reject(new Error(`Failed to load Mandatory Tariff workbook (HTTP ${r.status})`));
+  });
+}
+
+// Main XML parsing function - returns Promise<HTMLTableElement>
+// suppliedFile: explicit File object passed by the unified controller (preferred).
+// Falls back to window.unifiedCheckerFiles.xml, then to a scoped local input.
+// Does NOT use a global getElementById('xmlFile') to avoid duplicate-ID collisions.
+async function parseXML(suppliedFile = null) {
+  const messageBox = document.getElementById('messageBox');
+  if (messageBox) messageBox.textContent = '';
+
+  console.log('[TEETH] parseXML() called');
+
+  // Resolve file: explicit → unified shared → scoped local input
+  const localInput = document.querySelector(
+    '#checker-container-observations #xmlFile'
+  );
+  const file =
+    suppliedFile ||
+    window.unifiedCheckerFiles?.xml ||
+    localInput?.files?.[0] ||
+    null;
+
   console.log('[TEETH] File to process:', file ? file.name : 'NO FILE');
-  
+
   if (!file) {
     const msg = 'Please upload an XML file.';
     console.error('[TEETH]', msg);
@@ -1014,77 +1081,52 @@ function parseXML() {
     const errorDiv = document.createElement('div');
     errorDiv.className = 'alert alert-warning';
     errorDiv.textContent = msg;
-    return Promise.resolve(errorDiv);
+    return errorDiv;
   }
-  
+
   console.log('[TEETH] Starting file processing...');
 
-  return Promise.all([
-    new Promise((res, rej) => {
-      const rdr = new FileReader();
-      rdr.onload  = () => {
-        console.log('[TEETH] XML file read successfully');
-        res(rdr.result);
-      };
-      rdr.onerror = () => {
-        console.error('[TEETH] Error reading XML file');
-        rej('Error reading XML');
-      };
-      rdr.readAsText(file);
-    }),
-    fetch(repoJsonUrl)
-      .then(r => {
-        console.log('[TEETH] Fetched tooth JSON:', r.ok);
-        return r.ok ? r.json() : Promise.reject(`Failed to load ${repoJsonUrl} (HTTP ${r.status})`);
-      }),
-    fetch('../json/checker_auths.json')
-      .then(r => {
-        console.log('[TEETH] Fetched auth JSON:', r.ok);
-        return r.ok ? r.json() : Promise.reject(`Failed to load checker_auths.json (HTTP ${r.status})`);
-      }),
-    fetch('../json/clinician_licenses.json')
-      .then(r => {
-        console.log('[TEETH] Fetched clinician licenses JSON:', r.ok);
-        return r.ok ? r.json() : Promise.reject(`Failed to load clinician_licenses.json (HTTP ${r.status})`);
-      }),
-    fetch('../resources/Mandatory Tariff  Updated.xlsx')
-      .then(r => {
-        console.log('[TEETH] Fetched mandatory tariff workbook:', r.ok);
-        return r.ok ? r.arrayBuffer() : Promise.reject(`Failed to load Mandatory Tariff workbook (HTTP ${r.status})`);
-      })
-  ])
-  .then(([xmlText, toothJson, authJson, clinicianLicenses, mandatoryTariffBuffer]) => {
-    console.log('[TEETH] All resources loaded, processing...');
-    const toothMap = buildCodeMeta(toothJson);
-    const authMap  = buildAuthMap(authJson);
-    const endodontistSet = buildEndodontistSet(clinicianLicenses);
-    const mandatoryTariffWorkbook = XLSX.read(mandatoryTariffBuffer, { type: 'array' });
-    const tariffCodeTypeMap = buildTariffCodeTypeMap(mandatoryTariffWorkbook);
-    // Preprocess XML to replace unescaped & with "and" for parseability
-    const xmlContent = xmlText.replace(/&(?!(amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;))/g, "and");
-    const xmlDoc   = new DOMParser().parseFromString(xmlContent, 'application/xml');
-    if (xmlDoc.querySelector('parsererror')) throw new Error('Invalid XML file');
-    const header = xmlDoc.querySelector('Header');
-    const receiverID = header?.querySelector('ReceiverID')?.textContent.trim() || '';
-    // Read the claim type radio button (global or local)
-    const medicalRadio = document.getElementById('claimTypeMedical');
-    const isMedical = !!(medicalRadio && medicalRadio.checked);
-    console.log('[TEETH] XML parsed, validating activities... isMedical:', isMedical);
-    const rows     = validateActivities(xmlDoc, toothMap, authMap, endodontistSet, receiverID, isMedical, tariffCodeTypeMap);
-    console.log('[TEETH] Validation complete, building table... (rows:', rows.length, ')');
-    const tableElement = buildResultsTable(rows);
-    console.log('[TEETH] Table build complete');
-    return tableElement;
-  })
-  .catch(err => {
-    console.error('[TEETH] Error during processing:', err);
-    const errorMsg = err.toString();
-    if (messageBox) messageBox.textContent = errorMsg;
-    const errorDiv = document.createElement('div');
-    errorDiv.className = 'alert alert-danger';
-    errorDiv.textContent = `Error: ${errorMsg}`;
-    return errorDiv;
-  });
+  // Use cached XML text when the unified controller provides it, otherwise read directly.
+  const xmlTextPromise =
+    (typeof window.getUnifiedXmlText === 'function' && (suppliedFile || window.unifiedCheckerFiles?.xml))
+      ? window.getUnifiedXmlText()
+      : readXmlWithRetry(file);
+
+  const [xmlText, toothJson, authJson, clinicianLicenses, mandatoryTariffBuffer] =
+    await Promise.all([
+      xmlTextPromise,
+      loadToothJson(),
+      loadAuthJson(),
+      loadClinicianLicenses(),
+      loadMandatoryTariff()
+    ]);
+
+  console.log('[TEETH] All resources loaded, processing...');
+  const toothMap = buildCodeMeta(toothJson);
+  const authMap  = buildAuthMap(authJson);
+  const endodontistSet = buildEndodontistSet(clinicianLicenses);
+  const mandatoryTariffWorkbook = XLSX.read(mandatoryTariffBuffer, { type: 'array' });
+  const tariffCodeTypeMap = buildTariffCodeTypeMap(mandatoryTariffWorkbook);
+
+  // Preprocess XML to replace unescaped & with "and" for parseability
+  const xmlContent = xmlText.replace(/&(?!(amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;))/g, 'and');
+  const xmlDoc = new DOMParser().parseFromString(xmlContent, 'application/xml');
+  if (xmlDoc.querySelector('parsererror')) throw new Error('Invalid XML file');
+
+  const header = xmlDoc.querySelector('Header');
+  const receiverID = header?.querySelector('ReceiverID')?.textContent.trim() || '';
+
+  // Read the claim type radio button (global)
+  const medicalRadio = document.getElementById('claimTypeMedical');
+  const isMedical = !!(medicalRadio && medicalRadio.checked);
+  console.log('[TEETH] XML parsed, validating activities... isMedical:', isMedical);
+
+  const rows = validateActivities(xmlDoc, toothMap, authMap, endodontistSet, receiverID, isMedical, tariffCodeTypeMap);
+  console.log('[TEETH] Validation complete, building table... (rows:', rows.length, ')');
+
+  const tableElement = buildResultsTable(rows);
+  console.log('[TEETH] Table build complete');
+  return tableElement;
 }
 
 // ----------- SUPERFLUOUS FUNCTIONS (no longer used, kept for reference) -----------

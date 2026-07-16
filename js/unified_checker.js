@@ -41,6 +41,36 @@
   // Expose files globally for checkers to access
   window.unifiedCheckerFiles = files;
 
+  // XML text cache: reads each uploaded File object at most once.
+  // Keyed by File identity (object reference) so that two files with the
+  // same name but different content are never confused.
+  const parsedFileCache = {
+    xmlFile: null,
+    xmlTextPromise: null
+  };
+
+  function getXmlText(file) {
+    if (!file) {
+      return Promise.reject(new Error('No XML file uploaded.'));
+    }
+
+    // If the cached entry belongs to a different File object, invalidate it.
+    if (parsedFileCache.xmlFile !== file) {
+      parsedFileCache.xmlFile = file;
+      parsedFileCache.xmlTextPromise = file.text();
+    }
+
+    return parsedFileCache.xmlTextPromise;
+  }
+
+  function clearXmlTextCache() {
+    parsedFileCache.xmlFile = null;
+    parsedFileCache.xmlTextPromise = null;
+  }
+
+  // Expose so the Observation checker can reuse the already-read text.
+  window.getUnifiedXmlText = () => getXmlText(files.xml);
+
   let activeChecker = null;
   
   // Filter state for floating button
@@ -314,12 +344,21 @@
       
       // Console log
       console.log(`[FILE] Uploaded: ${fileKey} = "${file.name}" (${(file.size / 1024).toFixed(1)} KB, type: ${file.type})`);
+
+      // Invalidate XML text cache whenever a new XML file is selected.
+      if (fileKey === 'xml') {
+        clearXmlTextCache();
+      }
     } else {
       files[fileKey] = null;
       statusElement.textContent = '';
       statusElement.style.backgroundColor = '';
       
       console.log(`[FILE] Cleared: ${fileKey}`);
+
+      if (fileKey === 'xml') {
+        clearXmlTextCache();
+      }
     }
     updateButtonStates();
   }
@@ -364,6 +403,9 @@
 
     // Clear file cache
     if (window.FileCache && typeof window.FileCache.clear === 'function') window.FileCache.clear();
+
+    // Clear XML text cache
+    clearXmlTextCache();
 
     // Reset debug log and export state
     debugLog = [];
@@ -799,7 +841,7 @@
         schema: validateXmlSchema,
         exclusion: runExclusionCheck,
         timings: validateTimingsAsync,
-        observations: parseXML,
+        observations: () => parseXML(files.xml),
         elig: runEligCheck,
         auths: runAuthsCheck,
         clinician: runClinicianCheck,
@@ -817,8 +859,12 @@
       const tableElement = await checkerFn();  // GET the returned table
       
       // ✅ NEW: Render the returned table
-      if (tableElement && resultsDiv) {
+      if (tableElement instanceof HTMLTableElement && resultsDiv) {
         console.log(`[DEBUG] Rendering table returned from ${checkerName}`);
+        resultsDiv.appendChild(tableElement);
+      } else if (tableElement && !(tableElement instanceof HTMLTableElement) && resultsDiv) {
+        // Non-table result (e.g. alert/warning div) — render it but do not count as success
+        console.log(`[DEBUG] Rendering non-table result from ${checkerName}`);
         resultsDiv.appendChild(tableElement);
       } else if (!tableElement) {
         console.log(`[DEBUG] ${checkerName} returned no table (may have rendered status message instead)`);
@@ -1227,7 +1273,7 @@
         // Get section results container (needed for both success and failure cases)
         const sectionResults = document.getElementById(`${checkerName}-results`);
         
-        if (table) {
+        if (table instanceof HTMLTableElement) {
           successCount++;
           const rowCount = table.querySelectorAll('tbody tr').length;
           console.log(`[CHECK-ALL] ✓ ${checkerName} checker completed successfully`);
