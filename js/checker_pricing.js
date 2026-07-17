@@ -1773,7 +1773,9 @@ window._pricingTestApi = {
   normalizeDrugCode,
   buildMedicalPricingMatcher,
   buildJsonPricingMatcher,
-  buildPricingMatcher
+  buildPricingMatcher,
+  buildFactorRulesFromWorkbook,
+  findFactorFromRules
 };
 
 window.showPricingComparison = showComparisonModal;

@@ -770,6 +770,152 @@ await run('Correct price with inactive status stays invalid', () => {
   assert(row.status === 'Invalid', 'Expected invalid status when drug status is inactive/deleted');
 });
 
+// ---------------------------------------------------------------------------
+// Factor rule tests: 97802/97803 Medical Nutrition Therapy override
+// ---------------------------------------------------------------------------
+
+// Build factor rules directly in the same shape that buildFactorRulesFromWorkbook
+// produces, without requiring XLSX in the test context.
+function makeFactorRules(rows) {
+  // Mirror buildFactorRulesFromWorkbook logic without XLSX dependency
+  const payerColumns = [
+    { colKey: 'Thiqa (D001)', payerId: 'D001' },
+    { colKey: 'Low-End (A001)', payerId: 'A001' },
+    { colKey: 'Basic (D004)', payerId: 'D004' },
+    { colKey: 'NGI (A025)', payerId: 'A025' },
+    { colKey: 'Saico (A024)', payerId: 'A024' },
+    { colKey: 'Nextcare (C002)', payerId: 'C002' },
+    { colKey: 'Mednet (C004)', payerId: 'C004' },
+  ];
+  const rules = [];
+  rows.forEach(row => {
+    const facilityId = String(row['Facility ID'] || '').trim();
+    const matchType = String(row['Code Match Type'] || '').trim();
+    const matchValueRaw = String(row['Code Match Value'] || '').trim();
+    if (!facilityId || !matchType || !matchValueRaw) return;
+    const facility = String(row['Facility'] || '').trim();
+    const serviceType = String(row['Service Type'] || '').trim();
+    let matchValues = [];
+    if (matchType === 'Exact List') {
+      matchValues = matchValueRaw.split(',').map(v => v.trim()).filter(Boolean);
+    } else if (matchType === 'Starts With') {
+      matchValues = matchValueRaw.split(/[\s,]+/).map(v => v.replace(/^or$/i, '').trim()).filter(v => /^\d+$/.test(v));
+    }
+    if (!matchValues.length) return;
+    const factors = {};
+    payerColumns.forEach(({ colKey, payerId }) => {
+      const val = row[colKey];
+      if (val !== '' && val !== undefined) {
+        const num = Number(val);
+        if (!isNaN(num)) factors[payerId] = num;
+      }
+    });
+    rules.push({ facility, facilityId, serviceType, matchType, matchValues, factors });
+  });
+  return rules;
+}
+
+const mntRows = [
+  {
+    Facility: 'TestClinic', 'Facility ID': 'MF9999',
+    'Service Type': 'Medical Nutrition Therapy',
+    'Code Match Type': 'Exact List',
+    'Code Match Value': '97802, 97803',
+    'Thiqa (D001)': 1.3, 'Low-End (A001)': 1, 'Basic (D004)': 1,
+    'NGI (A025)': 1, 'Saico (A024)': 1, 'Nextcare (C002)': 1, 'Mednet (C004)': 1
+  },
+  {
+    Facility: 'TestClinic', 'Facility ID': 'MF9999',
+    'Service Type': 'Physiotherapy',
+    'Code Match Type': 'Starts With',
+    'Code Match Value': '97',
+    'Thiqa (D001)': 1, 'Low-End (A001)': 1, 'Basic (D004)': 1,
+    'NGI (A025)': 1, 'Saico (A024)': 1, 'Nextcare (C002)': 1, 'Mednet (C004)': 1
+  },
+  {
+    Facility: 'TestClinic', 'Facility ID': 'MF9999',
+    'Service Type': 'Consultation',
+    'Code Match Type': 'Exact List',
+    'Code Match Value': '99202, 99213',
+    'Thiqa (D001)': 1.3, 'Low-End (A001)': 1, 'Basic (D004)': 1,
+    'NGI (A025)': 1, 'Saico (A024)': 1, 'Nextcare (C002)': 1, 'Mednet (C004)': 1
+  },
+];
+const factorRules = makeFactorRules(mntRows);
+
+await run('97802 + D001 uses Medical Nutrition Therapy factor 1.3', () => {
+  const result = pricingApi.findFactorFromRules(factorRules, 'MF9999', '97802', 'D001');
+  assert(result.factor === 1.3, `Expected factor 1.3 for 97802/D001, got ${result.factor}`);
+  assert(result.rule !== null, 'Expected a matched rule for 97802/D001');
+  assert(result.rule.serviceType === 'Medical Nutrition Therapy', `Expected service type Medical Nutrition Therapy, got ${result.rule && result.rule.serviceType}`);
+  assert(result.rule.matchType === 'Exact List', `Expected Exact List match type, got ${result.rule && result.rule.matchType}`);
+});
+
+await run('97803 + D001 uses Medical Nutrition Therapy factor 1.3', () => {
+  const result = pricingApi.findFactorFromRules(factorRules, 'MF9999', '97803', 'D001');
+  assert(result.factor === 1.3, `Expected factor 1.3 for 97803/D001, got ${result.factor}`);
+  assert(result.rule !== null, 'Expected a matched rule for 97803/D001');
+  assert(result.rule.serviceType === 'Medical Nutrition Therapy', `Expected service type Medical Nutrition Therapy, got ${result.rule && result.rule.serviceType}`);
+  assert(result.rule.matchType === 'Exact List', `Expected Exact List match type, got ${result.rule && result.rule.matchType}`);
+});
+
+await run('97802 + D001: effectiveRef equals mandatoryTariffPrice * 1.3', () => {
+  const mandatoryTariffPrice = 100;
+  const result = pricingApi.findFactorFromRules(factorRules, 'MF9999', '97802', 'D001');
+  const effectiveRef = mandatoryTariffPrice * result.factor;
+  assert(effectiveRef === 130, `Expected effectiveRef 130, got ${effectiveRef}`);
+});
+
+await run('97803 + D001: effectiveRef equals mandatoryTariffPrice * 1.3', () => {
+  const mandatoryTariffPrice = 200;
+  const result = pricingApi.findFactorFromRules(factorRules, 'MF9999', '97803', 'D001');
+  const effectiveRef = mandatoryTariffPrice * result.factor;
+  assert(effectiveRef === 260, `Expected effectiveRef 260, got ${effectiveRef}`);
+});
+
+await run('97802 + D001 is NOT matched by Starts With 97 Physiotherapy rule', () => {
+  const result = pricingApi.findFactorFromRules(factorRules, 'MF9999', '97802', 'D001');
+  assert(result.rule && result.rule.serviceType !== 'Physiotherapy', `Expected rule not to be Physiotherapy, got ${result.rule && result.rule.serviceType}`);
+});
+
+await run('97803 + D001 is NOT matched by Starts With 97 Physiotherapy rule', () => {
+  const result = pricingApi.findFactorFromRules(factorRules, 'MF9999', '97803', 'D001');
+  assert(result.rule && result.rule.serviceType !== 'Physiotherapy', `Expected rule not to be Physiotherapy, got ${result.rule && result.rule.serviceType}`);
+});
+
+await run('97802 + non-D001 payer uses Starts With 97 Physiotherapy factor (1)', () => {
+  const result = pricingApi.findFactorFromRules(factorRules, 'MF9999', '97802', 'A001');
+  assert(result.factor === 1, `Expected factor 1 for 97802/A001, got ${result.factor}`);
+  assert(result.rule && result.rule.matchType === 'Exact List', `Expected Exact List match, got ${result.rule && result.rule.matchType}`);
+});
+
+await run('97803 + non-D001 payer uses Starts With 97 Physiotherapy factor (1)', () => {
+  const result = pricingApi.findFactorFromRules(factorRules, 'MF9999', '97803', 'D004');
+  assert(result.factor === 1, `Expected factor 1 for 97803/D004, got ${result.factor}`);
+  assert(result.rule && result.rule.matchType === 'Exact List', `Expected Exact List match, got ${result.rule && result.rule.matchType}`);
+});
+
+await run('Other 97xxx code (97161) still uses Physiotherapy Starts With 97 rule', () => {
+  const result = pricingApi.findFactorFromRules(factorRules, 'MF9999', '97161', 'D001');
+  assert(result.rule !== null, 'Expected a matched rule for 97161');
+  assert(result.rule.serviceType === 'Physiotherapy', `Expected Physiotherapy rule for 97161, got ${result.rule && result.rule.serviceType}`);
+  assert(result.rule.matchType === 'Starts With', `Expected Starts With match type for 97161, got ${result.rule && result.rule.matchType}`);
+  assert(result.factor === 1, `Expected factor 1 for 97161/D001 from Physiotherapy rule, got ${result.factor}`);
+});
+
+await run('Consultation Exact List unaffected by Medical Nutrition Therapy rule', () => {
+  const result = pricingApi.findFactorFromRules(factorRules, 'MF9999', '99213', 'D001');
+  assert(result.rule !== null, 'Expected a matched rule for 99213');
+  assert(result.rule.serviceType === 'Consultation', `Expected Consultation rule, got ${result.rule && result.rule.serviceType}`);
+  assert(result.factor === 1.3, `Expected factor 1.3 for 99213/D001, got ${result.factor}`);
+});
+
+await run('Unknown facility returns factor 1 with no rule', () => {
+  const result = pricingApi.findFactorFromRules(factorRules, 'MF0000', '97802', 'D001');
+  assert(result.factor === 1, `Expected factor 1 for unknown facility, got ${result.factor}`);
+  assert(result.rule === null, 'Expected null rule for unknown facility');
+});
+
 if (process.exitCode) {
   process.exit(process.exitCode);
 }
