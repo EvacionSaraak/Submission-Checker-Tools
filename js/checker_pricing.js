@@ -1,7 +1,13 @@
 (function () { try { // checker_pricing.js
 let lastResults = [];
 let lastWorkbook = null;
-const drugShared = window.DrugAnalysisShared || null;
+function getDrugShared(required = true) {
+  const shared = window.DrugAnalysisShared || null;
+  if (!shared && required) {
+    throw new Error('Drug analysis shared module is unavailable.');
+  }
+  return shared;
+}
 
 // Payer IDs that have a defined factor in Factors.xlsx and are valid for Medical mode
 const MEDICAL_CONFIGURED_PAYERS = new Set(['D001', 'A001', 'D004', 'A025', 'A024', 'C002', 'C004']);
@@ -38,8 +44,9 @@ function formatMoney(value) {
 }
 
 function normalizeDrugCode(value) {
-  if (drugShared && typeof drugShared.normalizeDrugCode === 'function') {
-    return drugShared.normalizeDrugCode(value);
+  const shared = getDrugShared(false);
+  if (shared && typeof shared.normalizeDrugCode === 'function') {
+    return shared.normalizeDrugCode(value);
   }
   return String(value || '').trim().toUpperCase();
 }
@@ -85,11 +92,6 @@ function asMedicalFinding({ ruleId, status, remark, claimID, activityID, code })
 
 function findingKey(claimID, activityID) {
   return `${String(claimID || '')}|${String(activityID || '')}`;
-}
-
-function getDrugShared() {
-  if (!drugShared) throw new Error('Drug analysis shared module is unavailable.');
-  return drugShared;
 }
 
 function dedupeFindingsByRuleAndSeverity(findings) {
@@ -285,7 +287,6 @@ document.addEventListener('DOMContentLoaded', () => {
 async function handleRun() {
   resetUI();
   try {
-    getDrugShared();
     let xmlFile = fileEl('xml-file');
     let xlsxFile = fileEl('xlsx-file');
     let drugsFile = fileEl('drugs-file');
