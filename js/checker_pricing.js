@@ -145,6 +145,7 @@ function analyzeDrugActivity(rec, options = {}) {
   const drugsMap = options.drugsMap && typeof options.drugsMap.get === 'function' ? options.drugsMap : null;
   const knownCptCodeSet = options.knownCptCodeSet || new Set();
   const quantityAuditorReceivers = options.quantityAuditorReceivers || shared.DEFAULT_QUANTITY_AUDITOR_RECEIVERS;
+  const isZeroPriced = moneyEqual(claimedNet, 0);
 
   let findings = [];
   let drug = null;
@@ -175,9 +176,9 @@ function analyzeDrugActivity(rec, options = {}) {
 
   const formularyInfo = drug
     ? shared.validateDrugFormulary(drug, receiverID, codeRaw)
-    : { formularyName: '', valueRaw: '', applies: false };
+    : { formularyName: '', valueRaw: '', applies: false, included: null };
 
-  if (formularyInfo && formularyInfo.remark) {
+  if (!isZeroPriced && formularyInfo && formularyInfo.remark) {
     findings.push({
       ruleId: formularyInfo.ruleId,
       status: formularyInfo.status,
@@ -200,22 +201,26 @@ function analyzeDrugActivity(rec, options = {}) {
   const expectedNet = shared.calculateExpectedDrugNet(selectedPricing.value, quantity);
   let priceResult = 'Unknown';
 
-  if (drug) {
-    if (selectedPricing.value === null || expectedNet === null) {
-      findings.push({
-        ruleId: 'DRUG_PRICE_SOURCE',
-        status: 'Unknown',
-        remark: `Unable to determine a pricing source for drug ${codeRaw}.`
-      });
-    } else if (shared.moneyEqual(claimedNet, expectedNet)) {
-      priceResult = 'Valid';
-    } else {
-      priceResult = 'Invalid';
-      findings.push({
-        ruleId: 'DRUG_PRICING',
-        status: 'Invalid',
-        remark: `Claimed Net ${formatMoney(claimedNet)} (for ${codeRaw}) does not match expected drug price ${formatMoney(selectedPricing.value)} × ${formatMoney(quantity)} = ${formatMoney(expectedNet)}.`
-      });
+  if (isZeroPriced) {
+    priceResult = 'Valid';
+  } else if (!formularyInfo.applies || formularyInfo.included === true) {
+    if (drug) {
+      if (selectedPricing.value === null || expectedNet === null) {
+        findings.push({
+          ruleId: 'DRUG_PRICE_SOURCE',
+          status: 'Unknown',
+          remark: `Unable to determine a pricing source for drug ${codeRaw}.`
+        });
+      } else if (shared.moneyEqual(claimedNet, expectedNet)) {
+        priceResult = 'Valid';
+      } else {
+        priceResult = 'Invalid';
+        findings.push({
+          ruleId: 'DRUG_PRICING',
+          status: 'Invalid',
+          remark: `Claimed Net ${formatMoney(claimedNet)} (for ${codeRaw}) does not match expected drug price ${formatMoney(selectedPricing.value)} × ${formatMoney(quantity)} = ${formatMoney(expectedNet)}.`
+        });
+      }
     }
   }
 

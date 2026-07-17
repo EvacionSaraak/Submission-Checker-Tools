@@ -728,6 +728,41 @@ await run('Quantity above 1 on D001 requires auditor confirmation', () => {
 await run('Correct price with formulary no stays invalid', () => {
   const row = analyzeDrug({}, { 'Included in Thiqa/ ABM - other than 1&7- Drug Formulary': 'No' });
   assert(row.status === 'Invalid', 'Expected invalid status when formulary blocks despite correct price');
+  assert(/cannot be submitted.*nonzero/.test(row.Remarks), 'Expected specific formulary exclusion remark');
+});
+
+await run('Zero-priced drug with D001 formulary No is valid', () => {
+  const row = analyzeDrug({ Net: '0' }, { 'Included in Thiqa/ ABM - other than 1&7- Drug Formulary': 'No' });
+  assert(row.status === 'Valid', 'Expected zero-priced drug with excluded formulary to be valid');
+  assert(!/cannot be submitted/.test(row.Remarks), 'Expected no formulary exclusion remark for zero-priced drug');
+});
+
+await run('Zero-priced drug with D004 formulary No is valid', () => {
+  const row = pricingApi.analyzeDrugActivity({
+    ClaimID: 'C1', ActivityID: 'A1', ActivityType: '5', CPT: 'JQ9-0699-00779-02', Quantity: '0.03', Net: '0'
+  }, {
+    receiverID: 'D004',
+    drugsMap: new Map([[pricingApi.normalizeDrugCode('JQ9-0699-00779-02'), makeDrugRow({ 'Included In Basic Drug Formulary': 'No' })]]),
+    knownCptCodeSet: new Set(),
+    drugListSource: 'resources/Drugs.xlsx'
+  });
+  assert(row.status === 'Valid', 'Expected zero-priced D004 drug with excluded formulary to be valid');
+});
+
+await run('Blank D001 formulary with nonzero price is unknown', () => {
+  const row = analyzeDrug({}, { 'Included in Thiqa/ ABM - other than 1&7- Drug Formulary': '' });
+  assert(row.status === 'Unknown', 'Expected unknown status when formulary value is blank');
+  assert(/blank or unrecognized/.test(row.Remarks), 'Expected blank-formulary remark');
+});
+
+await run('Zero-priced drug with blank formulary is valid', () => {
+  const row = analyzeDrug({ Net: '0' }, { 'Included in Thiqa/ ABM - other than 1&7- Drug Formulary': '' });
+  assert(row.status === 'Valid', 'Expected zero-priced drug with blank formulary to be valid');
+});
+
+await run('Formulary exclusion remark does not report price mismatch', () => {
+  const row = analyzeDrug({}, { 'Included in Thiqa/ ABM - other than 1&7- Drug Formulary': 'No' });
+  assert(!/does not match expected drug price/.test(row.Remarks), 'Expected no price mismatch remark when formulary excluded');
 });
 
 await run('Correct price with inactive status stays invalid', () => {

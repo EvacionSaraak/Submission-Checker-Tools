@@ -161,7 +161,8 @@
         remark: '',
         formularyName: '',
         valueRaw: '',
-        applies: false
+        applies: false,
+        included: null
       };
     }
 
@@ -175,7 +176,8 @@
         remark: '',
         formularyName: config.name,
         valueRaw,
-        applies: true
+        applies: true,
+        included: true
       };
     }
 
@@ -183,20 +185,22 @@
       return {
         ruleId: 'DRUG_FORMULARY',
         status: 'Invalid',
-        remark: `Drug ${code} is not included in the ${config.name} formulary.`,
+        remark: `Drug ${code} cannot be submitted with a nonzero price under the ${config.name} formulary.`,
         formularyName: config.name,
         valueRaw,
-        applies: true
+        applies: true,
+        included: false
       };
     }
 
     return {
       ruleId: 'DRUG_FORMULARY',
       status: 'Unknown',
-      remark: `Unable to determine ${config.name} formulary inclusion for drug ${code}.`,
+      remark: `Unable to determine whether drug ${code} is included in the ${config.name} formulary because the Drugs.xlsx formulary value is blank or unrecognized.`,
       formularyName: config.name,
       valueRaw,
-      applies: true
+      applies: true,
+      included: null
     };
   }
 
