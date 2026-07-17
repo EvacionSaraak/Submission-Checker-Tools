@@ -445,6 +445,7 @@ async function handleRun() {
       const facility = rec.FacilityID || '';
       const xmlNet = Number(rec.Net || 0);
       const xmlQty = Number(rec.Quantity || 0);
+      const isZeroPricedMedicalActivity = isMedicalMode && moneyEqual(xmlNet, 0);
       const claimPayerID = String(rec.PayerID || '').trim().toUpperCase();
       const isDrugActivity = isDrugActivityType(rec.ActivityType);
 
@@ -685,7 +686,7 @@ async function handleRun() {
       const computedRef = (match || endoEntry) && refPrice !== null && !Number.isNaN(ref) ? effectiveRef : null;
 
       if (xmlQty <= 0) remarks.push(xmlQty === 0 ? 'Quantity is 0 (invalid)' : 'Quantity is less than 0 (invalid)');
-      if (!match && !endoEntry) {
+      if (!match && !endoEntry && !isZeroPricedMedicalActivity) {
         if (isDrugActivity) {
           status = 'Unknown';
           if (drugsMap) {
@@ -703,7 +704,9 @@ async function handleRun() {
 
       const hasValidRef = (match || endoEntry) && refPrice !== null && !Number.isNaN(ref);
 
-      if (hasValidRef && effectiveRef === 0) {
+      if (isZeroPricedMedicalActivity) {
+        status = 'Valid';
+      } else if (hasValidRef && effectiveRef === 0) {
         status = 'Unknown';
         remarks.push(`The reference price is 0 under ${pricingContext} (status Unknown).`);
       } else if (hasValidRef && xmlQty > 0) {
