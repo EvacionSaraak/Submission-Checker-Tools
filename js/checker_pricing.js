@@ -1,6 +1,7 @@
 (function () { try { // checker_pricing.js
 let lastResults = [];
 let lastWorkbook = null;
+const drugShared = window.DrugAnalysisShared || null;
 
 // Payer IDs that have a defined factor in Factors.xlsx and are valid for Medical mode
 const MEDICAL_CONFIGURED_PAYERS = new Set(['D001', 'A001', 'D004', 'A025', 'A024', 'C002', 'C004']);
@@ -36,41 +37,15 @@ function formatMoney(value) {
   return Number.isFinite(n) ? String(n) : String(value);
 }
 
-// Resolve a numeric drug column, falling back to a secondary column when the primary is blank/zero.
-function getNumericDrugColumn(drug, primaryColumn, fallbackColumn) {
-  const primaryRaw = drug?.[primaryColumn];
-  const primary = Number(primaryRaw);
-  if (
-    primaryRaw !== '' && primaryRaw !== undefined && primaryRaw !== null &&
-    Number.isFinite(primary) && primary > 0
-  ) {
-    return { value: primary, source: primaryColumn };
+function normalizeDrugCode(value) {
+  if (drugShared && typeof drugShared.normalizeDrugCode === 'function') {
+    return drugShared.normalizeDrugCode(value);
   }
-  const fallbackRaw = drug?.[fallbackColumn];
-  const fallback = Number(fallbackRaw);
-  if (
-    fallbackRaw !== '' && fallbackRaw !== undefined && fallbackRaw !== null &&
-    Number.isFinite(fallback) && fallback > 0
-  ) {
-    return { value: fallback, source: fallbackColumn };
-  }
-  return { value: null, source: '' };
+  return String(value || '').trim().toUpperCase();
 }
 
-// Select the correct drug price based on quantity:
-//   qty < 1  → Package Markup (fallback: Package Price to Public)
-//   qty >= 1 → Unit Markup    (fallback: Unit Price to Public)
-function selectDrugPricing(drug, quantity) {
-  const qty = Number(quantity);
-  if (!Number.isFinite(qty) || qty <= 0) {
-    return { value: null, source: '', basis: '' };
-  }
-  if (qty < 1) {
-    const selected = getNumericDrugColumn(drug, 'Package Markup', 'Package Price to Public');
-    return { ...selected, basis: 'Package' };
-  }
-  const selected = getNumericDrugColumn(drug, 'Unit Markup', 'Unit Price to Public');
-  return { ...selected, basis: 'Unit' };
+function isDrugActivityType(activityType) {
+  return String(activityType || '').trim() === '5';
 }
 
 // Return the Bootstrap row-class for a pricing result row.
@@ -112,6 +87,188 @@ function findingKey(claimID, activityID) {
   return `${String(claimID || '')}|${String(activityID || '')}`;
 }
 
+function getDrugShared() {
+  if (!drugShared) throw new Error('Drug analysis shared module is unavailable.');
+  return drugShared;
+}
+
+function dedupeFindingsByRuleAndSeverity(findings) {
+  const list = Array.isArray(findings) ? findings : [];
+  const deduped = [];
+  const seen = new Set();
+  list.forEach(f => {
+    if (!f || !f.ruleId) return;
+    const key = `${f.ruleId}|${f.status || ''}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    deduped.push(f);
+  });
+  return deduped;
+}
+
+function getKnownCptTypeResult(rec, drugsMap, knownCptCodeSet, drugListSource) {
+  const codeRaw = String(rec.CPT || '').trim();
+  const code = normalizeCode(codeRaw);
+  const hasDrugMatch = !!(drugsMap && drugsMap.has(normalizeDrugCode(codeRaw)));
+
+  if (!hasDrugMatch && code && knownCptCodeSet && knownCptCodeSet.has(code)) {
+    return {
+      status: 'Invalid',
+      findings: [{
+        ruleId: 'DRUG_CPT_TYPE',
+        status: 'Invalid',
+        remark: `Invalid CPT Type for ${codeRaw} (should be 3).`
+      }]
+    };
+  }
+
+  return {
+    status: 'Unknown',
+    findings: [{
+      ruleId: 'DRUG_CODE_UNKNOWN',
+      status: 'Unknown',
+      remark: `Drug code ${codeRaw} was not found in ${drugListSource}.`
+    }]
+  };
+}
+
+function analyzeDrugActivity(rec, options = {}) {
+  const shared = getDrugShared();
+  const receiverID = String(options.receiverID || '').trim().toUpperCase();
+  const codeRaw = String(rec.CPT || '').trim();
+  const quantity = Number(rec.Quantity || 0);
+  const claimedNet = Number(rec.Net || 0);
+  const activityType = String(rec.ActivityType || '').trim();
+  const drugListSource = options.drugListSource || 'resources/Drugs.xlsx';
+  const drugsMap = options.drugsMap && typeof options.drugsMap.get === 'function' ? options.drugsMap : null;
+  const knownCptCodeSet = options.knownCptCodeSet || new Set();
+  const quantityAuditorReceivers = options.quantityAuditorReceivers || shared.DEFAULT_QUANTITY_AUDITOR_RECEIVERS;
+
+  let findings = [];
+  let drug = null;
+  const normalizedDrugCode = normalizeDrugCode(codeRaw);
+  if (drugsMap) {
+    drug = drugsMap.get(normalizedDrugCode) || null;
+  }
+
+  if (!codeRaw) {
+    findings.push({
+      ruleId: 'DRUG_CODE_MISSING',
+      status: 'Invalid',
+      remark: 'Type 5 activity has a missing drug code.'
+    });
+  } else if (!drug) {
+    const unknownCodeResult = getKnownCptTypeResult(rec, drugsMap, knownCptCodeSet, drugListSource);
+    findings = findings.concat(unknownCodeResult.findings);
+  }
+
+  const statusInfo = drug ? shared.validateDrugStatus(drug, codeRaw) : null;
+  if (statusInfo && statusInfo.remark) {
+    findings.push({
+      ruleId: statusInfo.ruleId,
+      status: statusInfo.status,
+      remark: statusInfo.remark
+    });
+  }
+
+  const formularyInfo = drug
+    ? shared.validateDrugFormulary(drug, receiverID, codeRaw)
+    : { formularyName: '', valueRaw: '', applies: false };
+
+  if (formularyInfo && formularyInfo.remark) {
+    findings.push({
+      ruleId: formularyInfo.ruleId,
+      status: formularyInfo.status,
+      remark: formularyInfo.remark
+    });
+  }
+
+  const requiredQuantity = drug ? shared.calculateRequiredDrugQuantity(drug) : null;
+  if (drug) {
+    findings = findings.concat(shared.validateDrugQuantity({
+      code: codeRaw,
+      quantity,
+      requiredQuantity,
+      receiverID,
+      quantityAuditorReceivers
+    }));
+  }
+
+  const selectedPricing = drug ? shared.selectDrugPricing(drug, quantity) : { value: null, source: '', basis: '' };
+  const expectedNet = shared.calculateExpectedDrugNet(selectedPricing.value, quantity);
+  let priceResult = 'Unknown';
+
+  if (drug) {
+    if (selectedPricing.value === null || expectedNet === null) {
+      findings.push({
+        ruleId: 'DRUG_PRICE_SOURCE',
+        status: 'Unknown',
+        remark: `Unable to determine a pricing source for drug ${codeRaw}.`
+      });
+    } else if (shared.moneyEqual(claimedNet, expectedNet)) {
+      priceResult = 'Valid';
+    } else {
+      priceResult = 'Invalid';
+      findings.push({
+        ruleId: 'DRUG_PRICING',
+        status: 'Invalid',
+        remark: `Claimed Net ${formatMoney(claimedNet)} (for ${codeRaw}) does not match expected drug price ${formatMoney(selectedPricing.value)} × ${formatMoney(quantity)} = ${formatMoney(expectedNet)}.`
+      });
+    }
+  }
+
+  findings = dedupeFindingsByRuleAndSeverity(shared.mergeDrugFindings(findings));
+  const finalStatus = shared.getFinalStatusFromFindings(findings);
+  const nonValidRemarks = findings.filter(f => f.status !== 'Valid').map(f => f.remark).filter(Boolean);
+
+  return {
+    ClaimID: rec.ClaimID || '',
+    ActivityID: rec.ActivityID || '',
+    ActivityType: activityType || '5',
+    CPT: rec.CPT || '',
+    DrugCode: codeRaw,
+    ClaimedNet: rec.Net || '',
+    ClaimedQty: rec.Quantity || '',
+    ReferenceNetPrice: selectedPricing.value == null ? '' : String(selectedPricing.value),
+    AppliedFactor: '',
+    FactoredReference: expectedNet == null ? '' : String(expectedNet),
+    PricingRow: drug,
+    XmlRow: rec,
+    isValid: finalStatus === 'Valid',
+    status: finalStatus,
+    Remarks: nonValidRemarks.join(' '),
+    ComputedRef: expectedNet,
+    xmlNetNum: claimedNet,
+    PatientShare: rec.PatientShare || '0',
+    ReceiverID: receiverID,
+    ClaimPayerID: String(rec.PayerID || '').trim().toUpperCase(),
+    PayerID: receiverID,
+    _matchedFactorRule: null,
+    _modifierMultiplier: 1,
+    _drugPricingMeta: drug ? {
+      drug,
+      basis: selectedPricing.basis,
+      source: selectedPricing.source,
+      pricePerBasis: selectedPricing.value
+    } : null,
+    _drugExpectedNet: expectedNet,
+    _drugRequiredQuantity: requiredQuantity,
+    _drugQuantityResult: findings.find(f => f.ruleId === 'DRUG_QUANTITY')?.status || '',
+    _drugPriceResult: priceResult,
+    _drugStatus: statusInfo ? statusInfo.value : '',
+    _drugFormularyName: formularyInfo.formularyName || '',
+    _drugFormularyValue: formularyInfo.valueRaw || '',
+    findings: findings.map(f => asMedicalFinding({
+      ruleId: f.ruleId,
+      status: f.status,
+      remark: f.remark,
+      claimID: rec.ClaimID,
+      activityID: rec.ActivityID,
+      code: codeRaw
+    }))
+  };
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   try {
     const runBtn = el('run-button');
@@ -128,6 +285,7 @@ document.addEventListener('DOMContentLoaded', () => {
 async function handleRun() {
   resetUI();
   try {
+    getDrugShared();
     let xmlFile = fileEl('xml-file');
     let xlsxFile = fileEl('xlsx-file');
     let drugsFile = fileEl('drugs-file');
@@ -175,10 +333,12 @@ async function handleRun() {
     let drugsMap = null;
     let usingBundledDrugs = false;
     if (drugsFile) {
-      drugsMap = await loadDrugsMap(drugsFile);
+      const loaded = await loadDrugsMap(drugsFile);
+      drugsMap = loaded.map;
       console.log('[PRICING] Drugs map loaded, entries:', drugsMap ? drugsMap.size : 0);
     } else {
-      drugsMap = await loadBundledDrugsMap();
+      const loaded = await loadBundledDrugsMap();
+      drugsMap = loaded.map;
       usingBundledDrugs = !!drugsMap;
       console.log('[PRICING] Bundled drugs map loaded, entries:', drugsMap ? drugsMap.size : 0);
     }
@@ -202,6 +362,11 @@ async function handleRun() {
     const extracted = extractPricingRecords(xmlDoc);
     const jsonMatcher = buildJsonPricingMatcher(dentalPricingRaw);
     const medicalMatcher = buildMedicalPricingMatcher(medicalPricingRaw);
+    const knownCptCodeSet = buildKnownCptCodeSet({
+      jsonMatcher,
+      xlsxMatcher,
+      medicalPricingRaw
+    });
 
     const clinicianSpecialtyMap = new Map();
     (Array.isArray(clinicianData) ? clinicianData : []).forEach(e => {
@@ -280,9 +445,9 @@ async function handleRun() {
       const xmlNet = Number(rec.Net || 0);
       const xmlQty = Number(rec.Quantity || 0);
       const claimPayerID = String(rec.PayerID || '').trim().toUpperCase();
-      const isDrugActivity = String(rec.ActivityType || '').trim() === '5';
+      const isDrugActivity = isDrugActivityType(rec.ActivityType);
 
-      if (pricingReceiverID !== 'D001' && pricingReceiverID !== 'A001') {
+      if (!isDrugActivity && pricingReceiverID !== 'D001' && pricingReceiverID !== 'A001') {
         if (isMedicalMode && MEDICAL_CONFIGURED_PAYERS.has(pricingReceiverID)) {
           // Configured medical payer — fall through to medical pricing
         } else if (isMedicalMode) {
@@ -340,6 +505,19 @@ async function handleRun() {
             _modifierMultiplier: 1
           };
         }
+      }
+
+      if (isDrugActivity) {
+        const drugListSource = usingBundledDrugs ? 'resources/Drugs.xlsx' : 'the uploaded Drugs sheet';
+        return analyzeDrugActivity(rec, {
+          receiverID: pricingReceiverID,
+          drugsMap,
+          knownCptCodeSet,
+          drugListSource,
+          quantityAuditorReceivers: (medicalRules && medicalRules.drugRules && Array.isArray(medicalRules.drugRules.quantityAuditorReceivers))
+            ? new Set(medicalRules.drugRules.quantityAuditorReceivers.map(v => String(v || '').trim().toUpperCase()))
+            : getDrugShared().DEFAULT_QUANTITY_AUDITOR_RECEIVERS
+        });
       }
 
       if (normalizeCode(rec.CPT) === '2111' && (pricingReceiverID === 'D001' || pricingReceiverID === 'A001')) {
@@ -423,24 +601,7 @@ async function handleRun() {
         }
       }
 
-      // Drug pricing: if code is found in drugs map and no other pricing matched,
-      // select the appropriate price (Package when qty < 1, Unit when qty >= 1).
       let drugPricingMeta = null;
-      if (drugsMap && (!matchRow) && drugsMap.has(normalizeCode(rec.CPT))) {
-        const drug = drugsMap.get(normalizeCode(rec.CPT));
-        const drugPricing = selectDrugPricing(drug, xmlQty);
-        if (drugPricing.value !== null) {
-          refPrice = drugPricing.value;
-          matchRow = drug;
-          pricingContext = 'Drug Pricing';
-          drugPricingMeta = {
-            drug,
-            basis: drugPricing.basis,
-            source: drugPricing.source,
-            pricePerBasis: drugPricing.value
-          };
-        }
-      }
 
       let endoEntry = null;
       let nonEndoUsedEndoPrice = false;
@@ -541,22 +702,7 @@ async function handleRun() {
 
       const hasValidRef = (match || endoEntry) && refPrice !== null && !Number.isNaN(ref);
 
-      if (drugPricingMeta !== null && hasValidRef && xmlQty > 0) {
-          // Drug-specific comparison: expected net = selected price × quantity
-          const drugExpectedNet = roundMoney(drugPricingMeta.pricePerBasis * xmlQty);
-          if (drugExpectedNet !== null && moneyEqual(xmlNet, drugExpectedNet)) {
-            status = 'Valid';
-          } else if (drugExpectedNet !== null) {
-            remarks.push(
-              `Claimed Net ${formatMoney(xmlNet)} (for ${rec.CPT}) does not match the ` +
-              `expected ${drugPricingMeta.basis} price: ` +
-              `${formatMoney(drugPricingMeta.pricePerBasis)} × ${xmlQty} = ${formatMoney(drugExpectedNet)} ` +
-              `under Drug Pricing.`
-            );
-          } else {
-            remarks.push(`Drug pricing value is unavailable for ${rec.CPT}.`);
-          }
-      } else if (hasValidRef && effectiveRef === 0) {
+      if (hasValidRef && effectiveRef === 0) {
         status = 'Unknown';
         remarks.push(`The reference price is 0 under ${pricingContext} (status Unknown).`);
       } else if (hasValidRef && xmlQty > 0) {
@@ -651,16 +797,16 @@ async function handleRun() {
         _matchedFactorRule: matchedFactorRule,
         _modifierMultiplier: modifierMultiplier,
         _drugPricingMeta: drugPricingMeta,
-        _drugExpectedNet: drugPricingMeta !== null ? roundMoney(drugPricingMeta.pricePerBasis * xmlQty) : null
+        _drugExpectedNet: null
       };
     });
 
     output.forEach(row => {
       const pricingRemark = String(row.Remarks || '').trim();
       const pricingStatus = String(row.status || '').trim() || 'Invalid';
-      row.findings = [];
+      row.findings = Array.isArray(row.findings) ? row.findings.slice() : [];
 
-      if (pricingStatus !== 'Valid' || pricingRemark) {
+      if (row._drugPricingMeta == null && (pricingStatus !== 'Valid' || pricingRemark)) {
         row.findings.push(asMedicalFinding({
           ruleId: 'PRICING',
           status: pricingStatus,
@@ -677,6 +823,11 @@ async function handleRun() {
         const claimFindings = claimLevelBusinessFindings.get(row.ClaimID) || [];
         row.findings = medicalShared.mergeFindingsBySeverity(row.findings, activityFindings, claimFindings);
         medicalShared.applyFinalStatus(row);
+      } else if (row._drugPricingMeta != null) {
+        row.findings = dedupeFindingsByRuleAndSeverity(row.findings);
+        row.status = getDrugShared().getFinalStatusFromFindings(row.findings);
+        row.isValid = row.status === 'Valid';
+        row.Remarks = row.findings.filter(f => f.status !== 'Valid').map(f => f.remark).filter(Boolean).join(' ');
       }
     });
 
@@ -894,37 +1045,37 @@ async function loadDrugsMap(file) {
   try {
     const arrayBuffer = await file.arrayBuffer();
     const wb = XLSX.read(arrayBuffer, { type: 'array' });
-    return buildDrugsMapFromWorkbook(wb);
+    return buildDrugsMapFromWorkbook(wb, file && file.name ? file.name : 'uploaded Drugs.xlsx');
   } catch (e) {
     console.warn('[PRICING] Failed to load drugs file:', e);
-    return null;
+    throw new Error(`Unable to load uploaded Drugs.xlsx: ${e && e.message ? e.message : e}`);
   }
 }
 
 async function loadBundledDrugsMap() {
   try {
     const response = await fetch('../resources/Drugs.xlsx');
-    if (!response.ok) return null;
+    if (!response.ok) {
+      throw new Error(`Unable to load bundled resources/Drugs.xlsx (HTTP ${response.status}).`);
+    }
     const arrayBuffer = await response.arrayBuffer();
     const wb = XLSX.read(arrayBuffer, { type: 'array' });
-    return buildDrugsMapFromWorkbook(wb);
+    return buildDrugsMapFromWorkbook(wb, 'resources/Drugs.xlsx');
   } catch (e) {
     console.warn('[PRICING] Failed to load bundled Drugs.xlsx:', e);
-    return null;
+    throw new Error(`Unable to load resources/Drugs.xlsx: ${e && e.message ? e.message : e}`);
   }
 }
 
-function buildDrugsMapFromWorkbook(wb) {
-  const sheetName = wb.SheetNames.find(n => n.trim().toLowerCase() === 'drugs') || wb.SheetNames[0];
-  if (!sheetName) return null;
-  const ws = wb.Sheets[sheetName];
-  const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
-  const map = new Map();
-  rows.forEach(r => {
-    const code = normalizeCode(String(r['Drug Code'] || '').trim());
-    if (code) map.set(code, r);
-  });
-  return map;
+function buildDrugsMapFromWorkbook(wb, sourceLabel) {
+  const parsed = getDrugShared().parseDrugWorkbook(wb, XLSX);
+  if (parsed.error) {
+    throw new Error(`Unable to load drugs from ${sourceLabel}: ${parsed.error}`);
+  }
+  return {
+    map: parsed.map,
+    rows: parsed.rows
+  };
 }
 
 async function loadBundledFactorRules(isMedicalMode) {
@@ -1189,7 +1340,8 @@ function buildJsonPricingMatcher(data) {
   return {
     find(code) {
       return index.get(normalizeCode(code)) || null;
-    }
+    },
+    _index: index
   };
 }
 
@@ -1215,6 +1367,31 @@ function buildMedicalPricingMatcher(data) {
       return index.get(key) || null;
     }
   };
+}
+
+function buildKnownCptCodeSet({ jsonMatcher, xlsxMatcher, medicalPricingRaw }) {
+  const set = new Set();
+
+  if (xlsxMatcher && xlsxMatcher._index instanceof Map) {
+    xlsxMatcher._index.forEach((_, code) => {
+      if (code) set.add(code);
+    });
+  }
+
+  if (jsonMatcher && jsonMatcher._index instanceof Map) {
+    jsonMatcher._index.forEach((_, code) => {
+      if (code) set.add(code);
+    });
+  }
+
+  (Array.isArray(medicalPricingRaw) ? medicalPricingRaw : []).forEach(entry => {
+    const type = normalizeTariffType(entry.type || 'CPT');
+    if (type !== 'CPT') return;
+    const code = normalizeCode(entry.code);
+    if (code) set.add(code);
+  });
+
+  return set;
 }
 
 // ----------------- Results table -----------------
@@ -1370,11 +1547,14 @@ function showComparisonModal(index) {
 
   const xmlTable = isDrug
     ? `
-    <h4>XML (Claim)</h4>
+    <h4>XML Activity</h4>
     <table class="table table-bordered table-sm">
-      <tr><th>Drug Code</th><td>${escapeHtml(row._drugPricingMeta.drug['Drug Code'] || row.CPT || '')}</td></tr>
-      <tr><th>Quantity</th><td>${escapeHtml(String(xml.Quantity || row.ClaimedQty || ''))}</td></tr>
+      <tr><th>Claim ID</th><td>${escapeHtml(String(row.ClaimID || ''))}</td></tr>
+      <tr><th>Activity ID</th><td>${escapeHtml(String(row.ActivityID || ''))}</td></tr>
+      <tr><th>Type</th><td>${escapeHtml(String(row.ActivityType || xml.ActivityType || '5'))}</td></tr>
+      <tr><th>Drug Code</th><td>${escapeHtml(row._drugPricingMeta?.drug?.['Drug Code'] || row.CPT || '')}</td></tr>
       <tr><th>Claimed Net</th><td>${escapeHtml(String(xml.Net || row.ClaimedNet || ''))}</td></tr>
+      <tr><th>Quantity</th><td>${escapeHtml(String(xml.Quantity || row.ClaimedQty || ''))}</td></tr>
     </table>
     `
     : `
@@ -1391,17 +1571,36 @@ function showComparisonModal(index) {
     ? (() => {
         const dm = row._drugPricingMeta;
         const expectedNet = row._drugExpectedNet;
+        const drug = dm.drug || {};
         return `
-    <h4>Drug Pricing Reference</h4>
+    <h4>Drug Reference</h4>
     <table class="table table-bordered table-sm">
-      <tr><th>Drug Code</th><td>${escapeHtml(dm.drug['Drug Code'] || row.CPT || '')}</td></tr>
-      <tr><th>Quantity</th><td>${escapeHtml(String(xml.Quantity || row.ClaimedQty || ''))}</td></tr>
+      <tr><th>Package Name</th><td>${escapeHtml(String(drug['Package Name'] || ''))}</td></tr>
+      <tr><th>Dosage Form</th><td>${escapeHtml(String(drug['Dosage Form'] || ''))}</td></tr>
+      <tr><th>Package Size</th><td>${escapeHtml(String(drug['Package Size'] || ''))}</td></tr>
+      <tr><th>Status</th><td>${escapeHtml(String(drug['Status'] || row._drugStatus || ''))}</td></tr>
+      <tr><th>Effective Date</th><td>${escapeHtml(String(drug['UPP Effective Date'] || ''))}</td></tr>
+      <tr><th>Delete Effective Date</th><td>${escapeHtml(String(drug['Delete Effective Date'] || ''))}</td></tr>
+      <tr><th>Thiqa Formulary</th><td>${escapeHtml(String(drug['Included in Thiqa/ ABM - other than 1&7- Drug Formulary'] || ''))}</td></tr>
+      <tr><th>Daman Basic Formulary</th><td>${escapeHtml(String(drug['Included In Basic Drug Formulary'] || ''))}</td></tr>
+    </table>
+    <h4>Quantity Analysis</h4>
+    <table class="table table-bordered table-sm">
+      <tr><th>Package Price to Public</th><td>${escapeHtml(String(drug['Package Price to Public'] || ''))}</td></tr>
+      <tr><th>Unit Price to Public</th><td>${escapeHtml(String(drug['Unit Price to Public'] || ''))}</td></tr>
+      <tr><th>Required Quantity</th><td>${escapeHtml(row._drugRequiredQuantity != null ? String(row._drugRequiredQuantity) : 'N/A')}</td></tr>
+      <tr><th>Claimed Quantity</th><td>${escapeHtml(String(xml.Quantity || row.ClaimedQty || ''))}</td></tr>
+      <tr><th>Quantity Result</th><td>${escapeHtml(String(row._drugQuantityResult || ''))}</td></tr>
+    </table>
+    <h4>Price Analysis</h4>
+    <table class="table table-bordered table-sm">
       <tr><th>Pricing Basis</th><td>${escapeHtml(dm.basis)}</td></tr>
-      <tr><th>${escapeHtml(dm.source)}</th><td>${escapeHtml(String(dm.pricePerBasis))}</td></tr>
       <tr><th>Pricing Source</th><td>${escapeHtml(dm.source)}</td></tr>
+      <tr><th>Selected Price</th><td>${escapeHtml(String(dm.pricePerBasis))}</td></tr>
       <tr><th>Calculation</th><td>${escapeHtml(String(dm.pricePerBasis))} × ${escapeHtml(String(xml.Quantity || row.ClaimedQty || ''))}</td></tr>
       <tr><th>Expected Net</th><td>${escapeHtml(expectedNet != null ? String(expectedNet) : 'N/A')}</td></tr>
       <tr><th>Claimed Net</th><td>${escapeHtml(String(xml.Net || row.ClaimedNet || ''))}</td></tr>
+      <tr><th>Price Result</th><td>${escapeHtml(String(row._drugPriceResult || ''))}</td></tr>
     </table>
     `;
       })()
@@ -1556,6 +1755,16 @@ window.runPricingCheck = async function () {
   if (typeof handleRun === 'function') return await handleRun();
   console.error('handleRun function not found');
   return null;
+};
+
+window._pricingTestApi = {
+  analyzeDrugActivity,
+  isDrugActivityType,
+  buildKnownCptCodeSet,
+  normalizeDrugCode,
+  buildMedicalPricingMatcher,
+  buildJsonPricingMatcher,
+  buildPricingMatcher
 };
 
 window.showPricingComparison = showComparisonModal;

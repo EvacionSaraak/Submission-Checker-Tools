@@ -1,4 +1,12 @@
 let _drugsLookupMap = null, _drugsRawArr = null, _drugQuantityOutputRows = [];
+const drugShared = window.DrugAnalysisShared || null;
+
+function normalizeDrugCode(value) {
+    if (drugShared && typeof drugShared.normalizeDrugCode === 'function') {
+        return drugShared.normalizeDrugCode(value);
+    }
+    return String(value || '').trim().toUpperCase();
+}
 
 function updateCheckSingleCodeBtnState() {
     const drugsLoaded = !!_drugsLookupMap;
@@ -19,16 +27,27 @@ document.getElementById('xlsxFile').addEventListener('change', function(e) {
     readerXLSX.onload = function(evt) {
         const data = new Uint8Array(evt.target.result);
         const workbook = XLSX.read(data, {type: 'array'});
-        const sheetName = workbook.SheetNames.find(n=>n.trim().toLowerCase()==="drugs");
-        if (!sheetName) {
+        if (!drugShared) {
             _drugsLookupMap = null;
             _drugsRawArr = null;
-            document.getElementById('singleCodeStatus').innerHTML = "<span style='color:red'>No 'Drugs' sheet found in XLSX file.</span>";
+            document.getElementById('singleCodeStatus').innerHTML = "<span style='color:red'>Drug analysis helpers are unavailable.</span>";
             updateCheckSingleCodeBtnState();
             return;
         }
-        const worksheet = workbook.Sheets[sheetName], drugsArr = XLSX.utils.sheet_to_json(worksheet, {defval:""}), drugsMap = {};
-        drugsArr.forEach(r=>{if(r['Drug Code']) drugsMap[String(r['Drug Code']).trim()] = r;});
+        const parsed = drugShared.parseDrugWorkbook(workbook, XLSX);
+        if (parsed.error) {
+            _drugsLookupMap = null;
+            _drugsRawArr = null;
+            document.getElementById('singleCodeStatus').innerHTML = `<span style='color:red'>${parsed.error}</span>`;
+            updateCheckSingleCodeBtnState();
+            return;
+        }
+        const drugsArr = parsed.rows;
+        const drugsMap = {};
+        drugsArr.forEach(r=>{
+            const code = normalizeDrugCode(r['Drug Code']);
+            if (code) drugsMap[code] = r;
+        });
         _drugsLookupMap = drugsMap;
         _drugsRawArr = drugsArr;
         document.getElementById('singleCodeStatus').innerHTML = "";
@@ -58,7 +77,7 @@ document.getElementById('checkSingleCodeBtn').addEventListener('click', function
         return;
     }
 
-    const drug=_drugsLookupMap[code];
+    const drug=_drugsLookupMap[normalizeDrugCode(code)];
     if(!drug){
         statusDiv.innerHTML="<span style='color:red'>Drug code not found in uploaded file.</span>";
         outDiv.innerHTML="";
@@ -79,9 +98,8 @@ document.getElementById('checkSingleCodeBtn').addEventListener('click', function
     const unitMarkup    = unitMarkupRaw    !== "" ? `<b>${unitMarkupRaw}</b>`    : `<b>${drug['Unit Price to Public']}</b>`;
 
     let requiredQuantity="";
-    if(packagePrice>0 && unitPrice>0){
-        requiredQuantity=(1/(packagePrice/unitPrice)).toFixed(2);
-    }
+    const requiredQtyNum = drugShared ? drugShared.calculateRequiredDrugQuantity(drug) : null;
+    if(requiredQtyNum !== null) requiredQuantity = requiredQtyNum.toFixed(2);
 
     let table = `<table class="shared-table"><thead><tr>
         <th>Drug Code</th><th class="wrap-col">Package Name</th><th>Package Size</th>
@@ -122,10 +140,11 @@ document.getElementById('processBtn').addEventListener('click', function() {
             const claimId = claim.getElementsByTagName('ID')[0]?.textContent||'';
             Array.from(claim.getElementsByTagName('Activity')).forEach(act=>{
                 const code = act.getElementsByTagName('Code')[0]?.textContent?.trim()||'';
-                if(!_drugsLookupMap[code]) return;
+                const normalizedCode = normalizeDrugCode(code);
+                if(!_drugsLookupMap[normalizedCode]) return;
 
                 const quantity = act.getElementsByTagName('Quantity')[0]?.textContent||'',
-                      drug = _drugsLookupMap[code],
+                      drug = _drugsLookupMap[normalizedCode],
                       packageName=drug['Package Name']||'',
                       packageSize=drug['Package Size']||'',
                       packagePrice=parseFloat(drug['Package Price to Public'])||0,
@@ -139,31 +158,29 @@ document.getElementById('processBtn').addEventListener('click', function() {
                 const unitMarkupDisp    = unitMarkupRaw    !== "" ? `<b>${unitMarkupRaw}</b>`    : `<b>${drug['Unit Price to Public']}</b>`;
 
                 let requiredQuantity="", rowClass="valid", errorRemark="";
-                if(packagePrice>0&&unitPrice>0){requiredQuantity=(1/(packagePrice/unitPrice)).toFixed(2);}
+                const requiredQtyNum = drugShared ? drugShared.calculateRequiredDrugQuantity(drug) : null;
+                if(requiredQtyNum !== null){requiredQuantity=requiredQtyNum.toFixed(2);}
                 const type=act.getElementsByTagName('Type')[0]?.textContent||'';
                 const xmlQ = Number(quantity), reqQ = Number(requiredQuantity);
 
                 if (type !== "5") {
                     rowClass = "invalid";
                     errorRemark = `Drug codes must have Type 5 and not ${type}`;
-                } else if (requiredQuantity === "" || quantity === "" || isNaN(reqQ) || isNaN(xmlQ)) {
-                    rowClass = "unknown";
-                    errorRemark = "Quantity validation cannot be determined.";
-                } else if (reqQ === 1.00) {
-                    rowClass = "valid";
-                    errorRemark = "";
-                } else if (reqQ > xmlQ) {
-                    rowClass = "invalid";
-                    errorRemark = "Claimed quantity is less than the required quantity.";
-                } else if (xmlQ > 1.00) {
-                    rowClass = "unknown";
-                    errorRemark = "Claimed quantity exceeds 1.00. Please Verify.";
-                } else if (reqQ !== xmlQ) {
-                    rowClass = "unknown";
-                    errorRemark = "Quantity validation cannot be determined. Please Verify.";
                 } else {
-                    rowClass = "valid";
-                    errorRemark = "";
+                    const qFindings = drugShared
+                        ? drugShared.validateDrugQuantity({
+                            code,
+                            quantity: xmlQ,
+                            requiredQuantity: requiredQtyNum,
+                            receiverID: '',
+                            quantityAuditorReceivers: new Set()
+                        })
+                        : [];
+                    const qStatus = qFindings.some(f => f.status === 'Invalid')
+                        ? 'invalid'
+                        : (qFindings.some(f => f.status === 'Unknown') ? 'unknown' : 'valid');
+                    rowClass = qStatus;
+                    errorRemark = qFindings.filter(f => f.status !== 'Valid').map(f => f.remark).join(' ');
                 }
 
                 outputRows.push({

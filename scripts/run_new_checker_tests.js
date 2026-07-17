@@ -47,6 +47,50 @@ function loadSchemaNotMergedUtils() {
   return utils;
 }
 
+function loadPricingTestApi() {
+  const pricingPath = path.join(__dirname, '..', 'js', 'checker_pricing.js');
+  const pricingCode = fs.readFileSync(pricingPath, 'utf8');
+  const drugSharedPath = path.join(__dirname, '..', 'js', 'drug_analysis_shared.js');
+  const drugShared = require(drugSharedPath);
+  const elementStub = {
+    files: [],
+    style: {},
+    disabled: false,
+    textContent: '',
+    innerHTML: '',
+    addEventListener() {},
+    appendChild() {},
+    remove() {}
+  };
+  const context = {
+    window: { DrugAnalysisShared: drugShared },
+    document: {
+      addEventListener() {},
+      getElementById() { return elementStub; },
+      createElement() { return { style: {}, appendChild() {}, setAttribute() {}, addEventListener() {}, remove() {} }; },
+      body: { appendChild() {} }
+    },
+    console,
+    DOMParser: function DOMParser() {},
+    FileReader: function FileReader() {},
+    fetch: async () => ({ ok: false, status: 404, json: async () => ([]), arrayBuffer: async () => new ArrayBuffer(0) }),
+    XLSX: { utils: { sheet_to_json: () => [] } }
+  };
+  context.DOMParser.prototype.parseFromString = function parseFromString() {
+    return {
+      getElementsByTagName() { return []; },
+      querySelector() { return null; }
+    };
+  };
+
+  vm.createContext(context);
+  vm.runInContext(pricingCode, context, { filename: 'checker_pricing.js' });
+
+  const api = context.window._pricingTestApi;
+  assert(api, 'Pricing test API was not exposed');
+  return { api, drugShared };
+}
+
 function createElement(name, text = '', children = []) {
   return {
     localName: name,
@@ -174,6 +218,9 @@ await run('Exclusion rules-load failure surfaces error', async () => {
 });
 
 const schemaUtils = loadSchemaNotMergedUtils();
+const pricingTest = loadPricingTestApi();
+const pricingApi = pricingTest.api;
+const drugShared = pricingTest.drugShared;
 
 function ts(input) {
   return schemaUtils.parseEncounterDateTime(input);
@@ -503,6 +550,189 @@ await run('Historical rules return unknown when chronology input missing', () =>
     historicalFrequencyRules: { '83036Days': 90, lab800Months: 6, otherLabDays: 3, exceptionGroups: { CBC: [], CRP: [], BHCG: [] } }
   }, { historicalIndex: null });
   assert(findings.some(f => f.ruleId === 'MED_HISTORICAL_INPUT_MISSING' && f.status === 'Unknown'), 'Expected unknown historical finding without chronology input');
+});
+
+function makeDrugRow(overrides = {}) {
+  return {
+    'Drug Code': 'JQ9-0699-00779-02',
+    'Package Name': 'Sample Drug',
+    'Dosage Form': 'Injection',
+    'Package Size': '1 vial',
+    'Package Price to Public': 66.4,
+    'Package Markup': 66.4,
+    'Unit Price to Public': 2.21,
+    'Unit Markup': 2.21,
+    'Status': 'Active',
+    'Delete Effective Date': '',
+    'Included in Thiqa/ ABM - other than 1&7- Drug Formulary': 'Yes',
+    'Included In Basic Drug Formulary': 'Yes',
+    'UPP Effective Date': '2026-01-01',
+    'UPP Updated Date': '2026-01-02',
+    ...overrides
+  };
+}
+
+function analyzeDrug(overrides = {}, mapOverrides = {}) {
+  const rec = {
+    ClaimID: 'TMCCL1036197',
+    ActivityID: 'A1',
+    ActivityType: '5',
+    CPT: 'JQ9-0699-00779-02',
+    Quantity: '0.03',
+    Net: '1.99',
+    PayerID: 'A001',
+    ...overrides
+  };
+  const drugRow = makeDrugRow(mapOverrides);
+  const drugsMap = new Map([[drugShared.normalizeDrugCode(drugRow['Drug Code']), drugRow]]);
+  const knownCptCodeSet = new Set(['94640']);
+  return pricingApi.analyzeDrugActivity(rec, {
+    receiverID: 'D001',
+    drugsMap,
+    knownCptCodeSet,
+    drugListSource: 'resources/Drugs.xlsx'
+  });
+}
+
+await run('Pricing routing uses Activity Type 5 for drug path', () => {
+  assert(pricingApi.isDrugActivityType('5') === true, 'Expected Type 5 to route to drug pricing path');
+  assert(pricingApi.isDrugActivityType('3') === false, 'Expected non-Type-5 to skip drug pricing path');
+});
+
+await run('Type 3 code in drugs does not route to drug path', () => {
+  assert(pricingApi.isDrugActivityType('3') === false, 'Expected Type 3 to stay on medical CPT pricing path');
+});
+
+await run('Type 5 valid active drug passes with package markup net', () => {
+  const row = analyzeDrug();
+  assert(row.status === 'Valid', 'Expected valid Type 5 drug pricing row');
+  assert(row._drugPricingMeta && row._drugPricingMeta.basis === 'Package', 'Expected package basis for quantity 0.03');
+  assert(String(row._drugExpectedNet) === '1.99', 'Expected net 1.99 for 66.4 x 0.03');
+});
+
+await run('Type 5 code also present in CPT set still uses drug path', () => {
+  const row = pricingApi.analyzeDrugActivity({
+    ClaimID: 'C1',
+    ActivityID: 'A1',
+    ActivityType: '5',
+    CPT: 'JQ9-0699-00779-02',
+    Quantity: '0.03',
+    Net: '1.99'
+  }, {
+    receiverID: 'D001',
+    drugsMap: new Map([[pricingApi.normalizeDrugCode('JQ9-0699-00779-02'), makeDrugRow()]]),
+    knownCptCodeSet: new Set([pricingApi.normalizeDrugCode('JQ9-0699-00779-02')]),
+    drugListSource: 'resources/Drugs.xlsx'
+  });
+  assert(row.status === 'Valid', 'Expected Type 5 drug code match to win over CPT type set');
+  assert(!/Invalid CPT Type/.test(row.Remarks), 'Expected no CPT type mismatch remark when drug exists');
+});
+
+await run('Type 5 unknown drug code returns unknown', () => {
+  const row = pricingApi.analyzeDrugActivity({
+    ClaimID: 'C1',
+    ActivityID: 'A1',
+    ActivityType: '5',
+    CPT: 'UNKNOWN-DRUG',
+    Quantity: '0.03',
+    Net: '1.99',
+    PayerID: 'A001'
+  }, {
+    receiverID: 'D001',
+    drugsMap: new Map(),
+    knownCptCodeSet: new Set(),
+    drugListSource: 'resources/Drugs.xlsx'
+  });
+  assert(row.status === 'Unknown', 'Expected unknown status for unmatched Type 5 drug code');
+  assert(/not found/.test(row.Remarks), 'Expected unknown drug code remark');
+});
+
+await run('Type 5 known CPT wrong type returns invalid CPT type message', () => {
+  const row = pricingApi.analyzeDrugActivity({
+    ClaimID: 'C1',
+    ActivityID: 'A1',
+    ActivityType: '5',
+    CPT: '94640',
+    Quantity: '1',
+    Net: '10'
+  }, {
+    receiverID: 'D001',
+    drugsMap: new Map(),
+    knownCptCodeSet: new Set(['94640']),
+    drugListSource: 'resources/Drugs.xlsx'
+  });
+  assert(row.status === 'Invalid', 'Expected invalid status for known CPT submitted as Type 5');
+  assert(/Invalid CPT Type/.test(row.Remarks), 'Expected invalid CPT type message');
+});
+
+await run('Drug status active and grace are treated as valid', () => {
+  assert(analyzeDrug({}, { Status: 'Active' }).status === 'Valid', 'Expected active status to pass');
+  assert(analyzeDrug({}, { Status: 'Grace' }).status === 'Valid', 'Expected grace status to pass');
+});
+
+await run('Drug status inactive and deleted are invalid', () => {
+  assert(analyzeDrug({}, { Status: 'Inactive' }).status === 'Invalid', 'Expected inactive status to fail');
+  assert(analyzeDrug({}, { Status: 'Deleted' }).status === 'Invalid', 'Expected deleted status to fail');
+});
+
+await run('D001 Thiqa formulary yes passes and no fails', () => {
+  assert(analyzeDrug({}, { 'Included in Thiqa/ ABM - other than 1&7- Drug Formulary': 'Yes' }).status === 'Valid', 'Expected Thiqa Yes to pass');
+  assert(analyzeDrug({}, { 'Included in Thiqa/ ABM - other than 1&7- Drug Formulary': 'No' }).status === 'Invalid', 'Expected Thiqa No to fail');
+});
+
+await run('D004 Daman Basic formulary yes passes and no fails', () => {
+  const yes = pricingApi.analyzeDrugActivity({
+    ClaimID: 'C1', ActivityID: 'A1', ActivityType: '5', CPT: 'JQ9-0699-00779-02', Quantity: '0.03', Net: '1.99'
+  }, {
+    receiverID: 'D004',
+    drugsMap: new Map([[pricingApi.normalizeDrugCode('JQ9-0699-00779-02'), makeDrugRow({ 'Included In Basic Drug Formulary': 'Yes' })]]),
+    knownCptCodeSet: new Set(),
+    drugListSource: 'resources/Drugs.xlsx'
+  });
+  const no = pricingApi.analyzeDrugActivity({
+    ClaimID: 'C1', ActivityID: 'A1', ActivityType: '5', CPT: 'JQ9-0699-00779-02', Quantity: '0.03', Net: '1.99'
+  }, {
+    receiverID: 'D004',
+    drugsMap: new Map([[pricingApi.normalizeDrugCode('JQ9-0699-00779-02'), makeDrugRow({ 'Included In Basic Drug Formulary': 'No' })]]),
+    knownCptCodeSet: new Set(),
+    drugListSource: 'resources/Drugs.xlsx'
+  });
+  assert(yes.status === 'Valid', 'Expected Daman Basic Yes to pass');
+  assert(no.status === 'Invalid', 'Expected Daman Basic No to fail');
+});
+
+await run('A001 does not trigger automatic formulary invalidation', () => {
+  const row = pricingApi.analyzeDrugActivity({
+    ClaimID: 'C1', ActivityID: 'A1', ActivityType: '5', CPT: 'JQ9-0699-00779-02', Quantity: '0.03', Net: '1.99'
+  }, {
+    receiverID: 'A001',
+    drugsMap: new Map([[pricingApi.normalizeDrugCode('JQ9-0699-00779-02'), makeDrugRow({ 'Included in Thiqa/ ABM - other than 1&7- Drug Formulary': 'No', 'Included In Basic Drug Formulary': 'No' })]]),
+    knownCptCodeSet: new Set(),
+    drugListSource: 'resources/Drugs.xlsx'
+  });
+  assert(row.status === 'Valid', 'Expected A001 to skip automatic Thiqa/Daman formulary columns');
+});
+
+await run('Required quantity validation marks low quantities invalid', () => {
+  const row = analyzeDrug({ Quantity: '0.01', Net: '0.66' });
+  assert(row.status === 'Invalid', 'Expected claimed quantity below required to fail');
+  assert(/less than the required quantity/.test(row.Remarks), 'Expected quantity lower-bound remark');
+});
+
+await run('Quantity above 1 on D001 requires auditor confirmation', () => {
+  const row = analyzeDrug({ Quantity: '2', Net: '4.42' });
+  assert(row.status === 'Unknown', 'Expected quantity above 1 to be unknown due to auditor review');
+  assert(/auditor confirmation/i.test(row.Remarks), 'Expected auditor confirmation remark');
+});
+
+await run('Correct price with formulary no stays invalid', () => {
+  const row = analyzeDrug({}, { 'Included in Thiqa/ ABM - other than 1&7- Drug Formulary': 'No' });
+  assert(row.status === 'Invalid', 'Expected invalid status when formulary blocks despite correct price');
+});
+
+await run('Correct price with inactive status stays invalid', () => {
+  const row = analyzeDrug({}, { Status: 'Deleted' });
+  assert(row.status === 'Invalid', 'Expected invalid status when drug status is inactive/deleted');
 });
 
 if (process.exitCode) {
