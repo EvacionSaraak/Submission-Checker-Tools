@@ -595,6 +595,7 @@ function validateConsultationAndSpecialtyRules(activities, text, invalidFields, 
     return { act, index, code, quantity, quantityRaw, net, clinician, orderingClinician, clinicianSpecialty, orderingSpecialty };
   });
 
+  const requires992SpecialtyCheck = activityContexts.length > 1;
   const infusionCodesInClaim = new Set();
   const code992Found = new Set();
 
@@ -653,7 +654,7 @@ function validateConsultationAndSpecialtyRules(activities, text, invalidFields, 
       invalidFields.push(`Activity ${ctx.code} requires Clinician specialty containing Dietician (Currently \`${spec}\`)`);
     }
 
-    if (GP_992_REQUIRED_CODES.has(ctx.code) && !specialtyContains(ctx.orderingSpecialty, 'General Practitioner')) {
+    if (requires992SpecialtyCheck && GP_992_REQUIRED_CODES.has(ctx.code) && !specialtyContains(ctx.orderingSpecialty, 'General Practitioner')) {
       const spec = ctx.orderingSpecialty || 'Unknown';
       invalidFields.push(`Activity ${ctx.code} requires OrderingClinician specialty as General Practitioner (Currently \`${spec}\`)`);
     }

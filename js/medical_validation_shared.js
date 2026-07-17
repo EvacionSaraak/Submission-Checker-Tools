@@ -855,7 +855,10 @@
     const pathPrefixes = Array.isArray(restrictions.pathologyLabCodePrefixes) && restrictions.pathologyLabCodePrefixes.length ? restrictions.pathologyLabCodePrefixes : ['8'];
     const dieticianCodes = new Set((restrictions.dieticianCodes || []).map(normalizeActivityCode));
 
-    (context.activities || []).forEach(activity => {
+    const activities = context.activities || [];
+    const requires992SpecialtyCheck = activities.length > 1;
+
+    activities.forEach(activity => {
       const code = activity.normalizedCode;
       const performing = activity.clinicianSpecialty;
       const ordering = activity.orderingSpecialty;
@@ -914,7 +917,7 @@
         }));
       }
 
-      if ((code === '99202' || code === '99212') && !specialtyIncludes(ordering, 'GENERAL PRACTITIONER')) {
+      if (requires992SpecialtyCheck && (code === '99202' || code === '99212') && !specialtyIncludes(ordering, 'GENERAL PRACTITIONER')) {
         findings.push(makeFinding({
           ruleId: 'MED_SPEC_992_GP_REQUIRED',
           code: activity.code,
