@@ -115,8 +115,17 @@
   }
 
   // Returns true when the Medical claim-type radio is checked
+  function getGlobalClaimTypeMode() {
+    const medical = document.getElementById('claimTypeMedical');
+    const dental = document.getElementById('claimTypeDental');
+    if (medical && medical.checked) return 'MEDICAL';
+    if (dental && dental.checked) return 'DENTAL';
+    return null;
+  }
+
+  // Returns true when the Medical claim-type radio is checked
   function isMedicalModeSelected() {
-    return Boolean(document.getElementById('claimTypeMedical')?.checked);
+    return getGlobalClaimTypeMode() === 'MEDICAL';
   }
 
   // Returns the sidebar button element for a given checker name
@@ -685,9 +694,9 @@
         <div id="results"></div>
       `,
       schema: `
-        <input type="file" id="xmlFile" accept=".xml" style="display:none" />
-        <div id="uploadStatus" aria-live="polite"></div>
-        <div id="results"></div>
+        <input type="file" data-role="schema-xml-file" accept=".xml" style="display:none" />
+        <div data-role="schema-status" aria-live="polite"></div>
+        <div data-role="schema-results"></div>
       `,
       exclusion: `
         <input type="file" id="xmlFile" accept=".xml" style="display:none" />
@@ -789,7 +798,7 @@
     console.log(`[DEBUG] executeChecker called for: ${checkerName}`);
     
     // ✅ Clear previous results before running checker
-    const resultsDiv = container.querySelector('#results');
+    const resultsDiv = container.querySelector('#results, [data-role="schema-results"]');
     if (resultsDiv) {
       resultsDiv.innerHTML = '';
       console.log(`[DEBUG] Cleared previous results for ${checkerName}`);
@@ -806,7 +815,7 @@
       messageBox.innerHTML = '';
     }
     
-    const uploadStatus = container.querySelector('#uploadStatus');
+    const uploadStatus = container.querySelector('#uploadStatus, [data-role="schema-status"]');
     if (uploadStatus) {
       uploadStatus.innerHTML = '';
     }
@@ -822,7 +831,7 @@
       auths: { xmlInput: 'xml', xlsxInput: 'auth' },
       timings: { xmlFileInput: 'xml' },
       observations: { xmlFile: 'xml' },
-      schema: { xmlFile: 'xml' },
+      schema: {},
       exclusion: { xmlFile: 'xml' },
       pricing: { 'xml-file': 'xml', 'xlsx-file': 'pricing' },
       modifiers: { 'xml-file': 'xml', 'xlsx-file': 'eligibility' }
@@ -858,7 +867,11 @@
       console.log(`[DEBUG] Calling ${checkerName} checker function...`);
       
       const checkerFunctions = {
-        schema: validateXmlSchema,
+        schema: () => validateXmlSchema({
+          file: files.xml,
+          container,
+          claimTypeMode: getGlobalClaimTypeMode()
+        }),
         exclusion: runExclusionCheck,
         timings: validateTimingsAsync,
         observations: () => parseXML(files.xml),
@@ -867,7 +880,11 @@
         // Pass the shared XML file directly so the clinician checker can read it
         // without depending on an asynchronous dispatched-event side-effect.
         clinician: () => runClinicianCheck(files.xml),
-        pricing: runPricingCheck,
+        pricing: () => runPricingCheck({
+          file: files.xml,
+          pricingFile: files.pricing,
+          claimTypeMode: getGlobalClaimTypeMode()
+        }),
         modifiers: runModifiersCheck
       };
       
@@ -932,26 +949,18 @@
     
     try {
       if (checkerName === 'schema') {
-        // Schema checker uses .view-claim-btn buttons with data-index
-        const results = window._lastValidationResults;
-        if (!results || !Array.isArray(results)) {
-          console.warn('[CHECK-ALL] No validation results found for schema checker');
-          return;
-        }
-        
-        results.forEach((row, index) => {
-          const btn = clonedTable.querySelector(`.view-claim-btn[data-index="${index}"]`);
-          if (btn) {
-            btn.onclick = () => {
-              if (typeof window.showModal === 'function' && typeof window.claimToHtmlTable === 'function') {
-                window.showModal(window.claimToHtmlTable(row.ClaimXML));
-              } else {
-                console.error('[CHECK-ALL] Modal functions not available');
-              }
-            };
-          }
+        const buttons = clonedTable.querySelectorAll('.view-claim-btn[data-claim-xml]');
+        buttons.forEach(btn => {
+          btn.onclick = () => {
+            if (typeof window.showModal === 'function' && typeof window.claimToHtmlTable === 'function') {
+              const claimXml = decodeURIComponent(btn.getAttribute('data-claim-xml') || '');
+              window.showModal(window.claimToHtmlTable(claimXml));
+            } else {
+              console.error('[CHECK-ALL] Modal functions not available');
+            }
+          };
         });
-        console.log(`[CHECK-ALL] Re-attached ${results.length} event listeners for schema checker`);
+        console.log(`[CHECK-ALL] Re-attached ${buttons.length} event listeners for schema checker`);
       } else if (checkerName === 'elig') {
         // Eligibility checker uses .eligibility-details buttons
         // Note: initEligibilityModal should be called with the results
@@ -1357,6 +1366,25 @@
           allResults.push({
             checkerName: checkerName,
             table: tableEl.cloneNode(true)
+          });
+        } else if (table instanceof HTMLElement) {
+          successCount++;
+          console.log(`[CHECK-ALL] ✓ ${checkerName} checker returned a non-table result element`);
+          if (sectionResults) {
+            sectionResults.appendChild(table.cloneNode(true));
+          }
+          logDebug(`Checker Success: ${checkerName}`, {
+            status: 'success',
+            executionTimeMs: executionTime,
+            rowsGenerated: 0,
+            tableGenerated: false,
+            elementType: table.className || table.tagName
+          });
+          checkerTimings.push({
+            checker: checkerName,
+            executionTimeMs: executionTime,
+            status: 'success',
+            rowCount: 0
           });
         } else {
           errorCount++;

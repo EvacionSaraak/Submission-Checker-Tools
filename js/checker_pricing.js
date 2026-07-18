@@ -289,12 +289,17 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ----------------- Main run handler -----------------
-async function handleRun() {
+function normalizeClaimTypeMode(value) {
+  const normalized = String(value || '').trim().toUpperCase();
+  return normalized === 'MEDICAL' || normalized === 'DENTAL' ? normalized : null;
+}
+
+async function handleRun(options = {}) {
   resetUI();
   try {
-    let xmlFile = fileEl('xml-file');
-    let xlsxFile = fileEl('xlsx-file');
-    let drugsFile = fileEl('drugs-file');
+    let xmlFile = options.file || fileEl('xml-file');
+    let xlsxFile = options.pricingFile || fileEl('xlsx-file');
+    let drugsFile = options.drugsFile || fileEl('drugs-file');
 
     if (!xmlFile && window.unifiedCheckerFiles && window.unifiedCheckerFiles.xml) {
       xmlFile = window.unifiedCheckerFiles.xml;
@@ -349,7 +354,8 @@ async function handleRun() {
       console.log('[PRICING] Bundled drugs map loaded, entries:', drugsMap ? drugsMap.size : 0);
     }
 
-    const isMedicalMode = getSelectedClaimTypeMode() === 'MEDICAL';
+    const claimTypeMode = normalizeClaimTypeMode(options.claimTypeMode) || getSelectedClaimTypeMode();
+    const isMedicalMode = claimTypeMode === 'MEDICAL';
 
     // Load factor rules from bundled resources/Factors.xlsx (Medical mode only; throws user-facing error if unavailable in medical mode)
     const factorRules = await loadBundledFactorRules(isMedicalMode);
@@ -390,7 +396,7 @@ async function handleRun() {
     const businessFindingsByRowKey = new Map();
     const claimLevelBusinessFindings = new Map();
 
-    if (isMedicalMode) {
+    if (claimTypeMode === 'MEDICAL') {
       if (!medicalShared) {
         throw new Error('Medical validation shared module is unavailable.');
       }
@@ -1760,8 +1766,8 @@ function escapeHtml(str) {
     .replaceAll("'", '&#039;');
 }
 
-window.runPricingCheck = async function () {
-  if (typeof handleRun === 'function') return await handleRun();
+window.runPricingCheck = async function (options = {}) {
+  if (typeof handleRun === 'function') return await handleRun(options);
   console.error('handleRun function not found');
   return null;
 };
@@ -1774,6 +1780,7 @@ window._pricingTestApi = {
   buildMedicalPricingMatcher,
   buildJsonPricingMatcher,
   buildPricingMatcher,
+  normalizeClaimTypeMode,
   buildFactorRulesFromWorkbook,
   findFactorFromRules
 };

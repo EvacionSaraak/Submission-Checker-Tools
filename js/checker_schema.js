@@ -47,14 +47,31 @@ function getSelectedClaimTypeMode() {
   return null;
 }
 
-function validateXmlSchema() {
-  const status = document.getElementById("uploadStatus");
-  const resultsDiv = document.getElementById("results");
-  
+function getScopedElement(container, selector) {
+  if (container && typeof container.querySelector === 'function') {
+    const scoped = container.querySelector(selector);
+    if (scoped) return scoped;
+  }
+  if (document && typeof document.querySelector === 'function') {
+    return document.querySelector(selector);
+  }
+  return null;
+}
+
+function buildSchemaMessageElement(message, className = 'checker-error') {
+  const el = document.createElement('div');
+  el.className = className;
+  el.textContent = message;
+  return el;
+}
+
+function validateXmlSchema(options = {}) {
+  const container = options.container || null;
+  const status = getScopedElement(container, '[data-role="schema-status"], #uploadStatus');
   if (status) status.textContent = "";
 
-  const fileInput = document.getElementById("xmlFile");
-  let file = fileInput?.files?.[0];
+  const fileInput = getScopedElement(container, '[data-role="schema-xml-file"], #xmlFile');
+  let file = options.file || fileInput?.files?.[0];
   
   // Fallback to unified checker files cache
   if (!file && window.unifiedCheckerFiles && window.unifiedCheckerFiles.xml) {
@@ -64,7 +81,7 @@ function validateXmlSchema() {
   
   if (!file) {
     if (status) status.textContent = "Please select an XML file first.";
-    return null;
+    return buildSchemaMessageElement('Schema Checker failed: Please select an XML file first.');
   }
 
   return new Promise((resolve) => {
@@ -82,8 +99,7 @@ function validateXmlSchema() {
         if (parseErrors.length > 0) {
           console.log('[SCHEMA] XML parsing error detected');
           if (status) status.textContent = "XML Parsing Error: The file is not well-formed.";
-          const errorDiv = document.createElement('pre');
-          errorDiv.textContent = parseErrors[0].textContent;
+          const errorDiv = buildSchemaMessageElement(`Schema Checker failed: XML Parsing Error: ${parseErrors[0].textContent}`);
           resolve(errorDiv);
           return;
         }
@@ -95,7 +111,7 @@ function validateXmlSchema() {
           schemaType = "claim";
           console.log('[SCHEMA] Validating Claim schema');
           const clinicianSpecialtyMap = await loadClinicianSpecialtyMap();
-          const claimTypeMode = getSelectedClaimTypeMode();
+          const claimTypeMode = String(options.claimTypeMode || getSelectedClaimTypeMode() || '').trim().toUpperCase();
           results = validateClaimSchema(xmlDoc, originalXmlContent, { clinicianSpecialtyMap, claimTypeMode });
           console.log('[SCHEMA] Claim validation complete, results count:', results.length);
         } else if (xmlDoc.documentElement.nodeName === "Person.Register") {
@@ -106,12 +122,12 @@ function validateXmlSchema() {
         } else {
           console.log('[SCHEMA] Unknown schema type:', xmlDoc.documentElement.nodeName);
           if (status) status.textContent = "Unknown schema: " + xmlDoc.documentElement.nodeName;
-          resolve(null);
+          resolve(buildSchemaMessageElement(`Schema Checker failed: Unknown schema: ${xmlDoc.documentElement.nodeName}`));
           return;
         }
         
         console.log('[SCHEMA] Rendering results table...');
-        const tableElement = renderResults(results, schemaType);
+        const tableElement = renderResults(results, schemaType, { fileName: file.name || '' });
         console.log('[SCHEMA] Table element created:', tableElement ? 'success' : 'failed');
 
         // Stats
@@ -125,13 +141,13 @@ function validateXmlSchema() {
       } catch (error) {
         console.error('[SCHEMA] Error during validation:', error);
         if (status) status.textContent = "Error: " + error.message;
-        resolve(null);
+        resolve(buildSchemaMessageElement(`Schema Checker failed: ${error.message}`));
       }
     };
     reader.onerror = function () {
       console.error('[SCHEMA] FileReader error');
       if (status) status.textContent = "Error reading the file.";
-      resolve(null);
+      resolve(buildSchemaMessageElement('Schema Checker failed: Error reading the file.'));
     };
     reader.readAsText(file);
   });
@@ -1171,11 +1187,12 @@ function claimToHtmlTable(xmlString) {
 }
 
 // renderResults - builds and RETURNS table element instead of inserting into DOM
-function renderResults(results, schemaType) {
+function renderResults(results, schemaType, options = {}) {
   // keep a global reference so export works even if scopes change
   const safeResults = Array.isArray(results) ? results.slice() : [];
   window._lastValidationResults = safeResults;
   window._lastValidationSchema = schemaType || "claim";
+  window._lastValidationFileName = options.fileName || '';
 
   const idLabel = schemaType === "person" ? "Member ID" : "Claim ID";
   
@@ -1184,6 +1201,8 @@ function renderResults(results, schemaType) {
   table.className = 'table table-striped table-bordered';
   table.style.borderCollapse = 'collapse';
   table.style.width = '100%';
+  table.dataset.schemaType = schemaType || 'claim';
+  table.dataset.sourceFileName = options.fileName || '';
   
   // Build table using innerHTML for consistency with other checkers (teeth, elig, auths)
   const tableHTML = `
@@ -1206,7 +1225,7 @@ function renderResults(results, schemaType) {
             <td style="padding:6px;border:1px solid #ccc">${sanitizeForHTML(row.Remark)}</td>
             <td style="padding:6px;border:1px solid #ccc">${row.Valid ? "Yes" : "No"}</td>
             <td style="padding:6px;border:1px solid #ccc">
-              <button class="view-claim-btn" data-index="${index}">View</button>
+             <button class="view-claim-btn" data-index="${index}" data-claim-xml="${encodeURIComponent(row.ClaimXML || '')}">View</button>
             </td>
           </tr>`;
       }).join('')}
@@ -1256,8 +1275,11 @@ function exportErrorsToXLSX(data, schemaType) {
   }));
 
   let fileName = null;
+  const lastValidationFileName = window._lastValidationFileName || '';
   const fileInput = document.getElementById("xmlFile");
-  if (fileInput && fileInput.files && fileInput.files[0] && fileInput.files[0].name) {
+  if (lastValidationFileName) {
+    fileName = lastValidationFileName.replace(/\.[^/.]+$/, "") + "_errors.xlsx";
+  } else if (fileInput && fileInput.files && fileInput.files[0] && fileInput.files[0].name) {
     fileName = fileInput.files[0].name.replace(/\.[^/.]+$/, "") + "_errors.xlsx";
   } else {
     const ts = new Date().toISOString().replace(/[:.]/g, "-");
@@ -1285,6 +1307,10 @@ function exportErrorsToXLSX(data, schemaType) {
       CLAIM_NOT_MERGED,
       parseEncounterDateTime,
       buildNotMergedRemarksFromContexts
+    };
+    window._schemaTestApi = {
+      validateXmlSchema,
+      renderResults
     };
 
   } catch (error) {

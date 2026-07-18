@@ -47,6 +47,42 @@ function loadSchemaNotMergedUtils() {
   return utils;
 }
 
+function loadSchemaTestApi() {
+  const schemaPath = path.join(__dirname, '..', 'js', 'checker_schema.js');
+  const schemaCode = fs.readFileSync(schemaPath, 'utf8');
+  const context = {
+    window: {},
+    document: {
+      getElementById() { return null; },
+      querySelector() { return null; },
+      createElement(tagName) {
+        return {
+          tagName: String(tagName || '').toUpperCase(),
+          className: '',
+          textContent: '',
+          style: {},
+          dataset: {},
+          innerHTML: '',
+          appendChild() {},
+          querySelector() { return null; }
+        };
+      },
+      body: { insertAdjacentHTML() {} }
+    },
+    console,
+    DOMParser: function DOMParser() {},
+    FileReader: function FileReader() {},
+    XLSX: {}
+  };
+
+  vm.createContext(context);
+  vm.runInContext(schemaCode, context, { filename: 'checker_schema.js' });
+
+  const api = context.window._schemaTestApi;
+  assert(api, 'Schema test API was not exposed');
+  return { api, context };
+}
+
 function loadPricingTestApi() {
   const pricingPath = path.join(__dirname, '..', 'js', 'checker_pricing.js');
   const pricingCode = fs.readFileSync(pricingPath, 'utf8');
@@ -218,6 +254,8 @@ await run('Exclusion rules-load failure surfaces error', async () => {
 });
 
 const schemaUtils = loadSchemaNotMergedUtils();
+const schemaTest = loadSchemaTestApi();
+const schemaApi = schemaTest.api;
 const pricingTest = loadPricingTestApi();
 const pricingApi = pricingTest.api;
 const drugShared = pricingTest.drugShared;
@@ -348,7 +386,7 @@ await run('97-series timing accepts 22 minutes quantity 1', () => {
   assert(findings.length === 0, 'Expected 22 minutes with quantity 1 to pass');
 });
 
-await run('97-series timing rejects 23 minutes quantity 1', () => {
+await run('97-series timing accepts 23 minutes quantity 1', () => {
   const findings = medicalShared.validate97SeriesQuantityBands({
     claimID: 'C1',
     parsedEncounterStart: medicalShared.parseEncounterDateTime('01/01/2026 10:00'),
@@ -360,7 +398,70 @@ await run('97-series timing rejects 23 minutes quantity 1', () => {
     { min: 38, max: 52, quantity: 3 },
     { min: 53, max: 67, quantity: 4 }
   ], maxSupportedQuantity: 4, codePrefixes: ['97'] } } });
-  assert(findings.some(f => f.ruleId === 'MED_97_QUANTITY_MISMATCH'), 'Expected mismatch finding for 23 minutes quantity 1');
+  assert(findings.length === 0, 'Expected 23 minutes with quantity 1 to pass');
+});
+
+await run('97-series timing accepts 45 minutes quantity 1-3', () => {
+  [1, 2, 3].forEach(quantity => {
+    const findings = medicalShared.validate97SeriesQuantityBands({
+      claimID: 'C1',
+      parsedEncounterStart: medicalShared.parseEncounterDateTime('01/01/2026 10:00'),
+      parsedEncounterEnd: medicalShared.parseEncounterDateTime('01/01/2026 10:45'),
+      activities: [{ code: '97802', normalizedCode: '97802', quantity }]
+    }, { timing: { series97: { bands: [
+      { min: 8, max: 22, quantity: 1 },
+      { min: 23, max: 37, quantity: 2 },
+      { min: 38, max: 52, quantity: 3 },
+      { min: 53, max: 67, quantity: 4 }
+    ], maxSupportedQuantity: 4, codePrefixes: ['97'] } } });
+    assert(findings.length === 0, `Expected 45 minutes with quantity ${quantity} to pass`);
+  });
+});
+
+await run('97-series timing rejects 45 minutes quantity 4 with code-specific wording', () => {
+  const findings = medicalShared.validate97SeriesQuantityBands({
+    claimID: 'C1',
+    parsedEncounterStart: medicalShared.parseEncounterDateTime('01/01/2026 10:00'),
+    parsedEncounterEnd: medicalShared.parseEncounterDateTime('01/01/2026 10:45'),
+    activities: [{ code: '97802', normalizedCode: '97802', quantity: 4 }]
+  }, { timing: { series97: { bands: [
+    { min: 8, max: 22, quantity: 1 },
+    { min: 23, max: 37, quantity: 2 },
+    { min: 38, max: 52, quantity: 3 },
+    { min: 53, max: 67, quantity: 4 }
+  ], maxSupportedQuantity: 4, codePrefixes: ['97'] } } });
+  assert(findings.some(f => f.ruleId === 'MED_97_QUANTITY_MISMATCH'), 'Expected mismatch finding for 45 minutes quantity 4');
+  assert(findings.some(f => /Code 97802: encounter duration 45 minutes allows a maximum total quantity of 3, but found 4\./.test(f.remark)), 'Expected code-specific quantity mismatch wording');
+});
+
+await run('97-series timing combined-code wording lists actual codes', () => {
+  const findings = medicalShared.validate97SeriesQuantityBands({
+    claimID: 'C1',
+    parsedEncounterStart: medicalShared.parseEncounterDateTime('01/01/2026 10:00'),
+    parsedEncounterEnd: medicalShared.parseEncounterDateTime('01/01/2026 10:45'),
+    activities: [
+      { code: '97802', normalizedCode: '97802', quantity: 2 },
+      { code: '97803', normalizedCode: '97803', quantity: 2 }
+    ]
+  }, { timing: { series97: { bands: [
+    { min: 8, max: 22, quantity: 1 },
+    { min: 23, max: 37, quantity: 2 },
+    { min: 38, max: 52, quantity: 3 },
+    { min: 53, max: 67, quantity: 4 }
+  ], maxSupportedQuantity: 4, codePrefixes: ['97'] } } });
+  assert(findings.some(f => /Codes 97802 and 97803: encounter duration 45 minutes allows a maximum total quantity of 3, but found 4\./.test(f.remark)), 'Expected combined-code wording for 97802 and 97803');
+});
+
+await run('97-series timing missing encounter times names the code', () => {
+  const findings = medicalShared.validate97SeriesQuantityBands({
+    claimID: 'C1',
+    parsedEncounterStart: null,
+    parsedEncounterEnd: null,
+    activities: [{ code: '97802', normalizedCode: '97802', quantity: 1 }]
+  }, { timing: { series97: { bands: [
+    { min: 8, max: 22, quantity: 1 }
+  ], maxSupportedQuantity: 1, codePrefixes: ['97'] } } });
+  assert(findings.some(f => /Code 97802: unable to validate encounter duration because encounter start\/end is missing\./.test(f.remark)), 'Expected code-specific missing encounter time wording');
 });
 
 await run('97-series timing rejects 68 minutes quantity 4 as out-of-range', () => {
@@ -914,6 +1015,25 @@ await run('Unknown facility returns factor 1 with no rule', () => {
   const result = pricingApi.findFactorFromRules(factorRules, 'MF0000', '97802', 'D001');
   assert(result.factor === 1, `Expected factor 1 for unknown facility, got ${result.factor}`);
   assert(result.rule === null, 'Expected null rule for unknown facility');
+});
+
+await run('Pricing claim-type normalizer accepts MEDICAL and DENTAL only', () => {
+  assert(pricingApi.normalizeClaimTypeMode('medical') === 'MEDICAL', 'Expected lowercase medical to normalize');
+  assert(pricingApi.normalizeClaimTypeMode(' dental ') === 'DENTAL', 'Expected padded dental to normalize');
+  assert(pricingApi.normalizeClaimTypeMode('other') === null, 'Expected unsupported claim type to normalize to null');
+});
+
+await run('Schema validateXmlSchema with explicit file/container returns visible error element when file missing', () => {
+  const statusNode = { textContent: '' };
+  const container = {
+    querySelector(selector) {
+      if (selector.includes('schema-status')) return statusNode;
+      return null;
+    }
+  };
+  const result = schemaApi.validateXmlSchema({ file: null, container, claimTypeMode: 'MEDICAL' });
+  assert(result && result.textContent === 'Schema Checker failed: Please select an XML file first.', 'Expected visible schema error element when file is missing');
+  assert(statusNode.textContent === 'Please select an XML file first.', 'Expected container-scoped schema status to be updated');
 });
 
 if (process.exitCode) {

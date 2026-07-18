@@ -475,13 +475,27 @@
     const relevantActivities = (context.activities || []).filter(activity => prefixes.some(prefix => activity.normalizedCode.startsWith(String(prefix).toUpperCase())));
     if (relevantActivities.length === 0) return findings;
 
+    const uniqueCodes = Array.from(new Set(
+      relevantActivities
+        .map(activity => String(activity.code || activity.normalizedCode || '').trim())
+        .filter(Boolean)
+    ));
+    const formatCodeList = codes => {
+      if (codes.length <= 1) return codes[0] || '(unknown)';
+      if (codes.length === 2) return `${codes[0]} and ${codes[1]}`;
+      return `${codes.slice(0, -1).join(', ')}, and ${codes[codes.length - 1]}`;
+    };
+    const codesLabel = uniqueCodes.length === 1
+      ? `Code ${uniqueCodes[0]}`
+      : `Codes ${formatCodeList(uniqueCodes)}`;
+
     const start = context.parsedEncounterStart;
     const end = context.parsedEncounterEnd;
     if (!start || !end) {
       findings.push(makeFinding({
         ruleId: 'MED_97_DURATION_UNKNOWN',
         status: 'Unknown',
-        remark: 'Unable to validate 97-series quantity because encounter start/end is missing.',
+        remark: `${codesLabel}: unable to validate encounter duration because encounter start/end is missing.`,
         context
       }));
       return findings;
@@ -497,7 +511,7 @@
       findings.push(makeFinding({
         ruleId: 'MED_97_BAND_CONFIG_MISSING',
         status: 'Unknown',
-        remark: '97-series quantity bands are not configured.',
+        remark: `${codesLabel}: timing bands are not configured.`,
         context
       }));
       return findings;
@@ -508,16 +522,16 @@
     if (duration < firstBand.min) {
       findings.push(makeFinding({
         ruleId: 'MED_97_DURATION_MIN',
-        remark: `97-series duration ${duration} minutes is below the minimum ${firstBand.min} minutes.`,
+        remark: `${codesLabel}: encounter duration ${duration} minutes is below the minimum configured duration of ${firstBand.min} minutes.`,
         context
       }));
       return findings;
     }
 
-    if (duration > lastBand.max || totalQty > Number(timingRules.maxSupportedQuantity || lastBand.quantity)) {
+    if (duration > lastBand.max) {
       findings.push(makeFinding({
         ruleId: 'MED_97_DURATION_RANGE',
-        remark: `97-series duration ${duration} minutes with quantity ${totalQty} is outside configured range.`,
+        remark: `${codesLabel}: encounter duration ${duration} minutes is outside the configured timing range of ${firstBand.min}-${lastBand.max} minutes.`,
         context
       }));
       return findings;
@@ -527,17 +541,23 @@
     if (!matchedBand) {
       findings.push(makeFinding({
         ruleId: 'MED_97_DURATION_BAND_MISSING',
-        remark: `No configured 97-series timing band covers duration ${duration} minutes.`,
+        remark: `${codesLabel}: no configured timing band covers encounter duration ${duration} minutes.`,
         context
       }));
       return findings;
     }
 
-    if (totalQty !== matchedBand.quantity) {
+    const matchedBandQty = Number(matchedBand.quantity);
+    const configuredMaxQty = Number(timingRules.maxSupportedQuantity);
+    const maxAllowedQty = Number.isFinite(configuredMaxQty)
+      ? Math.min(matchedBandQty, configuredMaxQty)
+      : matchedBandQty;
+
+    if (totalQty > maxAllowedQty) {
       findings.push(makeFinding({
         ruleId: 'MED_97_QUANTITY_MISMATCH',
-        remark: `97-series duration ${duration} minutes requires quantity ${matchedBand.quantity}, but found ${totalQty}.`,
-        expected: String(matchedBand.quantity),
+        remark: `${codesLabel}: encounter duration ${duration} minutes allows a maximum total quantity of ${maxAllowedQty}, but found ${totalQty}.`,
+        expected: String(maxAllowedQty),
         originalValue: String(totalQty),
         context
       }));
