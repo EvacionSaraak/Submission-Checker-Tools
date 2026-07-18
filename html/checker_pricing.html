@@ -21,6 +21,12 @@
 
   <div id="pricing-panel">
     <div class="form-row">
+      <label>Claim Type</label>
+      <label style="margin-right:16px"><input type="radio" name="claimTypeGlobal" id="claimTypeDental" value="DENTAL" checked> Dental</label>
+      <label><input type="radio" name="claimTypeGlobal" id="claimTypeMedical" value="MEDICAL"> Medical</label>
+    </div>
+
+    <div class="form-row">
       <label for="xml-file">Upload XML file</label>
       <input type="file" id="xml-file" accept=".xml" />
     </div>
@@ -57,7 +63,7 @@
 
   <!-- Main script -->
   <script src="../js/drug_analysis_shared.js?v=20260717" defer></script>
-  <script src="../js/checker_pricing.js?v=20260718" defer></script>
+  <script src="../js/checker_pricing.js?v=20260718-3" defer></script>
   <script src="../js/table_clipboard.js"></script>
 </body>
 </html>

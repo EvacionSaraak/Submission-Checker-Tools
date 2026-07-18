@@ -881,9 +881,10 @@
         // without depending on an asynchronous dispatched-event side-effect.
         clinician: () => runClinicianCheck(files.xml),
         pricing: () => runPricingCheck({
-          file: files.xml,
-          pricingFile: files.pricing,
-          claimTypeMode: getGlobalClaimTypeMode()
+          xmlFile: files.xml,
+          xlsxFile: files.pricing || null,
+          drugsFile: files.drugs || null,
+          claimTypeMode: isMedicalModeSelected() ? 'MEDICAL' : 'DENTAL'
         }),
         modifiers: runModifiersCheck
       };

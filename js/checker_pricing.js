@@ -297,22 +297,32 @@ function normalizeClaimTypeMode(value) {
 async function handleRun(options = {}) {
   resetUI();
   try {
-    let xmlFile = options.file || fileEl('xml-file');
-    let xlsxFile = options.pricingFile || fileEl('xlsx-file');
-    let drugsFile = options.drugsFile || fileEl('drugs-file');
+    const explicitMode = String(options.claimTypeMode || '').trim().toUpperCase();
+    const selectedMode = explicitMode || String(getSelectedClaimTypeMode() || '').trim().toUpperCase();
+    const isMedicalMode = selectedMode === 'MEDICAL';
 
-    if (!xmlFile && window.unifiedCheckerFiles && window.unifiedCheckerFiles.xml) {
-      xmlFile = window.unifiedCheckerFiles.xml;
-      console.log('[PRICING] Using XML file from unified cache:', xmlFile.name);
+    console.log(`[PRICING] Claim type mode: ${selectedMode || '(missing)'}`);
+
+    if (!['MEDICAL', 'DENTAL'].includes(selectedMode)) {
+      throw new Error('Pricing Checker could not determine the selected claim type.');
     }
-    if (!xlsxFile && window.unifiedCheckerFiles && window.unifiedCheckerFiles.pricing) {
-      xlsxFile = window.unifiedCheckerFiles.pricing;
-      console.log('[PRICING] Using pricing file from unified cache:', xlsxFile.name);
-    }
-    if (!drugsFile && window.unifiedCheckerFiles && window.unifiedCheckerFiles.drugs) {
-      drugsFile = window.unifiedCheckerFiles.drugs;
-      console.log('[PRICING] Using drugs file from unified cache:', drugsFile.name);
-    }
+
+    let xmlFile =
+      options.xmlFile ||
+      fileEl('xml-file') ||
+      window.unifiedCheckerFiles?.xml;
+
+    let xlsxFile =
+      options.xlsxFile ||
+      fileEl('xlsx-file') ||
+      window.unifiedCheckerFiles?.pricing ||
+      null;
+
+    let drugsFile =
+      options.drugsFile ||
+      fileEl('drugs-file') ||
+      window.unifiedCheckerFiles?.drugs ||
+      null;
 
     if (!xmlFile) throw new Error('Please select an XML file.');
     showProgress(5, 'Reading files');
@@ -354,9 +364,6 @@ async function handleRun(options = {}) {
       console.log('[PRICING] Bundled drugs map loaded, entries:', drugsMap ? drugsMap.size : 0);
     }
 
-    const claimTypeMode = normalizeClaimTypeMode(options.claimTypeMode) || getSelectedClaimTypeMode();
-    const isMedicalMode = claimTypeMode === 'MEDICAL';
-
     // Load factor rules from bundled resources/Factors.xlsx (Medical mode only; throws user-facing error if unavailable in medical mode)
     const factorRules = await loadBundledFactorRules(isMedicalMode);
     console.log('[PRICING] Factor rules loaded, count:', factorRules ? factorRules.length : 0);
@@ -396,7 +403,7 @@ async function handleRun(options = {}) {
     const businessFindingsByRowKey = new Map();
     const claimLevelBusinessFindings = new Map();
 
-    if (claimTypeMode === 'MEDICAL') {
+    if (isMedicalMode) {
       if (!medicalShared) {
         throw new Error('Medical validation shared module is unavailable.');
       }
@@ -573,27 +580,28 @@ async function handleRun(options = {}) {
       let pricingContext;
       let isMedicalPricingMatch = false;
 
-      if (xlsxMatcher) {
+      if (!isMedicalMode && xlsxMatcher) {
         const isAlyaharGroup = facility === 'MF5357' || facility === 'MF7231' || facility === 'MF232';
         pricingContext = isAlyaharGroup ? 'Alyahar/Emirates/Al Wagan Thiqa Pricing' : 'Standard Thiqa Pricing';
-      } else if (pricingReceiverID === 'A001') {
+      } else if (!isMedicalMode && pricingReceiverID === 'A001') {
         const isDamanKhabisiAlyahar = facility === 'MF5020' || facility === 'MF5357';
         pricingContext = isDamanKhabisiAlyahar ? 'Daman – Khabisi/Al Yahar pricing' : 'Daman – Standard pricing';
-      } else {
+      } else if (!isMedicalMode) {
         const isThiqaAlyaharGroup = facility === 'MF5357' || facility === 'MF7231' || facility === 'MF232';
         pricingContext = isThiqaAlyaharGroup ? 'Alyahar/Emirates/Al Wagan Thiqa Pricing' : 'Standard Thiqa Pricing';
       }
+      // Medical mode: pricingContext will be set after medicalMatch is found below
 
-      if (xlsxMatcher) {
+      if (!isMedicalMode && xlsxMatcher) {
         const xlsxMatch = xlsxMatcher.find(rec.CPT);
         if (xlsxMatch) {
           const isAlyaharGroup = facility === 'MF5357' || facility === 'MF7231' || facility === 'MF232';
           refPrice = isAlyaharGroup ? xlsxMatch._secondaryPrice : xlsxMatch._primaryPrice;
           matchRow = xlsxMatch;
         }
-      } else {
-        // In Medical mode, skip dental pricing and use medical pricing directly
-        const jsonMatch = !isMedicalMode ? jsonMatcher.find(rec.CPT) : null;
+      } else if (!isMedicalMode) {
+        // Bundled Dental pricing
+        const jsonMatch = jsonMatcher.find(rec.CPT);
         if (jsonMatch) {
           if (pricingReceiverID === 'A001') {
             const isDamanKhabisiAlyahar = facility === 'MF5020' || facility === 'MF5357';
@@ -603,14 +611,15 @@ async function handleRun(options = {}) {
             refPrice = isThiqaAlyaharGroup ? jsonMatch.thiqa_alyahar : jsonMatch.thiqa_other;
           }
           matchRow = jsonMatch;
-        } else {
-          const medicalMatch = medicalMatcher.find(rec.ActivityType, rec.CPT);
-          if (medicalMatch) {
-            refPrice = medicalMatch.price;
-            matchRow = medicalMatch;
-            pricingContext = 'Mandatory Tariff Standard Pricing';
-            isMedicalPricingMatch = true;
-          }
+        }
+      } else {
+        // Medical mandatory-tariff pricing
+        const medicalMatch = medicalMatcher.find(rec.ActivityType, rec.CPT);
+        if (medicalMatch) {
+          refPrice = medicalMatch.price;
+          matchRow = medicalMatch;
+          pricingContext = 'Mandatory Tariff Standard Pricing';
+          isMedicalPricingMatch = true;
         }
       }
 
@@ -692,6 +701,11 @@ async function handleRun(options = {}) {
           effectiveRef = Math.round(ref * referenceFactor * 100) / 100;
         }
         // Modifier 25 and 24: no price change
+      }
+
+      // Ensure pricingContext has a fallback for Medical mode when no tariff match was found
+      if (!pricingContext) {
+        pricingContext = isMedicalMode ? 'Mandatory Tariff Pricing' : 'Standard Thiqa Pricing';
       }
 
       const computedRef = (match || endoEntry) && refPrice !== null && !Number.isNaN(ref) ? effectiveRef : null;
