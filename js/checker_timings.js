@@ -145,6 +145,12 @@ function extractClaims(xmlDoc, options = {}) {
   const receiverID = options.receiverID || '';
   const maximumEncounterMinutes = getMaximumEncounterMinutes({ claimMode, receiverID });
   const maximumEncounterHours = Math.floor(maximumEncounterMinutes / 60);
+
+  const normalizedClaimMode = String(claimMode || '')
+    .trim()
+    .toUpperCase();
+  const isMedicalClaim = normalizedClaimMode === 'MEDICAL';
+
   const results = [];
   xmlDoc.querySelectorAll('Claim').forEach(claim => {
     const claimId = claim.querySelector('ID')?.textContent || 'Unknown';
@@ -157,12 +163,17 @@ function extractClaims(xmlDoc, options = {}) {
     let baseValid = true, baseRemarks = [];
     if (encMin < 0) { baseValid = false; baseRemarks.push('Encounter end is before encounter start.');}
     const activities = Array.from(claim.querySelectorAll('Activity'));
-    const timeBased97Activities = activities
-      .map(activity => ({
-        code: activity.querySelector('Code')?.textContent?.trim() || '',
-        quantity: Number(activity.querySelector('Quantity')?.textContent?.trim() || '0')
-      }))
-      .filter(activity => /^97/.test(activity.code));
+
+    // 97-code duration/quantity rules are Medical-only.
+    const timeBased97Activities = isMedicalClaim
+      ? activities
+          .map(activity => ({
+            code: activity.querySelector('Code')?.textContent?.trim() || '',
+            quantity: Number(activity.querySelector('Quantity')?.textContent?.trim() || '0')
+          }))
+          .filter(activity => /^97/.test(activity.code))
+      : [];
+
     const total97Quantity = timeBased97Activities.reduce((sum, activity) => {
       const quantity = Number.isFinite(activity.quantity) ? activity.quantity : 0;
       return sum + quantity;
@@ -171,7 +182,16 @@ function extractClaims(xmlDoc, options = {}) {
     const matched97Band = get97BandForDuration(encMin);
     const has97OutOfRangeDuration = has97Activities && (encMin < SERIES_97_BANDS[0].min || encMin > SERIES_97_BANDS[SERIES_97_BANDS.length - 1].max);
     const has97OutOfRangeQuantity = has97Activities && total97Quantity > SERIES_97_BANDS[SERIES_97_BANDS.length - 1].quantity;
-    const has97QuantityMismatch = has97Activities && matched97Band && total97Quantity !== matched97Band.quantity;
+    const has97QuantityExcess =
+      has97Activities &&
+      matched97Band &&
+      total97Quantity > Number(matched97Band.quantity);
+
+    // Build code label for 97-series messages.
+    const relevant97Codes = Array.from(new Set(timeBased97Activities.map(a => a.code)));
+    const codeLabel97 = relevant97Codes.length === 1
+      ? `Code ${relevant97Codes[0]}`
+      : `Codes ${relevant97Codes.join(', ')}`;
 
     activities.forEach(activity => {
       const activityId = activity.querySelector('ID')?.textContent || 'Unknown';
@@ -210,12 +230,12 @@ function extractClaims(xmlDoc, options = {}) {
           remarks.push(`Encounter duration too long (${hours}h ${minutes}m). Should be ${maximumEncounterHours} hours maximum.`);
         }
       }
-      if (/^97/.test(codeValue) && has97Activities) {
+      if (isMedicalClaim && /^97/.test(codeValue) && has97Activities) {
         isValid = false;
         if (has97OutOfRangeDuration || has97OutOfRangeQuantity) {
-          remarks.push(`97-series duration/quantity is out of supported range (Duration ${encMin} minutes, total quantity ${total97Quantity}).`);
-        } else if (has97QuantityMismatch && matched97Band) {
-          remarks.push(`97-series duration ${encMin} minutes requires total quantity ${matched97Band.quantity}, but found ${total97Quantity}.`);
+          remarks.push(`${codeLabel97}: encounter duration/quantity is out of supported range (Duration ${encMin} minutes, total quantity ${total97Quantity}).`);
+        } else if (has97QuantityExcess && matched97Band) {
+          remarks.push(`${codeLabel97}: encounter duration ${encMin} minutes allows a maximum total quantity of ${matched97Band.quantity}, but found ${total97Quantity}.`);
         } else {
           isValid = baseValid;
         }
@@ -518,6 +538,13 @@ function formatDateTimeCell(datetimeStr) {
 
     // Expose function globally for unified checker
     window.validateTimingsAsync = validateTimingsAsync;
+
+    // Expose test API for Node.js tests
+    window._timingsTestApi = {
+      extractClaims,
+      get97BandForDuration,
+      SERIES_97_BANDS
+    };
 
     // Initialize standalone mode if xmlFileInput exists
     const xmlFileInput = document.getElementById('xmlFileInput');

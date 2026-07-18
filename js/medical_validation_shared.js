@@ -469,6 +469,15 @@
 
   function validate97SeriesQuantityBands(context, rules) {
     const findings = [];
+
+    // Defensive mode guard: this rule is Medical-only.
+    if (
+      context.claimTypeMode &&
+      String(context.claimTypeMode).toUpperCase() !== 'MEDICAL'
+    ) {
+      return findings;
+    }
+
     const timingRules = (rules && rules.timing && rules.timing.series97) || {};
     const bands = Array.isArray(timingRules.bands) ? timingRules.bands.slice().sort((a, b) => a.min - b.min) : [];
     const prefixes = Array.isArray(timingRules.codePrefixes) && timingRules.codePrefixes.length > 0 ? timingRules.codePrefixes : ['97'];

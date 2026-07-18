@@ -595,6 +595,69 @@ function isOphthalmologyOrPsychiatrySpecialty(specialty) {
   return normalized.includes('OPTHALMOLOGY') || normalized.includes('OPHTHALMOLOGY') || normalized.includes('PSYCHIATRY');
 }
 
+function validateMedicalOrderingConsistency(activities, text, invalidFields, options = {}) {
+  if (!options.isMedicalClaim) return;
+
+  const nonBlankOrdering = new Set();
+  const missingOrderingCodes = [];
+  const duplicatePairs = new Map();
+
+  Array.from(activities || []).forEach(activity => {
+    const code = text('Code', activity);
+    const ordering = String(
+      text('OrderingClinician', activity) || ''
+    ).trim().toUpperCase();
+
+    const normalizedCode = String(code || '')
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9\-]/g, '');
+
+    if (!ordering) {
+      if (code) missingOrderingCodes.push(code);
+      return;
+    }
+
+    nonBlankOrdering.add(ordering);
+
+    if (!normalizedCode) return;
+
+    const pairKey = `${normalizedCode}|${ordering}`;
+    duplicatePairs.set(
+      pairKey,
+      (duplicatePairs.get(pairKey) || 0) + 1
+    );
+  });
+
+  if (nonBlankOrdering.size > 1) {
+    invalidFields.push(
+      `Claim ${text('ID')} has multiple Ordering Clinicians: ` +
+      `${Array.from(nonBlankOrdering).join(', ')}.`
+    );
+  }
+
+  if (missingOrderingCodes.length > 0) {
+    const uniqueCodes = Array.from(
+      new Set(missingOrderingCodes)
+    );
+
+    invalidFields.push(
+      `Missing OrderingClinician for activities: ` +
+      `${uniqueCodes.join(', ')}.`
+    );
+  }
+
+  duplicatePairs.forEach((count, pairKey) => {
+    if (count < 2) return;
+
+    const [code, ordering] = pairKey.split('|');
+
+    invalidFields.push(
+      `Duplicate code ${code} with Ordering Clinician ${ordering}.`
+    );
+  });
+}
+
 function validateConsultationAndSpecialtyRules(activities, text, invalidFields, clinicianSpecialtyMap, options = {}) {
   const isMedicalClaim = options.isMedicalClaim === true;
   if (!isMedicalClaim) return;
@@ -622,42 +685,6 @@ function validateConsultationAndSpecialtyRules(activities, text, invalidFields, 
 
     if (INVALID_ACTIVITY_CODES.has(ctx.code)) {
       invalidFields.push(`Activity ${ctx.code} is invalid and cannot be used`);
-    }
-
-    function validateMedicalOrderingConsistency(activities, text, invalidFields, options = {}) {
-      if (!options.isMedicalClaim) return;
-      const nonBlankOrdering = new Set();
-      const missingOrderingCodes = [];
-      const duplicatePairs = new Map();
-
-      Array.from(activities || []).forEach(activity => {
-        const code = text('Code', activity);
-        const ordering = String(text('OrderingClinician', activity) || '').trim().toUpperCase();
-        const normalizedCode = String(code || '').trim().toUpperCase().replace(/[^A-Z0-9\-]/g, '');
-        if (!ordering) {
-          if (code) missingOrderingCodes.push(code);
-          return;
-        }
-        nonBlankOrdering.add(ordering);
-        if (!normalizedCode) return;
-        const pairKey = `${normalizedCode}|${ordering}`;
-        duplicatePairs.set(pairKey, (duplicatePairs.get(pairKey) || 0) + 1);
-      });
-
-      if (nonBlankOrdering.size > 1) {
-        invalidFields.push(`Claim ${text('ID')} has multiple Ordering Clinicians: ${Array.from(nonBlankOrdering).join(', ')}.`);
-      }
-
-      if (missingOrderingCodes.length > 0) {
-        const uniqueCodes = Array.from(new Set(missingOrderingCodes));
-        invalidFields.push(`Missing OrderingClinician for activities: ${uniqueCodes.join(', ')}.`);
-      }
-
-      duplicatePairs.forEach((count, pairKey) => {
-        if (count < 2) return;
-        const [code, ordering] = pairKey.split('|');
-        invalidFields.push(`Duplicate code ${code} with Ordering Clinician ${ordering}.`);
-      });
     }
 
     if (/^8/.test(ctx.code) && !specialtyContains(ctx.clinicianSpecialty, 'Pathology')) {
@@ -1310,7 +1337,9 @@ function exportErrorsToXLSX(data, schemaType) {
     };
     window._schemaTestApi = {
       validateXmlSchema,
-      renderResults
+      renderResults,
+      validateMedicalOrderingConsistency,
+      validateConsultationAndSpecialtyRules
     };
 
   } catch (error) {

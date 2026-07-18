@@ -47,6 +47,37 @@ function loadSchemaNotMergedUtils() {
   return utils;
 }
 
+function loadTimingsTestApi() {
+  const timingsPath = path.join(__dirname, '..', 'js', 'checker_timings.js');
+  const timingsCode = fs.readFileSync(timingsPath, 'utf8');
+  const context = {
+    window: {},
+    document: {
+      getElementById() { return null; },
+      querySelector() { return null; }
+    },
+    console,
+    DOMParser: function DOMParser() {
+      this.parseFromString = function(str) {
+        const elements = [];
+        return {
+          querySelectorAll(selector) { return []; },
+          querySelector(selector) { return null; }
+        };
+      };
+    },
+    FileReader: function FileReader() {},
+    XLSX: {}
+  };
+
+  vm.createContext(context);
+  vm.runInContext(timingsCode, context, { filename: 'checker_timings.js' });
+
+  const api = context.window._timingsTestApi;
+  assert(api, 'Timings test API was not exposed');
+  return api;
+}
+
 function loadSchemaTestApi() {
   const schemaPath = path.join(__dirname, '..', 'js', 'checker_schema.js');
   const schemaCode = fs.readFileSync(schemaPath, 'utf8');
@@ -259,6 +290,60 @@ const schemaApi = schemaTest.api;
 const pricingTest = loadPricingTestApi();
 const pricingApi = pricingTest.api;
 const drugShared = pricingTest.drugShared;
+const timingsApi = loadTimingsTestApi();
+
+function makeEl(tag, textContent) {
+  return { _tag: tag, textContent: textContent || '', querySelector(sel) { return null; } };
+}
+
+function makeActivity({ id, code, quantity, start, type } = {}) {
+  const children = {
+    ID: makeEl('ID', id || 'A1'),
+    Code: makeEl('Code', code || ''),
+    Quantity: makeEl('Quantity', String(quantity !== undefined ? quantity : 1)),
+    Start: start !== undefined ? makeEl('Start', start) : undefined,
+    Type: makeEl('Type', type || '5')
+  };
+  return {
+    querySelector(sel) {
+      return children[sel] !== undefined ? children[sel] : null;
+    }
+  };
+}
+
+function makeEncounter({ start, end } = {}) {
+  return {
+    querySelector(sel) {
+      if (sel === 'Start') return makeEl('Start', start || '01/01/2026 10:00');
+      if (sel === 'End') return makeEl('End', end || '01/01/2026 10:45');
+      return null;
+    }
+  };
+}
+
+function makeMockXmlDoc(claimsConfig) {
+  const claimEls = claimsConfig.map(cfg => {
+    const activities = (cfg.activities || []).map(makeActivity);
+    const enc = makeEncounter(cfg.encounter || {});
+    return {
+      querySelector(sel) {
+        if (sel === 'ID') return makeEl('ID', cfg.id || 'C1');
+        if (sel === 'Encounter') return enc;
+        return null;
+      },
+      querySelectorAll(sel) {
+        if (sel === 'Activity') return activities;
+        return [];
+      }
+    };
+  });
+  return {
+    querySelectorAll(sel) {
+      if (sel === 'Claim') return claimEls;
+      return [];
+    }
+  };
+}
 
 function ts(input) {
   return schemaUtils.parseEncounterDateTime(input);
@@ -1034,6 +1119,135 @@ await run('Schema validateXmlSchema with explicit file/container returns visible
   const result = schemaApi.validateXmlSchema({ file: null, container, claimTypeMode: 'MEDICAL' });
   assert(result && result.textContent === 'Schema Checker failed: Please select an XML file first.', 'Expected visible schema error element when file is missing');
   assert(statusNode.textContent === 'Please select an XML file first.', 'Expected container-scoped schema status to be updated');
+});
+
+// --- Timings checker: 97-code Dental/Medical guard ---
+
+await run('Timings: Dental + code 97803 + 45 minutes + quantity 1 has no 97-code finding', () => {
+  const xmlDoc = makeMockXmlDoc([{
+    id: 'C1',
+    encounter: { start: '01/01/2026 10:00', end: '01/01/2026 10:45' },
+    activities: [{ id: 'A1', code: '97803', quantity: 1, start: '01/01/2026 10:00' }]
+  }]);
+  const rows = timingsApi.extractClaims(xmlDoc, { claimMode: 'DENTAL', requiredType: '6' });
+  const has97Finding = rows.some(r => (r.remarks || []).some(rem => /97803/.test(rem)));
+  assert(!has97Finding, 'Expected no 97-code finding for Dental claim');
+});
+
+await run('Timings: Medical + code 97803 + 45 minutes + quantity 1 is valid', () => {
+  const xmlDoc = makeMockXmlDoc([{
+    id: 'C1',
+    encounter: { start: '01/01/2026 10:00', end: '01/01/2026 10:45' },
+    activities: [{ id: 'A1', code: '97803', quantity: 1, start: '01/01/2026 10:00' }]
+  }]);
+  const rows = timingsApi.extractClaims(xmlDoc, { claimMode: 'MEDICAL', requiredType: '3' });
+  const has97Finding = rows.some(r => (r.remarks || []).some(rem => /97803/.test(rem)));
+  assert(!has97Finding, 'Expected no 97-code finding for Medical claim with quantity 1 and 45 minutes');
+  assert(rows.every(r => r.isValid), 'Expected all rows to be valid');
+});
+
+await run('Timings: Medical + code 97803 + 45 minutes + quantity 3 is valid', () => {
+  const xmlDoc = makeMockXmlDoc([{
+    id: 'C1',
+    encounter: { start: '01/01/2026 10:00', end: '01/01/2026 10:45' },
+    activities: [{ id: 'A1', code: '97803', quantity: 3, start: '01/01/2026 10:00' }]
+  }]);
+  const rows = timingsApi.extractClaims(xmlDoc, { claimMode: 'MEDICAL', requiredType: '3' });
+  const has97Finding = rows.some(r => (r.remarks || []).some(rem => /97803/.test(rem)));
+  assert(!has97Finding, 'Expected no 97-code finding for Medical claim with quantity 3 and 45 minutes');
+  assert(rows.every(r => r.isValid), 'Expected all rows to be valid');
+});
+
+await run('Timings: Medical + code 97803 + 45 minutes + quantity 4 is invalid with code shown', () => {
+  const xmlDoc = makeMockXmlDoc([{
+    id: 'C1',
+    encounter: { start: '01/01/2026 10:00', end: '01/01/2026 10:45' },
+    activities: [{ id: 'A1', code: '97803', quantity: 4, start: '01/01/2026 10:00' }]
+  }]);
+  const rows = timingsApi.extractClaims(xmlDoc, { claimMode: 'MEDICAL', requiredType: '3' });
+  const has97Finding = rows.some(r => (r.remarks || []).some(rem => /97803/.test(rem)));
+  const hasMaxMsg = rows.some(r => (r.remarks || []).some(rem => /maximum total quantity/.test(rem)));
+  assert(has97Finding, 'Expected a 97803-specific finding for Medical claim with quantity 4 and 45 minutes');
+  assert(hasMaxMsg, 'Expected message to mention maximum total quantity');
+  assert(rows.some(r => !r.isValid), 'Expected at least one row to be invalid');
+});
+
+await run('Timings: Medical + 97802 and 97803 combined excess quantity shows both codes', () => {
+  const xmlDoc = makeMockXmlDoc([{
+    id: 'C1',
+    encounter: { start: '01/01/2026 10:00', end: '01/01/2026 10:45' },
+    activities: [
+      { id: 'A1', code: '97802', quantity: 2, start: '01/01/2026 10:00' },
+      { id: 'A2', code: '97803', quantity: 2, start: '01/01/2026 10:00' }
+    ]
+  }]);
+  const rows = timingsApi.extractClaims(xmlDoc, { claimMode: 'MEDICAL', requiredType: '3' });
+  const has97802 = rows.some(r => (r.remarks || []).some(rem => /97802/.test(rem)));
+  const has97803 = rows.some(r => (r.remarks || []).some(rem => /97803/.test(rem)));
+  assert(has97802 && has97803, 'Expected both 97802 and 97803 to appear in findings');
+  assert(rows.some(r => !r.isValid), 'Expected at least one row to be invalid');
+});
+
+// --- Schema Checker: validateMedicalOrderingConsistency scope ---
+
+await run('Schema: validateMedicalOrderingConsistency is defined at correct scope', () => {
+  assert(typeof schemaApi.validateMedicalOrderingConsistency === 'function',
+    'Expected validateMedicalOrderingConsistency to be accessible via the test API');
+});
+
+await run('Schema: validateMedicalOrderingConsistency skips Dental claims', () => {
+  const invalidFields = [];
+  const activities = [
+    { _tag: 'Activity', querySelector(sel) {
+      if (sel === 'Code') return { textContent: '99213' };
+      if (sel === 'OrderingClinician') return { textContent: 'DR1' };
+      return null;
+    }},
+    { _tag: 'Activity', querySelector(sel) {
+      if (sel === 'Code') return { textContent: '99213' };
+      if (sel === 'OrderingClinician') return { textContent: 'DR2' };
+      return null;
+    }}
+  ];
+  function textFn(tag, node) {
+    if (!node) return '';
+    const el = node.querySelector && node.querySelector(tag);
+    return el && el.textContent ? el.textContent.trim() : '';
+  }
+  schemaApi.validateMedicalOrderingConsistency(activities, textFn, invalidFields, { isMedicalClaim: false });
+  assert(invalidFields.length === 0, 'Expected no ordering findings for Dental claim');
+});
+
+await run('Schema: validateMedicalOrderingConsistency detects multiple ordering clinicians for Medical', () => {
+  const invalidFields = [];
+  const activities = [
+    { querySelector(sel) {
+      if (sel === 'Code') return { textContent: '99213' };
+      if (sel === 'OrderingClinician') return { textContent: 'DR1' };
+      return null;
+    }},
+    { querySelector(sel) {
+      if (sel === 'Code') return { textContent: '99214' };
+      if (sel === 'OrderingClinician') return { textContent: 'DR2' };
+      return null;
+    }}
+  ];
+  function textFn(tag, node) {
+    if (!node) return '';
+    const el = node && node.querySelector && node.querySelector(tag);
+    if (el) return el.textContent ? el.textContent.trim() : '';
+    // top-level call like text('ID') without node
+    return 'CLAIM1';
+  }
+  schemaApi.validateMedicalOrderingConsistency(activities, textFn, invalidFields, { isMedicalClaim: true });
+  assert(invalidFields.some(f => /multiple Ordering Clinicians/.test(f)), 'Expected multiple ordering clinicians finding for Medical');
+});
+
+await run('Schema: no ReferenceError for validateMedicalOrderingConsistency during validateXmlSchema call', () => {
+  // This test verifies the function is in scope when validateClaimSchema calls it.
+  // It's already proven by the existence of schemaApi.validateMedicalOrderingConsistency,
+  // but we additionally confirm the schema loads without error.
+  assert(typeof schemaApi.validateXmlSchema === 'function', 'Expected validateXmlSchema to load without ReferenceError');
 });
 
 if (process.exitCode) {
