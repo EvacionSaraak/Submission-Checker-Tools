@@ -789,6 +789,56 @@ await run('Type 3 code in drugs does not route to drug path', () => {
   assert(pricingApi.isDrugActivityType('3') === false, 'Expected Type 3 to stay on medical CPT pricing path');
 });
 
+await run('Zero-priced non-drug activities are recognized across medical and dental types', () => {
+  assert(pricingApi.isZeroPricedActivityForPricing('3', 0) === true, 'Expected Medical non-drug zero net to be treated as zero-priced');
+  assert(pricingApi.isZeroPricedActivityForPricing('6', 0) === true, 'Expected Dental non-drug zero net to be treated as zero-priced');
+  assert(pricingApi.isZeroPricedActivityForPricing('3', 10) === false, 'Expected nonzero Medical net to use normal pricing comparison');
+});
+
+await run('Zero-priced drug activities keep drug-specific handling', () => {
+  assert(pricingApi.isZeroPricedActivityForPricing('5', 0) === false, 'Expected drug zero net to skip non-drug zero-price shortcut');
+});
+
+await run('No-pricing-match remark is suppressed for zero-priced non-drug activities', () => {
+  assert(
+    pricingApi.shouldAddNoPricingMatchRemark({
+      match: null,
+      endoEntry: null,
+      isZeroPricedActivity: true
+    }) === false,
+    'Expected no-pricing-match remark suppression for zero-priced non-drug activities'
+  );
+  assert(
+    pricingApi.shouldAddNoPricingMatchRemark({
+      match: null,
+      endoEntry: null,
+      isZeroPricedActivity: false
+    }) === true,
+    'Expected no-pricing-match remark for nonzero/non-shortcut activities'
+  );
+});
+
+await run('Reference-price error remarks are suppressed for zero-priced non-drug activities', () => {
+  assert(
+    pricingApi.shouldAddMissingEndoPriceRemark({
+      endoEntry: { code: 'X' },
+      refPrice: null,
+      isZeroPricedActivity: true
+    }) === false,
+    'Expected missing endo-price remark suppression for zero-priced non-drug activities'
+  );
+  assert(
+    pricingApi.shouldAddInvalidReferenceRemark({
+      match: { code: 'X' },
+      endoEntry: null,
+      refPrice: 'abc',
+      ref: Number.NaN,
+      isZeroPricedActivity: true
+    }) === false,
+    'Expected invalid-reference remark suppression for zero-priced non-drug activities'
+  );
+});
+
 await run('Type 5 valid active drug passes with package markup net', () => {
   const row = analyzeDrug();
   assert(row.status === 'Valid', 'Expected valid Type 5 drug pricing row');

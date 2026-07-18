@@ -55,6 +55,22 @@ function isDrugActivityType(activityType) {
   return String(activityType || '').trim() === '5';
 }
 
+function isZeroPricedActivityForPricing(activityType, net) {
+  return !isDrugActivityType(activityType) && moneyEqual(net, 0);
+}
+
+function shouldAddNoPricingMatchRemark({ match, endoEntry, isZeroPricedActivity }) {
+  return !match && !endoEntry && !isZeroPricedActivity;
+}
+
+function shouldAddMissingEndoPriceRemark({ endoEntry, refPrice, isZeroPricedActivity }) {
+  return !!endoEntry && refPrice === null && !isZeroPricedActivity;
+}
+
+function shouldAddInvalidReferenceRemark({ match, endoEntry, refPrice, ref, isZeroPricedActivity }) {
+  return (match || endoEntry) && refPrice !== null && Number.isNaN(ref) && !isZeroPricedActivity;
+}
+
 // Return the Bootstrap row-class for a pricing result row.
 function getPricingRowClass(row) {
   const status = String(row.status || '').trim().toLowerCase();
@@ -463,9 +479,9 @@ async function handleRun(options = {}) {
       const facility = rec.FacilityID || '';
       const xmlNet = Number(rec.Net || 0);
       const xmlQty = Number(rec.Quantity || 0);
-      const isZeroPricedMedicalActivity = isMedicalMode && moneyEqual(xmlNet, 0);
-      const claimPayerID = String(rec.PayerID || '').trim().toUpperCase();
       const isDrugActivity = isDrugActivityType(rec.ActivityType);
+      const isZeroPricedActivity = isZeroPricedActivityForPricing(rec.ActivityType, xmlNet);
+      const claimPayerID = String(rec.PayerID || '').trim().toUpperCase();
 
       if (!isDrugActivity && pricingReceiverID !== 'D001' && pricingReceiverID !== 'A001') {
         if (isMedicalMode && MEDICAL_CONFIGURED_PAYERS.has(pricingReceiverID)) {
@@ -711,7 +727,7 @@ async function handleRun(options = {}) {
       const computedRef = (match || endoEntry) && refPrice !== null && !Number.isNaN(ref) ? effectiveRef : null;
 
       if (xmlQty <= 0) remarks.push(xmlQty === 0 ? 'Quantity is 0 (invalid)' : 'Quantity is less than 0 (invalid)');
-      if (!match && !endoEntry && !isZeroPricedMedicalActivity) {
+      if (shouldAddNoPricingMatchRemark({ match, endoEntry, isZeroPricedActivity })) {
         if (isDrugActivity) {
           status = 'Unknown';
           if (drugsMap) {
@@ -724,12 +740,12 @@ async function handleRun(options = {}) {
           remarks.push(`No pricing match was found under ${pricingContext}.`);
         }
       }
-      if (endoEntry && refPrice === null) remarks.push(`Code ${rec.CPT} has no available price under ${pricingContext}.`);
-      if ((match || endoEntry) && refPrice !== null && Number.isNaN(ref)) remarks.push(`The reference price is not a valid number under ${pricingContext}.`);
+      if (shouldAddMissingEndoPriceRemark({ endoEntry, refPrice, isZeroPricedActivity })) remarks.push(`Code ${rec.CPT} has no available price under ${pricingContext}.`);
+      if (shouldAddInvalidReferenceRemark({ match, endoEntry, refPrice, ref, isZeroPricedActivity })) remarks.push(`The reference price is not a valid number under ${pricingContext}.`);
 
       const hasValidRef = (match || endoEntry) && refPrice !== null && !Number.isNaN(ref);
 
-      if (isZeroPricedMedicalActivity) {
+      if (isZeroPricedActivity) {
         status = 'Valid';
       } else if (hasValidRef && effectiveRef === 0) {
         status = 'Unknown';
@@ -1789,6 +1805,10 @@ window.runPricingCheck = async function (options = {}) {
 window._pricingTestApi = {
   analyzeDrugActivity,
   isDrugActivityType,
+  isZeroPricedActivityForPricing,
+  shouldAddNoPricingMatchRemark,
+  shouldAddMissingEndoPriceRemark,
+  shouldAddInvalidReferenceRemark,
   buildKnownCptCodeSet,
   normalizeDrugCode,
   buildMedicalPricingMatcher,
