@@ -441,20 +441,30 @@
 
   function validateDuplicateCodeOrdering(context, rules) {
     const findings = [];
-    const exceptionKeys = new Set(((rules && rules.duplicateActivityExceptions) || []).map(v => String(v || '').toUpperCase()));
+    const duplicateRules = (rules && rules.duplicateActivityRules) || {};
+    const allowedCodes = new Set(
+      ((duplicateRules.allowedDuplicateCodes) || []).map(normalizeActivityCode)
+    );
+    const allowedPairs = new Set(
+      [
+        ...((duplicateRules.allowedDuplicateCodeOrderingPairs) || []),
+        ...((rules && rules.duplicateActivityExceptions) || [])
+      ].map(value => String(value || '').trim().toUpperCase())
+    );
     const seen = new Map();
 
     (context.activities || []).forEach(activity => {
       const code = activity.normalizedCode;
       const ordering = normalizeLoose(activity.orderingClinician);
-      if (!code || !ordering) return;
+      if (!code || !ordering || allowedCodes.has(code)) return;
       const key = `${code}|${ordering}`;
+      if (allowedPairs.has(key)) return;
       if (!seen.has(key)) seen.set(key, []);
       seen.get(key).push(activity);
     });
 
     seen.forEach((activities, key) => {
-      if (activities.length < 2 || exceptionKeys.has(key)) return;
+      if (activities.length < 2) return;
       const sample = activities[0];
       findings.push(makeFinding({
         ruleId: 'MED_DUPLICATE_CODE_ORDERING',

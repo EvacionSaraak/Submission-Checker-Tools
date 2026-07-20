@@ -43,6 +43,13 @@ function formatMoney(value) {
   return Number.isFinite(n) ? String(n) : String(value);
 }
 
+function parseOptionalMoney(value) {
+  const raw = String(value == null ? '' : value).trim();
+  if (!raw) return null;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function normalizeDrugCode(value) {
   const shared = getDrugShared(false);
   if (shared && typeof shared.normalizeDrugCode === 'function') {
@@ -57,6 +64,129 @@ function isDrugActivityType(activityType) {
 
 function isZeroPricedActivityForPricing(activityType, net) {
   return !isDrugActivityType(activityType) && moneyEqual(net, 0);
+}
+
+function getPricingRowActivityType(row) {
+  return row && (row.ActivityType || (row.XmlRow && row.XmlRow.ActivityType) || row.type || '');
+}
+
+function getPricingRowCode(row) {
+  return normalizeCode(row && (row.CPT || row.code || row.Code || ''));
+}
+
+function getPricingRowNet(row) {
+  if (row && row.xmlNetNum != null) return Number(row.xmlNetNum || 0);
+  return Number(row && (row.Net || row.net || 0));
+}
+
+function getPricingRowClaimGross(row) {
+  return parseOptionalMoney(row && (row.ClaimGross || (row.XmlRow && row.XmlRow.ClaimGross) || ''));
+}
+
+function getPricingRowClaimNet(row) {
+  return parseOptionalMoney(row && (row.ClaimNet || (row.XmlRow && row.XmlRow.ClaimNet) || ''));
+}
+
+function buildConfiguredZeroPriceCodeSet(receiverID, medicalRules) {
+  const normalizedReceiver = String(receiverID || '').trim().toUpperCase();
+  const zeroPriceRules = (medicalRules && medicalRules.zeroPriceCodes) || {};
+  const allowed = new Set([
+    ...((zeroPriceRules.always) || []),
+    ...(((zeroPriceRules.byReceiver || {})[normalizedReceiver]) || [])
+  ].map(normalizeCode));
+
+  if (allowed.size === 0) {
+    allowed.add('99173');
+    if (['A001', 'D001', 'D004', 'A025'].includes(normalizedReceiver)) {
+      allowed.add('36415');
+    }
+  }
+
+  return allowed;
+}
+
+function isValidZeroPricedConsultationCompanion(row, claimRows) {
+  if (!moneyEqual(getPricingRowNet(row), 0)) {
+    return false;
+  }
+
+  const code = getPricingRowCode(row);
+  const pairedCode = {
+    '99203': '99202',
+    '99213': '99212'
+  }[code];
+
+  if (!pairedCode) {
+    return false;
+  }
+
+  return (claimRows || []).some(other =>
+    getPricingRowCode(other) === pairedCode
+    && Number(getPricingRowNet(other)) > 0
+  );
+}
+
+function isAllowedZeroPricedActivityForPricing(row, claimRows, options = {}) {
+  if (!isZeroPricedActivityForPricing(getPricingRowActivityType(row), getPricingRowNet(row))) {
+    return false;
+  }
+
+  const allowedCodes = buildConfiguredZeroPriceCodeSet(
+    options.receiverID || (row && (row.ReceiverID || row.PayerID)) || '',
+    options.medicalRules || null
+  );
+
+  return allowedCodes.has(getPricingRowCode(row))
+    || isValidZeroPricedConsultationCompanion(row, claimRows);
+}
+
+function shouldDeferA001PricingToClaimLevel({ receiverID, xmlNet, effectiveRef, xmlQty, isAllowedZeroPricedActivity }) {
+  if (receiverID !== 'A001' || isAllowedZeroPricedActivity) {
+    return false;
+  }
+
+  const referenceTotal = Number(effectiveRef) * Number(xmlQty || 0);
+  return Number.isFinite(referenceTotal)
+    && referenceTotal > 0
+    && Number(xmlNet) > 0
+    && Number(xmlNet) < referenceTotal;
+}
+
+function getPatientShareReferenceRows(actRows, options = {}) {
+  return (actRows || []).filter(row =>
+    !isAllowedZeroPricedActivityForPricing(row, actRows, {
+      receiverID: options.receiverID || (row && row.ReceiverID) || '',
+      medicalRules: options.medicalRules || null
+    })
+  );
+}
+
+function calculatePatientShareSummary(actRows, options = {}) {
+  const patientShareRows = getPatientShareReferenceRows(actRows, options);
+  const totalRef = roundMoney(patientShareRows.reduce((sum, row) => {
+    const quantity = Number(row.ClaimedQty || row.Quantity || 1);
+    const reference = row.ComputedRef !== null && row.ComputedRef !== undefined
+      ? Number(row.ComputedRef)
+      : getPricingRowNet(row);
+    return sum + (reference * quantity);
+  }, 0)) || 0;
+  const totalXmlNet = roundMoney((actRows || []).reduce((sum, row) => sum + getPricingRowNet(row), 0)) || 0;
+  const expectedPatientShare = roundMoney(totalRef - totalXmlNet) || 0;
+  const claimGross = (actRows || []).map(getPricingRowClaimGross).find(value => value !== null) ?? null;
+  const claimNet = (actRows || []).map(getPricingRowClaimNet).find(value => value !== null) ?? null;
+  const actualPatientShare = Number(((actRows || [])[0] && (actRows[0].PatientShare || actRows[0].ClaimPatientShare)) || 0);
+
+  return {
+    patientShareRows,
+    totalRef,
+    totalXmlNet,
+    expectedPatientShare,
+    claimGross,
+    claimNet,
+    claimTotalsConsistent: claimGross !== null && claimNet !== null
+      ? moneyEqual(claimGross, claimNet + actualPatientShare)
+      : null
+  };
 }
 
 function shouldAddNoPricingMatchRemark({ match, endoEntry, isZeroPricedActivity }) {
@@ -263,6 +393,8 @@ function analyzeDrugActivity(rec, options = {}) {
     ComputedRef: expectedNet,
     xmlNetNum: claimedNet,
     PatientShare: rec.PatientShare || '0',
+    ClaimGross: rec.ClaimGross || '',
+    ClaimNet: rec.ClaimNet || '',
     ReceiverID: receiverID,
     ClaimPayerID: String(rec.PayerID || '').trim().toUpperCase(),
     PayerID: receiverID,
@@ -408,6 +540,11 @@ async function handleRun(options = {}) {
       const lic = String(e['Phy Lic'] || '').trim();
       if (lic) clinicianSpecialtyMap.set(lic, String(e['Specialty'] || '').trim());
     });
+    const claimRecordsByID = new Map();
+    extracted.forEach(rec => {
+      if (!claimRecordsByID.has(rec.ClaimID)) claimRecordsByID.set(rec.ClaimID, []);
+      claimRecordsByID.get(rec.ClaimID).push(rec);
+    });
 
     const endoPricingMap = new Map();
     (Array.isArray(endoPricingRaw) ? endoPricingRaw : []).forEach(e => {
@@ -480,7 +617,11 @@ async function handleRun(options = {}) {
       const xmlNet = Number(rec.Net || 0);
       const xmlQty = Number(rec.Quantity || 0);
       const isDrugActivity = isDrugActivityType(rec.ActivityType);
-      const isZeroPricedActivity = isZeroPricedActivityForPricing(rec.ActivityType, xmlNet);
+      const claimRows = claimRecordsByID.get(rec.ClaimID) || [];
+      const isZeroPricedActivity = isAllowedZeroPricedActivityForPricing(rec, claimRows, {
+        receiverID: pricingReceiverID,
+        medicalRules
+      });
       const claimPayerID = String(rec.PayerID || '').trim().toUpperCase();
 
       if (!isDrugActivity && pricingReceiverID !== 'D001' && pricingReceiverID !== 'A001') {
@@ -509,6 +650,8 @@ async function handleRun(options = {}) {
             ComputedRef: null,
             xmlNetNum: xmlNet,
             PatientShare: rec.PatientShare || '0',
+            ClaimGross: rec.ClaimGross || '',
+            ClaimNet: rec.ClaimNet || '',
             ReceiverID: pricingReceiverID,
             ClaimPayerID: claimPayerID,
             PayerID: pricingReceiverID,
@@ -534,6 +677,8 @@ async function handleRun(options = {}) {
             ComputedRef: null,
             xmlNetNum: xmlNet,
             PatientShare: rec.PatientShare || '0',
+            ClaimGross: rec.ClaimGross || '',
+            ClaimNet: rec.ClaimNet || '',
             ReceiverID: pricingReceiverID,
             ClaimPayerID: claimPayerID,
             PayerID: pricingReceiverID,
@@ -583,6 +728,8 @@ async function handleRun(options = {}) {
           ComputedRef: 0,
           xmlNetNum: xmlNet,
           PatientShare: rec.PatientShare || '0',
+          ClaimGross: rec.ClaimGross || '',
+          ClaimNet: rec.ClaimNet || '',
           ReceiverID: pricingReceiverID,
           ClaimPayerID: claimPayerID,
           PayerID: pricingReceiverID,
@@ -763,6 +910,14 @@ async function handleRun(options = {}) {
             status = 'Valid';
           } else if (nonEndoUsedEndoPrice) {
             remarks.push(`Pricing for ${rec.CPT} is ${effectiveRef} following ${pricingContext}.\nEndo Pricing cannot be used for ${nonEndoClinicianSpec}.`);
+          } else if (shouldDeferA001PricingToClaimLevel({
+            receiverID: pricingReceiverID,
+            xmlNet,
+            effectiveRef,
+            xmlQty,
+            isAllowedZeroPricedActivity: isZeroPricedActivity
+          })) {
+            status = 'Valid';
           } else if (pricingReceiverID === 'A001') {
             const copayPct = Math.round((effectiveRef * xmlQty - xmlNet) / (effectiveRef * xmlQty) * 10000) / 100;
             remarks.push(`Copay: ${copayPct}%.`);
@@ -836,6 +991,8 @@ async function handleRun(options = {}) {
         ComputedRef: computedRef,
         xmlNetNum: xmlNet,
         PatientShare: rec.PatientShare || '0',
+        ClaimGross: rec.ClaimGross || '',
+        ClaimNet: rec.ClaimNet || '',
         ReceiverID: pricingReceiverID,
         ClaimPayerID: claimPayerID,
         PayerID: pricingReceiverID,
@@ -885,76 +1042,86 @@ async function handleRun(options = {}) {
 
       for (const [, actRows] of claimGroups) {
         const actualPS = Number(actRows[0].PatientShare || 0);
+        const primaryRow = actRows[0];
         if (actualPS === 0) {
           const msg = 'Patient Share is 0 — this is invalid for Daman (non-Thiqa) claims.';
-          actRows.forEach(r => {
+          if (isMedicalMode && medicalShared && medicalRules) {
+            primaryRow.findings = medicalShared.mergeFindingsBySeverity(
+              primaryRow.findings,
+              [asMedicalFinding({
+                ruleId: 'MED_PATIENT_SHARE_ZERO',
+                status: 'Unknown',
+                remark: msg,
+                claimID: primaryRow.ClaimID,
+                activityID: primaryRow.ActivityID,
+                code: primaryRow.CPT
+              })]
+            );
+            medicalShared.applyFinalStatus(primaryRow);
+          } else {
+            primaryRow.status = 'Unknown';
+            primaryRow.isValid = false;
+            primaryRow.Remarks = primaryRow.Remarks ? `${primaryRow.Remarks} ${msg}` : msg;
+          }
+        } else {
+          const summary = calculatePatientShareSummary(actRows, {
+            receiverID: pricingReceiverID,
+            medicalRules
+          });
+          const totalConsistencyMsg = summary.claimTotalsConsistent === false
+            ? `Claim totals are inconsistent.\nGross: ${summary.claimGross}.\nNet: ${summary.claimNet}.\nPatient Share: ${actualPS}.`
+            : '';
+
+          if (moneyEqual(actualPS, summary.expectedPatientShare)) {
             if (isMedicalMode && medicalShared && medicalRules) {
-              r.findings = medicalShared.mergeFindingsBySeverity(
-                r.findings,
+              const findings = [asMedicalFinding({
+                ruleId: 'MED_PATIENT_SHARE_MATCH',
+                status: 'Valid',
+                remark: `Patient Share ${actualPS} is correct.`,
+                claimID: primaryRow.ClaimID,
+                activityID: primaryRow.ActivityID,
+                code: primaryRow.CPT
+              })];
+              if (totalConsistencyMsg) {
+                findings.push(asMedicalFinding({
+                  ruleId: 'MED_PATIENT_SHARE_CLAIM_TOTALS',
+                  status: 'Invalid',
+                  remark: totalConsistencyMsg,
+                  claimID: primaryRow.ClaimID,
+                  activityID: primaryRow.ActivityID,
+                  code: primaryRow.CPT
+                }));
+              }
+              primaryRow.findings = medicalShared.mergeFindingsBySeverity(
+                primaryRow.findings,
+                findings
+              );
+              medicalShared.applyFinalStatus(primaryRow);
+            } else if (totalConsistencyMsg) {
+              primaryRow.status = 'Invalid';
+              primaryRow.isValid = false;
+              primaryRow.Remarks = primaryRow.Remarks ? `${primaryRow.Remarks} ${totalConsistencyMsg}` : totalConsistencyMsg;
+            }
+          } else {
+            const msg = `Patient Share ${actualPS} is incorrect.\nExpected: ${summary.expectedPatientShare} (Total Ref: ${summary.totalRef} − Total Net: ${summary.totalXmlNet}).${totalConsistencyMsg ? `\n${totalConsistencyMsg}` : ''}`;
+            if (isMedicalMode && medicalShared && medicalRules) {
+              primaryRow.findings = medicalShared.mergeFindingsBySeverity(
+                primaryRow.findings,
                 [asMedicalFinding({
-                  ruleId: 'MED_PATIENT_SHARE_ZERO',
+                  ruleId: 'MED_PATIENT_SHARE_MISMATCH',
                   status: 'Unknown',
                   remark: msg,
-                  claimID: r.ClaimID,
-                  activityID: r.ActivityID,
-                  code: r.CPT
+                  claimID: primaryRow.ClaimID,
+                  activityID: primaryRow.ActivityID,
+                  code: primaryRow.CPT
                 })]
               );
-              medicalShared.applyFinalStatus(r);
+              medicalShared.applyFinalStatus(primaryRow);
             } else {
-              r.status = 'Unknown';
-              r.isValid = false;
-              r.Remarks = r.Remarks ? `${r.Remarks} ${msg}` : msg;
+              primaryRow.status = 'Unknown';
+              primaryRow.isValid = false;
+              primaryRow.Remarks = primaryRow.Remarks ? `${primaryRow.Remarks} ${msg}` : msg;
             }
-          });
-        } else {
-          const totalRef = actRows.reduce((sum, r) => sum + (r.ComputedRef !== null ? r.ComputedRef * Number(r.ClaimedQty || 1) : r.xmlNetNum), 0);
-          const totalXmlNet = actRows.reduce((sum, r) => sum + r.xmlNetNum, 0);
-          const expectedPS = Math.round((totalRef - totalXmlNet) * 100) / 100;
-
-          if (actualPS === expectedPS) {
-            actRows.forEach(r => {
-              if (isMedicalMode && medicalShared && medicalRules) {
-                r.findings = medicalShared.mergeFindingsBySeverity(
-                  r.findings,
-                  [asMedicalFinding({
-                    ruleId: 'MED_PATIENT_SHARE_MATCH',
-                    status: 'Valid',
-                    remark: `Patient Share ${actualPS} matches expected amount.`,
-                    claimID: r.ClaimID,
-                    activityID: r.ActivityID,
-                    code: r.CPT
-                  })]
-                );
-                medicalShared.applyFinalStatus(r);
-              } else if (!r.isValid) {
-                r.status = 'Valid';
-                r.isValid = true;
-                r.Remarks = '';
-              }
-            });
-          } else {
-            const msg = `Patient Share ${actualPS} is incorrect.\nExpected: ${expectedPS} (Total Ref: ${totalRef} − Total Net: ${totalXmlNet}).`;
-            actRows.forEach(r => {
-              if (isMedicalMode && medicalShared && medicalRules) {
-                r.findings = medicalShared.mergeFindingsBySeverity(
-                  r.findings,
-                  [asMedicalFinding({
-                    ruleId: 'MED_PATIENT_SHARE_MISMATCH',
-                    status: 'Unknown',
-                    remark: msg,
-                    claimID: r.ClaimID,
-                    activityID: r.ActivityID,
-                    code: r.CPT
-                  })]
-                );
-                medicalShared.applyFinalStatus(r);
-              } else {
-                r.status = 'Unknown';
-                r.isValid = false;
-                r.Remarks = r.Remarks ? `${r.Remarks} ${msg}` : msg;
-              }
-            });
           }
         }
       }
@@ -1263,6 +1430,8 @@ function extractPricingRecords(xmlDoc) {
     const facilityId = textValue(encounterNode, 'FacilityID') || '';
     const encounterDateStr = textValue(encounterNode, 'Start') || textValue(encounterNode, 'Date') || textValue(encounterNode, 'EncounterDate') || '';
     const claimPatientShare = textValue(claim, 'PatientShare').trim() || '0';
+    const claimGross = textValue(claim, 'Gross').trim() || '';
+    const claimNet = textValue(claim, 'Net').trim() || '';
 
     for (const act of activities) {
       const activityId = textValue(act, 'ID') || '';
@@ -1316,6 +1485,8 @@ function extractPricingRecords(xmlDoc) {
         ClinicianLic: clinicianLic,
         EncounterDate: encounterDateStr,
         PatientShare: claimPatientShare,
+        ClaimGross: claimGross,
+        ClaimNet: claimNet,
         PayerID: payerId,
         Modifiers: modifiers,
         Modifier: modifier
@@ -1806,6 +1977,11 @@ window._pricingTestApi = {
   analyzeDrugActivity,
   isDrugActivityType,
   isZeroPricedActivityForPricing,
+  isAllowedZeroPricedActivityForPricing,
+  isValidZeroPricedConsultationCompanion,
+  shouldDeferA001PricingToClaimLevel,
+  getPatientShareReferenceRows,
+  calculatePatientShareSummary,
   shouldAddNoPricingMatchRemark,
   shouldAddMissingEndoPriceRemark,
   shouldAddInvalidReferenceRemark,

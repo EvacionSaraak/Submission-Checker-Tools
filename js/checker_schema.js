@@ -112,7 +112,17 @@ function validateXmlSchema(options = {}) {
           console.log('[SCHEMA] Validating Claim schema');
           const clinicianSpecialtyMap = await loadClinicianSpecialtyMap();
           const claimTypeMode = String(options.claimTypeMode || getSelectedClaimTypeMode() || '').trim().toUpperCase();
-          results = validateClaimSchema(xmlDoc, originalXmlContent, { clinicianSpecialtyMap, claimTypeMode });
+          const medicalShared = window.MedicalValidationShared || null;
+          let medicalRules = null;
+          if (claimTypeMode === 'MEDICAL' && medicalShared && typeof medicalShared.loadMedicalValidationRules === 'function') {
+            medicalRules = await medicalShared.loadMedicalValidationRules();
+          }
+          results = validateClaimSchema(xmlDoc, originalXmlContent, {
+            clinicianSpecialtyMap,
+            claimTypeMode,
+            medicalShared,
+            medicalRules
+          });
           console.log('[SCHEMA] Claim validation complete, results count:', results.length);
         } else if (xmlDoc.documentElement.nodeName === "Person.Register") {
           schemaType = "person";
@@ -600,7 +610,6 @@ function validateMedicalOrderingConsistency(activities, text, invalidFields, opt
 
   const nonBlankOrdering = new Set();
   const missingOrderingCodes = [];
-  const duplicatePairs = new Map();
 
   Array.from(activities || []).forEach(activity => {
     const code = text('Code', activity);
@@ -608,25 +617,12 @@ function validateMedicalOrderingConsistency(activities, text, invalidFields, opt
       text('OrderingClinician', activity) || ''
     ).trim().toUpperCase();
 
-    const normalizedCode = String(code || '')
-      .trim()
-      .toUpperCase()
-      .replace(/[^A-Z0-9\-]/g, '');
-
     if (!ordering) {
       if (code) missingOrderingCodes.push(code);
       return;
     }
 
     nonBlankOrdering.add(ordering);
-
-    if (!normalizedCode) return;
-
-    const pairKey = `${normalizedCode}|${ordering}`;
-    duplicatePairs.set(
-      pairKey,
-      (duplicatePairs.get(pairKey) || 0) + 1
-    );
   });
 
   if (nonBlankOrdering.size > 1) {
@@ -647,14 +643,37 @@ function validateMedicalOrderingConsistency(activities, text, invalidFields, opt
     );
   }
 
-  duplicatePairs.forEach((count, pairKey) => {
-    if (count < 2) return;
+  const medicalShared =
+    options.medicalShared
+    || window.MedicalValidationShared
+    || null;
 
-    const [code, ordering] = pairKey.split('|');
+  if (
+    !medicalShared
+    || typeof medicalShared.validateDuplicateCodeOrdering !== 'function'
+  ) {
+    return;
+  }
 
-    invalidFields.push(
-      `Duplicate code ${code} with Ordering Clinician ${ordering}.`
-    );
+  const context = {
+    claimID: text('ID'),
+    activities: Array.from(activities || []).map(activity => {
+      const code = text('Code', activity);
+      return {
+        code,
+        normalizedCode: medicalShared.normalizeActivityCode(code),
+        orderingClinician: text('OrderingClinician', activity)
+      };
+    })
+  };
+
+  medicalShared.validateDuplicateCodeOrdering(
+    context,
+    options.medicalRules || {}
+  ).forEach(finding => {
+    if (finding && finding.remark) {
+      invalidFields.push(finding.remark);
+    }
   });
 }
 
@@ -1004,7 +1023,11 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "", options = {}) {
       ? selectedClaimTypeMode === 'MEDICAL'
       : String(encounterType || '').trim() === '3';
     validateConsultationAndSpecialtyRules(activities, text, invalidFields, clinicianSpecialtyMap, { isMedicalClaim });
-    validateMedicalOrderingConsistency(activities, text, invalidFields, { isMedicalClaim });
+    validateMedicalOrderingConsistency(activities, text, invalidFields, {
+      isMedicalClaim,
+      medicalShared: options.medicalShared,
+      medicalRules: options.medicalRules
+    });
 
     // Contract optional
     const contract = claim.getElementsByTagName("Contract")[0];

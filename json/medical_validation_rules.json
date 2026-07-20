@@ -118,5 +118,8 @@
       "codePrefixes": ["97"]
     }
   },
-  "duplicateActivityExceptions": []
+  "duplicateActivityRules": {
+    "allowedDuplicateCodes": ["17999"],
+    "allowedDuplicateCodeOrderingPairs": []
+  }
 }

@@ -621,6 +621,32 @@ await run('Activity and diagnosis exclusions stay separated', () => {
   assert(diagnosisFindings.some(f => f.ruleId === 'MED_DX_COVERAGE_PRINCIPAL'), 'Expected diagnosis exclusion finding');
 });
 
+await run('Duplicate code ordering allows configured repeatable code 17999 for any ordering clinician', () => {
+  const rules = {
+    duplicateActivityRules: {
+      allowedDuplicateCodes: ['17999'],
+      allowedDuplicateCodeOrderingPairs: []
+    }
+  };
+  const allowedFindings = medicalShared.validateDuplicateCodeOrdering(makeMedicalContext({
+    activities: [
+      { id: 'A1', code: '17999', normalizedCode: '17999', orderingClinician: 'GD40942', quantity: 1, modifiers: [], net: 10 },
+      { id: 'A2', code: '17999', normalizedCode: '17999', orderingClinician: 'GD40942', quantity: 1, modifiers: [], net: 10 },
+      { id: 'A3', code: '17999', normalizedCode: '17999', orderingClinician: 'AA12345', quantity: 1, modifiers: [], net: 10 },
+      { id: 'A4', code: '17999', normalizedCode: '17999', orderingClinician: 'AA12345', quantity: 1, modifiers: [], net: 10 }
+    ]
+  }), rules);
+  assert(allowedFindings.length === 0, 'Expected 17999 duplicates to be exempt for all ordering clinicians');
+
+  const blockedFindings = medicalShared.validateDuplicateCodeOrdering(makeMedicalContext({
+    activities: [
+      { id: 'A1', code: '99213', normalizedCode: '99213', orderingClinician: 'GD40942', quantity: 1, modifiers: [], net: 10 },
+      { id: 'A2', code: '99213', normalizedCode: '99213', orderingClinician: 'GD40942', quantity: 1, modifiers: [], net: 10 }
+    ]
+  }), rules);
+  assert(blockedFindings.some(f => f.ruleId === 'MED_DUPLICATE_CODE_ORDERING'), 'Expected non-exempt duplicate code finding');
+});
+
 await run('Severity merge keeps invalid over valid patient share', () => {
   const findings = medicalShared.mergeFindingsBySeverity(
     [{ ruleId: 'PRICE', status: 'Invalid', remark: 'Coverage violation', claimID: 'C1', activityID: 'A1' }],
@@ -797,6 +823,94 @@ await run('Zero-priced non-drug activities are recognized across medical and den
 
 await run('Zero-priced drug activities keep drug-specific handling', () => {
   assert(pricingApi.isZeroPricedActivityForPricing('5', 0) === false, 'Expected drug zero net to skip non-drug zero-price shortcut');
+});
+
+await run('Only configured zero-priced companions are auto-accepted for pricing', () => {
+  const validCompanionRows = [
+    { ClaimID: 'C1', ActivityType: '3', CPT: '99202', Net: '48', Quantity: '1' },
+    { ClaimID: 'C1', ActivityType: '3', CPT: '99203', Net: '0', Quantity: '1' }
+  ];
+  assert(
+    pricingApi.isAllowedZeroPricedActivityForPricing(validCompanionRows[1], validCompanionRows, {
+      receiverID: 'A001',
+      medicalRules: { zeroPriceCodes: { always: [], byReceiver: {} } }
+    }) === true,
+    'Expected 99203 zero-priced companion to be auto-accepted when 99202 is priced'
+  );
+
+  const orphanRows = [
+    { ClaimID: 'C1', ActivityType: '3', CPT: '99203', Net: '0', Quantity: '1' }
+  ];
+  assert(
+    pricingApi.isAllowedZeroPricedActivityForPricing(orphanRows[0], orphanRows, {
+      receiverID: 'A001',
+      medicalRules: { zeroPriceCodes: { always: [], byReceiver: {} } }
+    }) === false,
+    'Expected orphan 99203 zero-priced row to keep normal pricing validation'
+  );
+});
+
+await run('A001 patient share summary excludes valid zero-priced consultation companions', () => {
+  const rows = [
+    {
+      ClaimID: 'NLKHC260663440',
+      ActivityID: 'A1',
+      ActivityType: '3',
+      CPT: '99202',
+      ClaimedQty: '1',
+      ComputedRef: 98,
+      xmlNetNum: 48,
+      PatientShare: '50',
+      ClaimGross: '98',
+      ClaimNet: '48',
+      ReceiverID: 'A001'
+    },
+    {
+      ClaimID: 'NLKHC260663440',
+      ActivityID: 'A2',
+      ActivityType: '3',
+      CPT: '99203',
+      ClaimedQty: '1',
+      ComputedRef: 142,
+      xmlNetNum: 0,
+      PatientShare: '50',
+      ClaimGross: '98',
+      ClaimNet: '48',
+      ReceiverID: 'A001'
+    }
+  ];
+  const summary = pricingApi.calculatePatientShareSummary(rows, {
+    receiverID: 'A001',
+    medicalRules: { zeroPriceCodes: { always: [], byReceiver: {} } }
+  });
+  assert(summary.patientShareRows.length === 1, `Expected only one patient-share reference row, got ${summary.patientShareRows.length}`);
+  assert(summary.patientShareRows[0].CPT === '99202', 'Expected 99202 to remain in patient-share reference rows');
+  assert(summary.totalRef === 98, `Expected total reference 98, got ${summary.totalRef}`);
+  assert(summary.expectedPatientShare === 50, `Expected patient share 50, got ${summary.expectedPatientShare}`);
+  assert(summary.claimTotalsConsistent === true, 'Expected claim totals to be internally consistent');
+});
+
+await run('A001 claim-level copay handling only defers positive under-reference rows', () => {
+  assert(
+    pricingApi.shouldDeferA001PricingToClaimLevel({
+      receiverID: 'A001',
+      xmlNet: 48,
+      effectiveRef: 98,
+      xmlQty: 1,
+      isAllowedZeroPricedActivity: false
+    }) === true,
+    'Expected positive under-reference row to defer to claim-level patient share validation'
+  );
+  assert(
+    pricingApi.shouldDeferA001PricingToClaimLevel({
+      receiverID: 'A001',
+      xmlNet: 0,
+      effectiveRef: 142,
+      xmlQty: 1,
+      isAllowedZeroPricedActivity: false
+    }) === false,
+    'Expected zero-net orphan row to retain normal pricing validation'
+  );
 });
 
 await run('No-pricing-match remark is suppressed for zero-priced non-drug activities', () => {
@@ -1291,6 +1405,63 @@ await run('Schema: validateMedicalOrderingConsistency detects multiple ordering 
   }
   schemaApi.validateMedicalOrderingConsistency(activities, textFn, invalidFields, { isMedicalClaim: true });
   assert(invalidFields.some(f => /multiple Ordering Clinicians/.test(f)), 'Expected multiple ordering clinicians finding for Medical');
+});
+
+await run('Schema: validateMedicalOrderingConsistency uses shared duplicate rules for repeatable codes', () => {
+  const invalidFields = [];
+  const allowedActivities = [
+    { querySelector(sel) {
+      if (sel === 'Code') return { textContent: '17999' };
+      if (sel === 'OrderingClinician') return { textContent: 'GD40942' };
+      return null;
+    }},
+    { querySelector(sel) {
+      if (sel === 'Code') return { textContent: '17999' };
+      if (sel === 'OrderingClinician') return { textContent: 'GD40942' };
+      return null;
+    }}
+  ];
+  function textFn(tag, node) {
+    if (!node) return tag === 'ID' ? 'CLAIM1' : '';
+    const el = node && node.querySelector && node.querySelector(tag);
+    return el && el.textContent ? el.textContent.trim() : '';
+  }
+  schemaApi.validateMedicalOrderingConsistency(allowedActivities, textFn, invalidFields, {
+    isMedicalClaim: true,
+    medicalShared: medicalShared,
+    medicalRules: {
+      duplicateActivityRules: {
+        allowedDuplicateCodes: ['17999'],
+        allowedDuplicateCodeOrderingPairs: []
+      }
+    }
+  });
+  assert(!invalidFields.some(f => /Duplicate code 17999/.test(f)), 'Expected 17999 duplicate to be allowed in schema checker');
+
+  const blockedFields = [];
+  const blockedActivities = [
+    { querySelector(sel) {
+      if (sel === 'Code') return { textContent: '99213' };
+      if (sel === 'OrderingClinician') return { textContent: 'GD40942' };
+      return null;
+    }},
+    { querySelector(sel) {
+      if (sel === 'Code') return { textContent: '99213' };
+      if (sel === 'OrderingClinician') return { textContent: 'GD40942' };
+      return null;
+    }}
+  ];
+  schemaApi.validateMedicalOrderingConsistency(blockedActivities, textFn, blockedFields, {
+    isMedicalClaim: true,
+    medicalShared: medicalShared,
+    medicalRules: {
+      duplicateActivityRules: {
+        allowedDuplicateCodes: ['17999'],
+        allowedDuplicateCodeOrderingPairs: []
+      }
+    }
+  });
+  assert(blockedFields.some(f => /Duplicate code 99213/.test(f)), 'Expected non-exempt schema duplicate to remain invalid');
 });
 
 await run('Schema: no ReferenceError for validateMedicalOrderingConsistency during validateXmlSchema call', () => {
