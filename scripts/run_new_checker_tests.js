@@ -850,6 +850,35 @@ await run('Only configured zero-priced companions are auto-accepted for pricing'
   );
 });
 
+await run('Required-priced medical activity config matches normalized facility, receiver, and code', () => {
+  assert(
+    pricingApi.requiresNonZeroMedicalPrice({
+      facilityID: ' mf5020 ',
+      receiverID: ' d001 ',
+      code: '096375',
+      rules: {
+        requiredPricedActivities: [
+          { facilityID: 'MF5020', receiverID: 'D001', code: '96375' }
+        ]
+      }
+    }) === true,
+    'Expected Khabisi Thiqa 96375 to require a nonzero medical price'
+  );
+  assert(
+    pricingApi.requiresNonZeroMedicalPrice({
+      facilityID: 'MF5020',
+      receiverID: 'A001',
+      code: '96375',
+      rules: {
+        requiredPricedActivities: [
+          { facilityID: 'MF5020', receiverID: 'D001', code: '96375' }
+        ]
+      }
+    }) === false,
+    'Expected other receivers to keep their own pricing behavior'
+  );
+});
+
 await run('A001 patient share summary excludes valid zero-priced consultation companions', () => {
   const rows = [
     {
@@ -1193,6 +1222,25 @@ const mntRows = [
 ];
 const factorRules = makeFactorRules(mntRows);
 
+const khabisi96375FactorRules = makeFactorRules([
+  {
+    Facility: 'Khabisi', 'Facility ID': 'MF5020',
+    'Service Type': 'Medical Services',
+    'Code Match Type': 'Exact List',
+    'Code Match Value': '96375',
+    'Thiqa (D001)': 1.3, 'Low-End (A001)': 1, 'Basic (D004)': 1,
+    'NGI (A025)': 1, 'Saico (A024)': 1, 'Nextcare (C002)': 1, 'Mednet (C004)': 1
+  },
+  {
+    Facility: 'Khabisi', 'Facility ID': 'MF5020',
+    'Service Type': 'Medical Services',
+    'Code Match Type': 'Starts With',
+    'Code Match Value': '1, 2, 3, 4, 5, 6',
+    'Thiqa (D001)': 1.3, 'Low-End (A001)': 1, 'Basic (D004)': 1,
+    'NGI (A025)': 1, 'Saico (A024)': 1, 'Nextcare (C002)': 1, 'Mednet (C004)': 1
+  }
+]);
+
 await run('97802 + D001 uses Medical Nutrition Therapy factor 1.3', () => {
   const result = pricingApi.findFactorFromRules(factorRules, 'MF9999', '97802', 'D001');
   assert(result.factor === 1.3, `Expected factor 1.3 for 97802/D001, got ${result.factor}`);
@@ -1264,6 +1312,17 @@ await run('Unknown facility returns factor 1 with no rule', () => {
   const result = pricingApi.findFactorFromRules(factorRules, 'MF0000', '97802', 'D001');
   assert(result.factor === 1, `Expected factor 1 for unknown facility, got ${result.factor}`);
   assert(result.rule === null, 'Expected null rule for unknown facility');
+});
+
+await run('Khabisi 96375 uses exact-list factor 1.3 for Thiqa without broadening 9-series matching', () => {
+  const exact = pricingApi.findFactorFromRules(khabisi96375FactorRules, 'MF5020', '96375', 'D001');
+  assert(exact.factor === 1.3, `Expected factor 1.3 for 96375/D001, got ${exact.factor}`);
+  assert(exact.rule && exact.rule.matchType === 'Exact List', `Expected Exact List match for 96375, got ${exact.rule && exact.rule.matchType}`);
+  assert(20 * exact.factor === 26, `Expected mandatory tariff base 20 × factor ${exact.factor} = 26`);
+
+  const unrelatedNineSeries = pricingApi.findFactorFromRules(khabisi96375FactorRules, 'MF5020', '99214', 'D001');
+  assert(unrelatedNineSeries.factor === 1, `Expected unrelated 9-series code to default to factor 1, got ${unrelatedNineSeries.factor}`);
+  assert(unrelatedNineSeries.rule === null, 'Expected unrelated 9-series code to avoid the 96375 exact-list rule');
 });
 
 await run('Pricing claim-type normalizer accepts MEDICAL and DENTAL only', () => {

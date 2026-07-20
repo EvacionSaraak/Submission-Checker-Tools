@@ -140,6 +140,18 @@ function isAllowedZeroPricedActivityForPricing(row, claimRows, options = {}) {
     || isValidZeroPricedConsultationCompanion(row, claimRows);
 }
 
+function requiresNonZeroMedicalPrice({ facilityID, receiverID, code, rules }) {
+  const normalizedFacility = String(facilityID || '').trim().toUpperCase();
+  const normalizedReceiver = String(receiverID || '').trim().toUpperCase();
+  const normalizedCode = normalizeCode(code);
+
+  return ((rules && rules.requiredPricedActivities) || []).some(rule =>
+    String(rule.facilityID || '').trim().toUpperCase() === normalizedFacility
+    && String(rule.receiverID || '').trim().toUpperCase() === normalizedReceiver
+    && normalizeCode(rule.code) === normalizedCode
+  );
+}
+
 function shouldDeferA001PricingToClaimLevel({ receiverID, xmlNet, effectiveRef, xmlQty, isAllowedZeroPricedActivity }) {
   if (receiverID !== 'A001' || isAllowedZeroPricedActivity) {
     return false;
@@ -618,7 +630,7 @@ async function handleRun(options = {}) {
       const xmlQty = Number(rec.Quantity || 0);
       const isDrugActivity = isDrugActivityType(rec.ActivityType);
       const claimRows = claimRecordsByID.get(rec.ClaimID) || [];
-      const isZeroPricedActivity = isAllowedZeroPricedActivityForPricing(rec, claimRows, {
+      const isConfiguredZeroPricedActivity = isAllowedZeroPricedActivityForPricing(rec, claimRows, {
         receiverID: pricingReceiverID,
         medicalRules
       });
@@ -874,6 +886,19 @@ async function handleRun(options = {}) {
       const computedRef = (match || endoEntry) && refPrice !== null && !Number.isNaN(ref) ? effectiveRef : null;
 
       if (xmlQty <= 0) remarks.push(xmlQty === 0 ? 'Quantity is 0 (invalid)' : 'Quantity is less than 0 (invalid)');
+      const requiresPrice = isMedicalMode
+        ? requiresNonZeroMedicalPrice({
+            facilityID: rec.FacilityID,
+            receiverID: pricingReceiverID,
+            code: rec.CPT,
+            rules: medicalRules
+          })
+        : false;
+      const mayUseMedicalZeroPrice = isMedicalMode
+        && moneyEqual(xmlNet, 0)
+        && !requiresPrice;
+      const isZeroPricedActivity = isConfiguredZeroPricedActivity || mayUseMedicalZeroPrice;
+
       if (shouldAddNoPricingMatchRemark({ match, endoEntry, isZeroPricedActivity })) {
         if (isDrugActivity) {
           status = 'Unknown';
@@ -892,7 +917,13 @@ async function handleRun(options = {}) {
 
       const hasValidRef = (match || endoEntry) && refPrice !== null && !Number.isNaN(ref);
 
-      if (isZeroPricedActivity) {
+      if (isMedicalMode && moneyEqual(xmlNet, 0) && requiresPrice) {
+        status = 'Invalid';
+        remarks.push(
+          `Code ${rec.CPT} must have a price for Khabisi under Thiqa. ` +
+          `Expected: ${formatMoney(effectiveRef)}.`
+        );
+      } else if (isZeroPricedActivity) {
         status = 'Valid';
       } else if (hasValidRef && effectiveRef === 0) {
         status = 'Unknown';
@@ -1992,7 +2023,8 @@ window._pricingTestApi = {
   buildPricingMatcher,
   normalizeClaimTypeMode,
   buildFactorRulesFromWorkbook,
-  findFactorFromRules
+  findFactorFromRules,
+  requiresNonZeroMedicalPrice
 };
 
 window.showPricingComparison = showComparisonModal;

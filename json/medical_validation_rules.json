@@ -59,6 +59,14 @@
       "A025": ["36415"]
     }
   },
+  "requiredPricedActivities": [
+    {
+      "facilityID": "MF5020",
+      "receiverID": "D001",
+      "code": "96375",
+      "pricingSource": "Mandatory Tariff with Factors.xlsx"
+    }
+  ],
   "coverageExclusions": {
     "insuredOnlyBlockedCodes": ["87635"]
   },
