@@ -14,9 +14,19 @@
   'use strict';
 
   const DEFAULT_PATHS = Object.freeze([
-    '../resources/Mandatory Tariff Updated.xlsx',
-    'resources/Mandatory Tariff Updated.xlsx',
-    './resources/Mandatory Tariff Updated.xlsx'
+    (() => {
+      const scriptUrl =
+        typeof document !== 'undefined'
+        && document.currentScript
+        && document.currentScript.src
+          ? document.currentScript.src
+          : window.location.href;
+  
+      return new URL(
+        '../resources/Mandatory Tariff Updated.xlsx',
+        scriptUrl
+      ).href;
+    })()
   ]);
 
   const TYPE_ALIASES = Object.freeze({
