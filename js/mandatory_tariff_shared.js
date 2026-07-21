@@ -1,336 +1,434 @@
-// mandatory_tariff_shared.js
-// Shared loader and validator for the bundled Mandatory Tariff workbook.
-// Used by checker_schema.js and checker_pricing.js so both read the same
-// parsed map and cannot drift apart.
-
-(function () {
+(function (root, factory) {
   'use strict';
 
-  // -----------------------------------------------------------------------
-  // Constants
-  // -----------------------------------------------------------------------
+  const api = factory(root);
 
-  // The exact filename as it exists in the repository (double-space intended)
-  const MANDATORY_TARIFF_PATH = '../resources/Mandatory Tariff  Updated.xlsx';
+  if (typeof module === 'object' && module.exports) {
+    module.exports = api;
+  }
 
-  // Workbook sheet to use for occurrence limits
-  const TARIFF_SHEET_NAME = 'Mandatory Tariff 2021 ';
+  if (root) {
+    root.MandatoryTariffShared = api;
+  }
+})(typeof window !== 'undefined' ? window : globalThis, function (root) {
+  'use strict';
 
-  // Column names in the workbook
-  const COL_TYPE    = 'Type';
-  const COL_CODE    = 'Code';
-  const COL_PRICE   = 'Price \r\n(AED)';
-  const COL_MUE     = 'CPT \r\nMUE Values';
+  const DEFAULT_PATHS = Object.freeze([
+    '../resources/Mandatory Tariff Updated.xlsx',
+    'resources/Mandatory Tariff Updated.xlsx',
+    './resources/Mandatory Tariff Updated.xlsx'
+  ]);
 
-  // Maps XML Activity Type numbers to workbook Type values
-  const ACTIVITY_TYPE_TO_TARIFF_TYPE = {
+  const TYPE_ALIASES = Object.freeze({
     '3': 'CPT',
+    CPT: 'CPT',
+    HCPCS: 'CPT',
+    PROCEDURE: 'CPT',
+    PROCEDURES: 'CPT',
+
     '6': 'USCLS',
-    '8': 'SERVICE'
-  };
+    USCLS: 'USCLS',
+    DENTAL: 'USCLS',
+    DENTISTRY: 'USCLS',
 
-  // -----------------------------------------------------------------------
-  // Cache
-  // -----------------------------------------------------------------------
+    '8': 'SERVICE',
+    SERVICE: 'SERVICE',
+    SERVICES: 'SERVICE'
+  });
 
-  let mandatoryTariffPromise = null;
+  const HEADER_ALIASES = Object.freeze({
+    type: new Set([
+      'type',
+      'activitytype',
+      'activitytypecode',
+      'codetype',
+      'tarifftype',
+      'servicetype'
+    ]),
+    code: new Set([
+      'code',
+      'activitycode',
+      'cptcode',
+      'procedurecode',
+      'servicecode',
+      'tariffcode'
+    ]),
+    maxOccurrences: new Set([
+      'cptmodifier'
+    ])
+  });
 
-  // -----------------------------------------------------------------------
-  // Pure helpers
-  // -----------------------------------------------------------------------
+  let cachedPromise = null;
+  let cachedPathsKey = '';
 
-  /**
-   * Normalise an activity type to the uppercase string used in the tariff.
-   * Accepts both the XML numeric code ('3', '6', '8') and the tariff string
-   * ('CPT', 'USCLS', 'SERVICE').
-   * Returns the tariff string or the uppercased input if no mapping is found.
-   */
-  function normalizeActivityType(value) {
-    const s = String(value || '').trim();
-    return ACTIVITY_TYPE_TO_TARIFF_TYPE[s] || s.toUpperCase();
-  }
-
-  /**
-   * Normalise a tariff code: strip leading zeros, uppercase, trim whitespace.
-   */
-  function normalizeTariffCode(value) {
-    return String(value || '')
+  function normalizeHeader(value) {
+    return String(value == null ? '' : value)
       .trim()
-      .toUpperCase()
-      .replace(/\.0+$/g, '')
-      .replace(/^0+(?=\w)/, '');
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '');
   }
 
-  /**
-   * Build the map key used to look up a tariff row.
-   */
+  function normalizeCode(value) {
+    return String(value == null ? '' : value)
+      .trim()
+      .toUpperCase();
+  }
+
+  function normalizeActivityType(value) {
+    const raw = String(value == null ? '' : value)
+      .trim()
+      .toUpperCase();
+
+    return TYPE_ALIASES[raw] || raw;
+  }
+
   function makeTariffKey(activityType, code) {
-    return normalizeActivityType(activityType) + '|' + normalizeTariffCode(code);
+    return `${normalizeActivityType(activityType)}|${normalizeCode(code)}`;
   }
 
-  /**
-   * Parse the raw `CPT MUE Values` cell value into a structured result.
-   *
-   * Returns:
-   *   { limit: null,    error: null }   — blank; unlimited
-   *   { limit: number,  error: null }   — valid positive integer limit
-   *   { limit: null,    error: string } — present but invalid
-   */
   function parseMaxOccurrences(rawValue) {
     const text = String(rawValue == null ? '' : rawValue).trim();
 
     if (!text) {
-      return { limit: null, error: null };
-    }
-
-    const number = Number(text);
-
-    if (!Number.isInteger(number) || number < 1) {
       return {
         limit: null,
-        error: 'Invalid CPT Modifier limit: ' + text
+        error: null
       };
     }
 
-    return { limit: number, error: null };
+    const numericValue = Number(text.replace(/,/g, ''));
+
+    if (!Number.isInteger(numericValue) || numericValue < 1) {
+      return {
+        limit: null,
+        error: `Invalid CPT Modifier occurrence limit: ${text}`
+      };
+    }
+
+    return {
+      limit: numericValue,
+      error: null
+    };
   }
 
-  /**
-   * Build the tariff Map from an array of raw workbook rows.
-   *
-   * Returns { map: Map<string, TariffRecord>, warnings: string[] }
-   *
-   * TariffRecord:
-   *   { activityType, code, price, maxOccurrencesPerClaim, rawRow }
-   */
-  function buildMandatoryTariffMap(rows) {
-    const map = new Map();
-    const warnings = [];
+  function getDirectChildren(parent, tagName) {
+    if (!parent || !parent.childNodes) return [];
 
-    (Array.isArray(rows) ? rows : []).forEach(row => {
-      const rawType = String(row[COL_TYPE] || '').trim();
-      const rawCode = String(row[COL_CODE] || '').trim();
+    return Array.from(parent.childNodes).filter((node) => {
+      if (!node || node.nodeType !== 1) return false;
+      const nodeName = node.localName || node.nodeName;
+      return nodeName === tagName;
+    });
+  }
 
-      if (!rawType || !rawCode) return;
+  function getDirectChildText(parent, tagName) {
+    const child = getDirectChildren(parent, tagName)[0];
+    return child && child.textContent ? child.textContent.trim() : '';
+  }
 
-      const activityType = rawType.toUpperCase();
-      const code = normalizeTariffCode(rawCode);
-      if (!code) return;
+  function findColumnIndex(headerRow, aliases) {
+    return headerRow.findIndex((cell) => aliases.has(normalizeHeader(cell)));
+  }
 
-      const rawPrice = row[COL_PRICE];
-      const priceText = String(rawPrice == null ? '' : rawPrice).trim();
-      const price = (priceText === '' || priceText === 'N/A')
-        ? null
-        : Number(priceText);
+  function locateHeaderRow(matrix) {
+    const maxRows = Math.min(matrix.length, 30);
 
-      const rawMue = row[COL_MUE];
-      const mueResult = parseMaxOccurrences(rawMue);
+    for (let rowIndex = 0; rowIndex < maxRows; rowIndex += 1) {
+      const row = Array.isArray(matrix[rowIndex]) ? matrix[rowIndex] : [];
+      const typeIndex = findColumnIndex(row, HEADER_ALIASES.type);
+      const codeIndex = findColumnIndex(row, HEADER_ALIASES.code);
+      const maxOccurrencesIndex = findColumnIndex(row, HEADER_ALIASES.maxOccurrences);
 
-      if (mueResult.error) {
-        warnings.push(
-          'Tariff row ' + rawType + '/' + rawCode + ': ' + mueResult.error
-        );
+      if (typeIndex >= 0 && codeIndex >= 0 && maxOccurrencesIndex >= 0) {
+        return {
+          rowIndex,
+          typeIndex,
+          codeIndex,
+          maxOccurrencesIndex
+        };
       }
+    }
 
-      const key = activityType + '|' + code;
+    return null;
+  }
 
-      // First row wins (do not overwrite an already-parsed entry)
-      if (!map.has(key)) {
-        map.set(key, {
-          activityType,
-          code,
-          price: Number.isFinite(price) ? price : null,
-          maxOccurrencesPerClaim: mueResult.limit,
-          rawRow: row
-        });
-      }
+  function selectTariffSheet(workbook) {
+    const sheetNames = Array.isArray(workbook && workbook.SheetNames)
+      ? workbook.SheetNames
+      : [];
+
+    if (sheetNames.length === 0) {
+      throw new Error('Mandatory Tariff workbook contains no worksheets.');
+    }
+
+    const preferred = sheetNames.find((name) => {
+      const normalized = normalizeHeader(name);
+      return normalized.includes('mandatorytariff') || normalized === 'tariff';
     });
 
-    return { map, warnings };
+    return preferred || sheetNames[0];
   }
 
-  /**
-   * Parse the XLSX workbook (already loaded as an ArrayBuffer or SheetJS workbook)
-   * and return { map, warnings }.
-   */
-  function parseMandatoryTariffWorkbook(wb) {
-    const ws = wb.Sheets[TARIFF_SHEET_NAME];
-    if (!ws) {
+  function parseMandatoryTariffWorkbook(workbook, xlsxOverride) {
+    const XLSX = xlsxOverride || (root && root.XLSX);
+
+    if (!XLSX || !XLSX.utils || typeof XLSX.utils.sheet_to_json !== 'function') {
+      throw new Error('SheetJS (XLSX) is unavailable.');
+    }
+
+    const sheetName = selectTariffSheet(workbook);
+    const sheet = workbook.Sheets[sheetName];
+
+    if (!sheet) {
+      throw new Error(`Worksheet "${sheetName}" could not be read.`);
+    }
+
+    const matrix = XLSX.utils.sheet_to_json(sheet, {
+      header: 1,
+      defval: '',
+      raw: false,
+      blankrows: false
+    });
+
+    const header = locateHeaderRow(matrix);
+
+    if (!header) {
       throw new Error(
-        'Mandatory Tariff workbook does not contain the expected sheet "' +
-        TARIFF_SHEET_NAME + '".'
+        'Mandatory Tariff is missing one or more required columns: Type, Code, CPT Modifier.'
       );
     }
-    const rows = XLSX.utils.sheet_to_json(ws, { defval: '', range: 0 });
-    return buildMandatoryTariffMap(rows);
-  }
 
-  /**
-   * Load and parse the bundled Mandatory Tariff workbook once; cache the
-   * promise so subsequent calls reuse the same result.
-   *
-   * Resolves with { map: Map, warnings: string[] }.
-   * Rejects with an Error if the workbook cannot be fetched or parsed.
-   */
-  function loadBundledMandatoryTariff() {
-    if (mandatoryTariffPromise) {
-      return mandatoryTariffPromise;
-    }
+    const map = new Map();
+    const rows = [];
+    const warnings = [];
 
-    mandatoryTariffPromise = fetch(MANDATORY_TARIFF_PATH)
-      .then(response => {
-        if (!response.ok) {
-          throw new Error(
-            'Mandatory Tariff workbook could not be loaded (HTTP ' +
-            response.status + ').'
+    for (let rowIndex = header.rowIndex + 1; rowIndex < matrix.length; rowIndex += 1) {
+      const sourceRow = Array.isArray(matrix[rowIndex]) ? matrix[rowIndex] : [];
+      const rawType = sourceRow[header.typeIndex];
+      const rawCode = sourceRow[header.codeIndex];
+      const rawLimit = sourceRow[header.maxOccurrencesIndex];
+      const activityType = normalizeActivityType(rawType);
+      const code = normalizeCode(rawCode);
+
+      if (!activityType && !code && String(rawLimit || '').trim() === '') {
+        continue;
+      }
+
+      if (!activityType || !code) {
+        warnings.push(
+          `Mandatory Tariff row ${rowIndex + 1} was skipped because Type or Code is blank.`
+        );
+        continue;
+      }
+
+      const parsedLimit = parseMaxOccurrences(rawLimit);
+
+      if (parsedLimit.error) {
+        warnings.push(`Mandatory Tariff row ${rowIndex + 1}: ${parsedLimit.error}`);
+      }
+
+      const record = {
+        activityType,
+        code,
+        maxOccurrencesPerClaim: parsedLimit.limit,
+        rawCptModifier: String(rawLimit == null ? '' : rawLimit).trim(),
+        sheetRowNumber: rowIndex + 1,
+        rawRow: sourceRow.slice()
+      };
+
+      const key = makeTariffKey(activityType, code);
+      const existing = map.get(key);
+
+      if (existing) {
+        const existingLimit = existing.maxOccurrencesPerClaim;
+        const incomingLimit = record.maxOccurrencesPerClaim;
+
+        if (existingLimit !== incomingLimit) {
+          warnings.push(
+            `Mandatory Tariff has conflicting CPT Modifier limits for ${activityType} ${code} ` +
+            `(rows ${existing.sheetRowNumber} and ${record.sheetRowNumber}). ` +
+            'The first row is being used.'
           );
         }
-        return response.arrayBuffer();
-      })
-      .then(buffer => {
-        const wb = XLSX.read(buffer, { type: 'array' });
-        return parseMandatoryTariffWorkbook(wb);
-      })
-      .catch(err => {
-        // Reset cache so a retry is possible
-        mandatoryTariffPromise = null;
-        throw err;
-      });
+        continue;
+      }
 
-    return mandatoryTariffPromise;
+      map.set(key, record);
+      rows.push(record);
+    }
+
+    return {
+      map,
+      rows,
+      warnings,
+      sheetName,
+      headerRowNumber: header.rowIndex + 1
+    };
   }
 
-  // -----------------------------------------------------------------------
-  // Lookup helpers
-  // -----------------------------------------------------------------------
+  async function fetchWorkbook(paths, fetchOverride) {
+    const fetchFn = fetchOverride || (root && root.fetch);
 
-  /**
-   * Return the tariff record for a given activity type + code, or null.
-   */
+    if (typeof fetchFn !== 'function') {
+      throw new Error('fetch() is unavailable, so Mandatory Tariff cannot be loaded.');
+    }
+
+    const failures = [];
+
+    for (const path of paths) {
+      try {
+        const response = await fetchFn(path, { cache: 'no-store' });
+
+        if (!response || !response.ok) {
+          failures.push(`${path}: HTTP ${response ? response.status : 'unknown'}`);
+          continue;
+        }
+
+        return {
+          path,
+          arrayBuffer: await response.arrayBuffer()
+        };
+      } catch (error) {
+        failures.push(`${path}: ${error && error.message ? error.message : String(error)}`);
+      }
+    }
+
+    throw new Error(
+      'Mandatory Tariff could not be loaded. ' + failures.join(' | ')
+    );
+  }
+
+  async function loadBundledMandatoryTariff(options) {
+    const config = options || {};
+    const paths = Array.isArray(config.paths) && config.paths.length
+      ? config.paths
+      : DEFAULT_PATHS;
+    const pathsKey = paths.join('|');
+
+    if (!config.forceReload && cachedPromise && cachedPathsKey === pathsKey) {
+      return cachedPromise;
+    }
+
+    cachedPathsKey = pathsKey;
+    cachedPromise = (async () => {
+      const XLSX = config.XLSX || (root && root.XLSX);
+
+      if (!XLSX || typeof XLSX.read !== 'function') {
+        throw new Error('SheetJS (XLSX) is unavailable.');
+      }
+
+      const fetched = await fetchWorkbook(paths, config.fetch);
+      const workbook = XLSX.read(fetched.arrayBuffer, {
+        type: 'array',
+        cellDates: true
+      });
+      const parsed = parseMandatoryTariffWorkbook(workbook, XLSX);
+
+      parsed.path = fetched.path;
+      return parsed;
+    })().catch((error) => {
+      cachedPromise = null;
+      cachedPathsKey = '';
+      throw error;
+    });
+
+    return cachedPromise;
+  }
+
   function getTariffRow(tariffMap, activityType, code) {
-    if (!tariffMap) return null;
+    if (!(tariffMap instanceof Map)) return null;
     return tariffMap.get(makeTariffKey(activityType, code)) || null;
   }
 
-  /**
-   * Return the maximum allowed occurrences per claim for a code, or null if
-   * unlimited / not found.
-   */
-  function getMaxOccurrencesPerClaim(tariffMap, activityType, code) {
-    const row = getTariffRow(tariffMap, activityType, code);
-    return row ? row.maxOccurrencesPerClaim : null;
-  }
-
-  // -----------------------------------------------------------------------
-  // Claim occurrence validator
-  // -----------------------------------------------------------------------
-
-  /**
-   * Validate that no tariff code exceeds its maximum occurrence limit in a
-   * single claim.
-   *
-   * Parameters:
-   *   claim      — DOM Element for the Claim
-   *   tariffMap  — Map returned by loadBundledMandatoryTariff / buildMandatoryTariffMap
-   *   getText    — function(tagName, parentElement?) → string
-   *
-   * Returns an array of finding objects:
-   *   {
-   *     ruleId, status, activityType, code,
-   *     actualCount, allowedCount, remark
-   *   }
-   *
-   * Rules:
-   *   - Count Activity elements by (ActivityType, Code) key.
-   *   - Quantity is irrelevant; only the number of Activity elements matters.
-   *   - Blank tariff MUE → unlimited → no finding.
-   *   - Code not in tariff → no finding.
-   *   - One finding per (Claim, ActivityType, Code) — not one per extra activity.
-   */
-  function validateClaimOccurrenceLimits(options) {
-    const claim     = options.claim;
-    const tariffMap = options.tariffMap;
-    const getText   = options.getText;
-
-    const findings = [];
-    if (!claim || !tariffMap) return findings;
-
-    const occurrences = new Map();
-
-    const activities = Array.from(claim.getElementsByTagName('Activity'));
-
-    for (const activity of activities) {
-      const type = getText ? getText('Type', activity) : _defaultGetText('Type', activity);
-      const code = getText ? getText('Code', activity) : _defaultGetText('Code', activity);
-
-      if (!code) continue;
-
-      const key = makeTariffKey(type, code);
-
-      if (!occurrences.has(key)) {
-        occurrences.set(key, { type, code, count: 0 });
-      }
-      occurrences.get(key).count += 1;
+  function validateClaimOccurrenceLimits(claim, tariffMap) {
+    if (!claim) return [];
+    if (!(tariffMap instanceof Map)) {
+      throw new TypeError('validateClaimOccurrenceLimits requires a Mandatory Tariff Map.');
     }
 
-    for (const [, occurrence] of occurrences) {
-      const tariffRow = getTariffRow(tariffMap, occurrence.type, occurrence.code);
-      if (!tariffRow) continue;
+    const claimID = getDirectChildText(claim, 'ID') || 'Unknown';
+    const activities = getDirectChildren(claim, 'Activity');
+    const occurrences = new Map();
+
+    for (const activity of activities) {
+      const activityType = getDirectChildText(activity, 'Type');
+      const code = getDirectChildText(activity, 'Code');
+
+      if (!activityType || !code) continue;
+
+      const key = makeTariffKey(activityType, code);
+      const current = occurrences.get(key) || {
+        claimID,
+        key,
+        activityType: normalizeActivityType(activityType),
+        xmlActivityType: String(activityType).trim(),
+        code: normalizeCode(code),
+        count: 0
+      };
+
+      current.count += 1;
+      occurrences.set(key, current);
+    }
+
+    const findings = [];
+
+    for (const occurrence of occurrences.values()) {
+      const tariffRow = tariffMap.get(occurrence.key);
+
+      if (!tariffRow || tariffRow.maxOccurrencesPerClaim == null) {
+        continue;
+      }
 
       const limit = tariffRow.maxOccurrencesPerClaim;
-      if (limit === null) continue; // unlimited
 
-      if (occurrence.count > limit) {
-        findings.push({
-          ruleId: 'TARIFF_MAX_OCCURRENCES',
-          status: 'Invalid',
-          activityType: occurrence.type,
-          code: occurrence.code,
-          actualCount: occurrence.count,
-          allowedCount: limit,
-          remark:
-            occurrence.code +
-            ' can only be coded ' +
-            limit +
-            (limit === 1 ? ' time' : ' times') +
-            ' in one claim.'
-        });
+      if (occurrence.count <= limit) {
+        continue;
       }
+
+      findings.push({
+        ruleId: 'TARIFF_MAX_OCCURRENCES',
+        status: 'Invalid',
+        claimID,
+        activityType: occurrence.activityType,
+        xmlActivityType: occurrence.xmlActivityType,
+        code: occurrence.code,
+        actualCount: occurrence.count,
+        allowedCount: limit,
+        remark:
+          `${occurrence.code} can only be coded ${limit} ` +
+          `${limit === 1 ? 'time' : 'times'} in one claim.`
+      });
     }
 
     return findings;
   }
 
-  function _defaultGetText(tagName, parent) {
-    if (!parent) return '';
-    const el = parent.getElementsByTagName(tagName)[0];
-    return el && el.textContent ? el.textContent.trim() : '';
+  function validateSubmissionOccurrenceLimits(xmlDoc, tariffMap) {
+    if (!xmlDoc || !xmlDoc.documentElement) return [];
+
+    const claims = getDirectChildren(xmlDoc.documentElement, 'Claim');
+    return claims.flatMap((claim) => validateClaimOccurrenceLimits(claim, tariffMap));
   }
 
-  // -----------------------------------------------------------------------
-  // Public API
-  // -----------------------------------------------------------------------
+  function clearCache() {
+    cachedPromise = null;
+    cachedPathsKey = '';
+  }
 
-  const api = {
-    MANDATORY_TARIFF_PATH,
-    ACTIVITY_TYPE_TO_TARIFF_TYPE,
+  return Object.freeze({
+    DEFAULT_PATHS,
+    normalizeHeader,
+    normalizeCode,
     normalizeActivityType,
-    normalizeTariffCode,
     makeTariffKey,
     parseMaxOccurrences,
-    buildMandatoryTariffMap,
+    getDirectChildren,
+    getDirectChildText,
     parseMandatoryTariffWorkbook,
     loadBundledMandatoryTariff,
     getTariffRow,
-    getMaxOccurrencesPerClaim,
-    validateClaimOccurrenceLimits
-  };
-
-  if (typeof window !== 'undefined') {
-    window.MandatoryTariffShared = api;
-  }
-
-  if (typeof module !== 'undefined' && module.exports) {
-    module.exports = api;
-  }
-})();
+    validateClaimOccurrenceLimits,
+    validateSubmissionOccurrenceLimits,
+    clearCache
+  });
+});

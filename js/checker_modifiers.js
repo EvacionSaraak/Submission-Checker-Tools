@@ -1,643 +1,716 @@
-(function() {
-  try {
-    // checker_modifiers.js
-    let lastResults = [];
-    let lastWorkbook = null;
+(function (root) {
+  'use strict';
 
-// -----------------------------------------------------------------------
-// Receiver configuration — keyed by Header ReceiverID (upper-case)
-// -----------------------------------------------------------------------
-const RECEIVER_CONFIG = {
-  D001: {
-    insurer:        'Thiqa',
-    modifier52Voi:  'VOI_EF1',
-    modifier24Voi:  'VOI_D'
-  },
-  A001: {
-    insurer:        'Daman Enhanced',
-    modifier52Voi:  'VOI_EF1',
-    modifier24Voi:  'VOI_D'
-  },
-  D004: {
-    insurer:        'Daman Basic',
-    modifier52Voi:  'VOI_EF1',
-    modifier24Voi:  'VOI_D'
+  const RECEIVER_CONFIG = Object.freeze({
+    D001: Object.freeze({ insurer: 'Thiqa' }),
+    A001: Object.freeze({ insurer: 'Daman Enhanced' }),
+    D004: Object.freeze({ insurer: 'Daman Basic' })
+  });
+
+  const MODIFIER_RULES = Object.freeze({
+    '24': Object.freeze({ expectedVOI: 'VOI_D' }),
+    '52': Object.freeze({ expectedVOI: 'VOI_EF1' })
+  });
+
+  const HEADER_ALIASES = Object.freeze({
+    memberID: Object.freeze([
+      'cardnumber', 'cardno', 'memberid', 'membernumber', 'memberno',
+      'patientcardnumber', 'dhamemberid', 'member'
+    ]),
+    orderedOn: Object.freeze([
+      'orderedon', 'eligibilitydate', 'servicedate', 'encounterdate',
+      'visitdate', 'transactiondate', 'date', 'admregdate', 'admissiondate'
+    ]),
+    clinician: Object.freeze([
+      'clinician', 'clinicianlicense', 'doctorlicense', 'physicianlicense',
+      'performingclinician', 'orderingclinician', 'providerlicense',
+      'practitionerlicense', 'license'
+    ]),
+    voi: Object.freeze([
+      'voi', 'voinumber', 'verificationofinsurance', 'verificationinsurance',
+      'volumeofinsurance', 'volume', 'vol', 'benefitvoi'
+    ])
+  });
+
+  let lastResults = [];
+  let listenersBound = false;
+
+  function normalizeHeader(value) {
+    return String(value == null ? '' : value)
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '');
   }
-};
 
-function normalizeIdentifier(value) {
-  return String(value || '').trim().toUpperCase();
-}
-
-function getReceiverConfig(receiverID) {
-  return RECEIVER_CONFIG[normalizeIdentifier(receiverID)] || null;
-}
-
-document.addEventListener('DOMContentLoaded', () => {
-  try {
-    const runBtn = el('run-button');
-    const dlBtn = el('download-button');
-    if (runBtn) runBtn.addEventListener('click', handleRun);
-    if (dlBtn) dlBtn.addEventListener('click', handleDownload);
-    resetUI();
-  } catch (error) {
-    console.error('[MODIFIERS] DOMContentLoaded initialization error:', error);
+  function normalizeIdentifier(value) {
+    return String(value == null ? '' : value).trim().toUpperCase();
   }
-});
 
-// ----------------- Main run handler -----------------
-async function handleRun() {
-  resetUI();
-  try {
-    let xmlFile = fileEl('xml-file');
-    let xlsxFile = fileEl('xlsx-file');
-    
-    // Fallback to unified checker files cache
-    if (!xmlFile && window.unifiedCheckerFiles && window.unifiedCheckerFiles.xml) {
-      xmlFile = window.unifiedCheckerFiles.xml;
-      console.log('[MODIFIERS] Using XML file from unified cache:', xmlFile.name);
-    }
-    if (!xlsxFile && window.unifiedCheckerFiles && window.unifiedCheckerFiles.eligibility) {
-      xlsxFile = window.unifiedCheckerFiles.eligibility;
-      console.log('[MODIFIERS] Using eligibility file from unified cache:', xlsxFile.name);
-    }
-    
-    if (!xmlFile || !xlsxFile) throw new Error('Please select both an XML file and an XLSX file.');
+  function normalizeMemberID(value) {
+    const raw = String(value == null ? '' : value).trim();
+    if (!raw) return '';
 
-    const [xmlText, xlsxObj, minorProceduresRaw] = await Promise.all([
-      readFileText(xmlFile),
-      readXlsx(xlsxFile),
-      fetch('../json/minor_procedures.json').then(r => r.ok ? r.json() : []).catch(() => [])
-    ]);
-    const xmlDoc = parseXml(xmlText);
-
-    // ----------------------------------------------------------------
-    // Parse Header ReceiverID once — used for all payer-routing logic.
-    // Claim-level PayerID is kept separately for auditing only.
-    // ----------------------------------------------------------------
-    const headerElement = xmlDoc.documentElement.querySelector(':scope > Header')
-      || xmlDoc.querySelector('Header');
-    const rawReceiverID = headerElement
-      ? (headerElement.querySelector('ReceiverID') || headerElement.getElementsByTagName('ReceiverID')[0] || null)
-      : null;
-    const receiverID = normalizeIdentifier(rawReceiverID ? rawReceiverID.textContent : '');
-    const receiverConfig = getReceiverConfig(receiverID);
-
-    console.log('[MODIFIERS] Header ReceiverID:', receiverID || '(MISSING)');
-    if (receiverConfig) {
-      console.log('[MODIFIERS] Insurer:', receiverConfig.insurer);
-    } else if (receiverID) {
-      console.warn('[MODIFIERS] ReceiverID "' + receiverID + '" has no configured modifier rules.');
-    } else {
-      console.warn('[MODIFIERS] ReceiverID is missing from the XML Header.');
+    const compact = raw.replace(/\s+/g, '');
+    if (/^\d+$/.test(compact)) {
+      return compact.replace(/^0+(?=\d)/, '');
     }
 
-    const extracted = extractModifierRecords(xmlDoc);
-    const minorProcedureCodes = new Set((Array.isArray(minorProceduresRaw) ? minorProceduresRaw : [])
-      .map(item => normalizeCode(typeof item === 'string' ? item : (item && item.code) ? item.code : ''))
-      .filter(Boolean));
-    const claimModifierContext = buildClaimModifierContext(extracted, minorProcedureCodes);
+    return compact.toUpperCase();
+  }
 
-    const matcher = buildXlsxMatcher(xlsxObj.rows);
+  function normalizeClinician(value) {
+    return normalizeIdentifier(value).replace(/\s+/g, '');
+  }
 
-    const output = extracted.map(rec => {
-      const xmlDate = normalizeDate(rec.Date);
-      const match = matcher.find(rec.MemberID, xmlDate, rec.OrderingClinician);
-    
-      const remarks = [];
-    
-      // Determine VOI number: prefer matched eligibility, fallback to XML
-      let voiNumber = '';
-      if (match) {
-        voiNumber = String(match['VOI Number'] || '').trim();
-      } else {
-        voiNumber = rec.VOINumber || ''; // fallback to XML
-      }
+  function normalizeObservationCode(value) {
+    return normalizeHeader(value);
+  }
 
-      // ---------------------------------------------------------------
-      // Determine insurer from Header ReceiverID (not Claim PayerID).
-      // ---------------------------------------------------------------
-      let isUnknownPayer = false;
-      let insurerLabel = '';
-      let payerRemark = '';
+  function normalizeVoi(value) {
+    return normalizeIdentifier(value)
+      .replace(/[\s\-\/]+/g, '_')
+      .replace(/_+/g, '_')
+      .replace(/^_+|_+$/g, '');
+  }
 
-      if (!receiverID) {
-        isUnknownPayer = true;
-        payerRemark = 'ReceiverID is missing from the XML Header; modifier payer rules could not be determined.';
-      } else if (!receiverConfig) {
-        isUnknownPayer = true;
-        payerRemark = 'Modifier rules are not configured for ReceiverID ' + receiverID + '.';
-      } else {
-        insurerLabel = receiverConfig.insurer;
-      }
+  function escapeHtml(value) {
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
 
-      if (isUnknownPayer) {
-        remarks.push(payerRemark);
-      } else {
-        // Check Observation Code
-        if (rec.ObsCode !== 'CPT modifier') {
-          remarks.push(`Observation Code incorrect; expected "CPT modifier" but found "${rec.ObsCode}"`);
-        }
+  function getDirectChildren(parent, tagName) {
+    if (!parent || !parent.childNodes) return [];
 
-        // Check VOI against modifier using receiver-specific mappings
-        const voiNorm = normForCompare(voiNumber);
-        const expected52 = receiverConfig.modifier52Voi;
-        const expected24 = receiverConfig.modifier24Voi;
-        if (rec.Modifier === '52' && voiNorm !== normForCompare(expected52)) {
-          remarks.push(`Modifier 52 does not match VOI (expected ${expected52}).`);
-        }
-        if (rec.Modifier === '24' && voiNorm !== normForCompare(expected24)) {
-          remarks.push(`Modifier 24 does not match VOI (expected ${expected24}).`);
-        }
-        if (rec.Quantity !== 1) remarks.push('Qty must be 1 for modifiers.');
-
-        const claimCtx = claimModifierContext.get(rec.ClaimID) || { hasMinorProcedure: false, hasPricedConsultation: false };
-        if ((rec.Modifier === '24' || rec.Modifier === '25' || rec.Modifier === '52') && !isConsultationCode(rec.ActivityCode)) {
-          remarks.push(`Modifier ${rec.Modifier} must only be on consultation codes.`);
-        }
-        if (rec.Modifier === '24' && !normForCompare(voiNumber).includes(normForCompare('Vol D'))) {
-          remarks.push('Modifier 24 requires eligibility containing Vol D.');
-        }
-        if (rec.Modifier === '25') {
-          if (!claimCtx.hasMinorProcedure) remarks.push('Modifier 25 requires a minor procedure in the same claim.');
-          if (!claimCtx.hasPricedConsultation) remarks.push('Modifier 25 requires a consultation code with price in the same claim.');
-        }
-        if (rec.Modifier === '50') {
-          if (!minorProcedureCodes.has(normalizeCode(rec.ActivityCode))) {
-            remarks.push(`Modifier 50 cannot be used on \`${rec.ActivityCode || '(unknown)'}\`.`);
-          }
-        }
-
-        if (!match) remarks.push('No matching eligibility found');
-      }
-
-      return {
-        ClaimID: rec.ClaimID || '',
-        MemberID: rec.MemberID || '',
-        ActivityID: rec.ActivityID || '',
-        OrderingClinician: rec.OrderingClinician || '',
-        Modifier: rec.Modifier || '',
-        ActivityCode: rec.ActivityCode || '',
-        Quantity: rec.Quantity,
-        Net: rec.Net,
-        ObsCode: rec.ObsCode || '',
-        VOINumber: voiNumber,
-        ReceiverID: receiverID,
-        ClaimPayerID: rec.ClaimPayerID || '',
-        Insurer: insurerLabel,
-        EligibilityRow: match || null,
-        isUnknown: isUnknownPayer,
-        isValid: !isUnknownPayer && remarks.length === 0,
-        Remarks: remarks.map(s => s && !s.endsWith('.') ? s + '.' : s).join('; ')
-      };
+    return Array.from(parent.childNodes).filter((node) => {
+      if (!node || node.nodeType !== 1) return false;
+      return (node.localName || node.nodeName) === tagName;
     });
+  }
 
-    lastResults = output;
-    const tableElement = buildResultsTable(output);
-    lastWorkbook = makeWorkbookFromJson(output, 'checker_modifiers_results');
-    toggleDownload(output.length > 0);
+  function getDirectChildText(parent, tagName) {
+    const child = getDirectChildren(parent, tagName)[0];
+    return child && child.textContent ? child.textContent.trim() : '';
+  }
 
-    // Count valid rows and display percentage (unknown payer rows excluded from percent)
-    const knownRows = output.filter(r => !r.isUnknown);
-    const validCount = knownRows.filter(r => r.isValid).length;
-    const totalCount = knownRows.length;
-    const percent = totalCount ? Math.round((validCount / totalCount) * 100) : 0;
-    message(`Completed — ${validCount}/${totalCount} rows correct (${percent}%)${output.length > knownRows.length ? ` · ${output.length - knownRows.length} unconfigured receiver row(s)` : ''}`, percent === 100 ? 'green' : 'orange');
-
-    return tableElement;
-  } catch (err) {
-    showError(err);
+  function getVisibleModifierContainer() {
+    const container = document.getElementById('checker-container-modifiers');
+    if (container) return container;
     return null;
   }
-}
 
-// ----------------- Download -----------------
-function handleDownload() {
-  if (!lastWorkbook || !lastResults.length) { showError(new Error('Nothing to download')); return; }
-  try { XLSX.writeFile(lastWorkbook, 'checker_modifiers_results.xlsx'); }
-  catch(err) { try { XLSX.writeFile(makeWorkbookFromJson(lastResults, 'checker_modifiers_results'), 'checker_modifiers_results.xlsx'); } catch(e) { showError(e); } }
-}
+  function getScopedElement(id) {
+    const container = getVisibleModifierContainer();
+    return (container && container.querySelector(`#${id}`)) || document.getElementById(id);
+  }
 
-// ----------------- File helpers -----------------
-function readFileText(file) {
-  return new Promise((resolve, reject) => {
-    const fr = new FileReader();
-    fr.onload = () => resolve(String(fr.result || ''));
-    fr.onerror = () => reject(fr.error || new Error('Failed to read file'));
-    fr.readAsText(file);
-  });
-}
+  function resolveInputFile(id, cacheKey, explicitFile) {
+    if (explicitFile) return explicitFile;
+    const input = getScopedElement(id);
+    return input?.files?.[0] || root.unifiedCheckerFiles?.[cacheKey] || null;
+  }
 
-async function readXlsx(file) {
-  const arrayBuffer = await file.arrayBuffer();
-  const wb = XLSX.read(arrayBuffer, { type: 'array' });
-  const sheetName = wb.SheetNames[0];
-  const ws = wb.Sheets[sheetName];
-  // header row is on row 2 in sample -> range:1
-  const rows = XLSX.utils.sheet_to_json(ws, { defval: '', range: 1 });
-  return { rows, sheetName };
-}
+  async function readFileText(file) {
+    if (!file) throw new Error('XML file is missing.');
+    if (typeof file.text === 'function') return file.text();
 
-// ----------------- XML parsing & extraction -----------------
-function parseXml(text) {
-  // Preprocess XML to replace unescaped & with "and" for parseability
-  const xmlContent = text.replace(/&(?!(amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;))/g, "and");
-  const doc = new DOMParser().parseFromString(xmlContent, 'text/xml');
-  const pe = doc.getElementsByTagName('parsererror')[0];
-  if (pe) throw new Error('Invalid XML: ' + (pe.textContent || 'parse error').trim());
-  return doc;
-}
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(reader.error || new Error('Unable to read XML file.'));
+      reader.readAsText(file);
+    });
+  }
 
-// Extract records where Observation contains Code === 'CPT modifier' and Value is '24' or '52'
-// ----------------- XML parsing & extraction -----------------
-function extractModifierRecords(xmlDoc) {
-  const records = [];
-  const claims = Array.from(xmlDoc.getElementsByTagName('Claim'));
+  async function readFileArrayBuffer(file) {
+    if (!file) throw new Error('Eligibility workbook is missing.');
+    if (typeof file.arrayBuffer === 'function') return file.arrayBuffer();
 
-  claims.forEach(claim => {
-    const claimId = textValue(claim, 'ID');
-    const payerId = textValue(claim, 'PayerID');
-    const memberIdRaw = textValue(claim, 'MemberID');
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error || new Error('Unable to read eligibility workbook.'));
+      reader.readAsArrayBuffer(file);
+    });
+  }
 
-    const encNode = claim.getElementsByTagName('Encounter')[0] || claim.getElementsByTagName('Encounte')[0];
-    const encDateRaw = encNode ? (textValue(encNode, 'Date') || textValue(encNode, 'Start') || textValue(encNode, 'EncounterDate') || '') : '';
-    const encDate = normalizeDate(encDateRaw);
+  function parseXml(xmlText) {
+    const safeXml = String(xmlText || '').replace(
+      /&(?!(amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;))/g,
+      'and'
+    );
+    const xmlDoc = new DOMParser().parseFromString(safeXml, 'application/xml');
+    const parserError = xmlDoc.getElementsByTagName('parsererror')[0];
 
-    const activities = Array.from(claim.getElementsByTagName('Activity'));
-    activities.forEach(act => {
-      const activityId = textValue(act, 'ID');
-      const clinician = firstNonEmpty([
-        textValue(act, 'OrderingClnician'),
-        textValue(act, 'OrderingClinician'),
-        textValue(act, 'Ordering_Clinician'),
-        textValue(act, 'OrderingClin')
-      ]).trim().toUpperCase();
+    if (parserError) {
+      throw new Error('XML Parsing Error: The file is not well-formed.');
+    }
 
-      const observations = Array.from(act.getElementsByTagName('Observation'));
-      observations.forEach(obs => {
-        const code = textValue(obs, 'Code');
-        const voiVal = textValue(obs, 'Value') || textValue(obs, 'ValueText') || '';
-        const valueType = textValue(obs, 'ValueType') || '';
+    if (!xmlDoc.documentElement || xmlDoc.documentElement.nodeName !== 'Claim.Submission') {
+      throw new Error('Modifier checker requires a Claim.Submission XML file.');
+    }
 
-        // Only accept observations with ValueType of "Modifiers"
-        if (!valueType || valueType.trim().toLowerCase() !== 'modifiers') return;
+    return xmlDoc;
+  }
 
-        const activityCode = textValue(act, 'Code');
-        const quantity = Number(textValue(act, 'Quantity') || '0');
-        const net = Number(textValue(act, 'Net') || '0');
+  function excelSerialToDate(serial) {
+    if (!Number.isFinite(serial)) return null;
 
-        // Only accept valid modifier values
-        let modifier = '';
-        const voiNorm = (voiVal || '').toUpperCase().replace(/[_\s]/g, '');
-        if (voiNorm === 'VOI_D' || voiNorm === '24') modifier = '24';
-        else if (voiNorm === 'VOI_EF1' || voiNorm === '52') modifier = '52';
-        else if (voiNorm === '25') modifier = '25';
-        else if (voiNorm === '50') modifier = '50';
-        else return; // skip anything else
+    if (root.XLSX?.SSF?.parse_date_code) {
+      const parsed = root.XLSX.SSF.parse_date_code(serial);
+      if (parsed) {
+        return new Date(Date.UTC(parsed.y, parsed.m - 1, parsed.d));
+      }
+    }
 
-        // Check for exact Observation Code match
-        const remarks = [];
-        if (code !== 'CPT modifier') {
-          remarks.push(`Observation Code incorrect; expected "CPT modifier" but found "${code}"`);
+    const utcDays = Math.floor(serial - 25569);
+    return new Date(utcDays * 86400 * 1000);
+  }
+
+  function toDateKey(value) {
+    if (value == null || value === '') return '';
+
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+      const year = value.getUTCFullYear();
+      const month = String(value.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(value.getUTCDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+
+    if (typeof value === 'number') {
+      const date = excelSerialToDate(value);
+      return date ? toDateKey(date) : '';
+    }
+
+    const raw = String(value).trim();
+    if (!raw) return '';
+
+    let match = raw.match(/^(\d{4})[-\/]([01]?\d)[-\/]([0-3]?\d)/);
+    if (match) {
+      return `${match[1]}-${String(Number(match[2])).padStart(2, '0')}-${String(Number(match[3])).padStart(2, '0')}`;
+    }
+
+    match = raw.match(/^([0-3]?\d)[-\/]([01]?\d)[-\/](\d{4})/);
+    if (match) {
+      return `${match[3]}-${String(Number(match[2])).padStart(2, '0')}-${String(Number(match[1])).padStart(2, '0')}`;
+    }
+
+    const parsedDate = new Date(raw);
+    if (!Number.isNaN(parsedDate.getTime())) {
+      return toDateKey(parsedDate);
+    }
+
+    return '';
+  }
+
+  function findActualHeader(headers, aliases) {
+    const normalizedAliases = new Set(aliases);
+    return headers.find((header) => normalizedAliases.has(normalizeHeader(header))) || null;
+  }
+
+  function extractVoiTokens(value) {
+    const raw = String(value == null ? '' : value);
+    const tokens = new Set();
+
+    raw.match(/VOI[\s_\-\/]*[A-Z0-9]+/gi)?.forEach((token) => tokens.add(normalizeVoi(token)));
+
+    const normalizedWholeValue = normalizeVoi(raw);
+    if (normalizedWholeValue) tokens.add(normalizedWholeValue);
+
+    return Array.from(tokens);
+  }
+
+  function parseEligibilityWorkbook(workbookFile, arrayBuffer) {
+    if (!root.XLSX || typeof root.XLSX.read !== 'function') {
+      throw new Error('SheetJS (XLSX) is unavailable.');
+    }
+
+    const workbook = root.XLSX.read(arrayBuffer, {
+      type: 'array',
+      cellDates: true
+    });
+
+    if (!workbook.SheetNames?.length) {
+      throw new Error('Eligibility workbook contains no worksheets.');
+    }
+
+    const rows = [];
+    const warnings = [];
+
+    for (const sheetName of workbook.SheetNames) {
+      const sheet = workbook.Sheets[sheetName];
+      const sheetRows = root.XLSX.utils.sheet_to_json(sheet, {
+        defval: '',
+        raw: true,
+        blankrows: false
+      });
+
+      if (sheetRows.length === 0) continue;
+
+      const headers = Array.from(
+        new Set(sheetRows.flatMap((row) => Object.keys(row || {})))
+      );
+      const memberHeader = findActualHeader(headers, HEADER_ALIASES.memberID);
+      const dateHeader = findActualHeader(headers, HEADER_ALIASES.orderedOn);
+      const clinicianHeader = findActualHeader(headers, HEADER_ALIASES.clinician);
+      const voiHeader = findActualHeader(headers, HEADER_ALIASES.voi);
+
+      if (!memberHeader || !dateHeader || !clinicianHeader) {
+        warnings.push(
+          `${sheetName}: could not identify all matching columns ` +
+          `(Member/Card Number, Ordered On, Clinician).`
+        );
+      }
+
+      sheetRows.forEach((sourceRow, rowIndex) => {
+        const values = Object.values(sourceRow || {});
+        let voiValue = voiHeader ? sourceRow[voiHeader] : '';
+
+        if (!String(voiValue || '').trim()) {
+          const discovered = values
+            .flatMap(extractVoiTokens)
+            .find((token) => token.startsWith('VOI_'));
+          voiValue = discovered || '';
         }
 
-        records.push({
-          ClaimID: claimId,
-          ActivityID: activityId,
-          MemberID: normalizeMemberId(memberIdRaw),
-          Date: encDate,
-          OrderingClinician: clinician,
-          Modifier: modifier,
-          ActivityCode: activityCode,
-          Quantity: quantity,
-          Net: net,
-          ClaimPayerID: payerId,
-          ObsCode: code,
-          VOINumber: voiVal,
-          Remarks: remarks.map(s => s && !s.endsWith('.') ? s + '.' : s).join('; ')
+        rows.push({
+          workbookName: workbookFile?.name || '',
+          sheetName,
+          sheetRowNumber: rowIndex + 2,
+          memberID: normalizeMemberID(memberHeader ? sourceRow[memberHeader] : ''),
+          orderedOn: toDateKey(dateHeader ? sourceRow[dateHeader] : ''),
+          clinician: normalizeClinician(clinicianHeader ? sourceRow[clinicianHeader] : ''),
+          voiRaw: String(voiValue == null ? '' : voiValue).trim(),
+          voiTokens: extractVoiTokens(voiValue),
+          sourceRow
         });
       });
-    });
-  });
+    }
 
-  // Deduplicate rows based on key
-  const seen = new Set();
-  return records.filter(r => {
-    const key = [r.ClaimID, r.ActivityID, r.MemberID, r.Modifier, r.ObsCode].join('|');
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
+    if (rows.length === 0) {
+      throw new Error('Eligibility workbook contains no data rows.');
+    }
 
-// ----------------- XLSX matcher -----------------
-function buildXlsxMatcher(rows) {
-  const index = new Map();
+    return { rows, warnings };
+  }
 
-  // Build index
-  rows.forEach(r => {
-    const member = normalizeMemberId(String(r['Card Number / DHA Member ID'] || ''));
-    const date = normalizeDate(String(r['Ordered On'] || ''));
-    const clinician = String(r['Clinician'] || '').trim().toUpperCase();
-    r._VOINumber = String(r['VOI Number'] || '').trim();
-    r._used = false; // add used flag
+  function collectModifierRecords(xmlDoc) {
+    const header = getDirectChildren(xmlDoc.documentElement, 'Header')[0];
+    const receiverID = normalizeIdentifier(getDirectChildText(header, 'ReceiverID'));
+    const receiver = RECEIVER_CONFIG[receiverID] || null;
+    const records = [];
 
-    const key = [member, date, clinician].join('|');
-    if (!index.has(key)) index.set(key, []);
-    index.get(key).push(r);
-  });
+    for (const claim of getDirectChildren(xmlDoc.documentElement, 'Claim')) {
+      const claimID = getDirectChildText(claim, 'ID') || 'Unknown';
+      const memberIDRaw = getDirectChildText(claim, 'MemberID');
+      const claimPayerID = normalizeIdentifier(getDirectChildText(claim, 'PayerID'));
+      const encounter = getDirectChildren(claim, 'Encounter')[0];
+      const encounterDate = toDateKey(getDirectChildText(encounter, 'Start'));
 
-  return {
-    find(memberId, date, clinicianLicense) {
-      const normalizedMember = normalizeMemberId(memberId);
-      const normalizedDate = normalizeDate(date);
-      const normalizedClinician = String(clinicianLicense || '').trim().toUpperCase();
+      for (const activity of getDirectChildren(claim, 'Activity')) {
+        const activityID = getDirectChildText(activity, 'ID');
+        const activityDate = toDateKey(getDirectChildText(activity, 'Start')) || encounterDate;
+        const code = getDirectChildText(activity, 'Code');
+        const performingClinicianRaw = getDirectChildText(activity, 'Clinician');
+        const orderingClinicianRaw = getDirectChildText(activity, 'OrderingClinician');
+        const performingClinician = normalizeClinician(performingClinicianRaw);
+        const orderingClinician = normalizeClinician(orderingClinicianRaw);
 
-      const fullKey = [normalizedMember, normalizedDate, normalizedClinician].join('|');
-      const arr = index.get(fullKey);
+        for (const observation of getDirectChildren(activity, 'Observation')) {
+          const observationValue = String(getDirectChildText(observation, 'Value')).trim();
+          if (!MODIFIER_RULES[observationValue]) continue;
 
-      if (arr && arr.length) {
-        // find first unused eligibility
-        const eligibleRow = arr.find(r => !r._used);
-        if (eligibleRow) {
-          eligibleRow._used = true; // mark as used
-          console.log(`[MATCH] Full match found for Member: ${memberId}, Clinician: ${clinicianLicense}, Date: ${date}`);
-          return eligibleRow;
+          const observationCode = getDirectChildText(observation, 'Code');
+
+          records.push({
+            claimID,
+            receiverID,
+            claimPayerID,
+            insurer: receiver?.insurer || 'Unknown',
+            memberIDRaw,
+            memberID: normalizeMemberID(memberIDRaw),
+            activityID,
+            activityDate,
+            code,
+            performingClinicianRaw,
+            orderingClinicianRaw,
+            performingClinician,
+            orderingClinician,
+            modifier: observationValue,
+            observationCode,
+            observationCodeIsValid: normalizeObservationCode(observationCode) === 'cptmodifier',
+            expectedVOI: MODIFIER_RULES[observationValue].expectedVOI
+          });
         }
       }
+    }
 
-      // Partial match logging (member+clinician, date mismatch)
-      const partialKeyPattern = new RegExp(`^${escapeRegex(normalizedMember)}\\|.*\\|${escapeRegex(normalizedClinician)}$`);
-      for (const k of index.keys()) {
-        if (partialKeyPattern.test(k)) {
-          console.warn(`[PARTIAL MATCH] Member and Clinician matched but date mismatch. XML date: ${date}, XLSX key: ${k}`);
-          break;
-        }
+    return {
+      receiverID,
+      receiver,
+      records
+    };
+  }
+
+  function scoreEligibilityRow(record, row) {
+    if (!record.memberID || !row.memberID || record.memberID !== row.memberID) {
+      return -1;
+    }
+
+    let score = 10;
+
+    if (record.activityDate && row.orderedOn) {
+      if (record.activityDate !== row.orderedOn) return -1;
+      score += 5;
+    }
+
+    const clinicianCandidates = new Set([
+      record.performingClinician,
+      record.orderingClinician
+    ].filter(Boolean));
+
+    if (row.clinician && clinicianCandidates.size > 0) {
+      if (!clinicianCandidates.has(row.clinician)) return -1;
+      score += row.clinician === record.performingClinician ? 4 : 3;
+    }
+
+    if (row.voiTokens.includes(record.expectedVOI)) score += 2;
+    return score;
+  }
+
+  function findBestEligibilityMatch(record, eligibilityRows) {
+    let best = null;
+    let bestScore = -1;
+
+    for (const row of eligibilityRows) {
+      const score = scoreEligibilityRow(record, row);
+      if (score > bestScore) {
+        best = row;
+        bestScore = score;
       }
+    }
 
-      return null;
-    },
+    return bestScore >= 0 ? best : null;
+  }
 
-    _index: index // expose index for debugging
-  };
-}
+  function analyzeModifierRecord(record, eligibilityRows, receiver) {
+    const findings = [];
 
-// ----------------- Validation / business rules -----------------
-function isModifierTarget(val) { const v = String(val || '').trim(); return v === '24' || v === '25' || v === '50' || v === '52'; }
-function normForCompare(s) { return String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
-function escapeRegex(s) { return String(s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
-function isConsultationCode(code) { return /^(92|992)/.test(String(code || '').trim()); }
-function normalizeCode(code) { return String(code || '').trim().replace(/^0+/, ''); }
-
-function buildClaimModifierContext(records, minorProcedureCodes) {
-  const byClaim = new Map();
-  (records || []).forEach(rec => {
-    if (!byClaim.has(rec.ClaimID)) {
-      byClaim.set(rec.ClaimID, {
-        hasMinorProcedure: false,
-        hasPricedConsultation: false
+    if (!record.receiverID) {
+      findings.push({
+        status: 'Unknown',
+        remark: 'ReceiverID is missing from the XML Header; modifier payer rules could not be determined.'
+      });
+    } else if (!receiver) {
+      findings.push({
+        status: 'Unknown',
+        remark: `Modifier rules are not configured for ReceiverID ${record.receiverID}.`
       });
     }
-    const ctx = byClaim.get(rec.ClaimID);
-    const activityCode = normalizeCode(rec.ActivityCode);
-    if (minorProcedureCodes.has(activityCode)) ctx.hasMinorProcedure = true;
-    if (isConsultationCode(rec.ActivityCode) && Number(rec.Net || 0) > 0) ctx.hasPricedConsultation = true;
-  });
-  return byClaim;
-}
-function expectedModifierForVOI(voi) {
-  if (!voi) return '';
-  const v = String(voi || '').toUpperCase().replace(/[_\s]/g, '');
-  if (v === 'VOID') return '24';      // VOI_D
-  if (v === 'VOIEF1') return '52';    // VOI_EF1
-  return '';
-}
 
-// ----------------- Rendering -----------------
-function buildResultsTable(rows) {
-  if (!rows || !rows.length) {
-    const emptyDiv = document.createElement('div');
-    emptyDiv.textContent = 'No results';
-    return emptyDiv;
-  }
-
-  console.info('[DEBUG] total rows from mapping:', rows.length);
-  const receiverSet = new Set(rows.map(r => String(r.ReceiverID || '').trim().toUpperCase()).filter(x => x));
-  console.info('[DEBUG] unique ReceiverIDs in results:', Array.from(receiverSet).join(', ') || '(none)');
-
-  // Show all rows; assign an _originalIndex for modal linking
-  rows.forEach((r, i) => { r._originalIndex = i; });
-
-  const container = document.createElement('div');
-  let prevClaimId = null, prevMemberId = null, prevActivityId = null;
-
-  let html = `<table class="table table-striped table-bordered" style="width:100%;border-collapse:collapse">
-    <thead>
-      <tr>
-        <th style="padding:8px;border:1px solid #ccc">Claim ID</th>
-        <th style="padding:8px;border:1px solid #ccc">Member ID</th>
-        <th style="padding:8px;border:1px solid #ccc">Activity ID</th>
-        <th style="padding:8px;border:1px solid #ccc">Ordering Clinician</th>
-        <th style="padding:8px;border:1px solid #ccc">Observation Code</th>
-        <th style="padding:8px;border:1px solid #ccc">Observation CPT Modifier</th>
-        <th style="padding:8px;border:1px solid #ccc">VOI Number</th>
-        <th style="padding:8px;border:1px solid #ccc">Receiver ID</th>
-        <th style="padding:8px;border:1px solid #ccc">Claim Payer ID</th>
-        <th style="padding:8px;border:1px solid #ccc">Insurer</th>
-        <th style="padding:8px;border:1px solid #ccc">Remarks</th>
-        <th style="padding:8px;border:1px solid #ccc">Eligibility Details</th>
-      </tr>
-    </thead>
-    <tbody>`;
-
-  rows.forEach(r => {
-    const showClaim = r.ClaimID !== prevClaimId;
-    const showMember = showClaim || r.MemberID !== prevMemberId;
-    const showActivity = showMember || r.ActivityID !== prevActivityId;
-
-    let rowClass;
-    if (r.isUnknown) {
-      rowClass = 'table-warning';
-    } else {
-      const remarks = String(r.Remarks || '').split(';').map(s => s.trim()).filter(Boolean);
-      rowClass = remarks.length === 0 ? 'table-success' : 'table-danger';
+    if (!record.observationCodeIsValid) {
+      findings.push({
+        status: 'Invalid',
+        remark:
+          `Modifier ${record.modifier} has Observation Code ` +
+          `\`${record.observationCode || '(blank)'}\`; it must be \`CPT modifier\`.`
+      });
     }
 
-    const remarksText = r.isUnknown
-      ? (String(r.Remarks || '').split(';').map(s => s.trim()).filter(Boolean)
-          .map(s => s && !s.endsWith('.') ? s + '.' : s).join('; ') || 'Unknown payer — modifier rules could not be determined.')
-      : (String(r.Remarks || '').split(';').map(s => s.trim()).filter(Boolean)
-          .map(s => s && !s.endsWith('.') ? s + '.' : s).join('; ') || 'OK');
+    const match = findBestEligibilityMatch(record, eligibilityRows);
 
-    html += `<tr class="${rowClass}">
-      <td style="padding:6px;border:1px solid #ccc">${showClaim ? escapeHtml(r.ClaimID) : ''}</td>
-      <td style="padding:6px;border:1px solid #ccc">${showMember ? escapeHtml(r.MemberID) : ''}</td>
-      <td style="padding:6px;border:1px solid #ccc">${showActivity ? escapeHtml(r.ActivityID) : ''}</td>
-      <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.OrderingClinician)}</td>
-      <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.ObsCode || '')}</td>
-      <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.Modifier)}</td>
-      <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.VOINumber || '')}</td>
-      <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.ReceiverID || '')}</td>
-      <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.ClaimPayerID || '')}</td>
-      <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.Insurer || '')}</td>
-      <td style="padding:6px;border:1px solid #ccc">${escapeHtml(remarksText)}</td>
-      <td style="padding:6px;border:1px solid #ccc">${r.EligibilityRow ? `<button type="button" class="details-btn eligibility-details" onclick="showEligibility(${r._originalIndex})">View</button>` : ''}</td>
-    </tr>`;
+    if (!match) {
+      findings.push({
+        status: 'Invalid',
+        remark:
+          `No eligibility match was found for Member ${record.memberIDRaw || '(blank)'}, ` +
+          `date ${record.activityDate || '(unknown)'}, and Clinician ` +
+          `${record.performingClinicianRaw || record.orderingClinicianRaw || '(blank)'}.`
+      });
+    } else if (!match.voiTokens.includes(record.expectedVOI)) {
+      findings.push({
+        status: 'Invalid',
+        remark:
+          `Modifier ${record.modifier} requires ${record.expectedVOI}, ` +
+          `but eligibility shows ${match.voiRaw || '(blank)'}.`
+      });
+    }
 
-    prevClaimId = r.ClaimID;
-    prevMemberId = r.MemberID;
-    prevActivityId = r.ActivityID;
+    let status = 'Valid';
+    if (findings.some((finding) => finding.status === 'Invalid')) status = 'Invalid';
+    else if (findings.some((finding) => finding.status === 'Unknown')) status = 'Unknown';
+
+    return {
+      ...record,
+      eligibilityMatch: match,
+      actualVOI: match?.voiRaw || '',
+      status,
+      valid: status === 'Valid',
+      findings,
+      remark: findings.map((finding) => finding.remark).join('\n') || 'OK'
+    };
+  }
+
+  function makeWrapper() {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'modifier-checker-results';
+    return wrapper;
+  }
+
+  function renderResults(results, context) {
+    const wrapper = makeWrapper();
+    const total = results.length;
+    const valid = results.filter((row) => row.status === 'Valid').length;
+    const invalid = results.filter((row) => row.status === 'Invalid').length;
+    const unknown = results.filter((row) => row.status === 'Unknown').length;
+    const percentage = total ? ((valid / total) * 100).toFixed(1) : '100.0';
+
+    const summary = document.createElement('div');
+    summary.className = 'alert alert-info modifier-summary';
+    summary.innerHTML =
+      `<strong>Modifier results:</strong> ${valid} valid / ${total} total (${percentage}%). ` +
+      `${invalid} invalid, ${unknown} unknown. ` +
+      `ReceiverID: ${escapeHtml(context.receiverID || '(missing)')} ` +
+      `(${escapeHtml(context.receiver?.insurer || 'Unknown')}).`;
+    wrapper.appendChild(summary);
+
+    if (context.warnings?.length) {
+      const warning = document.createElement('div');
+      warning.className = 'alert alert-warning';
+      warning.textContent = context.warnings.join(' ');
+      wrapper.appendChild(warning);
+    }
+
+    const tableContainer = document.createElement('div');
+    tableContainer.className = 'table-responsive';
+    const table = document.createElement('table');
+    table.className = 'table table-bordered table-striped checker-table result-table modifier-results-table';
+    table.innerHTML = `
+      <thead>
+        <tr>
+          <th>Claim ID</th>
+          <th>Receiver ID</th>
+          <th>Payer ID</th>
+          <th>Insurer</th>
+          <th>Member ID</th>
+          <th>Ordered On</th>
+          <th>Clinician</th>
+          <th>CPT Code</th>
+          <th>Modifier</th>
+          <th>Expected VOI</th>
+          <th>Actual VOI</th>
+          <th>Status</th>
+          <th>Remarks</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    `;
+
+    const tbody = table.querySelector('tbody');
+
+    if (results.length === 0) {
+      const row = document.createElement('tr');
+      row.className = 'valid-row table-success';
+      row.innerHTML = '<td colspan="13">No modifier 24 or 52 activities were found.</td>';
+      tbody.appendChild(row);
+    } else {
+      results.forEach((result, index) => {
+        const row = document.createElement('tr');
+        row.dataset.index = String(index);
+        row.dataset.status = result.status.toLowerCase();
+        row.className = result.status === 'Invalid'
+          ? 'invalid-row table-danger'
+          : result.status === 'Unknown'
+            ? 'unknown-row table-warning'
+            : 'valid-row table-success';
+
+        row.innerHTML = `
+          <td>${escapeHtml(result.claimID)}</td>
+          <td>${escapeHtml(result.receiverID)}</td>
+          <td>${escapeHtml(result.claimPayerID)}</td>
+          <td>${escapeHtml(result.insurer)}</td>
+          <td>${escapeHtml(result.memberIDRaw)}</td>
+          <td>${escapeHtml(result.activityDate)}</td>
+          <td>${escapeHtml(result.performingClinicianRaw || result.orderingClinicianRaw)}</td>
+          <td>${escapeHtml(result.code)}</td>
+          <td>${escapeHtml(result.modifier)}</td>
+          <td>${escapeHtml(result.expectedVOI)}</td>
+          <td>${escapeHtml(result.actualVOI)}</td>
+          <td class="status-cell">${escapeHtml(result.status)}</td>
+          <td style="white-space:pre-line">${escapeHtml(result.remark)}</td>
+        `;
+        tbody.appendChild(row);
+      });
+    }
+
+    tableContainer.appendChild(table);
+    wrapper.appendChild(tableContainer);
+    return wrapper;
+  }
+
+  function renderError(error) {
+    const wrapper = makeWrapper();
+    const alert = document.createElement('div');
+    alert.className = 'alert alert-danger';
+    alert.setAttribute('role', 'alert');
+    alert.textContent = `Modifier Checker failed: ${error?.message || String(error)}`;
+    wrapper.appendChild(alert);
+
+    const table = document.createElement('table');
+    table.className = 'table checker-table';
+    table.innerHTML = '<tbody><tr class="invalid-row"><td>Modifier checker did not complete.</td></tr></tbody>';
+    wrapper.appendChild(table);
+    return wrapper;
+  }
+
+  function updateMessage(message, isError) {
+    const messageBox = getScopedElement('messageBox');
+    if (!messageBox) return;
+    messageBox.textContent = message || '';
+    messageBox.classList.toggle('error', Boolean(isError));
+  }
+
+  function updateDownloadButton() {
+    const button = getScopedElement('download-button');
+    if (!button) return;
+    button.style.display = lastResults.length ? '' : 'none';
+    button.disabled = lastResults.length === 0;
+  }
+
+  async function runModifiersCheck(options) {
+    const config = options || {};
+    const xmlFile = resolveInputFile('xml-file', 'xml', config.xmlFile);
+    const eligibilityFile = resolveInputFile('xlsx-file', 'eligibility', config.eligibilityFile);
+
+    if (!xmlFile || !eligibilityFile) {
+      const missing = [
+        !xmlFile ? 'XML' : null,
+        !eligibilityFile ? 'Eligibility workbook' : null
+      ].filter(Boolean).join(' and ');
+      const error = new Error(`${missing} is required.`);
+      updateMessage(error.message, true);
+      return renderError(error);
+    }
+
+    updateMessage('Checking CPT modifiers...', false);
+
+    try {
+      const [xmlText, eligibilityBuffer] = await Promise.all([
+        readFileText(xmlFile),
+        readFileArrayBuffer(eligibilityFile)
+      ]);
+      const xmlDoc = parseXml(xmlText);
+      const eligibility = parseEligibilityWorkbook(eligibilityFile, eligibilityBuffer);
+      const modifierContext = collectModifierRecords(xmlDoc);
+      const results = modifierContext.records.map((record) =>
+        analyzeModifierRecord(record, eligibility.rows, modifierContext.receiver)
+      );
+
+      lastResults = results;
+      root._lastModifierResults = results;
+      updateDownloadButton();
+      updateMessage(
+        `Modifier check completed using Header ReceiverID ${modifierContext.receiverID || '(missing)'}.`,
+        false
+      );
+
+      return renderResults(results, {
+        ...modifierContext,
+        warnings: eligibility.warnings
+      });
+    } catch (error) {
+      console.error('[MODIFIERS] Checker failed:', error);
+      lastResults = [];
+      root._lastModifierResults = [];
+      updateDownloadButton();
+      updateMessage(error?.message || String(error), true);
+      return renderError(error);
+    }
+  }
+
+  function downloadModifierResults() {
+    if (!lastResults.length) return;
+
+    if (!root.XLSX?.utils) {
+      updateMessage('SheetJS (XLSX) is unavailable; results cannot be downloaded.', true);
+      return;
+    }
+
+    const exportRows = lastResults.map((row) => ({
+      'Claim ID': row.claimID,
+      'Receiver ID': row.receiverID,
+      'Payer ID': row.claimPayerID,
+      Insurer: row.insurer,
+      'Member ID': row.memberIDRaw,
+      'Ordered On': row.activityDate,
+      'Performing Clinician': row.performingClinicianRaw,
+      'Ordering Clinician': row.orderingClinicianRaw,
+      'Activity ID': row.activityID,
+      'CPT Code': row.code,
+      Modifier: row.modifier,
+      'Observation Code': row.observationCode,
+      'Expected VOI': row.expectedVOI,
+      'Actual VOI': row.actualVOI,
+      Status: row.status,
+      Remarks: row.remark,
+      'Eligibility Sheet': row.eligibilityMatch?.sheetName || '',
+      'Eligibility Row': row.eligibilityMatch?.sheetRowNumber || ''
+    }));
+
+    const workbook = root.XLSX.utils.book_new();
+    const sheet = root.XLSX.utils.json_to_sheet(exportRows);
+    root.XLSX.utils.book_append_sheet(workbook, sheet, 'Modifier Results');
+    root.XLSX.writeFile(workbook, 'modifier_checker_results.xlsx');
+  }
+
+  function bindStandaloneListeners() {
+    if (listenersBound || typeof document === 'undefined') return;
+    listenersBound = true;
+
+    document.addEventListener('click', async (event) => {
+      const runButton = event.target.closest('#run-button');
+      if (runButton) {
+        const container = getVisibleModifierContainer();
+        if (!container || container.contains(runButton) || !document.getElementById('checker-container-modifiers')) {
+          event.preventDefault();
+          const result = await runModifiersCheck();
+          const output = getScopedElement('outputTableContainer') || getScopedElement('results');
+          if (output) {
+            output.innerHTML = '';
+            output.appendChild(result);
+          }
+        }
+      }
+
+      const downloadButton = event.target.closest('#download-button');
+      if (downloadButton) {
+        const container = getVisibleModifierContainer();
+        if (!container || container.contains(downloadButton) || !document.getElementById('checker-container-modifiers')) {
+          event.preventDefault();
+          downloadModifierResults();
+        }
+      }
+    });
+  }
+
+  root.runModifiersCheck = runModifiersCheck;
+  root.downloadModifierResults = downloadModifierResults;
+  root.ModifierChecker = Object.freeze({
+    RECEIVER_CONFIG,
+    MODIFIER_RULES,
+    normalizeMemberID,
+    normalizeClinician,
+    normalizeVoi,
+    toDateKey,
+    parseEligibilityWorkbook,
+    collectModifierRecords,
+    analyzeModifierRecord,
+    runModifiersCheck,
+    downloadModifierResults
   });
 
-  html += `</tbody></table>`;
-  container.innerHTML = html;
-  return container;
-}
-
-// ----------------- Utilities -----------------
-function textValue(node, tag) { if (!node) return ''; const el = node.getElementsByTagName(tag)[0]; return el ? String(el.textContent || '').trim() : ''; }
-function firstNonEmpty(arr) { for (const s of arr) if (s !== undefined && s !== null && String(s).trim() !== '') return String(s).trim(); return ''; }
-
-// Only remove leading zeros per requirement; keep other characters intact
-function normalizeMemberId(id) { return String(id || '').replace(/^0+/, '').trim(); }
-
-// normalizeName retains spacing normalization and lowercases (used only in a few debug paths)
-function normalizeName(name) { return String(name || '').replace(/\s+/g, ' ').trim().toLowerCase(); }
-
-// normalizeDate: robust handling of common formats; returns YYYY-MM-DD
-function normalizeDate(input) {
-  const s = String(input || '').trim();
-  if (!s) return '';
-
-  // Remove time portion if present
-  const dateOnly = s.split(' ')[0].trim();
-
-  // Check for DD/MM/YYYY or DD-MM-YYYY (day-first)
-  let m = dateOnly.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
-  if (m) {
-    let [, d, mo, y] = m;
-    if (y.length === 2) y = String(2000 + Number(y));
-    const dt = new Date(Number(y), Number(mo) - 1, Number(d));
-    if (!Number.isNaN(dt.getTime())) return toYMD(dt);
-  }
-
-  // Check for DD-MMM-YYYY e.g., 11-Aug-2025
-  m = dateOnly.match(/^(\d{1,2})-([A-Za-z]+)-(\d{4})$/);
-  if (m) {
-    let [, d, mon, y] = m;
-    const monthMap = { Jan:0, Feb:1, Mar:2, Apr:3, May:4, Jun:5, Jul:6, Aug:7, Sep:8, Oct:9, Nov:10, Dec:11 };
-    const dt = new Date(Number(y), monthMap[mon] ?? 0, Number(d));
-    if (!Number.isNaN(dt.getTime())) return toYMD(dt);
-  }
-
-  // Try ISO/parseable numeric date
-  let t = Date.parse(dateOnly);
-  if (!Number.isNaN(t)) return toYMD(new Date(t));
-
-  return dateOnly; // fallback (unchanged)
-}
-
-function toYMD(d) {
-  const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, '0'), da = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${da}`;
-}
-
-function escapeHtml(str) {
-  return String(str == null ? '' : str)
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
-}
-
-function firstNonEmptyKey(obj, keys) {
-  for (const k of keys) if (Object.prototype.hasOwnProperty.call(obj, k) && String(obj[k]).trim() !== '') return obj[k];
-  return null;
-}
-
-function makeWorkbookFromJson(json, sheetName) {
-  const ws = XLSX.utils.json_to_sheet(json);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, sheetName || 'Results');
-  return wb;
-}
-
-// ----------------- UI helpers -----------------
-function el(id) { return document.getElementById(id); }
-function fileEl(id) { const f = el(id); return f && f.files && f.files[0] ? f.files[0] : null; }
-
-function resetUI() {
-  const container = el('outputTableContainer');
-  if (container) container.innerHTML = '';
-  toggleDownload(false);
-  message('', '');
-  showProgress(0, '');
-  lastResults = [];
-  lastWorkbook = null;
-}
-
-function toggleDownload(enabled) { const dl = el('download-button'); if (!dl) return; dl.disabled = !enabled; }
-
-function showProgress(percent, text) {
-  const barContainer = el('progress-bar-container'), bar = el('progress-bar'), pText = el('progress-text');
-  if (barContainer) barContainer.style.display = percent > 0 ? 'block' : 'none';
-  if (bar) bar.style.width = (percent || 0) + '%';
-  if (pText) pText.textContent = text ? `${percent}% — ${text}` : `${percent}%`;
-}
-
-function message(text, color) { const m = el('messageBox'); if (!m) return; m.textContent = text || ''; m.style.color = color || ''; }
-
-function showError(err) { message(err && err.message ? err.message : String(err), 'red'); showProgress(0, ''); toggleDownload(false); }
-
-// ----------------- Modal logic -----------------
-function showEligibility(index) {
-  const row = lastResults[index];
-  if (!row || !row.EligibilityRow) { alert('No eligibility data found for this claim.'); return; }
-
-  const data = row.EligibilityRow;
-  const keys = Object.keys(data);
-  const details = keys.map(k => `<tr><th>${escapeHtml(k)}</th><td>${escapeHtml(data[k])}</td></tr>`).join('');
-
-  const modalHtml = `<div class="modal-content eligibility-modal modal-scrollable">
-    <span class="close" onclick="closeEligibilityModal()">&times;</span>
-    <h3>Eligibility Details</h3>
-    <table class="eligibility-details">${details}</table>
-    <div style="text-align:right;margin-top:10px;">
-      <button class="details-btn eligibility-details" onclick="closeEligibilityModal()">Close</button>
-    </div>
-  </div>`;
-
-  // Remove existing modal if present
-  closeEligibilityModal();
-
-  const modal = document.createElement('div');
-  modal.id = "eligibilityModal";
-  modal.className = "modal";
-  modal.innerHTML = modalHtml;
-  modal.addEventListener('click', e => { if (e.target === modal) closeEligibilityModal(); });
-  document.body.appendChild(modal);
-  modal.style.display = "flex";
-}
-
-function closeEligibilityModal() { const modal = el('eligibilityModal'); if (modal) modal.remove(); }
-
-// Unified checker entry point
-window.runModifiersCheck = async function() {
-  if (typeof handleRun === 'function') {
-    return await handleRun();
-  } else {
-    console.error('handleRun function not found');
-    return null;
-  }
-};
-
-// Expose showEligibility to global scope for onclick handlers
-window.showEligibility = showEligibility;
-window.closeEligibilityModal = closeEligibilityModal;
-
-  } catch (error) {
-    console.error('[CHECKER-ERROR] Failed to load checker:', error);
-    console.error(error.stack);
-  }
-})();
+  bindStandaloneListeners();
+})(typeof window !== 'undefined' ? window : globalThis);
