@@ -37,6 +37,7 @@
   const HEADER_ALIASES = Object.freeze({
     type: new Set([
       'type',
+      'cpttype',
       'activitytype',
       'activitytypecode',
       'codetype',
@@ -150,23 +151,62 @@
     return null;
   }
 
-  function selectTariffSheet(workbook) {
-    const sheetNames = Array.isArray(workbook && workbook.SheetNames)
-      ? workbook.SheetNames
-      : [];
-
-    if (sheetNames.length === 0) {
-      throw new Error('Mandatory Tariff workbook contains no worksheets.');
+  function locateTariffWorksheet(workbook, XLSX) {
+    const sheetNames =
+      Array.isArray(workbook?.SheetNames)
+        ? workbook.SheetNames
+        : [];
+  
+    if (!sheetNames.length) {
+      throw new Error(
+        'Mandatory Tariff workbook contains no worksheets.'
+      );
     }
-
-    const preferred = sheetNames.find((name) => {
-      const normalized = normalizeHeader(name);
-      return normalized.includes('mandatorytariff') || normalized === 'tariff';
-    });
-
-    return preferred || sheetNames[0];
+  
+    const inspectedSheets = [];
+  
+    for (const sheetName of sheetNames) {
+      const sheet = workbook.Sheets[sheetName];
+  
+      if (!sheet) {
+        continue;
+      }
+  
+      const matrix = XLSX.utils.sheet_to_json(sheet, {
+        header: 1,
+        defval: '',
+        raw: false,
+        blankrows: false
+      });
+  
+      const header = locateHeaderRow(matrix);
+  
+      inspectedSheets.push({
+        sheetName,
+        matrix,
+        header
+      });
+  
+      if (header) {
+        return {
+          sheetName,
+          sheet,
+          matrix,
+          header
+        };
+      }
+    }
+  
+    const sheetSummary = inspectedSheets
+      .map((entry) => entry.sheetName)
+      .join(', ');
+  
+    throw new Error(
+      'Mandatory Tariff is missing one or more required columns: ' +
+      'CPT Type, Code, CPT Modifier. ' +
+      `Worksheets checked: ${sheetSummary || '(none)'}.`
+    );
   }
-
   function parseMandatoryTariffWorkbook(workbook, xlsxOverride) {
     const XLSX = xlsxOverride || (root && root.XLSX);
 
@@ -174,27 +214,16 @@
       throw new Error('SheetJS (XLSX) is unavailable.');
     }
 
-    const sheetName = selectTariffSheet(workbook);
-    const sheet = workbook.Sheets[sheetName];
-
-    if (!sheet) {
-      throw new Error(`Worksheet "${sheetName}" could not be read.`);
-    }
-
-    const matrix = XLSX.utils.sheet_to_json(sheet, {
-      header: 1,
-      defval: '',
-      raw: false,
-      blankrows: false
-    });
-
-    const header = locateHeaderRow(matrix);
-
-    if (!header) {
-      throw new Error(
-        'Mandatory Tariff is missing one or more required columns: Type, Code, CPT Modifier.'
-      );
-    }
+    const located = locateTariffWorksheet(
+      workbook,
+      XLSX
+    );
+    
+    const {
+      sheetName,
+      matrix,
+      header
+    } = located;
 
     const map = new Map();
     const rows = [];
