@@ -1133,10 +1133,100 @@ await run('A001 does not trigger automatic formulary invalidation', () => {
   assert(row.status === 'Valid', 'Expected A001 to skip automatic Thiqa/Daman formulary columns');
 });
 
-await run('Required quantity validation marks low quantities invalid', () => {
+await run('Fractional quantity below calculated ratio is valid when package price is correct', () => {
+  // Package Markup 66.4 × 0.01 = 0.664 → rounds to 0.66. Claimed Net 0.66 matches → Valid.
+  // The ratio (Unit Price to Public / Package Price to Public) = 2.21/66.4 ≈ 0.03 is not a minimum.
   const row = analyzeDrug({ Quantity: '0.01', Net: '0.66' });
-  assert(row.status === 'Invalid', 'Expected claimed quantity below required to fail');
-  assert(/less than the required quantity/.test(row.Remarks), 'Expected quantity lower-bound remark');
+  assert(row.status === 'Valid', 'Expected fractional quantity valid when package-based price is correct');
+  assert(!/less than the required quantity/.test(row.Remarks), 'Expected no quantity lower-bound remark');
+});
+
+// ---------------------------------------------------------------------------
+// Regression tests: fractional drug quantity (TMCCL1036219 / S22-1970-10706-02)
+// ---------------------------------------------------------------------------
+
+function makeS22DrugRow(overrides = {}) {
+  // Package Markup 6.5 × 0.02 = 0.13. Unit Price to Public / Package Price to Public = 1.3/6.5 = 0.2.
+  return {
+    'Drug Code': 'S22-1970-10706-02',
+    'Package Name': 'Test Drug S22',
+    'Dosage Form': 'Tablet',
+    'Package Size': '1 pack',
+    'Package Price to Public': 6.5,
+    'Package Markup': 6.5,
+    'Unit Price to Public': 1.3,
+    'Unit Markup': 1.3,
+    'Status': 'Active',
+    'Delete Effective Date': '',
+    'Included in Thiqa/ ABM - other than 1&7- Drug Formulary': 'Yes',
+    'Included In Basic Drug Formulary': 'Yes',
+    'UPP Effective Date': '2026-01-01',
+    'UPP Updated Date': '2026-01-02',
+    ...overrides
+  };
+}
+
+function analyzeS22Drug(recOverrides = {}, rowOverrides = {}) {
+  const rec = {
+    ClaimID: 'TMCCL1036219',
+    ActivityID: 'A1',
+    ActivityType: '5',
+    CPT: 'S22-1970-10706-02',
+    Quantity: '0.02',
+    Net: '0.13',
+    PayerID: 'D001',
+    ...recOverrides
+  };
+  const drugRow = makeS22DrugRow(rowOverrides);
+  const drugsMap = new Map([[drugShared.normalizeDrugCode(drugRow['Drug Code']), drugRow]]);
+  return pricingApi.analyzeDrugActivity(rec, {
+    receiverID: 'D001',
+    drugsMap,
+    knownCptCodeSet: new Set(),
+    drugListSource: 'resources/Drugs.xlsx'
+  });
+}
+
+await run('TMCCL1036219: qty 0.02, net 0.13, ratio 0.2 → Valid (regression)', () => {
+  // Package Markup 6.5 × 0.02 = 0.13. Ratio = 0.2 but must not make this Invalid.
+  const row = analyzeS22Drug();
+  assert(row.status === 'Valid', 'Expected Valid when package-based net 0.13 matches claimed net 0.13');
+  assert(!/less than the required quantity/.test(row.Remarks), 'Expected no quantity lower-bound remark');
+  assert(!/Claimed quantity 0.02 is less than/.test(row.Remarks), 'Expected no ratio-minimum remark');
+});
+
+await run('TMCCL1036219: qty 0.02, net 0.10 (wrong) → Invalid price mismatch', () => {
+  // Package Markup 6.5 × 0.02 = 0.13 but claimed is 0.10 → price mismatch.
+  const row = analyzeS22Drug({ Net: '0.10' });
+  assert(row.status === 'Invalid', 'Expected Invalid when claimed net does not match package-based price');
+  assert(/does not match expected drug price/.test(row.Remarks), 'Expected price mismatch remark');
+  assert(!/less than the required quantity/.test(row.Remarks), 'Expected no ratio-minimum remark');
+});
+
+await run('TMCCL1036219: qty 0 → Invalid quantity', () => {
+  const row = analyzeS22Drug({ Quantity: '0' });
+  assert(row.status === 'Invalid', 'Expected Invalid for zero quantity');
+  assert(/missing or invalid/.test(row.Remarks), 'Expected invalid quantity remark');
+});
+
+await run('TMCCL1036219: qty -0.02 → Invalid quantity', () => {
+  const row = analyzeS22Drug({ Quantity: '-0.02' });
+  assert(row.status === 'Invalid', 'Expected Invalid for negative quantity');
+  assert(/missing or invalid/.test(row.Remarks), 'Expected invalid quantity remark');
+});
+
+await run('TMCCL1036219: qty 1.5, correct price, D001 → Unknown (auditor confirmation)', () => {
+  // Unit Markup 1.3 × 1.5 = 1.95. Must also flag auditor confirmation for qty > 1 on D001.
+  const row = analyzeS22Drug({ Quantity: '1.5', Net: '1.95' });
+  assert(row.status === 'Unknown', 'Expected Unknown when quantity above 1 requires auditor confirmation');
+  assert(/auditor confirmation/i.test(row.Remarks), 'Expected auditor confirmation remark');
+});
+
+await run('Package-based pricing: qty 0.03, Package Markup 66.4 → net 1.99 (regression)', () => {
+  // 66.4 × 0.03 = 1.992 → rounds to 1.99. Previously verified; must remain Valid.
+  const row = analyzeDrug({ Quantity: '0.03', Net: '1.99' });
+  assert(row.status === 'Valid', 'Expected Valid for 66.4 × 0.03 = 1.99');
+  assert(String(row._drugExpectedNet) === '1.99', 'Expected computed net 1.99 for 66.4 × 0.03');
 });
 
 await run('Quantity above 1 on D001 requires auditor confirmation', () => {

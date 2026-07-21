@@ -205,9 +205,7 @@
   }
 
   function validateDrugQuantity(params) {
-    const code = params.code;
     const quantity = Number(params.quantity);
-    const requiredQuantity = params.requiredQuantity;
     const receiverID = normalizeLoose(params.receiverID);
     const auditorReceivers = params.quantityAuditorReceivers || DEFAULT_QUANTITY_AUDITOR_RECEIVERS;
     const findings = [];
@@ -219,26 +217,6 @@
         remark: 'Quantity is missing or invalid for this activity.'
       });
       return findings;
-    }
-
-    if (requiredQuantity === null || !Number.isFinite(requiredQuantity)) {
-      findings.push({
-        ruleId: 'DRUG_QUANTITY',
-        status: 'Unknown',
-        remark: `Unable to compute required quantity for drug ${code}; manual verification is required.`
-      });
-    } else if (quantity < requiredQuantity && !moneyEqual(quantity, requiredQuantity)) {
-      findings.push({
-        ruleId: 'DRUG_QUANTITY',
-        status: 'Invalid',
-        remark: `Claimed quantity ${quantity} is less than the required quantity ${requiredQuantity} for drug ${code}.`
-      });
-    } else if (!moneyEqual(quantity, requiredQuantity)) {
-      findings.push({
-        ruleId: 'DRUG_QUANTITY',
-        status: 'Unknown',
-        remark: `Drug quantity ${quantity} does not match the expected package quantity ${requiredQuantity}; manual verification is required.`
-      });
     }
 
     if (auditorReceivers.has(receiverID) && quantity > 1) {
