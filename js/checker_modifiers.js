@@ -24,6 +24,8 @@
   let lastResults = [];
   let lastWorkbook = null;
   let standaloneBound = false;
+  let claimIdObserver = null;
+  let claimIdStyleInjected = false;
 
   function escapeHtml(value) {
     return String(value == null ? '' : value)
@@ -35,7 +37,9 @@
   }
 
   function normalizeIdentifier(value) {
-    return String(value == null ? '' : value).trim().toUpperCase();
+    return String(value == null ? '' : value)
+      .trim()
+      .toUpperCase();
   }
 
   function normalizeMemberId(value) {
@@ -45,7 +49,8 @@
   }
 
   function normalizeClinician(value) {
-    return normalizeIdentifier(value).replace(/\s+/g, '');
+    return normalizeIdentifier(value)
+      .replace(/\s+/g, '');
   }
 
   function normalizeCode(value) {
@@ -55,149 +60,253 @@
   }
 
   function normForCompare(value) {
-    return normalizeIdentifier(value).replace(/[^A-Z0-9]/g, '');
+    return normalizeIdentifier(value)
+      .replace(/[^A-Z0-9]/g, '');
   }
 
   function isConsultationCode(code) {
-    return /^(92|992)/.test(String(code || '').trim());
+    return /^(92|992)/.test(
+      String(code || '').trim()
+    );
   }
 
   function getDirectChildren(parent, tagName) {
-    if (!parent || !parent.childNodes) return [];
+    if (
+      !parent
+      || !parent.childNodes
+    ) {
+      return [];
+    }
 
-    return Array.from(parent.childNodes).filter((node) => {
-      if (!node || node.nodeType !== 1) return false;
-      return (node.localName || node.nodeName) === tagName;
+    return Array.from(
+      parent.childNodes
+    ).filter((node) => {
+      if (
+        !node
+        || node.nodeType !== 1
+      ) {
+        return false;
+      }
+
+      return (
+        node.localName
+        || node.nodeName
+      ) === tagName;
     });
   }
 
   function getDirectChildText(parent, tagName) {
-    const child = getDirectChildren(parent, tagName)[0];
+    const child =
+      getDirectChildren(
+        parent,
+        tagName
+      )[0];
 
     return child
-      ? String(child.textContent || '').trim()
+      ? String(
+          child.textContent || ''
+        ).trim()
       : '';
   }
 
-  function firstDirectChildText(parent, tagNames) {
-    for (const tagName of tagNames) {
-      const value = getDirectChildText(parent, tagName);
+  function firstDirectChildText(
+    parent,
+    tagNames
+  ) {
+    for (
+      const tagName
+      of tagNames
+    ) {
+      const value =
+        getDirectChildText(
+          parent,
+          tagName
+        );
 
-      if (value) return value;
+      if (value) {
+        return value;
+      }
     }
 
     return '';
   }
 
   function getModifierContainer() {
-    return document.getElementById('checker-container-modifiers');
+    return document.getElementById(
+      'checker-container-modifiers'
+    );
   }
 
   function getScopedElement(id) {
-    const container = getModifierContainer();
+    const container =
+      getModifierContainer();
 
     return (
-      (container && container.querySelector(`#${id}`))
+      (
+        container
+        && container.querySelector(
+          `#${id}`
+        )
+      )
       || document.getElementById(id)
     );
   }
 
-  function resolveInputFile(id, cacheKey, explicitFile) {
-    if (explicitFile) return explicitFile;
+  function resolveInputFile(
+    id,
+    cacheKey,
+    explicitFile
+  ) {
+    if (explicitFile) {
+      return explicitFile;
+    }
 
-    const input = getScopedElement(id);
+    const input =
+      getScopedElement(id);
 
     return (
       input?.files?.[0]
-      || root.unifiedCheckerFiles?.[cacheKey]
+      || root.unifiedCheckerFiles?.[
+        cacheKey
+      ]
       || null
     );
   }
 
-  function updateMessage(text, isError) {
-    const messageBox = getScopedElement('messageBox');
+  function updateMessage(
+    text,
+    isError
+  ) {
+    const messageBox =
+      getScopedElement(
+        'messageBox'
+      );
 
-    if (!messageBox) return;
+    if (!messageBox) {
+      return;
+    }
 
-    messageBox.textContent = text || '';
-    messageBox.style.color = isError ? '#b42318' : '';
+    messageBox.textContent =
+      text || '';
+
+    messageBox.style.color =
+      isError
+        ? '#b42318'
+        : '';
   }
 
   function updateDownloadButton() {
-    const button = getScopedElement('download-button');
+    const button =
+      getScopedElement(
+        'download-button'
+      );
 
-    if (!button) return;
+    if (!button) {
+      return;
+    }
 
-    button.disabled = lastResults.length === 0;
-    button.style.display = lastResults.length ? '' : 'none';
+    button.disabled =
+      lastResults.length === 0;
+
+    button.style.display =
+      lastResults.length
+        ? ''
+        : 'none';
   }
 
   async function readFileText(file) {
     if (!file) {
-      throw new Error('XML file is missing.');
+      throw new Error(
+        'XML file is missing.'
+      );
     }
 
-    if (typeof file.text === 'function') {
+    if (
+      typeof file.text
+      === 'function'
+    ) {
       return file.text();
     }
 
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
+    return new Promise(
+      (resolve, reject) => {
+        const reader =
+          new FileReader();
 
-      reader.onload = () => {
-        resolve(String(reader.result || ''));
-      };
+        reader.onload = () => {
+          resolve(
+            String(
+              reader.result || ''
+            )
+          );
+        };
 
-      reader.onerror = () => {
-        reject(
-          reader.error
-          || new Error('Failed to read XML file.')
-        );
-      };
+        reader.onerror = () => {
+          reject(
+            reader.error
+            || new Error(
+              'Failed to read XML file.'
+            )
+          );
+        };
 
-      reader.readAsText(file);
-    });
+        reader.readAsText(file);
+      }
+    );
   }
 
   async function readFileArrayBuffer(file) {
     if (!file) {
-      throw new Error('Eligibility workbook is missing.');
+      throw new Error(
+        'Eligibility workbook is missing.'
+      );
     }
 
-    if (typeof file.arrayBuffer === 'function') {
+    if (
+      typeof file.arrayBuffer
+      === 'function'
+    ) {
       return file.arrayBuffer();
     }
 
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
+    return new Promise(
+      (resolve, reject) => {
+        const reader =
+          new FileReader();
 
-      reader.onload = () => {
-        resolve(reader.result);
-      };
+        reader.onload = () => {
+          resolve(reader.result);
+        };
 
-      reader.onerror = () => {
-        reject(
-          reader.error
-          || new Error(
-            'Failed to read eligibility workbook.'
-          )
+        reader.onerror = () => {
+          reject(
+            reader.error
+            || new Error(
+              'Failed to read eligibility workbook.'
+            )
+          );
+        };
+
+        reader.readAsArrayBuffer(
+          file
         );
-      };
-
-      reader.readAsArrayBuffer(file);
-    });
+      }
+    );
   }
 
   function parseXml(text) {
-    const safeXml = String(text || '').replace(
-      /&(?!(amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;))/g,
-      'and'
-    );
+    const safeXml =
+      String(text || '').replace(
+        /&(?!(amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;))/g,
+        'and'
+      );
 
-    const xmlDoc = new DOMParser().parseFromString(
-      safeXml,
-      'application/xml'
-    );
+    const xmlDoc =
+      new DOMParser()
+        .parseFromString(
+          safeXml,
+          'application/xml'
+        );
 
     const parserError =
       xmlDoc.getElementsByTagName(
@@ -217,8 +326,9 @@
 
     if (
       !xmlDoc.documentElement
-      || xmlDoc.documentElement.nodeName
-        !== 'Claim.Submission'
+      || xmlDoc.documentElement
+        .nodeName !==
+        'Claim.Submission'
     ) {
       throw new Error(
         'Modifier checker requires a Claim.Submission XML file.'
@@ -233,11 +343,16 @@
       return null;
     }
 
-    if (root.XLSX?.SSF?.parse_date_code) {
+    if (
+      root.XLSX
+        ?.SSF
+        ?.parse_date_code
+    ) {
       const parsed =
-        root.XLSX.SSF.parse_date_code(
-          serial
-        );
+        root.XLSX.SSF
+          .parse_date_code(
+            serial
+          );
 
       if (parsed) {
         return new Date(
@@ -252,7 +367,10 @@
 
     return new Date(
       Math.round(
-        (serial - 25569)
+        (
+          serial
+          - 25569
+        )
         * 86400
         * 1000
       )
@@ -262,22 +380,31 @@
   function dateToKey(date) {
     if (
       !(date instanceof Date)
-      || Number.isNaN(date.getTime())
+      || Number.isNaN(
+        date.getTime()
+      )
     ) {
       return '';
     }
 
-    const year = date.getFullYear();
+    const year =
+      date.getUTCFullYear();
 
-    const month = String(
-      date.getMonth() + 1
-    ).padStart(2, '0');
+    const month =
+      String(
+        date.getUTCMonth() + 1
+      ).padStart(2, '0');
 
-    const day = String(
-      date.getDate()
-    ).padStart(2, '0');
+    const day =
+      String(
+        date.getUTCDate()
+      ).padStart(2, '0');
 
-    return `${year}-${month}-${day}`;
+    return (
+      `${year}-`
+      + `${month}-`
+      + day
+    );
   }
 
   function normalizeDate(value) {
@@ -288,13 +415,20 @@
       return '';
     }
 
-    if (value instanceof Date) {
+    if (
+      value instanceof Date
+    ) {
       return dateToKey(value);
     }
 
-    if (typeof value === 'number') {
+    if (
+      typeof value
+      === 'number'
+    ) {
       const parsed =
-        excelSerialToDate(value);
+        excelSerialToDate(
+          value
+        );
 
       return parsed
         ? dateToKey(parsed)
@@ -304,41 +438,57 @@
     const raw =
       String(value).trim();
 
-    if (!raw) return '';
+    if (!raw) {
+      return '';
+    }
 
     const dateOnly =
       raw.split(/[ T]/)[0];
 
-    let match = dateOnly.match(
-      /^(\d{4})[-\/]([01]?\d)[-\/]([0-3]?\d)$/
-    );
+    let match =
+      dateOnly.match(
+        /^(\d{4})[-\/]([01]?\d)[-\/]([0-3]?\d)$/
+      );
 
     if (match) {
       return (
         `${match[1]}-`
-        + `${String(Number(match[2])).padStart(2, '0')}-`
-        + String(Number(match[3])).padStart(2, '0')
+        + `${String(
+          Number(match[2])
+        ).padStart(2, '0')}-`
+        + String(
+          Number(match[3])
+        ).padStart(2, '0')
       );
     }
 
-    match = dateOnly.match(
-      /^([0-3]?\d)[-\/]([01]?\d)[-\/](\d{2}|\d{4})$/
-    );
+    match =
+      dateOnly.match(
+        /^([0-3]?\d)[-\/]([01]?\d)[-\/](\d{2}|\d{4})$/
+      );
 
     if (match) {
       const year =
         match[3].length === 2
-          ? 2000 + Number(match[3])
+          ? (
+              2000
+              + Number(match[3])
+            )
           : Number(match[3]);
 
       return (
         `${year}-`
-        + `${String(Number(match[2])).padStart(2, '0')}-`
-        + String(Number(match[1])).padStart(2, '0')
+        + `${String(
+          Number(match[2])
+        ).padStart(2, '0')}-`
+        + String(
+          Number(match[1])
+        ).padStart(2, '0')
       );
     }
 
-    const parsed = new Date(raw);
+    const parsed =
+      new Date(raw);
 
     return Number.isNaN(
       parsed.getTime()
@@ -401,23 +551,25 @@
     }
 
     const worksheet =
-      workbook.Sheets[sheetName];
+      workbook.Sheets[
+        sheetName
+      ];
 
     /*
-     * Established Eligibility format:
-     * row 1 contains report metadata;
-     * workbook headers begin on row 2.
+     * Established eligibility format:
+     * headers are located on Excel row 2.
      */
     const sourceRows =
-      root.XLSX.utils.sheet_to_json(
-        worksheet,
-        {
-          defval: '',
-          range: 1,
-          raw: true,
-          blankrows: false
-        }
-      );
+      root.XLSX.utils
+        .sheet_to_json(
+          worksheet,
+          {
+            defval: '',
+            range: 1,
+            raw: true,
+            blankrows: false
+          }
+        );
 
     if (!sourceRows.length) {
       throw new Error(
@@ -425,14 +577,17 @@
       );
     }
 
-    const headers = Array.from(
-      new Set(
-        sourceRows.flatMap(
-          (row) =>
-            Object.keys(row || {})
+    const headers =
+      Array.from(
+        new Set(
+          sourceRows.flatMap(
+            (row) =>
+              Object.keys(
+                row || {}
+              )
+          )
         )
-      )
-    );
+      );
 
     const memberHeader =
       resolveExactHeader(
@@ -496,25 +651,32 @@
 
     const rows =
       sourceRows.map(
-        (sourceRow, index) => ({
+        (
+          sourceRow,
+          index
+        ) => ({
           sourceRow,
           sheetName,
 
           /*
-           * Because headers are on Excel row 2,
-           * the first data row is Excel row 3.
+           * Headers are row 2, therefore
+           * the first data row is row 3.
            */
           sheetRowNumber:
             index + 3,
 
           memberID:
             normalizeMemberId(
-              sourceRow[memberHeader]
+              sourceRow[
+                memberHeader
+              ]
             ),
 
           orderedOn:
             normalizeDate(
-              sourceRow[dateHeader]
+              sourceRow[
+                dateHeader
+              ]
             ),
 
           clinician:
@@ -526,8 +688,9 @@
 
           voiNumber:
             String(
-              sourceRow[voiHeader]
-              == null
+              sourceRow[
+                voiHeader
+              ] == null
                 ? ''
                 : sourceRow[
                     voiHeader
@@ -545,10 +708,12 @@
     };
   }
 
-  function buildEligibilityMatcher(
-    rows
-  ) {
-    const index = new Map();
+  function buildEligibilityMatcher(rows) {
+    const index =
+      new Map();
+
+    const claimCache =
+      new Map();
 
     for (const row of rows) {
       const key = [
@@ -558,55 +723,236 @@
       ].join('|');
 
       if (!index.has(key)) {
-        index.set(key, []);
+        index.set(
+          key,
+          []
+        );
       }
 
       index.get(key).push(row);
     }
 
+    function findUnusedExact(
+      memberID,
+      orderedOn,
+      orderingClinician
+    ) {
+      const key = [
+        normalizeMemberId(
+          memberID
+        ),
+
+        normalizeDate(
+          orderedOn
+        ),
+
+        normalizeClinician(
+          orderingClinician
+        )
+      ].join('|');
+
+      const candidates =
+        index.get(key) || [];
+
+      return (
+        candidates.find(
+          (row) =>
+            !row.used
+        )
+        || null
+      );
+    }
+
     return {
-      find(
+      /*
+       * One eligibility row is assigned to
+       * one Claim ID.
+       *
+       * Every modifier activity inside that
+       * claim reuses the same matched row.
+       */
+      findForClaim(
+        claimID,
         memberID,
         orderedOn,
-        orderingClinician
+        orderingClinicians
       ) {
-        const key = [
-          normalizeMemberId(
-            memberID
-          ),
+        const normalizedClaimID =
+          String(
+            claimID || ''
+          ).trim();
 
-          normalizeDate(
-            orderedOn
-          ),
-
-          normalizeClinician(
-            orderingClinician
+        if (
+          claimCache.has(
+            normalizedClaimID
           )
-        ].join('|');
+        ) {
+          return claimCache.get(
+            normalizedClaimID
+          );
+        }
 
-        const candidates =
-          index.get(key) || [];
+        const clinicians =
+          Array.from(
+            new Set(
+              (
+                Array.isArray(
+                  orderingClinicians
+                )
+                  ? orderingClinicians
+                  : [
+                      orderingClinicians
+                    ]
+              )
+                .map(
+                  normalizeClinician
+                )
+                .filter(Boolean)
+            )
+          );
+
+        let match = null;
+
+        for (
+          const clinician
+          of clinicians
+        ) {
+          match =
+            findUnusedExact(
+              memberID,
+              orderedOn,
+              clinician
+            );
+
+          if (match) {
+            break;
+          }
+        }
 
         /*
-         * Eligibility rows are single-use.
-         * Do not reuse one eligibility row for
-         * multiple modifier activities.
+         * Consume the eligibility row once
+         * for the entire claim.
          */
-        const match =
-          candidates.find(
-            (row) => !row.used
-          )
-          || null;
-
         if (match) {
           match.used = true;
         }
 
+        /*
+         * Cache null as well. This prevents
+         * contradictory rows where one
+         * activity says no eligibility but
+         * another activity in the same claim
+         * finds one later.
+         */
+        claimCache.set(
+          normalizedClaimID,
+          match
+        );
+
         return match;
       },
 
-      index
+      getClaimMatch(claimID) {
+        const normalizedClaimID =
+          String(
+            claimID || ''
+          ).trim();
+
+        return claimCache.has(
+          normalizedClaimID
+        )
+          ? claimCache.get(
+              normalizedClaimID
+            )
+          : undefined;
+      },
+
+      index,
+      claimCache
     };
+  }
+
+  function resolveClaimEligibilityMatches(
+    records,
+    claimActivities,
+    matcher
+  ) {
+    const recordsByClaim =
+      new Map();
+
+    for (const record of records) {
+      if (
+        !recordsByClaim.has(
+          record.ClaimID
+        )
+      ) {
+        recordsByClaim.set(
+          record.ClaimID,
+          []
+        );
+      }
+
+      recordsByClaim
+        .get(record.ClaimID)
+        .push(record);
+    }
+
+    const matches =
+      new Map();
+
+    for (
+      const [
+        claimID,
+        claimRecords
+      ]
+      of recordsByClaim.entries()
+    ) {
+      const firstRecord =
+        claimRecords[0];
+
+      /*
+       * Match using the exact established:
+       *
+       * Member ID
+       * + Encounter date
+       * + Ordering Clinician
+       *
+       * Try all Ordering Clinicians appearing
+       * in the claim before declaring that the
+       * claim has no eligibility.
+       */
+      const orderingClinicians = [
+        ...claimRecords.map(
+          (record) =>
+            record.OrderingClinician
+        ),
+
+        ...(
+          claimActivities.get(
+            claimID
+          )
+          || []
+        ).map(
+          (activity) =>
+            activity.orderingClinician
+        )
+      ];
+
+      const match =
+        matcher.findForClaim(
+          claimID,
+          firstRecord.MemberID,
+          firstRecord.Date,
+          orderingClinicians
+        );
+
+      matches.set(
+        claimID,
+        match
+      );
+    }
+
+    return matches;
   }
 
   function parseModifierValue(
@@ -652,9 +998,8 @@
       )[0];
 
     /*
-     * ReceiverID determines insurer routing.
-     * Claim-level PayerID remains separate
-     * claim metadata.
+     * Insurer routing uses Header ReceiverID.
+     * Claim-level PayerID remains separate.
      */
     const receiverID =
       normalizeIdentifier(
@@ -714,10 +1059,6 @@
           'Encounte'
         )[0];
 
-      /*
-       * Restore the established matching date:
-       * XML Encounter date, not Activity date.
-       */
       const encounterDate =
         normalizeDate(
           firstDirectChildText(
@@ -769,11 +1110,6 @@
             || 0
           );
 
-        /*
-         * Restore the established clinician:
-         * Eligibility is matched against the
-         * XML Ordering Clinician only.
-         */
         const orderingClinicianRaw =
           firstDirectChildText(
             activity,
@@ -814,14 +1150,11 @@
             );
 
           /*
-           * CRITICAL:
+           * Only observations explicitly marked
+           * as Modifiers may be processed here.
            *
-           * Check ValueType BEFORE examining
-           * the observation Value.
-           *
-           * LOINC observations may legitimately
-           * contain values 24, 25, 50, or 52.
-           * They are not modifier observations.
+           * LOINC values such as 24, 25, 50 or
+           * 52 are not CPT modifiers.
            */
           if (
             String(
@@ -864,10 +1197,17 @@
             );
 
           records.push({
-            ClaimID: claimID,
-            MemberID: memberID,
-            ActivityID: activityID,
-            Date: encounterDate,
+            ClaimID:
+              claimID,
+
+            MemberID:
+              memberID,
+
+            ActivityID:
+              activityID,
+
+            Date:
+              encounterDate,
 
             OrderingClinician:
               orderingClinician,
@@ -875,12 +1215,17 @@
             OrderingClinicianRaw:
               orderingClinicianRaw,
 
-            Modifier: modifier,
+            Modifier:
+              modifier,
+
             ActivityCode:
               activityCode,
 
-            Quantity: quantity,
-            Net: net,
+            Quantity:
+              quantity,
+
+            Net:
+              net,
 
             ReceiverID:
               receiverID,
@@ -912,7 +1257,8 @@
       );
     }
 
-    const seen = new Set();
+    const seen =
+      new Set();
 
     const uniqueRecords =
       records.filter(
@@ -958,7 +1304,9 @@
       of claimActivities.entries()
     ) {
       const claimContext = {
-        hasMinorProcedure: false,
+        hasMinorProcedure:
+          false,
+
         hasPricedConsultation:
           false
       };
@@ -978,7 +1326,8 @@
           )
         ) {
           claimContext
-            .hasMinorProcedure = true;
+            .hasMinorProcedure =
+              true;
         }
 
         if (
@@ -1039,7 +1388,7 @@
 
   function analyzeRecord(
     record,
-    matcher,
+    eligibilityMatch,
     receiver,
     claimContext,
     minorProcedureCodes
@@ -1062,9 +1411,8 @@
     }
 
     /*
-     * This check applies only after the
-     * observation was confirmed to have
-     * ValueType = Modifiers.
+     * This is only checked after ValueType
+     * has already been confirmed as Modifiers.
      */
     if (
       record.ObsCode
@@ -1081,21 +1429,9 @@
     }
 
     /*
-     * Restore exact established matching:
-     *
-     * MemberID
-     * + Encounter date
-     * + Ordering Clinician
-     *
-     * Each eligibility row is single-use.
+     * All modifier activities in this claim
+     * receive the same eligibilityMatch object.
      */
-    const eligibilityMatch =
-      matcher.find(
-        record.MemberID,
-        record.Date,
-        record.OrderingClinician
-      );
-
     const voiNumber =
       eligibilityMatch
         ? String(
@@ -1213,12 +1549,6 @@
 
     let status = 'Valid';
 
-    /*
-     * Unsupported/missing ReceiverID alone
-     * produces Unknown. Any actual modifier,
-     * eligibility, quantity, or code error
-     * remains Invalid.
-     */
     const substantiveRemarks =
       remarks.filter(
         (remark) =>
@@ -1259,7 +1589,9 @@
           ?.sheetRowNumber
         || '',
 
-      Status: status,
+      Status:
+        status,
+
       valid:
         status === 'Valid',
 
@@ -1269,10 +1601,250 @@
     };
   }
 
+  function ensureClaimIdFormattingStyle() {
+    if (claimIdStyleInjected) {
+      return;
+    }
+
+    const style =
+      document.createElement(
+        'style'
+      );
+
+    style.id =
+      'modifier-claim-id-formatting-style';
+
+    style.textContent = `
+      .modifier-results-table
+      .claim-id-cell.restored-claim-id {
+        color: #666;
+        font-style: italic;
+      }
+    `;
+
+    document.head.appendChild(
+      style
+    );
+
+    claimIdStyleInjected = true;
+  }
+
+  function isRowVisible(row) {
+    if (!row) {
+      return false;
+    }
+
+    if (row.hidden) {
+      return false;
+    }
+
+    if (
+      row.style.display
+      === 'none'
+    ) {
+      return false;
+    }
+
+    return (
+      getComputedStyle(row)
+        .display
+      !== 'none'
+    );
+  }
+
+  function refreshModifierClaimIds(scope) {
+    const rootScope =
+      scope || document;
+
+    const tables =
+      rootScope.matches
+        ?.(
+          '.modifier-results-table'
+        )
+        ? [rootScope]
+        : Array.from(
+            rootScope.querySelectorAll
+              ?.(
+                '.modifier-results-table'
+              )
+            || []
+          );
+
+    for (const table of tables) {
+      let lastVisibleClaimID =
+        null;
+
+      const rows =
+        Array.from(
+          table.querySelectorAll(
+            'tbody tr[data-claim-id]'
+          )
+        );
+
+      for (const row of rows) {
+        const claimID =
+          row.dataset.claimId
+          || '';
+
+        const cell =
+          row.querySelector(
+            '.claim-id-cell'
+          );
+
+        if (!cell) {
+          continue;
+        }
+
+        if (!isRowVisible(row)) {
+          continue;
+        }
+
+        /*
+         * Show the Claim ID on the first
+         * currently visible row of each claim.
+         */
+        const shouldShow =
+          claimID
+          && claimID
+            !== lastVisibleClaimID;
+
+        cell.textContent =
+          shouldShow
+            ? claimID
+            : '';
+
+        const wasOriginallyShown =
+          row.dataset
+            .originalClaimVisible
+          === 'true';
+
+        /*
+         * Match Auth checker formatting:
+         * restored IDs are gray and italic.
+         */
+        cell.classList.toggle(
+          'restored-claim-id',
+          Boolean(
+            shouldShow
+            && !wasOriginallyShown
+          )
+        );
+
+        if (claimID) {
+          lastVisibleClaimID =
+            claimID;
+        }
+      }
+    }
+  }
+
+  function installModifierClaimIdObserver() {
+    ensureClaimIdFormattingStyle();
+
+    if (claimIdObserver) {
+      return;
+    }
+
+    let refreshQueued = false;
+
+    const queueRefresh = () => {
+      if (refreshQueued) {
+        return;
+      }
+
+      refreshQueued = true;
+
+      requestAnimationFrame(() => {
+        refreshQueued = false;
+
+        refreshModifierClaimIds(
+          document
+        );
+      });
+    };
+
+    claimIdObserver =
+      new MutationObserver(
+        (mutations) => {
+          const relevant =
+            mutations.some(
+              (mutation) => {
+                if (
+                  mutation.type
+                  === 'childList'
+                ) {
+                  return Array.from(
+                    mutation.addedNodes
+                    || []
+                  ).some(
+                    (node) =>
+                      node.nodeType === 1
+                      && (
+                        node.matches
+                          ?.(
+                            '.modifier-results-table, .modifier-results-table *'
+                          )
+                        || node.querySelector
+                          ?.(
+                            '.modifier-results-table'
+                          )
+                      )
+                  );
+                }
+
+                if (
+                  mutation.type
+                  === 'attributes'
+                ) {
+                  const element =
+                    mutation.target;
+
+                  return (
+                    element?.nodeType
+                    === 1
+                    && (
+                      element.matches
+                        ?.(
+                          '.modifier-results-table tbody tr'
+                        )
+                      || element.closest
+                        ?.(
+                          '.modifier-results-table'
+                        )
+                    )
+                  );
+                }
+
+                return false;
+              }
+            );
+
+          if (relevant) {
+            queueRefresh();
+          }
+        }
+      );
+
+    claimIdObserver.observe(
+      document.body,
+      {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        attributeFilter: [
+          'style',
+          'hidden'
+        ]
+      }
+    );
+  }
+
   function createResultsWrapper(
     results,
     context
   ) {
+    installModifierClaimIdObserver();
+
     const wrapper =
       document.createElement(
         'div'
@@ -1314,7 +1886,7 @@
       'alert alert-info';
 
     summary.innerHTML =
-      `<strong>Modifier results:</strong> `
+      '<strong>Modifier results:</strong> '
       + `${valid} valid / ${total} total. `
       + `${invalid} invalid, `
       + `${unknown} unknown. `
@@ -1376,6 +1948,7 @@
           <th>Eligibility Details</th>
         </tr>
       </thead>
+
       <tbody></tbody>
     `;
 
@@ -1406,7 +1979,10 @@
       let previousActivity = null;
 
       results.forEach(
-        (result, index) => {
+        (
+          result,
+          index
+        ) => {
           const row =
             document.createElement(
               'tr'
@@ -1415,11 +1991,20 @@
           row.className =
             result.Status
               === 'Invalid'
-              ? 'table-danger invalid-row invalid'
+              ? (
+                  'table-danger '
+                  + 'invalid-row invalid'
+                )
               : result.Status
                 === 'Unknown'
-                ? 'table-warning unknown-row unknown'
-                : 'table-success valid-row valid';
+                ? (
+                    'table-warning '
+                    + 'unknown-row unknown'
+                  )
+                : (
+                    'table-success '
+                    + 'valid-row valid'
+                  );
 
           row.dataset.index =
             String(index);
@@ -1428,9 +2013,24 @@
             result.Status
               .toLowerCase();
 
+          /*
+           * The complete Claim ID is stored on
+           * every row so it can be restored after
+           * invalid-only filtering.
+           */
+          row.dataset.claimId =
+            result.ClaimID
+            || '';
+
           const showClaim =
             result.ClaimID
             !== previousClaim;
+
+          row.dataset
+            .originalClaimVisible =
+              showClaim
+                ? 'true'
+                : 'false';
 
           const showMember =
             showClaim
@@ -1443,118 +2043,150 @@
               !== previousActivity;
 
           row.innerHTML = `
-            <td>${
-              showClaim
-                ? escapeHtml(
-                    result.ClaimID
-                  )
-                : ''
-            }</td>
+            <td class="nowrap-col claim-id-cell">
+              ${
+                showClaim
+                  ? escapeHtml(
+                      result.ClaimID
+                    )
+                  : ''
+              }
+            </td>
 
-            <td>${
-              showMember
-                ? escapeHtml(
-                    result.MemberID
-                  )
-                : ''
-            }</td>
+            <td>
+              ${
+                showMember
+                  ? escapeHtml(
+                      result.MemberID
+                    )
+                  : ''
+              }
+            </td>
 
-            <td>${
-              showActivity
-                ? escapeHtml(
-                    result.ActivityID
-                  )
-                : ''
-            }</td>
+            <td>
+              ${
+                showActivity
+                  ? escapeHtml(
+                      result.ActivityID
+                    )
+                  : ''
+              }
+            </td>
 
-            <td>${
-              escapeHtml(
-                result
-                  .OrderingClinicianRaw
-                || result
-                  .OrderingClinician
-              )
-            }</td>
+            <td>
+              ${
+                escapeHtml(
+                  result
+                    .OrderingClinicianRaw
+                  || result
+                    .OrderingClinician
+                )
+              }
+            </td>
 
-            <td>${
-              escapeHtml(
-                result.ActivityCode
-              )
-            }</td>
+            <td>
+              ${
+                escapeHtml(
+                  result.ActivityCode
+                )
+              }
+            </td>
 
-            <td>${
-              escapeHtml(
-                result.Quantity
-              )
-            }</td>
+            <td>
+              ${
+                escapeHtml(
+                  result.Quantity
+                )
+              }
+            </td>
 
-            <td>${
-              escapeHtml(
-                result.Net
-              )
-            }</td>
+            <td>
+              ${
+                escapeHtml(
+                  result.Net
+                )
+              }
+            </td>
 
-            <td>${
-              escapeHtml(
-                result.ObsCode
-              )
-            }</td>
+            <td>
+              ${
+                escapeHtml(
+                  result.ObsCode
+                )
+              }
+            </td>
 
-            <td>${
-              escapeHtml(
-                result.Modifier
-              )
-            }</td>
+            <td>
+              ${
+                escapeHtml(
+                  result.Modifier
+                )
+              }
+            </td>
 
-            <td>${
-              escapeHtml(
-                result.VOINumber
-              )
-            }</td>
+            <td>
+              ${
+                escapeHtml(
+                  result.VOINumber
+                )
+              }
+            </td>
 
-            <td>${
-              escapeHtml(
-                result.ReceiverID
-              )
-            }</td>
+            <td>
+              ${
+                escapeHtml(
+                  result.ReceiverID
+                )
+              }
+            </td>
 
-            <td>${
-              escapeHtml(
-                result.PayerID
-              )
-            }</td>
+            <td>
+              ${
+                escapeHtml(
+                  result.PayerID
+                )
+              }
+            </td>
 
-            <td>${
-              escapeHtml(
-                result.Insurer
-              )
-            }</td>
+            <td>
+              ${
+                escapeHtml(
+                  result.Insurer
+                )
+              }
+            </td>
 
-            <td>${
-              escapeHtml(
-                result.Status
-              )
-            }</td>
+            <td>
+              ${
+                escapeHtml(
+                  result.Status
+                )
+              }
+            </td>
 
-            <td>${
-              escapeHtml(
-                result.Remarks
-              )
-            }</td>
+            <td>
+              ${
+                escapeHtml(
+                  result.Remarks
+                )
+              }
+            </td>
 
-            <td>${
-              result.EligibilityRow
-                ? (
-                    '<button '
-                    + 'type="button" '
-                    + 'class="details-btn eligibility-details" '
-                    + `data-index="${index}" `
-                    + `onclick="showModifierEligibility(${index})">`
-                    + 'View'
-                    + '</button>'
-                  )
-                : ''
-            }</td>
+            <td>
+              ${
+                result.EligibilityRow
+                  ? (
+                      '<button '
+                      + 'type="button" '
+                      + 'class="details-btn eligibility-details" '
+                      + `data-index="${index}" `
+                      + `onclick="showModifierEligibility(${index})">`
+                      + 'View'
+                      + '</button>'
+                    )
+                  : ''
+              }
+            </td>
           `;
 
           tbody.appendChild(row);
@@ -1571,20 +2203,23 @@
       );
     }
 
-    responsive.appendChild(
-      table
-    );
+    responsive.appendChild(table);
+    wrapper.appendChild(responsive);
 
-    wrapper.appendChild(
-      responsive
-    );
+    /*
+     * The invalid-only filter may already be
+     * active when the result is inserted.
+     */
+    requestAnimationFrame(() => {
+      refreshModifierClaimIds(
+        wrapper
+      );
+    });
 
     return wrapper;
   }
 
-  function createErrorWrapper(
-    error
-  ) {
+  function createErrorWrapper(error) {
     const wrapper =
       document.createElement(
         'div'
@@ -1607,9 +2242,7 @@
         || String(error)
       }`;
 
-    wrapper.appendChild(
-      alert
-    );
+    wrapper.appendChild(alert);
 
     const table =
       document.createElement(
@@ -1626,9 +2259,7 @@
       + '</tr>'
       + '</tbody>';
 
-    wrapper.appendChild(
-      table
-    );
+    wrapper.appendChild(table);
 
     return wrapper;
   }
@@ -1641,9 +2272,7 @@
       ?.remove();
   }
 
-  function showModifierEligibility(
-    index
-  ) {
+  function showModifierEligibility(index) {
     const result =
       lastResults[
         Number(index)
@@ -1654,7 +2283,7 @@
       ?.EligibilityRow
     ) {
       alert(
-        'No eligibility data found for this modifier activity.'
+        'No eligibility data found for this claim.'
       );
 
       return;
@@ -1733,9 +2362,7 @@
     );
   }
 
-  function makeExportRows(
-    results
-  ) {
+  function makeExportRows(results) {
     return results.map(
       (result) => ({
         'Claim ID':
@@ -1796,9 +2423,7 @@
     );
   }
 
-  function buildResultsWorkbook(
-    results
-  ) {
+  function buildResultsWorkbook(results) {
     const workbook =
       root.XLSX.utils
         .book_new();
@@ -1889,9 +2514,7 @@
     }
   }
 
-  async function runModifiersCheck(
-    options
-  ) {
+  async function runModifiersCheck(options) {
     const config =
       options || {};
 
@@ -1987,12 +2610,29 @@
           minorProcedureCodes
         );
 
+      /*
+       * Resolve one eligibility result for
+       * each claim before processing rows.
+       */
+      const claimEligibilityMatches =
+        resolveClaimEligibilityMatches(
+          xmlData.records,
+          xmlData.claimActivities,
+          matcher
+        );
+
       const results =
         xmlData.records.map(
           (record) =>
             analyzeRecord(
               record,
-              matcher,
+
+              claimEligibilityMatches
+                .get(
+                  record.ClaimID
+                )
+              || null,
+
               xmlData.receiver,
               claimContext,
               minorProcedureCodes
@@ -2072,6 +2712,7 @@
 
     if (output) {
       output.innerHTML = '';
+
       output.appendChild(
         wrapper
       );
@@ -2150,6 +2791,9 @@
   root.closeModifierEligibilityModal =
     closeModifierEligibilityModal;
 
+  root.refreshModifierClaimIds =
+    refreshModifierClaimIds;
+
   root.ModifierChecker =
     Object.freeze({
       RECEIVER_CONFIG,
@@ -2160,7 +2804,9 @@
       normalizeClinician,
       parseEligibilityWorkbook,
       buildEligibilityMatcher,
+      resolveClaimEligibilityMatches,
       collectXmlData,
+      refreshModifierClaimIds,
       runModifiersCheck
     });
 
@@ -2171,14 +2817,15 @@
     document.addEventListener(
       'DOMContentLoaded',
       bindStandaloneListeners,
-      { once: true }
+      {
+        once: true
+      }
     );
   } else {
     bindStandaloneListeners();
   }
 })(
-  typeof window
-    !== 'undefined'
+  typeof window !== 'undefined'
     ? window
     : globalThis
 );
