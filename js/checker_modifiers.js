@@ -4,6 +4,35 @@
     let lastResults = [];
     let lastWorkbook = null;
 
+// -----------------------------------------------------------------------
+// Receiver configuration — keyed by Header ReceiverID (upper-case)
+// -----------------------------------------------------------------------
+const RECEIVER_CONFIG = {
+  D001: {
+    insurer:        'Thiqa',
+    modifier52Voi:  'VOI_EF1',
+    modifier24Voi:  'VOI_D'
+  },
+  A001: {
+    insurer:        'Daman Enhanced',
+    modifier52Voi:  'VOI_EF1',
+    modifier24Voi:  'VOI_D'
+  },
+  D004: {
+    insurer:        'Daman Basic',
+    modifier52Voi:  'VOI_EF1',
+    modifier24Voi:  'VOI_D'
+  }
+};
+
+function normalizeIdentifier(value) {
+  return String(value || '').trim().toUpperCase();
+}
+
+function getReceiverConfig(receiverID) {
+  return RECEIVER_CONFIG[normalizeIdentifier(receiverID)] || null;
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   try {
     const runBtn = el('run-button');
@@ -41,6 +70,28 @@ async function handleRun() {
       fetch('../json/minor_procedures.json').then(r => r.ok ? r.json() : []).catch(() => [])
     ]);
     const xmlDoc = parseXml(xmlText);
+
+    // ----------------------------------------------------------------
+    // Parse Header ReceiverID once — used for all payer-routing logic.
+    // Claim-level PayerID is kept separately for auditing only.
+    // ----------------------------------------------------------------
+    const headerElement = xmlDoc.documentElement.querySelector(':scope > Header')
+      || xmlDoc.querySelector('Header');
+    const rawReceiverID = headerElement
+      ? (headerElement.querySelector('ReceiverID') || headerElement.getElementsByTagName('ReceiverID')[0] || null)
+      : null;
+    const receiverID = normalizeIdentifier(rawReceiverID ? rawReceiverID.textContent : '');
+    const receiverConfig = getReceiverConfig(receiverID);
+
+    console.log('[MODIFIERS] Header ReceiverID:', receiverID || '(MISSING)');
+    if (receiverConfig) {
+      console.log('[MODIFIERS] Insurer:', receiverConfig.insurer);
+    } else if (receiverID) {
+      console.warn('[MODIFIERS] ReceiverID "' + receiverID + '" has no configured modifier rules.');
+    } else {
+      console.warn('[MODIFIERS] ReceiverID is missing from the XML Header.');
+    }
+
     const extracted = extractModifierRecords(xmlDoc);
     const minorProcedureCodes = new Set((Array.isArray(minorProceduresRaw) ? minorProceduresRaw : [])
       .map(item => normalizeCode(typeof item === 'string' ? item : (item && item.code) ? item.code : ''))
@@ -58,44 +109,68 @@ async function handleRun() {
       // Determine VOI number: prefer matched eligibility, fallback to XML
       let voiNumber = '';
       if (match) {
-        voiNumber = String(match['VOI Number'] || '').trim(); // <-- VOI from eligibility
+        voiNumber = String(match['VOI Number'] || '').trim();
       } else {
         voiNumber = rec.VOINumber || ''; // fallback to XML
       }
-    
-      // Check Observation Code
-      if (rec.ObsCode !== 'CPT modifier') {
-        remarks.push(`Observation Code incorrect; expected "CPT modifier" but found "${rec.ObsCode}"`);
-      }
-    
-      // Check VOI against modifier
-      const voiNorm = normForCompare(voiNumber);
-      if (rec.Modifier === '52' && voiNorm !== normForCompare('VOI_EF1')) remarks.push(`Modifier 52 does not match VOI (expected VOI_EF1).`);
-      if (rec.Modifier === '24' && voiNorm !== normForCompare('VOI_D')) remarks.push(`Modifier 24 does not match VOI (expected VOI_D).`);
-      if (rec.Quantity !== 1) remarks.push('Qty must be 1 for modifiers.');
 
-      const claimCtx = claimModifierContext.get(rec.ClaimID) || { hasMinorProcedure: false, hasPricedConsultation: false };
-      if ((rec.Modifier === '24' || rec.Modifier === '25' || rec.Modifier === '52') && !isConsultationCode(rec.ActivityCode)) {
-        remarks.push(`Modifier ${rec.Modifier} must only be on consultation codes.`);
+      // ---------------------------------------------------------------
+      // Determine insurer from Header ReceiverID (not Claim PayerID).
+      // ---------------------------------------------------------------
+      let isUnknownPayer = false;
+      let insurerLabel = '';
+      let payerRemark = '';
+
+      if (!receiverID) {
+        isUnknownPayer = true;
+        payerRemark = 'ReceiverID is missing from the XML Header; modifier payer rules could not be determined.';
+      } else if (!receiverConfig) {
+        isUnknownPayer = true;
+        payerRemark = 'Modifier rules are not configured for ReceiverID ' + receiverID + '.';
+      } else {
+        insurerLabel = receiverConfig.insurer;
       }
-      if (rec.Modifier === '24' && !normForCompare(voiNumber).includes(normForCompare('Vol D'))) {
-        remarks.push('Modifier 24 requires eligibility containing Vol D.');
-      }
-      if (rec.Modifier === '25') {
-        if (!claimCtx.hasMinorProcedure) remarks.push('Modifier 25 requires a minor procedure in the same claim.');
-        if (!claimCtx.hasPricedConsultation) remarks.push('Modifier 25 requires a consultation code with price in the same claim.');
-      }
-      if (rec.Modifier === '50') {
-        if (!minorProcedureCodes.has(normalizeCode(rec.ActivityCode))) {
-          remarks.push(`Modifier 50 cannot be used on \`${rec.ActivityCode || '(unknown)'}\`.`);
+
+      if (isUnknownPayer) {
+        remarks.push(payerRemark);
+      } else {
+        // Check Observation Code
+        if (rec.ObsCode !== 'CPT modifier') {
+          remarks.push(`Observation Code incorrect; expected "CPT modifier" but found "${rec.ObsCode}"`);
         }
+
+        // Check VOI against modifier using receiver-specific mappings
+        const voiNorm = normForCompare(voiNumber);
+        const expected52 = receiverConfig.modifier52Voi;
+        const expected24 = receiverConfig.modifier24Voi;
+        if (rec.Modifier === '52' && voiNorm !== normForCompare(expected52)) {
+          remarks.push(`Modifier 52 does not match VOI (expected ${expected52}).`);
+        }
+        if (rec.Modifier === '24' && voiNorm !== normForCompare(expected24)) {
+          remarks.push(`Modifier 24 does not match VOI (expected ${expected24}).`);
+        }
+        if (rec.Quantity !== 1) remarks.push('Qty must be 1 for modifiers.');
+
+        const claimCtx = claimModifierContext.get(rec.ClaimID) || { hasMinorProcedure: false, hasPricedConsultation: false };
+        if ((rec.Modifier === '24' || rec.Modifier === '25' || rec.Modifier === '52') && !isConsultationCode(rec.ActivityCode)) {
+          remarks.push(`Modifier ${rec.Modifier} must only be on consultation codes.`);
+        }
+        if (rec.Modifier === '24' && !normForCompare(voiNumber).includes(normForCompare('Vol D'))) {
+          remarks.push('Modifier 24 requires eligibility containing Vol D.');
+        }
+        if (rec.Modifier === '25') {
+          if (!claimCtx.hasMinorProcedure) remarks.push('Modifier 25 requires a minor procedure in the same claim.');
+          if (!claimCtx.hasPricedConsultation) remarks.push('Modifier 25 requires a consultation code with price in the same claim.');
+        }
+        if (rec.Modifier === '50') {
+          if (!minorProcedureCodes.has(normalizeCode(rec.ActivityCode))) {
+            remarks.push(`Modifier 50 cannot be used on \`${rec.ActivityCode || '(unknown)'}\`.`);
+          }
+        }
+
+        if (!match) remarks.push('No matching eligibility found');
       }
 
-      if (!match) remarks.push('No matching eligibility found');
-
-      const payer = String(rec.PayerID || '').trim().toUpperCase();
-      const isUnknownPayer = payer !== 'A001' && payer !== 'D001';
-    
       return {
         ClaimID: rec.ClaimID || '',
         MemberID: rec.MemberID || '',
@@ -107,7 +182,9 @@ async function handleRun() {
         Net: rec.Net,
         ObsCode: rec.ObsCode || '',
         VOINumber: voiNumber,
-        PayerID: rec.PayerID || '',
+        ReceiverID: receiverID,
+        ClaimPayerID: rec.ClaimPayerID || '',
+        Insurer: insurerLabel,
         EligibilityRow: match || null,
         isUnknown: isUnknownPayer,
         isValid: !isUnknownPayer && remarks.length === 0,
@@ -125,7 +202,7 @@ async function handleRun() {
     const validCount = knownRows.filter(r => r.isValid).length;
     const totalCount = knownRows.length;
     const percent = totalCount ? Math.round((validCount / totalCount) * 100) : 0;
-    message(`Completed — ${validCount}/${totalCount} rows correct (${percent}%)${output.length > knownRows.length ? ` · ${output.length - knownRows.length} unknown payer row(s)` : ''}`, percent === 100 ? 'green' : 'orange');
+    message(`Completed — ${validCount}/${totalCount} rows correct (${percent}%)${output.length > knownRows.length ? ` · ${output.length - knownRows.length} unconfigured receiver row(s)` : ''}`, percent === 100 ? 'green' : 'orange');
 
     return tableElement;
   } catch (err) {
@@ -234,7 +311,7 @@ function extractModifierRecords(xmlDoc) {
           ActivityCode: activityCode,
           Quantity: quantity,
           Net: net,
-          PayerID: payerId,
+          ClaimPayerID: payerId,
           ObsCode: code,
           VOINumber: voiVal,
           Remarks: remarks.map(s => s && !s.endsWith('.') ? s + '.' : s).join('; ')
@@ -345,8 +422,8 @@ function buildResultsTable(rows) {
   }
 
   console.info('[DEBUG] total rows from mapping:', rows.length);
-  const payerSet = new Set(rows.map(r => String(r.PayerID || '').trim().toUpperCase()).filter(x => x));
-  console.info('[DEBUG] unique Payer IDs in results:', Array.from(payerSet).join(', ') || '(none)');
+  const receiverSet = new Set(rows.map(r => String(r.ReceiverID || '').trim().toUpperCase()).filter(x => x));
+  console.info('[DEBUG] unique ReceiverIDs in results:', Array.from(receiverSet).join(', ') || '(none)');
 
   // Show all rows; assign an _originalIndex for modal linking
   rows.forEach((r, i) => { r._originalIndex = i; });
@@ -364,7 +441,9 @@ function buildResultsTable(rows) {
         <th style="padding:8px;border:1px solid #ccc">Observation Code</th>
         <th style="padding:8px;border:1px solid #ccc">Observation CPT Modifier</th>
         <th style="padding:8px;border:1px solid #ccc">VOI Number</th>
-        <th style="padding:8px;border:1px solid #ccc">Payer ID</th>
+        <th style="padding:8px;border:1px solid #ccc">Receiver ID</th>
+        <th style="padding:8px;border:1px solid #ccc">Claim Payer ID</th>
+        <th style="padding:8px;border:1px solid #ccc">Insurer</th>
         <th style="padding:8px;border:1px solid #ccc">Remarks</th>
         <th style="padding:8px;border:1px solid #ccc">Eligibility Details</th>
       </tr>
@@ -385,7 +464,8 @@ function buildResultsTable(rows) {
     }
 
     const remarksText = r.isUnknown
-      ? 'Unknown payer (not A001 or D001).'
+      ? (String(r.Remarks || '').split(';').map(s => s.trim()).filter(Boolean)
+          .map(s => s && !s.endsWith('.') ? s + '.' : s).join('; ') || 'Unknown payer — modifier rules could not be determined.')
       : (String(r.Remarks || '').split(';').map(s => s.trim()).filter(Boolean)
           .map(s => s && !s.endsWith('.') ? s + '.' : s).join('; ') || 'OK');
 
@@ -397,7 +477,9 @@ function buildResultsTable(rows) {
       <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.ObsCode || '')}</td>
       <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.Modifier)}</td>
       <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.VOINumber || '')}</td>
-      <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.PayerID)}</td>
+      <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.ReceiverID || '')}</td>
+      <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.ClaimPayerID || '')}</td>
+      <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.Insurer || '')}</td>
       <td style="padding:6px;border:1px solid #ccc">${escapeHtml(remarksText)}</td>
       <td style="padding:6px;border:1px solid #ccc">${r.EligibilityRow ? `<button type="button" class="details-btn eligibility-details" onclick="showEligibility(${r._originalIndex})">View</button>` : ''}</td>
     </tr>`;

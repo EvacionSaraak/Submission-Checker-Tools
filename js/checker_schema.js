@@ -117,11 +117,34 @@ function validateXmlSchema(options = {}) {
           if (claimTypeMode === 'MEDICAL' && medicalShared && typeof medicalShared.loadMedicalValidationRules === 'function') {
             medicalRules = await medicalShared.loadMedicalValidationRules();
           }
+
+          // Load Mandatory Tariff for occurrence-limit validation.
+          let mandatoryTariffMap = null;
+          const tariffShared = window.MandatoryTariffShared || null;
+          if (tariffShared && typeof tariffShared.loadBundledMandatoryTariff === 'function') {
+            try {
+              const tariffData = await tariffShared.loadBundledMandatoryTariff();
+              mandatoryTariffMap = tariffData && tariffData.map;
+              if (tariffData && tariffData.warnings && tariffData.warnings.length > 0) {
+                console.warn('[SCHEMA] Mandatory Tariff warnings:', tariffData.warnings);
+              }
+              console.log('[SCHEMA] Mandatory Tariff loaded, entries:', mandatoryTariffMap ? mandatoryTariffMap.size : 0);
+            } catch (tariffErr) {
+              console.error('[SCHEMA] Failed to load Mandatory Tariff:', tariffErr);
+              if (status) status.textContent = 'Schema Checker failed: Mandatory Tariff could not be loaded.';
+              resolve(buildSchemaMessageElement(
+                'Schema Checker failed: Mandatory Tariff could not be loaded. ' + tariffErr.message
+              ));
+              return;
+            }
+          }
+
           results = validateClaimSchema(xmlDoc, originalXmlContent, {
             clinicianSpecialtyMap,
             claimTypeMode,
             medicalShared,
-            medicalRules
+            medicalRules,
+            mandatoryTariffMap
           });
           console.log('[SCHEMA] Claim validation complete, results count:', results.length);
         } else if (xmlDoc.documentElement.nodeName === "Person.Register") {
@@ -643,38 +666,9 @@ function validateMedicalOrderingConsistency(activities, text, invalidFields, opt
     );
   }
 
-  const medicalShared =
-    options.medicalShared
-    || window.MedicalValidationShared
-    || null;
-
-  if (
-    !medicalShared
-    || typeof medicalShared.validateDuplicateCodeOrdering !== 'function'
-  ) {
-    return;
-  }
-
-  const context = {
-    claimID: text('ID'),
-    activities: Array.from(activities || []).map(activity => {
-      const code = text('Code', activity);
-      return {
-        code,
-        normalizedCode: medicalShared.normalizeActivityCode(code),
-        orderingClinician: text('OrderingClinician', activity)
-      };
-    })
-  };
-
-  medicalShared.validateDuplicateCodeOrdering(
-    context,
-    options.medicalRules || {}
-  ).forEach(finding => {
-    if (finding && finding.remark) {
-      invalidFields.push(finding.remark);
-    }
-  });
+  // Generic duplicate-code-per-ordering-clinician rule has been replaced by
+  // tariff-based occurrence-limit validation (validateClaimOccurrenceLimits).
+  // Do not re-add validateDuplicateCodeOrdering here.
 }
 
 function validateConsultationAndSpecialtyRules(activities, text, invalidFields, clinicianSpecialtyMap, options = {}) {
@@ -1028,6 +1022,25 @@ function validateClaimSchema(xmlDoc, originalXmlContent = "", options = {}) {
       medicalShared: options.medicalShared,
       medicalRules: options.medicalRules
     });
+
+    // Tariff occurrence-limit validation — replaces the generic duplicate-code rule.
+    // Counts Activity elements per (ActivityType, Code) key and reports those
+    // that exceed the Mandatory Tariff MUE limit.
+    const tariffShared = window.MandatoryTariffShared || null;
+    const mandatoryTariffMap = options.mandatoryTariffMap || null;
+    if (tariffShared && mandatoryTariffMap && typeof tariffShared.validateClaimOccurrenceLimits === 'function') {
+      const occurrenceFindings = tariffShared.validateClaimOccurrenceLimits({
+        claim,
+        tariffMap: mandatoryTariffMap,
+        getText: (tag, parent) => {
+          const el = (parent || claim).getElementsByTagName(tag)[0];
+          return el && el.textContent ? el.textContent.trim() : '';
+        }
+      });
+      occurrenceFindings.forEach(f => {
+        if (f && f.remark) invalidFields.push(f.remark);
+      });
+    }
 
     // Contract optional
     const contract = claim.getElementsByTagName("Contract")[0];
