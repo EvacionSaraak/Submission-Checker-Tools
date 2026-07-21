@@ -1046,7 +1046,7 @@ function loadClinicianLicenses() {
 }
 
 function loadMandatoryTariff() {
-  return fetch('../resources/Mandatory Tariff  Updated.xlsx').then(r => {
+  return fetch('../resources/Mandatory Tariff Updated.xlsx').then(r => {
     console.log('[TEETH] Fetched mandatory tariff workbook:', r.ok);
     return r.ok ? r.arrayBuffer() : Promise.reject(new Error(`Failed to load Mandatory Tariff workbook (HTTP ${r.status})`));
   });
