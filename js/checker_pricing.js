@@ -33,6 +33,15 @@ function moneyEqual(a, b) {
   return centsA !== null && centsB !== null && centsA === centsB;
 }
 
+function compareMoney(a, b) {
+  const centsA = moneyToCents(a);
+  const centsB = moneyToCents(b);
+  if (centsA === null || centsB === null) return null;
+  if (centsA < centsB) return -1;
+  if (centsA > centsB) return 1;
+  return 0;
+}
+
 function roundMoney(value) {
   const number = Number(value);
   return Number.isFinite(number) ? Math.round((number + Number.EPSILON) * 100) / 100 : null;
@@ -175,11 +184,14 @@ function getZeroPricePricingDecision({
   };
 }
 
-function shouldDeferA001PricingToClaimLevel({ receiverID, xmlNet, effectiveRef, xmlQty, isAllowedZeroPricedActivity }) {
-  if (receiverID !== 'A001' || isAllowedZeroPricedActivity) {
-    return false;
-  }
-
+function shouldDeferA001PricingToClaimLevel({ receiverID, xmlNet, effectiveRef, xmlQty, isAllowedZeroPricedActivity, claimPatientShare }) {
+  if (isAllowedZeroPricedActivity) return false;
+  // D001 (Thiqa) uses 0 patient share — no deferral
+  if (receiverID === 'D001') return false;
+  // For A001: always defer when net < reference (claim-level PS check handles it)
+  // For other payers: defer only when patient share is applied
+  const hasPatientShare = Number(claimPatientShare || 0) > 0;
+  if (receiverID !== 'A001' && !hasPatientShare) return false;
   const referenceTotal = Number(effectiveRef) * Number(xmlQty || 0);
   return Number.isFinite(referenceTotal)
     && referenceTotal > 0
@@ -222,6 +234,71 @@ function calculatePatientShareSummary(actRows, options = {}) {
       ? moneyEqual(claimGross, claimNet + actualPatientShare)
       : null
   };
+}
+
+// Apply the 3-way patient share comparison (below=Invalid, equal=Valid, above=Unknown) to the
+// primary row of a claim group. Uses severity merging so existing findings are never erased.
+function applyClaimLevelPatientShare(actRows, options) {
+  const { receiverID, medicalRules, isMedicalMode, medicalShared } = options || {};
+  const primaryRow = actRows[0];
+  const actualPS = Number(primaryRow.PatientShare || 0);
+  const summary = calculatePatientShareSummary(actRows, { receiverID, medicalRules });
+  const totalClaimedNet = summary.totalXmlNet;
+  const totalRef = summary.totalRef;
+  const isMulti = actRows.length > 1;
+
+  const comparison = compareMoney(totalClaimedNet + actualPS, totalRef);
+  if (comparison === null) return;
+
+  const netLabel = isMulti
+    ? `Total Net ${formatMoney(totalClaimedNet)}`
+    : `Net ${formatMoney(totalClaimedNet)}`;
+  const psLabel = `Patient Share ${formatMoney(actualPS)}`;
+  const refLabel = isMulti
+    ? `total reference of ${formatMoney(totalRef)}`
+    : `reference price of ${formatMoney(totalRef)}`;
+
+  let psStatus, psRemark, psRuleId;
+  if (comparison < 0) {
+    psStatus = 'Invalid';
+    psRemark = `${netLabel} plus ${psLabel} is below the ${refLabel}.`;
+    psRuleId = 'MED_PATIENT_SHARE_BELOW';
+  } else if (comparison === 0) {
+    psStatus = 'Valid';
+    psRemark = '';
+    psRuleId = 'MED_PATIENT_SHARE_MATCH';
+  } else {
+    psStatus = 'Unknown';
+    psRemark = `${netLabel} plus ${psLabel} exceeds the ${refLabel}; manual review is required.`;
+    psRuleId = 'MED_PATIENT_SHARE_ABOVE';
+  }
+
+  if (isMedicalMode && medicalShared && medicalRules) {
+    primaryRow.findings = medicalShared.mergeFindingsBySeverity(
+      primaryRow.findings,
+      [asMedicalFinding({
+        ruleId: psRuleId,
+        status: psStatus,
+        remark: psRemark,
+        claimID: primaryRow.ClaimID,
+        activityID: primaryRow.ActivityID,
+        code: primaryRow.CPT
+      })]
+    );
+    medicalShared.applyFinalStatus(primaryRow);
+  } else {
+    // Only escalate severity; never lower an existing Invalid/Unknown status
+    const sev = { 'Invalid': 3, 'Unknown': 2, 'Valid': 1 };
+    const existingSev = sev[primaryRow.status] || 0;
+    const psSev = sev[psStatus] || 0;
+    if (psSev > existingSev) {
+      primaryRow.status = psStatus;
+      primaryRow.isValid = psStatus === 'Valid';
+    }
+    if (psRemark) {
+      primaryRow.Remarks = primaryRow.Remarks ? `${primaryRow.Remarks} ${psRemark}` : psRemark;
+    }
+  }
 }
 
 function shouldAddNoPricingMatchRemark({ match, endoEntry, isZeroPricedActivity }) {
@@ -980,7 +1057,8 @@ async function handleRun(options = {}) {
             xmlNet,
             effectiveRef,
             xmlQty,
-            isAllowedZeroPricedActivity: isZeroPricedActivity
+            isAllowedZeroPricedActivity: isZeroPricedActivity,
+            claimPatientShare: rec.PatientShare
           })) {
             status = 'Valid';
           } else if (pricingReceiverID === 'A001') {
@@ -1098,7 +1176,8 @@ async function handleRun(options = {}) {
       }
     });
 
-    if (pricingReceiverID === 'A001') {
+    // Claim-level Patient Share validation (all non-D001 payers)
+    if (pricingReceiverID !== 'D001') {
       const claimGroups = new Map();
       output.forEach(r => {
         if (!claimGroups.has(r.ClaimID)) claimGroups.set(r.ClaimID, []);
@@ -1106,9 +1185,11 @@ async function handleRun(options = {}) {
       });
 
       for (const [, actRows] of claimGroups) {
-        const actualPS = Number(actRows[0].PatientShare || 0);
         const primaryRow = actRows[0];
-        if (actualPS === 0) {
+        const actualPS = Number(primaryRow.PatientShare || 0);
+
+        // A001 (Daman): flag zero patient share for non-Thiqa
+        if (pricingReceiverID === 'A001' && actualPS === 0) {
           const msg = 'Patient Share is 0 — this is invalid for Daman (non-Thiqa) claims.';
           if (isMedicalMode && medicalShared && medicalRules) {
             primaryRow.findings = medicalShared.mergeFindingsBySeverity(
@@ -1124,58 +1205,36 @@ async function handleRun(options = {}) {
             );
             medicalShared.applyFinalStatus(primaryRow);
           } else {
-            primaryRow.status = 'Unknown';
-            primaryRow.isValid = false;
+            const sev = { 'Invalid': 3, 'Unknown': 2, 'Valid': 1 };
+            if ((sev['Unknown'] || 0) > (sev[primaryRow.status] || 0)) {
+              primaryRow.status = 'Unknown';
+              primaryRow.isValid = false;
+            }
             primaryRow.Remarks = primaryRow.Remarks ? `${primaryRow.Remarks} ${msg}` : msg;
           }
-        } else {
-          const summary = calculatePatientShareSummary(actRows, {
-            receiverID: pricingReceiverID,
-            medicalRules
-          });
-          const totalConsistencyMsg = summary.claimTotalsConsistent === false
-            ? `Claim totals are inconsistent.\nGross: ${summary.claimGross}.\nNet: ${summary.claimNet}.\nPatient Share: ${actualPS}.`
-            : '';
+          continue;
+        }
 
-          if (moneyEqual(actualPS, summary.expectedPatientShare)) {
-            if (isMedicalMode && medicalShared && medicalRules) {
-              const findings = [asMedicalFinding({
-                ruleId: 'MED_PATIENT_SHARE_MATCH',
-                status: 'Valid',
-                remark: `Patient Share ${actualPS} is correct.`,
-                claimID: primaryRow.ClaimID,
-                activityID: primaryRow.ActivityID,
-                code: primaryRow.CPT
-              })];
-              if (totalConsistencyMsg) {
-                findings.push(asMedicalFinding({
-                  ruleId: 'MED_PATIENT_SHARE_CLAIM_TOTALS',
-                  status: 'Invalid',
-                  remark: totalConsistencyMsg,
-                  claimID: primaryRow.ClaimID,
-                  activityID: primaryRow.ActivityID,
-                  code: primaryRow.CPT
-                }));
-              }
-              primaryRow.findings = medicalShared.mergeFindingsBySeverity(
-                primaryRow.findings,
-                findings
-              );
-              medicalShared.applyFinalStatus(primaryRow);
-            } else if (totalConsistencyMsg) {
-              primaryRow.status = 'Invalid';
-              primaryRow.isValid = false;
-              primaryRow.Remarks = primaryRow.Remarks ? `${primaryRow.Remarks} ${totalConsistencyMsg}` : totalConsistencyMsg;
-            }
-          } else {
-            const msg = `Patient Share ${actualPS} is incorrect.\nExpected: ${summary.expectedPatientShare} (Total Ref: ${summary.totalRef} − Total Net: ${summary.totalXmlNet}).${totalConsistencyMsg ? `\n${totalConsistencyMsg}` : ''}`;
+        // 3-way patient share comparison: Net + PS vs Reference
+        applyClaimLevelPatientShare(actRows, {
+          receiverID: pricingReceiverID,
+          medicalRules,
+          isMedicalMode,
+          medicalShared
+        });
+
+        // A001: also validate claim-level gross/net/PS consistency
+        if (pricingReceiverID === 'A001') {
+          const summary = calculatePatientShareSummary(actRows, { receiverID: pricingReceiverID, medicalRules });
+          if (summary.claimTotalsConsistent === false) {
+            const consistencyMsg = `Claim totals are inconsistent.\nGross: ${summary.claimGross}.\nNet: ${summary.claimNet}.\nPatient Share: ${actualPS}.`;
             if (isMedicalMode && medicalShared && medicalRules) {
               primaryRow.findings = medicalShared.mergeFindingsBySeverity(
                 primaryRow.findings,
                 [asMedicalFinding({
-                  ruleId: 'MED_PATIENT_SHARE_MISMATCH',
-                  status: 'Unknown',
-                  remark: msg,
+                  ruleId: 'MED_PATIENT_SHARE_CLAIM_TOTALS',
+                  status: 'Invalid',
+                  remark: consistencyMsg,
                   claimID: primaryRow.ClaimID,
                   activityID: primaryRow.ActivityID,
                   code: primaryRow.CPT
@@ -1183,65 +1242,11 @@ async function handleRun(options = {}) {
               );
               medicalShared.applyFinalStatus(primaryRow);
             } else {
-              primaryRow.status = 'Unknown';
+              primaryRow.status = 'Invalid';
               primaryRow.isValid = false;
-              primaryRow.Remarks = primaryRow.Remarks ? `${primaryRow.Remarks} ${msg}` : msg;
+              primaryRow.Remarks = primaryRow.Remarks ? `${primaryRow.Remarks} ${consistencyMsg}` : consistencyMsg;
             }
           }
-        }
-      }
-    }
-
-    if (pricingReceiverID !== 'D001' && pricingReceiverID !== 'A001') {
-      const claimGroups = new Map();
-      output.forEach(r => {
-        if (!claimGroups.has(r.ClaimID)) claimGroups.set(r.ClaimID, []);
-        claimGroups.get(r.ClaimID).push(r);
-      });
-
-      const isCash = pricingReceiverID === 'HAAD' || pricingReceiverID === 'CASH';
-
-      for (const [, actRows] of claimGroups) {
-        const actualPS = Number(actRows[0].PatientShare || 0);
-
-        if (actualPS === 0 && !isCash) {
-          const msg = 'Patient Share is 0 — this is invalid for non-Thiqa claims.';
-          actRows.forEach(r => {
-            r.status = 'Unknown';
-            r.isValid = false;
-            r.Remarks = r.Remarks ? `${r.Remarks} ${msg}` : msg;
-          });
-        } else if (actualPS === 0 && isCash) {
-          const totalClaimedNet = actRows.reduce((sum, r) => sum + r.xmlNetNum, 0);
-          if (totalClaimedNet === 0) {
-            actRows.forEach(r => {
-              r.status = 'Valid';
-              r.isValid = true;
-            });
-          }
-        }
-
-        if (actualPS > 0) {
-          const totalClaimedNet = actRows.reduce((sum, r) => sum + r.xmlNetNum, 0);
-          const psPercentage = actualPS / (actualPS + totalClaimedNet);
-          const psPercentagePct = Math.round(psPercentage * 100);
-
-          actRows.forEach(r => {
-            const net = r.xmlNetNum;
-            const estimatedTotal = psPercentage < 1 ? Math.round((net / (1 - psPercentage)) * 100) / 100 : 0;
-            const estimatedPS = Math.round((estimatedTotal - net) * 100) / 100;
-            r._estimatedTotal = estimatedTotal;
-            r._estimatedPS = estimatedPS;
-            r._estimatedPayerNet = Math.round((estimatedTotal - estimatedPS) * 100) / 100;
-          });
-
-          actRows.forEach(r => {
-            const netMatch = Math.abs(r.xmlNetNum - r._estimatedPayerNet) < 0.01;
-            const matchOp = netMatch ? '==' : '!=';
-            if (r.xmlNetNum === 0) return;
-            const remark = `${psPercentagePct}% Copay estimate.\nNet ${netMatch ? 'Match' : 'Mismatch'} (${r.xmlNetNum} [xml] ${matchOp} ${r._estimatedPayerNet} [estimate]).`;
-            r.Remarks = r.Remarks ? `${r.Remarks} ${remark}` : remark;
-          });
         }
       }
     }
@@ -2047,6 +2052,8 @@ window._pricingTestApi = {
   shouldDeferA001PricingToClaimLevel,
   getPatientShareReferenceRows,
   calculatePatientShareSummary,
+  applyClaimLevelPatientShare,
+  compareMoney,
   shouldAddNoPricingMatchRemark,
   shouldAddMissingEndoPriceRemark,
   shouldAddInvalidReferenceRemark,

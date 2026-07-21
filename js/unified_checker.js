@@ -963,21 +963,10 @@
         });
         console.log(`[CHECK-ALL] Re-attached ${buttons.length} event listeners for schema checker`);
       } else if (checkerName === 'elig') {
-        // Eligibility checker uses .eligibility-details buttons
-        // Note: initEligibilityModal should be called with the results
-        if (typeof window.initEligibilityModal === 'function') {
-          // The eligibility modal initialization needs the results array
-          // For now, we'll attach basic click handlers that use global modal functions
-          const detailButtons = clonedTable.querySelectorAll('.eligibility-details');
-          console.log(`[CHECK-ALL] Found ${detailButtons.length} eligibility detail buttons`);
-          
-          detailButtons.forEach(btn => {
-            btn.onclick = function() {
-              console.log('[CHECK-ALL] Eligibility detail button clicked, but full data not available in cloned table');
-              alert('For detailed eligibility information, please run the Eligibility checker individually.');
-            };
-          });
-        }
+        // Eligibility details buttons use delegated event handling via window.openEligibilityDetails
+        // (registered once in checker_elig.js initEligibilityModal). No per-clone reattachment needed.
+        const detailButtons = clonedTable.querySelectorAll('.eligibility-details');
+        console.log(`[CHECK-ALL] Found ${detailButtons.length} eligibility detail buttons (handled by delegated listener)`);
       } else if (checkerName === 'clinician') {
         // Clinician checker uses .view-activities and .view-license-history buttons.
         // clonedTable is the full cloned root element (a <div> that contains the

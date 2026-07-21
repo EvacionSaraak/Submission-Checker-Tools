@@ -1066,6 +1066,10 @@ function buildResultsTable(results, eligMap) {
   wrapper.appendChild(summary);
   wrapper.appendChild(tableContainer);
   
+  // Save results for delegated modal access (used by Check All)
+  window.checkerResultData = window.checkerResultData || {};
+  window.checkerResultData.eligibility = results;
+
   // Initialize modal and attach event handlers
   setTimeout(() => {
     initEligibilityModal(results);
@@ -1073,6 +1077,30 @@ function buildResultsTable(results, eligMap) {
   }, 0);
   
   return wrapper;
+}
+
+function renderEligibilityDetails(result) {
+  if (!result?.fullEligibilityRecord) return;
+  const record = result.fullEligibilityRecord;
+  const tableHtml = `
+    <h3>Eligibility Details</h3>
+    <div style="overflow-x:auto;">
+      <table style="width:100%;border-collapse:collapse;">
+        <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Eligibility Request Number</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Eligibility Request Number"] || ''}</td></tr>
+        <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Card Number / DHA Member ID</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Card Number / DHA Member ID"] || ''}</td></tr>
+        <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Card Network</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Card Network"] || ''}</td></tr>
+        <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Answered On</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Answered On"] || ''}</td></tr>
+        <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Ordered On</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Ordered On"] || ''}</td></tr>
+        <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Status</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Status"] || ''}</td></tr>
+        <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Clinician</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Clinician"] || ''}</td></tr>
+        <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Payer Name</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Payer Name"] || ''}</td></tr>
+        <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Service Category</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Service Category"] || ''}</td></tr>
+        <tr><th style="text-align:left;padding:6px;">Package Name</th><td style="padding:6px;">${record["Package Name"] || ''}</td></tr>
+      </table>
+    </div>
+  `;
+  document.getElementById("modalTable").innerHTML = tableHtml;
+  document.getElementById("modalOverlay").style.display = "block";
 }
 
 function initEligibilityModal(results) {
@@ -1112,38 +1140,27 @@ function initEligibilityModal(results) {
     };
   }
 
-  // Attach click handlers
-  document.querySelectorAll(".eligibility-details").forEach(btn => {
-    btn.onclick = function() {
-      const index = parseInt(this.dataset.index, 10);
-      const result = results[index];
-      if (!result?.fullEligibilityRecord) return;
+  // Expose a shared function so both individual and unified Check All can open details
+  window.openEligibilityDetails = function openEligibilityDetails(resultIndex) {
+    const stored = (window.checkerResultData && window.checkerResultData.eligibility) || [];
+    const result = stored[Number(resultIndex)];
+    if (!result) {
+      console.error('[ELIGIBILITY] Result not found', { resultIndex });
+      return;
+    }
+    renderEligibilityDetails(result);
+  };
 
-      console.log("Clicked eligibility data:", result.fullEligibilityRecord);
-
-      const record = result.fullEligibilityRecord;
-      const tableHtml = `
-        <h3>Eligibility Details</h3>
-        <div style="overflow-x:auto;">
-          <table style="width:100%;border-collapse:collapse;">
-            <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Eligibility Request Number</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Eligibility Request Number"] || ''}</td></tr>
-            <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Card Number / DHA Member ID</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Card Number / DHA Member ID"] || ''}</td></tr>
-            <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Card Network</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Card Network"] || ''}</td></tr>
-            <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Answered On</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Answered On"] || ''}</td></tr>
-            <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Ordered On</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Ordered On"] || ''}</td></tr>
-            <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Status</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Status"] || ''}</td></tr>
-            <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Clinician</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Clinician"] || ''}</td></tr>
-            <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Payer Name</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Payer Name"] || ''}</td></tr>
-            <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Service Category</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Service Category"] || ''}</td></tr>
-            <tr><th style="text-align:left;padding:6px;">Package Name</th><td style="padding:6px;">${record["Package Name"] || ''}</td></tr>
-          </table>
-        </div>
-      `;
-
-      document.getElementById("modalTable").innerHTML = tableHtml;
-      document.getElementById("modalOverlay").style.display = "block";
-    };
-  });
+  // Register one delegated listener for .eligibility-details buttons; never duplicate it
+  if (!window._eligibilityDetailsListenerAttached) {
+    window._eligibilityDetailsListenerAttached = true;
+    document.addEventListener('click', function(event) {
+      const button = event.target.closest('.eligibility-details');
+      if (!button) return;
+      const index = button.dataset.index;
+      window.openEligibilityDetails?.(index);
+    });
+  }
 }
 
 function initShowAllEligibilitiesHandlers(eligMap) {
@@ -1470,6 +1487,7 @@ document.addEventListener('DOMContentLoaded', () => {
     window.runEligCheck = runEligCheck;
     window.hideModal = hideModal;
     window.initEligibilityModal = initEligibilityModal;
+    window.renderEligibilityDetails = renderEligibilityDetails;
 
   } catch (error) {
     console.error('[CHECKER-ERROR] Failed to load checker:', error);
