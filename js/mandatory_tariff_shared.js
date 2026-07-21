@@ -14,19 +14,12 @@
   'use strict';
 
   const DEFAULT_PATHS = Object.freeze([
-    (() => {
-      const scriptUrl =
-        typeof document !== 'undefined'
-        && document.currentScript
-        && document.currentScript.src
-          ? document.currentScript.src
-          : window.location.href;
+    new URL(
+      '../resources/Mandatory Tariff Updated.xlsx',
+      document.currentScript?.src || window.location.href
+    ).href,
   
-      return new URL(
-        '../resources/Mandatory Tariff Updated.xlsx',
-        scriptUrl
-      ).href;
-    })()
+    'https://raw.githubusercontent.com/EvacionSaraak/Submission-Checker-Tools/copilot/copilotimplement-exclusion-checker/resources/Mandatory%20Tariff%20Updated.xlsx'
   ]);
 
   const TYPE_ALIASES = Object.freeze({
