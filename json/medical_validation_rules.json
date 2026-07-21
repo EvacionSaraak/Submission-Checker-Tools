@@ -63,7 +63,7 @@
     {
       "facilityID": "MF5020",
       "receiverID": "D001",
-      "code": "96375",
+      "codes": ["96375"],
       "pricingSource": "Mandatory Tariff with Factors.xlsx"
     }
   ],

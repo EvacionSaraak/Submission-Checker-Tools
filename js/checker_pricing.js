@@ -145,11 +145,34 @@ function requiresNonZeroMedicalPrice({ facilityID, receiverID, code, rules }) {
   const normalizedReceiver = String(receiverID || '').trim().toUpperCase();
   const normalizedCode = normalizeCode(code);
 
-  return ((rules && rules.requiredPricedActivities) || []).some(rule =>
-    String(rule.facilityID || '').trim().toUpperCase() === normalizedFacility
-    && String(rule.receiverID || '').trim().toUpperCase() === normalizedReceiver
-    && normalizeCode(rule.code) === normalizedCode
-  );
+  return ((rules && rules.requiredPricedActivities) || []).some(rule => {
+    const ruleCodes = Array.isArray(rule.codes)
+      ? rule.codes
+      : [rule.code];
+
+    return String(rule.facilityID || '').trim().toUpperCase() === normalizedFacility
+      && String(rule.receiverID || '').trim().toUpperCase() === normalizedReceiver
+      && ruleCodes.map(normalizeCode).includes(normalizedCode);
+  });
+}
+
+function getZeroPricePricingDecision({
+  isMedicalMode,
+  isDrugActivity,
+  xmlNet,
+  requiresMedicalPrice,
+  isConfiguredZeroPricedActivity
+}) {
+  const isZeroBilled = moneyEqual(xmlNet, 0);
+  const isZeroPricedDentalActivity = !isMedicalMode && !isDrugActivity && isZeroBilled;
+  const mayUseMedicalZeroPrice = isMedicalMode && isZeroBilled && !requiresMedicalPrice;
+
+  return {
+    isZeroBilled,
+    isZeroPricedDentalActivity,
+    mayUseMedicalZeroPrice,
+    zeroPricePassesPricing: isConfiguredZeroPricedActivity || isZeroPricedDentalActivity || mayUseMedicalZeroPrice
+  };
 }
 
 function shouldDeferA001PricingToClaimLevel({ receiverID, xmlNet, effectiveRef, xmlQty, isAllowedZeroPricedActivity }) {
@@ -886,7 +909,7 @@ async function handleRun(options = {}) {
       const computedRef = (match || endoEntry) && refPrice !== null && !Number.isNaN(ref) ? effectiveRef : null;
 
       if (xmlQty <= 0) remarks.push(xmlQty === 0 ? 'Quantity is 0 (invalid)' : 'Quantity is less than 0 (invalid)');
-      const requiresPrice = isMedicalMode
+      const requiresMedicalPrice = isMedicalMode
         ? requiresNonZeroMedicalPrice({
             facilityID: rec.FacilityID,
             receiverID: pricingReceiverID,
@@ -894,10 +917,19 @@ async function handleRun(options = {}) {
             rules: medicalRules
           })
         : false;
-      const mayUseMedicalZeroPrice = isMedicalMode
-        && moneyEqual(xmlNet, 0)
-        && !requiresPrice;
-      const isZeroPricedActivity = isConfiguredZeroPricedActivity || mayUseMedicalZeroPrice;
+      const zeroPriceDecision = getZeroPricePricingDecision({
+        isMedicalMode,
+        isDrugActivity,
+        xmlNet,
+        requiresMedicalPrice,
+        isConfiguredZeroPricedActivity
+      });
+      const {
+        isZeroBilled,
+        isZeroPricedDentalActivity,
+        mayUseMedicalZeroPrice,
+        zeroPricePassesPricing: isZeroPricedActivity
+      } = zeroPriceDecision;
 
       if (shouldAddNoPricingMatchRemark({ match, endoEntry, isZeroPricedActivity })) {
         if (isDrugActivity) {
@@ -917,13 +949,15 @@ async function handleRun(options = {}) {
 
       const hasValidRef = (match || endoEntry) && refPrice !== null && !Number.isNaN(ref);
 
-      if (isMedicalMode && moneyEqual(xmlNet, 0) && requiresPrice) {
+      if (isZeroPricedDentalActivity) {
+        status = 'Valid';
+      } else if (isMedicalMode && isZeroBilled && requiresMedicalPrice) {
         status = 'Invalid';
         remarks.push(
-          `Code ${rec.CPT} must have a price for Khabisi under Thiqa. ` +
-          `Expected: ${formatMoney(effectiveRef)}.`
+          `Code ${rec.CPT} must have a price for Khabisi under Thiqa ` +
+          `(should be ${formatMoney(effectiveRef)}).`
         );
-      } else if (isZeroPricedActivity) {
+      } else if (isConfiguredZeroPricedActivity || mayUseMedicalZeroPrice) {
         status = 'Valid';
       } else if (hasValidRef && effectiveRef === 0) {
         status = 'Unknown';
@@ -2024,7 +2058,8 @@ window._pricingTestApi = {
   normalizeClaimTypeMode,
   buildFactorRulesFromWorkbook,
   findFactorFromRules,
-  requiresNonZeroMedicalPrice
+  requiresNonZeroMedicalPrice,
+  getZeroPricePricingDecision
 };
 
 window.showPricingComparison = showComparisonModal;

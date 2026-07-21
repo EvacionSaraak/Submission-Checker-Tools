@@ -858,7 +858,7 @@ await run('Required-priced medical activity config matches normalized facility, 
       code: '096375',
       rules: {
         requiredPricedActivities: [
-          { facilityID: 'MF5020', receiverID: 'D001', code: '96375' }
+          { facilityID: 'MF5020', receiverID: 'D001', codes: ['96375'] }
         ]
       }
     }) === true,
@@ -871,12 +871,53 @@ await run('Required-priced medical activity config matches normalized facility, 
       code: '96375',
       rules: {
         requiredPricedActivities: [
-          { facilityID: 'MF5020', receiverID: 'D001', code: '96375' }
+          { facilityID: 'MF5020', receiverID: 'D001', codes: ['96375'] }
         ]
       }
     }) === false,
     'Expected other receivers to keep their own pricing behavior'
   );
+});
+
+await run('Zero-billed pricing decision keeps dental zero-net valid, preserves medical exception, and excludes drugs', () => {
+  const dental = pricingApi.getZeroPricePricingDecision({
+    isMedicalMode: false,
+    isDrugActivity: false,
+    xmlNet: 0,
+    requiresMedicalPrice: false,
+    isConfiguredZeroPricedActivity: false
+  });
+  assert(dental.isZeroPricedDentalActivity === true, 'Expected dental zero-net activity to be recognized');
+  assert(dental.zeroPricePassesPricing === true, 'Expected dental zero-net activity to pass price validation');
+
+  const medicalGeneral = pricingApi.getZeroPricePricingDecision({
+    isMedicalMode: true,
+    isDrugActivity: false,
+    xmlNet: 0,
+    requiresMedicalPrice: false,
+    isConfiguredZeroPricedActivity: false
+  });
+  assert(medicalGeneral.mayUseMedicalZeroPrice === true, 'Expected general medical zero-net activity to retain medical zero-price handling');
+  assert(medicalGeneral.zeroPricePassesPricing === true, 'Expected general medical zero-net activity to pass price validation');
+
+  const medicalRequired = pricingApi.getZeroPricePricingDecision({
+    isMedicalMode: true,
+    isDrugActivity: false,
+    xmlNet: 0,
+    requiresMedicalPrice: true,
+    isConfiguredZeroPricedActivity: false
+  });
+  assert(medicalRequired.mayUseMedicalZeroPrice === false, 'Expected required-priced medical activity to bypass medical zero-price handling');
+  assert(medicalRequired.zeroPricePassesPricing === false, 'Expected required-priced medical activity to fail the zero-price shortcut');
+
+  const drug = pricingApi.getZeroPricePricingDecision({
+    isMedicalMode: false,
+    isDrugActivity: true,
+    xmlNet: 0,
+    requiresMedicalPrice: false,
+    isConfiguredZeroPricedActivity: false
+  });
+  assert(drug.zeroPricePassesPricing === false, 'Expected drug activities to skip the non-drug zero-price shortcut');
 });
 
 await run('A001 patient share summary excludes valid zero-priced consultation companions', () => {
