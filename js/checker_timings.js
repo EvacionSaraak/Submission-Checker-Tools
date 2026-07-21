@@ -98,7 +98,10 @@ async function onFileChange(event) {
       claimMode: selectedType,
       receiverID
     });
-    renderResults(document.getElementById('results'), claims);
+    const resultsContainer = getStandaloneResultsContainer();
+    if (resultsContainer) {
+      renderResults(resultsContainer, claims);
+    }
   } catch (err) {
     renderMessage(`❌ Error: ${sanitize(String(err.message))}`);
   }
@@ -272,11 +275,29 @@ function sanitize(str) {
     .replace(/>/g, "&gt;").replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
 }
-function renderMessage(msg) {
-  document.getElementById('results').innerHTML = `<p>${sanitize(msg)}</p>`;
+    
+function getStandaloneResultsContainer() {
+  return document.getElementById('results');
 }
+
+function renderMessage(msg) {
+  const container = getStandaloneResultsContainer();
+
+  if (!container) {
+    return;
+  }
+
+  container.innerHTML = `<p>${sanitize(msg)}</p>`;
+}
+
 function clearResults() {
-  document.getElementById('results').innerHTML = '';
+  const container = getStandaloneResultsContainer();
+
+  if (!container) {
+    return;
+  }
+
+  container.innerHTML = '';
 }
 
 // --- Results Rendering ---
@@ -546,11 +567,22 @@ function formatDateTimeCell(datetimeStr) {
       SERIES_97_BANDS
     };
 
-    // Initialize standalone mode if xmlFileInput exists
-    const xmlFileInput = document.getElementById('xmlFileInput');
-    if (xmlFileInput) {
-      xmlFileInput.addEventListener('change', onFileChange);
-    }
+  // Initialize the legacy file-change handler only on the standalone
+  // Timing checker page. Unified Checker also has xmlFileInput, but it
+  // does not have the standalone results elements.
+  const xmlFileInput = document.getElementById('xmlFileInput');
+  const standaloneResults = document.getElementById('results');
+  const standaloneSummary = document.getElementById('resultsSummary');
+  
+  const isStandaloneTimingsPage = Boolean(
+    xmlFileInput
+    && standaloneResults
+    && standaloneSummary
+  );
+  
+  if (isStandaloneTimingsPage) {
+    xmlFileInput.addEventListener('change', onFileChange);
+  }
 
   } catch (error) {
     console.error('[CHECKER-ERROR] Failed to load checker:', error);
