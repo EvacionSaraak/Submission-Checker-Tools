@@ -14,12 +14,7 @@
   'use strict';
 
   const DEFAULT_PATHS = Object.freeze([
-    new URL(
-      '../resources/Mandatory Tariff Updated.xlsx',
-      document.currentScript?.src || window.location.href
-    ).href,
-  
-    'https://raw.githubusercontent.com/EvacionSaraak/Submission-Checker-Tools/copilot/copilotimplement-exclusion-checker/resources/Mandatory%20Tariff%20Updated.xlsx'
+    '../resources/Mandatory Tariff Updated.xlsx'
   ]);
 
   const TYPE_ALIASES = Object.freeze({
