@@ -1772,30 +1772,68 @@ function validateConsultationAndSpecialtyRules(
 }
 
 function buildDuplicateActivityReferenceRemarksByClaim(claims) {
-  const firstOccurrenceByActivityID =
-    new Map();
+  const occurrencesByActivityID = new Map();
+  const remarksByClaim = new Map();
 
-  const remarksByClaim =
-    new Map();
+  function formatClaimIDs(claimIDs) {
+    const uniqueClaimIDs =
+      Array.from(
+        new Set(
+          claimIDs.filter(Boolean)
+        )
+      );
 
+    if (uniqueClaimIDs.length === 0) {
+      return "another claim";
+    }
+
+    if (uniqueClaimIDs.length === 1) {
+      return uniqueClaimIDs[0];
+    }
+
+    if (uniqueClaimIDs.length === 2) {
+      return (
+        uniqueClaimIDs[0] +
+        " and " +
+        uniqueClaimIDs[1]
+      );
+    }
+
+    return (
+      uniqueClaimIDs
+        .slice(0, -1)
+        .join(", ") +
+      ", and " +
+      uniqueClaimIDs[
+        uniqueClaimIDs.length - 1
+      ]
+    );
+  }
+
+  /*
+   * First pass:
+   * Collect every Activity ID and every claim where it occurs.
+   */
   Array.from(claims || [])
     .forEach((claim, claimIndex) => {
       const claimID =
         safeTextByTag(
           claim,
-          'ID'
+          "ID"
         ) ||
         `Unknown claim ${claimIndex + 1}`;
 
       const activities =
-        claim.getElementsByTagName('Activity');
+        claim.getElementsByTagName(
+          "Activity"
+        );
 
       Array.from(activities)
-        .forEach(activity => {
+        .forEach((activity, activityIndex) => {
           const activityID =
             safeTextByTag(
               activity,
-              'ID'
+              "ID"
             );
 
           if (!activityID) {
@@ -1803,45 +1841,91 @@ function buildDuplicateActivityReferenceRemarksByClaim(claims) {
           }
 
           const normalizedActivityID =
-            activityID.toUpperCase();
+            activityID
+              .trim()
+              .toUpperCase();
 
-          const firstOccurrence =
-            firstOccurrenceByActivityID.get(
+          if (
+            !occurrencesByActivityID.has(
               normalizedActivityID
-            );
-
-          if (!firstOccurrence) {
-            firstOccurrenceByActivityID.set(
+            )
+          ) {
+            occurrencesByActivityID.set(
               normalizedActivityID,
-              {
-                activityID,
-                claimID,
-                claim
-              }
-            );
-
-            return;
-          }
-
-          const remark =
-            `Activity reference ${activityID} already exists in ${firstOccurrence.claimID}. ` +
-            'Kindly contact IT for this issue.';
-
-          if (!remarksByClaim.has(claim)) {
-            remarksByClaim.set(
-              claim,
               []
             );
           }
 
-          const claimRemarks =
-            remarksByClaim.get(claim);
-
-          if (!claimRemarks.includes(remark)) {
-            claimRemarks.push(remark);
-          }
+          occurrencesByActivityID
+            .get(normalizedActivityID)
+            .push({
+              claim,
+              claimID,
+              activity,
+              activityID:
+                activityID.trim(),
+              activityIndex
+            });
         });
     });
+
+  /*
+   * Second pass:
+   * Any Activity ID occurring more than once is invalid everywhere,
+   * including its first occurrence.
+   */
+  occurrencesByActivityID.forEach(
+    occurrences => {
+      if (occurrences.length < 2) {
+        return;
+      }
+
+      occurrences.forEach(currentOccurrence => {
+        const otherClaimIDs =
+          occurrences
+            .filter(
+              occurrence =>
+                occurrence !== currentOccurrence
+            )
+            .map(
+              occurrence =>
+                occurrence.claimID
+            );
+
+        const duplicateLocation =
+          formatClaimIDs(
+            otherClaimIDs
+          );
+
+        const remark =
+          `Activity reference ${currentOccurrence.activityID} ` +
+          `already exists in ${duplicateLocation}. ` +
+          `Kindly contact IT for this issue.`;
+
+        if (
+          !remarksByClaim.has(
+            currentOccurrence.claim
+          )
+        ) {
+          remarksByClaim.set(
+            currentOccurrence.claim,
+            []
+          );
+        }
+
+        const claimRemarks =
+          remarksByClaim.get(
+            currentOccurrence.claim
+          );
+
+        if (
+          !claimRemarks.includes(remark)
+        ) {
+          claimRemarks.push(remark);
+        }
+      });
+    }
+  );
 
   return remarksByClaim;
 }
