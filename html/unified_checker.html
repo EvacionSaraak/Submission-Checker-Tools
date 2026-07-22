@@ -1,906 +1,620 @@
-(function (root, factory) {
-  'use strict';
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Unified Checker</title>
 
-  const api = factory(root);
+  <!-- Bootstrap 5 CSS -->
+  <link
+    href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
+    rel="stylesheet"
+  />
 
-  if (typeof module === 'object' && module.exports) {
-    module.exports = api;
-  }
+  <!-- Unified Styles - Consolidates tables.css and unified_checker.css -->
+  <link rel="stylesheet" href="../css/unified_styles.css" />
 
-  if (root) {
-    root.MandatoryTariffShared = api;
-  }
-})(typeof window !== 'undefined' ? window : globalThis, function (root) {
-  'use strict';
+  <!-- XLSX Library -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
-  const DEFAULT_PATHS = Object.freeze([
-    '../resources/Mandatory Tariff Updated.xlsx',
-    'resources/Mandatory Tariff Updated.xlsx',
-    './resources/Mandatory Tariff Updated.xlsx'
-  ]);
+  <!-- Common Utilities -->
+  <script src="../js/common_table_renderer.js"></script>
+  <script src="../js/file_cache.js"></script>
 
-  const TYPE_ALIASES = Object.freeze({
-    '3': 'CPT',
-    CPT: 'CPT',
-    HCPCS: 'CPT',
-    PROCEDURE: 'CPT',
-    PROCEDURES: 'CPT',
-
-    '6': 'USCLS',
-    USCLS: 'USCLS',
-    DENTAL: 'USCLS',
-    DENTISTRY: 'USCLS',
-
-    '8': 'SERVICE',
-    SERVICE: 'SERVICE',
-    SERVICES: 'SERVICE'
-  });
-
-  const HEADER_ALIASES = Object.freeze({
-    type: new Set([
-      'type',
-      'activitytype',
-      'activitytypecode',
-      'cpttype',
-      'codetype',
-      'tarifftype',
-      'servicetype'
-    ]),
-
-    code: new Set([
-      'code',
-      'activitycode',
-      'cptcode',
-      'procedurecode',
-      'servicecode',
-      'tariffcode'
-    ]),
-
-    maxOccurrences: new Set([
-      'cptmodifier'
-    ])
-  });
-
-  const SELF_PAY_PAYER_IDS = new Set([
-    'SELFPAY',
-    'SELF PAY',
-    'CASH'
-  ]);
-
-  let cachedPromise = null;
-  let cachedPathsKey = '';
-
-  function normalizeHeader(value) {
-    return String(value == null ? '' : value)
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9]/g, '');
-  }
-
-  function normalizeCode(value) {
-    return String(value == null ? '' : value)
-      .trim()
-      .toUpperCase();
-  }
-
-  function normalizeActivityType(value) {
-    const raw = String(value == null ? '' : value)
-      .trim()
-      .toUpperCase();
-
-    return TYPE_ALIASES[raw] || raw;
-  }
-
-  function makeTariffKey(activityType, code) {
-    return (
-      `${normalizeActivityType(activityType)}|` +
-      `${normalizeCode(code)}`
-    );
-  }
-
-  function parseMaxOccurrences(rawValue) {
-    const text = String(
-      rawValue == null ? '' : rawValue
-    ).trim();
-
-    if (!text) {
-      return {
-        limit: null,
-        error: null
-      };
+  <style>
+    .version-badge {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      background: #2c3e50;
+      color: white;
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 14px;
+      font-weight: 600;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+      z-index: 9999;
     }
 
-    const numericValue = Number(
-      text.replace(/,/g, '')
-    );
-
-    if (
-      !Number.isInteger(numericValue) ||
-      numericValue < 1
-    ) {
-      return {
-        limit: null,
-        error:
-          `Invalid CPT Modifier occurrence limit: ${text}`
-      };
+    .session-count {
+      color: #3498db;
+      margin-left: 10px;
     }
 
-    return {
-      limit: numericValue,
-      error: null
-    };
-  }
-
-  function getDirectChildren(parent, tagName) {
-    if (
-      !parent ||
-      !parent.childNodes
-    ) {
-      return [];
+    /* Loading Overlay Styles */
+    .loading-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(255, 255, 255, 0.95);
+      display: none;
+      justify-content: center;
+      align-items: center;
+      z-index: 10000;
+      backdrop-filter: blur(3px);
     }
 
-    return Array.from(parent.childNodes)
-      .filter(node => {
-        if (
-          !node ||
-          node.nodeType !== 1
-        ) {
-          return false;
-        }
+    .loading-overlay.active {
+      display: flex;
+    }
 
-        const nodeName =
-          node.localName ||
-          node.nodeName;
+    .loading-content {
+      text-align: center;
+      padding: 40px;
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+      max-width: 500px;
+    }
 
-        return nodeName === tagName;
-      });
-  }
+    .loading-spinner {
+      width: 60px;
+      height: 60px;
+      border: 6px solid #e0e0e0;
+      border-top-color: #007bff;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 20px;
+    }
 
-  function getDirectChildText(parent, tagName) {
-    const child =
-      getDirectChildren(
-        parent,
-        tagName
-      )[0];
-
-    return (
-      child &&
-      child.textContent
-        ? child.textContent.trim()
-        : ''
-    );
-  }
-
-  function findColumnIndex(
-    headerRow,
-    aliases
-  ) {
-    return headerRow.findIndex(
-      cell =>
-        aliases.has(
-          normalizeHeader(cell)
-        )
-    );
-  }
-
-  function locateHeaderRow(matrix) {
-    const maxRows =
-      Math.min(
-        matrix.length,
-        30
-      );
-
-    for (
-      let rowIndex = 0;
-      rowIndex < maxRows;
-      rowIndex += 1
-    ) {
-      const row =
-        Array.isArray(matrix[rowIndex])
-          ? matrix[rowIndex]
-          : [];
-
-      const typeIndex =
-        findColumnIndex(
-          row,
-          HEADER_ALIASES.type
-        );
-
-      const codeIndex =
-        findColumnIndex(
-          row,
-          HEADER_ALIASES.code
-        );
-
-      const maxOccurrencesIndex =
-        findColumnIndex(
-          row,
-          HEADER_ALIASES.maxOccurrences
-        );
-
-      if (
-        typeIndex >= 0 &&
-        codeIndex >= 0 &&
-        maxOccurrencesIndex >= 0
-      ) {
-        return {
-          rowIndex,
-          typeIndex,
-          codeIndex,
-          maxOccurrencesIndex
-        };
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
       }
     }
 
-    return null;
-  }
-
-  function selectTariffSheet(workbook) {
-    const sheetNames =
-      Array.isArray(
-        workbook &&
-        workbook.SheetNames
-      )
-        ? workbook.SheetNames
-        : [];
-
-    if (sheetNames.length === 0) {
-      throw new Error(
-        'Mandatory Tariff workbook contains no worksheets.'
-      );
+    .loading-text {
+      font-size: 18px;
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 10px;
     }
 
-    const matchingSheets =
-      sheetNames.filter(name => {
-        const normalized =
-          normalizeHeader(name);
-
-        return (
-          normalized.includes(
-            'mandatorytariff'
-          ) ||
-          normalized === 'tariff'
-        );
-      });
-
-    if (matchingSheets.length === 0) {
-      return sheetNames[0];
+    .loading-subtext {
+      font-size: 14px;
+      color: #666;
     }
-
-    const sortedMatches =
-      matchingSheets
-        .slice()
-        .sort((first, second) => {
-          const firstYear =
-            Number(
-              String(first).match(
-                /\b(20\d{2})\b/
-              )?.[1] || 0
-            );
-
-          const secondYear =
-            Number(
-              String(second).match(
-                /\b(20\d{2})\b/
-              )?.[1] || 0
-            );
-
-          return secondYear - firstYear;
-        });
-
-    return sortedMatches[0];
-  }
-
-  function parseMandatoryTariffWorkbook(
-    workbook,
-    xlsxOverride
-  ) {
-    const XLSX =
-      xlsxOverride ||
-      (
-        root &&
-        root.XLSX
-      );
-
-    if (
-      !XLSX ||
-      !XLSX.utils ||
-      typeof XLSX.utils.sheet_to_json !==
-        'function'
-    ) {
-      throw new Error(
-        'SheetJS (XLSX) is unavailable.'
-      );
-    }
-
-    const sheetName =
-      selectTariffSheet(workbook);
-
-    const sheet =
-      workbook.Sheets[sheetName];
-
-    if (!sheet) {
-      throw new Error(
-        `Worksheet "${sheetName}" could not be read.`
-      );
-    }
-
-    const matrix =
-      XLSX.utils.sheet_to_json(
-        sheet,
-        {
-          header: 1,
-          defval: '',
-          raw: false,
-          blankrows: false
-        }
-      );
-
-    const header =
-      locateHeaderRow(matrix);
-
-    if (!header) {
-      throw new Error(
-        'Mandatory Tariff is missing one or more required columns: ' +
-        'CPT Type, Code, CPT Modifier.'
-      );
-    }
-
-    const map = new Map();
-    const rows = [];
-    const warnings = [];
-
-    for (
-      let rowIndex =
-        header.rowIndex + 1;
-      rowIndex < matrix.length;
-      rowIndex += 1
-    ) {
-      const sourceRow =
-        Array.isArray(matrix[rowIndex])
-          ? matrix[rowIndex]
-          : [];
-
-      const rawType =
-        sourceRow[
-          header.typeIndex
-        ];
-
-      const rawCode =
-        sourceRow[
-          header.codeIndex
-        ];
-
-      const rawLimit =
-        sourceRow[
-          header.maxOccurrencesIndex
-        ];
-
-      const activityType =
-        normalizeActivityType(
-          rawType
-        );
-
-      const code =
-        normalizeCode(
-          rawCode
-        );
-
-      if (
-        !activityType &&
-        !code &&
-        String(
-          rawLimit || ''
-        ).trim() === ''
-      ) {
-        continue;
-      }
-
-      if (
-        !activityType ||
-        !code
-      ) {
-        warnings.push(
-          `Mandatory Tariff row ${rowIndex + 1} ` +
-          'was skipped because CPT Type or Code is blank.'
-        );
-
-        continue;
-      }
-
-      const parsedLimit =
-        parseMaxOccurrences(
-          rawLimit
-        );
-
-      if (parsedLimit.error) {
-        warnings.push(
-          `Mandatory Tariff row ${rowIndex + 1}: ` +
-          parsedLimit.error
-        );
-      }
-
-      const record = {
-        activityType,
-        code,
-        maxOccurrencesPerClaim:
-          parsedLimit.limit,
-
-        rawCptModifier:
-          String(
-            rawLimit == null
-              ? ''
-              : rawLimit
-          ).trim(),
-
-        sheetRowNumber:
-          rowIndex + 1,
-
-        rawRow:
-          sourceRow.slice()
-      };
-
-      const key =
-        makeTariffKey(
-          activityType,
-          code
-        );
-
-      const existing =
-        map.get(key);
-
-      if (existing) {
-        const existingLimit =
-          existing
-            .maxOccurrencesPerClaim;
-
-        const incomingLimit =
-          record
-            .maxOccurrencesPerClaim;
-
-        if (
-          existingLimit !==
-          incomingLimit
-        ) {
-          warnings.push(
-            `Mandatory Tariff has conflicting CPT Modifier limits for ` +
-            `${activityType} ${code} ` +
-            `(rows ${existing.sheetRowNumber} and ` +
-            `${record.sheetRowNumber}). ` +
-            'The first row is being used.'
-          );
-        }
-
-        continue;
-      }
-
-      map.set(
-        key,
-        record
-      );
-
-      rows.push(
-        record
-      );
-    }
-
-    return {
-      map,
-      rows,
-      warnings,
-      sheetName,
-      headerRowNumber:
-        header.rowIndex + 1
-    };
-  }
-
-  async function fetchWorkbook(
-    paths,
-    fetchOverride
-  ) {
-    const fetchFn =
-      fetchOverride ||
-      (
-        root &&
-        root.fetch
-      );
-
-    if (
-      typeof fetchFn !==
-      'function'
-    ) {
-      throw new Error(
-        'fetch() is unavailable, so Mandatory Tariff cannot be loaded.'
-      );
-    }
-
-    const failures = [];
-
-    for (const path of paths) {
-      try {
-        const response =
-          await fetchFn(
-            path,
-            {
-              cache: 'no-store'
-            }
-          );
-
-        if (
-          !response ||
-          !response.ok
-        ) {
-          failures.push(
-            `${path}: HTTP ` +
-            `${response ? response.status : 'unknown'}`
-          );
-
-          continue;
-        }
-
-        return {
-          path,
-          arrayBuffer:
-            await response.arrayBuffer()
-        };
-      } catch (error) {
-        failures.push(
-          `${path}: ` +
-          (
-            error &&
-            error.message
-              ? error.message
-              : String(error)
-          )
-        );
-      }
-    }
-
-    throw new Error(
-      'Mandatory Tariff could not be loaded. ' +
-      failures.join(' | ')
-    );
-  }
-
-  async function loadBundledMandatoryTariff(
-    options
-  ) {
-    const config =
-      options || {};
-
-    const paths =
-      Array.isArray(
-        config.paths
-      ) &&
-      config.paths.length
-        ? config.paths
-        : DEFAULT_PATHS;
-
-    const pathsKey =
-      paths.join('|');
-
-    if (
-      !config.forceReload &&
-      cachedPromise &&
-      cachedPathsKey === pathsKey
-    ) {
-      return cachedPromise;
-    }
-
-    cachedPathsKey =
-      pathsKey;
-
-    cachedPromise =
-      (
-        async () => {
-          const XLSX =
-            config.XLSX ||
-            (
-              root &&
-              root.XLSX
-            );
-
-          if (
-            !XLSX ||
-            typeof XLSX.read !==
-              'function'
-          ) {
-            throw new Error(
-              'SheetJS (XLSX) is unavailable.'
-            );
-          }
-
-          const fetched =
-            await fetchWorkbook(
-              paths,
-              config.fetch
-            );
-
-          const workbook =
-            XLSX.read(
-              fetched.arrayBuffer,
-              {
-                type: 'array',
-                cellDates: true
-              }
-            );
-
-          const parsed =
-            parseMandatoryTariffWorkbook(
-              workbook,
-              XLSX
-            );
-
-          parsed.path =
-            fetched.path;
-
-          return parsed;
-        }
-      )()
-        .catch(error => {
-          cachedPromise = null;
-          cachedPathsKey = '';
-
-          throw error;
-        });
-
-    return cachedPromise;
-  }
-
-  function getTariffRow(
-    tariffMap,
-    activityType,
-    code
-  ) {
-    if (
-      !(tariffMap instanceof Map)
-    ) {
-      return null;
-    }
-
-    return (
-      tariffMap.get(
-        makeTariffKey(
-          activityType,
-          code
-        )
-      ) ||
-      null
-    );
-  }
-
-  function isSelfPayClaim(claim) {
-    const payerID =
-      normalizeCode(
-        getDirectChildText(
-          claim,
-          'PayerID'
-        )
-      );
-
-    return SELF_PAY_PAYER_IDS.has(
-      payerID
-    );
-  }
-
-  function validateClaimOccurrenceLimits(
-    claim,
-    tariffMap
-  ) {
-    if (!claim) {
-      return [];
-    }
-
-    if (
-      !(tariffMap instanceof Map)
-    ) {
-      throw new TypeError(
-        'validateClaimOccurrenceLimits requires a Mandatory Tariff Map.'
-      );
-    }
-
-    const claimID =
-      getDirectChildText(
-        claim,
-        'ID'
-      ) ||
-      'Unknown';
-
-    const selfPayClaim =
-      isSelfPayClaim(claim);
-
-    const activities =
-      getDirectChildren(
-        claim,
-        'Activity'
-      );
-
-    const occurrences =
-      new Map();
-
-    for (const activity of activities) {
-      const activityType =
-        getDirectChildText(
-          activity,
-          'Type'
-        );
-
-      const code =
-        getDirectChildText(
-          activity,
-          'Code'
-        );
-
-      if (
-        !activityType ||
-        !code
-      ) {
-        continue;
-      }
-
-      const normalizedCode =
-        normalizeCode(code);
-
-      /*
-       * 17999 is an unlisted procedure.
-       *
-       * For SelfPay/Cash claims, multiple 17999 activities may represent
-       * different procedures. The XML does not contain enough information
-       * to determine whether they are the same procedure, so the occurrence
-       * limit is not applied.
-       */
-      if (
-        selfPayClaim &&
-        normalizedCode === '17999'
-      ) {
-        continue;
-      }
-
-      const key =
-        makeTariffKey(
-          activityType,
-          code
-        );
-
-      const current =
-        occurrences.get(key) ||
-        {
-          claimID,
-          key,
-
-          activityType:
-            normalizeActivityType(
-              activityType
-            ),
-
-          xmlActivityType:
-            String(
-              activityType
-            ).trim(),
-
-          code:
-            normalizedCode,
-
-          count: 0
-        };
-
-      current.count += 1;
-
-      occurrences.set(
-        key,
-        current
-      );
-    }
-
-    const findings = [];
-
-    for (
-      const occurrence
-      of occurrences.values()
-    ) {
-      const tariffRow =
-        tariffMap.get(
-          occurrence.key
-        );
-
-      if (
-        !tariffRow ||
-        tariffRow
-          .maxOccurrencesPerClaim ==
-          null
-      ) {
-        continue;
-      }
-
-      const limit =
-        tariffRow
-          .maxOccurrencesPerClaim;
-
-      if (
-        occurrence.count <= limit
-      ) {
-        continue;
-      }
-
-      findings.push({
-        ruleId:
-          'TARIFF_MAX_OCCURRENCES',
-
-        status:
-          'Invalid',
-
-        claimID,
-
-        activityType:
-          occurrence.activityType,
-
-        xmlActivityType:
-          occurrence.xmlActivityType,
-
-        code:
-          occurrence.code,
-
-        actualCount:
-          occurrence.count,
-
-        allowedCount:
-          limit,
-
-        remark:
-          `${occurrence.code} can only be coded ${limit} ` +
-          `${limit === 1 ? 'time' : 'times'} in one claim.`
-      });
-    }
-
-    return findings;
-  }
-
-  function validateSubmissionOccurrenceLimits(
-    xmlDoc,
-    tariffMap
-  ) {
-    if (
-      !xmlDoc ||
-      !xmlDoc.documentElement
-    ) {
-      return [];
-    }
-
-    const claims =
-      getDirectChildren(
-        xmlDoc.documentElement,
-        'Claim'
-      );
-
-    return claims.flatMap(
-      claim =>
-        validateClaimOccurrenceLimits(
-          claim,
-          tariffMap
-        )
-    );
-  }
-
-  function clearCache() {
-    cachedPromise = null;
-    cachedPathsKey = '';
-  }
-
-  return Object.freeze({
-    DEFAULT_PATHS,
-    normalizeHeader,
-    normalizeCode,
-    normalizeActivityType,
-    makeTariffKey,
-    parseMaxOccurrences,
-    getDirectChildren,
-    getDirectChildText,
-    parseMandatoryTariffWorkbook,
-    loadBundledMandatoryTariff,
-    getTariffRow,
-    isSelfPayClaim,
-    validateClaimOccurrenceLimits,
-    validateSubmissionOccurrenceLimits,
-    clearCache
-  });
-});
+  </style>
+</head>
+
+<body>
+  <!-- Loading Overlay -->
+  <div class="loading-overlay" id="loadingOverlay">
+    <div class="loading-content">
+      <div class="loading-spinner"></div>
+      <div class="loading-text" id="loadingText">Processing...</div>
+      <div class="loading-subtext" id="loadingSubtext">
+        Please wait while we check your data
+      </div>
+    </div>
+  </div>
+
+  <!-- Version Badge -->
+  <div class="version-badge">
+    <span>v1.0.0</span>
+    <span class="session-count" id="sessionCount"></span>
+  </div>
+
+  <div class="container-fluid py-4">
+    <h2 class="mb-4">Unified Checker Tool</h2>
+
+    <!-- File Inputs Section -->
+    <div class="card mb-4">
+      <div class="card-header bg-primary text-white">
+        <h5 class="mb-0">File Inputs</h5>
+      </div>
+
+      <div class="card-body">
+        <div class="row">
+          <div class="col-md-6">
+            <div class="file-input-group">
+              <label for="xmlFileInput" class="form-label">
+                Claim (XML):
+              </label>
+
+              <div class="input-group">
+                <input
+                  type="file"
+                  class="form-control"
+                  id="xmlFileInput"
+                  accept=".xml"
+                />
+                <span
+                  class="input-group-text file-status"
+                  id="xmlStatus"
+                ></span>
+              </div>
+            </div>
+
+            <div class="file-input-group">
+              <label for="eligibilityFileInput" class="form-label">
+                Elig (XLSX):
+              </label>
+
+              <div class="input-group">
+                <input
+                  type="file"
+                  class="form-control"
+                  id="eligibilityFileInput"
+                  accept=".xlsx"
+                />
+                <span
+                  class="input-group-text file-status"
+                  id="eligibilityStatus"
+                ></span>
+              </div>
+            </div>
+
+            <div class="file-input-group">
+              <label for="authFileInput" class="form-label">
+                Auth (XLSX):
+              </label>
+
+              <div class="input-group">
+                <input
+                  type="file"
+                  class="form-control"
+                  id="authFileInput"
+                  accept=".xlsx"
+                />
+                <span
+                  class="input-group-text file-status"
+                  id="authStatus"
+                ></span>
+              </div>
+            </div>
+
+            <div class="file-input-group">
+              <label class="form-label">
+                Claim Type (for Timings and Observation checkers):
+              </label>
+
+              <div>
+                <div class="form-check form-check-inline">
+                  <input
+                    class="form-check-input"
+                    type="radio"
+                    name="claimTypeGlobal"
+                    id="claimTypeDental"
+                    value="DENTAL"
+                    checked
+                  />
+                  <label
+                    class="form-check-label"
+                    for="claimTypeDental"
+                  >
+                    Dental
+                  </label>
+                </div>
+
+                <div class="form-check form-check-inline">
+                  <input
+                    class="form-check-input"
+                    type="radio"
+                    name="claimTypeGlobal"
+                    id="claimTypeMedical"
+                    value="MEDICAL"
+                  />
+                  <label
+                    class="form-check-label"
+                    for="claimTypeMedical"
+                  >
+                    Medical
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-md-6">
+            <div class="file-input-group">
+              <label for="pricingFileInput" class="form-label">
+                Pricing (XLSX):
+              </label>
+
+              <div class="input-group">
+                <input
+                  type="file"
+                  class="form-control"
+                  id="pricingFileInput"
+                  accept=".xlsx"
+                />
+                <span
+                  class="input-group-text file-status"
+                  id="pricingStatus"
+                ></span>
+              </div>
+            </div>
+
+            <div class="file-input-group">
+              <label for="clinicianFileInput" class="form-label">
+                Clinician (XLSX):
+              </label>
+
+              <div class="input-group">
+                <input
+                  type="file"
+                  class="form-control"
+                  id="clinicianFileInput"
+                  accept=".xlsx"
+                />
+                <span
+                  class="input-group-text file-status"
+                  id="clinicianStatus"
+                ></span>
+              </div>
+            </div>
+
+            <div class="file-input-group">
+              <label for="statusFileInput" class="form-label">
+                License Status (XLSX):
+              </label>
+
+              <div class="input-group">
+                <input
+                  type="file"
+                  class="form-control"
+                  id="statusFileInput"
+                  accept=".xlsx"
+                />
+                <span
+                  class="input-group-text file-status"
+                  id="statusStatus"
+                ></span>
+              </div>
+            </div>
+
+            <div class="file-input-group">
+              <label class="form-label">Export Results:</label>
+
+              <div class="d-flex gap-2 flex-wrap">
+                <button
+                  type="button"
+                  class="btn btn-secondary"
+                  id="exportAllBtn"
+                  disabled
+                  title="Export all results to Excel"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="16"
+                    height="16"
+                    fill="currentColor"
+                    class="bi bi-file-earmark-arrow-down"
+                    viewBox="0 0 16 16"
+                    style="margin-right: 8px;"
+                  >
+                    <path d="M8.5 6.5a.5.5 0 0 0-1 0v3.793L6.354 9.146a.5.5 0 1 0-.708.708l2 2a.5.5 0 0 0 .708 0l2-2a.5.5 0 0 0-.708-.708L8.5 10.293V6.5z"/>
+                    <path d="M14 14V4.5L9.5 0H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2zM9.5 3A1.5 1.5 0 0 0 11 4.5h2V14a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h5.5v2z"/>
+                  </svg>
+
+                  Export All to Excel
+                </button>
+
+                <button
+                  type="button"
+                  class="btn btn-success"
+                  id="exportInvalidsBtn"
+                  disabled
+                  title="Export all invalid entries from Check All results"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="16"
+                    height="16"
+                    fill="currentColor"
+                    class="bi bi-file-earmark-spreadsheet"
+                    viewBox="0 0 16 16"
+                    style="margin-right: 8px;"
+                  >
+                    <path d="M14 14V4.5L9.5 0H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2zM9.5 3A1.5 1.5 0 0 0 11 4.5h2V9H3V2a1 1 0 0 1 1-1h5.5v2zM3 12v-2h2v2H3zm0 1h2v2H4a1 1 0 0 1-1-1v-1zm3 2v-2h3v2H6zm4 0v-2h3v1a1 1 0 0 1-1 1h-2zm3-3h-3v-2h3v2zm-7 0v-2h3v2H6z"/>
+                  </svg>
+
+                  Export Invalids to Excel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Run Checkers buttons at bottom of inputs card -->
+        <div class="mt-4 pt-3 border-top">
+          <div
+            class="d-flex justify-content-between align-items-start mb-3"
+          >
+            <h6 class="mb-0">Run Checkers</h6>
+
+            <button
+              type="button"
+              class="btn btn-outline-secondary btn-sm"
+              id="clearAllBtn"
+              title="Clear all file inputs and reset options to defaults"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="14"
+                height="14"
+                fill="currentColor"
+                class="bi bi-x-circle"
+                viewBox="0 0 16 16"
+                style="margin-right: 5px;"
+              >
+                <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/>
+                <path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/>
+              </svg>
+
+              Clear All
+            </button>
+          </div>
+
+          <div
+            class="btn-group checker-buttons"
+            role="group"
+            aria-label="Checker buttons"
+          >
+            <button
+              type="button"
+              class="btn btn-outline-primary"
+              id="btn-elig"
+              title="Requires: XML, Eligibility"
+              disabled
+            >
+              Eligibility
+            </button>
+
+            <button
+              type="button"
+              class="btn btn-outline-primary"
+              id="btn-auths"
+              title="Requires: XML, Authorization Export"
+              disabled
+            >
+              Authorizations
+            </button>
+
+            <button
+              type="button"
+              class="btn btn-outline-primary"
+              id="btn-timings"
+              title="Requires: XML"
+              disabled
+            >
+              Timings
+            </button>
+
+            <button
+              type="button"
+              class="btn btn-outline-primary"
+              id="btn-observations"
+              title="Requires: XML"
+              disabled
+            >
+              Observations
+            </button>
+
+            <button
+              type="button"
+              class="btn btn-outline-primary"
+              id="btn-schema"
+              title="Requires: XML"
+              disabled
+            >
+              Schema
+            </button>
+
+            <button
+              type="button"
+              class="btn btn-outline-primary"
+              id="btn-exclusion"
+              title="Requires: XML"
+              disabled
+            >
+              Exclusion
+            </button>
+
+            <button
+              type="button"
+              class="btn btn-outline-primary"
+              id="btn-clinician"
+              title="Requires: XML, Clinician List, License Status"
+              disabled
+            >
+              Clinicians
+            </button>
+
+            <button
+              type="button"
+              class="btn btn-outline-primary"
+              id="btn-pricing"
+              title="Requires: XML (uses default pricing if not uploaded)"
+              disabled
+            >
+              Pricing
+            </button>
+
+            <button
+              type="button"
+              class="btn btn-outline-primary"
+              id="btn-modifiers"
+              title="Requires: XML, Eligibility"
+              disabled
+            >
+              Modifiers
+            </button>
+
+            <button
+              type="button"
+              class="btn btn-warning"
+              id="btn-check-all"
+              title="Runs all available checkers"
+              disabled
+            >
+              Check All<span class="experimental-badge">EXP</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Status Message -->
+    <div id="uploadStatus" aria-live="polite"></div>
+
+    <!-- Debug Log Button (appears after Check All) -->
+    <div
+      id="debugLogContainer"
+      style="display: none; margin-top: 20px; margin-bottom: 20px;"
+    >
+      <button
+        type="button"
+        class="btn btn-secondary"
+        id="downloadDebugLogBtn"
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="16"
+          height="16"
+          fill="currentColor"
+          class="bi bi-file-text"
+          viewBox="0 0 16 16"
+          style="margin-right: 8px;"
+        >
+          <path d="M5 4a.5.5 0 0 0 0 1h6a.5.5 0 0 0 0-1H5zm-.5 2.5A.5.5 0 0 1 5 6h6a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5zM5 8a.5.5 0 0 0 0 1h6a.5.5 0 0 0 0-1H5zm0 2a.5.5 0 0 0 0 1h3a.5.5 0 0 0 0-1H5z"/>
+          <path d="M2 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2zm10-1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1z"/>
+        </svg>
+
+        Download Debug Log
+      </button>
+    </div>
+
+    <!-- Persistent Checker Containers (one per checker, all hidden by default) -->
+    <div id="checker-containers">
+      <div
+        id="checker-container-elig"
+        class="checker-container"
+        style="display: none;"
+      ></div>
+
+      <div
+        id="checker-container-auths"
+        class="checker-container"
+        style="display: none;"
+      ></div>
+
+      <div
+        id="checker-container-timings"
+        class="checker-container"
+        style="display: none;"
+      ></div>
+
+      <div
+        id="checker-container-observations"
+        class="checker-container"
+        style="display: none;"
+      ></div>
+
+      <div
+        id="checker-container-schema"
+        class="checker-container"
+        style="display: none;"
+      ></div>
+
+      <div
+        id="checker-container-exclusion"
+        class="checker-container"
+        style="display: none;"
+      ></div>
+
+      <div
+        id="checker-container-clinician"
+        class="checker-container"
+        style="display: none;"
+      ></div>
+
+      <div
+        id="checker-container-pricing"
+        class="checker-container"
+        style="display: none;"
+      ></div>
+
+      <div
+        id="checker-container-modifiers"
+        class="checker-container"
+        style="display: none;"
+      ></div>
+
+      <div
+        id="checker-container-check-all"
+        class="checker-container"
+        style="display: none;"
+      ></div>
+    </div>
+  </div>
+
+  <!-- Floating Filter Button -->
+  <button
+    type="button"
+    class="btn btn-primary floating-filter-btn"
+    id="floatingFilterBtn"
+    title="Toggle Show Invalid Only"
+  >
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="20"
+      height="20"
+      fill="currentColor"
+      class="bi bi-funnel"
+      viewBox="0 0 16 16"
+    >
+      <path d="M1.5 1.5A.5.5 0 0 1 2 1h12a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-.128.334L10 8.692V13.5a.5.5 0 0 1-.342.474l-3 1A.5.5 0 0 1 6 14.5V8.692L1.628 3.834A.5.5 0 0 1 1.5 3.5v-2zm1 .5v1.308l4.372 4.858A.5.5 0 0 1 7 8.5v5.306l2-.666V8.5a.5.5 0 0 1 .128-.334L13.5 3.308V2h-11z"/>
+    </svg>
+
+    <span class="filter-label">Show Invalid Only</span>
+  </button>
+
+  <!-- Include required libraries -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+  <script src="../js/table_clipboard.js"></script>
+  <script src="../js/medical_validation_shared.js"></script>
+  <script src="../js/drug_analysis_shared.js"></script>
+  <script src="../js/mandatory_tariff_shared.js"></script>
+
+  <!-- Load all checker scripts upfront (they stay loaded) -->
+  <script src="../js/checker_clinician.js"></script>
+  <script src="../js/checker_elig.js"></script>
+  <script src="../js/checker_auths.js"></script>
+  <script src="../js/checker_timings.js"></script>
+  <script src="../js/checker_observations.js"></script>
+  <script src="../js/checker_schema.js"></script>
+  <script src="../js/dx_rules.js"></script>
+  <script src="../js/checker_exclusions.js"></script>
+  <script src="../js/checker_pricing.js"></script>
+  <script src="../js/checker_modifiers.js"></script>
+
+  <!-- Main unified controller (must load after checker scripts) -->
+  <script src="../js/unified_checker.js"></script>
+</body>
+</html>
