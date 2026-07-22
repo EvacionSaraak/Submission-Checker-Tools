@@ -57,7 +57,13 @@
     ]),
 
     maxOccurrences: new Set([
-      'cptmodifier'
+      'cptmuevalues',
+      'cptmuevalue',
+      'muevalues',
+      'muevalue',
+      'cptmodifier',
+      'maxoccurrences',
+      'maxoccurrencesperclaim'
     ])
   });
 
@@ -340,10 +346,9 @@
       locateHeaderRow(matrix);
 
     if (!header) {
-      throw new Error(
-        'Mandatory Tariff is missing one or more required columns: ' +
-        'CPT Type, Code, CPT Modifier.'
-      );
+    throw new Error(
+      'Mandatory Tariff is missing one or more required columns: Type, Code, CPT MUE Values.'
+    );
     }
 
     const map = new Map();
