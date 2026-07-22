@@ -1,133 +1,18 @@
-(function (root, factory) {
+(function (root) {
   'use strict';
 
-  const api = factory(root);
+  if (!root || root.__schemaOccurrenceLimitsPatchInstalled) return;
 
-  if (typeof module === 'object' && module.exports) {
-    module.exports = api;
-  }
+  const OLD_DUPLICATE_PATTERN =
+    /^Duplicate code\s+.+?\s+with Ordering Clinician\s+.+?\.?$/i;
 
-  if (root) {
-    root.MandatoryTariffShared = api;
-  }
-})(typeof window !== 'undefined' ? window : globalThis, function (root) {
-  'use strict';
+  const OK_PATTERN = /^OK\.?$/i;
 
-  const nativeFetch = root && typeof root.fetch === 'function'
-    ? root.fetch.bind(root)
-    : null;
-
-  const TYPE_ALIASES = Object.freeze({
-    '3': 'CPT',
-    CPT: 'CPT',
-    HCPCS: 'CPT',
-    PROCEDURE: 'CPT',
-    PROCEDURES: 'CPT',
-
-    '6': 'USCLS',
-    USCLS: 'USCLS',
-    DENTAL: 'USCLS',
-    DENTISTRY: 'USCLS',
-
-    '8': 'SERVICE',
-    SERVICE: 'SERVICE',
-    SERVICES: 'SERVICE'
-  });
-
-  const SUPPORTED_TYPES = new Set(['CPT', 'USCLS', 'SERVICE']);
-
-  const HEADER_ALIASES = Object.freeze({
-    type: new Set([
-      'type',
-      'cpttype',
-      'activitytype',
-      'activitytypecode',
-      'codetype',
-      'tarifftype',
-      'servicetype'
-    ]),
-    code: new Set([
-      'code',
-      'activitycode',
-      'cptcode',
-      'procedurecode',
-      'servicecode',
-      'tariffcode'
-    ]),
-    maxOccurrences: new Set([
-      'cptmuevalues',
-      'cptmuevalue',
-      'cptmue',
-      'muevalues',
-      'muevalue',
-      'mue',
-      'practitionerservicesmedicallyunlikelyedit'
-    ])
-  });
-
-  function unique(values) {
-    return Array.from(new Set(values.filter(Boolean)));
-  }
-
-  function buildDefaultPaths() {
-    const paths = [];
-    const fileNames = [
-      'Mandatory Tariff Updated.xlsx',
-      'Mandatory Tariff  Updated.xlsx'
-    ];
-
-    let scriptUrl = '';
-
-    try {
-      scriptUrl = root?.document?.currentScript?.src || '';
-    } catch (error) {
-      scriptUrl = '';
-    }
-
-    if (scriptUrl) {
-      for (const fileName of fileNames) {
-        try {
-          paths.push(new URL(`../resources/${fileName}`, scriptUrl).href);
-        } catch (error) {
-          // Continue to other path strategies.
-        }
-      }
-    }
-
-    if (root?.location?.href) {
-      for (const fileName of fileNames) {
-        try {
-          const pageUrl = new URL(root.location.href);
-          const marker = '/Submission-Checker-Tools/';
-          const markerIndex = pageUrl.pathname.indexOf(marker);
-
-          if (markerIndex >= 0) {
-            const basePath = pageUrl.pathname.slice(0, markerIndex + marker.length);
-            paths.push(new URL(`${basePath}resources/${fileName}`, pageUrl.origin).href);
-          }
-        } catch (error) {
-          // Continue to raw GitHub fallbacks.
-        }
-      }
-    }
-
-    const rawBase =
-      'https://raw.githubusercontent.com/EvacionSaraak/' +
-      'Submission-Checker-Tools/refs/heads/' +
-      'copilot/copilotimplement-exclusion-checker/resources/';
-
-    for (const fileName of fileNames) {
-      paths.push(rawBase + encodeURIComponent(fileName).replace(/%2F/gi, '/'));
-    }
-
-    return Object.freeze(unique(paths));
-  }
-
-  const DEFAULT_PATHS = buildDefaultPaths();
-
-  let cachedPromise = null;
-  let cachedPathsKey = '';
-  let fetchFallbackInstalled = false;
+  const SELF_PAY_PAYER_IDS = new Set([
+    'SELFPAY',
+    'SELF PAY',
+    'CASH'
+  ]);
 
   function normalizeHeader(value) {
     return String(value == null ? '' : value)
@@ -136,488 +21,877 @@
       .replace(/[^a-z0-9]/g, '');
   }
 
-  function normalizeActivityType(value) {
-    const raw = String(value == null ? '' : value)
+  function normalizeCode(value) {
+    return String(value == null ? '' : value)
       .trim()
       .toUpperCase();
-
-    return TYPE_ALIASES[raw] || raw;
   }
 
-  function normalizeCode(value, activityType) {
-    const type = normalizeActivityType(activityType);
-    let code = String(value == null ? '' : value)
-      .trim()
-      .toUpperCase();
-
-    if (type === 'CPT' && /^\d+$/.test(code) && code.length < 5) {
-      code = code.padStart(5, '0');
-    }
-
-    return code;
-  }
-
-  function makeTariffKey(activityType, code) {
-    const normalizedType = normalizeActivityType(activityType);
-    return `${normalizedType}|${normalizeCode(code, normalizedType)}`;
-  }
-
-  function parseMaxOccurrences(rawValue) {
-    const text = String(rawValue == null ? '' : rawValue).trim();
-
-    if (!text) {
-      return { limit: null, error: null };
-    }
-
-    const numericValue = Number(text.replace(/,/g, ''));
-
-    if (!Number.isFinite(numericValue)) {
-      return {
-        limit: null,
-        error: `Invalid CPT MUE value: ${text}`
-      };
-    }
-
-    // Blank and 0 mean that no occurrence cap is applied by this checker.
-    if (numericValue === 0) {
-      return { limit: null, error: null };
-    }
-
-    if (!Number.isInteger(numericValue) || numericValue < 0) {
-      return {
-        limit: null,
-        error: `Invalid CPT MUE value: ${text}`
-      };
-    }
-
-    return { limit: numericValue, error: null };
-  }
-
-  function getDirectChildren(parent, tagName) {
-    if (!parent || !parent.childNodes) return [];
-
-    return Array.from(parent.childNodes).filter((node) => {
-      if (!node || node.nodeType !== 1) return false;
-      return (node.localName || node.nodeName) === tagName;
-    });
-  }
-
-  function getDirectChildText(parent, tagName) {
-    const child = getDirectChildren(parent, tagName)[0];
-    return child && child.textContent ? child.textContent.trim() : '';
-  }
-
-  function findColumnIndex(headerRow, aliases) {
-    return headerRow.findIndex((cell) => aliases.has(normalizeHeader(cell)));
-  }
-
-  function locateHeaderRow(matrix) {
-    const maxRows = Math.min(matrix.length, 50);
-
-    for (let rowIndex = 0; rowIndex < maxRows; rowIndex += 1) {
-      const row = Array.isArray(matrix[rowIndex]) ? matrix[rowIndex] : [];
-      const typeIndex = findColumnIndex(row, HEADER_ALIASES.type);
-      const codeIndex = findColumnIndex(row, HEADER_ALIASES.code);
-      const maxOccurrencesIndex = findColumnIndex(row, HEADER_ALIASES.maxOccurrences);
-
-      if (typeIndex >= 0 && codeIndex >= 0 && maxOccurrencesIndex >= 0) {
-        return {
-          rowIndex,
-          typeIndex,
-          codeIndex,
-          maxOccurrencesIndex
-        };
-      }
-    }
-
-    return null;
-  }
-
-  function sheetPriority(name, originalIndex) {
-    const text = String(name || '').trim();
-    const mandatoryMatch = text.match(/mandatory\s*tariff\s*(\d{4})?/i);
-
-    if (mandatoryMatch) {
-      const year = mandatoryMatch[1] ? Number(mandatoryMatch[1]) : 0;
-      return { group: 0, year, originalIndex };
-    }
-
-    return { group: 1, year: 0, originalIndex };
-  }
-
-  function locateTariffWorksheet(workbook, XLSX) {
-    const sheetNames = Array.isArray(workbook?.SheetNames)
-      ? workbook.SheetNames
-      : [];
-
-    if (!sheetNames.length) {
-      throw new Error('Mandatory Tariff workbook contains no worksheets.');
-    }
-
-    const orderedSheetNames = sheetNames
-      .map((name, originalIndex) => ({
-        name,
-        ...sheetPriority(name, originalIndex)
-      }))
-      .sort((left, right) => {
-        if (left.group !== right.group) return left.group - right.group;
-        if (left.year !== right.year) return right.year - left.year;
-        return left.originalIndex - right.originalIndex;
-      });
-
-    const inspectedSheets = [];
-
-    for (const candidate of orderedSheetNames) {
-      const sheetName = candidate.name;
-      const sheet = workbook.Sheets[sheetName];
-
-      if (!sheet) continue;
-
-      const matrix = XLSX.utils.sheet_to_json(sheet, {
-        header: 1,
-        defval: '',
-        raw: false,
-        blankrows: false
-      });
-
-      const header = locateHeaderRow(matrix);
-      inspectedSheets.push(sheetName);
-
-      if (header) {
-        return {
-          sheetName,
-          sheet,
-          matrix,
-          header,
-          inspectedSheets
-        };
-      }
-    }
-
-    throw new Error(
-      'Mandatory Tariff is missing one or more required columns: ' +
-      'Type, Code, CPT MUE Values. ' +
-      `Worksheets checked: ${inspectedSheets.join(', ')}.`
+  function getSchemaContainer() {
+    return (
+      document.getElementById(
+        'checker-container-schema'
+      ) || null
     );
   }
 
-  function parseMandatoryTariffWorkbook(workbook, xlsxOverride) {
-    const XLSX = xlsxOverride || root?.XLSX;
+  function getScopedElement(id) {
+    const container = getSchemaContainer();
 
-    if (!XLSX?.utils || typeof XLSX.utils.sheet_to_json !== 'function') {
-      throw new Error('SheetJS (XLSX) is unavailable.');
+    return (
+      container?.querySelector(`#${id}`) ||
+      document.getElementById(id)
+    );
+  }
+
+  function resolveXmlFile() {
+    const possibleInputs = [
+      'xmlFile',
+      'xml-file',
+      'xmlFileInput'
+    ];
+
+    for (const id of possibleInputs) {
+      const input = getScopedElement(id);
+
+      if (input?.files?.[0]) {
+        return input.files[0];
+      }
     }
 
-    const located = locateTariffWorksheet(workbook, XLSX);
-    const { sheetName, matrix, header } = located;
-    const map = new Map();
-    const rows = [];
-    const warnings = [];
+    return root.unifiedCheckerFiles?.xml || null;
+  }
 
-    for (let rowIndex = header.rowIndex + 1; rowIndex < matrix.length; rowIndex += 1) {
-      const sourceRow = Array.isArray(matrix[rowIndex]) ? matrix[rowIndex] : [];
-      const rawType = sourceRow[header.typeIndex];
-      const rawCode = sourceRow[header.codeIndex];
-      const rawMueValue = sourceRow[header.maxOccurrencesIndex];
-      const activityType = normalizeActivityType(rawType);
-      const code = normalizeCode(rawCode, activityType);
+  function parseXml(xmlText) {
+    const safeText =
+      String(xmlText || '').replace(
+        /&(?!(amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;))/g,
+        'and'
+      );
 
-      if (!activityType && !code && String(rawMueValue || '').trim() === '') {
-        continue;
-      }
+    const xmlDocument =
+      new DOMParser().parseFromString(
+        safeText,
+        'application/xml'
+      );
 
-      if (!SUPPORTED_TYPES.has(activityType)) {
-        continue;
-      }
+    const parserError =
+      xmlDocument.getElementsByTagName(
+        'parsererror'
+      )[0];
 
-      if (!code) {
-        warnings.push(
-          `${sheetName} row ${rowIndex + 1} was skipped because Code is blank.`
+    if (parserError) {
+      throw new Error(
+        'The XML is not well-formed.'
+      );
+    }
+
+    return xmlDocument;
+  }
+
+  function getDirectChildText(
+    parent,
+    tagName
+  ) {
+    if (!parent) return '';
+
+    const child =
+      Array.from(parent.children || [])
+        .find(
+          element =>
+            element.tagName === tagName
         );
+
+    return String(
+      child?.textContent || ''
+    ).trim();
+  }
+
+  function getSelfPayClaimIDs(
+    xmlDocument
+  ) {
+    const selfPayClaimIDs = new Set();
+
+    const claims =
+      Array.from(
+        xmlDocument
+          ?.getElementsByTagName('Claim') ||
+        []
+      );
+
+    for (const claim of claims) {
+      const claimID =
+        getDirectChildText(
+          claim,
+          'ID'
+        );
+
+      const payerID =
+        normalizeCode(
+          getDirectChildText(
+            claim,
+            'PayerID'
+          )
+        );
+
+      if (
+        !claimID ||
+        !SELF_PAY_PAYER_IDS.has(payerID)
+      ) {
         continue;
       }
 
-      const parsedLimit = parseMaxOccurrences(rawMueValue);
+      selfPayClaimIDs.add(claimID);
+    }
 
-      if (parsedLimit.error) {
-        warnings.push(`${sheetName} row ${rowIndex + 1}: ${parsedLimit.error}`);
-      }
+    return selfPayClaimIDs;
+  }
 
-      const record = {
-        activityType,
-        code,
-        maxOccurrencesPerClaim: parsedLimit.limit,
-        rawMueValue: String(rawMueValue == null ? '' : rawMueValue).trim(),
-        sheetName,
-        sheetRowNumber: rowIndex + 1,
-        rawRow: sourceRow.slice()
-      };
+  function getFindingCode(finding) {
+    const directCode =
+      normalizeCode(
+        finding?.code ??
+        finding?.cptCode ??
+        finding?.activityCode ??
+        finding?.serviceCode ??
+        finding?.activity?.code ??
+        ''
+      );
 
-      const key = makeTariffKey(activityType, code);
-      const existing = map.get(key);
+    if (directCode) {
+      return directCode;
+    }
 
-      if (existing) {
-        if (existing.maxOccurrencesPerClaim !== record.maxOccurrencesPerClaim) {
-          warnings.push(
-            `${sheetName} has conflicting CPT MUE values for ${activityType} ${code} ` +
-            `(rows ${existing.sheetRowNumber} and ${record.sheetRowNumber}). ` +
-            'The first row is being used.'
-          );
-        }
+    const remark =
+      String(
+        finding?.remark || ''
+      ).trim();
+
+    const match =
+      remark.match(
+        /^([^\s]+)\s+can only be coded\b/i
+      );
+
+    return normalizeCode(
+      match?.[1] || ''
+    );
+  }
+
+  function filterSelfPay17999Findings(
+    findings,
+    selfPayClaimIDs
+  ) {
+    const keptFindings = [];
+    const exemptedFindings = [];
+
+    for (const finding of findings || []) {
+      const claimID =
+        String(
+          finding?.claimID || ''
+        ).trim();
+
+      const code =
+        getFindingCode(finding);
+
+      /*
+       * 17999 is an unlisted procedure code.
+       *
+       * Multiple occurrences are accepted for
+       * SelfPay/Cash claims because the XML cannot
+       * establish whether the activities represent
+       * the same procedure or separate procedures.
+       */
+      if (
+        code === '17999' &&
+        claimID &&
+        selfPayClaimIDs.has(claimID)
+      ) {
+        exemptedFindings.push(finding);
         continue;
       }
 
-      map.set(key, record);
-      rows.push(record);
+      keptFindings.push(finding);
     }
 
     return {
-      map,
-      rows,
-      codeSet: new Set(rows.map((row) => row.code)),
-      warnings,
-      sheetName,
-      headerRowNumber: header.rowIndex + 1,
-      occurrenceColumnName: 'CPT MUE Values'
+      findings: keptFindings,
+      exemptedFindings
     };
   }
 
-  function requestUrl(input) {
-    if (typeof input === 'string') return input;
-    if (input && typeof input.url === 'string') return input.url;
-    return String(input || '');
+  function cleanRemarkLines(remark) {
+    return String(
+      remark == null ? '' : remark
+    )
+      .split(/\r?\n/)
+      .map(line => line.trim())
+      .filter(Boolean)
+      .filter(
+        line =>
+          !OLD_DUPLICATE_PATTERN.test(
+            line
+          )
+      );
   }
 
-  function isMandatoryTariffRequest(input) {
-    let value = requestUrl(input);
+  function groupFindingsByClaim(
+    findings
+  ) {
+    const grouped = new Map();
 
-    try {
-      value = decodeURIComponent(value);
-    } catch (error) {
-      // Keep the original URL when decoding fails.
-    }
+    for (const finding of findings || []) {
+      const claimID =
+        String(
+          finding?.claimID || 'Unknown'
+        ).trim();
 
-    return /mandatory\s*tariff.*\.xlsx(?:$|[?#])/i.test(value);
-  }
-
-  function requestMethod(input, init) {
-    return String(init?.method || input?.method || 'GET').toUpperCase();
-  }
-
-  function sameUrl(left, right) {
-    try {
-      return new URL(left, root?.location?.href || undefined).href ===
-        new URL(right, root?.location?.href || undefined).href;
-    } catch (error) {
-      return String(left) === String(right);
-    }
-  }
-
-  function installTariffFetchFallback() {
-    if (!root || !nativeFetch || fetchFallbackInstalled) return false;
-
-    root.fetch = async function mandatoryTariffAwareFetch(input, init) {
-      const response = await nativeFetch(input, init);
-
-      if (
-        response?.ok ||
-        requestMethod(input, init) !== 'GET' ||
-        !isMandatoryTariffRequest(input)
-      ) {
-        return response;
+      if (!grouped.has(claimID)) {
+        grouped.set(
+          claimID,
+          []
+        );
       }
 
-      const originalUrl = requestUrl(input);
+      grouped
+        .get(claimID)
+        .push(finding);
+    }
 
-      for (const fallbackPath of DEFAULT_PATHS) {
-        if (sameUrl(originalUrl, fallbackPath)) continue;
+    return grouped;
+  }
 
-        try {
-          const fallbackResponse = await nativeFetch(fallbackPath, init);
-          if (fallbackResponse?.ok) {
-            console.warn(
-              `[MANDATORY TARIFF] ${originalUrl} returned HTTP ${response.status}; ` +
-              `using ${fallbackPath}.`
-            );
-            return fallbackResponse;
+  function applyFindingsToResult(
+    result,
+    findings
+  ) {
+    const originalLines =
+      String(result?.Remark || '')
+        .split(/\r?\n/)
+        .map(line => line.trim())
+        .filter(Boolean);
+
+    const removedOldDuplicate =
+      originalLines.some(
+        line =>
+          OLD_DUPLICATE_PATTERN.test(
+            line
+          )
+      );
+
+    let lines =
+      cleanRemarkLines(
+        result?.Remark
+      );
+
+    lines =
+      lines.filter(
+        line =>
+          !OK_PATTERN.test(line)
+      );
+
+    for (const finding of findings || []) {
+      if (
+        finding?.remark &&
+        !lines.includes(finding.remark)
+      ) {
+        lines.push(finding.remark);
+      }
+    }
+
+    if ((findings || []).length) {
+      result.Valid = false;
+      result.Unknown = false;
+    } else if (
+      removedOldDuplicate &&
+      lines.length === 0
+    ) {
+      result.Valid = true;
+      result.Unknown = false;
+    }
+
+    if (lines.length === 0) {
+      lines = ['OK'];
+    }
+
+    result.Remark =
+      lines.join('\n');
+
+    result.TariffOccurrenceFindings =
+      (findings || []).slice();
+
+    return result;
+  }
+
+  function updateLastResults(
+    findingsByClaim
+  ) {
+    const results =
+      root._lastValidationResults;
+
+    if (!Array.isArray(results)) {
+      return null;
+    }
+
+    for (const result of results) {
+      const claimID =
+        String(
+          result?.ClaimID || 'Unknown'
+        ).trim();
+
+      applyFindingsToResult(
+        result,
+        findingsByClaim.get(claimID) ||
+        []
+      );
+    }
+
+    return results;
+  }
+
+  function findColumnIndexes(table) {
+    const headers =
+      Array.from(
+        table
+          ?.querySelectorAll('thead th') ||
+        []
+      );
+
+    const normalized =
+      headers.map(
+        cell =>
+          normalizeHeader(
+            cell.textContent
+          )
+      );
+
+    function findIndex(names) {
+      return normalized.findIndex(
+        header =>
+          names.some(
+            name =>
+              header === name ||
+              header.includes(name)
+          )
+      );
+    }
+
+    return {
+      claim: findIndex([
+        'claimid',
+        'claim'
+      ]),
+
+      status: findIndex([
+        'status',
+        'validity',
+        'valid'
+      ]),
+
+      remark: findIndex([
+        'remarks',
+        'remark',
+        'errors',
+        'error'
+      ])
+    };
+  }
+
+  function statusForResult(result) {
+    if (!result?.Valid) {
+      return 'Invalid';
+    }
+
+    if (result?.Unknown) {
+      return 'Unknown';
+    }
+
+    return 'Valid';
+  }
+
+  function applyRowStyle(
+    row,
+    status
+  ) {
+    row.classList.remove(
+      'valid',
+      'invalid',
+      'unknown',
+      'valid-row',
+      'invalid-row',
+      'unknown-row',
+      'table-success',
+      'table-danger',
+      'table-warning'
+    );
+
+    if (status === 'Invalid') {
+      row.classList.add(
+        'invalid-row',
+        'table-danger'
+      );
+    } else if (status === 'Unknown') {
+      row.classList.add(
+        'unknown-row',
+        'table-warning'
+      );
+    } else {
+      row.classList.add(
+        'valid-row',
+        'table-success'
+      );
+    }
+  }
+
+  function cleanDomRemark(
+    text,
+    findings
+  ) {
+    const lines =
+      cleanRemarkLines(text)
+        .filter(
+          line =>
+            !OK_PATTERN.test(line)
+        );
+
+    for (const finding of findings || []) {
+      if (
+        finding?.remark &&
+        !lines.includes(finding.remark)
+      ) {
+        lines.push(finding.remark);
+      }
+    }
+
+    return lines.length
+      ? lines.join('\n')
+      : 'OK';
+  }
+
+  function updateRenderedTable(
+    resultElement,
+    results,
+    findingsByClaim
+  ) {
+    const table =
+      resultElement?.tagName === 'TABLE'
+        ? resultElement
+        : resultElement
+            ?.querySelector?.('table');
+
+    if (!table) return;
+
+    const indexes =
+      findColumnIndexes(table);
+
+    const rows =
+      Array.from(
+        table.querySelectorAll(
+          'tbody tr'
+        )
+      );
+
+    let lastClaimID = '';
+
+    rows.forEach(
+      (row, rowIndex) => {
+        const cells =
+          Array.from(
+            row.cells || []
+          );
+
+        const visibleClaimID =
+          indexes.claim >= 0
+            ? String(
+                cells[indexes.claim]
+                  ?.textContent ||
+                ''
+              ).trim()
+            : '';
+
+        const claimID =
+          visibleClaimID ||
+          lastClaimID;
+
+        if (visibleClaimID) {
+          lastClaimID =
+            visibleClaimID;
+        }
+
+        const result =
+          Array.isArray(results)
+            ? (
+              results.find(
+                entry =>
+                  String(
+                    entry?.ClaimID ||
+                    ''
+                  ).trim() === claimID
+              ) ||
+              results[rowIndex]
+            )
+            : null;
+
+        if (result) {
+          const status =
+            statusForResult(result);
+
+          if (
+            indexes.status >= 0 &&
+            cells[indexes.status]
+          ) {
+            cells[indexes.status]
+              .textContent =
+                status;
+
+            cells[indexes.status]
+              .dataset.status =
+                status.toLowerCase();
           }
-        } catch (error) {
-          // Try the next fallback.
+
+          if (
+            indexes.remark >= 0 &&
+            cells[indexes.remark]
+          ) {
+            cells[indexes.remark]
+              .textContent =
+                result.Remark ||
+                'OK';
+
+            cells[indexes.remark]
+              .style.whiteSpace =
+                'pre-line';
+          }
+
+          applyRowStyle(
+            row,
+            status
+          );
+
+          return;
+        }
+
+        const findings =
+          findingsByClaim.get(claimID) ||
+          [];
+
+        if (
+          indexes.remark >= 0 &&
+          cells[indexes.remark]
+        ) {
+          const cleaned =
+            cleanDomRemark(
+              cells[indexes.remark]
+                .textContent,
+              findings
+            );
+
+          cells[indexes.remark]
+            .textContent =
+              cleaned;
+
+          cells[indexes.remark]
+            .style.whiteSpace =
+              'pre-line';
+
+          const status =
+            findings.length
+              ? 'Invalid'
+              : (
+                cleaned === 'OK'
+                  ? 'Valid'
+                  : String(
+                      cells[indexes.status]
+                        ?.textContent ||
+                      'Invalid'
+                    )
+              );
+
+          if (
+            indexes.status >= 0 &&
+            cells[indexes.status]
+          ) {
+            cells[indexes.status]
+              .textContent =
+                status;
+
+            cells[indexes.status]
+              .dataset.status =
+                status.toLowerCase();
+          }
+
+          applyRowStyle(
+            row,
+            status
+          );
         }
       }
+    );
+  }
 
-      return response;
-    };
+  function updateSummary(results) {
+    if (!Array.isArray(results)) {
+      return;
+    }
 
-    fetchFallbackInstalled = true;
+    const status =
+      getScopedElement(
+        'uploadStatus'
+      );
+
+    if (!status) return;
+
+    const total =
+      results.length;
+
+    const valid =
+      results.filter(
+        result =>
+          result?.Valid
+      ).length;
+
+    const percentage =
+      total > 0
+        ? (
+          (
+            valid /
+            total
+          ) *
+          100
+        ).toFixed(1)
+        : '0.0';
+
+    status.textContent =
+      `Valid claims: ${valid} / ${total} (${percentage}%)`;
+  }
+
+  function createErrorResult(message) {
+    const wrapper =
+      document.createElement('div');
+
+    wrapper.className =
+      'alert alert-danger';
+
+    wrapper.setAttribute(
+      'role',
+      'alert'
+    );
+
+    wrapper.textContent =
+      `Schema Checker failed: ${message}`;
+
+    return wrapper;
+  }
+
+  function installPatch() {
+    const originalValidateXmlSchema =
+      root.validateXmlSchema;
+
+    if (
+      typeof originalValidateXmlSchema !==
+      'function'
+    ) {
+      console.error(
+        '[SCHEMA][TARIFF] validateXmlSchema is unavailable. ' +
+        'Load checker_schema_occurrence_limits.js after checker_schema.js.'
+      );
+
+      return false;
+    }
+
+    if (!root.MandatoryTariffShared) {
+      console.error(
+        '[SCHEMA][TARIFF] MandatoryTariffShared is unavailable. ' +
+        'Load mandatory_tariff_shared.js before checker_schema.js.'
+      );
+
+      return false;
+    }
+
+    root.validateXmlSchema =
+      async function patchedValidateXmlSchema() {
+        const args = arguments;
+
+        const xmlFile =
+          resolveXmlFile();
+
+        const statusElement =
+          getScopedElement(
+            'uploadStatus'
+          );
+
+        if (!xmlFile) {
+          return originalValidateXmlSchema
+            .apply(
+              this,
+              args
+            );
+        }
+
+        let tariffData;
+        let xmlDocument;
+
+        try {
+          const [
+            loadedTariff,
+            xmlText
+          ] = await Promise.all([
+            root.MandatoryTariffShared
+              .loadBundledMandatoryTariff(),
+
+            xmlFile.text()
+          ]);
+
+          tariffData =
+            loadedTariff;
+
+          xmlDocument =
+            parseXml(xmlText);
+        } catch (error) {
+          const message =
+            error?.message ||
+            String(error);
+
+          console.error(
+            '[SCHEMA][TARIFF] Failed before Schema validation:',
+            error
+          );
+
+          if (statusElement) {
+            statusElement.textContent =
+              `Schema Checker failed: ${message}`;
+          }
+
+          return createErrorResult(
+            message
+          );
+        }
+
+        const resultElement =
+          await originalValidateXmlSchema
+            .apply(
+              this,
+              args
+            );
+
+        if (
+          !resultElement ||
+          xmlDocument
+            .documentElement
+            .nodeName !==
+              'Claim.Submission'
+        ) {
+          return resultElement;
+        }
+
+        try {
+          for (
+            const warning
+            of tariffData.warnings ||
+            []
+          ) {
+            console.warn(
+              '[SCHEMA][TARIFF]',
+              warning
+            );
+          }
+
+          const rawFindings =
+            root.MandatoryTariffShared
+              .validateSubmissionOccurrenceLimits(
+                xmlDocument,
+                tariffData.map
+              );
+
+          const selfPayClaimIDs =
+            getSelfPayClaimIDs(
+              xmlDocument
+            );
+
+          const {
+            findings,
+            exemptedFindings
+          } =
+            filterSelfPay17999Findings(
+              rawFindings,
+              selfPayClaimIDs
+            );
+
+          const findingsByClaim =
+            groupFindingsByClaim(
+              findings
+            );
+
+          const results =
+            updateLastResults(
+              findingsByClaim
+            );
+
+          updateRenderedTable(
+            resultElement,
+            results,
+            findingsByClaim
+          );
+
+          updateSummary(results);
+
+          root._lastTariffOccurrenceFindings =
+            findings;
+
+          root._lastTariffOccurrenceExemptions =
+            exemptedFindings;
+
+          console.log(
+            `[SCHEMA][TARIFF] Applied CPT MUE occurrence limits from ${tariffData.sheetName}. ` +
+            `Findings: ${findings.length}; ` +
+            `SelfPay 17999 exemptions: ${exemptedFindings.length}; ` +
+            `tariff rows: ${tariffData.rows.length}; ` +
+            `source: ${tariffData.path}`
+          );
+        } catch (error) {
+          const message =
+            error?.message ||
+            String(error);
+
+          console.error(
+            '[SCHEMA][TARIFF] Failed to apply occurrence limits:',
+            error
+          );
+
+          if (statusElement) {
+            statusElement.textContent =
+              `Schema Checker failed: ${message}`;
+          }
+
+          return createErrorResult(
+            message
+          );
+        }
+
+        return resultElement;
+      };
+
+    root.__schemaOccurrenceLimitsPatchInstalled =
+      true;
+
+    root.SchemaOccurrenceLimitsPatch =
+      Object.freeze({
+        cleanRemarkLines,
+        applyFindingsToResult,
+        groupFindingsByClaim,
+        getSelfPayClaimIDs,
+        filterSelfPay17999Findings
+      });
+
+    console.log(
+      '[SCHEMA][TARIFF] CPT MUE occurrence-limit patch installed.'
+    );
+
     return true;
   }
 
-  async function fetchWorkbook(paths, fetchOverride) {
-    const fetchFn = fetchOverride || nativeFetch || root?.fetch;
-
-    if (typeof fetchFn !== 'function') {
-      throw new Error('fetch() is unavailable, so Mandatory Tariff cannot be loaded.');
-    }
-
-    const failures = [];
-
-    for (const path of unique(paths)) {
-      try {
-        const response = await fetchFn(path, { cache: 'no-store' });
-
-        if (!response?.ok) {
-          failures.push(`${path}: HTTP ${response ? response.status : 'unknown'}`);
-          continue;
-        }
-
-        return {
-          path,
-          arrayBuffer: await response.arrayBuffer()
-        };
-      } catch (error) {
-        failures.push(`${path}: ${error?.message || String(error)}`);
-      }
-    }
-
-    throw new Error('Mandatory Tariff could not be loaded. ' + failures.join(' | '));
-  }
-
-  async function loadBundledMandatoryTariff(options) {
-    const config = options || {};
-    const paths = Array.isArray(config.paths) && config.paths.length
-      ? config.paths
-      : DEFAULT_PATHS;
-    const pathsKey = paths.join('|');
-
-    if (!config.forceReload && cachedPromise && cachedPathsKey === pathsKey) {
-      return cachedPromise;
-    }
-
-    cachedPathsKey = pathsKey;
-    cachedPromise = (async () => {
-      const XLSX = config.XLSX || root?.XLSX;
-
-      if (!XLSX || typeof XLSX.read !== 'function') {
-        throw new Error('SheetJS (XLSX) is unavailable.');
-      }
-
-      const fetched = await fetchWorkbook(paths, config.fetch);
-      const workbook = XLSX.read(fetched.arrayBuffer, {
-        type: 'array',
-        cellDates: true
-      });
-      const parsed = parseMandatoryTariffWorkbook(workbook, XLSX);
-      parsed.path = fetched.path;
-      return parsed;
-    })().catch((error) => {
-      cachedPromise = null;
-      cachedPathsKey = '';
-      throw error;
-    });
-
-    return cachedPromise;
-  }
-
-  function getTariffRow(tariffMap, activityType, code) {
-    if (!(tariffMap instanceof Map)) return null;
-    return tariffMap.get(makeTariffKey(activityType, code)) || null;
-  }
-
-  function validateClaimOccurrenceLimits(claim, tariffMap) {
-    if (!claim) return [];
-
-    if (!(tariffMap instanceof Map)) {
-      throw new TypeError('validateClaimOccurrenceLimits requires a Mandatory Tariff Map.');
-    }
-
-    const claimID = getDirectChildText(claim, 'ID') || 'Unknown';
-    const activities = getDirectChildren(claim, 'Activity');
-    const occurrences = new Map();
-
-    for (const activity of activities) {
-      const xmlActivityType = getDirectChildText(activity, 'Type');
-      const rawCode = getDirectChildText(activity, 'Code');
-      const activityType = normalizeActivityType(xmlActivityType);
-
-      if (!SUPPORTED_TYPES.has(activityType) || !rawCode) continue;
-
-      const code = normalizeCode(rawCode, activityType);
-      const key = makeTariffKey(activityType, code);
-      const current = occurrences.get(key) || {
-        claimID,
-        key,
-        activityType,
-        xmlActivityType: String(xmlActivityType).trim(),
-        code,
-        count: 0
-      };
-
-      // Count Activity elements. Do not use the XML Quantity value here.
-      current.count += 1;
-      occurrences.set(key, current);
-    }
-
-    const findings = [];
-
-    for (const occurrence of occurrences.values()) {
-      const tariffRow = tariffMap.get(occurrence.key);
-
-      if (!tariffRow || tariffRow.maxOccurrencesPerClaim == null) continue;
-
-      const limit = tariffRow.maxOccurrencesPerClaim;
-      if (occurrence.count <= limit) continue;
-
-      findings.push({
-        ruleId: 'TARIFF_MAX_OCCURRENCES',
-        status: 'Invalid',
-        claimID,
-        activityType: occurrence.activityType,
-        xmlActivityType: occurrence.xmlActivityType,
-        code: occurrence.code,
-        actualCount: occurrence.count,
-        allowedCount: limit,
-        remark:
-          `${occurrence.code} can only be coded ${limit} ` +
-          `${limit === 1 ? 'time' : 'times'} in one claim.`
-      });
-    }
-
-    return findings;
-  }
-
-  function validateSubmissionOccurrenceLimits(xmlDoc, tariffMap) {
-    if (!xmlDoc?.documentElement) return [];
-
-    return getDirectChildren(xmlDoc.documentElement, 'Claim')
-      .flatMap((claim) => validateClaimOccurrenceLimits(claim, tariffMap));
-  }
-
-  function clearCache() {
-    cachedPromise = null;
-    cachedPathsKey = '';
-  }
-
-  installTariffFetchFallback();
-
-  return Object.freeze({
-    DEFAULT_PATHS,
-    HEADER_ALIASES,
-    normalizeHeader,
-    normalizeActivityType,
-    normalizeCode,
-    makeTariffKey,
-    parseMaxOccurrences,
-    getDirectChildren,
-    getDirectChildText,
-    locateHeaderRow,
-    locateTariffWorksheet,
-    parseMandatoryTariffWorkbook,
-    installTariffFetchFallback,
-    loadBundledMandatoryTariff,
-    getTariffRow,
-    validateClaimOccurrenceLimits,
-    validateSubmissionOccurrenceLimits,
-    clearCache
-  });
-});
+  installPatch();
+})(
+  typeof window !== 'undefined'
+    ? window
+    : globalThis
+);
