@@ -552,31 +552,118 @@ async function applyTariffOccurrenceLimits(
     );
   }
 
+  /*
+   * Codes in this set are not restricted by the Mandatory Tariff
+   * occurrence limit.
+   *
+   * 17999 represents an unlisted procedure. Multiple instances may
+   * represent separate procedures, and the XML does not contain enough
+   * information to determine whether they are duplicates.
+   */
+  const occurrenceLimitExemptCodes =
+    new Set([
+      '17999'
+    ]);
+
   const tariffData =
     await window.MandatoryTariffShared
       .loadBundledMandatoryTariff();
 
-  for (const warning of tariffData.warnings || []) {
+  for (
+    const warning
+    of tariffData.warnings || []
+  ) {
     console.warn(
       '[SCHEMA][TARIFF]',
       warning
     );
   }
 
-  const findings =
+  const rawFindings =
     window.MandatoryTariffShared
       .validateSubmissionOccurrenceLimits(
         xmlDoc,
         tariffData.map
       );
 
-  const findingsByClaim =
-    groupTariffFindingsByClaim(findings);
+  /*
+   * Remove occurrence-limit findings for exempt codes.
+   *
+   * The property checks support different finding-object versions.
+   * The remark check is retained as a fallback in case the shared
+   * module does not expose the activity code as its own property.
+   */
+  const findings =
+    (rawFindings || []).filter(finding => {
+      const findingCode =
+        String(
+          finding?.code ??
+          finding?.cptCode ??
+          finding?.activityCode ??
+          finding?.serviceCode ??
+          ''
+        )
+          .trim()
+          .toUpperCase();
 
-  for (const result of results || []) {
+      if (
+        occurrenceLimitExemptCodes.has(
+          findingCode
+        )
+      ) {
+        return false;
+      }
+
+      const findingRemark =
+        String(
+          finding?.remark || ''
+        ).trim();
+
+      for (
+        const exemptCode
+        of occurrenceLimitExemptCodes
+      ) {
+        const escapedCode =
+          exemptCode.replace(
+            /[.*+?^${}()|[\]\\]/g,
+            '\\$&'
+          );
+
+        const occurrenceRemarkPattern =
+          new RegExp(
+            `^${escapedCode}\\s+can only be coded\\b`,
+            'i'
+          );
+
+        if (
+          occurrenceRemarkPattern.test(
+            findingRemark
+          )
+        ) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+
+  const exemptedFindingCount =
+    (rawFindings || []).length -
+    findings.length;
+
+  const findingsByClaim =
+    groupTariffFindingsByClaim(
+      findings
+    );
+
+  for (
+    const result
+    of results || []
+  ) {
     const claimID =
-      String(result?.ClaimID || 'Unknown')
-        .trim();
+      String(
+        result?.ClaimID || 'Unknown'
+      ).trim();
 
     applyTariffFindingsToResult(
       result,
@@ -590,6 +677,7 @@ async function applyTariffOccurrenceLimits(
   console.log(
     `[SCHEMA][TARIFF] Applied CPT MUE occurrence limits from ${tariffData.sheetName}. ` +
     `Findings: ${findings.length}; ` +
+    `exempted findings: ${exemptedFindingCount}; ` +
     `tariff rows: ${tariffData.rows.length}; ` +
     `source: ${tariffData.path}`
   );
