@@ -143,114 +143,329 @@ function getMaximumEncounterMinutes({ claimMode, receiverID }) {
 }
 
 function extractClaims(xmlDoc, options = {}) {
-  const requiredType = options.requiredType || "6";
-  const claimMode = options.claimMode || "DENTAL";
-  const receiverID = options.receiverID || '';
-  const maximumEncounterMinutes = getMaximumEncounterMinutes({ claimMode, receiverID });
-  const maximumEncounterHours = Math.floor(maximumEncounterMinutes / 60);
+    const requiredType = options.requiredType || "6";
+    const claimMode = String(options.claimMode || "DENTAL")
+        .trim()
+        .toUpperCase();
 
-  const normalizedClaimMode = String(claimMode || '')
-    .trim()
-    .toUpperCase();
-  const isMedicalClaim = normalizedClaimMode === 'MEDICAL';
+    const receiverID = options.receiverID || "";
 
-  const results = [];
-  xmlDoc.querySelectorAll('Claim').forEach(claim => {
-    const claimId = claim.querySelector('ID')?.textContent || 'Unknown';
-    const enc = claim.querySelector('Encounter');
-    const encounterStartStr = enc?.querySelector('Start')?.textContent, encounterEndStr = enc?.querySelector('End')?.textContent;
-    if (!encounterStartStr || !encounterEndStr) return;
-    const encounterStart = parseDateTime(encounterStartStr), encounterEnd = parseDateTime(encounterEndStr);
-    if (!encounterStart || !encounterEnd) return;
-    const encMin = Math.floor((encounterEnd - encounterStart) / 60000);
-    let baseValid = true, baseRemarks = [];
-    if (encMin < 0) { baseValid = false; baseRemarks.push('Encounter end is before encounter start.');}
-    const activities = Array.from(claim.querySelectorAll('Activity'));
-
-    // 97-code duration/quantity rules are Medical-only.
-    const timeBased97Activities = isMedicalClaim
-      ? activities
-          .map(activity => ({
-            code: activity.querySelector('Code')?.textContent?.trim() || '',
-            quantity: Number(activity.querySelector('Quantity')?.textContent?.trim() || '0')
-          }))
-          .filter(activity => /^97/.test(activity.code))
-      : [];
-
-    const total97Quantity = timeBased97Activities.reduce((sum, activity) => {
-      const quantity = Number.isFinite(activity.quantity) ? activity.quantity : 0;
-      return sum + quantity;
-    }, 0);
-    const has97Activities = timeBased97Activities.length > 0;
-    const matched97Band = get97BandForDuration(encMin);
-    const has97OutOfRangeDuration = has97Activities && (encMin < SERIES_97_BANDS[0].min || encMin > SERIES_97_BANDS[SERIES_97_BANDS.length - 1].max);
-    const has97OutOfRangeQuantity = has97Activities && total97Quantity > SERIES_97_BANDS[SERIES_97_BANDS.length - 1].quantity;
-    const has97QuantityExcess =
-      has97Activities &&
-      matched97Band &&
-      total97Quantity > Number(matched97Band.quantity);
-
-    // Build code label for 97-series messages.
-    const relevant97Codes = Array.from(new Set(timeBased97Activities.map(a => a.code)));
-    const codeLabel97 = relevant97Codes.length === 1
-      ? `Code ${relevant97Codes[0]}`
-      : `Codes ${relevant97Codes.join(', ')}`;
-
-    activities.forEach(activity => {
-      const activityId = activity.querySelector('ID')?.textContent || 'Unknown';
-      const activityStartStr = activity.querySelector('Start')?.textContent;
-      const typeValue = activity.querySelector('Type')?.textContent?.trim() || '';
-      const codeValue = activity.querySelector('Code')?.textContent?.trim() || '';
-      const qtyValue = Number(activity.querySelector('Quantity')?.textContent?.trim() || '0');
-      let isValid = baseValid, remarks = [...baseRemarks];
-      
-      // Type validation has been moved to the teeths checker
-      // This checker now only validates timing-related aspects
-      
-      if (!activityStartStr) {
-        remarks.push('Missing Activity Start');
-        results.push({
-          claimId, activityId, type: typeValue, encounterStart: encounterStartStr, encounterEnd: encounterEndStr,
-          start: 'N/A', duration: formatDuration(encMin), excess: 'N/A', isValid, remarks
-        });
-        return;
-      }
-      const activityStart = parseDateTime(activityStartStr);
-      if (!activityStart) { isValid = false; remarks.push('Invalid Activity Start format'); }
-      const excessMin = (activityStart instanceof Date && !isNaN(activityStart))
-        ? Math.floor((encounterEnd - activityStart) / 60000)
-        : NaN;
-      if (activityStart && activityStart < encounterStart) { isValid = false; remarks.push('Activity start is before encounter start.'); }
-      if (activityStart && activityStart > encounterEnd) { isValid = false; remarks.push('Activity start is after encounter end.'); }
-      if (encMin >= 0 && encMin < 10) { isValid = false; remarks.push(`Encounter duration too short (${encMin} min). Should be 10 minutes minimum.`);}
-      else if (encMin > maximumEncounterMinutes) {
-        isValid = false;
-        if (encMin >= 1440) {
-          const [startDate] = encounterStartStr.split(' '), [endDate] = encounterEndStr.split(' ');
-          remarks.push(`Encounter crosses days: ${startDate} → ${endDate}`);
-        } else {
-          const hours = Math.floor(encMin / 60), minutes = encMin % 60;
-          remarks.push(`Encounter duration too long (${hours}h ${minutes}m). Should be ${maximumEncounterHours} hours maximum.`);
-        }
-      }
-      if (isMedicalClaim && /^97/.test(codeValue) && has97Activities) {
-        isValid = false;
-        if (has97OutOfRangeDuration || has97OutOfRangeQuantity) {
-          remarks.push(`${codeLabel97}: encounter duration/quantity is out of supported range (Duration ${encMin} minutes, total quantity ${total97Quantity}).`);
-        } else if (has97QuantityExcess && matched97Band) {
-          remarks.push(`${codeLabel97}: encounter duration ${encMin} minutes allows a maximum total quantity of ${matched97Band.quantity}, but found ${total97Quantity}.`);
-        } else {
-          isValid = baseValid;
-        }
-      }
-      results.push({
-        claimId, activityId, type: typeValue, encounterStart: encounterStartStr, encounterEnd: encounterEndStr,
-        start: activityStartStr, duration: formatDuration(encMin),
-        excess: isNaN(excessMin) ? 'N/A' : formatDuration(excessMin), isValid, remarks
-      });
+    const maximumEncounterMinutes = getMaximumEncounterMinutes({
+        claimMode,
+        receiverID
     });
-  });
-  return results;
+
+    const maximumEncounterHours = Math.floor(
+        maximumEncounterMinutes / 60
+    );
+
+    const isMedicalClaim = claimMode === "MEDICAL";
+    const results = [];
+
+    xmlDoc.querySelectorAll("Claim").forEach(claim => {
+        const claimId =
+            claim.querySelector("ID")?.textContent?.trim() ||
+            "Unknown";
+
+        const encounter = claim.querySelector("Encounter");
+
+        const encounterStartStr =
+            encounter?.querySelector("Start")?.textContent?.trim() ||
+            "";
+
+        const encounterEndStr =
+            encounter?.querySelector("End")?.textContent?.trim() ||
+            "";
+
+        if (!encounterStartStr || !encounterEndStr) {
+            return;
+        }
+
+        const encounterStart = parseDateTime(encounterStartStr);
+        const encounterEnd = parseDateTime(encounterEndStr);
+
+        if (!encounterStart || !encounterEnd) {
+            return;
+        }
+
+        const encounterMinutes = Math.floor(
+            (encounterEnd - encounterStart) / 60000
+        );
+
+        let baseValid = true;
+        const baseRemarks = [];
+
+        if (encounterMinutes < 0) {
+            baseValid = false;
+            baseRemarks.push(
+                "Encounter end is before encounter start."
+            );
+        }
+
+        const activities = Array.from(
+            claim.querySelectorAll("Activity")
+        );
+
+        /*
+         * Timed 97-code validation applies only to Medical claims.
+         *
+         * Every billed quantity requires at least 15 encounter minutes.
+         * A longer encounter is allowed, even when fewer quantities are billed.
+         *
+         * Examples:
+         *   Quantity 1 requires at least 15 minutes.
+         *   Quantity 2 requires at least 30 minutes.
+         *   Quantity 4 requires at least 60 minutes.
+         *
+         * There is no artificial maximum quantity or 67-minute ceiling.
+         */
+        const timed97Activities = isMedicalClaim
+            ? activities
+                .map(activity => {
+                    const code =
+                        activity
+                            .querySelector("Code")
+                            ?.textContent
+                            ?.trim() || "";
+
+                    const quantityRaw =
+                        activity
+                            .querySelector("Quantity")
+                            ?.textContent
+                            ?.trim() || "0";
+
+                    const quantity = Number(quantityRaw);
+
+                    return {
+                        code,
+                        quantity:
+                            Number.isFinite(quantity) && quantity > 0
+                                ? quantity
+                                : 0
+                    };
+                })
+                .filter(activity => /^97/.test(activity.code))
+            : [];
+
+        const timed97Codes = Array.from(
+            new Set(
+                timed97Activities
+                    .map(activity => activity.code)
+                    .filter(Boolean)
+            )
+        );
+
+        const total97Quantity = timed97Activities.reduce(
+            (sum, activity) => sum + activity.quantity,
+            0
+        );
+
+        const required97Minutes = total97Quantity * 15;
+
+        const has97Activities =
+            isMedicalClaim &&
+            timed97Activities.length > 0;
+
+        /*
+         * Only overbilling is invalid:
+         *
+         * encounterMinutes < required97Minutes
+         *
+         * Underbilling is allowed. For example, an encounter of 163 minutes
+         * with four total units requires only 60 minutes and is therefore valid.
+         */
+        const hasInsufficient97Duration =
+            has97Activities &&
+            total97Quantity > 0 &&
+            encounterMinutes >= 0 &&
+            encounterMinutes < required97Minutes;
+
+        const timed97CodeLabel =
+            timed97Codes.length === 1
+                ? `Code ${timed97Codes[0]}`
+                : `Codes ${timed97Codes.join(", ")}`;
+
+        activities.forEach(activity => {
+            const activityId =
+                activity
+                    .querySelector("ID")
+                    ?.textContent
+                    ?.trim() ||
+                "Unknown";
+
+            const activityStartStr =
+                activity
+                    .querySelector("Start")
+                    ?.textContent
+                    ?.trim() ||
+                "";
+
+            const typeValue =
+                activity
+                    .querySelector("Type")
+                    ?.textContent
+                    ?.trim() ||
+                "";
+
+            const codeValue =
+                activity
+                    .querySelector("Code")
+                    ?.textContent
+                    ?.trim() ||
+                "";
+
+            let isValid = baseValid;
+            const remarks = [...baseRemarks];
+
+            // Type validation is handled by the teeth/checker logic.
+            // This function validates timing-related aspects only.
+
+            if (!activityStartStr) {
+                isValid = false;
+                remarks.push("Missing Activity Start");
+
+                results.push({
+                    claimId,
+                    activityId,
+                    type: typeValue,
+                    encounterStart: encounterStartStr,
+                    encounterEnd: encounterEndStr,
+                    start: "N/A",
+                    duration: formatDuration(encounterMinutes),
+                    excess: "N/A",
+                    isValid,
+                    remarks
+                });
+
+                return;
+            }
+
+            const activityStart = parseDateTime(
+                activityStartStr
+            );
+
+            if (!activityStart) {
+                isValid = false;
+                remarks.push(
+                    "Invalid Activity Start format"
+                );
+            }
+
+            const excessMinutes =
+                activityStart instanceof Date &&
+                !Number.isNaN(activityStart.getTime())
+                    ? Math.floor(
+                        (encounterEnd - activityStart) /
+                        60000
+                    )
+                    : NaN;
+
+            if (
+                activityStart &&
+                activityStart < encounterStart
+            ) {
+                isValid = false;
+                remarks.push(
+                    "Activity start is before encounter start."
+                );
+            }
+
+            if (
+                activityStart &&
+                activityStart > encounterEnd
+            ) {
+                isValid = false;
+                remarks.push(
+                    "Activity start is after encounter end."
+                );
+            }
+
+            if (
+                encounterMinutes >= 0 &&
+                encounterMinutes < 10
+            ) {
+                isValid = false;
+
+                remarks.push(
+                    `Encounter duration too short ` +
+                    `(${encounterMinutes} min). ` +
+                    `Should be 10 minutes minimum.`
+                );
+            } else if (
+                encounterMinutes >
+                maximumEncounterMinutes
+            ) {
+                isValid = false;
+
+                if (encounterMinutes >= 1440) {
+                    const [startDate] =
+                        encounterStartStr.split(" ");
+
+                    const [endDate] =
+                        encounterEndStr.split(" ");
+
+                    remarks.push(
+                        `Encounter crosses days: ` +
+                        `${startDate} → ${endDate}`
+                    );
+                } else {
+                    const hours = Math.floor(
+                        encounterMinutes / 60
+                    );
+
+                    const minutes =
+                        encounterMinutes % 60;
+
+                    remarks.push(
+                        `Encounter duration too long ` +
+                        `(${hours}h ${minutes}m). ` +
+                        `Should be ${maximumEncounterHours} ` +
+                        `hours maximum.`
+                    );
+                }
+            }
+
+            /*
+             * Add the aggregate timed-code error only to affected 97-code rows.
+             * Do not reset isValid when the timing is acceptable, because another
+             * timing validation may already have marked the activity invalid.
+             */
+            if (
+                isMedicalClaim &&
+                /^97/.test(codeValue) &&
+                hasInsufficient97Duration
+            ) {
+                isValid = false;
+
+                remarks.push(
+                    `${timed97CodeLabel}: total quantity ` +
+                    `${total97Quantity} requires at least ` +
+                    `${required97Minutes} minutes, but the ` +
+                    `encounter duration is only ` +
+                    `${encounterMinutes} minutes.`
+                );
+            }
+
+            results.push({
+                claimId,
+                activityId,
+                type: typeValue,
+                encounterStart: encounterStartStr,
+                encounterEnd: encounterEndStr,
+                start: activityStartStr,
+                duration: formatDuration(
+                    encounterMinutes
+                ),
+                excess: Number.isNaN(excessMinutes)
+                    ? "N/A"
+                    : formatDuration(excessMinutes),
+                isValid,
+                remarks
+            });
+        });
+    });
+
+    return results;
 }
 
 // --- Utilities ---
