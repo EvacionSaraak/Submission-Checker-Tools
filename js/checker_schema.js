@@ -1773,157 +1773,227 @@ function validateConsultationAndSpecialtyRules(
 
 function buildDuplicateActivityReferenceRemarksByClaim(claims) {
   const occurrencesByActivityID = new Map();
+  const groupedErrorsByClaim = new Map();
   const remarksByClaim = new Map();
 
-  function formatClaimIDs(claimIDs) {
-    const uniqueClaimIDs =
-      Array.from(
-        new Set(
-          claimIDs.filter(Boolean)
-        )
-      );
+  function formatList(values) {
+    const uniqueValues = Array.from(
+      new Set(
+        values
+          .map(value => String(value || "").trim())
+          .filter(Boolean)
+      )
+    );
 
-    if (uniqueClaimIDs.length === 0) {
+    if (uniqueValues.length === 0) {
       return "another claim";
     }
 
-    if (uniqueClaimIDs.length === 1) {
-      return uniqueClaimIDs[0];
+    if (uniqueValues.length === 1) {
+      return uniqueValues[0];
     }
 
-    if (uniqueClaimIDs.length === 2) {
-      return (
-        uniqueClaimIDs[0] +
-        " and " +
-        uniqueClaimIDs[1]
-      );
+    if (uniqueValues.length === 2) {
+      return `${uniqueValues[0]} and ${uniqueValues[1]}`;
     }
 
     return (
-      uniqueClaimIDs
-        .slice(0, -1)
-        .join(", ") +
-      ", and " +
-      uniqueClaimIDs[
-        uniqueClaimIDs.length - 1
-      ]
+      uniqueValues.slice(0, -1).join(", ") +
+      `, and ${uniqueValues[uniqueValues.length - 1]}`
     );
   }
 
   /*
    * First pass:
-   * Collect every Activity ID and every claim where it occurs.
+   * Collect every occurrence of every Activity ID across the submission.
    */
-  Array.from(claims || [])
-    .forEach((claim, claimIndex) => {
-      const claimID =
-        safeTextByTag(
-          claim,
-          "ID"
-        ) ||
-        `Unknown claim ${claimIndex + 1}`;
+  Array.from(claims || []).forEach((claim, claimIndex) => {
+    const claimID =
+      safeTextByTag(claim, "ID") ||
+      `Unknown claim ${claimIndex + 1}`;
 
-      const activities =
-        claim.getElementsByTagName(
-          "Activity"
-        );
+    const activities =
+      claim.getElementsByTagName("Activity");
 
-      Array.from(activities)
-        .forEach((activity, activityIndex) => {
-          const activityID =
-            safeTextByTag(
-              activity,
-              "ID"
-            );
+    Array.from(activities).forEach(activity => {
+      const activityID =
+        safeTextByTag(activity, "ID").trim();
 
-          if (!activityID) {
-            return;
-          }
-
-          const normalizedActivityID =
-            activityID
-              .trim()
-              .toUpperCase();
-
-          if (
-            !occurrencesByActivityID.has(
-              normalizedActivityID
-            )
-          ) {
-            occurrencesByActivityID.set(
-              normalizedActivityID,
-              []
-            );
-          }
-
-          occurrencesByActivityID
-            .get(normalizedActivityID)
-            .push({
-              claim,
-              claimID,
-              activity,
-              activityID:
-                activityID.trim(),
-              activityIndex
-            });
-        });
-    });
-
-  /*
-   * Second pass:
-   * Any Activity ID occurring more than once is invalid everywhere,
-   * including its first occurrence.
-   */
-  occurrencesByActivityID.forEach(
-    occurrences => {
-      if (occurrences.length < 2) {
+      if (!activityID) {
         return;
       }
 
-      occurrences.forEach(currentOccurrence => {
-        const otherClaimIDs =
+      const normalizedActivityID =
+        activityID.toUpperCase();
+
+      if (
+        !occurrencesByActivityID.has(
+          normalizedActivityID
+        )
+      ) {
+        occurrencesByActivityID.set(
+          normalizedActivityID,
+          []
+        );
+      }
+
+      occurrencesByActivityID
+        .get(normalizedActivityID)
+        .push({
+          claim,
+          claimID,
+          activityID
+        });
+    });
+  });
+
+  /*
+   * Second pass:
+   * For every duplicated Activity ID, add it to each affected claim.
+   *
+   * Activity IDs that duplicate against the same claim or same group of
+   * claims are grouped into one final error message.
+   */
+  occurrencesByActivityID.forEach(occurrences => {
+    if (occurrences.length < 2) {
+      return;
+    }
+
+    const affectedClaims = new Map();
+
+    occurrences.forEach(occurrence => {
+      if (!affectedClaims.has(occurrence.claim)) {
+        affectedClaims.set(
+          occurrence.claim,
+          {
+            claimID: occurrence.claimID,
+            activityID: occurrence.activityID
+          }
+        );
+      }
+    });
+
+    affectedClaims.forEach(
+      (currentClaimData, currentClaim) => {
+        let duplicateClaimIDs =
           occurrences
             .filter(
               occurrence =>
-                occurrence !== currentOccurrence
+                occurrence.claim !== currentClaim
             )
             .map(
               occurrence =>
                 occurrence.claimID
             );
 
-        const duplicateLocation =
-          formatClaimIDs(
-            otherClaimIDs
-          );
+        /*
+         * The Activity ID may be repeated more than once inside the same
+         * claim without occurring in another claim. It is still invalid.
+         */
+        if (duplicateClaimIDs.length === 0) {
+          duplicateClaimIDs = [
+            currentClaimData.claimID
+          ];
+        }
 
-        const remark =
-          `Activity reference ${currentOccurrence.activityID} ` +
-          `already exists in ${duplicateLocation}. ` +
-          `Kindly contact IT for this issue.`;
+        duplicateClaimIDs = Array.from(
+          new Set(duplicateClaimIDs)
+        );
+
+        /*
+         * Create a stable grouping key so references duplicated against
+         * the same claims are rendered together.
+         */
+        const duplicateGroupKey =
+          duplicateClaimIDs
+            .map(value =>
+              String(value || "")
+                .trim()
+                .toUpperCase()
+            )
+            .sort()
+            .join("|");
 
         if (
-          !remarksByClaim.has(
-            currentOccurrence.claim
+          !groupedErrorsByClaim.has(
+            currentClaim
           )
         ) {
-          remarksByClaim.set(
-            currentOccurrence.claim,
-            []
+          groupedErrorsByClaim.set(
+            currentClaim,
+            new Map()
           );
         }
 
-        const claimRemarks =
-          remarksByClaim.get(
-            currentOccurrence.claim
+        const claimGroups =
+          groupedErrorsByClaim.get(
+            currentClaim
           );
 
         if (
-          !claimRemarks.includes(remark)
+          !claimGroups.has(
+            duplicateGroupKey
+          )
         ) {
-          claimRemarks.push(remark);
+          claimGroups.set(
+            duplicateGroupKey,
+            {
+              activityIDs: [],
+              duplicateClaimIDs
+            }
+          );
         }
+
+        const group =
+          claimGroups.get(
+            duplicateGroupKey
+          );
+
+        if (
+          !group.activityIDs.some(
+            existingID =>
+              existingID.toUpperCase() ===
+              currentClaimData.activityID.toUpperCase()
+          )
+        ) {
+          group.activityIDs.push(
+            currentClaimData.activityID
+          );
+        }
+      }
+    );
+  });
+
+  /*
+   * Third pass:
+   * Render one combined remark per duplicate-claim grouping.
+   */
+  groupedErrorsByClaim.forEach(
+    (claimGroups, claim) => {
+      const claimRemarks = [];
+
+      claimGroups.forEach(group => {
+        const activityReferenceList =
+          formatList(group.activityIDs);
+
+        const duplicateClaimList =
+          formatList(
+            group.duplicateClaimIDs
+          );
+
+        claimRemarks.push(
+          `Activity reference(s) ${activityReferenceList} ` +
+          `already exists in ${duplicateClaimList}. ` +
+          `Kindly contact IT for this issue.`
+        );
       });
+
+      if (claimRemarks.length > 0) {
+        remarksByClaim.set(
+          claim,
+          claimRemarks
+        );
+      }
     }
   );
 
