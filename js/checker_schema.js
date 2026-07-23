@@ -722,69 +722,24 @@
       return result;
     }
 
-    async function applyTariffOccurrenceLimits(xmlDoc, results) {
-      if (!window.MandatoryTariffShared) {
-        throw new Error(
-          'MandatoryTariffShared is unavailable. Load mandatory_tariff_shared.js before checker_schema.js.'
-        );
+    async function applyTariffOccurrenceLimits(xmlDoc, results, options = {}) {
+      const claimTypeMode = String(options.claimTypeMode || getSelectedClaimTypeMode() || '').trim().toUpperCase();
+      if (claimTypeMode === 'DENTAL') {
+        window._lastTariffOccurrenceFindings = [];
+        console.log('[SCHEMA][TARIFF] Skipped CPT MUE validation (Dental).');
+        return results;
       }
-
-      // Codes exempt from occurrence limit (V2 addition)
-      const occurrenceLimitExemptCodes = new Set(['17999']);
-
+      if (!window.MandatoryTariffShared) throw new Error('MandatoryTariffShared unavailable.');
       const tariffData = await window.MandatoryTariffShared.loadBundledMandatoryTariff();
-      for (const warning of tariffData.warnings || []) {
-        console.warn('[SCHEMA][TARIFF]', warning);
-      }
-
-      const rawFindings = window.MandatoryTariffShared.validateSubmissionOccurrenceLimits(
-        xmlDoc,
-        tariffData.map
-      );
-
-      // Filter out exempt codes
-      const findings = (rawFindings || []).filter(finding => {
-        const findingCode = String(
-          finding?.code ??
-          finding?.cptCode ??
-          finding?.activityCode ??
-          finding?.serviceCode ??
-          ''
-        ).trim().toUpperCase();
-
-        if (occurrenceLimitExemptCodes.has(findingCode)) {
-          return false;
-        }
-
-        const findingRemark = String(finding?.remark || '').trim();
-        for (const exemptCode of occurrenceLimitExemptCodes) {
-          const escapedCode = exemptCode.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-          const occurrenceRemarkPattern = new RegExp(`^${escapedCode}\\s+can only be coded\\b`, 'i');
-          if (occurrenceRemarkPattern.test(findingRemark)) {
-            return false;
-          }
-        }
-        return true;
-      });
-
-      const exemptedFindingCount = (rawFindings || []).length - findings.length;
-
+      tariffData.warnings?.forEach(w => console.warn('[SCHEMA][TARIFF]', w));
+      const findings = window.MandatoryTariffShared.validateSubmissionOccurrenceLimits(xmlDoc, tariffData.map);
       const findingsByClaim = groupTariffFindingsByClaim(findings);
-
       for (const result of results || []) {
         const claimID = String(result?.ClaimID || 'Unknown').trim();
         applyTariffFindingsToResult(result, findingsByClaim.get(claimID) || []);
       }
-
       window._lastTariffOccurrenceFindings = findings;
-      console.log(
-        `[SCHEMA][TARIFF] Applied CPT MUE occurrence limits from ${tariffData.sheetName}. ` +
-        `Findings: ${findings.length}; ` +
-        `exempted findings: ${exemptedFindingCount}; ` +
-        `tariff rows: ${tariffData.rows.length}; ` +
-        `source: ${tariffData.path}`
-      );
-
+      console.log(`[SCHEMA][TARIFF] Applied CPT MUE from ${tariffData.sheetName}. Findings: ${findings.length}; rows: ${tariffData.rows.length}; source: ${tariffData.path}`);
       return results;
     }
 
