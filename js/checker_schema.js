@@ -1,6 +1,10 @@
 (function() {
   try {
-    ':contentReference[oaicite:1]{index=1} with modal table view, Person schema support,
+    'use strict';
+
+    // checker_schema.js with modal table view and Person schema support.
+    // Includes medical validation, pregnancy diagnosis validation,
+    // Activity ID validation, and Mandatory Tariff occurrence limits.
     // medical consistency rules, pregnancy diagnosis validation,
     // global Activity ID validation, and Mandatory Tariff occurrence limits.
     //
