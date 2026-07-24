@@ -1,9 +1,7 @@
 (function() {
   'use strict';
 
-  // checker_schema.js – compact, readable, combined V1+V2 features
-  // Requires SheetJS and mandatory_tariff_shared.js.
-
+  // checker_schema.js – compact, all features retained, single-line ifs
   const AMPERSAND_REPLACEMENT_ERROR = "Please replace `&` in the observations to `and` because this will cause error.";
   const CLAIM_NOT_MERGED = "CLAIM_NOT_MERGED";
   const NOT_MERGED_RECEIVER_IDS = new Set(['D001', 'A001', 'D004']);
@@ -20,16 +18,8 @@
   let pregnancyDiagnosisDataPromise = null;
 
   // ----- Display / Modal / Export helpers --------------------------------------
-  function sanitizeForHTML(text) {
-    if (text == null) return '';
-    return String(text)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#039;');
-  }
-  
+  function sanitizeForHTML(t) { return t == null ? '' : String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;'); }
+
   function ensureModal() {
     if (document.getElementById('modalOverlay')) return;
     const html = `<div id="modalOverlay" style="display:none;position:fixed;z-index:9999;left:0;top:0;width:100vw;height:100vh;background:rgba(0,0,0,0.35);"><div id="modalContent" style="background:#fff;width:90%;max-width:1000px;max-height:95vh;overflow:auto;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);padding:20px;border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,0.2);"><button id="modalCloseBtn" style="float:right;font-size:18px;padding:2px 10px;cursor:pointer;">&times;</button><div id="modalTable"></div></div></div>`;
@@ -334,6 +324,34 @@
     return buildNotMergedRemarksFromContexts(contexts);
   }
 
+  // ----- buildDuplicateActivityReferenceRemarksByClaim (included) ---------------
+  function buildDuplicateActivityReferenceRemarksByClaim(claims) {
+    const occurrencesByReference = new Map();
+    Array.from(claims || []).forEach(claim => {
+      const claimID = getDirectChildText(claim, 'ID') || 'Unknown';
+      const activities = Array.from(claim?.children || []).filter(child => String(child?.nodeName || child?.tagName || '').trim() === 'Activity');
+      activities.forEach(activity => {
+        const activityReference = getDirectChildText(activity, 'ID').trim().toUpperCase();
+        if (!activityReference) return;
+        if (!occurrencesByReference.has(activityReference)) occurrencesByReference.set(activityReference, []);
+        occurrencesByReference.get(activityReference).push({ claim, claimID, activityReference });
+      });
+    });
+    const remarksByClaim = new Map();
+    occurrencesByReference.forEach((occurrences, activityReference) => {
+      if (occurrences.length < 2) return;
+      occurrences.forEach(current => {
+        const otherClaimIDs = Array.from(new Set(occurrences.filter(item => item !== current).map(item => item.claimID).filter(Boolean))).sort();
+        if (!otherClaimIDs.length) return;
+        if (!remarksByClaim.has(current.claim)) remarksByClaim.set(current.claim, []);
+        const remarks = remarksByClaim.get(current.claim);
+        const remark = `Activity reference ${activityReference} already exists in ${formatNaturalList(otherClaimIDs)}.`;
+        if (!remarks.includes(remark)) remarks.push(remark);
+      });
+    });
+    return remarksByClaim;
+  }
+
   // ----- Supplemental claim‑rule helpers ----------------------------------------
   function isConsultationCode(c) { return CONSULATION_CODE_REGEX.test(String(c||'').trim()); }
   function specialtyContains(spec, text) { return normalizeSpecialty(spec).includes(normalizeSpecialty(text)); }
@@ -531,6 +549,7 @@
     const missingReceiverID = !receiverID;
     console.log(`[SCHEMA] ReceiverID: ${receiverID || '(MISSING)'}`);
     const notMergedRemarks = detectNotMergedRemarksByClaim(claims, receiverID);
+    const duplicateActivityRemarks = buildDuplicateActivityReferenceRemarksByClaim(claims);
 
     for (const claim of claims) {
       let missing = [], invalid = [], remarks = [], unknown = false;
@@ -540,7 +559,8 @@
       if (missingReceiverID) invalid.push('CRITICAL ERROR: ReceiverID is missing from XML Header. This file cannot be processed.');
       const claimID = text('ID');
       if (claimID && dupIds.has(claimID)) invalid.push(`Duplicate Claim ID '${claimID}' found within this submission.`);
-      // No duplicate activity detection – removed
+      (duplicateActivityRemarks.get(claim) || []).forEach(r => invalid.push(r));
+
       let hadAmp = false;
       if (originalXmlContent && claimID) {
         const pos = originalXmlContent.indexOf(`<ID>${claimID}</ID>`);
@@ -769,11 +789,11 @@
     applyTariffOccurrenceLimits,
     loadPregnancyDiagnosisData,
     checkPregnancyDiagnosisTrimesterConsistency,
-    normalizeDiagnosisCode
+    normalizeDiagnosisCode,
+    buildDuplicateActivityReferenceRemarksByClaim
   };
 
 } catch (e) {
   console.error('[CHECKER-ERROR] Failed to load checker:', e);
   console.error(e.stack);
 }
-})();
