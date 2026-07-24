@@ -867,25 +867,34 @@
       console.log(`[DEBUG] Calling ${checkerName} checker function...`);
       
       const checkerFunctions = {
-        schema: () => validateXmlSchema({
-          file: files.xml,
-          container,
-          claimTypeMode: getGlobalClaimTypeMode()
-        }),
+        schema: () => {
+          if (typeof window.validateXmlSchema !== 'function') {
+            throw new Error(
+              'Schema Checker failed to load: window.validateXmlSchema is unavailable.'
+            );
+          }
+      
+          return window.validateXmlSchema({
+            file: files.xml,
+            container,
+            claimTypeMode: getGlobalClaimTypeMode()
+          });
+        },
+      
         exclusion: runExclusionCheck,
         timings: validateTimingsAsync,
         observations: () => parseXML(files.xml),
         elig: runEligCheck,
         auths: runAuthsCheck,
-        // Pass the shared XML file directly so the clinician checker can read it
-        // without depending on an asynchronous dispatched-event side-effect.
         clinician: () => runClinicianCheck(files.xml),
+      
         pricing: () => runPricingCheck({
           xmlFile: files.xml,
           xlsxFile: files.pricing || null,
           drugsFile: files.drugs || null,
           claimTypeMode: isMedicalModeSelected() ? 'MEDICAL' : 'DENTAL'
         }),
+      
         modifiers: runModifiersCheck
       };
       
