@@ -20,8 +20,16 @@
   let pregnancyDiagnosisDataPromise = null;
 
   // ----- Display / Modal / Export helpers --------------------------------------
-  function sanitizeForHTML(t) { return t == null ? '' : String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;'); }
-
+  function sanitizeForHTML(text) {
+    if (text == null) return '';
+    return String(text)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+  
   function ensureModal() {
     if (document.getElementById('modalOverlay')) return;
     const html = `<div id="modalOverlay" style="display:none;position:fixed;z-index:9999;left:0;top:0;width:100vw;height:100vh;background:rgba(0,0,0,0.35);"><div id="modalContent" style="background:#fff;width:90%;max-width:1000px;max-height:95vh;overflow:auto;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);padding:20px;border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,0.2);"><button id="modalCloseBtn" style="float:right;font-size:18px;padding:2px 10px;cursor:pointer;">&times;</button><div id="modalTable"></div></div></div>`;
