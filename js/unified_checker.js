@@ -795,140 +795,289 @@
   }
 
   async function executeChecker(checkerName, container) {
-    console.log(`[DEBUG] executeChecker called for: ${checkerName}`);
-    
-    // ✅ Clear previous results before running checker
-    const resultsDiv = container.querySelector('#results, [data-role="schema-results"]');
+    console.log(
+      `[DEBUG] executeChecker called for: ${checkerName}`
+    );
+  
+    const resultsDiv =
+      container.querySelector(
+        '#results, [data-role="schema-results"]'
+      );
+  
     if (resultsDiv) {
       resultsDiv.innerHTML = '';
-      console.log(`[DEBUG] Cleared previous results for ${checkerName}`);
+  
+      console.log(
+        `[DEBUG] Cleared previous results for ${checkerName}`
+      );
     }
-    
-    // Also clear other common result containers
-    const resultsSummary = container.querySelector('#resultsSummary');
+  
+    const resultsSummary =
+      container.querySelector(
+        '#resultsSummary'
+      );
+  
     if (resultsSummary) {
       resultsSummary.innerHTML = '';
     }
-    
-    const messageBox = container.querySelector('#messageBox');
+  
+    const messageBox =
+      container.querySelector(
+        '#messageBox'
+      );
+  
     if (messageBox) {
       messageBox.innerHTML = '';
     }
-    
-    const uploadStatus = container.querySelector('#uploadStatus, [data-role="schema-status"]');
+  
+    const uploadStatus =
+      container.querySelector(
+        '#uploadStatus, [data-role="schema-status"]'
+      );
+  
     if (uploadStatus) {
       uploadStatus.innerHTML = '';
     }
-    
-    const fileStatus = container.querySelector('#file-status');
+  
+    const fileStatus =
+      container.querySelector(
+        '#file-status'
+      );
+  
     if (fileStatus) {
       fileStatus.innerHTML = '';
     }
-    
+  
     const fileInputMap = {
-      clinician: { xmlFileInput: 'xml' }, // clinician and status files are auto-loaded from resources
-      elig: { xmlFileInput: 'xml', eligibilityFileInput: 'eligibility' },
-      auths: { xmlInput: 'xml', xlsxInput: 'auth' },
-      timings: { xmlFileInput: 'xml' },
-      observations: { xmlFile: 'xml' },
+      clinician: {
+        xmlFileInput: 'xml'
+      },
+  
+      elig: {
+        xmlFileInput: 'xml',
+        eligibilityFileInput: 'eligibility'
+      },
+  
+      auths: {
+        xmlInput: 'xml',
+        xlsxInput: 'auth'
+      },
+  
+      timings: {
+        xmlFileInput: 'xml'
+      },
+  
+      observations: {
+        xmlFile: 'xml'
+      },
+  
       schema: {},
-      exclusion: { xmlFile: 'xml' },
-      pricing: { 'xml-file': 'xml', 'xlsx-file': 'pricing' },
-      modifiers: { 'xml-file': 'xml', 'xlsx-file': 'eligibility' }
+  
+      exclusion: {
+        xmlFile: 'xml'
+      },
+  
+      pricing: {
+        'xml-file': 'xml',
+        'xlsx-file': 'pricing'
+      },
+  
+      modifiers: {
+        'xml-file': 'xml',
+        'xlsx-file': 'eligibility'
+      }
     };
-
-    const inputMap = fileInputMap[checkerName];
+  
+    const inputMap =
+      fileInputMap[checkerName];
+  
     if (!inputMap) {
-      console.warn(`[DEBUG] No input map found for: ${checkerName}`);
-      return;
+      console.warn(
+        `[DEBUG] No input map found for: ${checkerName}`
+      );
+  
+      return null;
     }
-
-    // Set files in hidden inputs within the container
-    console.log(`[DEBUG] Setting files for ${checkerName}:`, inputMap);
-    for (const [inputId, fileKey] of Object.entries(inputMap)) {
-      const input = container.querySelector(`#${inputId}`);
-      console.log(`[DEBUG] Looking for input #${inputId}, found:`, !!input, 'File key:', fileKey, 'Has file:', !!files[fileKey]);
-      
-      if (input && files[fileKey]) {
-        const dataTransfer = new DataTransfer();
-        dataTransfer.items.add(files[fileKey]);
-        input.files = dataTransfer.files;
-        console.log(`[DEBUG] Set file for #${inputId}:`, input.files[0]?.name);
-        
-        // Trigger change event
-        const event = new Event('change', { bubbles: true });
-        input.dispatchEvent(event);
+  
+    console.log(
+      `[DEBUG] Setting files for ${checkerName}:`,
+      inputMap
+    );
+  
+    for (
+      const [inputID, fileKey]
+      of Object.entries(inputMap)
+    ) {
+      const input =
+        container.querySelector(
+          `#${inputID}`
+        );
+  
+      console.log(
+        `[DEBUG] Looking for input #${inputID}, ` +
+        `found: ${Boolean(input)}, ` +
+        `file key: ${fileKey}, ` +
+        `has file: ${Boolean(files[fileKey])}`
+      );
+  
+      if (
+        input &&
+        files[fileKey]
+      ) {
+        const dataTransfer =
+          new DataTransfer();
+  
+        dataTransfer.items.add(
+          files[fileKey]
+        );
+  
+        input.files =
+          dataTransfer.files;
+  
+        console.log(
+          `[DEBUG] Set file for #${inputID}:`,
+          input.files[0]?.name
+        );
+  
+        input.dispatchEvent(
+          new Event(
+            'change',
+            { bubbles: true }
+          )
+        );
       }
     }
-
-    // Call the checker function directly (scripts are already loaded)
-    // Bug #5 fix: Use function registry map instead of if-else chain
+  
     try {
-      console.log(`[DEBUG] Calling ${checkerName} checker function...`);
-      
+      console.log(
+        `[DEBUG] Calling ${checkerName} checker function...`
+      );
+  
       const checkerFunctions = {
         schema: () => {
-          if (typeof window.validateXmlSchema !== 'function') {
+          if (
+            typeof window.validateXmlSchema !==
+            'function'
+          ) {
             throw new Error(
-              'Schema Checker failed to load: window.validateXmlSchema is unavailable.'
+              'Schema Checker failed to load: ' +
+              'window.validateXmlSchema is unavailable.'
             );
           }
-      
+  
           return window.validateXmlSchema({
-            file: files.xml,
+            file:
+              files.xml,
+  
             container,
-            claimTypeMode: getGlobalClaimTypeMode()
+  
+            claimTypeMode:
+              getGlobalClaimTypeMode()
           });
         },
-      
-        exclusion: runExclusionCheck,
-        timings: validateTimingsAsync,
-        observations: () => parseXML(files.xml),
-        elig: runEligCheck,
-        auths: runAuthsCheck,
-        clinician: () => runClinicianCheck(files.xml),
-      
-        pricing: () => runPricingCheck({
-          xmlFile: files.xml,
-          xlsxFile: files.pricing || null,
-          drugsFile: files.drugs || null,
-          claimTypeMode: isMedicalModeSelected() ? 'MEDICAL' : 'DENTAL'
-        }),
-      
-        modifiers: runModifiersCheck
+  
+        exclusion:
+          runExclusionCheck,
+  
+        timings:
+          validateTimingsAsync,
+  
+        observations:
+          () => parseXML(files.xml),
+  
+        elig:
+          runEligCheck,
+  
+        auths:
+          runAuthsCheck,
+  
+        clinician:
+          () => runClinicianCheck(
+            files.xml
+          ),
+  
+        pricing:
+          () => runPricingCheck({
+            xmlFile:
+              files.xml,
+  
+            xlsxFile:
+              files.pricing || null,
+  
+            drugsFile:
+              files.drugs || null,
+  
+            claimTypeMode:
+              isMedicalModeSelected()
+                ? 'MEDICAL'
+                : 'DENTAL'
+          }),
+  
+        modifiers:
+          runModifiersCheck
       };
-      
-      const checkerFn = checkerFunctions[checkerName];
-      
-      if (!checkerFn || typeof checkerFn !== 'function') {
-        throw new Error(`Checker function not found for: ${checkerName}`);
+  
+      const checkerFunction =
+        checkerFunctions[checkerName];
+  
+      if (
+        typeof checkerFunction !==
+        'function'
+      ) {
+        throw new Error(
+          `Checker function not found for: ${checkerName}`
+        );
       }
-      
-      console.log(`[DEBUG] Executing ${checkerName} checker function`);
-      const resultElement = await checkerFn();  // GET the returned element
-
-      // Resolve the element into { root, table } if possible.
-      // This handles checkers that return a wrapper <div> (e.g. clinician) as well
-      // as checkers that return a <table> directly.
-      const checkerResult = resolveCheckerResult(resultElement);
-
-      if (checkerResult && resultsDiv) {
-        // Render the full root element (preserves summary, modals, etc.)
-        console.log(`[DEBUG] Rendering result from ${checkerName}`);
-        resultsDiv.appendChild(checkerResult.root);
-      } else if (resultElement && !checkerResult && resultsDiv) {
-        // Result exists but contains no table — render as-is (informational/warning element)
-        console.log(`[DEBUG] Rendering non-table result from ${checkerName}`);
-        resultsDiv.appendChild(resultElement);
+  
+      console.log(
+        `[DEBUG] Executing ${checkerName} checker function`
+      );
+  
+      const resultElement =
+        await checkerFunction();
+  
+      const checkerResult =
+        resolveCheckerResult(
+          resultElement
+        );
+  
+      if (
+        checkerResult &&
+        resultsDiv
+      ) {
+        console.log(
+          `[DEBUG] Rendering result from ${checkerName}`
+        );
+  
+        resultsDiv.appendChild(
+          checkerResult.root
+        );
+      } else if (
+        resultElement instanceof HTMLElement &&
+        !checkerResult &&
+        resultsDiv
+      ) {
+        console.log(
+          `[DEBUG] Rendering non-table result from ${checkerName}`
+        );
+  
+        resultsDiv.appendChild(
+          resultElement
+        );
       } else if (!resultElement) {
-        console.log(`[DEBUG] ${checkerName} returned no result (may have rendered status message instead)`);
+        console.log(
+          `[DEBUG] ${checkerName} returned no result`
+        );
       }
-      
-      // Return the raw result element so Check All can resolve it independently.
+  
       return resultElement;
-      
+  
     } catch (error) {
-      console.error(`[DEBUG] Error executing ${checkerName}:`, error);
+      console.error(
+        `[DEBUG] Error executing ${checkerName}:`,
+        error
+      );
+  
       throw error;
     }
   }
