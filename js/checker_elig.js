@@ -3,8 +3,8 @@
 // Matching methodology:
 //   1. Match by Emirates ID + encounter date when a usable Emirates ID exists.
 //   2. Fall back to Member ID + encounter date.
-//   3. Provider, clinician, status, and time proximity rank candidates, but a
-//      clinician mismatch does not erase an otherwise valid eligibility match.
+//   3. Provider, eligibility status, and time proximity rank candidates.
+//      Clinician is informational only and does not affect matching or validity.
 //
 // The View All modal uses delegated document-level handling and a per-run
 // detail store, so it works in both the individual checker and cloned Check All
@@ -516,7 +516,6 @@
     if (claim.memberID && row.memberID === claim.memberID) score += 700;
     if (claim.providerID && row.providerLicense === claim.providerID) score += 300;
     if (ELIGIBLE_STATUS_PATTERN.test(row.status)) score += 150;
-    if (claim.clinicians.size && row.clinician && claim.clinicians.has(row.clinician)) score += 100;
 
     let minutesDifference = null;
     if (claim.encounterTimestamp != null && row.orderedTimestamp != null) {
@@ -595,14 +594,6 @@
       if (claim.providerID && matchedRow.providerLicense && claim.providerID !== matchedRow.providerLicense) {
         notes.push(
           `Provider differs: claim ${claim.providerIDRaw}, eligibility ${matchedRow.providerLicenseRaw}.`
-        );
-      }
-
-      if (claim.clinicians.size && matchedRow.clinician && !claim.clinicians.has(matchedRow.clinician)) {
-        notes.push(
-          `Clinician differs: claim ${Array.from(claim.clinicians).join(', ')}, ` +
-          `eligibility ${matchedRow.clinicianRaw}. The eligibility was still matched by ` +
-          `${match.basis} and encounter date.`
         );
       }
 
