@@ -883,7 +883,19 @@
         exclusion: runExclusionCheck,
         timings: validateTimingsAsync,
         observations: () => parseXML(files.xml),
-        elig: runEligCheck,
+        elig: () => {
+          if (typeof window.runEligCheck !== 'function') {
+            throw new Error(
+              'Eligibility Checker failed to load: window.runEligCheck is unavailable.'
+            );
+          }
+
+          return window.runEligCheck({
+            xmlFile: files.xml,
+            eligibilityFile: files.eligibility,
+            container
+          });
+        },
         auths: runAuthsCheck,
         // Pass the shared XML file directly so the clinician checker can read it
         // without depending on an asynchronous dispatched-event side-effect.
@@ -971,10 +983,26 @@
         });
         console.log(`[CHECK-ALL] Re-attached ${buttons.length} event listeners for schema checker`);
       } else if (checkerName === 'elig') {
-        // Eligibility details buttons use delegated event handling via window.openEligibilityDetails
-        // (registered once in checker_elig.js initEligibilityModal). No per-clone reattachment needed.
-        const detailButtons = clonedTable.querySelectorAll('.eligibility-details');
-        console.log(`[CHECK-ALL] Found ${detailButtons.length} eligibility detail buttons (handled by delegated listener)`);
+        // Eligibility detail buttons carry a stable detail ID. The Eligibility
+        // checker registers one delegated document-level click handler, so the
+        // buttons continue to work after Check All clones the result wrapper.
+        if (typeof window.initEligibilityModal === 'function') {
+          window.initEligibilityModal();
+        }
+
+        const detailButtons = clonedTable.querySelectorAll(
+          'button.eligibility-details[data-eligibility-detail-id]'
+        );
+
+        detailButtons.forEach(button => {
+          // Remove stale inline handlers from older Eligibility checker builds.
+          button.removeAttribute('onclick');
+        });
+
+        console.log(
+          `[CHECK-ALL] Found ${detailButtons.length} eligibility detail button(s) ` +
+          '(handled by delegated modal listener).'
+        );
       } else if (checkerName === 'clinician') {
         // Clinician checker uses .view-activities and .view-license-history buttons.
         // clonedTable is the full cloned root element (a <div> that contains the
