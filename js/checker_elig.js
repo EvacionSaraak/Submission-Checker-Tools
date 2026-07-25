@@ -5,12 +5,14 @@
 //      matches the claim by Member ID or Emirates ID. Clinician-only rows are
 //      not eligible for partial-match review.
 //   2. A valid candidate must match encounter date, Member ID, Emirates ID,
-//      and clinician license. Any mismatch makes that candidate invalid.
-//   3. Complete four-field matches outrank partial candidates. Provider,
-//      eligibility status, and time proximity only break ties between complete matches.
-//   4. Different-date rows are not shown as partial matches in the modal.
-//   5. When no complete match exists, every same-date partial identity match
-//      produces an explicit error remark identifying the fields that differ.
+//      and clinician license. Emirates ID is always mandatory for validity.
+//   3. A same-date candidate whose Emirates ID and clinician match, but whose
+//      Member ID differs, is an Unknown correction case rather than Invalid.
+//   4. Complete four-field matches outrank correction and partial candidates.
+//      Provider, eligibility status, and time proximity only break ties.
+//   5. Different-date rows are not shown as partial matches in the modal.
+//   6. When no complete or Member-ID-correction match exists, every same-date
+//      partial identity match produces an explicit mismatch remark.
 //
 // The View All modal uses delegated document-level handling and a per-run
 // detail store, so it works in both the individual checker and cloned Check All
@@ -571,6 +573,28 @@
     };
   }
 
+  function isMemberIdCorrectionCandidate(claim, candidate) {
+    const row = candidate?.row;
+    const comparison = candidate?.comparison || buildCandidateComparison(claim, row);
+
+    return Boolean(
+      comparison.orderedOn &&
+      comparison.eid &&
+      comparison.clinician &&
+      !comparison.memberId &&
+      row?.memberID
+    );
+  }
+
+  function buildWrongMemberIdRemark(candidate) {
+    const expectedMemberID =
+      candidate?.row?.memberIDRaw ||
+      candidate?.row?.memberID ||
+      '(blank)';
+
+    return `Wrong Member ID (should be ${expectedMemberID}).`;
+  }
+
   function findBestEligibilityMatch(claim, indexes) {
     const candidateMap = new Map();
 
@@ -673,109 +697,79 @@
       });
 
     const selectedEntry = rankedForReview.find(candidate => candidate.completeMatch) || null;
-    const reviewEntry = selectedEntry || rankedForReview[0];
+    const memberIdCorrectionEntry = selectedEntry
+      ? null
+      : rankedForReview.find(candidate => isMemberIdCorrectionCandidate(claim, candidate)) || null;
+    const reviewEntry = selectedEntry || memberIdCorrectionEntry || rankedForReview[0];
 
-    // A partial candidate is never marked Selected. It is only retained as the
-    // closest same-date review row so the result table and modal can explain
-    // which of the required identity fields failed.
+    // Only a complete four-field match receives the Selected badge. A Member
+    // ID correction candidate remains unselected and produces an Unknown result.
     if (selectedEntry) selectedEntry.selected = true;
+    if (memberIdCorrectionEntry) memberIdCorrectionEntry.memberIdCorrection = true;
 
     return {
       row: reviewEntry.row,
       selectedRow: selectedEntry?.row || null,
+      memberIdCorrectionRow: memberIdCorrectionEntry?.row || null,
+      memberIdCorrectionCandidate: memberIdCorrectionEntry || null,
       basis: reviewEntry.basis,
       candidateCount: candidates.length,
       minutesDifference: reviewEntry.minutesDifference,
       candidates,
       selectedComparison: reviewEntry.comparison,
-      completeMatch: Boolean(selectedEntry)
+      completeMatch: Boolean(selectedEntry),
+      memberIdCorrection: Boolean(memberIdCorrectionEntry)
     };
   }
 
-  function buildPartialCandidateError(claim, candidate) {
-    const row = candidate?.row;
-    const comparison = candidate?.comparison || buildCandidateComparison(claim, row);
-    const claimClinicians = Array.from(claim?.clinicians || []);
-    const matchedIdentityFields = [];
-    const mismatches = [];
+  function buildEligibilityNotFoundRemark(claim) {
+    const memberID = claim?.memberIDRaw || claim?.memberID || '(blank)';
+    const claimDate = claim?.encounterDate || claim?.encounterStartRaw || '(unknown date)';
+    const clinicians = Array.from(claim?.clinicians || []);
+    const clinicianID = clinicians.length ? clinicians.join(', ') : '(blank)';
 
-    if (comparison.memberId) matchedIdentityFields.push('Member ID');
-    if (comparison.eid) matchedIdentityFields.push('Emirates ID');
-
-    if (!comparison.orderedOn) {
-      mismatches.push(
-        `encounter date differs (claim ${claim?.encounterDate || claim?.encounterStartRaw || '(blank)'}, ` +
-        `eligibility ${row?.orderedDate || row?.orderedOnDisplay || '(blank)'})`
-      );
-    }
-
-    if (!comparison.memberId) {
-      mismatches.push(
-        `Member ID differs (claim ${claim?.memberIDRaw || '(blank)'}, ` +
-        `eligibility ${row?.memberIDRaw || '(blank)'})`
-      );
-    }
-
-    if (!comparison.eid) {
-      mismatches.push(
-        `Emirates ID differs (claim ${claim?.eidRaw || '(blank)'}, ` +
-        `eligibility ${row?.eidRaw || '(blank)'})`
-      );
-    }
-
-    if (!comparison.clinician) {
-      mismatches.push(
-        `clinician license differs (claim ` +
-        `${claimClinicians.length ? claimClinicians.join(', ') : '(blank)'}, ` +
-        `eligibility ${row?.clinicianRaw || '(blank)'})`
-      );
-    }
-
-    const requestReference = row?.requestNumber
-      ? `\`${row.requestNumber}\``
-      : `sheet ${row?.sheetName || '(unknown)'}, row ${row?.sheetRowNumber || '(unknown)'}`;
-
-    const matchedBy = matchedIdentityFields.length
-      ? matchedIdentityFields.join(' and ')
-      : 'neither required patient identifier';
-
-    return (
-      `Partial eligibility match ${requestReference} matched by ${matchedBy}, ` +
-      `but ${mismatches.join('; ') || 'it does not satisfy all required match fields'}.`
-    );
+    return `Eligibility for ${memberID} cannot be found on ${claimDate} for ${clinicianID}.`;
   }
 
   function analyzeClaim(claim, match) {
     const matchedRow = match.row;
     const selectedRow = match.selectedRow || null;
+    const memberIdCorrectionCandidate = match.memberIdCorrectionCandidate || null;
+    const memberIdCorrectionRow = match.memberIdCorrectionRow || null;
+    const validationRow = selectedRow || memberIdCorrectionRow || null;
     const invalidRemarks = [];
+    const unknownRemarks = [];
     const notes = [];
 
     if (!claim.encounterDate) {
       invalidRemarks.push('Encounter Start is missing or has an invalid date.');
     }
 
-    if (!matchedRow) {
-      invalidRemarks.push(
-        `No eligibility match was found for EID ${claim.eidRaw || '(blank)'} ` +
-        `or Member ID ${claim.memberIDRaw || '(blank)'} on ` +
-        `${claim.encounterDate || claim.encounterStartRaw || '(unknown date)'}.`
-      );
-    } else if (!match.completeMatch) {
-      const partialCandidates = Array.isArray(match.candidates)
-        ? match.candidates.filter(candidate => candidate && !candidate.completeMatch)
-        : [];
+    if (!isUsableEid(claim.eid)) {
+      invalidRemarks.push('Emirates ID is missing or invalid.');
+    }
 
-      if (partialCandidates.length) {
-        partialCandidates.forEach(candidate => {
-          invalidRemarks.push(buildPartialCandidateError(claim, candidate));
-        });
-      } else {
-        invalidRemarks.push(
-          'Eligibility candidates were found, but none matched encounter date, ' +
-          'Member ID, Emirates ID, and clinician license together.'
+    if (!matchedRow) {
+      invalidRemarks.push(buildEligibilityNotFoundRemark(claim));
+    } else if (!match.completeMatch && memberIdCorrectionCandidate) {
+      unknownRemarks.push(buildWrongMemberIdRemark(memberIdCorrectionCandidate));
+      notes.push(
+        `Eligibility ${memberIdCorrectionRow?.requestNumber || '(unknown)'} matched ` +
+        'encounter date, Emirates ID, and clinician license. It was not selected ' +
+        'because the Member ID differs.'
+      );
+
+      if (match.candidateCount > 1) {
+        notes.push(
+          `${match.candidateCount} same-date eligibility candidates were found. ` +
+          'Review every candidate in View All.'
         );
       }
+    } else if (!match.completeMatch) {
+      // Keep every same-date identity partial visible in View All, but emit only
+      // one compact claim-level error instead of repeating every candidate and
+      // every mismatched field in the results table and clipboard export.
+      invalidRemarks.push(buildEligibilityNotFoundRemark(claim));
 
       notes.push(
         `${match.candidateCount} same-date partial eligibility ` +
@@ -785,40 +779,40 @@
     }
 
     /*
-     * Status, service-category, and provider checks are only meaningful for the
-     * complete four-field eligibility that was actually selected. Partial rows
-     * remain diagnostic candidates and cannot validate the claim.
+     * Eligibility status and service-category checks apply to either the full
+     * selected match or the three-field Member ID correction candidate. The
+     * latter is Unknown only when Member ID is the sole remaining problem.
      */
-    if (selectedRow) {
-      if (!ELIGIBLE_STATUS_PATTERN.test(selectedRow.status)) {
+    if (validationRow) {
+      if (!ELIGIBLE_STATUS_PATTERN.test(validationRow.status)) {
         invalidRemarks.push(
-          `Eligibility status is ${selectedRow.status || '(blank)'} instead of Eligible.`
+          `Eligibility status is ${validationRow.status || '(blank)'} instead of Eligible.`
         );
       }
 
       if (
         claim.isDental &&
-        selectedRow.serviceCategory &&
-        !DENTAL_CATEGORY_PATTERN.test(selectedRow.serviceCategory)
+        validationRow.serviceCategory &&
+        !DENTAL_CATEGORY_PATTERN.test(validationRow.serviceCategory)
       ) {
         invalidRemarks.push(
           `Dental claim matched eligibility Service Category ` +
-          `\`${selectedRow.serviceCategory}\` instead of Dental Services.`
+          `\`${validationRow.serviceCategory}\` instead of Dental Services.`
         );
       }
 
       if (
         claim.providerID &&
-        selectedRow.providerLicense &&
-        claim.providerID !== selectedRow.providerLicense
+        validationRow.providerLicense &&
+        claim.providerID !== validationRow.providerLicense
       ) {
         notes.push(
           `Provider differs: claim ${claim.providerIDRaw}, ` +
-          `eligibility ${selectedRow.providerLicenseRaw}.`
+          `eligibility ${validationRow.providerLicenseRaw}.`
         );
       }
 
-      if (match.candidateCount > 1) {
+      if (selectedRow && match.candidateCount > 1) {
         notes.push(
           `${match.candidateCount} eligibility candidates were found; ` +
           `the candidate matching date, Member ID, Emirates ID, and clinician was selected.`
@@ -826,7 +820,11 @@
       }
     }
 
-    const status = invalidRemarks.length ? 'Invalid' : 'Valid';
+    const status = invalidRemarks.length
+      ? 'Invalid'
+      : unknownRemarks.length
+        ? 'Unknown'
+        : 'Valid';
 
     return {
       ClaimID: claim.claimID,
@@ -838,8 +836,9 @@
       ProviderID: claim.providerIDRaw,
       MatchBasis: match.basis || '',
       RequiredMatchComplete: match.completeMatch === true,
+      MemberIdCorrection: match.memberIdCorrection === true,
       Status: status,
-      Remarks: invalidRemarks.join('\n') || 'OK',
+      Remarks: [...invalidRemarks, ...unknownRemarks].join('\n') || 'OK',
       Notes: notes.join('\n'),
       EligibilityRequestNumber: matchedRow?.requestNumber || '',
       SelectedEligibilityRequestNumber: selectedRow?.requestNumber || '',
@@ -901,6 +900,7 @@
     const candidates = (result.EligibilityCandidates || []).map((candidate, candidateIndex) => ({
       index: candidateIndex,
       selected: candidate.selected === true,
+      memberIdCorrection: candidate.memberIdCorrection === true,
       completeMatch: candidate.completeMatch === true,
       basis: candidate.basis || '',
       bases: Array.isArray(candidate.bases) ? candidate.bases.slice() : [],
@@ -928,7 +928,10 @@
         'Selected Eligibility Request': result.RequiredMatchComplete
           ? result.EligibilityRequestNumber
           : '(none - no complete four-field match)',
-        'Closest Review Candidate': result.RequiredMatchComplete
+        'Member ID Correction Candidate': result.MemberIdCorrection
+          ? result.EligibilityRequestNumber
+          : '',
+        'Closest Review Candidate': result.RequiredMatchComplete || result.MemberIdCorrection
           ? ''
           : result.EligibilityRequestNumber,
         'Four Required Fields Match': result.RequiredMatchComplete ? 'Yes' : 'No',
@@ -948,14 +951,15 @@
 
     const total = results.length;
     const valid = results.filter(result => result.Status === 'Valid').length;
-    const invalid = total - valid;
+    const unknown = results.filter(result => result.Status === 'Unknown').length;
+    const invalid = results.filter(result => result.Status === 'Invalid').length;
     const percentage = total ? ((valid / total) * 100).toFixed(1) : '100.0';
 
     const summary = document.createElement('div');
     summary.className = 'alert alert-info';
     summary.innerHTML =
       `<strong>Eligibility results:</strong> ${valid} valid / ${total} total ` +
-      `(${percentage}%). ${invalid} invalid.`;
+      `(${percentage}%). ${unknown} unknown, ${invalid} invalid.`;
     wrapper.appendChild(summary);
 
     if (context.warnings?.length) {
@@ -1000,7 +1004,9 @@
       const row = document.createElement('tr');
       row.className = result.Status === 'Valid'
         ? 'table-success valid-row valid'
-        : 'table-danger invalid-row invalid';
+        : result.Status === 'Unknown'
+          ? 'table-warning unknown-row unknown'
+          : 'table-danger invalid-row invalid';
       row.dataset.claimId = result.ClaimID || '';
       row.dataset.status = result.Status.toLowerCase();
 
@@ -1020,7 +1026,9 @@
         <td>${escapeHtml(
           result.RequiredMatchComplete
             ? `${result.EligibilityRequestNumber} (Selected)`
-            : `${result.EligibilityRequestNumber || '(none)'} (Closest candidate; not selected)`
+            : result.MemberIdCorrection
+              ? `${result.EligibilityRequestNumber} (Member ID correction candidate; not selected)`
+              : `${result.EligibilityRequestNumber || '(none)'} (Closest candidate; not selected)`
         )}</td>
         <td>${escapeHtml(result.EligibilityOrderedOn)}</td>
         <td>${escapeHtml(result.EligibilityClinician)}</td>
@@ -1221,6 +1229,10 @@
                     <span style="display:inline-block;margin-left:6px;background:#0d6efd;color:#fff;border-radius:999px;padding:2px 8px;font-size:11px;">
                       Selected
                     </span>
+                  ` : candidate.memberIdCorrection ? `
+                    <span style="display:inline-block;margin-left:6px;background:#ffc107;color:#212529;border-radius:999px;padding:2px 8px;font-size:11px;">
+                      Member ID Correction
+                    </span>
                   ` : ''}
                   <div style="font-size:11px;margin-top:3px;">
                     ${escapeHtml(candidate.sheetName)} row ${escapeHtml(candidate.sheetRowNumber)}
@@ -1267,6 +1279,10 @@
           <span style="display:inline-block;margin-left:5px;background:#0d6efd;color:#fff;border-radius:999px;padding:1px 7px;font-size:10px;">
             Selected
           </span>
+        ` : candidate.memberIdCorrection ? `
+          <span style="display:inline-block;margin-left:5px;background:#ffc107;color:#212529;border-radius:999px;padding:1px 7px;font-size:10px;">
+            Member ID Correction
+          </span>
         ` : ''}
         <span style="display:inline-block;margin-left:5px;background:${candidate.completeMatch ? '#198754' : '#dc3545'};color:#fff;border-radius:999px;padding:1px 7px;font-size:10px;">
           ${candidate.completeMatch ? 'Complete Match' : 'Mismatch'}
@@ -1308,6 +1324,10 @@
             ${candidate.selected ? `
               <span style="display:inline-block;margin-left:6px;background:#0d6efd;color:#fff;border-radius:999px;padding:2px 8px;font-size:11px;vertical-align:middle;">
                 Selected
+              </span>
+            ` : candidate.memberIdCorrection ? `
+              <span style="display:inline-block;margin-left:6px;background:#ffc107;color:#212529;border-radius:999px;padding:2px 8px;font-size:11px;vertical-align:middle;">
+                Member ID Correction
               </span>
             ` : ''}
           </h4>
@@ -1463,7 +1483,7 @@
       : lastResults;
 
     if (!selected.length) {
-      alert(onlyInvalid ? 'No invalid eligibility results.' : 'No eligibility results to export.');
+      alert(onlyInvalid ? 'No non-valid eligibility results.' : 'No eligibility results to export.');
       return;
     }
 
@@ -1551,7 +1571,8 @@
         claims: claims.length,
         eligibilityRows: workbookContext.rows.length,
         valid: results.filter(result => result.Status === 'Valid').length,
-        invalid: results.filter(result => result.Status !== 'Valid').length
+        unknown: results.filter(result => result.Status === 'Unknown').length,
+        invalid: results.filter(result => result.Status === 'Invalid').length
       });
 
       return createResultsWrapper(results, workbookContext);
@@ -1586,6 +1607,8 @@
     findBestEligibilityMatch,
     analyzeClaim,
     buildCandidateComparison,
+    isMemberIdCorrectionCandidate,
+    buildWrongMemberIdRemark,
     eligibilityRowToRows,
     buildModalTabs,
     buildModalPanes
