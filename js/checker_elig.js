@@ -1,11 +1,13 @@
 // checker_elig.js - Claim-to-eligibility validation
 //
 // Matching methodology:
-//   1. Collect candidates matching Emirates ID + encounter date.
-//   2. Also collect candidates matching Member ID + encounter date.
-//   3. Emirates ID matches outrank Member ID-only matches.
-//   4. Provider, eligibility status, and time proximity rank candidates.
-//      Clinician is informational only and does not affect selection or validity.
+//   1. Collect every eligibility row from the same encounter date that
+//      partially matches the claim by Member ID, Emirates ID, or clinician.
+//   2. A valid candidate must match encounter date, Member ID, Emirates ID,
+//      and clinician license. Any mismatch makes that candidate invalid.
+//   3. Complete four-field matches outrank partial candidates. Provider,
+//      eligibility status, and time proximity only break ties between complete matches.
+//   4. Different-date rows are not shown as partial matches in the modal.
 //
 // The View All modal uses delegated document-level handling and a per-run
 // detail store, so it works in both the individual checker and cloned Check All
@@ -498,24 +500,41 @@
   }
 
   function buildEligibilityIndexes(rows) {
+    const date = new Map();
+    const eid = new Map();
+    const member = new Map();
     const eidDate = new Map();
     const memberDate = new Map();
 
     rows.forEach(row => {
+      if (row.orderedDate) addToIndex(date, row.orderedDate, row);
+      if (row.eid) addToIndex(eid, row.eid, row);
+      if (row.memberID) addToIndex(member, row.memberID, row);
       if (row.eid && row.orderedDate) addToIndex(eidDate, `${row.eid}|${row.orderedDate}`, row);
       if (row.memberID && row.orderedDate) {
         addToIndex(memberDate, `${row.memberID}|${row.orderedDate}`, row);
       }
     });
 
-    return { eidDate, memberDate };
+    return { date, eid, member, eidDate, memberDate };
   }
 
   function scoreCandidate(claim, row, basis) {
-    let score = basis === 'EID' ? 10000 : 5000;
+    const comparison = buildCandidateComparison(claim, row);
+    const matchedFieldCount = Object.values(comparison).filter(Boolean).length;
+    const completeMatch = matchedFieldCount === 4;
 
-    if (claim.eid && row.eid === claim.eid) score += 1000;
-    if (claim.memberID && row.memberID === claim.memberID) score += 700;
+    // Complete identity matches must always outrank partial candidates.
+    // The remaining score only determines which complete match is selected
+    // when more than one eligibility satisfies all four required fields.
+    let score = completeMatch ? 1000000 : 0;
+
+    if (comparison.orderedOn) score += 10000;
+    if (comparison.memberId) score += 10000;
+    if (comparison.eid) score += 10000;
+    if (comparison.clinician) score += 10000;
+
+    if (basis === 'EID') score += 1000;
     if (claim.providerID && row.providerLicense === claim.providerID) score += 300;
     if (ELIGIBLE_STATUS_PATTERN.test(row.status)) score += 150;
 
@@ -525,36 +544,72 @@
       score += Math.max(0, 90 - Math.min(90, minutesDifference));
     }
 
-    return { score, minutesDifference };
+    return {
+      score,
+      minutesDifference,
+      comparison,
+      matchedFieldCount,
+      completeMatch
+    };
   }
 
   function findBestEligibilityMatch(claim, indexes) {
     const candidateMap = new Map();
 
-    function registerCandidates(rows, basis) {
-      rows.forEach(row => {
-        let entry = candidateMap.get(row);
-        if (!entry) {
-          entry = { row, bases: new Set() };
-          candidateMap.set(row, entry);
-        }
-        entry.bases.add(basis);
-      });
+    function registerCandidate(row, bases) {
+      if (!row) return;
+
+      const normalizedBases = Array.from(new Set((bases || []).filter(Boolean)));
+      if (!normalizedBases.length) return;
+
+      let entry = candidateMap.get(row);
+      if (!entry) {
+        entry = { row, bases: new Set() };
+        candidateMap.set(row, entry);
+      }
+
+      normalizedBases.forEach(basis => entry.bases.add(basis));
     }
 
-    if (isUsableEid(claim.eid) && claim.encounterDate) {
-      registerCandidates(
-        indexes.eidDate.get(`${claim.eid}|${claim.encounterDate}`) || [],
-        'EID'
-      );
-    }
+    /*
+     * A partial eligibility candidate is only useful for this modal when it is
+     * from the claim's encounter date. Within that date, include every row that
+     * matches at least one identity field: Member ID, Emirates ID, or clinician.
+     * This exposes all plausible same-visit rows without flooding the modal with
+     * unrelated eligibilities or historical rows from other dates.
+     */
+    const sameDateRows = claim.encounterDate
+      ? (indexes.date?.get(claim.encounterDate) || [])
+      : [];
 
-    if (claim.memberID && claim.encounterDate) {
-      registerCandidates(
-        indexes.memberDate.get(`${claim.memberID}|${claim.encounterDate}`) || [],
-        'Member ID'
-      );
-    }
+    sameDateRows.forEach(row => {
+      const bases = [];
+
+      if (
+        claim.memberID &&
+        row.memberID &&
+        row.memberID === claim.memberID
+      ) {
+        bases.push('Member ID');
+      }
+
+      if (
+        isUsableEid(claim.eid) &&
+        isUsableEid(row.eid) &&
+        row.eid === claim.eid
+      ) {
+        bases.push('EID');
+      }
+
+      if (
+        row.clinician &&
+        claim.clinicians?.has(row.clinician)
+      ) {
+        bases.push('Clinician');
+      }
+
+      registerCandidate(row, bases);
+    });
 
     if (!candidateMap.size) {
       return {
@@ -562,38 +617,68 @@
         basis: '',
         candidateCount: 0,
         minutesDifference: null,
-        candidates: []
+        candidates: [],
+        selectedComparison: null,
+        completeMatch: false,
+        selectedRow: null
       };
     }
 
-    const ranked = Array.from(candidateMap.values())
-      .map(entry => {
-        const basis = entry.bases.has('EID') ? 'EID' : 'Member ID';
-        return {
-          row: entry.row,
-          basis,
-          bases: Array.from(entry.bases),
-          ...scoreCandidate(claim, entry.row, basis)
-        };
-      })
+    // Keep candidates in workbook order for sequential modal tabs. Selection
+    // is calculated separately, so a valid candidate can remain Eligibility 2,
+    // Eligibility 3, etc. instead of being moved into the first tab.
+    const candidates = Array.from(candidateMap.values()).map(entry => {
+      const bases = Array.from(entry.bases);
+      const basis = bases.includes('EID')
+        ? 'EID'
+        : bases.includes('Member ID')
+          ? 'Member ID'
+          : 'Clinician';
+
+      return {
+        row: entry.row,
+        basis,
+        bases,
+        selected: false,
+        ...scoreCandidate(claim, entry.row, basis)
+      };
+    });
+
+    const rankedForReview = candidates
+      .slice()
       .sort((a, b) => {
+        if (a.completeMatch !== b.completeMatch) return a.completeMatch ? -1 : 1;
+        if (b.matchedFieldCount !== a.matchedFieldCount) {
+          return b.matchedFieldCount - a.matchedFieldCount;
+        }
         if (b.score !== a.score) return b.score - a.score;
-        const aTime = a.minutesDifference == null ? Number.POSITIVE_INFINITY : a.minutesDifference;
-        const bTime = b.minutesDifference == null ? Number.POSITIVE_INFINITY : b.minutesDifference;
+        const aTime = a.minutesDifference == null
+          ? Number.POSITIVE_INFINITY
+          : a.minutesDifference;
+        const bTime = b.minutesDifference == null
+          ? Number.POSITIVE_INFINITY
+          : b.minutesDifference;
         if (aTime !== bTime) return aTime - bTime;
         return b.row.sheetRowNumber - a.row.sheetRowNumber;
-      })
-      .map((entry, index) => ({
-        ...entry,
-        selected: index === 0
-      }));
+      });
+
+    const selectedEntry = rankedForReview.find(candidate => candidate.completeMatch) || null;
+    const reviewEntry = selectedEntry || rankedForReview[0];
+
+    // A partial candidate is never marked Selected. It is only retained as the
+    // closest same-date review row so the result table and modal can explain
+    // which of the required identity fields failed.
+    if (selectedEntry) selectedEntry.selected = true;
 
     return {
-      row: ranked[0].row,
-      basis: ranked[0].basis,
-      candidateCount: ranked.length,
-      minutesDifference: ranked[0].minutesDifference,
-      candidates: ranked
+      row: reviewEntry.row,
+      selectedRow: selectedEntry?.row || null,
+      basis: reviewEntry.basis,
+      candidateCount: candidates.length,
+      minutesDifference: reviewEntry.minutesDifference,
+      candidates,
+      selectedComparison: reviewEntry.comparison,
+      completeMatch: Boolean(selectedEntry)
     };
   }
 
@@ -613,41 +698,80 @@
         `${claim.encounterDate || claim.encounterStartRaw || '(unknown date)'}.`
       );
     } else {
+      const comparison = match.selectedComparison || buildCandidateComparison(claim, matchedRow);
+      const claimClinicians = Array.from(claim.clinicians || []);
+
+      if (!comparison.orderedOn) {
+        invalidRemarks.push(
+          `Eligibility date mismatch: claim encounter date is ` +
+          `${claim.encounterDate || claim.encounterStartRaw || '(blank)'}, ` +
+          `but eligibility is ${matchedRow.orderedDate || matchedRow.orderedOnDisplay || '(blank)'}.`
+        );
+      }
+
+      if (!comparison.memberId) {
+        invalidRemarks.push(
+          `Eligibility Member ID mismatch: claim ${claim.memberIDRaw || '(blank)'}, ` +
+          `eligibility ${matchedRow.memberIDRaw || '(blank)'}.`
+        );
+      }
+
+      if (!comparison.eid) {
+        invalidRemarks.push(
+          `Eligibility Emirates ID mismatch: claim ${claim.eidRaw || '(blank)'}, ` +
+          `eligibility ${matchedRow.eidRaw || '(blank)'}.`
+        );
+      }
+
+      if (!comparison.clinician) {
+        invalidRemarks.push(
+          `Eligibility clinician mismatch: claim ` +
+          `${claimClinicians.length ? claimClinicians.join(', ') : '(blank)'}, ` +
+          `eligibility ${matchedRow.clinicianRaw || '(blank)'}.`
+        );
+      }
+
       if (!ELIGIBLE_STATUS_PATTERN.test(matchedRow.status)) {
         invalidRemarks.push(
           `Eligibility status is ${matchedRow.status || '(blank)'} instead of Eligible.`
         );
       }
 
-      if (claim.isDental && matchedRow.serviceCategory && !DENTAL_CATEGORY_PATTERN.test(matchedRow.serviceCategory)) {
+      if (
+        claim.isDental &&
+        matchedRow.serviceCategory &&
+        !DENTAL_CATEGORY_PATTERN.test(matchedRow.serviceCategory)
+      ) {
         invalidRemarks.push(
           `Dental claim matched eligibility Service Category ` +
           `\`${matchedRow.serviceCategory}\` instead of Dental Services.`
         );
       }
 
-      if (claim.providerID && matchedRow.providerLicense && claim.providerID !== matchedRow.providerLicense) {
-        notes.push(
-          `Provider differs: claim ${claim.providerIDRaw}, eligibility ${matchedRow.providerLicenseRaw}.`
-        );
-      }
-
       if (
-        claim.memberID &&
-        matchedRow.memberID &&
-        claim.memberID !== matchedRow.memberID
+        claim.providerID &&
+        matchedRow.providerLicense &&
+        claim.providerID !== matchedRow.providerLicense
       ) {
         notes.push(
-          `Member ID differs: claim ${claim.memberIDRaw}, eligibility ${matchedRow.memberIDRaw}; ` +
-          `the match was made by Emirates ID.`
+          `Provider differs: claim ${claim.providerIDRaw}, ` +
+          `eligibility ${matchedRow.providerLicenseRaw}.`
         );
       }
 
       if (match.candidateCount > 1) {
-        notes.push(
-          `${match.candidateCount} eligibility rows matched ${match.basis} and date; ` +
-          `the closest/highest-ranked row was selected.`
-        );
+        if (match.completeMatch) {
+          notes.push(
+            `${match.candidateCount} eligibility candidates were found; ` +
+            `the candidate matching date, Member ID, Emirates ID, and clinician was selected.`
+          );
+        } else {
+          notes.push(
+            `${match.candidateCount} eligibility candidates were found, but none matched ` +
+            `date, Member ID, Emirates ID, and clinician together. ` +
+            `No eligibility was selected; all same-date partial candidates are available in View All.`
+          );
+        }
       }
     }
 
@@ -662,10 +786,14 @@
       ClaimClinicians: Array.from(claim.clinicians).join(', '),
       ProviderID: claim.providerIDRaw,
       MatchBasis: match.basis || '',
+      RequiredMatchComplete: match.completeMatch === true,
       Status: status,
       Remarks: invalidRemarks.join('\n') || 'OK',
       Notes: notes.join('\n'),
       EligibilityRequestNumber: matchedRow?.requestNumber || '',
+      SelectedEligibilityRequestNumber: match.completeMatch
+        ? (matchedRow?.requestNumber || '')
+        : '',
       EligibilityOrderedOn: matchedRow?.orderedOnDisplay || '',
       EligibilityStatus: matchedRow?.status || '',
       EligibilityClinician: matchedRow?.clinicianRaw || '',
@@ -689,6 +817,10 @@
   }
 
   function buildCandidateComparison(claim, row) {
+    const claimClinicians = claim?.clinicians instanceof Set
+      ? claim.clinicians
+      : new Set();
+
     return {
       orderedOn: Boolean(
         claim?.encounterDate &&
@@ -702,17 +834,14 @@
       ),
       eid: Boolean(
         isUsableEid(claim?.eid) &&
-        row?.eid &&
+        isUsableEid(row?.eid) &&
         claim.eid === row.eid
       ),
-      clinician: (() => {
-        if (!row?.clinician || !claim) return false;
-        const primaryClinicians =
-          claim.performingClinicians instanceof Set && claim.performingClinicians.size
-            ? claim.performingClinicians
-            : claim.orderingClinicians;
-        return primaryClinicians instanceof Set && primaryClinicians.has(row.clinician);
-      })()
+      clinician: Boolean(
+        row?.clinician &&
+        claimClinicians.size &&
+        claimClinicians.has(row.clinician)
+      )
     };
   }
 
@@ -723,6 +852,7 @@
     const candidates = (result.EligibilityCandidates || []).map((candidate, candidateIndex) => ({
       index: candidateIndex,
       selected: candidate.selected === true,
+      completeMatch: candidate.completeMatch === true,
       basis: candidate.basis || '',
       bases: Array.isArray(candidate.bases) ? candidate.bases.slice() : [],
       score: candidate.score,
@@ -733,7 +863,7 @@
       orderedOnDisplay: candidate.row?.orderedOnDisplay || '',
       clinicianRaw: candidate.row?.clinicianRaw || '',
       row: candidate.row?.sourceRow || null,
-      comparison: buildCandidateComparison(claimContext, candidate.row)
+      comparison: candidate.comparison || buildCandidateComparison(claimContext, candidate.row)
     }));
 
     detailStore.set(detailId, {
@@ -746,7 +876,13 @@
         'Ordering Clinicians': Array.from(claimContext?.orderingClinicians || []).join(', '),
         'Provider ID': result.ProviderID,
         'Selected Match Basis': result.MatchBasis,
-        'Selected Eligibility Request': result.EligibilityRequestNumber,
+        'Selected Eligibility Request': result.RequiredMatchComplete
+          ? result.EligibilityRequestNumber
+          : '(none - no complete four-field match)',
+        'Closest Review Candidate': result.RequiredMatchComplete
+          ? ''
+          : result.EligibilityRequestNumber,
+        'Four Required Fields Match': result.RequiredMatchComplete ? 'Yes' : 'No',
         Status: result.Status,
         Remarks: result.Remarks,
         Notes: result.Notes
@@ -795,7 +931,7 @@
           <th>Encounter Start</th>
           <th>Claim Clinician</th>
           <th>Match Basis</th>
-          <th>Eligibility Request</th>
+          <th>Selected Eligibility / Closest Candidate</th>
           <th>Ordered On</th>
           <th>Eligibility Clinician</th>
           <th>Service Category</th>
@@ -832,7 +968,11 @@
         <td>${escapeHtml(result.EncounterStart)}</td>
         <td>${escapeHtml(result.ClaimClinicians)}</td>
         <td>${escapeHtml(result.MatchBasis)}</td>
-        <td>${escapeHtml(result.EligibilityRequestNumber)}</td>
+        <td>${escapeHtml(
+          result.RequiredMatchComplete
+            ? `${result.EligibilityRequestNumber} (Selected)`
+            : `${result.EligibilityRequestNumber || '(none)'} (Closest candidate; not selected)`
+        )}</td>
         <td>${escapeHtml(result.EligibilityOrderedOn)}</td>
         <td>${escapeHtml(result.EligibilityClinician)}</td>
         <td>${escapeHtml(result.ServiceCategory)}</td>
@@ -990,7 +1130,7 @@
 
   function renderCandidateSummary(candidates) {
     if (!candidates.length) {
-      return '<div class="alert alert-warning">No eligibility candidates were matched.</div>';
+      return '<div class="alert alert-warning">No same-date partial eligibility candidates were matched.</div>';
     }
 
     return `
@@ -1005,6 +1145,7 @@
               <th>Member ID</th>
               <th>Emirates ID</th>
               <th>Clinician</th>
+              <th>Overall</th>
             </tr>
           </thead>
           <tbody>
@@ -1027,6 +1168,7 @@
                 ${comparisonCell(candidate.comparison?.memberId === true)}
                 ${comparisonCell(candidate.comparison?.eid === true)}
                 ${comparisonCell(candidate.comparison?.clinician === true)}
+                ${comparisonCell(candidate.completeMatch === true)}
               </tr>
             `).join('')}
           </tbody>
@@ -1062,6 +1204,9 @@
             Selected
           </span>
         ` : ''}
+        <span style="display:inline-block;margin-left:5px;background:${candidate.completeMatch ? '#198754' : '#dc3545'};color:#fff;border-radius:999px;padding:1px 7px;font-size:10px;">
+          ${candidate.completeMatch ? 'Complete Match' : 'Mismatch'}
+        </span>
       </button>
     `).join('');
 
@@ -1231,7 +1376,8 @@
       'Claim Clinician': result.ClaimClinicians,
       'Provider ID': result.ProviderID,
       'Match Basis': result.MatchBasis,
-      'Eligibility Request': result.EligibilityRequestNumber,
+      'Selected Eligibility Request': result.SelectedEligibilityRequestNumber,
+      'Closest/Displayed Eligibility Candidate': result.EligibilityRequestNumber,
       'Eligibility Ordered On': result.EligibilityOrderedOn,
       'Eligibility Clinician': result.EligibilityClinician,
       'Service Category': result.ServiceCategory,
