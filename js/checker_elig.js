@@ -1,1496 +1,3123 @@
-(function() {
-  try {
-    /*******************************
-     * GLOBAL VARIABLES & CONSTANTS *
-     *******************************/
-    const SERVICE_PACKAGE_RULES = {
-  'Dental Services': ['dental', 'orthodontic'],
-  'Physiotherapy': ['physio'],
-  'Other OP Services': ['physio', 'diet', 'occupational', 'speech'],
-  'Consultation': []  // Special handling below
-};
-const DATE_KEYS = ['Date', 'On'];
-const MONTHS = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"];
+// checker_elig.js - Claim-to-eligibility validation
+//
+// Matching methodology:
+//   1. Match by Emirates ID + encounter date when a usable Emirates ID exists.
+//   2. Fall back to Member ID + encounter date.
+//   3. Provider, clinician, status, and time proximity rank candidates, but a
+//      clinician mismatch does not erase an otherwise valid eligibility match.
+//
+// The View All modal uses delegated document-level handling and a per-run
+// detail store, so it works in both the individual checker and cloned Check All
+// results.
 
-// Package Name Normalization Mapping
-// Maps variations/aliases to canonical package names
-const PACKAGE_NAME_MAPPING = {
-  // Thiqa variations
-  'Thiqa C1': 'Thiqa 1',
-  'Thiqa C2': 'Thiqa 2',
-  'Thiqa C3': 'Thiqa 3',
-  // Regional Plus TC variations (equivalent to Thiqa tiers)
-  'Regional Plus TC1': 'Thiqa 1',
-  'Regional Plus TC2': 'Thiqa 2',
-  'Regional Plus TC3': 'Thiqa 3',
-  // Add more mappings as needed
-};
+(function eligibilityCheckerModule(root) {
+  'use strict';
 
-// Expected ReceiverID → PayerID rules per insurer type
-const RECEIVER_PAYER_RULES = {
-  'A001': { expectedPayerID: 'A001', label: 'Daman Enhanced' },
-  'D004': { expectedPayerID: 'A001', label: 'Daman Basic' },
-  'D001': { expectedPayerID: 'E001', label: 'Thiqa' },
-};
+  const MODULE_NAME = 'Eligibility Checker';
+  const ELIGIBLE_STATUS_PATTERN = /^eligible$/i;
+  const DENTAL_CATEGORY_PATTERN = /dental/i;
+  const PLACEHOLDER_EID_PATTERN = /^(0+|1+|2+|9+)$/;
 
-/**
- * Normalize package name by converting known variations to canonical form
- * @param {string} packageName - The package name to normalize
- * @returns {string} - Normalized package name
- */
-function normalizePackageName(packageName) {
-  if (!packageName) return packageName;
-  const trimmed = packageName.trim();
-  return PACKAGE_NAME_MAPPING[trimmed] || trimmed;
-}
-
-/**
- * NAS network codes that appear as standalone tokens in package names.
- * These codes represent the network/benefit tier used by NAS (National Health Insurance Company):
- *   EN = Emergency Network, CN = Comprehensive Network, GN = General Network,
- *   RN = Restricted Network, SR = Special Rate, WN = Wide Network, VN = Value Network.
- * When a NAS receiver ID is in use and the package contains one of these codes,
- * a ReceiverID mismatch is treated as "unknown" (not "invalid") because the
- * network code makes the expected receiver ambiguous.
- * Thiqa (D001) and Daman (A001 / D004) receivers are NOT exempt — mismatches
- * for those insurers are always invalid regardless of network codes.
- */
-const NAS_RECEIVER_IDS = new Set(['C001']);
-const NAS_NETWORK_CODE_PATTERN = /\b(EN|CN|GN|RN|SR|WN|VN)\b/;
-
-/**
- * Return the expected ReceiverID based on an XLSX package name, or null if undetermined.
- * @param {string} packageName - The XLSX eligibility Package Name
- * @returns {string|null}
- */
-function getExpectedReceiverID(packageName) {
-  if (!packageName) return null;
-  const pkg = packageName.toLowerCase();
-  if (pkg.includes('thiqa')) return 'D001';
-  if (pkg.includes('basic')) return 'D004';
-  // Packages containing parentheses are not standard Daman packages — skip keyword matching
-  // to avoid false positives (e.g. "AUH(ADIB25_GOLD-C)_RN(UAE,WW)2473" is not a Daman package
-  // despite containing the word "gold").
-  if (packageName.includes('(') || packageName.includes(')')) return null;
-  if (pkg.includes('daman') || pkg.includes('bronze') || pkg.includes('silver') ||
-      pkg.includes('gold') || pkg.includes('platinum') || pkg.includes('enhanced')) return 'A001';
-  return null;
-}
-
-
-// Application state
-let xmlData = null;
-let xlsData = null;
-let eligData = null;
-const usedEligibilities = new Set();
-
-// DOM Elements
-const xmlInput = document.getElementById("xmlFileInput");
-const reportInput = document.getElementById("reportFileInput");
-const eligInput = document.getElementById("eligibilityFileInput");
-const processBtn = document.getElementById("processBtn");
-const exportInvalidBtn = document.getElementById("exportInvalidBtn");
-const status = document.getElementById("uploadStatus");
-const resultsContainer = document.getElementById("results");
-const xmlGroup = document.getElementById("xmlReportInputGroup");
-const reportGroup = document.getElementById("reportInputGroup");
-const xmlRadio = document.querySelector('input[name="reportSource"][value="xml"]');
-const xlsRadio = document.querySelector('input[name="reportSource"][value="xls"]');
-
-/*************************
- * RADIO BUTTON HANDLING *
- *************************/
-function handleReportSourceChange() {
-  if (!xmlRadio) return;
-  const isXmlMode = xmlRadio.checked;
-
-  xmlGroup.style.display = isXmlMode ? 'block' : 'none';
-  reportGroup.style.display = isXmlMode ? 'none' : 'block';
-
-  if (isXmlMode) {
-    xlsData = null;
-    reportInput.value = '';
-  } else {
-    xmlData = null;
-    xmlInput.value = '';
-  }
-
-  updateStatus();
-}
-
-function initializeRadioButtons() {
-  // Only initialize if the radio buttons exist (they don't exist in unified_checker.html)
-  if (!xmlRadio || !xlsRadio) return;
-  
-  xmlRadio.addEventListener('change', handleReportSourceChange);
-  xlsRadio.addEventListener('change', handleReportSourceChange);
-  handleReportSourceChange();
-}
-
-/*************************
- * DATE HANDLING UTILITIES *
- *************************/
-let lastReportWasCSV = false;
-const DateHandler = {
-  parse: function(input, options = {}) {
-    const preferMDY = !!options.preferMDY;
-    if (!input) return null;
-    if (input instanceof Date) return isNaN(input) ? null : input;
-    if (typeof input === 'number') return this._parseExcelDate(input);
-
-    const cleanStr = input.toString().trim().replace(/[,.]/g, '');
-    const parsed = this._parseStringDate(cleanStr, preferMDY) || new Date(cleanStr);
-    if (isNaN(parsed)) {
-      console.warn('Unrecognized date:', input);
-      return null;
-    }
-    return parsed;
-  },
-
-  format: function(date) {
-    if (!(date instanceof Date) || isNaN(date)) return '';
-    const d = date.getUTCDate().toString().padStart(2, '0');
-    const m = (date.getUTCMonth() + 1).toString().padStart(2, '0');
-    const y = date.getUTCFullYear();
-    return `${d}/${m}/${y}`;
-  },
-
-  isSameDay: function(date1, date2) {
-    if (!date1 || !date2) return false;
-    return date1.getUTCDate() === date2.getUTCDate() &&
-           date1.getUTCMonth() === date2.getUTCMonth() &&
-           date1.getUTCFullYear() === date2.getUTCFullYear();
-  },
-
-  _parseExcelDate: function(serial) {
-    const utcDays = Math.floor(serial) - 25569;
-    const ms = utcDays * 86400 * 1000;
-    const date = new Date(ms);
-    // Return UTC midnight
-    return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
-  },
-
-  // PATCHED: Always parse string dates as UTC
-  _parseStringDate: function(dateStr, preferMDY = false) {
-    if (dateStr.includes(' ')) {
-      dateStr = dateStr.split(' ')[0];
-    }
-    // Matches DD/MM/YYYY or MM/DD/YYYY (ambiguous). We'll disambiguate using preferMDY flag
-    const dmyMdyMatch = dateStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
-    if (dmyMdyMatch) {
-      const part1 = parseInt(dmyMdyMatch[1], 10);
-      const part2 = parseInt(dmyMdyMatch[2], 10);
-      const year = parseInt(dmyMdyMatch[3], 10);
-
-      if (part1 > 12 && part2 <= 12) {
-        return new Date(Date.UTC(year, part2 - 1, part1)); // dmy
-      } else if (part2 > 12 && part1 <= 12) {
-        return new Date(Date.UTC(year, part1 - 1, part2)); // mdy (rare)
-      } else {
-        if (preferMDY) {
-          return new Date(Date.UTC(year, part1 - 1, part2)); // MM/DD/YYYY UTC
-        } else {
-          return new Date(Date.UTC(year, part2 - 1, part1)); // DD/MM/YYYY UTC
-        }
-      }
-    }
-
-    // Matches 30-Jun-2025 or 30 Jun 2025
-    const textMatch = dateStr.match(/^(\d{1,2})[\/\- ]([a-z]{3,})[\/\- ](\d{2,4})$/i);
-    if (textMatch) {
-      const monthIndex = MONTHS.indexOf(textMatch[2].toLowerCase().substr(0, 3));
-      if (monthIndex >= 0) return new Date(Date.UTC(textMatch[3], monthIndex, textMatch[1]));
-    }
-
-    // ISO: 2025-07-01
-    const isoMatch = dateStr.match(/^(\d{4})[\/\-](\d{2})[\/\-](\d{2})$/);
-    if (isoMatch) return new Date(Date.UTC(isoMatch[1], isoMatch[2] - 1, isoMatch[3]));
-    return null;
-  }
-};
-
-/*****************************
- * DATA NORMALIZATION FUNCTIONS *
- *****************************/
-function normalizeMemberID(id) {
-  const raw = String(id || '').trim().replace(/\.0+$/, '');
-  if (!raw) return '';
-  const withoutLeadingZeroes = raw.replace(/^0+/, '');
-  return withoutLeadingZeroes || '0';
-}
-
-function hasLeadingMemberIDZero(value) {
-  const raw = String(value || '').trim().replace(/\.0+$/, '');
-  return /^0+\d+$/.test(raw);
-}
-
-function normalizeClinician(name) {
-  if (!name) return '';
-  return name.trim().toLowerCase().replace(/\s+/g, ' ');
-}
-
-// Finds the correct header row within the first `maxScan` rows of a sheet (array-of-arrays)
-// Returns an object with the detected headerRowIndex, normalized headers array, and rows as objects
-function findHeaderRowFromArrays(allRows, maxScan = 10) {
-  if (!Array.isArray(allRows) || allRows.length === 0) { return { headerRowIndex: -1, headers: [], rows: [] }; }
-
-  // tokens that commonly appear in the header rows for the supported file types
-  const tokens = [
-    'pri. claim no', 'pri claim no', 'claimid', 'claim id', 'pri. claim id', 'pri claim id',
-    'center name', 'card number', 'card number / dha member id', 'member id', 'patientcardid',
-    'pri. patient insurance card no', 'institution', 'facility id', 'mr no.', 'pri. claim id'
-  ];
-
-  const scanLimit = Math.min(maxScan, allRows.length);
-  let bestIndex = 0;
-  let bestScore = 0;
-
-  for (let i = 0; i < scanLimit; i++) {
-    const row = allRows[i] || [];
-    const joined = row.map(c => (c === null || c === undefined) ? '' : String(c)).join(' ').toLowerCase();
-
-    let score = 0;
-    for (const t of tokens) { if (joined.includes(t)) score++; }
-
-    // prefer a row that contains multiple token hits; tie-breaker: earlier row wins
-    if (score > bestScore) {
-      bestScore = score;
-      bestIndex = i;
-    }
-  }
-
-  // If we found no meaningful header row, default to first row (index 0)
-  const headerRowIndex = bestScore > 0 ? bestIndex : 0;
-  const rawHeaderRow = allRows[headerRowIndex] || [];
-
-  // normalize headers (trim strings)
-  const headers = rawHeaderRow.map(h => (h === null || h === undefined) ? '' : String(h).trim());
-
-  // assemble data rows (everything after headerRowIndex)
-  const dataRows = allRows.slice(headerRowIndex + 1);
-
-  // convert to array of objects using detected headers
-  const rows = dataRows.map(rowArray => {
-    const obj = {};
-    for (let c = 0; c < headers.length; c++) {
-      const key = headers[c] || `Column${c+1}`;
-      obj[key] = rowArray[c] === undefined || rowArray[c] === null ? '' : rowArray[c];
-    }
-    return obj;
-  });
-  return { headerRowIndex, headers, rows };
-}
-
-/*******************************
- * ELIGIBILITY MATCHING FUNCTIONS *
- *******************************/
-function prepareEligibilityMap(eligData) {
-  const eligMap = new Map();
-
-  eligData.forEach(e => {
-    const rawID =
-      e['Card Number / DHA Member ID'] ||
-      e['Card Number'] ||
-      e['_5'] ||
-      e['MemberID'] ||
-      e['Member ID'] ||
-      e['Patient Insurance Card No'];
-
-    if (!rawID) return;
-
-    const memberID = normalizeMemberID(rawID);
-
-    if (!eligMap.has(memberID)) eligMap.set(memberID, []);
-
-    // Build eligibility record from XLSX columns
-    const eligRecord = {
-      'Eligibility Request Number': e['Eligibility Request Number'],
-      'Card Number / DHA Member ID': rawID, // preserve original for display
-      'Answered On': e['Answered On'],
-      'Ordered On': e['Ordered On'],
-      'Status': e['Status'],
-      'Clinician': e['Clinician'],
-      'Payer Name': e['Payer Name'],
-      'Service Category': e['Service Category'],
-      'Package Name': e['Package Name'],
-      'Card Network': e['Card Network']  // Column AI in XLSX eligibility file
-    };
-
-    eligMap.get(memberID).push(eligRecord);
+  const HEADER_ALIASES = Object.freeze({
+    payerName: ['Payer Name', 'Payer'],
+    memberName: ['Member Name', 'Patient Name'],
+    transactionId: ['Transcation Id', 'Transaction Id', 'Transaction ID'],
+    requestNumber: ['Eligibility Request Number', 'Eligibility Number', 'Request Number'],
+    memberId: [
+      'Card Number / DHA Member ID',
+      'DHA Member ID',
+      'Member ID',
+      'MemberID',
+      'Card Number'
+    ],
+    eid: ['EID', 'Emirates ID', 'EmiratesID', 'Emirates ID Number', 'EmiratesIDNumber'],
+    orderedOn: ['Ordered On', 'Requested On', 'Request Date'],
+    answeredOn: ['Answered On', 'Response Date'],
+    authorizationNumber: ['Authorization Number', 'Authorisation Number'],
+    status: ['Status', 'Eligibility Status'],
+    denialCode: ['Denial Code/Rule ID', 'Denial Code', 'Rule ID'],
+    denialDescription: [
+      'Denial Description/Rule Description',
+      'Denial Description',
+      'Rule Description'
+    ],
+    clinician: ['Clinician', 'Clinician License', 'Doctor License'],
+    clinicianName: ['Clinician Name', 'Doctor Name'],
+    providerLicense: ['Provider License', 'Facility License', 'Provider ID'],
+    providerName: ['Provider Name', 'Facility Name'],
+    serviceCategory: ['Service Category', 'Service'],
+    consultationStatus: ['Consultation Status', 'Visit Type'],
+    voiNumber: ['VOI Number', 'VOI'],
+    voiMessage: ['VOI Message'],
+    packageName: ['Package Name', 'Package'],
+    cardNetwork: ['Card Network', 'Network']
   });
 
-  return eligMap;
-}
-
-function findEligibilityForClaim(eligMap, claimDate, memberID, claimClinicians = []) {
-  const normalizedID = normalizeMemberID(memberID);
-  const eligList = eligMap.get(normalizedID) || []; // PATCHED: use Map.get
-
-  if (!eligList.length) return null;
-
-  console.log(`[Diagnostics] Searching eligibilities for member "${memberID}" (normalized: "${normalizedID}")`);
-  console.log(`[Diagnostics] Claim date: ${claimDate} (${DateHandler.format(claimDate)}), Claim clinicians: ${JSON.stringify(claimClinicians)}`);
-
-  for (const elig of eligList) {
-    console.log(`[Diagnostics] Checking eligibility ${elig["Eligibility Request Number"] || "(unknown)"}:`);
-
-    const eligDate = DateHandler.parse(elig["Answered On"]);
-    // PATCHED: use isSameDay, which now compares UTC days
-    if (!DateHandler.isSameDay(claimDate, eligDate)) {
-      console.log(`  ❌ Date mismatch: claim ${DateHandler.format(claimDate)} vs elig ${DateHandler.format(eligDate)}`);
-      continue;
-    }
-
-    const eligClinician = (elig.Clinician || '').trim();
-    if (eligClinician && claimClinicians.length && !claimClinicians.includes(eligClinician)) {
-      console.log(`  ❌ Clinician mismatch: claim clinicians ${JSON.stringify(claimClinicians)} vs elig clinician "${eligClinician}"`);
-      continue;
-    }
-
-    const serviceCategory = (elig['Service Category'] || '').trim();
-    const consultationStatus = (elig['Consultation Status'] || '').trim();
-    const department = (elig.Department || elig.Clinic || '').toLowerCase();
-    const categoryCheck = isServiceCategoryValid(serviceCategory, consultationStatus, department);
-
-    if (!categoryCheck.valid) {
-      console.log(`  ❌ Service category mismatch: claim dept "${department}" not valid for category "${serviceCategory}" / consult "${consultationStatus}"`);
-      continue;
-    }
-
-    if ((elig.Status || '').toLowerCase() !== 'eligible') {
-      console.log(`  ❌ Status mismatch: expected Eligible, got "${elig.Status}"`);
-      continue;
-    }
-
-    console.log(`  ✅ Eligibility match found: ${elig["Eligibility Request Number"]}`);
-    return elig;
-  }
-
-  console.log(`[Diagnostics] No matching eligibility passed all checks for member "${memberID}"`);
-  return null;
-}
-
-function checkClinicianMatch(claimClinicians, eligClinician) {
-  if (!eligClinician || !claimClinicians?.length) return true;
-  const normElig = normalizeClinician(eligClinician);
-  return claimClinicians.some(c => normalizeClinician(c) === normElig);
-}
-
-/************************
- * VALIDATION FUNCTIONS *
- ************************/
-function isServiceCategoryValid(serviceCategory, consultationStatus, rawPackage) {
-  if (!serviceCategory) return { valid: true };
-
-  const category = serviceCategory.trim().toLowerCase();
-  const pkgRaw = rawPackage || '';
-  const pkg = pkgRaw.toLowerCase();
-
-  // Consultation rule: allow anything EXCEPT the restricted types
-  if (category === 'consultation' && consultationStatus?.toLowerCase() === 'elective') {
-    const disallowed = ['dental', 'physio', 'diet', 'occupational', 'speech'];
-    if (disallowed.some(term => pkg.includes(term))) {
-      return {
-        valid: false,
-        reason: `Consultation (Elective) cannot include restricted service types. Found: "${pkgRaw}"`
-      };
-    }
-    return { valid: true };
-  }
-
-  // Check other rules based on category
-  const allowedKeywords = SERVICE_PACKAGE_RULES[serviceCategory];
-  if (allowedKeywords && allowedKeywords.length > 0) {
-    // If package name is present, at least one keyword must match
-    if (pkg && !allowedKeywords.some(keyword => pkg.includes(keyword))) {
-      return {
-        valid: false,
-        reason: `${serviceCategory} category requires related package. Found: "${pkgRaw}"`
-      };
-    }
-  }
-
-  // If no special rule or package is empty, accept
-  return { valid: true };
-}
-
-function getInvalidTcEligibilityRemark(packageName) {
-  const rawPackage = String(packageName || '').trim();
-  if (!rawPackage) return null;
-  const tcMatch = rawPackage.match(/\b(TC\s*[1-4])\b/i);
-  if (!tcMatch) return null;
-  const tcLabel = tcMatch[1].replace(/\s+/g, '').toUpperCase();
-  return `${tcLabel} are not acceptible as eligibilities`;
-}
-
-function validateXmlClaims(xmlClaims, eligMap, receiverID = '') {
-  console.log(`Validating ${xmlClaims.length} XML claims`);
-  
-  // If ReceiverID is HAAD, skip validation and treat all claims as valid (cash file with no eligibility required)
-  if (receiverID.toUpperCase() === 'HAAD') {
-    console.log('ReceiverID is HAAD - treating all claims as valid (cash file, no eligibility required)');
-    return xmlClaims.map(claim => {
-      const claimDate = DateHandler.parse(claim.encounterStart);
-      const formattedDate = DateHandler.format(claimDate);
-      
-      return {
-        claimID: claim.claimID,
-        memberID: claim.memberID,
-        packageName: claim.packageName,
-        payerID: claim.payerID || '',
-        receiverID: receiverID,
-        encounterStart: formattedDate,
-        clinician: '',
-        xlsxPackageName: '',
-        serviceCategory: '',
-        consultationStatus: '',
-        status: '',
-        remarks: ['Cash claim (HAAD receiver) - all rows are valid, no eligibility check required'],
-        finalStatus: 'valid',
-        fullEligibilityRecord: null
-      };
-    });
-  }
-  
-  return xmlClaims.map(claim => {
-    const claimDate = DateHandler.parse(claim.encounterStart);
-    const formattedDate = DateHandler.format(claimDate);
-    const memberID = claim.memberID;
-    const packageName = claim.packageName;
-
-    const hasLeadingZero = hasLeadingMemberIDZero(memberID);
-
-    const eligibility = findEligibilityForClaim(eligMap, claimDate, memberID, claim.clinicians);
-
-    let status = 'valid';  // Start with valid, invalidate on failures
-    const remarks = [];
-
-    if (!eligibility) {
-      status = 'invalid';
-      remarks.push(`No matching eligibility found for ${memberID} on ${formattedDate}`);
-    } else {
-      if (hasLeadingZero) {
-        remarks.push('Member ID contains leading zeroes; eligibility was matched after removing them.');
-      }
-      if (eligibility.Status?.toLowerCase() !== 'eligible') {
-        status = 'invalid';
-        remarks.push(`Eligibility status: ${eligibility.Status}`);
-      } else if (!checkClinicianMatch(claim.clinicians, eligibility.Clinician)) {
-        status = 'unknown';
-        remarks.push('Clinician mismatch');
-      } else if (packageName && eligibility['Package Name']) {
-        // Only validate if both XML and XLSX have PackageName values (skip if XML has no PackageName)
-        const normalizedXmlPackage = normalizePackageName(packageName);
-        const normalizedEligPackage = normalizePackageName(eligibility['Package Name']);
-      
-        if (normalizedXmlPackage !== normalizedEligPackage) {
-          // Package Name mismatch is treated as 'invalid' (not 'unknown') because it's a definitive
-          // data mismatch that indicates the wrong eligibility record or incorrect package in the claim.
-          // Compares: XML <Contract><PackageName> vs XLSX eligibility "Package Name" column (column AH)
-          status = 'invalid';
-          remarks.push(`Claim package (${normalizedXmlPackage}) is different from eligibility (${normalizedEligPackage}).`);
-        }
-      }
-    }
-
-    if (hasLeadingZero && eligibility && status === 'valid') {
-      status = 'unknown';
-    }
-
-    // Independent check: PayerID must match the expected value for the given ReceiverID
-    if (claim.payerID && receiverID && RECEIVER_PAYER_RULES[receiverID]) {
-      const { expectedPayerID, label } = RECEIVER_PAYER_RULES[receiverID];
-      if (claim.payerID !== expectedPayerID) {
-        status = 'invalid';
-        remarks.push(`Payer ID "${claim.payerID}" does not match expected "${expectedPayerID}" for ${label}.`);
-      }
-    }
-
-    // Independent check: ReceiverID must match the expected value for the XLSX package type
-    if (eligibility?.['Package Name'] && receiverID) {
-      const xlsxPackage = eligibility['Package Name'];
-      const expectedReceiverID = getExpectedReceiverID(xlsxPackage);
-      if (expectedReceiverID && receiverID !== expectedReceiverID) {
-        // For NAS receiver IDs: if the package contains a NAS network code (EN, CN, GN, RN, SR,
-        // WN, VN) the expected receiver is ambiguous — treat the mismatch as unknown, not invalid.
-        // Thiqa (D001) and Daman (A001 / D004) receivers are never exempt from this check.
-        if (NAS_RECEIVER_IDS.has(receiverID) && NAS_NETWORK_CODE_PATTERN.test(xlsxPackage)) {
-          // Don't downgrade an already-invalid status (e.g. from a PayerID mismatch earlier).
-          if (status !== 'invalid') status = 'unknown';
-          remarks.push(`Receiver ID "${receiverID}" does not match expected "${expectedReceiverID}" based on package "${xlsxPackage}" (contains NAS network code — marked unknown).`);
-        } else {
-          status = 'invalid';
-          remarks.push(`Receiver ID "${receiverID}" does not match expected "${expectedReceiverID}" based on package "${xlsxPackage}".`);
-        }
-      }
-    }
-
-    const invalidTcRemark = getInvalidTcEligibilityRemark(eligibility?.['Package Name']);
-    if (invalidTcRemark) {
-      status = 'invalid';
-      remarks.push(invalidTcRemark);
-    }
-
-    return {
-      claimID: claim.claimID,
-      memberID: claim.memberID,
-      packageName: claim.packageName,  // XML PackageName (used for validation)
-      payerID: claim.payerID || '',
-      receiverID: receiverID,
-      encounterStart: formattedDate,
-      clinician: eligibility?.['Clinician'] || '',
-      xlsxPackageName: eligibility?.['Package Name'] || '',  // XLSX "Package Name" column (column AH)
-      serviceCategory: eligibility?.['Service Category'] || '',
-      consultationStatus: eligibility?.['Consultation Status'] || '',
-      status: eligibility?.Status || '',
-      remarks,
-      finalStatus: status,
-      fullEligibilityRecord: eligibility
-    };
-  });
-}
-
-function validateReportClaims(reportData, eligMap) {
-  console.log(`Validating ${reportData.length} report rows`);
-
-  const results = reportData.map(row => {
-    if (!row.claimID || String(row.claimID).trim() === '') return null;
-
-    const memberID = String(row.memberID || '').trim();
-    const claimDateRaw = row.claimDate;
-    const claimDate = DateHandler.parse(claimDateRaw, { preferMDY: lastReportWasCSV });
-    const formattedDate = DateHandler.format(claimDate);
-
-    // VVIP IDs: mark as valid with a special remark
-    const isVVIP = memberID.startsWith('(VVIP)');
-    if (isVVIP) {
-      return {
-        claimID: row.claimID,
-        memberID,
-        encounterStart: formattedDate,
-        packageName: row.packageName || '',
-        provider: row.provider || '',
-        clinician: row.clinician || '',
-        serviceCategory: '',
-        consultationStatus: '',
-        status: 'VVIP',
-        claimStatus: row.claimStatus || '',
-        remarks: ['VVIP member, eligibility check bypassed'],
-        finalStatus: 'valid',
-        fullEligibilityRecord: null
-      };
-    }
-
-    const hasLeadingZero = hasLeadingMemberIDZero(memberID);
-
-    // Proceed with normal eligibility lookup
-    const eligibility = findEligibilityForClaim(eligMap, claimDate, memberID, [row.clinician]);
-    let status = 'invalid';
-    const remarks = [];
-    const department = (row.department || row.clinic || '').toLowerCase();
-
-    if (!eligibility) {
-      remarks.push(`No matching eligibility found for ${memberID} on ${formattedDate}`);
-      logNoEligibilityMatch(
-        'REPORT',
-        {
-          claimID: row.claimID,
-          memberID,
-          claimDateRaw,
-          department: row.department || row.clinic,
-          clinician: row.clinician,
-          packageName: row.packageName
-        },
-        memberID,
-        claimDate,
-        [row.clinician],
-        eligMap
-      );
-    } else if (eligibility.Status?.toLowerCase() !== 'eligible') {
-      remarks.push(`Eligibility status: ${eligibility.Status}`);
-    } else {
-      const serviceCategory = eligibility['Service Category']?.trim() || '';
-      const consultationStatus = eligibility['Consultation Status']?.trim()?.toLowerCase() || '';
-      const matchesCategory = isServiceCategoryValid(serviceCategory, consultationStatus, department).valid;
-
-      if (!matchesCategory) {
-        remarks.push(`Invalid for category: ${serviceCategory}, department: ${row.department || row.clinic}`);
-      } else {
-        status = 'valid';
-      }
-    }
-
-    if (hasLeadingZero && eligibility) {
-      remarks.push('Member ID contains leading zeroes; eligibility was matched after removing them.');
-      if (status !== 'invalid') {
-        status = 'unknown';
-      }
-    }
-
-    const invalidTcRemark = getInvalidTcEligibilityRemark(eligibility?.['Package Name']);
-    if (invalidTcRemark) {
-      status = 'invalid';
-      remarks.push(invalidTcRemark);
-    }
-
-    return {
-      claimID: row.claimID,
-      memberID,
-      encounterStart: formattedDate,
-      packageName: eligibility?.['Package Name'] || row.packageName || '',
-      provider: eligibility?.['Payer Name'] || row.provider || '',
-      clinician: eligibility?.['Clinician'] || row.clinician || '',
-      serviceCategory: eligibility?.['Service Category'] || '',
-      consultationStatus: eligibility?.['Consultation Status'] || '',
-      status: eligibility?.Status || '',
-      claimStatus: row.claimStatus || '',
-      remarks,
-      finalStatus: status,
-      fullEligibilityRecord: eligibility
-    };
-  });
-
-  return results.filter(r => r);
-}
-
-// --- Put this helper above validateXmlClaims / validateReportClaims ---
-function logNoEligibilityMatch(sourceType, claimSummary, memberID, parsedClaimDate, claimClinicians, eligMap) {
-  try {
-    const normalizedID = normalizeMemberID(memberID);
-    const eligList = eligMap.get(normalizedID) || []; // PATCHED: use Map.get
-
-    console.groupCollapsed(`[Diagnostics] No eligibility match (${sourceType}) — member: "${memberID}" (normalized: "${normalizedID}")`);
-    console.log('Claim / row summary:', claimSummary);
-    console.log('Parsed claim date object:', parsedClaimDate, 'Formatted:', DateHandler.format(parsedClaimDate));
-    console.log('Claim clinicians:', claimClinicians || []);
-
-    if (!eligList || eligList.length === 0) {
-      console.warn('No eligibility records found for this member ID in eligMap.');
-    } else {
-      console.log(`Found ${eligList.length} eligibility record(s) for member "${memberID}":`);
-      eligList.forEach((e, i) => {
-        const answeredOnRaw = e['Answered On'] || e['Ordered On'] || '';
-        const answeredOnParsed = DateHandler.parse(answeredOnRaw);
-        console.log(`#${i+1}`, {
-          'Eligibility Request Number': e['Eligibility Request Number'],
-          'Answered On (raw)': answeredOnRaw,
-          'Answered On (parsed)': answeredOnParsed,
-          'Ordered On': e['Ordered On'],
-          'Status': e['Status'],
-          'Clinician': e['Clinician'],
-          'Payer Name': e['Payer Name'],
-          'Service Category': e['Service Category'],
-          'Package Name': e['Package Name'],
-          'Used': usedEligibilities.has(e['Eligibility Request Number'])
-        });
-      });
-    }
-    console.groupEnd();
-  } catch (err) {
-    console.error('Error in logNoEligibilityMatch diagnostic logger:', err);
-  }
-}
-
-/*********************
- * FILE PARSING FUNCTIONS *
- *********************/
-
-/**
- * Helper function to handle duplicate header names
- * Keeps first occurrence with original name, renames subsequent duplicates
- * @param {Array} headers - Array of header names
- * @returns {Array} Array of unique header names
- */
-function handleDuplicateHeaders(headers) {
-  const seenHeaders = new Map();
-  return headers.map((header, index) => {
-    const trimmedHeader = String(header).trim();
-    if (!trimmedHeader) return `Column${index + 1}`;  // Use 1-based indexing
-    
-    if (seenHeaders.has(trimmedHeader)) {
-      // This is a duplicate - rename it
-      const count = seenHeaders.get(trimmedHeader) + 1;
-      seenHeaders.set(trimmedHeader, count);
-      return `${trimmedHeader}_${count}`;
-    } else {
-      // First occurrence - keep it
-      seenHeaders.set(trimmedHeader, 1);
-      return trimmedHeader;
-    }
-  });
-}
-
-async function parseXmlFile(file) {
-  console.log(`Parsing XML file: ${file.name}`);
-  const text = await file.text();
-  // Preprocess XML to replace unescaped & with "and" for parseability
-  const xmlContent = text.replace(/&(?!(amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;))/g, "and");
-  const xmlDoc = new DOMParser().parseFromString(xmlContent, "application/xml");
-
-  // Extract ReceiverID from Header element
-  const header = xmlDoc.querySelector("Header");
-  const receiverID = header?.querySelector("ReceiverID")?.textContent.trim() || '';
-  console.log(`ReceiverID found: ${receiverID}`);
-
-  const claims = Array.from(xmlDoc.querySelectorAll("Claim")).map(claim => {
-    // Extract PackageName from Contract element (to match with XLSX "Package Name" column AH)
-    const contract = claim.querySelector("Contract");
-    const packageName = contract?.querySelector("PackageName")?.textContent.trim() || '';
-    
-    return {
-      claimID: claim.querySelector("ID")?.textContent.trim() || '',
-      memberID: claim.querySelector("MemberID")?.textContent.trim() || '',
-      payerID: claim.querySelector("PayerID")?.textContent.trim() || '',
-      packageName: packageName,
-      encounterStart: claim.querySelector("Encounter Start")?.textContent.trim(),
-      clinicians: Array.from(claim.querySelectorAll("Clinician")).map(c => c.textContent.trim())
-    };
-  });
-
-  return { claims, receiverID };
-}
-
-async function parseExcelFile(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = function(e) {
-      try {
-        const data = new Uint8Array(e.target.result);
-        const workbook = XLSX.read(data, { type: 'array' });
-        const sheet = workbook.Sheets[workbook.SheetNames[0]];
-        const allRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
-
-        // Helper: detect likely title rows
-        function isLikelyTitleRow(row) {
-          const emptyCount = row.filter(c => String(c).trim() === '').length;
-          return emptyCount > 4; // skip if more than 4 empty cells
-        }
-
-        // Detect header row dynamically
-        let headerRow = 0;
-        let foundHeaders = false;
-
-        while (headerRow < allRows.length && !foundHeaders) {
-          const currentRow = allRows[headerRow].map(c => String(c).trim());
-
-          // Skip likely title rows
-          if (isLikelyTitleRow(currentRow)) {
-            headerRow++;
-            continue;
-          }
-
-          // Check for known headers
-          if (currentRow.some(cell => cell.includes('Pri. Claim No')) ||
-              currentRow.some(cell => cell.includes('Pri. Claim ID')) ||
-              currentRow.some(cell => cell.includes('Card Number / DHA Member ID'))) {
-            foundHeaders = true;
-            break;
-          }
-
-          // Fallback: treat row with >= 3 non-empty cells as header
-          const nonEmptyCells = currentRow.filter(c => c !== '');
-          if (nonEmptyCells.length >= 3) {
-            foundHeaders = true;
-            break;
-          }
-          headerRow++;
-        }
-
-        // Default to first row if none detected
-        if (!foundHeaders) headerRow = 0;
-
-        // Trim headers and handle duplicates
-        const headers = allRows[headerRow].map(h => String(h).trim());
-        const uniqueHeaders = handleDuplicateHeaders(headers);
-        
-        console.log(`Headers: ${uniqueHeaders}`);
-
-        // Extract data rows
-        const dataRows = allRows.slice(headerRow + 1);
-
-        // Map rows to objects using unique headers
-        const jsonData = dataRows.map(row => {
-          const obj = {};
-          uniqueHeaders.forEach((header, index) => {
-            obj[header] = row[index] || '';
-          });
-          return obj;
-        });
-
-        resolve(jsonData);
-      } catch (error) {
-        reject(error);
-      }
-    };
-    reader.onerror = () => reject(reader.error);
-    reader.readAsArrayBuffer(file);
-  });
-}
-
-async function parseCsvFile(file) {
-  console.log(`Parsing CSV file: ${file.name}`);
-
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-
-    reader.onload = function(e) {
-      try {
-        const text = e.target.result;
-        const workbook = XLSX.read(text, { type: 'string' });
-        const sheet = workbook.Sheets[workbook.SheetNames[0]];
-        const allRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
-
-        // Dynamically detect header row by scanning first 5 rows
-        let headerRowIndex = -1;
-        for (let i = 0; i < 5; i++) {
-          const row = allRows[i];
-          if (!row) continue;
-          const joined = row.join(',').toLowerCase();
-          if (joined.includes('pri. claim no') || joined.includes('claimid') || joined.includes('claim id')) {
-            headerRowIndex = i;
-            break;
-          }
-        }
-
-        if (headerRowIndex === -1) throw new Error("Could not detect header row in CSV");
-
-        const rawHeaders = allRows[headerRowIndex];
-        const headers = handleDuplicateHeaders(rawHeaders);
-        
-        const dataRows = allRows.slice(headerRowIndex + 1);
-
-        console.log(`Detected header at row ${headerRowIndex + 1}:`, headers);
-
-        const rawParsed = dataRows.map(row => {
-          const obj = {};
-          headers.forEach((header, index) => {
-            obj[header] = row[index] || '';
-          });
-          return obj;
-        });
-
-        // Deduplicate based on claim ID
-        const seen = new Set();
-        const uniqueRows = [];
-
-        const claimIdHeader = headers.find(h =>
-          h.toLowerCase().replace(/\s+/g, '') === 'claimid' ||
-          h.toLowerCase().includes('claim')  // fallback if no exact match
-        );
-
-        if (!claimIdHeader) throw new Error("Could not find a Claim ID column");
-
-        rawParsed.forEach(row => {
-          const claimID = row[claimIdHeader];
-          if (claimID && !seen.has(claimID)) {
-            seen.add(claimID);
-            uniqueRows.push(row);
-          }
-        });
-
-        resolve(uniqueRows);
-      } catch (error) {
-        reject(error);
-      }
-    };
-
-    reader.onerror = () => reject(reader.error);
-    reader.readAsText(file);
-  });
-}
-
-function normalizeReportData(rawData) {
-  // Check if data is from InstaHMS (has 'Pri. Claim No' header)
-  const isInsta = rawData[0]?.hasOwnProperty('Pri. Claim No');
-  const isOdoo = rawData[0]?.hasOwnProperty('Pri. Claim ID');
-
-  return rawData.map(row => {
-    if (isInsta) {
-      // InstaHMS report format
-      return {
-        claimID: row['Pri. Claim No'] || '',
-        memberID: row['Pri. Patient Insurance Card No'] || '',
-        claimDate: row['Encounter Date'] || '',
-        clinician: row['Clinician License'] || '',
-        department: row['Department'] || '',
-        packageName: row['Pri. Payer Name'] || '', // ✅ shown in table as "Package"
-        insuranceCompany: row['Pri. Payer Name'] || '',
-        claimStatus: row['Codification Status'] || ''
-      };
-    } else if (isOdoo) {
-      // InstaHMS report format
-      return {
-        claimID: row['Pri. Claim ID'] || '',
-        memberID: row['Pri. Member ID'] || '',
-        claimDate: row['Adm/Reg. Date'] || '',
-        clinician: row['Admitting License'] || '',
-        department: row['Admitting Department'] || '',
-        //packageName: row['Pri. Sponsor'] || '',
-        insuranceCompany: row['Pri. Plan Type'] || '',
-        claimStatus: row['Codification Status'] || ''
-      };
-    } else {
-      // ClinicPro report format (starts from row 1)
-      return {
-        claimID: row['ClaimID'] || '',
-        memberID: row['PatientCardID'] || '', // patient ID for eligibility match
-        claimDate: row['ClaimDate'] || '',
-        clinician: row['Clinician License'] || '',
-        packageName: row['Insurance Company'] || '', // ✅ shown in table as "Package"
-        insuranceCompany: row['Insurance Company'] || '',
-        department: row['Clinic'] || '',
-        claimStatus: row['VisitStatus'] || ''
-      };
-    }
-  });
-}
-
-/********************
- * UI RENDERING FUNCTIONS *
- ********************/
-// buildResultsTable: builds and returns table element
-function buildResultsTable(results, eligMap) {
-  // Query for fresh DOM elements each time to avoid stale references
-  const xmlRadio = document.querySelector('input[name="reportSource"][value="xml"]');
-
-  if (!results || results.length === 0) {
-    const emptyDiv = document.createElement('div');
-    emptyDiv.className = 'no-results';
-    emptyDiv.textContent = 'No claims to display';
-    return emptyDiv;
-  }
-
-  const tableContainer = document.createElement('div');
-  tableContainer.className = 'analysis-results';
-  tableContainer.style.overflowX = 'auto';
-
-  const table = document.createElement('table');
-  table.className = 'table table-striped table-bordered';
-  table.style.borderCollapse = 'collapse';
-  table.style.width = '100%';
-
-  const isXmlMode = xmlRadio ? xmlRadio.checked : true;
-  const thead = document.createElement('thead');
-  thead.innerHTML = `
-    <tr>
-      <th style="padding:8px;border:1px solid #ccc">Claim ID</th>
-      <th style="padding:8px;border:1px solid #ccc">Member ID</th>
-      <th style="padding:8px;border:1px solid #ccc">Encounter Date</th>
-      ${!isXmlMode ? '<th style="padding:8px;border:1px solid #ccc">Package</th><th style="padding:8px;border:1px solid #ccc">Provider</th>' : ''}
-      <th style="padding:8px;border:1px solid #ccc">Clinician</th>
-      ${isXmlMode ? '<th style="padding:8px;border:1px solid #ccc">XML Package Name</th><th style="padding:8px;border:1px solid #ccc">XLSX Package Name</th>' : ''}
-      ${isXmlMode ? '<th style="padding:8px;border:1px solid #ccc">Receiver ID</th><th style="padding:8px;border:1px solid #ccc">Payer ID</th>' : ''}
-      <th style="padding:8px;border:1px solid #ccc">Service Category</th>
-      <th style="padding:8px;border:1px solid #ccc">Status</th>
-      <th class="wrap-col" style="padding:8px;border:1px solid #ccc">Remarks</th>
-      <th style="padding:8px;border:1px solid #ccc">Details</th>
-    </tr>
-  `;
-  table.appendChild(thead);
-
-  const tbody = document.createElement('tbody');
-  const statusCounts = { valid: 0, invalid: 0, unknown: 0 };
-
-  results.forEach((result, index) => {
-    // Skip rows where Member ID is missing/empty
-    if (!result.memberID || result.memberID.trim() === '') return;
-
-    // Ignore claims whose status is "Not Seen"
-    const statusToCheck = (result.claimStatus || result.status || result.fullEligibilityRecord?.Status || '')
-      .toString()
+  let detailRunCounter = 0;
+  let lastResults = [];
+  let lastWorkbookContext = null;
+  const detailStore = new Map();
+  let modalDelegationInstalled = false;
+
+  function normalizeHeader(value) {
+    return String(value == null ? '' : value)
+      .replace(/\u00a0/g, ' ')
       .trim()
-      .toLowerCase();
-
-    if (statusToCheck === 'not seen') return;
-
-    // Count statuses safely
-    if (result.finalStatus && statusCounts.hasOwnProperty(result.finalStatus)) {
-      statusCounts[result.finalStatus]++;
-    }
-
-    const row = document.createElement('tr');
-    // Use Bootstrap classes for row coloring
-    if (result.finalStatus === 'valid') {
-      row.classList.add('table-success');
-    } else if (result.finalStatus === 'invalid') {
-      row.classList.add('table-danger');
-    } else {
-      row.classList.add('table-warning');
-    }
-
-    const statusBadge = result.status 
-      ? `<span class="status-badge ${result.status.toLowerCase() === 'eligible' ? 'eligible' : 'ineligible'}">${result.status}</span>`
-      : '';
-
-    const remarksHTML = result.remarks && result.remarks.length > 0
-      ? result.remarks.map(r => `<div>${r}</div>`).join('')
-      : '<div class="source-note">No remarks</div>';
-
-    let detailsCell = '<div class="source-note">N/A</div>';
-    if (result.fullEligibilityRecord?.['Eligibility Request Number']) {
-      detailsCell = `<button class="details-btn eligibility-details" data-index="${index}">${result.fullEligibilityRecord['Eligibility Request Number']}</button>`;
-    } else if (eligMap && eligMap.has && eligMap.has(result.memberID)) {
-      detailsCell = `<button class="details-btn show-all-eligibilities" data-member="${result.memberID}" data-clinicians="${(result.clinicians || [result.clinician || '']).join(',')}">View All</button>`;
-    }
-
-    row.innerHTML = `
-      <td style="padding:6px;border:1px solid #ccc">${result.claimID}</td>
-      <td style="padding:6px;border:1px solid #ccc">${result.memberID}</td>
-      <td style="padding:6px;border:1px solid #ccc">${result.encounterStart}</td>
-      ${!isXmlMode ? `<td class="description-col" style="padding:6px;border:1px solid #ccc">${result.packageName}</td><td class="description-col" style="padding:6px;border:1px solid #ccc">${result.provider}</td>` : ''}
-      <td class="description-col" style="padding:6px;border:1px solid #ccc">${result.clinician}</td>
-      ${isXmlMode ? `<td class="description-col" style="padding:6px;border:1px solid #ccc">${result.packageName || ''}</td><td class="description-col" style="padding:6px;border:1px solid #ccc">${result.xlsxPackageName || ''}</td>` : ''}
-      ${isXmlMode ? `<td style="padding:6px;border:1px solid #ccc">${result.receiverID || ''}</td><td style="padding:6px;border:1px solid #ccc">${result.payerID || ''}</td>` : ''}
-      <td class="description-col" style="padding:6px;border:1px solid #ccc">${result.serviceCategory}</td>
-      <td class="description-col" style="padding:6px;border:1px solid #ccc">${statusBadge}</td>
-      <td class="wrap-col" style="padding:6px;border:1px solid #ccc">${remarksHTML}</td>
-      <td style="padding:6px;border:1px solid #ccc">${detailsCell}</td>
-    `;
-    tbody.appendChild(row);
-  });
-
-  table.appendChild(tbody);
-  tableContainer.appendChild(table);
-
-  const summary = document.createElement('div');
-  summary.className = 'loaded-count';
-  summary.innerHTML = `
-    Processed ${results.length} claims: 
-    <span class="valid">${statusCounts.valid} valid</span>, 
-    <span class="unknown">${statusCounts.unknown} unknown</span>, 
-    <span class="invalid">${statusCounts.invalid} invalid</span>
-  `;
-  
-  // Create wrapper container for summary + table
-  const wrapper = document.createElement('div');
-  wrapper.appendChild(summary);
-  wrapper.appendChild(tableContainer);
-  
-  // Save results for delegated modal access (used by Check All)
-  window.checkerResultData = window.checkerResultData || {};
-  window.checkerResultData.eligibility = results;
-
-  // Initialize modal and attach event handlers
-  setTimeout(() => {
-    initEligibilityModal(results);
-    initShowAllEligibilitiesHandlers(eligMap);
-  }, 0);
-  
-  return wrapper;
-}
-
-function renderEligibilityDetails(result) {
-  if (!result?.fullEligibilityRecord) return;
-  const record = result.fullEligibilityRecord;
-  const tableHtml = `
-    <h3>Eligibility Details</h3>
-    <div style="overflow-x:auto;">
-      <table style="width:100%;border-collapse:collapse;">
-        <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Eligibility Request Number</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Eligibility Request Number"] || ''}</td></tr>
-        <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Card Number / DHA Member ID</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Card Number / DHA Member ID"] || ''}</td></tr>
-        <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Card Network</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Card Network"] || ''}</td></tr>
-        <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Answered On</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Answered On"] || ''}</td></tr>
-        <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Ordered On</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Ordered On"] || ''}</td></tr>
-        <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Status</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Status"] || ''}</td></tr>
-        <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Clinician</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Clinician"] || ''}</td></tr>
-        <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Payer Name</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Payer Name"] || ''}</td></tr>
-        <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Service Category</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Service Category"] || ''}</td></tr>
-        <tr><th style="text-align:left;padding:6px;">Package Name</th><td style="padding:6px;">${record["Package Name"] || ''}</td></tr>
-      </table>
-    </div>
-  `;
-  document.getElementById("modalTable").innerHTML = tableHtml;
-  document.getElementById("modalOverlay").style.display = "block";
-}
-
-function initEligibilityModal(results) {
-  // Ensure modal exists
-  if (!document.getElementById("modalOverlay")) {
-    const modalHtml = `
-      <div id="modalOverlay" style="display:none;position:fixed;z-index:9999;left:0;top:0;width:100vw;height:100vh;background:rgba(0,0,0,0.35);">
-        <div id="modalContent" style="
-          background:#fff;
-          width:90%;
-          max-width:1200px;
-          max-height:95vh;
-          overflow:auto;
-          position:absolute;
-          left:50%;
-          top:50%;
-          transform:translate(-50%,-50%);
-          padding:20px;
-          border-radius:8px;
-          box-shadow:0 4px 24px rgba(0,0,0,0.2);
-        ">
-          <button id="modalCloseBtn" style="
-            float:right;
-            font-size:18px;
-            padding:2px 10px;
-            cursor:pointer;
-          " aria-label="Close">&times;</button>
-          <div id="modalTable"></div>
-        </div>
-      </div>
-    `;
-    document.body.insertAdjacentHTML("beforeend", modalHtml);
-
-    document.getElementById("modalCloseBtn").onclick = hideModal;
-    document.getElementById("modalOverlay").onclick = function(e) {
-      if (e.target.id === "modalOverlay") hideModal();
-    };
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '');
   }
 
-  // Expose a shared function so both individual and unified Check All can open details
-  window.openEligibilityDetails = function openEligibilityDetails(resultIndex) {
-    const stored = (window.checkerResultData && window.checkerResultData.eligibility) || [];
-    const result = stored[Number(resultIndex)];
-    if (!result) {
-      console.error('[ELIGIBILITY] Result not found', { resultIndex });
-      return;
-    }
-    renderEligibilityDetails(result);
-  };
+  function normalizeText(value) {
+    return String(value == null ? '' : value).trim();
+  }
 
-  // Register one delegated listener for .eligibility-details buttons; never duplicate it
-  if (!window._eligibilityDetailsListenerAttached) {
-    window._eligibilityDetailsListenerAttached = true;
-    document.addEventListener('click', function(event) {
-      const button = event.target.closest('.eligibility-details');
-      if (!button) return;
-      const index = button.dataset.index;
-      window.openEligibilityDetails?.(index);
+  function normalizeUpper(value) {
+    return normalizeText(value).toUpperCase();
+  }
+
+  function normalizeMemberId(value) {
+    const raw = normalizeText(value);
+    if (!raw) return '';
+
+    if (/^\d+(?:\.0+)?$/.test(raw)) {
+      return raw.replace(/\.0+$/, '').replace(/^0+(?=\d)/, '');
+    }
+
+    return raw.toUpperCase().replace(/\s+/g, '');
+  }
+
+  function normalizeEid(value) {
+    return normalizeText(value).replace(/\D/g, '');
+  }
+
+  function isUsableEid(value) {
+    const eid = normalizeEid(value);
+    return eid.length >= 12 && !PLACEHOLDER_EID_PATTERN.test(eid);
+  }
+
+  function normalizeClinician(value) {
+    return normalizeUpper(value).replace(/\s+/g, '');
+  }
+
+  function normalizeProvider(value) {
+    return normalizeUpper(value).replace(/\s+/g, '');
+  }
+
+  function pad2(value) {
+    return String(value).padStart(2, '0');
+  }
+
+  function dateToKey(date) {
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
+    return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+  }
+
+  function parseDateTime(value) {
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+      return {
+        date: value,
+        dateKey: dateToKey(value),
+        timestamp: value.getTime(),
+        display: formatDateTime(value)
+      };
+    }
+
+    if (typeof value === 'number' && Number.isFinite(value) && root.XLSX?.SSF?.parse_date_code) {
+      const parsed = root.XLSX.SSF.parse_date_code(value);
+      if (parsed) {
+        const date = new Date(
+          parsed.y,
+          parsed.m - 1,
+          parsed.d,
+          parsed.H || 0,
+          parsed.M || 0,
+          Math.floor(parsed.S || 0)
+        );
+        return {
+          date,
+          dateKey: dateToKey(date),
+          timestamp: date.getTime(),
+          display: formatDateTime(date)
+        };
+      }
+    }
+
+    const raw = normalizeText(value);
+    if (!raw) return { date: null, dateKey: '', timestamp: null, display: '' };
+
+    let match = raw.match(
+      /^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2}|\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/
+    );
+
+    if (match) {
+      const day = Number(match[1]);
+      const month = Number(match[2]);
+      const year = match[3].length === 2 ? 2000 + Number(match[3]) : Number(match[3]);
+      const hour = Number(match[4] || 0);
+      const minute = Number(match[5] || 0);
+      const second = Number(match[6] || 0);
+      const date = new Date(year, month - 1, day, hour, minute, second);
+
+      if (
+        date.getFullYear() === year &&
+        date.getMonth() === month - 1 &&
+        date.getDate() === day
+      ) {
+        return {
+          date,
+          dateKey: dateToKey(date),
+          timestamp: date.getTime(),
+          display: formatDateTime(date)
+        };
+      }
+    }
+
+    match = raw.match(
+      /^(\d{1,2})-([A-Za-z]{3})-(\d{2}|\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/
+    );
+
+    if (match) {
+      const monthMap = {
+        JAN: 0, FEB: 1, MAR: 2, APR: 3, MAY: 4, JUN: 5,
+        JUL: 6, AUG: 7, SEP: 8, OCT: 9, NOV: 10, DEC: 11
+      };
+      const monthIndex = monthMap[match[2].toUpperCase()];
+      const day = Number(match[1]);
+      const year = match[3].length === 2 ? 2000 + Number(match[3]) : Number(match[3]);
+      const hour = Number(match[4] || 0);
+      const minute = Number(match[5] || 0);
+      const second = Number(match[6] || 0);
+
+      if (monthIndex != null) {
+        const date = new Date(year, monthIndex, day, hour, minute, second);
+        return {
+          date,
+          dateKey: dateToKey(date),
+          timestamp: date.getTime(),
+          display: formatDateTime(date)
+        };
+      }
+    }
+
+    const fallback = new Date(raw);
+    if (!Number.isNaN(fallback.getTime())) {
+      return {
+        date: fallback,
+        dateKey: dateToKey(fallback),
+        timestamp: fallback.getTime(),
+        display: formatDateTime(fallback)
+      };
+    }
+
+    return { date: null, dateKey: '', timestamp: null, display: raw };
+  }
+
+  function formatDateTime(date) {
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
+    return (
+      `${pad2(date.getDate())}/${pad2(date.getMonth() + 1)}/${date.getFullYear()} ` +
+      `${pad2(date.getHours())}:${pad2(date.getMinutes())}:${pad2(date.getSeconds())}`
+    );
+  }
+
+  function escapeHtml(value) {
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  function getDirectChild(parent, tagName) {
+    return Array.from(parent?.children || []).find(
+      child => String(child.nodeName || '').trim() === tagName
+    ) || null;
+  }
+
+  function getDirectText(parent, tagName) {
+    return normalizeText(getDirectChild(parent, tagName)?.textContent);
+  }
+
+  function getNestedText(parent, tagName) {
+    const element = parent?.getElementsByTagName?.(tagName)?.[0];
+    return normalizeText(element?.textContent);
+  }
+
+  function resolveInputFile(inputId, cacheKey, explicitFile) {
+    if (explicitFile) return explicitFile;
+
+    const cached = root.unifiedCheckerFiles?.[cacheKey];
+    if (cached) return cached;
+
+    const input = document.getElementById(inputId);
+    return input?.files?.[0] || null;
+  }
+
+  function parseXMLClaims(xmlText) {
+    const parser = new DOMParser();
+    const xmlDocument = parser.parseFromString(xmlText, 'application/xml');
+    const parserError = xmlDocument.getElementsByTagName('parsererror')[0];
+
+    if (parserError) {
+      throw new Error(`XML parsing failed: ${normalizeText(parserError.textContent)}`);
+    }
+
+    const claims = Array.from(xmlDocument.getElementsByTagName('Claim'));
+    if (!claims.length) throw new Error('The XML contains no Claim entries.');
+
+    return claims.map((claim, claimIndex) => {
+      const encounter = claim.getElementsByTagName('Encounter')[0] || null;
+      const encounterStartRaw = getNestedText(encounter, 'Start');
+      const encounterStart = parseDateTime(encounterStartRaw);
+      const activities = Array.from(claim.getElementsByTagName('Activity'));
+      const clinicians = new Set();
+      const performingClinicians = new Set();
+      const orderingClinicians = new Set();
+
+      activities.forEach(activity => {
+        const performing = normalizeClinician(getNestedText(activity, 'Clinician'));
+        const ordering = normalizeClinician(getNestedText(activity, 'OrderingClinician'));
+        if (performing) {
+          clinicians.add(performing);
+          performingClinicians.add(performing);
+        }
+        if (ordering) {
+          clinicians.add(ordering);
+          orderingClinicians.add(ordering);
+        }
+      });
+
+      const activityTypes = new Set(
+        activities.map(activity => normalizeText(getNestedText(activity, 'Type'))).filter(Boolean)
+      );
+      const isDental = activityTypes.has('6');
+
+      return {
+        claimIndex,
+        claimID: getDirectText(claim, 'ID') || `Claim ${claimIndex + 1}`,
+        memberIDRaw: getDirectText(claim, 'MemberID'),
+        memberID: normalizeMemberId(getDirectText(claim, 'MemberID')),
+        eidRaw: getDirectText(claim, 'EmiratesIDNumber'),
+        eid: normalizeEid(getDirectText(claim, 'EmiratesIDNumber')),
+        providerIDRaw: getDirectText(claim, 'ProviderID') || getNestedText(encounter, 'FacilityID'),
+        providerID: normalizeProvider(
+          getDirectText(claim, 'ProviderID') || getNestedText(encounter, 'FacilityID')
+        ),
+        encounterStartRaw,
+        encounterDate: encounterStart.dateKey,
+        encounterTimestamp: encounterStart.timestamp,
+        clinicians,
+        performingClinicians,
+        orderingClinicians,
+        isDental,
+        claimXML: claim.outerHTML
+      };
     });
   }
-}
 
-function initShowAllEligibilitiesHandlers(eligMap) {
-  // Attach click handlers for "View All" buttons
-  document.querySelectorAll(".show-all-eligibilities").forEach(btn => {
-    btn.onclick = function() {
-      const memberID = this.dataset.member;
-      const clinicians = (this.dataset.clinicians || '').split(',').filter(c => c.trim());
-      
-      if (!eligMap || !eligMap.has(memberID)) {
-        alert('No eligibility records found for this member.');
+  function findHeaderRow(matrix) {
+    const scanLimit = Math.min(matrix.length, 20);
+    let best = null;
+
+    for (let rowIndex = 0; rowIndex < scanLimit; rowIndex += 1) {
+      const row = matrix[rowIndex] || [];
+      const normalized = row.map(normalizeHeader);
+      let score = 0;
+
+      const hasAlias = aliases => aliases.some(alias => normalized.includes(normalizeHeader(alias)));
+      if (hasAlias(HEADER_ALIASES.memberId)) score += 3;
+      if (hasAlias(HEADER_ALIASES.eid)) score += 3;
+      if (hasAlias(HEADER_ALIASES.orderedOn)) score += 3;
+      if (hasAlias(HEADER_ALIASES.status)) score += 2;
+      if (hasAlias(HEADER_ALIASES.clinician)) score += 1;
+      if (hasAlias(HEADER_ALIASES.providerLicense)) score += 1;
+
+      if (!best || score > best.score) best = { rowIndex, score };
+    }
+
+    if (!best || best.score < 8) {
+      throw new Error(
+        'Eligibility: could not identify all matching columns. ' +
+        'Expected a header row containing EID or Member ID, Ordered On, and Status.'
+      );
+    }
+
+    return best.rowIndex;
+  }
+
+  function buildUniqueHeaders(headerRow) {
+    const counts = new Map();
+
+    return headerRow.map((value, index) => {
+      const base = normalizeText(value) || `Column ${index + 1}`;
+      const normalized = normalizeHeader(base);
+      const count = (counts.get(normalized) || 0) + 1;
+      counts.set(normalized, count);
+      return count === 1 ? base : `${base} (${count})`;
+    });
+  }
+
+  function resolveHeaderIndex(rawHeaders, aliases) {
+    const normalizedHeaders = rawHeaders.map(normalizeHeader);
+
+    for (const alias of aliases) {
+      const target = normalizeHeader(alias);
+      const index = normalizedHeaders.indexOf(target);
+      if (index !== -1) return index;
+    }
+
+    return -1;
+  }
+
+  function parseEligibilityWorkbook(arrayBuffer) {
+    if (!root.XLSX || typeof root.XLSX.read !== 'function') {
+      throw new Error('SheetJS (XLSX) is unavailable.');
+    }
+
+    const workbook = root.XLSX.read(arrayBuffer, {
+      type: 'array',
+      cellDates: true,
+      raw: true
+    });
+
+    const allRows = [];
+    const warnings = [];
+
+    workbook.SheetNames.forEach(sheetName => {
+      const worksheet = workbook.Sheets[sheetName];
+      const matrix = root.XLSX.utils.sheet_to_json(worksheet, {
+        header: 1,
+        defval: '',
+        raw: true,
+        blankrows: false
+      });
+
+      if (!matrix.length) return;
+
+      let headerRowIndex;
+      try {
+        headerRowIndex = findHeaderRow(matrix);
+      } catch (error) {
+        warnings.push(`${sheetName}: ${error.message}`);
         return;
       }
 
-      const eligList = eligMap.get(memberID);
-      
-      console.log("Showing all eligibilities for member:", memberID, "Eligibilities:", eligList);
+      const rawHeaders = matrix[headerRowIndex].map(value => normalizeText(value));
+      const displayHeaders = buildUniqueHeaders(rawHeaders);
+      const indexes = {};
 
-      let tableHtml = `
-        <h3>All Eligibility Records for Member ${memberID}</h3>
-        <p>Clinician(s): ${clinicians.join(', ') || 'N/A'}</p>
-        <div style="overflow-x:auto;">
+      Object.entries(HEADER_ALIASES).forEach(([key, aliases]) => {
+        indexes[key] = resolveHeaderIndex(rawHeaders, aliases);
+      });
+
+      if (indexes.orderedOn < 0 || indexes.status < 0 || (indexes.eid < 0 && indexes.memberId < 0)) {
+        warnings.push(
+          `${sheetName}: missing EID/Member ID, Ordered On, or Status columns.`
+        );
+        return;
+      }
+
+      for (let rowIndex = headerRowIndex + 1; rowIndex < matrix.length; rowIndex += 1) {
+        const values = matrix[rowIndex] || [];
+        if (!values.some(value => normalizeText(value))) continue;
+
+        const sourceRow = {};
+        displayHeaders.forEach((header, columnIndex) => {
+          sourceRow[header] = values[columnIndex] ?? '';
+        });
+
+        const orderedOn = parseDateTime(values[indexes.orderedOn]);
+        const row = {
+          sheetName,
+          sheetRowNumber: rowIndex + 1,
+          sourceRow,
+          rawValues: values,
+          memberIDRaw: indexes.memberId >= 0 ? values[indexes.memberId] : '',
+          memberID: indexes.memberId >= 0 ? normalizeMemberId(values[indexes.memberId]) : '',
+          eidRaw: indexes.eid >= 0 ? values[indexes.eid] : '',
+          eid: indexes.eid >= 0 ? normalizeEid(values[indexes.eid]) : '',
+          orderedOnRaw: indexes.orderedOn >= 0 ? values[indexes.orderedOn] : '',
+          orderedOnDisplay: orderedOn.display || normalizeText(values[indexes.orderedOn]),
+          orderedDate: orderedOn.dateKey,
+          orderedTimestamp: orderedOn.timestamp,
+          answeredOn: indexes.answeredOn >= 0 ? normalizeText(values[indexes.answeredOn]) : '',
+          status: indexes.status >= 0 ? normalizeText(values[indexes.status]) : '',
+          clinicianRaw: indexes.clinician >= 0 ? normalizeText(values[indexes.clinician]) : '',
+          clinician: indexes.clinician >= 0 ? normalizeClinician(values[indexes.clinician]) : '',
+          clinicianName: indexes.clinicianName >= 0 ? normalizeText(values[indexes.clinicianName]) : '',
+          providerLicenseRaw:
+            indexes.providerLicense >= 0 ? normalizeText(values[indexes.providerLicense]) : '',
+          providerLicense:
+            indexes.providerLicense >= 0 ? normalizeProvider(values[indexes.providerLicense]) : '',
+          providerName: indexes.providerName >= 0 ? normalizeText(values[indexes.providerName]) : '',
+          serviceCategory:
+            indexes.serviceCategory >= 0 ? normalizeText(values[indexes.serviceCategory]) : '',
+          consultationStatus:
+            indexes.consultationStatus >= 0 ? normalizeText(values[indexes.consultationStatus]) : '',
+          requestNumber: indexes.requestNumber >= 0 ? normalizeText(values[indexes.requestNumber]) : '',
+          authorizationNumber:
+            indexes.authorizationNumber >= 0 ? normalizeText(values[indexes.authorizationNumber]) : '',
+          payerName: indexes.payerName >= 0 ? normalizeText(values[indexes.payerName]) : '',
+          memberName: indexes.memberName >= 0 ? normalizeText(values[indexes.memberName]) : '',
+          transactionId: indexes.transactionId >= 0 ? normalizeText(values[indexes.transactionId]) : '',
+          denialCode: indexes.denialCode >= 0 ? normalizeText(values[indexes.denialCode]) : '',
+          denialDescription:
+            indexes.denialDescription >= 0 ? normalizeText(values[indexes.denialDescription]) : '',
+          voiNumber: indexes.voiNumber >= 0 ? normalizeText(values[indexes.voiNumber]) : '',
+          voiMessage: indexes.voiMessage >= 0 ? normalizeText(values[indexes.voiMessage]) : '',
+          packageName: indexes.packageName >= 0 ? normalizeText(values[indexes.packageName]) : '',
+          cardNetwork: indexes.cardNetwork >= 0 ? normalizeText(values[indexes.cardNetwork]) : ''
+        };
+
+        allRows.push(row);
+      }
+    });
+
+    if (!allRows.length) {
+      throw new Error(
+        warnings.length
+          ? `Eligibility workbook contains no usable rows. ${warnings.join(' ')}`
+          : 'Eligibility workbook contains no usable rows.'
+      );
+    }
+
+    return {
+      workbook,
+      rows: allRows,
+      warnings
+    };
+  }
+
+  function addToIndex(index, key, row) {
+    if (!key || key.startsWith('|') || key.endsWith('|')) return;
+    if (!index.has(key)) index.set(key, []);
+    index.get(key).push(row);
+  }
+
+  function buildEligibilityIndexes(rows) {
+    const eidDate = new Map();
+    const memberDate = new Map();
+
+    rows.forEach(row => {
+      if (row.eid && row.orderedDate) addToIndex(eidDate, `${row.eid}|${row.orderedDate}`, row);
+      if (row.memberID && row.orderedDate) {
+        addToIndex(memberDate, `${row.memberID}|${row.orderedDate}`, row);
+      }
+    });
+
+    return { eidDate, memberDate };
+  }
+
+  function scoreCandidate(claim, row, basis) {
+    let score = basis === 'EID' ? 10000 : 5000;
+
+    if (claim.eid && row.eid === claim.eid) score += 1000;
+    if (claim.memberID && row.memberID === claim.memberID) score += 700;
+    if (claim.providerID && row.providerLicense === claim.providerID) score += 300;
+    if (ELIGIBLE_STATUS_PATTERN.test(row.status)) score += 150;
+    if (claim.clinicians.size && row.clinician && claim.clinicians.has(row.clinician)) score += 100;
+
+    let minutesDifference = null;
+    if (claim.encounterTimestamp != null && row.orderedTimestamp != null) {
+      minutesDifference = Math.abs(claim.encounterTimestamp - row.orderedTimestamp) / 60000;
+      score += Math.max(0, 90 - Math.min(90, minutesDifference));
+    }
+
+    return { score, minutesDifference };
+  }
+
+  function findBestEligibilityMatch(claim, indexes) {
+    let candidates = [];
+    let basis = '';
+
+    if (isUsableEid(claim.eid) && claim.encounterDate) {
+      candidates = indexes.eidDate.get(`${claim.eid}|${claim.encounterDate}`) || [];
+      if (candidates.length) basis = 'EID';
+    }
+
+    if (!candidates.length && claim.memberID && claim.encounterDate) {
+      candidates = indexes.memberDate.get(`${claim.memberID}|${claim.encounterDate}`) || [];
+      if (candidates.length) basis = 'Member ID';
+    }
+
+    if (!candidates.length) {
+      return { row: null, basis: '', candidateCount: 0, minutesDifference: null };
+    }
+
+    const ranked = candidates
+      .map(row => ({ row, ...scoreCandidate(claim, row, basis) }))
+      .sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        const aTime = a.minutesDifference == null ? Number.POSITIVE_INFINITY : a.minutesDifference;
+        const bTime = b.minutesDifference == null ? Number.POSITIVE_INFINITY : b.minutesDifference;
+        if (aTime !== bTime) return aTime - bTime;
+        return b.row.sheetRowNumber - a.row.sheetRowNumber;
+      });
+
+    return {
+      row: ranked[0].row,
+      basis,
+      candidateCount: candidates.length,
+      minutesDifference: ranked[0].minutesDifference
+    };
+  }
+
+  function analyzeClaim(claim, match) {
+    const matchedRow = match.row;
+    const invalidRemarks = [];
+    const notes = [];
+
+    if (!claim.encounterDate) {
+      invalidRemarks.push('Encounter Start is missing or has an invalid date.');
+    }
+
+    if (!matchedRow) {
+      invalidRemarks.push(
+        `No eligibility match was found for EID ${claim.eidRaw || '(blank)'} ` +
+        `or Member ID ${claim.memberIDRaw || '(blank)'} on ` +
+        `${claim.encounterDate || claim.encounterStartRaw || '(unknown date)'}.`
+      );
+    } else {
+      if (!ELIGIBLE_STATUS_PATTERN.test(matchedRow.status)) {
+        invalidRemarks.push(
+          `Eligibility status is ${matchedRow.status || '(blank)'} instead of Eligible.`
+        );
+      }
+
+      if (claim.isDental && matchedRow.serviceCategory && !DENTAL_CATEGORY_PATTERN.test(matchedRow.serviceCategory)) {
+        invalidRemarks.push(
+          `Dental claim matched eligibility Service Category ` +
+          `\`${matchedRow.serviceCategory}\` instead of Dental Services.`
+        );
+      }
+
+      if (claim.providerID && matchedRow.providerLicense && claim.providerID !== matchedRow.providerLicense) {
+        notes.push(
+          `Provider differs: claim ${claim.providerIDRaw}, eligibility ${matchedRow.providerLicenseRaw}.`
+        );
+      }
+
+      if (claim.clinicians.size && matchedRow.clinician && !claim.clinicians.has(matchedRow.clinician)) {
+        notes.push(
+          `Clinician differs: claim ${Array.from(claim.clinicians).join(', ')}, ` +
+          `eligibility ${matchedRow.clinicianRaw}. The eligibility was still matched by ` +
+          `${match.basis} and encounter date.`
+        );
+      }
+
+      if (
+        claim.memberID &&
+        matchedRow.memberID &&
+        claim.memberID !== matchedRow.memberID
+      ) {
+        notes.push(
+          `Member ID differs: claim ${claim.memberIDRaw}, eligibility ${matchedRow.memberIDRaw}; ` +
+          `the match was made by Emirates ID.`
+        );
+      }
+
+      if (match.candidateCount > 1) {
+        notes.push(
+          `${match.candidateCount} eligibility rows matched ${match.basis} and date; ` +
+          `the closest/highest-ranked row was selected.`
+        );
+      }
+    }
+
+    const status = invalidRemarks.length ? 'Invalid' : 'Valid';
+
+    return {
+      ClaimID: claim.claimID,
+      MemberID: claim.memberIDRaw,
+      EmiratesID: claim.eidRaw,
+      EncounterStart: claim.encounterStartRaw,
+      EncounterDate: claim.encounterDate,
+      ClaimClinicians: Array.from(claim.clinicians).join(', '),
+      ProviderID: claim.providerIDRaw,
+      MatchBasis: match.basis || '',
+      Status: status,
+      Remarks: invalidRemarks.join('\n') || 'OK',
+      Notes: notes.join('\n'),
+      EligibilityRequestNumber: matchedRow?.requestNumber || '',
+      EligibilityOrderedOn: matchedRow?.orderedOnDisplay || '',
+      EligibilityStatus: matchedRow?.status || '',
+      EligibilityClinician: matchedRow?.clinicianRaw || '',
+      EligibilityClinicianName: matchedRow?.clinicianName || '',
+      ServiceCategory: matchedRow?.serviceCategory || '',
+      ConsultationStatus: matchedRow?.consultationStatus || '',
+      AuthorizationNumber: matchedRow?.authorizationNumber || '',
+      EligibilitySheet: matchedRow?.sheetName || '',
+      EligibilityRowNumber: matchedRow?.sheetRowNumber || '',
+      EligibilityRow: matchedRow?.sourceRow || null,
+      ClaimContext: claim,
+      Valid: status === 'Valid'
+    };
+  }
+
+  function clearDetailStoreForRun() {
+    detailRunCounter += 1;
+    detailStore.clear();
+    return `elig-${Date.now()}-${detailRunCounter}`;
+  }
+
+  function registerDetail(runId, result, index) {
+    const detailId = `${runId}-${index}`;
+    detailStore.set(detailId, {
+      claim: {
+        'Claim ID': result.ClaimID,
+        'Member ID': result.MemberID,
+        'Emirates ID': result.EmiratesID,
+        'Encounter Start': result.EncounterStart,
+        'Claim Clinicians': result.ClaimClinicians,
+        'Provider ID': result.ProviderID,
+        'Match Basis': result.MatchBasis,
+        Status: result.Status,
+        Remarks: result.Remarks,
+        Notes: result.Notes
+      },
+      eligibility: result.EligibilityRow,
+      sheetName: result.EligibilitySheet,
+      sheetRowNumber: result.EligibilityRowNumber
+    });
+    return detailId;
+  }
+
+  function createResultsWrapper(results, context) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'elig-checker-results';
+
+    const total = results.length;
+    const valid = results.filter(result => result.Status === 'Valid').length;
+    const invalid = total - valid;
+    const percentage = total ? ((valid / total) * 100).toFixed(1) : '100.0';
+
+    const summary = document.createElement('div');
+    summary.className = 'alert alert-info';
+    summary.innerHTML =
+      `<strong>Eligibility results:</strong> ${valid} valid / ${total} total ` +
+      `(${percentage}%). ${invalid} invalid.`;
+    wrapper.appendChild(summary);
+
+    if (context.warnings?.length) {
+      const warning = document.createElement('div');
+      warning.className = 'alert alert-warning';
+      warning.textContent = context.warnings.join(' ');
+      wrapper.appendChild(warning);
+    }
+
+    const responsive = document.createElement('div');
+    responsive.className = 'table-responsive';
+
+    const table = document.createElement('table');
+    table.className =
+      'table table-bordered table-striped checker-table result-table eligibility-results-table';
+    table.innerHTML = `
+      <thead>
+        <tr>
+          <th>Claim ID</th>
+          <th>Member ID</th>
+          <th>Emirates ID</th>
+          <th>Encounter Start</th>
+          <th>Claim Clinician</th>
+          <th>Match Basis</th>
+          <th>Eligibility Request</th>
+          <th>Ordered On</th>
+          <th>Eligibility Clinician</th>
+          <th>Service Category</th>
+          <th>Status</th>
+          <th>Remarks</th>
+          <th>Notes</th>
+          <th>Eligibility Details</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    `;
+
+    const tbody = table.querySelector('tbody');
+    const runId = clearDetailStoreForRun();
+
+    results.forEach((result, index) => {
+      const row = document.createElement('tr');
+      row.className = result.Status === 'Valid'
+        ? 'table-success valid-row valid'
+        : 'table-danger invalid-row invalid';
+      row.dataset.claimId = result.ClaimID || '';
+      row.dataset.status = result.Status.toLowerCase();
+
+      const detailId = result.EligibilityRow ? registerDetail(runId, result, index) : '';
+      const detailButton = detailId
+        ? `<button type="button" class="details-btn eligibility-details" ` +
+          `data-eligibility-detail-id="${escapeHtml(detailId)}">View All</button>`
+        : '';
+
+      row.innerHTML = `
+        <td class="nowrap-col claim-id-cell">${escapeHtml(result.ClaimID)}</td>
+        <td>${escapeHtml(result.MemberID)}</td>
+        <td>${escapeHtml(result.EmiratesID)}</td>
+        <td>${escapeHtml(result.EncounterStart)}</td>
+        <td>${escapeHtml(result.ClaimClinicians)}</td>
+        <td>${escapeHtml(result.MatchBasis)}</td>
+        <td>${escapeHtml(result.EligibilityRequestNumber)}</td>
+        <td>${escapeHtml(result.EligibilityOrderedOn)}</td>
+        <td>${escapeHtml(result.EligibilityClinician)}</td>
+        <td>${escapeHtml(result.ServiceCategory)}</td>
+        <td>${escapeHtml(result.Status)}</td>
+        <td style="white-space:pre-line">${escapeHtml(result.Remarks)}</td>
+        <td style="white-space:pre-line">${escapeHtml(result.Notes)}</td>
+        <td>${detailButton}</td>
       `;
 
-      eligList.forEach((record, idx) => {
-        tableHtml += `
-          <h4>Record ${idx + 1}</h4>
-          <table style="width:100%;border-collapse:collapse;margin-bottom:20px;">
-            <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Eligibility Request Number</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Eligibility Request Number"] || ''}</td></tr>
-            <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Card Number / DHA Member ID</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Card Number / DHA Member ID"] || ''}</td></tr>
-            <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Card Network</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Card Network"] || ''}</td></tr>
-            <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Answered On</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Answered On"] || ''}</td></tr>
-            <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Ordered On</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Ordered On"] || ''}</td></tr>
-            <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Status</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Status"] || ''}</td></tr>
-            <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Clinician</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Clinician"] || ''}</td></tr>
-            <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Payer Name</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Payer Name"] || ''}</td></tr>
-            <tr><th style="text-align:left;padding:6px;border-bottom:1px solid #ccc;">Service Category</th><td style="padding:6px;border-bottom:1px solid #ccc;">${record["Service Category"] || ''}</td></tr>
-            <tr><th style="text-align:left;padding:6px;">Package Name</th><td style="padding:6px;">${record["Package Name"] || ''}</td></tr>
+      tbody.appendChild(row);
+    });
+
+    responsive.appendChild(table);
+    wrapper.appendChild(responsive);
+    return wrapper;
+  }
+
+  function createErrorWrapper(error) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'elig-checker-results';
+
+    const alert = document.createElement('div');
+    alert.className = 'alert alert-danger';
+    alert.textContent = `${MODULE_NAME} failed: ${error?.message || String(error)}`;
+    wrapper.appendChild(alert);
+
+    const table = document.createElement('table');
+    table.className = 'table checker-table';
+    table.innerHTML =
+      '<tbody><tr class="table-danger invalid-row invalid">' +
+      '<td>Eligibility checker did not complete.</td></tr></tbody>';
+    wrapper.appendChild(table);
+    return wrapper;
+  }
+
+  function closeEligibilityModal() {
+    document.getElementById('eligibilityDetailsModal')?.remove();
+  }
+
+  function objectToRows(object) {
+    if (!object || typeof object !== 'object') {
+      return '<tr><td colspan="2">No data available.</td></tr>';
+    }
+
+    return Object.entries(object)
+      .map(([key, value]) => {
+        let displayValue = value;
+        if (value instanceof Date) displayValue = formatDateTime(value);
+        else if (value && typeof value === 'object') displayValue = JSON.stringify(value);
+        return `<tr><th>${escapeHtml(key)}</th><td>${escapeHtml(displayValue)}</td></tr>`;
+      })
+      .join('');
+  }
+
+  function openEligibilityDetails(detailId) {
+    const detail = detailStore.get(String(detailId || ''));
+
+    if (!detail) {
+      alert(
+        'Eligibility details are no longer available for this result. ' +
+        'Run the Eligibility checker again.'
+      );
+      return;
+    }
+
+    closeEligibilityModal();
+
+    const modal = document.createElement('div');
+    modal.id = 'eligibilityDetailsModal';
+    modal.className = 'modal';
+    modal.style.cssText =
+      'display:flex;position:fixed;inset:0;z-index:10050;' +
+      'background:rgba(0,0,0,.45);align-items:center;justify-content:center;padding:20px;';
+
+    modal.innerHTML = `
+      <div class="modal-content eligibility-modal modal-scrollable" style="
+        width:min(1100px,96vw);max-height:92vh;overflow:auto;background:#fff;
+        border-radius:8px;padding:18px;box-shadow:0 10px 30px rgba(0,0,0,.3);">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
+          <h3 style="margin:0;">Eligibility Details</h3>
+          <button type="button" class="details-btn eligibility-modal-close" aria-label="Close">&times;</button>
+        </div>
+        <p style="margin:8px 0 14px;">
+          Sheet: <strong>${escapeHtml(detail.sheetName)}</strong>, row
+          <strong>${escapeHtml(detail.sheetRowNumber)}</strong>
+        </p>
+        <h4>Claim Match</h4>
+        <div class="table-responsive">
+          <table class="table table-bordered eligibility-detail-table">
+            <tbody>${objectToRows(detail.claim)}</tbody>
           </table>
-        `;
-      });
-
-      tableHtml += '</div>';
-
-      document.getElementById("modalTable").innerHTML = tableHtml;
-      document.getElementById("modalOverlay").style.display = "block";
-    };
-  });
-}
-
-function hideModal() {
-  const overlay = document.getElementById("modalOverlay");
-  if (overlay) overlay.style.display = "none";
-}
-
-function formatEligibilityDetails(record, memberID) {
-  // Using existing eligibility-details table class
-  let html = `
-    <div class="form-row">
-      <strong>Member:</strong> ${memberID}
-      <span class="status-badge ${record.Status.toLowerCase() === 'eligible' ? 'eligible' : 'ineligible'}">
-        ${record.Status}
-      </span>
-    </div>
-    <table class="eligibility-details">
-      <tbody>
-  `;
-
-  Object.entries(record).forEach(([key, value]) => {
-    if (!value && value !== 0) return;
-
-    // Format dates using existing date-value class
-    if (key.includes('Date') || key.includes('On')) {
-      value = `<span class="date-value">${DateHandler.format(DateHandler.parse(value)) || value}</span>`;
-    }
-
-    html += `
-      <tr>
-        <th>${key}</th>
-        <td>${value}</td>
-      </tr>
+        </div>
+        <h4>Complete Eligibility Row</h4>
+        <div class="table-responsive">
+          <table class="table table-bordered eligibility-detail-table">
+            <tbody>${objectToRows(detail.eligibility)}</tbody>
+          </table>
+        </div>
+        <div style="text-align:right;margin-top:12px;">
+          <button type="button" class="details-btn eligibility-modal-close">Close</button>
+        </div>
+      </div>
     `;
-  });
 
-  html += `
-      </tbody>
-    </table>
-  `;
+    modal.addEventListener('click', event => {
+      if (event.target === modal || event.target.closest('.eligibility-modal-close')) {
+        closeEligibilityModal();
+      }
+    });
 
-  return html;
-}
-
-function updateStatus(message) {
-  status.textContent = message || 'Ready';
-}
-
-function updateProcessButtonState() {
-  const reportSourceXML = document.querySelector('input[name="reportSource"][value="xml"]');
-  const reportSourceXLS = document.querySelector('input[name="reportSource"][value="xls"]');
-  
-  // Exit early if elements don't exist yet
-  if (!processBtn || !reportSourceXML || !reportSourceXLS) {
-    return;
-  }
-  
-  const hasEligibility = !!eligData;
-  const isXmlMode = xmlRadio ? xmlRadio.checked : true;
-  const hasReportData = isXmlMode ? !!xmlData : !!xlsData;
-  processBtn.disabled = !hasEligibility || !hasReportData;
-  exportInvalidBtn.disabled = !hasEligibility || !hasReportData;
-}
-
-
-/************************
- * EXPORT FUNCTIONALITY *
- ************************/
-function exportInvalidEntries(results) {
-  // Filter only invalid entries
-  const invalidEntries = results.filter(r => r && r.finalStatus === 'invalid');
-
-  if (invalidEntries.length === 0) {
-    alert('No invalid entries to export.');
-    return;
+    document.body.appendChild(modal);
   }
 
-  // Map data to plain objects for export
-  const exportData = invalidEntries.map(entry => ({
-    'Claim ID': entry.claimID,
-    'Member ID': entry.memberID,
-    'XML Package Name': entry.packageName || '',  // XML <Contract><PackageName>
-    'XLSX Package Name': entry.xlsxPackageName || '',  // XLSX "Package Name" column (AH)
-    'Receiver ID': entry.receiverID || '',
-    'Payer ID': entry.payerID || '',
-    'Encounter Date': entry.encounterStart,
-    'Provider': entry.provider || '',
-    'Clinician': entry.clinician || '',
-    'Service Category': entry.serviceCategory || '',
-    'Consultation Status': entry.consultationStatus || '',
-    'Eligibility Status': entry.status || '',
-    'Final Status': entry.finalStatus,
-    'Remarks': entry.remarks.map(s => s && !s.endsWith('.') ? s + '.' : s).join('; ')
-  }));
+  function installModalDelegation() {
+    if (modalDelegationInstalled) return;
+    modalDelegationInstalled = true;
 
-  // Create a new workbook and worksheet
-  const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.json_to_sheet(exportData);
+    document.addEventListener('click', event => {
+      const button = event.target.closest?.(
+        'button.eligibility-details[data-eligibility-detail-id]'
+      );
+      if (!button) return;
 
-  XLSX.utils.book_append_sheet(wb, ws, 'Invalid Claims');
+      event.preventDefault();
+      event.stopPropagation();
+      openEligibilityDetails(button.dataset.eligibilityDetailId);
+    });
 
-  // Generate XLSX file and trigger download
-  XLSX.writeFile(wb, `invalid_claims_${new Date().toISOString().slice(0,10)}.xlsx`);
-}
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape') closeEligibilityModal();
+    });
+  }
 
+  function makeExportRows(results) {
+    return results.map(result => ({
+      'Claim ID': result.ClaimID,
+      'Member ID': result.MemberID,
+      'Emirates ID': result.EmiratesID,
+      'Encounter Start': result.EncounterStart,
+      'Claim Clinician': result.ClaimClinicians,
+      'Provider ID': result.ProviderID,
+      'Match Basis': result.MatchBasis,
+      'Eligibility Request': result.EligibilityRequestNumber,
+      'Eligibility Ordered On': result.EligibilityOrderedOn,
+      'Eligibility Clinician': result.EligibilityClinician,
+      'Service Category': result.ServiceCategory,
+      Status: result.Status,
+      Remarks: result.Remarks,
+      Notes: result.Notes,
+      'Eligibility Sheet': result.EligibilitySheet,
+      'Eligibility Row': result.EligibilityRowNumber
+    }));
+  }
 
-/********************
- * EVENT HANDLERS *
- ********************/
-async function handleFileUpload(event, type) {
-  const file = event.target.files[0];
-  if (!file) return;
-
-  try {
-    updateStatus(`Loading ${type} file...`);
-
-    if (type === 'xml') {
-      xmlData = await parseXmlFile(file);
-      updateStatus(`Loaded ${xmlData.claims.length} XML claims`);
-      lastReportWasCSV = false;
-    } 
-    else if (type === 'eligibility') {
-      eligData = await parseExcelFile(file);
-      updateStatus(`Loaded ${eligData.length} eligibility records`);
-      lastReportWasCSV = false;
+  function exportEligibilityResults(onlyInvalid = false) {
+    if (!root.XLSX || typeof root.XLSX.writeFile !== 'function') {
+      throw new Error('SheetJS (XLSX) is unavailable.');
     }
-    else {
-      // if report is CSV, mark the global flag so downstream parsing prefers MDY
-      lastReportWasCSV = file.name.toLowerCase().endsWith('.csv');
 
-      const rawData = lastReportWasCSV
-        ? await parseCsvFile(file)
-        : (file.name.toLowerCase().endsWith('.csv') ? await parseCsvFile(file) : await parseExcelFile(file));
+    const selected = onlyInvalid
+      ? lastResults.filter(result => result.Status !== 'Valid')
+      : lastResults;
 
-      xlsData = normalizeReportData(rawData).filter(r => {
-        return r.claimID !== null && r.claimID !== undefined && String(r.claimID).trim() !== '';
+    if (!selected.length) {
+      alert(onlyInvalid ? 'No invalid eligibility results.' : 'No eligibility results to export.');
+      return;
+    }
+
+    const workbook = root.XLSX.utils.book_new();
+    const worksheet = root.XLSX.utils.json_to_sheet(makeExportRows(selected));
+    root.XLSX.utils.book_append_sheet(workbook, worksheet, 'Eligibility Results');
+    root.XLSX.writeFile(
+      workbook,
+      onlyInvalid ? 'eligibility_invalid_results.xlsx' : 'eligibility_results.xlsx'
+    );
+  }
+
+  function wireOptionalExportButton() {
+    const button = document.getElementById('exportInvalidBtn');
+    if (!button) return;
+    button.onclick = () => exportEligibilityResults(true);
+    button.disabled = !lastResults.some(result => result.Status !== 'Valid');
+  }
+
+  async function runEligCheck(options) {
+    const config = options || {};
+    const xmlFile = resolveInputFile('xmlFileInput', 'xml', config.xmlFile);
+    const eligibilityFile = resolveInputFile(
+      'eligibilityFileInput',
+      'eligibility',
+      config.eligibilityFile
+    );
+
+    installModalDelegation();
+
+    if (!xmlFile || !eligibilityFile) {
+      const missing = [
+        !xmlFile ? 'XML file' : '',
+        !eligibilityFile ? 'Eligibility workbook' : ''
+      ].filter(Boolean).join(' and ');
+      return createErrorWrapper(new Error(`Missing ${missing}.`));
+    }
+
+    try {
+      const [xmlText, eligibilityBuffer] = await Promise.all([
+        typeof root.getUnifiedXmlText === 'function'
+          ? root.getUnifiedXmlText()
+          : xmlFile.text(),
+        eligibilityFile.arrayBuffer()
+      ]);
+
+      const claims = parseXMLClaims(xmlText);
+      const workbookContext = parseEligibilityWorkbook(eligibilityBuffer);
+      const indexes = buildEligibilityIndexes(workbookContext.rows);
+
+      const results = claims.map(claim => {
+        const match = findBestEligibilityMatch(claim, indexes);
+        return analyzeClaim(claim, match);
       });
-      console.log(xlsData);
-      updateStatus(`Loaded ${xlsData.length} report rows`);
-    }
 
-    updateProcessButtonState();
-  } catch (error) {
-    console.error(`${type} file error:`, error);
-    updateStatus(`Error loading ${type} file`);
-  }
-}
+      lastResults = results;
+      lastWorkbookContext = workbookContext;
+      root._lastEligibilityResults = results;
+      root._lastEligibilityWorkbookContext = workbookContext;
+      wireOptionalExportButton();
 
-async function handleProcessClick() {
-  if (!eligData) {
-    updateStatus('Error: Missing eligibility file');
-    return alert('Please upload eligibility file first');
-  }
-
-  try {
-    updateStatus('Processing...');
-    usedEligibilities.clear();
-
-    const eligMap = prepareEligibilityMap(eligData);
-    const isXmlMode = xmlRadio ? xmlRadio.checked : true;
-    const results = isXmlMode ? validateXmlClaims(xmlData.claims, eligMap, xmlData.receiverID) : validateReportClaims(xlsData, eligMap);
-
-    // Only filter for Daman/Thiqa if report mode
-    let filteredResults = results;
-    if (!isXmlMode) {
-      filteredResults = results.filter(r => {
-        const provider = (r.provider || r.insuranceCompany || r.packageName || r['Payer Name'] || r['Insurance Company'] || '').toString().toLowerCase();
-        return provider.includes('daman') || provider.includes('thiqa');
+      console.log('[ELIG] Completed eligibility matching.', {
+        claims: claims.length,
+        eligibilityRows: workbookContext.rows.length,
+        valid: results.filter(result => result.Status === 'Valid').length,
+        invalid: results.filter(result => result.Status !== 'Valid').length
       });
+
+      return createResultsWrapper(results, workbookContext);
+    } catch (error) {
+      console.error('[ELIG] Checker failed:', error);
+      lastResults = [];
+      lastWorkbookContext = null;
+      return createErrorWrapper(error);
+    }
+  }
+
+  installModalDelegation();
+
+  root.runEligCheck = runEligCheck;
+  root.openEligibilityDetails = openEligibilityDetails;
+  root.closeEligibilityModal = closeEligibilityModal;
+  root.exportEligibilityResults = exportEligibilityResults;
+  root.initEligibilityModal = installModalDelegation;
+  root._eligibilityCheckerTestApi = {
+    normalizeMemberId,
+    normalizeEid,
+    normalizeClinician,
+    parseDateTime,
+    parseXMLClaims,
+    parseEligibilityWorkbook,
+    buildEligibilityIndexes,
+    findBestEligibilityMatch,
+    analyzeClaim
+  };
+
+  console.log('[ELIG] checker_elig.js loaded successfully.');
+})(window);
+
+
+================================================================================
+unified_checker.js — COMPLETE REPLACEMENT
+================================================================================
+
+// unified_checker.js - Unified controller for all checkers
+// Refactored: Checkers return tables; rendering handled centrally
+
+(function() {
+  'use strict';
+
+  // Constants
+  const CLIPBOARD_FEEDBACK_DURATION_MS = 2000;
+  const ERROR_FEEDBACK_DURATION_EXTENSION_FACTOR = 1.5; // Extend error messages display time by 50%
+  const INVALID_ROW_CLASSES = 'tbody tr.table-danger, tbody tr.table-warning';
+
+  // Checkers that are only applicable in Medical mode
+  const MEDICAL_ONLY_CHECKERS = new Set(['exclusion', 'modifiers']);
+
+  // Initialize session counter immediately
+  (function initSessionCounter() {
+    let sessionCount = sessionStorage.getItem('checkerSessionCount');
+    sessionCount = sessionCount ? parseInt(sessionCount) + 1 : 1;
+    sessionStorage.setItem('checkerSessionCount', sessionCount);
+    console.log(`[INIT] Unified Checker v1.2.107 - Session #${sessionCount}`);
+    
+    // Update DOM when ready
+    document.addEventListener('DOMContentLoaded', () => {
+      const sessionElement = document.getElementById('sessionCount');
+      if (sessionElement) {
+        sessionElement.textContent = `v1.2.98 | Session #${sessionCount}`;
+      }
+    });
+  })();
+
+  // File storage
+  const files = {
+    xml: null,
+    clinician: null,
+    eligibility: null,
+    auth: null,
+    status: null,
+    pricing: null
+  };
+
+  // Expose files globally for checkers to access
+  window.unifiedCheckerFiles = files;
+
+  // XML text cache: reads each uploaded File object at most once.
+  // Keyed by File identity (object reference) so that two files with the
+  // same name but different content are never confused.
+  const parsedFileCache = {
+    xmlFile: null,
+    xmlTextPromise: null
+  };
+
+  function getXmlText(file) {
+    if (!file) {
+      return Promise.reject(new Error('No XML file uploaded.'));
     }
 
-    window.lastValidationResults = filteredResults;
-    renderResults(filteredResults, eligMap);
-    updateStatus(`Processed ${filteredResults.length} claims`);
-  } catch (error) {
-    console.error('Processing error:', error);
-    updateStatus('Processing failed');
-    resultsContainer.innerHTML = `<div class="error">${error.message}</div>`;
-  }
-}
+    // If the cached entry belongs to a different File object, invalidate it.
+    if (parsedFileCache.xmlFile !== file) {
+      parsedFileCache.xmlFile = file;
+      parsedFileCache.xmlTextPromise = file.text();
+    }
 
-function handleExportInvalidClick() {
-  if (!window.lastValidationResults) {
-    alert('Please run the validation first.');
-    return;
+    return parsedFileCache.xmlTextPromise;
   }
-  exportInvalidEntries(window.lastValidationResults);
-}
 
-/********************
- * UNIFIED ENTRY POINT *
- ********************/
-// Simplified entry point for unified checker - reads files, validates, renders
-async function runEligCheck() {
-  const xmlFileInput = document.getElementById('xmlFileInput');
-  const eligFileInput = document.getElementById('eligibilityFileInput');
-  const statusDiv = document.getElementById('uploadStatus');
-  
-  // Clear status
-  if (statusDiv) statusDiv.textContent = '';
-  
-  // Validate files are uploaded
-  if (!xmlFileInput || !xmlFileInput.files || !xmlFileInput.files.length) {
-    if (statusDiv) statusDiv.textContent = 'Please select an XML file first.';
+  function clearXmlTextCache() {
+    parsedFileCache.xmlFile = null;
+    parsedFileCache.xmlTextPromise = null;
+  }
+
+  // Expose so the Observation checker can reuse the already-read text.
+  window.getUnifiedXmlText = () => getXmlText(files.xml);
+
+  /**
+   * Normalise a value returned by any checker into { root, table }.
+   *  - If the checker returned a <table> directly, root === table.
+   *  - If the checker returned a wrapper <div> that contains a <table>,
+   *    root is the wrapper and table is the first contained <table>.
+   *  - Returns null when neither condition holds (checker produced no result).
+   */
+  function resolveCheckerResult(resultElement) {
+    if (resultElement instanceof HTMLTableElement) {
+      return { root: resultElement, table: resultElement };
+    }
+    if (resultElement instanceof HTMLElement) {
+      const table = resultElement.querySelector('table');
+      if (table instanceof HTMLTableElement) {
+        return { root: resultElement, table };
+      }
+    }
     return null;
   }
-  if (!eligFileInput || !eligFileInput.files || !eligFileInput.files.length) {
-    if (statusDiv) statusDiv.textContent = 'Please select an eligibility XLSX file first.';
+
+  let activeChecker = null;
+  
+  // Filter state for floating button
+  let filterActive = false;
+  
+  // Debug log for Check All functionality
+  let debugLog = [];
+  
+  // Storage for invalid rows from Check All
+  let invalidRowsData = [];
+
+  // Helper function to add to debug log
+  function logDebug(message, data = null) {
+    const timestamp = new Date().toISOString();
+    const logEntry = {
+      timestamp,
+      message,
+      data
+    };
+    debugLog.push(logEntry);
+    console.log(`[DEBUG-LOG] ${timestamp} - ${message}`, data || '');
+  }
+
+  // Returns true when the Medical claim-type radio is checked
+  function getGlobalClaimTypeMode() {
+    const medical = document.getElementById('claimTypeMedical');
+    const dental = document.getElementById('claimTypeDental');
+    if (medical && medical.checked) return 'MEDICAL';
+    if (dental && dental.checked) return 'DENTAL';
     return null;
   }
-  
-  const xmlFile = xmlFileInput.files[0];
-  const eligFile = eligFileInput.files[0];
-  
-  try {
-    if (statusDiv) statusDiv.textContent = 'Processing...';
-    usedEligibilities.clear();
+
+  // Returns true when the Medical claim-type radio is checked
+  function isMedicalModeSelected() {
+    return getGlobalClaimTypeMode() === 'MEDICAL';
+  }
+
+  // Returns the sidebar button element for a given checker name
+  function getCheckerButton(checker) {
+    const btnName = `btn${checker.charAt(0).toUpperCase() + checker.slice(1)}`;
+    return elements[btnName] || null;
+  }
+
+  // Hides the checker container and clears its content if it is currently active
+  function hideAndClearChecker(checker) {
+    const container = document.getElementById(`checker-container-${checker}`);
+    if (container && activeChecker === checker) {
+      container.style.display = 'none';
+      container.innerHTML = '';
+      activeChecker = null;
+      console.log(`[BUTTON] Cleared ${checker} container (switched to DENTAL)`);
+    }
+  }
+
+  // Loading overlay functions
+  function showLoadingOverlay(text = 'Processing...', subtext = 'Please wait while we check your data') {
+    const overlay = document.getElementById('loadingOverlay');
+    const loadingText = document.getElementById('loadingText');
+    const loadingSubtext = document.getElementById('loadingSubtext');
     
-    // Parse XML file
-    const xmlResult = await parseXmlFile(xmlFile);
-    if (!xmlResult || !xmlResult.claims || !Array.isArray(xmlResult.claims)) {
-      throw new Error('Invalid XML file structure - expected claims array');
+    if (overlay) {
+      overlay.classList.add('active');
+      if (loadingText) loadingText.textContent = text;
+      if (loadingSubtext) loadingSubtext.textContent = subtext;
+      console.log('[LOADING] Showing loading overlay:', text);
+    }
+  }
+  
+  function hideLoadingOverlay() {
+    const overlay = document.getElementById('loadingOverlay');
+    if (overlay) {
+      overlay.classList.remove('active');
+      console.log('[LOADING] Hiding loading overlay');
+    }
+  }
+  
+  function updateLoadingOverlay(text, subtext) {
+    const loadingText = document.getElementById('loadingText');
+    const loadingSubtext = document.getElementById('loadingSubtext');
+    if (loadingText) loadingText.textContent = text;
+    if (loadingSubtext) loadingSubtext.textContent = subtext;
+  }
+
+  // DOM elements
+  let elements = {};
+
+  document.addEventListener('DOMContentLoaded', init);
+
+  // LocalStorage helpers for file persistence
+  function init() {
+    elements = {
+      // File inputs
+      xmlInput: document.getElementById('xmlFileInput'),
+      clinicianInput: document.getElementById('clinicianFileInput'),
+      eligibilityInput: document.getElementById('eligibilityFileInput'),
+      authInput: document.getElementById('authFileInput'),
+      statusInput: document.getElementById('statusFileInput'),
+      pricingInput: document.getElementById('pricingFileInput'),
+      
+      // Status spans
+      xmlStatus: document.getElementById('xmlStatus'),
+      clinicianStatus: document.getElementById('clinicianStatus'),
+      eligibilityStatus: document.getElementById('eligibilityStatus'),
+      authStatus: document.getElementById('authStatus'),
+      statusStatus: document.getElementById('statusStatus'),
+      pricingStatus: document.getElementById('pricingStatus'),
+      
+      // Buttons
+      btnClinician: document.getElementById('btn-clinician'),
+      btnElig: document.getElementById('btn-elig'),
+      btnAuths: document.getElementById('btn-auths'),
+      btnTimings: document.getElementById('btn-timings'),
+      btnObservations: document.getElementById('btn-observations'),
+      btnSchema: document.getElementById('btn-schema'),
+      btnExclusion: document.getElementById('btn-exclusion'),
+      btnPricing: document.getElementById('btn-pricing'),
+      btnModifiers: document.getElementById('btn-modifiers'),
+      btnCheckAll: document.getElementById('btn-check-all'),
+      
+      // Export and filter
+      exportBtn: document.getElementById('exportBtn'),
+      exportAllBtn: document.getElementById('exportAllBtn'),
+      exportInvalidsBtn: document.getElementById('exportInvalidsBtn'),
+      floatingFilterBtn: document.getElementById('floatingFilterBtn'),
+      debugLogContainer: document.getElementById('debugLogContainer'),
+      downloadDebugLogBtn: document.getElementById('downloadDebugLogBtn'),
+      
+      // Results
+      uploadStatus: document.getElementById('uploadStatus'),
+      resultsContainer: document.getElementById('results-container')
+    };
+
+    // File input event listeners - add null checks to prevent crashes
+    // Also add click listeners to reset input value (allows re-uploading same filename)
+    if (elements.xmlInput) {
+      elements.xmlInput.addEventListener('click', (e) => {
+        e.target.value = ''; // Reset to allow same file to be re-uploaded
+      });
+      elements.xmlInput.addEventListener('change', (e) => {
+        handleFileChange(e, 'xml', elements.xmlStatus);
+      });
+    }
+    if (elements.clinicianInput) {
+      elements.clinicianInput.addEventListener('click', (e) => {
+        e.target.value = '';
+      });
+      elements.clinicianInput.addEventListener('change', (e) => {
+        handleFileChange(e, 'clinician', elements.clinicianStatus);
+      });
+    }
+    if (elements.eligibilityInput) {
+      elements.eligibilityInput.addEventListener('click', (e) => {
+        e.target.value = '';
+      });
+      elements.eligibilityInput.addEventListener('change', (e) => {
+        handleFileChange(e, 'eligibility', elements.eligibilityStatus);
+      });
+    }
+    if (elements.authInput) {
+      elements.authInput.addEventListener('click', (e) => {
+        e.target.value = '';
+      });
+      elements.authInput.addEventListener('change', (e) => {
+        handleFileChange(e, 'auth', elements.authStatus);
+      });
+    }
+    if (elements.statusInput) {
+      elements.statusInput.addEventListener('click', (e) => {
+        e.target.value = '';
+      });
+      elements.statusInput.addEventListener('change', (e) => {
+        handleFileChange(e, 'status', elements.statusStatus);
+      });
+    }
+    if (elements.pricingInput) {
+      elements.pricingInput.addEventListener('click', (e) => {
+        e.target.value = '';
+      });
+      elements.pricingInput.addEventListener('change', (e) => {
+        handleFileChange(e, 'pricing', elements.pricingStatus);
+      });
+    }
+
+    // Checker button event listeners
+    elements.btnTimings.addEventListener('click', () => {
+      runChecker('timings');
+    });
+    elements.btnObservations.addEventListener('click', () => {
+      runChecker('observations');
+    });
+    elements.btnSchema.addEventListener('click', () => {
+      runChecker('schema');
+    });
+    elements.btnExclusion.addEventListener('click', () => {
+      runChecker('exclusion');
+    });
+    elements.btnClinician.addEventListener('click', () => {
+      runChecker('clinician');
+    });
+    elements.btnElig.addEventListener('click', () => {
+      runChecker('elig');
+    });
+    elements.btnAuths.addEventListener('click', () => {
+      runChecker('auths');
+    });
+    elements.btnPricing.addEventListener('click', () => {
+      runChecker('pricing');
+    });
+    elements.btnModifiers.addEventListener('click', () => {
+      runChecker('modifiers');
+    });
+    elements.btnCheckAll.addEventListener('click', () => {
+      runAllCheckers();
+    });
+
+    // Filter button - make it toggleable
+    elements.floatingFilterBtn.addEventListener('click', () => {
+      filterActive = !filterActive;
+      elements.floatingFilterBtn.classList.toggle('active', filterActive);
+      applyFilter();
+    });
+
+    // Claim type radio buttons - update button states when changed
+    const claimTypeDental = document.getElementById('claimTypeDental');
+    const claimTypeMedical = document.getElementById('claimTypeMedical');
+    if (claimTypeDental) {
+      claimTypeDental.addEventListener('change', () => {
+        updateButtonStates();
+      });
+    }
+    if (claimTypeMedical) {
+      claimTypeMedical.addEventListener('change', () => {
+        updateButtonStates();
+      });
+    }
+
+    // Export button
+    if (elements.exportBtn) elements.exportBtn.addEventListener('click', exportResults);
+    
+    // Export All button
+    if (elements.exportAllBtn) elements.exportAllBtn.addEventListener('click', exportResults);
+    
+    // Export Invalids button
+    if (elements.exportInvalidsBtn) {
+      elements.exportInvalidsBtn.addEventListener('click', exportInvalids);
+      // Speech bubble is visible by default in HTML with initial message
+    }
+
+    // Debug log download button
+    if (elements.downloadDebugLogBtn) {
+      console.log('[INIT] Debug log button found, attaching click listener');
+      elements.downloadDebugLogBtn.addEventListener('click', () => {
+        console.log('[DEBUG-LOG] Debug button clicked');
+        downloadDebugLog();
+      });
+    } else {
+      console.warn('[INIT] Debug log button not found in DOM');
+    }
+
+    // Clear All button
+    const clearAllBtn = document.getElementById('clearAllBtn');
+    if (clearAllBtn) {
+      clearAllBtn.addEventListener('click', clearAll);
+    }
+
+    console.log('[INIT] Performing initial button state update...');
+    updateButtonStates();
+    
+    console.log('[INIT] ✓ Initialization complete! Ready for file uploads.');
+  }
+
+  function handleFileChange(event, fileKey, statusElement) {
+    const file = event.target.files[0];
+    if (file) {
+      files[fileKey] = file;
+      statusElement.textContent = `✓ ${file.name}`;
+      statusElement.style.color = '#0f5132';
+      statusElement.style.backgroundColor = '#d1e7dd';
+      statusElement.style.fontWeight = 'bold';
+      
+      // Console log
+      console.log(`[FILE] Uploaded: ${fileKey} = "${file.name}" (${(file.size / 1024).toFixed(1)} KB, type: ${file.type})`);
+
+      // Invalidate XML text cache whenever a new XML file is selected.
+      if (fileKey === 'xml') {
+        clearXmlTextCache();
+      }
+    } else {
+      files[fileKey] = null;
+      statusElement.textContent = '';
+      statusElement.style.backgroundColor = '';
+      
+      console.log(`[FILE] Cleared: ${fileKey}`);
+
+      if (fileKey === 'xml') {
+        clearXmlTextCache();
+      }
+    }
+    updateButtonStates();
+  }
+
+  function clearAll() {
+    console.log('[CLEAR] Clearing all inputs and resetting to defaults...');
+
+    // Clear file data
+    for (const key in files) { files[key] = null; }
+
+    // Clear file input elements and status spans
+    const fileInputMap = [
+      { input: elements.xmlInput,         status: elements.xmlStatus },
+      { input: elements.clinicianInput,   status: elements.clinicianStatus },
+      { input: elements.eligibilityInput, status: elements.eligibilityStatus },
+      { input: elements.authInput,        status: elements.authStatus },
+      { input: elements.statusInput,      status: elements.statusStatus },
+      { input: elements.pricingInput,     status: elements.pricingStatus }
+    ];
+    fileInputMap.forEach(({ input, status }) => {
+      if (input) input.value = '';
+      if (status) {
+        status.textContent = '';
+        status.removeAttribute('style');
+      }
+    });
+
+    // Reset radio buttons to default (Dental)
+    const claimTypeDental = document.getElementById('claimTypeDental');
+    if (claimTypeDental) claimTypeDental.checked = true;
+
+    // Clear results and status message
+    if (elements.uploadStatus) elements.uploadStatus.innerHTML = '';
+    hideAllCheckerContainers();
+    activeChecker = null;
+
+    // Reset filter state
+    filterActive = false;
+    if (elements.floatingFilterBtn) {
+      elements.floatingFilterBtn.classList.remove('active');
+    }
+
+    // Clear file cache
+    if (window.FileCache && typeof window.FileCache.clear === 'function') window.FileCache.clear();
+
+    // Clear XML text cache
+    clearXmlTextCache();
+
+    // Reset debug log and export state
+    debugLog = [];
+    invalidRowsData = [];
+    if (elements.exportInvalidsBtn) {
+      elements.exportInvalidsBtn.disabled = true;
+    }
+    if (elements.exportAllBtn) {
+      elements.exportAllBtn.disabled = true;
+    }
+    if (elements.debugLogContainer) {
+      elements.debugLogContainer.style.display = 'none';
+    }
+
+    updateButtonStates();
+    console.log('[CLEAR] All inputs cleared and defaults restored.');
+  }
+
+  function updateButtonStates() {
+    console.log('[BUTTON] Updating button states based on available files and claim type...');
+    console.log('[BUTTON] Current files state:', JSON.stringify(files));
+    
+    const isMedical = isMedicalModeSelected();
+    
+    const requirements = {
+      clinician: ['xml'], // clinician and status files are auto-loaded from resources
+      elig: ['xml', 'eligibility'],
+      auths: ['xml', 'auth'],
+      timings: ['xml'],
+      observations: ['xml'],
+      schema: ['xml'],
+      exclusion: ['xml'],
+      pricing: ['xml'],
+      modifiers: ['xml', 'eligibility']
+    };
+
+    for (const [checker, reqs] of Object.entries(requirements)) {
+      const button = getCheckerButton(checker);
+      console.log(`[BUTTON] Checking ${checker}: button element found = ${!!button}`);
+
+      if (!button) {
+        console.log(`[BUTTON] ${checker}: BUTTON ELEMENT NOT FOUND`);
+        continue;
+      }
+
+      // Medical-only checkers are hidden and disabled when Dental is selected
+      const isMedicalOnly = MEDICAL_ONLY_CHECKERS.has(checker);
+      if (isMedicalOnly && !isMedical) {
+        button.disabled = true;
+        button.style.display = 'none';
+        hideAndClearChecker(checker);
+        console.log(`[BUTTON] ${checker}: HIDDEN (claim type is DENTAL, ${checker} only available for MEDICAL)`);
+        continue;
+      }
+
+      button.style.display = ''; // Restore from possible Medical-only hide
+
+      const hasAll = reqs.every(req => {
+        const hasFile = files[req] !== null && files[req] !== undefined;
+        console.log(`[BUTTON]   - Checking requirement '${req}': ${hasFile ? 'YES' : 'NO'} (value: ${files[req] ? 'File object' : files[req]})`);
+        return hasFile;
+      });
+      button.disabled = !hasAll;
+      
+      const missingFiles = reqs.filter(req => !files[req]);
+      if (hasAll) {
+        console.log(`[BUTTON] ${checker}: ENABLED (has all required: ${reqs.join(', ')})`);
+      } else {
+        console.log(`[BUTTON] ${checker}: DISABLED (missing: ${missingFiles.join(', ')})`);
+      }
+    }
+
+    if (elements.btnCheckAll) {
+      elements.btnCheckAll.disabled = !files.xml;
+      if (files.xml) {
+        console.log('[BUTTON] Check All: ENABLED (has XML file)');
+      } else {
+        console.log('[BUTTON] Check All: DISABLED (missing XML file)');
+      }
     }
     
-    // Parse eligibility XLSX file
-    const eligResult = await parseExcelFile(eligFile);
-    if (!Array.isArray(eligResult)) {
-      throw new Error('Invalid eligibility file structure - expected array of rows');
+    console.log('[BUTTON] Button state update complete');
+  }
+
+  async function runChecker(checkerName) {
+    console.log(`[DEBUG] runChecker called with: ${checkerName}`);
+    console.log(`[DEBUG] Files available:`, Object.keys(files).filter(k => files[k]));
+    
+    // Safety guard: Medical-only checkers must not run when Dental is selected.
+    // This protects against stale or programmatic execution even when the button is hidden.
+    if (MEDICAL_ONLY_CHECKERS.has(checkerName) && !isMedicalModeSelected()) {
+      console.warn(
+        `[CHECKER] Skipped ${checkerName}: ` +
+        'Medical mode is not selected.'
+      );
+      return null;
     }
     
-    // Prepare eligibility map
-    const eligMap = prepareEligibilityMap(eligResult);
-    
-    // Validate claims against eligibility (pass receiverID to skip validation for HAAD)
-    const results = validateXmlClaims(xmlResult.claims, eligMap, xmlResult.receiverID);
-    
-    // Store results for export
-    window.lastValidationResults = results;
-    
-    if (statusDiv) statusDiv.textContent = `Processed ${results.length} claims`;
-    
-    return buildResultsTable(results, eligMap);
-  } catch (error) {
-    console.error('Eligibility check error:', error);
-    if (statusDiv) statusDiv.textContent = 'Processing failed: ' + error.message;
-    const errorDiv = document.createElement('div');
-    errorDiv.className = 'error';
-    errorDiv.style.cssText = 'color: red; padding: 20px; border: 1px solid red; margin: 10px;';
-    errorDiv.innerHTML = `<strong>Eligibility Checker Error:</strong><br>${error.message}`;
-    return errorDiv;
+    try {
+      // Show loading overlay
+      showLoadingOverlay(`Running ${checkerName} checker...`, 'Processing your data...');
+      
+      elements.uploadStatus.innerHTML = `<div class="status-message info">Running ${checkerName} checker...</div>`;
+      
+      setActiveButton(checkerName);
+      activeChecker = checkerName;
+
+      // Reset filter when starting a new checker (Bug #26 fix)
+      // Always set to inactive state when new tables are loaded
+      filterActive = false;
+      if (elements.floatingFilterBtn) {
+        elements.floatingFilterBtn.classList.remove('active');
+      }
+      console.log('[FILTER] Auto-reset: Filter set to off when running new checker');
+
+      // Hide all checker containers and show the active one
+      hideAllCheckerContainers();
+      const container = document.getElementById(`checker-container-${checkerName}`);
+      if (!container) {
+        throw new Error(`Container for ${checkerName} not found`);
+      }
+      container.style.display = 'block';
+
+      // Always recreate interface to ensure fresh state (Bug #3 fix)
+      console.log(`[DEBUG] Creating ${checkerName} interface...`);
+      createCheckerInterface(checkerName, container);
+
+      // Sync global claim type with timings checker if applicable
+      if (checkerName === 'timings') {
+        console.log('[DEBUG] Syncing claim type for timings');
+        syncClaimType(container);
+      }
+
+      // Set files in the checker's hidden inputs and run
+      console.log(`[DEBUG] Executing ${checkerName} checker...`);
+      const tableElement = await executeChecker(checkerName, container);
+
+      // Collect invalid rows from this individual checker
+      if (tableElement) {
+        const invalidRows = tableElement.querySelectorAll('tbody tr.table-danger, tbody tr.table-warning, tbody tr.invalid, tbody tr.unknown');
+        if (invalidRows.length > 0) {
+          console.log(`[CHECKER] Found ${invalidRows.length} invalid rows in ${checkerName}`);
+          // Reset invalidRowsData for single checker (don't accumulate from previous runs)
+          invalidRowsData = [];
+          invalidRows.forEach(row => {
+            const rowData = {
+              checker: checkerName,
+              cells: []
+            };
+            row.querySelectorAll('td').forEach(cell => {
+              rowData.cells.push(cell.textContent.trim());
+            });
+            invalidRowsData.push(rowData);
+          });
+          
+          // Enable Export Invalids button
+          if (elements.exportInvalidsBtn) {
+            elements.exportInvalidsBtn.disabled = false;
+            console.log(`[CHECKER] Export Invalids button enabled (${invalidRows.length} invalid rows)`);
+          }
+        } else {
+          // No invalids found, disable button
+          invalidRowsData = [];
+          if (elements.exportInvalidsBtn) {
+            elements.exportInvalidsBtn.disabled = true;
+            console.log(`[CHECKER] Export Invalids button disabled (no invalid rows)`);
+          }
+        }
+      }
+
+      // Bug #6: Clean up inactive containers to free memory
+      cleanupInactiveContainers(checkerName);
+
+      elements.uploadStatus.innerHTML = ''; // Clear status message
+      if (elements.exportBtn) {
+        elements.exportBtn.disabled = false;
+      }
+      if (elements.exportAllBtn) {
+        elements.exportAllBtn.disabled = false;
+      }
+      console.log(`[DEBUG] ${checkerName} checker completed successfully`);
+
+      // Apply filter if button is active (works on already-rendered tables)
+      if (filterActive) {
+        setTimeout(() => applyFilter(), 100); // Small delay to ensure table is fully rendered
+      }
+      
+      // Hide loading overlay after completion
+      hideLoadingOverlay();
+
+    } catch (error) {
+      console.error('[DEBUG] Error running checker:', error);
+      console.error(error.stack);
+      elements.uploadStatus.innerHTML = `<div class="status-message error">Error: ${error.message}</div>`;
+      const container = document.getElementById(`checker-container-${checkerName}`);
+      if (container) {
+        container.innerHTML = `<div class="alert alert-danger" role="alert"><strong>Error:</strong> ${error.message}</div>`;
+      }
+      // Hide loading overlay on error
+      hideLoadingOverlay();
+    }
   }
-}
 
-/********************
- * INITIALIZATION *
- ********************/
-function initializeEventListeners() {
-  if (xmlInput) xmlInput.addEventListener('change', (e) => handleFileUpload(e, 'xml'));
-  if (reportInput) reportInput.addEventListener('change', (e) => handleFileUpload(e, 'report'));
-  if (eligInput) eligInput.addEventListener('change', (e) => handleFileUpload(e, 'eligibility'));
-  if (processBtn) processBtn.addEventListener('click', handleProcessClick);
-  if (exportInvalidBtn) exportInvalidBtn.addEventListener('click', handleExportInvalidClick);
-  initializeRadioButtons();
-}
-
-document.addEventListener('DOMContentLoaded', () => {
-  try {
-    initializeEventListeners();
-    updateStatus('Ready to process files');
-  } catch (error) {
-    console.error('[ELIG] DOMContentLoaded initialization error:', error);
+  function hideAllCheckerContainers() {
+    const containers = document.querySelectorAll('.checker-container');
+    containers.forEach(c => c.style.display = 'none');
   }
-});
 
-    // Expose functions globally for unified checker and modal functionality
-    window.runEligCheck = runEligCheck;
-    window.hideModal = hideModal;
-    window.initEligibilityModal = initEligibilityModal;
-    window.renderEligibilityDetails = renderEligibilityDetails;
-
-  } catch (error) {
-    console.error('[CHECKER-ERROR] Failed to load checker:', error);
-    console.error(error.stack);
+  // Bug #6: Memory cleanup for inactive containers
+  function cleanupInactiveContainers(activeCheckerName) {
+    console.log(`[DEBUG] Cleaning up inactive containers (keeping ${activeCheckerName})`);
+    const allCheckers = ['schema', 'exclusion', 'timings', 'observations', 'elig', 'auths', 'clinician', 'pricing', 'modifiers'];
+    
+    allCheckers.forEach(checkerName => {
+      if (checkerName !== activeCheckerName) {
+        const container = document.getElementById(`checker-container-${checkerName}`);
+        if (container && container.style.display === 'none') {
+          // Clear results from hidden containers to free memory
+          const resultsDiv = container.querySelector('#results');
+          if (resultsDiv && resultsDiv.innerHTML) {
+            resultsDiv.innerHTML = '';
+            console.log(`[DEBUG] Cleared results from inactive container: ${checkerName}`);
+          }
+        }
+      }
+    });
   }
+
+  function createCheckerInterface(checkerName, container) {
+    // Create a simple interface for the checker with necessary DOM elements
+    const interfaces = {
+      timings: () => {
+        // Read current global radio button state
+        const globalDental = document.getElementById('claimTypeDental');
+        const globalMedical = document.getElementById('claimTypeMedical');
+        const isDental = globalDental ? globalDental.checked : true;
+        const isMedical = globalMedical ? globalMedical.checked : false;
+        
+        console.log('🟡 [TIMINGS-INIT] Creating interface with claim type:', isDental ? 'DENTAL' : 'MEDICAL');
+        
+        return `
+          <div id="typeSelector" style="display:none;">
+            <label><input type="radio" name="claimType" value="DENTAL" ${isDental ? 'checked' : ''}> Dental</label>
+            <label><input type="radio" name="claimType" value="MEDICAL" ${isMedical ? 'checked' : ''}> Medical</label>
+          </div>
+          <input type="file" id="xmlFileInput" accept=".xml" style="display:none" />
+          <button id="exportBtn" class="btn btn-secondary" style="display:none;">Export Invalid Entries</button>
+          <div id="resultsSummary" style="margin:10px;font-weight:bold;"></div>
+          <div id="results"></div>
+        `;
+      },
+      observations: `
+        <input type="file" id="xmlFile" accept=".xml" style="display:none" />
+        <button id="exportBtn" class="btn btn-secondary" style="display:none;">Export Invalid Activities</button>
+        <div id="messageBox" style="color: red; font-weight: bold;"></div>
+        <div id="resultsSummary" style="margin:10px;font-weight:bold;"></div>
+        <div id="results"></div>
+      `,
+      schema: `
+        <input type="file" data-role="schema-xml-file" accept=".xml" style="display:none" />
+        <div data-role="schema-status" aria-live="polite"></div>
+        <div data-role="schema-results"></div>
+      `,
+      exclusion: `
+        <input type="file" id="xmlFile" accept=".xml" style="display:none" />
+        <div id="uploadStatus" aria-live="polite"></div>
+        <div id="results"></div>
+      `,
+      clinician: `
+        <input type="file" id="xmlFileInput" accept=".xml" style="display:none" />
+        <input type="file" id="clinicianFileInput" accept=".xlsx" style="display:none" />
+        <input type="file" id="statusFileInput" accept=".xlsx" style="display:none" />
+        <button id="processBtn" class="btn btn-primary" style="display:none;">Validate</button>
+        <button id="exportCsvBtn" class="btn btn-secondary" style="display:none;">Export to Excel</button>
+        <div id="uploadStatus" aria-live="polite"></div>
+        <div id="results"></div>
+      `,
+      elig: `
+        <div id="xmlReportInputGroup" style="display:block;">
+          <input type="file" id="xmlFileInput" accept=".xml" style="display:none" />
+        </div>
+        <div id="reportInputGroup" style="display:none;">
+          <input type="file" id="reportFileInput" accept=".xlsx" style="display:none" />
+        </div>
+        <input type="file" id="eligibilityFileInput" accept=".xlsx" style="display:none" />
+        <div style="display:none;">
+          <label><input type="radio" name="reportSource" value="xml" checked> XML</label>
+          <label><input type="radio" name="reportSource" value="xls"> XLS</label>
+        </div>
+        <button id="processBtn" class="btn btn-primary" style="display:none;">Process</button>
+        <button id="exportInvalidBtn" class="btn btn-secondary" style="display:none;">Export Invalid Rows</button>
+        <div id="uploadStatus" style="margin-top:12px; color:#0074D9;"></div>
+        <div id="results" style="margin-top:20px;"></div>
+      `,
+      auths: `
+        <input type="file" id="xmlInput" accept=".xml" style="display:none" />
+        <input type="file" id="xlsxInput" accept=".xlsx" style="display:none" />
+        <button id="processBtn" class="btn btn-primary" style="display:none;">Run Checker</button>
+        <div id="uploadStatus" style="margin-top:12px; color:#0074D9;"></div>
+        <div id="file-status"></div>
+        <div id="results"></div>
+      `,
+      pricing: `
+        <input type="file" id="xml-file" accept=".xml" style="display:none" />
+        <input type="file" id="xlsx-file" accept=".xlsx" style="display:none" />
+        <button id="run-button" class="btn btn-primary" style="display:none;">Run Check</button>
+        <button id="download-button" class="btn btn-secondary" style="display:none;">Download Results</button>
+        <div id="progress-bar-container" class="progress-bar-container"></div>
+        <div id="messageBox" class="message-box" aria-live="polite"></div>
+        <div id="results">
+          <div id="outputTableContainer" class="results-container"></div>
+        </div>
+      `,
+      modifiers: `
+        <input type="file" id="xml-file" accept=".xml" style="display:none" />
+        <input type="file" id="xlsx-file" accept=".xlsx" style="display:none" />
+        <button id="run-button" class="btn btn-primary" style="display:none;">Run Check</button>
+        <button id="download-button" class="btn btn-secondary" style="display:none;">Download Results</button>
+        <div id="messageBox" class="message-box" aria-live="polite"></div>
+        <div id="results">
+          <div id="outputTableContainer" class="results-container"></div>
+        </div>
+      `
+    };
+
+    container.innerHTML = (typeof interfaces[checkerName] === 'function' ? interfaces[checkerName]() : interfaces[checkerName]) || '<div id="results"></div>';
+  }
+
+  function syncClaimType(container) {
+    // Get the global claim type selection
+    const globalDental = document.getElementById('claimTypeDental');
+    const globalMedical = document.getElementById('claimTypeMedical');
+    
+    if (!globalDental || !globalMedical) {
+      console.warn('[SYNC] WARNING: Global claim type radio buttons not found');
+      return;
+    }
+    
+    const selectedType = globalDental.checked ? 'DENTAL' : 'MEDICAL';
+    
+    // Set the hidden radio buttons in the timings checker to match
+    const timingsRadios = container.querySelectorAll('input[name="claimType"]');
+    
+    if (timingsRadios.length === 0) {
+      console.error('[SYNC] ERROR: No radio buttons found in timings container');
+      return;
+    }
+    
+    timingsRadios.forEach((radio) => {
+      radio.checked = (radio.value === selectedType);
+    });
+    
+    // Verify the sync worked
+    const checkedRadio = container.querySelector('input[name="claimType"]:checked');
+    if (!checkedRadio) {
+      console.error('[SYNC] ERROR: No radio button checked after sync');
+    }
+  }
+
+  async function executeChecker(checkerName, container) {
+    console.log(`[DEBUG] executeChecker called for: ${checkerName}`);
+    
+    // ✅ Clear previous results before running checker
+    const resultsDiv = container.querySelector('#results, [data-role="schema-results"]');
+    if (resultsDiv) {
+      resultsDiv.innerHTML = '';
+      console.log(`[DEBUG] Cleared previous results for ${checkerName}`);
+    }
+    
+    // Also clear other common result containers
+    const resultsSummary = container.querySelector('#resultsSummary');
+    if (resultsSummary) {
+      resultsSummary.innerHTML = '';
+    }
+    
+    const messageBox = container.querySelector('#messageBox');
+    if (messageBox) {
+      messageBox.innerHTML = '';
+    }
+    
+    const uploadStatus = container.querySelector('#uploadStatus, [data-role="schema-status"]');
+    if (uploadStatus) {
+      uploadStatus.innerHTML = '';
+    }
+    
+    const fileStatus = container.querySelector('#file-status');
+    if (fileStatus) {
+      fileStatus.innerHTML = '';
+    }
+    
+    const fileInputMap = {
+      clinician: { xmlFileInput: 'xml' }, // clinician and status files are auto-loaded from resources
+      elig: { xmlFileInput: 'xml', eligibilityFileInput: 'eligibility' },
+      auths: { xmlInput: 'xml', xlsxInput: 'auth' },
+      timings: { xmlFileInput: 'xml' },
+      observations: { xmlFile: 'xml' },
+      schema: {},
+      exclusion: { xmlFile: 'xml' },
+      pricing: { 'xml-file': 'xml', 'xlsx-file': 'pricing' },
+      modifiers: { 'xml-file': 'xml', 'xlsx-file': 'eligibility' }
+    };
+
+    const inputMap = fileInputMap[checkerName];
+    if (!inputMap) {
+      console.warn(`[DEBUG] No input map found for: ${checkerName}`);
+      return;
+    }
+
+    // Set files in hidden inputs within the container
+    console.log(`[DEBUG] Setting files for ${checkerName}:`, inputMap);
+    for (const [inputId, fileKey] of Object.entries(inputMap)) {
+      const input = container.querySelector(`#${inputId}`);
+      console.log(`[DEBUG] Looking for input #${inputId}, found:`, !!input, 'File key:', fileKey, 'Has file:', !!files[fileKey]);
+      
+      if (input && files[fileKey]) {
+        const dataTransfer = new DataTransfer();
+        dataTransfer.items.add(files[fileKey]);
+        input.files = dataTransfer.files;
+        console.log(`[DEBUG] Set file for #${inputId}:`, input.files[0]?.name);
+        
+        // Trigger change event
+        const event = new Event('change', { bubbles: true });
+        input.dispatchEvent(event);
+      }
+    }
+
+    // Call the checker function directly (scripts are already loaded)
+    // Bug #5 fix: Use function registry map instead of if-else chain
+    try {
+      console.log(`[DEBUG] Calling ${checkerName} checker function...`);
+      
+      const checkerFunctions = {
+        schema: () => {
+          if (typeof window.validateXmlSchema !== 'function') {
+            throw new Error(
+              'Schema Checker failed to load: window.validateXmlSchema is unavailable.'
+            );
+          }
+
+          return window.validateXmlSchema({
+            file: files.xml,
+            container,
+            claimTypeMode: getGlobalClaimTypeMode()
+          });
+        },
+        exclusion: runExclusionCheck,
+        timings: validateTimingsAsync,
+        observations: () => parseXML(files.xml),
+        elig: () => {
+          if (typeof window.runEligCheck !== 'function') {
+            throw new Error(
+              'Eligibility Checker failed to load: window.runEligCheck is unavailable.'
+            );
+          }
+
+          return window.runEligCheck({
+            xmlFile: files.xml,
+            eligibilityFile: files.eligibility,
+            container
+          });
+        },
+        auths: runAuthsCheck,
+        // Pass the shared XML file directly so the clinician checker can read it
+        // without depending on an asynchronous dispatched-event side-effect.
+        clinician: () => runClinicianCheck(files.xml),
+        pricing: () => runPricingCheck({
+          xmlFile: files.xml,
+          xlsxFile: files.pricing || null,
+          drugsFile: files.drugs || null,
+          claimTypeMode: isMedicalModeSelected() ? 'MEDICAL' : 'DENTAL'
+        }),
+        modifiers: runModifiersCheck
+      };
+      
+      const checkerFn = checkerFunctions[checkerName];
+      
+      if (!checkerFn || typeof checkerFn !== 'function') {
+        throw new Error(`Checker function not found for: ${checkerName}`);
+      }
+      
+      console.log(`[DEBUG] Executing ${checkerName} checker function`);
+      const resultElement = await checkerFn();  // GET the returned element
+
+      // Resolve the element into { root, table } if possible.
+      // This handles checkers that return a wrapper <div> (e.g. clinician) as well
+      // as checkers that return a <table> directly.
+      const checkerResult = resolveCheckerResult(resultElement);
+
+      if (checkerResult && resultsDiv) {
+        // Render the full root element (preserves summary, modals, etc.)
+        console.log(`[DEBUG] Rendering result from ${checkerName}`);
+        resultsDiv.appendChild(checkerResult.root);
+      } else if (resultElement && !checkerResult && resultsDiv) {
+        // Result exists but contains no table — render as-is (informational/warning element)
+        console.log(`[DEBUG] Rendering non-table result from ${checkerName}`);
+        resultsDiv.appendChild(resultElement);
+      } else if (!resultElement) {
+        console.log(`[DEBUG] ${checkerName} returned no result (may have rendered status message instead)`);
+      }
+      
+      // Return the raw result element so Check All can resolve it independently.
+      return resultElement;
+      
+    } catch (error) {
+      console.error(`[DEBUG] Error executing ${checkerName}:`, error);
+      throw error;
+    }
+  }
+
+  function setActiveButton(checkerName) {
+    const allButtons = [
+      elements.btnClinician, elements.btnElig, elements.btnAuths,
+      elements.btnTimings, elements.btnObservations, elements.btnSchema,
+      elements.btnExclusion, elements.btnPricing, elements.btnModifiers,
+      elements.btnCheckAll
+    ];
+    
+    allButtons.forEach(btn => btn && btn.classList.remove('active'));
+    
+    const btnName = `btn${checkerName.charAt(0).toUpperCase() + checkerName.slice(1)}`;
+    const currentBtn = elements[btnName];
+    if (currentBtn) {
+      currentBtn.classList.add('active');
+    }
+  }
+
+  /**
+   * Re-attach event listeners to a cloned table for Check-All functionality
+   * When tables are cloned, event listeners are lost. This function restores them.
+   */
+  function reattachEventListeners(clonedTable, checkerName) {
+    console.log(`[CHECK-ALL] Re-attaching event listeners for ${checkerName} table`);
+    
+    try {
+      if (checkerName === 'schema') {
+        const buttons = clonedTable.querySelectorAll('.view-claim-btn[data-claim-xml]');
+        buttons.forEach(btn => {
+          btn.onclick = () => {
+            if (typeof window.showModal === 'function' && typeof window.claimToHtmlTable === 'function') {
+              const claimXml = decodeURIComponent(btn.getAttribute('data-claim-xml') || '');
+              window.showModal(window.claimToHtmlTable(claimXml));
+            } else {
+              console.error('[CHECK-ALL] Modal functions not available');
+            }
+          };
+        });
+        console.log(`[CHECK-ALL] Re-attached ${buttons.length} event listeners for schema checker`);
+      } else if (checkerName === 'elig') {
+        // Eligibility detail buttons carry a stable detail ID. The Eligibility
+        // checker registers one delegated document-level click handler, so the
+        // buttons continue to work after Check All clones the result wrapper.
+        if (typeof window.initEligibilityModal === 'function') {
+          window.initEligibilityModal();
+        }
+
+        const detailButtons = clonedTable.querySelectorAll(
+          'button.eligibility-details[data-eligibility-detail-id]'
+        );
+
+        detailButtons.forEach(button => {
+          // Remove stale inline handlers from older Eligibility checker builds.
+          button.removeAttribute('onclick');
+        });
+
+        console.log(
+          `[CHECK-ALL] Found ${detailButtons.length} eligibility detail button(s) ` +
+          '(handled by delegated modal listener).'
+        );
+      } else if (checkerName === 'clinician') {
+        // Clinician checker uses .view-activities and .view-license-history buttons.
+        // clonedTable is the full cloned root element (a <div> that contains the
+        // <table>, summary, and modal elements).  All lookups must be scoped to
+        // this root so they find the modals that were cloned along with it.
+        console.log('[CHECK-ALL] Re-attaching clinician modal event listeners');
+        
+        const rootElement = clonedTable; // full cloned wrapper div
+        
+        // Re-attach .view-activities button listeners
+        const activityButtons = rootElement.querySelectorAll('.view-activities');
+        console.log(`[CHECK-ALL] Found ${activityButtons.length} activity buttons`);
+        
+        activityButtons.forEach(btn => {
+          btn.addEventListener('click', function() {
+            const uniqueIdFromButton = this.getAttribute('data-uniqueid');
+            const modalId = this.getAttribute('data-modalid');
+            
+            console.log(`[CHECK-ALL] Activity button clicked: uniqueId=${uniqueIdFromButton}, modalId=${modalId}`);
+            
+            // Get modal data from global storage
+            const modalData = window._clinicianModalData && window._clinicianModalData[uniqueIdFromButton];
+            if (!modalData) {
+              console.error('[CHECK-ALL] Modal data not found for uniqueId:', uniqueIdFromButton);
+              return;
+            }
+            
+            // Modals are inside the cloned root element
+            const activityModal = rootElement.querySelector(`#activityModal_${uniqueIdFromButton}`);
+            const activityModalText = rootElement.querySelector(`#activityModalText_${uniqueIdFromButton}`);
+            
+            if (activityModalText && modalData[modalId]) {
+              activityModalText.innerHTML = modalData[modalId];
+            }
+            if (activityModal) {
+              activityModal.style.display = 'block';
+            }
+          });
+        });
+        
+        // Re-attach .view-license-history button listeners
+        const licenseButtons = rootElement.querySelectorAll('.view-license-history');
+        console.log(`[CHECK-ALL] Found ${licenseButtons.length} license history buttons`);
+        
+        licenseButtons.forEach(btn => {
+          btn.addEventListener('click', function() {
+            const uniqueIdFromButton = this.getAttribute('data-uniqueid');
+            const fullHistory = decodeURIComponent(this.getAttribute('data-fullhistory'));
+            
+            console.log(`[CHECK-ALL] License history button clicked: uniqueId=${uniqueIdFromButton}`);
+            
+            // Modals are inside the cloned root element
+            const licenseHistoryModal = rootElement.querySelector(`#licenseHistoryModal_${uniqueIdFromButton}`);
+            const licenseHistoryText = rootElement.querySelector(`#licenseHistoryText_${uniqueIdFromButton}`);
+            
+            if (licenseHistoryText && window._formatClinicianLicenseHistory) {
+              licenseHistoryText.innerHTML = window._formatClinicianLicenseHistory(fullHistory);
+            }
+            if (licenseHistoryModal) {
+              licenseHistoryModal.style.display = 'block';
+            }
+          });
+        });
+        
+        // Re-attach modal close handlers
+        // Find all unique IDs from buttons
+        const uniqueIds = new Set();
+        activityButtons.forEach(btn => uniqueIds.add(btn.getAttribute('data-uniqueid')));
+        licenseButtons.forEach(btn => uniqueIds.add(btn.getAttribute('data-uniqueid')));
+        
+        uniqueIds.forEach(uniqueId => {
+          // Activity modal close handlers
+          const activityModalClose = rootElement.querySelector(`#activityModalClose_${uniqueId}`);
+          const activityModal = rootElement.querySelector(`#activityModal_${uniqueId}`);
+          
+          if (activityModalClose && activityModal) {
+            activityModalClose.onclick = function() {
+              activityModal.style.display = 'none';
+            };
+          }
+          
+          if (activityModal) {
+            activityModal.onclick = function(event) {
+              if (event.target === this) this.style.display = 'none';
+            };
+          }
+          
+          // License history modal close handlers
+          const licenseHistoryClose = rootElement.querySelector(`#licenseHistoryClose_${uniqueId}`);
+          const licenseHistoryModal = rootElement.querySelector(`#licenseHistoryModal_${uniqueId}`);
+          
+          if (licenseHistoryClose && licenseHistoryModal) {
+            licenseHistoryClose.onclick = function() {
+              licenseHistoryModal.style.display = 'none';
+            };
+          }
+          
+          if (licenseHistoryModal) {
+            licenseHistoryModal.onclick = function(event) {
+              if (event.target === this) this.style.display = 'none';
+            };
+          }
+        });
+        
+        console.log(`[CHECK-ALL] Re-attached event listeners for ${activityButtons.length} activity buttons and ${licenseButtons.length} license buttons`);
+      } else if (checkerName === 'pricing') {
+        // Pricing checker uses Compare buttons with data-pricing-index
+        const compareBtns = clonedTable.querySelectorAll('[data-pricing-index]');
+        compareBtns.forEach(btn => {
+          const idx = parseInt(btn.dataset.pricingIndex, 10);
+          if (!isNaN(idx)) {
+            btn.onclick = () => window.showPricingComparison(idx);
+          }
+        });
+        console.log(`[CHECK-ALL] Re-attached ${compareBtns.length} pricing compare button(s)`);
+      }
+      // Add more checker types as needed
+    } catch (error) {
+      console.error(`[CHECK-ALL] Error re-attaching event listeners for ${checkerName}:`, error);
+    }
+  }
+
+  async function runAllCheckers() {
+    try {
+      console.log('[CHECK-ALL] Starting Check All functionality...');
+      
+      // Show loading overlay
+      showLoadingOverlay('Running all checkers...', 'Please wait while we check all your data');
+      
+      // Reset debug log and invalid rows data
+      debugLog = [];
+      invalidRowsData = [];
+      logDebug('Check All Started', { timestamp: new Date().toISOString() });
+    
+    // Disable Export Invalids button initially
+    if (elements.exportInvalidsBtn) {
+      elements.exportInvalidsBtn.disabled = true;
+    }
+    
+    // Disable Export All button initially
+    if (elements.exportAllBtn) {
+      elements.exportAllBtn.disabled = true;
+    }
+    
+    // Hide debug log button initially
+    if (elements.debugLogContainer) {
+      elements.debugLogContainer.style.display = 'none';
+    }
+    
+    // Log system information
+    logDebug('System Information', {
+      userAgent: navigator.userAgent,
+      platform: navigator.platform,
+      language: navigator.language,
+      screenResolution: `${screen.width}x${screen.height}`,
+      viewportSize: `${window.innerWidth}x${window.innerHeight}`
+    });
+    
+    // Log uploaded files
+    logDebug('Uploaded Files', {
+      xml: files.xml ? files.xml.name : 'Not uploaded',
+      clinician: files.clinician ? files.clinician.name : 'Not uploaded',
+      eligibility: files.eligibility ? files.eligibility.name : 'Not uploaded',
+      auth: files.auth ? files.auth.name : 'Not uploaded',
+      status: files.status ? files.status.name : 'Not uploaded',
+      pricing: files.pricing ? files.pricing.name : 'Not uploaded'
+    });
+    
+    // Determine which checkers are available (enabled buttons)
+    const availableCheckers = [];
+    const checkerButtons = {
+      'elig': elements.btnElig,
+      'auths': elements.btnAuths,
+      'timings': elements.btnTimings,
+      'observations': elements.btnObservations,
+      'schema': elements.btnSchema,
+      'exclusion': elements.btnExclusion,
+      'clinician': elements.btnClinician,
+      'pricing': elements.btnPricing,
+      'modifiers': elements.btnModifiers
+    };
+    
+    // Find all enabled checkers, explicitly skipping Medical-only checkers in Dental mode
+    const isMedical = isMedicalModeSelected();
+    for (const [checkerName, button] of Object.entries(checkerButtons)) {
+      if (MEDICAL_ONLY_CHECKERS.has(checkerName) && !isMedical) {
+        logDebug(`Checker Skipped: ${checkerName}`, { reason: 'Medical-only checker' });
+        continue;
+      }
+      if (button && !button.disabled) {
+        availableCheckers.push(checkerName);
+        logDebug(`Checker Available: ${checkerName}`, { 
+          buttonEnabled: true,
+          buttonExists: !!button 
+        });
+      } else {
+        logDebug(`Checker Unavailable: ${checkerName}`, { 
+          buttonEnabled: false,
+          buttonExists: !!button,
+          reason: !button ? 'Button element not found' : 'Button is disabled (missing required files)'
+        });
+      }
+    }
+    
+    console.log('[CHECK-ALL] Available checkers:', availableCheckers);
+    logDebug('Available Checkers Detected', { 
+      count: availableCheckers.length,
+      checkers: availableCheckers 
+    });
+    
+    if (availableCheckers.length === 0) {
+      const errorMsg = 'No checkers are available. Please upload the required files first.';
+      elements.uploadStatus.innerHTML = `<div class="status-message error">${errorMsg}</div>`;
+      logDebug('Check All Aborted', { reason: 'No checkers available' });
+      
+      // Show debug log button even if aborted
+      if (elements.debugLogContainer) {
+        elements.debugLogContainer.style.display = 'block';
+      }
+      
+      // Hide loading overlay since we're done
+      hideLoadingOverlay();
+      return;
+    }
+    
+    // Show progress message
+    elements.uploadStatus.innerHTML = `<div class="status-message info">Running ${availableCheckers.length} checker(s): ${availableCheckers.join(', ')}... Please wait.</div>`;
+    logDebug('Check All Progress Started', { 
+      totalCheckers: availableCheckers.length,
+      checkerList: availableCheckers.join(', ')
+    });
+    
+    // Set Check All button as active
+    setActiveButton('checkAll');
+    activeChecker = 'check-all';
+    
+    // Reset filter when starting Check All
+    // Always set to inactive state when new tables are loaded
+    filterActive = false;
+    if (elements.floatingFilterBtn) {
+      elements.floatingFilterBtn.classList.remove('active');
+    }
+    console.log('[FILTER] Auto-reset: Filter set to off when running Check All');
+    
+    // Hide all containers and show the check-all container
+    hideAllCheckerContainers();
+    const checkAllContainer = document.getElementById('checker-container-check-all');
+    if (checkAllContainer) {
+      checkAllContainer.style.display = 'block';
+      checkAllContainer.innerHTML = '<div id="results"></div>';
+    }
+    
+    logDebug('Results Container Cleared');
+    
+    // Array to store all results for combined export
+    const allResults = [];
+    let successCount = 0;
+    let errorCount = 0;
+    const checkerTimings = [];
+    
+    // Run each available checker sequentially
+    for (const checkerName of availableCheckers) {
+      const checkerStartTime = performance.now();
+      logDebug(`Starting Checker: ${checkerName}`, {
+        checkerNumber: successCount + errorCount + 1,
+        totalCheckers: availableCheckers.length,
+        timestamp: new Date().toISOString()
+      });
+      
+      try {
+        console.log(`[CHECK-ALL] Running ${checkerName} checker...`);
+        
+        // Update loading overlay with current progress
+        updateLoadingOverlay(
+          `Running ${checkerName} checker...`,
+          `Progress: ${successCount + errorCount + 1}/${availableCheckers.length} checkers`
+        );
+        
+        // Update status
+        if (elements.uploadStatus) {
+          elements.uploadStatus.innerHTML = `<div class="status-message info">Running ${checkerName} checker (${successCount + errorCount + 1}/${availableCheckers.length})...</div>`;
+        }
+        
+        // Create a section for this checker's results
+        const sectionDiv = document.createElement('div');
+        sectionDiv.id = `${checkerName}-section`;
+        sectionDiv.style.marginBottom = '30px';
+        
+        // Add clipboard button for ALL checkers
+        const clipboardButton = `<button class="btn btn-sm btn-outline-primary checker-copy-button" data-checker="${checkerName}" style="margin-left:10px;" title="Copy invalid ${checkerName.toUpperCase()} results to clipboard">📋 Copy Invalids</button>`;
+        
+        sectionDiv.innerHTML = `
+          <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #0d6efd;padding-bottom:10px;margin-top:20px;">
+            <h3 style="color:#0d6efd;margin:0;">
+              ${checkerName.toUpperCase()} Checker Results
+            </h3>
+            ${clipboardButton}
+          </div>
+          <div id="${checkerName}-results"></div>
+        `;
+        if (checkAllContainer) {
+          checkAllContainer.appendChild(sectionDiv);
+          
+          // Attach event listener to clipboard button
+          const copyBtn = sectionDiv.querySelector('.checker-copy-button');
+          if (copyBtn) {
+            copyBtn.addEventListener('click', () => copyCheckerInvalidResults(checkerName));
+            logDebug(`${checkerName} copy button event listener attached`);
+          }
+        }
+        
+        logDebug(`Created Results Section: ${checkerName}`);
+        
+        // Get this checker's persistent container and run it
+        const checkerContainer = document.getElementById(`checker-container-${checkerName}`);
+        let table = null;
+        
+        if (checkerContainer) {
+          // IMPORTANT: Ensure checker container stays hidden during Check All
+          checkerContainer.style.display = 'none';
+          
+          // Execute the checker and get returned element (Bug #10 fix: removed duplicate initialization check)
+          logDebug(`Executing Checker: ${checkerName}`);
+          table = await executeChecker(checkerName, checkerContainer);
+          
+          // Re-confirm container is hidden after execution
+          checkerContainer.style.display = 'none';
+        }
+        const checkerEndTime = performance.now();
+        const executionTime = (checkerEndTime - checkerStartTime).toFixed(2);
+        
+        // Get section results container (needed for both success and failure cases)
+        const sectionResults = document.getElementById(`${checkerName}-results`);
+
+        // Accept either a <table> directly or a wrapper element that contains a <table>
+        // (e.g. the clinician checker returns a <div> with summary, table, and modals).
+        const checkerResult = resolveCheckerResult(table);
+        
+        if (checkerResult) {
+          successCount++;
+          const tableEl = checkerResult.table;
+          const rootEl  = checkerResult.root;
+          const rowCount = tableEl.querySelectorAll('tbody tr').length;
+          console.log(`[CHECK-ALL] ✓ ${checkerName} checker completed successfully`);
+          
+          // Collect invalid rows from the resolved table
+          const invalidRows = tableEl.querySelectorAll('tbody tr.table-danger, tbody tr.table-warning, tbody tr.invalid, tbody tr.unknown');
+          if (invalidRows.length > 0) {
+            console.log(`[CHECK-ALL] Found ${invalidRows.length} invalid rows in ${checkerName}`);
+            invalidRows.forEach(row => {
+              const rowData = {
+                checker: checkerName,
+                cells: []
+              };
+              row.querySelectorAll('td').forEach(cell => {
+                rowData.cells.push(cell.textContent.trim());
+              });
+              invalidRowsData.push(rowData);
+            });
+          }
+          
+          // Copy the full root element (preserves wrapper, summary, and modals for checkers
+          // like clinician that return a <div> instead of a bare <table>).
+          if (sectionResults && rootEl) {
+            const clonedRoot = rootEl.cloneNode(true);
+            sectionResults.appendChild(clonedRoot);
+            
+            // Re-attach event listeners that were lost during cloning
+            reattachEventListeners(clonedRoot, checkerName);
+          }
+          
+          logDebug(`Checker Success: ${checkerName}`, {
+            status: 'success',
+            executionTimeMs: executionTime,
+            rowsGenerated: rowCount,
+            tableGenerated: true
+          });
+          
+          checkerTimings.push({
+            checker: checkerName,
+            executionTimeMs: executionTime,
+            status: 'success',
+            rowCount: rowCount
+          });
+          
+          // Store the resolved table (not the wrapper) for combined export
+          allResults.push({
+            checkerName: checkerName,
+            table: tableEl.cloneNode(true)
+          });
+        } else if (table instanceof HTMLElement) {
+          successCount++;
+          console.log(`[CHECK-ALL] ✓ ${checkerName} checker returned a non-table result element`);
+          if (sectionResults) {
+            sectionResults.appendChild(table.cloneNode(true));
+          }
+          logDebug(`Checker Success: ${checkerName}`, {
+            status: 'success',
+            executionTimeMs: executionTime,
+            rowsGenerated: 0,
+            tableGenerated: false,
+            elementType: table.className || table.tagName
+          });
+          checkerTimings.push({
+            checker: checkerName,
+            executionTimeMs: executionTime,
+            status: 'success',
+            rowCount: 0
+          });
+        } else {
+          errorCount++;
+          console.log(`[CHECK-ALL] ✗ ${checkerName} checker failed to generate table`);
+          if (sectionResults) {
+            const noResultsMsg = checkerName === 'pricing'
+              ? 'XML Claims are non-Thiqa, prices are not being checked.'
+              : 'No results or checker did not complete';
+            sectionResults.innerHTML = `<div class="alert alert-warning">${noResultsMsg}</div>`;
+          }
+          
+          logDebug(`Checker Failed: ${checkerName}`, {
+            status: 'failed',
+            executionTimeMs: executionTime,
+            reason: 'No table generated',
+            tableGenerated: false
+          });
+          
+          checkerTimings.push({
+            checker: checkerName,
+            executionTimeMs: executionTime,
+            status: 'failed',
+            reason: 'No table generated'
+          });
+        }
+        
+      } catch (error) {
+        errorCount++;
+        const checkerEndTime = performance.now();
+        const executionTime = (checkerEndTime - checkerStartTime).toFixed(2);
+        
+        console.error(`[CHECK-ALL] Error running ${checkerName}:`, error);
+        const errorDiv = document.getElementById(`${checkerName}-results`);
+        if (errorDiv) {
+          errorDiv.innerHTML = `<div class="alert alert-danger">Error: ${error.message}</div>`;
+        }
+        
+        logDebug(`Checker Error: ${checkerName}`, {
+          status: 'error',
+          executionTimeMs: executionTime,
+          errorMessage: error.message,
+          errorStack: error.stack,
+          errorType: error.name
+        });
+        
+        checkerTimings.push({
+          checker: checkerName,
+          executionTimeMs: executionTime,
+          status: 'error',
+          errorMessage: error.message
+        });
+      }
+    }
+    
+    // Calculate total execution time
+    const totalExecutionTime = checkerTimings.reduce((sum, timing) => 
+      sum + parseFloat(timing.executionTimeMs), 0
+    ).toFixed(2);
+    
+    // Show completion status
+    const totalRun = successCount + errorCount;
+    if (elements.uploadStatus) {
+      elements.uploadStatus.innerHTML = `<div class="status-message success">Check All complete: ${successCount} successful, ${errorCount} failed out of ${totalRun} checker(s)</div>`;
+    }
+    
+    logDebug('Check All Completed', {
+      totalCheckers: totalRun,
+      successCount: successCount,
+      errorCount: errorCount,
+      totalExecutionTimeMs: totalExecutionTime,
+      timestamp: new Date().toISOString()
+    });
+    
+    logDebug('Checker Execution Timings', checkerTimings);
+    
+    // Enable export button if we have results
+    if (successCount > 0 && elements.exportBtn) {
+      elements.exportBtn.disabled = false;
+      logDebug('Export Button Enabled', { resultsCount: successCount });
+    }
+    
+    // Enable Export All button if we have results
+    if (successCount > 0 && elements.exportAllBtn) {
+      elements.exportAllBtn.disabled = false;
+      logDebug('Export All Button Enabled', { resultsCount: successCount });
+    }
+    
+    // Enable Export Invalids button if we have invalid rows
+    if (invalidRowsData.length > 0 && elements.exportInvalidsBtn) {
+      elements.exportInvalidsBtn.disabled = false;
+      console.log(`[CHECK-ALL] Export Invalids button enabled (${invalidRowsData.length} invalid rows from ${successCount} checkers)`);
+      logDebug('Export Invalids Button Enabled', { invalidRowsCount: invalidRowsData.length });
+    } else if (elements.exportInvalidsBtn) {
+      elements.exportInvalidsBtn.disabled = true;
+      console.log(`[CHECK-ALL] Export Invalids button disabled (no invalid rows found)`);
+    }
+    
+    // Store results globally for export
+    window._checkAllResults = allResults;
+    
+    logDebug('Results Stored for Export', { 
+      checkersWithResults: allResults.length,
+      checkerNames: allResults.map(r => r.checkerName)
+    });
+    
+    // Show debug log download button
+    if (elements.debugLogContainer) {
+      elements.debugLogContainer.style.display = 'block';
+      logDebug('Debug Log Button Displayed');
+    }
+    
+    // Hide loading overlay after all checkers complete
+    hideLoadingOverlay();
+    
+    console.log('[CHECK-ALL] ✓ Check All functionality complete');
+    console.log('[CHECK-ALL] Results collected from', allResults.length, 'checkers');
+    console.log('[CHECK-ALL] Debug log contains', debugLog.length, 'entries');
+  } catch (error) {
+    // Catch any unexpected errors to ensure loading overlay is hidden
+    console.error('[CHECK-ALL] Unexpected error in runAllCheckers:', error);
+    logDebug('Check All Fatal Error', {
+      errorMessage: error.message,
+      errorStack: error.stack
+    });
+    
+    // Show error message to user
+    if (elements.uploadStatus) {
+      elements.uploadStatus.innerHTML = `<div class="status-message error">An unexpected error occurred: ${error.message}</div>`;
+    }
+    
+    // Show debug log button so user can download the log
+    if (elements.debugLogContainer) {
+      elements.debugLogContainer.style.display = 'block';
+    }
+    
+    // Always hide loading overlay on error
+    hideLoadingOverlay();
+  }
+  }
+
+  function applyFilter() {
+    const filterEnabled = filterActive;
+    
+    // Get tables from the active checker's container
+    const container = document.getElementById(`checker-container-${activeChecker}`);
+    if (!container) {
+      console.warn('[FILTER] No active checker container found');
+      return;
+    }
+    
+    const tables = container.querySelectorAll('table');
+    console.log('[FILTER] Applying filter, enabled:', filterEnabled, 'to', tables.length, 'tables');
+
+    tables.forEach(table => {
+      const rows = table.querySelectorAll('tbody tr');
+      
+      // Track which Claim IDs have been shown in the filtered view
+      // This is used to fill the claim ID for the first invalid occurrence only
+      const shownClaimIds = new Set();
+      
+      rows.forEach(row => {
+        // Skip the "no invalids" placeholder — handled separately below
+        if (row.classList.contains('no-invalids-placeholder')) return;
+
+        if (filterEnabled) {
+          // Check for invalid/error indicators based on CSS classes only
+          // CSS classes are set by the checker logic based on whether remarks exist
+          // 1. Bootstrap danger class (red rows - has remarks/errors)
+          // 2. Bootstrap warning class (yellow rows - warnings)
+          // 3. Old 'invalid' or 'unknown' class (backward compatibility for other checkers)
+          const hasInvalid = row.classList.contains('table-danger') ||
+                            row.classList.contains('table-warning') ||
+                            row.classList.contains('invalid') ||
+                            row.classList.contains('unknown');
+          const hideForInvalidOnly = row.getAttribute('data-hide-invalid-only') === 'true';
+          
+          if (hasInvalid && !hideForInvalidOnly) {
+            // Show all invalid rows
+            row.style.display = '';
+            
+            // Get the Claim ID from this row (if it has one)
+            const claimId = row.getAttribute('data-claim-id');
+            
+            if (claimId && !shownClaimIds.has(claimId)) {
+              // First invalid occurrence of this Claim ID - ensure it's displayed
+              shownClaimIds.add(claimId);
+              
+              const claimIdCell = row.querySelector('.claim-id-cell');
+              if (claimIdCell && claimIdCell.textContent.trim() === '') {
+                claimIdCell.textContent = claimId;
+                claimIdCell.style.color = '#666';
+                claimIdCell.style.fontStyle = 'italic';
+              }
+            }
+            // Subsequent invalid rows with the same Claim ID keep their blank cells
+          } else {
+            row.style.display = 'none';
+          }
+        } else {
+          row.style.display = '';
+        }
+      });
+
+      // Show the "no invalids" placeholder row only when filtering reveals no invalid rows
+      const placeholder = table.querySelector('tbody tr.no-invalids-placeholder');
+      if (placeholder) {
+        if (filterEnabled) {
+          const hasVisibleInvalid = Array.from(
+            table.querySelectorAll('tbody tr.table-danger, tbody tr.table-warning, tbody tr.invalid, tbody tr.unknown')
+          ).some(r => r.style.display !== 'none');
+          placeholder.style.display = hasVisibleInvalid ? 'none' : '';
+        } else {
+          placeholder.style.display = 'none';
+        }
+      }
+    });
+
+    console.log('[FILTER] Filter applied to', tables.length, 'tables');
+  }
+
+  /**
+   * Clone a table and fill any blank "Claim ID" cells by propagating the last
+   * non-empty value downward.  The original DOM table is never mutated.
+   * @param {HTMLTableElement} table
+   * @returns {HTMLTableElement}
+   */
+  function fillClaimIdColumn(table) {
+    const clone = table.cloneNode(true);
+
+    // Locate the "Claim ID" column index from the header row
+    let claimIdColIndex = -1;
+    const headerRow = clone.querySelector('thead tr');
+    if (headerRow) {
+      headerRow.querySelectorAll('th').forEach((th, idx) => {
+        if (th.textContent.trim() === 'Claim ID') claimIdColIndex = idx;
+      });
+    }
+
+    if (claimIdColIndex === -1) return clone; // no Claim ID column – nothing to do
+
+    // Walk body rows and propagate the last seen Claim ID into blank cells
+    let lastClaimId = '';
+    clone.querySelectorAll('tbody tr').forEach(row => {
+      const cells = row.querySelectorAll('td');
+      if (claimIdColIndex < cells.length) {
+        const cell = cells[claimIdColIndex];
+        const value = cell.textContent.trim();
+        if (value) {
+          lastClaimId = value;
+        } else if (lastClaimId) {
+          cell.textContent = lastClaimId;
+        }
+      }
+    });
+
+    return clone;
+  }
+
+  function exportResults() {
+    // Check if this is a Check All export
+    if (activeChecker === 'check-all' && window._checkAllResults && window._checkAllResults.length > 0) {
+      console.log('[EXPORT] Exporting Check All results from', window._checkAllResults.length, 'checkers');
+      
+      const wb = XLSX.utils.book_new();
+      
+      window._checkAllResults.forEach((result, index) => {
+        const ws = XLSX.utils.table_to_sheet(fillClaimIdColumn(result.table));
+        // Limit sheet name to 31 characters (Excel limit)
+        const sheetName = result.checkerName.substring(0, 31);
+        XLSX.utils.book_append_sheet(wb, ws, sheetName);
+      });
+      
+      const filename = `check-all_results_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      XLSX.writeFile(wb, filename);
+      console.log('[EXPORT] ✓ Check All export complete:', filename);
+      return;
+    }
+    
+    // Regular single checker export - get tables from active checker's container
+    const container = document.getElementById(`checker-container-${activeChecker}`);
+    if (!container) {
+      alert('No active checker container found');
+      return;
+    }
+    
+    const tables = container.querySelectorAll('table');
+    if (tables.length === 0) {
+      alert('No results to export');
+      return;
+    }
+
+    const wb = XLSX.utils.book_new();
+    tables.forEach((table, index) => {
+      const ws = XLSX.utils.table_to_sheet(fillClaimIdColumn(table));
+      const sheetName = activeChecker ? activeChecker.substring(0, 31) : `Sheet${index + 1}`;
+      XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    });
+
+    const filename = `${activeChecker || 'checker'}_results_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    XLSX.writeFile(wb, filename);
+    console.log('[EXPORT] ✓ Single checker export complete:', filename);
+  }
+  
+  /**
+   * Export only invalid rows to Excel with one sheet per checker (matching Export All style).
+   * The Claim ID (first) column is guaranteed to be non-empty in every exported row.
+   */
+  function exportInvalids() {
+    console.log('[EXPORT-INVALIDS] Starting per-checker sheet export of invalid rows...');
+
+    const columnsToRemove = new Set(['View Full Entry', 'Valid']);
+
+    // Group tables by resolved checker name
+    const checkerTablesMap = new Map();
+    const checkerContainers = document.querySelectorAll('[id^="checker-container-"]');
+    checkerContainers.forEach(container => {
+      const tables = container.querySelectorAll('table');
+      tables.forEach(table => {
+        let checkerName = container.id.replace('checker-container-', '');
+
+        // If in check-all container, resolve the actual checker from its section
+        if (checkerName === 'check-all') {
+          const parentSection = table.closest('[id$="-section"]');
+          if (parentSection) {
+            checkerName = parentSection.id.replace('-section', '');
+          } else {
+            return; // skip unresolvable tables in check-all container
+          }
+        }
+
+        if (!checkerTablesMap.has(checkerName)) {
+          checkerTablesMap.set(checkerName, []);
+        }
+        checkerTablesMap.get(checkerName).push(table);
+      });
+    });
+
+    const wb = XLSX.utils.book_new();
+    let totalInvalidRows = 0;
+
+    checkerTablesMap.forEach((tables, checkerName) => {
+      const sheetRows = [];
+      let sheetHeaders = null;
+
+      tables.forEach(table => {
+        // Extract raw column headers
+        const rawHeaders = [];
+        table.querySelectorAll('thead th').forEach(th => {
+          rawHeaders.push(th.textContent.trim());
+        });
+
+        // Compute display headers: remove unwanted columns, normalise Remark -> Remarks
+        const displayHeaders = rawHeaders
+          .filter(h => !columnsToRemove.has(h))
+          .map(h => (h === 'Remark' ? 'Remarks' : h));
+
+        if (!sheetHeaders) sheetHeaders = displayHeaders;
+
+        // Build a claim-ID lookup for every row by scanning all tbody rows in order.
+        // This ensures that when a valid row is the first row of a claim (showing the
+        // claim ID in its first cell) and is followed by an invalid row (whose first
+        // cell is blank), the invalid row still gets the correct claim ID.
+        let lastSeenClaimId = '';
+        const rowClaimIdMap = new Map();
+        table.querySelectorAll('tbody tr').forEach(rowElement => {
+          const dataClaim = rowElement.getAttribute('data-claim-id');
+          if (dataClaim) {
+            // data-claim-id attribute is present and non-empty – use it
+            lastSeenClaimId = dataClaim;
+          } else if (dataClaim === null) {
+            // No data-claim-id attribute – fall back to first cell content
+            const firstTd = rowElement.querySelector('td');
+            const firstCellText = firstTd ? firstTd.textContent.trim() : '';
+            if (firstCellText) lastSeenClaimId = firstCellText;
+          }
+          rowClaimIdMap.set(rowElement, lastSeenClaimId);
+        });
+
+        // Collect only invalid rows
+        const invalidRowElements = table.querySelectorAll(
+          'tbody tr.table-danger, tbody tr.table-warning, tbody tr.invalid, tbody tr.unknown'
+        );
+
+        invalidRowElements.forEach(rowElement => {
+          const cells = [];
+          rowElement.querySelectorAll('td').forEach(td => {
+            cells.push(td.textContent.trim());
+          });
+
+          // Resolve Claim ID from the pre-built lookup (covers both data-attribute
+          // and first-cell patterns, propagating across valid rows that were skipped)
+          const claimId = rowClaimIdMap.get(rowElement) || '';
+
+          const rowObj = {};
+          let isFirstKeptColumn = true;
+
+          rawHeaders.forEach((rawHeader, idx) => {
+            if (columnsToRemove.has(rawHeader)) return;
+
+            const displayHeader = rawHeader === 'Remark' ? 'Remarks' : rawHeader;
+            let value = idx < cells.length ? cells[idx] : '';
+
+            // Guarantee the first kept column (Claim ID) is never empty
+            if (isFirstKeptColumn && !value) {
+              value = claimId;
+            }
+            isFirstKeptColumn = false;
+
+            rowObj[displayHeader] = value;
+          });
+
+          sheetRows.push(rowObj);
+          totalInvalidRows++;
+        });
+      });
+
+      if (sheetRows.length > 0 && sheetHeaders) {
+        const ws = XLSX.utils.json_to_sheet(sheetRows, { header: sheetHeaders });
+        const sheetName = checkerName.toUpperCase().substring(0, 31);
+        XLSX.utils.book_append_sheet(wb, ws, sheetName);
+        console.log(`[EXPORT-INVALIDS] Added sheet "${sheetName}" with ${sheetRows.length} row(s)`);
+      }
+    });
+
+    if (totalInvalidRows === 0) {
+      alert('No invalid entries found in any tables.');
+      return;
+    }
+
+    const filename = `invalid_entries_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    XLSX.writeFile(wb, filename);
+    console.log(`[EXPORT-INVALIDS] ✓ Export complete: ${filename} (${totalInvalidRows} invalid rows)`);
+  }
+
+  /**
+   * Download comprehensive debug log as text file
+   */
+  function downloadDebugLog() {
+    console.log('[DEBUG-LOG] downloadDebugLog() function called');
+    console.log('[DEBUG-LOG] Debug log array length:', debugLog ? debugLog.length : 'undefined');
+    console.log('[DEBUG-LOG] Debug log contents:', debugLog);
+    
+    if (!debugLog || debugLog.length === 0) {
+      console.error('[DEBUG-LOG] Debug log is empty or undefined');
+      alert('No debug log available. Please run Check All first.');
+      return;
+    }
+    
+    console.log('[DEBUG-LOG] Preparing debug log download...');
+    
+    try {
+      // Build debug log text content
+      const logLines = [];
+      
+      // Header
+      logLines.push('='.repeat(80));
+      logLines.push('UNIFIED CHECKER TOOL - DEBUG LOG');
+      logLines.push('='.repeat(80));
+      logLines.push('');
+      logLines.push(`Generated: ${new Date().toISOString()}`);
+      logLines.push(`Total Log Entries: ${debugLog.length}`);
+      logLines.push('');
+      logLines.push('='.repeat(80));
+      logLines.push('');
+      
+      // Log entries
+      debugLog.forEach((entry, index) => {
+        logLines.push(`[${index + 1}] ${entry.timestamp}`);
+        logLines.push(`Message: ${entry.message}`);
+        
+        if (entry.data) {
+          logLines.push('Data:');
+          try {
+            const dataStr = JSON.stringify(entry.data, null, 2);
+            // Indent each line of data
+            dataStr.split('\n').forEach(line => {
+              logLines.push(`  ${line}`);
+            });
+          } catch (e) {
+            logLines.push(`  [Error serializing data: ${e.message}]`);
+          }
+        }
+        
+        logLines.push('-'.repeat(80));
+        logLines.push('');
+      });
+      
+      // Footer
+      logLines.push('='.repeat(80));
+      logLines.push('END OF DEBUG LOG');
+      logLines.push('='.repeat(80));
+      
+      console.log('[DEBUG-LOG] Generated log text, length:', logLines.join('\n').length);
+      
+      // Create blob and download
+      const logText = logLines.join('\n');
+      const blob = new Blob([logText], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      
+      const filename = `check-all_debug_log_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.txt`;
+      
+      // Create temporary link and click it
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      
+      console.log('[DEBUG-LOG] Triggering download for:', filename);
+      a.click();
+      
+      // Clean up
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        console.log('[DEBUG-LOG] ✓ Download triggered and cleaned up');
+      }, 100);
+      
+      logDebug('Debug Log Downloaded', { 
+        filename: filename,
+        entriesCount: debugLog.length,
+        logSizeBytes: logText.length
+      });
+    } catch (error) {
+      console.error('[DEBUG-LOG] Error during download:', error);
+      alert(`Error downloading debug log: ${error.message}`);
+    }
+  }
+  
+  /**
+   * Copy checker invalid results to clipboard in specified format
+   * Format: CLAIM_ID\t\tRemark
+   * Only copies invalid/unknown rows (table-danger or table-warning)
+   * @param {string} checkerName - The name of the checker (e.g., 'elig', 'auths', 'pricing')
+   */
+  function copyCheckerInvalidResults(checkerName) {
+    console.log(`[CLIPBOARD] Copying ${checkerName.toUpperCase()} checker invalid results...`);
+    
+    const button = document.querySelector(`.checker-copy-button[data-checker="${checkerName}"]`);
+    
+    // Helper function to show button feedback (uses textContent for security)
+    const showButtonFeedback = (message, backgroundColor, duration = CLIPBOARD_FEEDBACK_DURATION_MS) => {
+      if (!button) return;
+      const originalText = button.textContent;
+      button.textContent = message;
+      button.style.backgroundColor = backgroundColor;
+      button.style.color = 'white';
+      
+      setTimeout(() => {
+        button.textContent = originalText;
+        button.style.backgroundColor = '';
+        button.style.color = '';
+      }, duration);
+    };
+    
+    // Find the checker results section
+    const checkerSection = document.getElementById(`${checkerName}-results`);
+    if (!checkerSection) {
+      console.error(`[CLIPBOARD] ${checkerName} results section not found`);
+      showButtonFeedback('⚠ Section Not Found', '#dc3545');
+      return;
+    }
+    
+    // Find the table in the checker section
+    const table = checkerSection.querySelector('table');
+    if (!table) {
+      console.error(`[CLIPBOARD] ${checkerName} results table not found`);
+      showButtonFeedback('⚠ Table Not Found', '#dc3545');
+      return;
+    }
+    
+    // Find the Remarks column index by searching table headers
+    const headers = table.querySelectorAll('thead th');
+    let remarksColumnIndex = -1;
+    
+    // Find first header matching "Remark" or "Remarks" (exact match, case-insensitive)
+    for (let i = 0; i < headers.length; i++) {
+      const headerText = headers[i].textContent.trim();
+      const headerLower = headerText.toLowerCase();
+      // Use exact match for "remark" or "remarks" to avoid false positives
+      if (headerLower === 'remark' || headerLower === 'remarks') {
+        remarksColumnIndex = i;
+        console.log(`[CLIPBOARD] Found remarks column at index ${i}: "${headerText}"`);
+        break; // Stop after finding first match
+      }
+    }
+    
+    if (remarksColumnIndex === -1) {
+      console.error(`[CLIPBOARD] Could not find Remarks column in ${checkerName} table headers`);
+      showButtonFeedback('⚠ No Remarks Column', '#dc3545');
+      return;
+    }
+    
+    // Extract data from INVALID rows only (table-danger or table-warning)
+    const invalidRows = table.querySelectorAll(INVALID_ROW_CLASSES);
+    if (invalidRows.length === 0) {
+      console.log(`[CLIPBOARD] No invalid rows found in ${checkerName}`);
+      showButtonFeedback('⚠ No Invalids', '#ffc107');
+      return;
+    }
+    
+    // Use a Map to group remarks by ClaimID: key = claimID, value = Set of remark texts
+    const claimRemarks = new Map();
+    
+    invalidRows.forEach(row => {
+      // Get all cells in the row
+      const cells = row.querySelectorAll('td');
+      if (cells.length < 2) return; // Skip if not enough cells
+      
+      // Get Claim ID from data attribute first (for checkers that hide duplicate IDs visually)
+      // or fall back to first cell's textContent
+      let claimID = row.getAttribute('data-claim-id') || cells[0].textContent.trim();
+      
+      // Skip empty claim IDs
+      if (!claimID) return;
+      
+      if (!claimRemarks.has(claimID)) claimRemarks.set(claimID, new Set());
+      const remarks = claimRemarks.get(claimID);
+      
+      // Get the Remarks cell using the dynamically found column index
+      const remarksCell = cells[remarksColumnIndex];
+      
+      if (!remarksCell) return;
+      
+      // Get all remark divs from the cell
+      const remarkDivs = remarksCell.querySelectorAll('div');
+      
+      // Only include rows that have remarks (not "No remarks")
+      if (remarkDivs.length > 0) {
+        remarkDivs.forEach(div => {
+          // Replace newlines with spaces to keep everything on one line
+          const remarkText = div.textContent.trim().replace(/\n+/g, ' ').replace(/\s+/g, ' ');
+          // Skip "No remarks" entries and source notes
+          if (remarkText && remarkText !== 'No remarks' && !div.classList.contains('source-note')) {
+            remarks.add(remarkText);
+          }
+        });
+      } else {
+        // If no divs, try getting text content directly (some checkers may use plain text)
+        const remarkText = remarksCell.textContent.trim().replace(/\n+/g, ' ').replace(/\s+/g, ' ');
+        if (remarkText && remarkText !== 'No remarks' && remarkText !== '') {
+          remarks.add(remarkText);
+        }
+      }
+    });
+    
+    // Build one line per claim: CLAIM_ID\t\t<all remarks joined with a space>
+    const results = Array.from(claimRemarks.entries())
+      .filter(([, remarks]) => remarks.size > 0)
+      .map(([claimID, remarks]) => `${claimID}\t\t${Array.from(remarks).join(' ')}`);
+    
+    if (results.length === 0) {
+      console.log(`[CLIPBOARD] Invalid rows found in ${checkerName} but no remarks to copy`);
+      showButtonFeedback('⚠ No Remarks', '#ffc107');
+      return;
+    }
+    
+    // Join all results with newlines
+    const textToCopy = results.join('\n');
+    
+    // Copy to clipboard
+    navigator.clipboard.writeText(textToCopy).then(() => {
+      console.log(`[CLIPBOARD] ✓ Copied ${results.length} invalid ${checkerName.toUpperCase()} results`);
+      showButtonFeedback(`✓ Copied ${results.length}!`, '#198754');
+    }).catch(err => {
+      console.error(`[CLIPBOARD] Copy failed for ${checkerName}:`, err);
+      // Use a safe, fixed error message instead of potentially unsafe error content
+      const safeErrorMsg = err.name === 'NotAllowedError' 
+        ? 'Permission denied' 
+        : err.name === 'SecurityError'
+        ? 'Security error'
+        : 'Check console for details';
+      showButtonFeedback(`❌ Copy Failed: ${safeErrorMsg}`, '#dc3545', CLIPBOARD_FEEDBACK_DURATION_MS * ERROR_FEEDBACK_DURATION_EXTENSION_FACTOR);
+    });
+  }
+  
+  // Bug #7 fix: Auto-table generation system removed (obsolete with persistent containers)
+  // Bug #8 fix: Dead code in checkForExistingTable removed (lines after early return)
+
 })();
