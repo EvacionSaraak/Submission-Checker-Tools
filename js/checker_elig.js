@@ -2,12 +2,15 @@
 //
 // Matching methodology:
 //   1. Collect every eligibility row from the same encounter date that
-//      partially matches the claim by Member ID, Emirates ID, or clinician.
+//      matches the claim by Member ID or Emirates ID. Clinician-only rows are
+//      not eligible for partial-match review.
 //   2. A valid candidate must match encounter date, Member ID, Emirates ID,
 //      and clinician license. Any mismatch makes that candidate invalid.
 //   3. Complete four-field matches outrank partial candidates. Provider,
 //      eligibility status, and time proximity only break ties between complete matches.
 //   4. Different-date rows are not shown as partial matches in the modal.
+//   5. When no complete match exists, every same-date partial identity match
+//      produces an explicit error remark identifying the fields that differ.
 //
 // The View All modal uses delegated document-level handling and a per-run
 // detail store, so it works in both the individual checker and cloned Check All
@@ -573,10 +576,10 @@
 
     /*
      * A partial eligibility candidate is only useful for this modal when it is
-     * from the claim's encounter date. Within that date, include every row that
-     * matches at least one identity field: Member ID, Emirates ID, or clinician.
-     * This exposes all plausible same-visit rows without flooding the modal with
-     * unrelated eligibilities or historical rows from other dates.
+     * from the claim's encounter date and matches at least one patient identity
+     * field: Member ID or Emirates ID. Clinician-only matches are deliberately
+     * excluded because they may belong to a different patient seen by the same
+     * clinician on the same date.
      */
     const sameDateRows = claim.encounterDate
       ? (indexes.date?.get(claim.encounterDate) || [])
@@ -601,13 +604,9 @@
         bases.push('EID');
       }
 
-      if (
-        row.clinician &&
-        claim.clinicians?.has(row.clinician)
-      ) {
-        bases.push('Clinician');
-      }
-
+      // Clinician is still compared and highlighted inside the modal, but it
+      // cannot qualify a row as a partial candidate by itself. At least the
+      // Member ID or Emirates ID must match before the row is registered.
       registerCandidate(row, bases);
     });
 
@@ -629,11 +628,7 @@
     // Eligibility 3, etc. instead of being moved into the first tab.
     const candidates = Array.from(candidateMap.values()).map(entry => {
       const bases = Array.from(entry.bases);
-      const basis = bases.includes('EID')
-        ? 'EID'
-        : bases.includes('Member ID')
-          ? 'Member ID'
-          : 'Clinician';
+      const basis = bases.includes('EID') ? 'EID' : 'Member ID';
 
       return {
         row: entry.row,
@@ -682,8 +677,62 @@
     };
   }
 
+  function buildPartialCandidateError(claim, candidate) {
+    const row = candidate?.row;
+    const comparison = candidate?.comparison || buildCandidateComparison(claim, row);
+    const claimClinicians = Array.from(claim?.clinicians || []);
+    const matchedIdentityFields = [];
+    const mismatches = [];
+
+    if (comparison.memberId) matchedIdentityFields.push('Member ID');
+    if (comparison.eid) matchedIdentityFields.push('Emirates ID');
+
+    if (!comparison.orderedOn) {
+      mismatches.push(
+        `encounter date differs (claim ${claim?.encounterDate || claim?.encounterStartRaw || '(blank)'}, ` +
+        `eligibility ${row?.orderedDate || row?.orderedOnDisplay || '(blank)'})`
+      );
+    }
+
+    if (!comparison.memberId) {
+      mismatches.push(
+        `Member ID differs (claim ${claim?.memberIDRaw || '(blank)'}, ` +
+        `eligibility ${row?.memberIDRaw || '(blank)'})`
+      );
+    }
+
+    if (!comparison.eid) {
+      mismatches.push(
+        `Emirates ID differs (claim ${claim?.eidRaw || '(blank)'}, ` +
+        `eligibility ${row?.eidRaw || '(blank)'})`
+      );
+    }
+
+    if (!comparison.clinician) {
+      mismatches.push(
+        `clinician license differs (claim ` +
+        `${claimClinicians.length ? claimClinicians.join(', ') : '(blank)'}, ` +
+        `eligibility ${row?.clinicianRaw || '(blank)'})`
+      );
+    }
+
+    const requestReference = row?.requestNumber
+      ? `\`${row.requestNumber}\``
+      : `sheet ${row?.sheetName || '(unknown)'}, row ${row?.sheetRowNumber || '(unknown)'}`;
+
+    const matchedBy = matchedIdentityFields.length
+      ? matchedIdentityFields.join(' and ')
+      : 'neither required patient identifier';
+
+    return (
+      `Partial eligibility match ${requestReference} matched by ${matchedBy}, ` +
+      `but ${mismatches.join('; ') || 'it does not satisfy all required match fields'}.`
+    );
+  }
+
   function analyzeClaim(claim, match) {
     const matchedRow = match.row;
+    const selectedRow = match.selectedRow || null;
     const invalidRemarks = [];
     const notes = [];
 
@@ -697,81 +746,68 @@
         `or Member ID ${claim.memberIDRaw || '(blank)'} on ` +
         `${claim.encounterDate || claim.encounterStartRaw || '(unknown date)'}.`
       );
-    } else {
-      const comparison = match.selectedComparison || buildCandidateComparison(claim, matchedRow);
-      const claimClinicians = Array.from(claim.clinicians || []);
+    } else if (!match.completeMatch) {
+      const partialCandidates = Array.isArray(match.candidates)
+        ? match.candidates.filter(candidate => candidate && !candidate.completeMatch)
+        : [];
 
-      if (!comparison.orderedOn) {
+      if (partialCandidates.length) {
+        partialCandidates.forEach(candidate => {
+          invalidRemarks.push(buildPartialCandidateError(claim, candidate));
+        });
+      } else {
         invalidRemarks.push(
-          `Eligibility date mismatch: claim encounter date is ` +
-          `${claim.encounterDate || claim.encounterStartRaw || '(blank)'}, ` +
-          `but eligibility is ${matchedRow.orderedDate || matchedRow.orderedOnDisplay || '(blank)'}.`
+          'Eligibility candidates were found, but none matched encounter date, ' +
+          'Member ID, Emirates ID, and clinician license together.'
         );
       }
 
-      if (!comparison.memberId) {
-        invalidRemarks.push(
-          `Eligibility Member ID mismatch: claim ${claim.memberIDRaw || '(blank)'}, ` +
-          `eligibility ${matchedRow.memberIDRaw || '(blank)'}.`
-        );
-      }
+      notes.push(
+        `${match.candidateCount} same-date partial eligibility ` +
+        `candidate${match.candidateCount === 1 ? '' : 's'} found. ` +
+        `No eligibility was selected; review every candidate in View All.`
+      );
+    }
 
-      if (!comparison.eid) {
+    /*
+     * Status, service-category, and provider checks are only meaningful for the
+     * complete four-field eligibility that was actually selected. Partial rows
+     * remain diagnostic candidates and cannot validate the claim.
+     */
+    if (selectedRow) {
+      if (!ELIGIBLE_STATUS_PATTERN.test(selectedRow.status)) {
         invalidRemarks.push(
-          `Eligibility Emirates ID mismatch: claim ${claim.eidRaw || '(blank)'}, ` +
-          `eligibility ${matchedRow.eidRaw || '(blank)'}.`
-        );
-      }
-
-      if (!comparison.clinician) {
-        invalidRemarks.push(
-          `Eligibility clinician mismatch: claim ` +
-          `${claimClinicians.length ? claimClinicians.join(', ') : '(blank)'}, ` +
-          `eligibility ${matchedRow.clinicianRaw || '(blank)'}.`
-        );
-      }
-
-      if (!ELIGIBLE_STATUS_PATTERN.test(matchedRow.status)) {
-        invalidRemarks.push(
-          `Eligibility status is ${matchedRow.status || '(blank)'} instead of Eligible.`
+          `Eligibility status is ${selectedRow.status || '(blank)'} instead of Eligible.`
         );
       }
 
       if (
         claim.isDental &&
-        matchedRow.serviceCategory &&
-        !DENTAL_CATEGORY_PATTERN.test(matchedRow.serviceCategory)
+        selectedRow.serviceCategory &&
+        !DENTAL_CATEGORY_PATTERN.test(selectedRow.serviceCategory)
       ) {
         invalidRemarks.push(
           `Dental claim matched eligibility Service Category ` +
-          `\`${matchedRow.serviceCategory}\` instead of Dental Services.`
+          `\`${selectedRow.serviceCategory}\` instead of Dental Services.`
         );
       }
 
       if (
         claim.providerID &&
-        matchedRow.providerLicense &&
-        claim.providerID !== matchedRow.providerLicense
+        selectedRow.providerLicense &&
+        claim.providerID !== selectedRow.providerLicense
       ) {
         notes.push(
           `Provider differs: claim ${claim.providerIDRaw}, ` +
-          `eligibility ${matchedRow.providerLicenseRaw}.`
+          `eligibility ${selectedRow.providerLicenseRaw}.`
         );
       }
 
       if (match.candidateCount > 1) {
-        if (match.completeMatch) {
-          notes.push(
-            `${match.candidateCount} eligibility candidates were found; ` +
-            `the candidate matching date, Member ID, Emirates ID, and clinician was selected.`
-          );
-        } else {
-          notes.push(
-            `${match.candidateCount} eligibility candidates were found, but none matched ` +
-            `date, Member ID, Emirates ID, and clinician together. ` +
-            `No eligibility was selected; all same-date partial candidates are available in View All.`
-          );
-        }
+        notes.push(
+          `${match.candidateCount} eligibility candidates were found; ` +
+          `the candidate matching date, Member ID, Emirates ID, and clinician was selected.`
+        );
       }
     }
 
@@ -791,9 +827,7 @@
       Remarks: invalidRemarks.join('\n') || 'OK',
       Notes: notes.join('\n'),
       EligibilityRequestNumber: matchedRow?.requestNumber || '',
-      SelectedEligibilityRequestNumber: match.completeMatch
-        ? (matchedRow?.requestNumber || '')
-        : '',
+      SelectedEligibilityRequestNumber: selectedRow?.requestNumber || '',
       EligibilityOrderedOn: matchedRow?.orderedOnDisplay || '',
       EligibilityStatus: matchedRow?.status || '',
       EligibilityClinician: matchedRow?.clinicianRaw || '',
