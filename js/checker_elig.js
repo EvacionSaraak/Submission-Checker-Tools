@@ -261,6 +261,21 @@
     return input?.files?.[0] || null;
   }
 
+  function getSubmissionReceiverID(xmlText) {
+    const parser = new DOMParser();
+    const xmlDocument = parser.parseFromString(xmlText, 'application/xml');
+    const parserError = xmlDocument.getElementsByTagName('parsererror')[0];
+
+    if (parserError) {
+      throw new Error(`XML parsing failed: ${normalizeText(parserError.textContent)}`);
+    }
+
+    const header = xmlDocument.getElementsByTagName('Header')[0] || null;
+    return normalizeUpper(
+      getDirectText(header, 'ReceiverID') || getNestedText(header, 'ReceiverID')
+    );
+  }
+
   function parseXMLClaims(xmlText) {
     const parser = new DOMParser();
     const xmlDocument = parser.parseFromString(xmlText, 'application/xml');
@@ -1042,6 +1057,21 @@
     return wrapper;
   }
 
+  function createSkippedWrapper(receiverID) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'elig-checker-results elig-checker-skipped';
+    wrapper.dataset.checkerSkipped = 'true';
+    wrapper.dataset.receiverId = receiverID || '';
+
+    const alert = document.createElement('div');
+    alert.className = 'alert alert-info';
+    alert.textContent =
+      `Eligibility Checker skipped: ReceiverID ${receiverID || 'HAAD'} is excluded from eligibility validation.`;
+    wrapper.appendChild(alert);
+
+    return wrapper;
+  }
+
   function closeEligibilityModal() {
     document.getElementById('eligibilityDetailsModal')?.remove();
   }
@@ -1464,22 +1494,43 @@
 
     installModalDelegation();
 
-    if (!xmlFile || !eligibilityFile) {
-      const missing = [
-        !xmlFile ? 'XML file' : '',
-        !eligibilityFile ? 'Eligibility workbook' : ''
-      ].filter(Boolean).join(' and ');
-      return createErrorWrapper(new Error(`Missing ${missing}.`));
+    if (!xmlFile) {
+      return createErrorWrapper(new Error('Missing XML file.'));
     }
 
     try {
-      const [xmlText, eligibilityBuffer] = await Promise.all([
-        typeof root.getUnifiedXmlText === 'function'
-          ? root.getUnifiedXmlText()
-          : xmlFile.text(),
-        eligibilityFile.arrayBuffer()
-      ]);
+      const xmlText = typeof root.getUnifiedXmlText === 'function'
+        ? await root.getUnifiedXmlText()
+        : await xmlFile.text();
 
+      const receiverID = getSubmissionReceiverID(xmlText);
+
+      if (receiverID === 'HAAD') {
+        lastResults = [];
+        lastWorkbookContext = null;
+        detailStore.clear();
+        root._lastEligibilityResults = [];
+        root._lastEligibilityWorkbookContext = null;
+        root._lastEligibilitySkipReason = {
+          receiverID,
+          reason: 'ReceiverID HAAD is excluded from eligibility validation.'
+        };
+        wireOptionalExportButton();
+
+        console.log('[ELIG] Skipped eligibility matching for HAAD submission.', {
+          receiverID
+        });
+
+        return createSkippedWrapper(receiverID);
+      }
+
+      root._lastEligibilitySkipReason = null;
+
+      if (!eligibilityFile) {
+        return createErrorWrapper(new Error('Missing eligibility workbook.'));
+      }
+
+      const eligibilityBuffer = await eligibilityFile.arrayBuffer();
       const claims = parseXMLClaims(xmlText);
       const workbookContext = parseEligibilityWorkbook(eligibilityBuffer);
       const indexes = buildEligibilityIndexes(workbookContext.rows);
@@ -1496,6 +1547,7 @@
       wireOptionalExportButton();
 
       console.log('[ELIG] Completed eligibility matching.', {
+        receiverID,
         claims: claims.length,
         eligibilityRows: workbookContext.rows.length,
         valid: results.filter(result => result.Status === 'Valid').length,
@@ -1507,6 +1559,10 @@
       console.error('[ELIG] Checker failed:', error);
       lastResults = [];
       lastWorkbookContext = null;
+      root._lastEligibilityResults = [];
+      root._lastEligibilityWorkbookContext = null;
+      root._lastEligibilitySkipReason = null;
+      wireOptionalExportButton();
       return createErrorWrapper(error);
     }
   }
@@ -1523,6 +1579,7 @@
     normalizeEid,
     normalizeClinician,
     parseDateTime,
+    getSubmissionReceiverID,
     parseXMLClaims,
     parseEligibilityWorkbook,
     buildEligibilityIndexes,
