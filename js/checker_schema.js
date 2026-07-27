@@ -3243,11 +3243,29 @@
                         observation
                       );
 
+                    const observationCode =
+                      text(
+                        'Code',
+                        observation
+                      );
+
                     const valueType =
                       text(
                         'ValueType',
                         observation
                       );
+
+                    const isMedicalTourismUnplannedFlag =
+                      type.trim().toUpperCase() === 'FLAGS' &&
+                      observationCode.trim().toUpperCase() ===
+                        'MEDICALTOURISMUNPLANNED';
+
+                    // MedicalTourismUnplanned is a required claim marker.
+                    // It is intentionally a Flags observation and must not be
+                    // validated as the free-text activity description.
+                    if (isMedicalTourismUnplannedFlag) {
+                      return;
+                    }
 
                     if (
                       type &&
