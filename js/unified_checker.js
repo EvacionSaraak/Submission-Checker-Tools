@@ -93,8 +93,18 @@
 
   let activeChecker = null;
   
-  // Filter state for floating button
-  let filterActive = false;
+  // Result-status filter state. A true value means that status is visible.
+  const FILTER_STATUSES = ['valid', 'unknown', 'invalid'];
+  const FILTER_VARIANTS = {
+    valid: 'success',
+    unknown: 'warning',
+    invalid: 'danger'
+  };
+  const filterVisibility = {
+    valid: true,
+    unknown: true,
+    invalid: true
+  };
   
   // Debug log for Check All functionality
   let debugLog = [];
@@ -223,6 +233,8 @@
       resultsContainer: document.getElementById('results-container')
     };
 
+    initializeStatusFilterControls();
+
     // File input event listeners - add null checks to prevent crashes
     // Also add click listeners to reset input value (allows re-uploading same filename)
     if (elements.xmlInput) {
@@ -306,11 +318,16 @@
       runAllCheckers();
     });
 
-    // Filter button - make it toggleable
-    elements.floatingFilterBtn.addEventListener('click', () => {
-      filterActive = !filterActive;
-      elements.floatingFilterBtn.classList.toggle('active', filterActive);
-      applyFilter();
+    // Each status button independently controls whether that result type is visible.
+    Object.values(elements.statusFilterButtons || {}).forEach(button => {
+      button.addEventListener('click', () => {
+        const status = button.dataset.filterStatus;
+        if (!FILTER_STATUSES.includes(status)) return;
+
+        filterVisibility[status] = !filterVisibility[status];
+        updateStatusFilterButtons();
+        applyFilter();
+      });
     });
 
     // Claim type radio buttons - update button states when changed
@@ -424,11 +441,8 @@
     hideAllCheckerContainers();
     activeChecker = null;
 
-    // Reset filter state
-    filterActive = false;
-    if (elements.floatingFilterBtn) {
-      elements.floatingFilterBtn.classList.remove('active');
-    }
+    // Reset all status filters to visible.
+    resetStatusFilters();
 
     // Clear file cache
     if (window.FileCache && typeof window.FileCache.clear === 'function') window.FileCache.clear();
@@ -542,13 +556,9 @@
       setActiveButton(checkerName);
       activeChecker = checkerName;
 
-      // Reset filter when starting a new checker (Bug #26 fix)
-      // Always set to inactive state when new tables are loaded
-      filterActive = false;
-      if (elements.floatingFilterBtn) {
-        elements.floatingFilterBtn.classList.remove('active');
-      }
-      console.log('[FILTER] Auto-reset: Filter set to off when running new checker');
+      // Reset status filters whenever a new checker result is loaded.
+      resetStatusFilters();
+      console.log('[FILTER] Auto-reset: Valid, Unknown, and Invalid are all visible');
 
       // Hide all checker containers and show the active one
       hideAllCheckerContainers();
@@ -617,9 +627,9 @@
       }
       console.log(`[DEBUG] ${checkerName} checker completed successfully`);
 
-      // Apply filter if button is active (works on already-rendered tables)
-      if (filterActive) {
-        setTimeout(() => applyFilter(), 100); // Small delay to ensure table is fully rendered
+      // Re-apply a non-default status filter after rendering, if needed.
+      if (hasActiveStatusFilter()) {
+        setTimeout(() => applyFilter(), 100);
       }
       
       // Hide loading overlay after completion
@@ -1239,13 +1249,9 @@
     setActiveButton('checkAll');
     activeChecker = 'check-all';
     
-    // Reset filter when starting Check All
-    // Always set to inactive state when new tables are loaded
-    filterActive = false;
-    if (elements.floatingFilterBtn) {
-      elements.floatingFilterBtn.classList.remove('active');
-    }
-    console.log('[FILTER] Auto-reset: Filter set to off when running Check All');
+    // Reset status filters whenever Check All starts.
+    resetStatusFilters();
+    console.log('[FILTER] Auto-reset: Valid, Unknown, and Invalid are all visible');
     
     // Hide all containers and show the check-all container
     hideAllCheckerContainers();
@@ -1551,84 +1557,185 @@
   }
   }
 
+  function initializeStatusFilterControls() {
+    const originalButton = elements.floatingFilterBtn;
+    if (!originalButton) {
+      console.warn('[FILTER] Original floating filter button was not found');
+      elements.statusFilterButtons = {};
+      return;
+    }
+
+    const group = document.createElement('div');
+    group.id = 'floatingFilterGroup';
+    group.className = 'floating-filter-btn';
+    group.setAttribute('role', 'group');
+    group.setAttribute('aria-label', 'Result status filters');
+    group.style.display = 'flex';
+    group.style.alignItems = 'center';
+    group.style.gap = '6px';
+    group.style.padding = '6px';
+    group.style.background = '#fff';
+    group.style.border = '1px solid #ced4da';
+    group.style.borderRadius = '10px';
+    group.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.16)';
+    group.style.whiteSpace = 'nowrap';
+
+    FILTER_STATUSES.forEach(status => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'btn btn-sm status-filter-btn';
+      button.dataset.filterStatus = status;
+      button.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+      group.appendChild(button);
+    });
+
+    originalButton.replaceWith(group);
+    elements.floatingFilterBtn = group;
+    elements.statusFilterButtons = Object.fromEntries(
+      FILTER_STATUSES.map(status => [
+        status,
+        group.querySelector(`[data-filter-status="${status}"]`)
+      ])
+    );
+
+    updateStatusFilterButtons();
+  }
+
+  function updateStatusFilterButtons() {
+    FILTER_STATUSES.forEach(status => {
+      const button = elements.statusFilterButtons?.[status];
+      if (!button) return;
+
+      const visible = filterVisibility[status];
+      const variant = FILTER_VARIANTS[status];
+      const label = status.charAt(0).toUpperCase() + status.slice(1);
+
+      button.classList.toggle(`btn-${variant}`, visible);
+      button.classList.toggle(`btn-outline-${variant}`, !visible);
+      button.setAttribute('aria-pressed', String(visible));
+      button.title = visible
+        ? `${label} rows are visible. Click to hide them.`
+        : `${label} rows are hidden. Click to show them.`;
+      button.style.opacity = visible ? '1' : '0.62';
+      button.style.textDecoration = visible ? 'none' : 'line-through';
+    });
+  }
+
+  function resetStatusFilters() {
+    FILTER_STATUSES.forEach(status => {
+      filterVisibility[status] = true;
+    });
+    updateStatusFilterButtons();
+  }
+
+  function hasActiveStatusFilter() {
+    return FILTER_STATUSES.some(status => !filterVisibility[status]);
+  }
+
+  function getRowFilterStatus(row) {
+    // Rows explicitly excluded from the old Invalid-only view are treated as
+    // normal/valid display rows in the new three-status filter.
+    if (row.getAttribute('data-hide-invalid-only') === 'true') return 'valid';
+
+    // Invalid takes precedence if a checker accidentally applies both classes.
+    if (
+      row.classList.contains('table-danger') ||
+      row.classList.contains('invalid')
+    ) {
+      return 'invalid';
+    }
+
+    if (
+      row.classList.contains('table-warning') ||
+      row.classList.contains('unknown')
+    ) {
+      return 'unknown';
+    }
+
+    return 'valid';
+  }
+
+  function clearInjectedClaimIds(table) {
+    table.querySelectorAll('.claim-id-cell[data-filter-injected="true"]').forEach(cell => {
+      cell.textContent = '';
+      cell.style.color = '';
+      cell.style.fontStyle = '';
+      cell.removeAttribute('data-filter-injected');
+    });
+  }
+
   function applyFilter() {
-    const filterEnabled = filterActive;
-    
-    // Get tables from the active checker's container
     const container = document.getElementById(`checker-container-${activeChecker}`);
     if (!container) {
       console.warn('[FILTER] No active checker container found');
       return;
     }
-    
+
     const tables = container.querySelectorAll('table');
-    console.log('[FILTER] Applying filter, enabled:', filterEnabled, 'to', tables.length, 'tables');
+    const filtering = hasActiveStatusFilter();
+    console.log(
+      '[FILTER] Applying status filters:',
+      { ...filterVisibility },
+      'to',
+      tables.length,
+      'table(s)'
+    );
 
     tables.forEach(table => {
-      const rows = table.querySelectorAll('tbody tr');
-      
-      // Track which Claim IDs have been shown in the filtered view
-      // This is used to fill the claim ID for the first invalid occurrence only
-      const shownClaimIds = new Set();
-      
-      rows.forEach(row => {
-        // Skip the "no invalids" placeholder — handled separately below
-        if (row.classList.contains('no-invalids-placeholder')) return;
+      clearInjectedClaimIds(table);
 
-        if (filterEnabled) {
-          // Check for invalid/error indicators based on CSS classes only
-          // CSS classes are set by the checker logic based on whether remarks exist
-          // 1. Bootstrap danger class (red rows - has remarks/errors)
-          // 2. Bootstrap warning class (yellow rows - warnings)
-          // 3. Old 'invalid' or 'unknown' class (backward compatibility for other checkers)
-          const hasInvalid = row.classList.contains('table-danger') ||
-                            row.classList.contains('table-warning') ||
-                            row.classList.contains('invalid') ||
-                            row.classList.contains('unknown');
-          const hideForInvalidOnly = row.getAttribute('data-hide-invalid-only') === 'true';
-          
-          if (hasInvalid && !hideForInvalidOnly) {
-            // Show all invalid rows
-            row.style.display = '';
-            
-            // Get the Claim ID from this row (if it has one)
-            const claimId = row.getAttribute('data-claim-id');
-            
-            if (claimId && !shownClaimIds.has(claimId)) {
-              // First invalid occurrence of this Claim ID - ensure it's displayed
-              shownClaimIds.add(claimId);
-              
-              const claimIdCell = row.querySelector('.claim-id-cell');
-              if (claimIdCell && claimIdCell.textContent.trim() === '') {
-                claimIdCell.textContent = claimId;
-                claimIdCell.style.color = '#666';
-                claimIdCell.style.fontStyle = 'italic';
-              }
-            }
-            // Subsequent invalid rows with the same Claim ID keep their blank cells
-          } else {
-            row.style.display = 'none';
-          }
-        } else {
-          row.style.display = '';
-        }
+      const rows = Array.from(table.querySelectorAll('tbody tr'));
+      const resultRows = rows.filter(row => !row.classList.contains('no-invalids-placeholder'));
+
+      resultRows.forEach(row => {
+        const status = getRowFilterStatus(row);
+        row.style.display = filterVisibility[status] ? '' : 'none';
       });
 
-      // Show the "no invalids" placeholder row only when filtering reveals no invalid rows
+      // When one or more categories are hidden, restore the Claim ID on the
+      // first visible row for each claim so filtered tables remain readable.
+      if (filtering) {
+        const shownClaimIds = new Set();
+
+        resultRows.forEach(row => {
+          if (row.style.display === 'none') return;
+
+          const claimId = row.getAttribute('data-claim-id');
+          if (!claimId || shownClaimIds.has(claimId)) return;
+
+          shownClaimIds.add(claimId);
+          const claimIdCell = row.querySelector('.claim-id-cell');
+
+          if (claimIdCell && claimIdCell.textContent.trim() === '') {
+            claimIdCell.textContent = claimId;
+            claimIdCell.style.color = '#666';
+            claimIdCell.style.fontStyle = 'italic';
+            claimIdCell.setAttribute('data-filter-injected', 'true');
+          }
+        });
+      }
+
+      const hasVisibleRows = resultRows.some(row => row.style.display !== 'none');
       const placeholder = table.querySelector('tbody tr.no-invalids-placeholder');
+
       if (placeholder) {
-        if (filterEnabled) {
-          const hasVisibleInvalid = Array.from(
-            table.querySelectorAll('tbody tr.table-danger, tbody tr.table-warning, tbody tr.invalid, tbody tr.unknown')
-          ).some(r => r.style.display !== 'none');
-          placeholder.style.display = hasVisibleInvalid ? 'none' : '';
+        const placeholderCell = placeholder.querySelector('td') || placeholder;
+
+        if (!placeholder.dataset.originalFilterText) {
+          placeholder.dataset.originalFilterText = placeholderCell.textContent;
+        }
+
+        if (filtering && !hasVisibleRows) {
+          placeholderCell.textContent = 'No rows match the selected status filters.';
+          placeholder.style.display = '';
         } else {
+          placeholderCell.textContent = placeholder.dataset.originalFilterText;
           placeholder.style.display = 'none';
         }
       }
     });
 
-    console.log('[FILTER] Filter applied to', tables.length, 'tables');
+    console.log('[FILTER] Status filter applied to', tables.length, 'table(s)');
   }
 
   /**
