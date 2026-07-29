@@ -320,6 +320,8 @@
       return {
         claimIndex,
         claimID: getDirectText(claim, 'ID') || `Claim ${claimIndex + 1}`,
+        payerIDRaw: getDirectText(claim, 'PayerID'),
+        payerID: normalizeUpper(getDirectText(claim, 'PayerID')),
         memberIDRaw: getDirectText(claim, 'MemberID'),
         memberID: normalizeMemberId(getDirectText(claim, 'MemberID')),
         eidRaw: getDirectText(claim, 'EmiratesIDNumber'),
@@ -828,6 +830,7 @@
 
     return {
       ClaimID: claim.claimID,
+      PayerID: claim.payerIDRaw,
       MemberID: claim.memberIDRaw,
       EmiratesID: claim.eidRaw,
       EncounterStart: claim.encounterStartRaw,
@@ -918,6 +921,7 @@
     detailStore.set(detailId, {
       claim: {
         'Claim ID': result.ClaimID,
+        'Payer ID': result.PayerID,
         'Member ID': result.MemberID,
         'Emirates ID': result.EmiratesID,
         'Encounter Start': result.EncounterStart,
@@ -979,6 +983,7 @@
       <thead>
         <tr>
           <th>Claim ID</th>
+          <th>Payer ID</th>
           <th>Member ID</th>
           <th>Emirates ID</th>
           <th>Encounter Start</th>
@@ -1018,6 +1023,7 @@
 
       row.innerHTML = `
         <td class="nowrap-col claim-id-cell">${escapeHtml(result.ClaimID)}</td>
+        <td>${escapeHtml(result.PayerID)}</td>
         <td>${escapeHtml(result.MemberID)}</td>
         <td>${escapeHtml(result.EmiratesID)}</td>
         <td>${escapeHtml(result.EncounterStart)}</td>
@@ -1454,6 +1460,7 @@
   function makeExportRows(results) {
     return results.map(result => ({
       'Claim ID': result.ClaimID,
+      'Payer ID': result.PayerID,
       'Member ID': result.MemberID,
       'Emirates ID': result.EmiratesID,
       'Encounter Start': result.EncounterStart,
