@@ -139,8 +139,7 @@ function calculate97DurationRange(timedActivities) {
     totalQuantity,
     uniqueCodeCount,
     duplicateQuantity,
-    minimumMinutes: (uniqueCodeCount * 7) + (duplicateQuantity * 15),
-    maximumMinutes: totalQuantity * 15
+    minimumMinutes: (uniqueCodeCount * 7) + (duplicateQuantity * 15)
   };
 }
 
@@ -226,12 +225,14 @@ function extractClaims(xmlDoc, options = {}) {
          * full 15 minutes.
          *
          * Minimum = (unique codes × 7) + (duplicate units × 15)
-         * Maximum = total quantity × 15
+         *
+         * Only the minimum is enforced. A longer encounter may include other
+         * procedures that also contribute to the total encounter duration.
          *
          * Examples for three total units:
-         *   1, 2, 3 => 21 through 45 minutes.
-         *   1, 2, 2 => 29 through 45 minutes.
-         *   1, 1, 1 => 37 through 45 minutes.
+         *   1, 2, 3 => at least 21 minutes.
+         *   1, 2, 2 => at least 29 minutes.
+         *   1, 1, 1 => at least 37 minutes.
          */
         const timed97Activities = isMedicalClaim
             ? activities
@@ -262,7 +263,6 @@ function extractClaims(xmlDoc, options = {}) {
         const timed97Codes = duration97Range.timedCodes;
         const total97Quantity = duration97Range.totalQuantity;
         const minimum97Minutes = duration97Range.minimumMinutes;
-        const maximum97Minutes = duration97Range.maximumMinutes;
         const has97Activities =
             isMedicalClaim &&
             timed97Codes.length > 0 &&
@@ -270,10 +270,7 @@ function extractClaims(xmlDoc, options = {}) {
         const hasInvalid97Duration =
             has97Activities &&
             encounterMinutes >= 0 &&
-            (
-                encounterMinutes < minimum97Minutes ||
-                encounterMinutes > maximum97Minutes
-            );
+            encounterMinutes < minimum97Minutes;
         const timed97CodeLabel =
             timed97Codes.length === 1
                 ? `Code ${timed97Codes[0]}`
@@ -422,9 +419,8 @@ function extractClaims(xmlDoc, options = {}) {
                 remarks.push(
                     `${timed97CodeLabel}: total quantity ` +
                     `${formatMinuteValue(total97Quantity)} requires an ` +
-                    `encounter duration of ` +
-                    `${formatMinuteValue(minimum97Minutes)} through ` +
-                    `${formatMinuteValue(maximum97Minutes)} minutes, but the ` +
+                    `encounter duration of at least ` +
+                    `${formatMinuteValue(minimum97Minutes)} minutes, but the ` +
                     `encounter duration is ` +
                     `${encounterMinutes} minutes.`
                 );
