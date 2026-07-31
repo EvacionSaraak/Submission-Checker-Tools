@@ -1369,10 +1369,30 @@ function buildFactorRulesFromWorkbook(wb) {
 }
 
 function findFactorFromRules(rules, facilityId, code, payerId) {
-  if (!rules || !rules.length) return { factor: 1, rule: null };
   const normCode = normalizeCode(code);
   const normFacility = String(facilityId || '').trim().toUpperCase();
-  const normPayer = String(payerId || '').toUpperCase();
+  const normPayer = String(payerId || '').trim().toUpperCase();
+
+  // Explicit medical pricing override:
+  // True Life (MF7003), Thiqa (D001), CPT 90792 uses factor 1.3.
+  // This takes priority over Factors.xlsx, where this combination may
+  // otherwise resolve to the default factor of 1.
+  if (normFacility === 'MF7003' && normPayer === 'D001' && normCode === '90792') {
+    return {
+      factor: 1.3,
+      rule: {
+        facility: 'True Life',
+        facilityId: 'MF7003',
+        serviceType: 'CPT 90792 override',
+        matchType: 'Exact List',
+        matchValues: ['90792'],
+        factors: { D001: 1.3 },
+        isOverride: true
+      }
+    };
+  }
+
+  if (!rules || !rules.length) return { factor: 1, rule: null };
 
   const facilityRules = rules.filter(r => r.facilityId.trim().toUpperCase() === normFacility);
   if (!facilityRules.length) return { factor: 1, rule: null };
