@@ -998,7 +998,9 @@
       requestNumber: candidate.row?.requestNumber || '',
       status: candidate.row?.status || '',
       orderedOnDisplay: candidate.row?.orderedOnDisplay || '',
+      memberName: candidate.row?.memberName || '',
       clinicianRaw: candidate.row?.clinicianRaw || '',
+      clinicianName: candidate.row?.clinicianName || '',
       row: candidate.row?.sourceRow || null,
       comparison: candidate.comparison || buildCandidateComparison(claimContext, candidate.row)
     }));
@@ -1149,7 +1151,7 @@
           <th>EID</th>
           <th>Encounter</th>
           <th>Claim Clinician</th>
-          <th>Eligibility Match</th>
+          <th>Eligibility Matches</th>
           <th>Ordered On</th>
           <th>Elig Clinician</th>
           <th>Service</th>
@@ -1195,12 +1197,12 @@
         <td>${escapeHtml(result.EmiratesID)}</td>
         <td>${escapeHtml(result.EncounterStart)}</td>
         <td>${escapeHtml(result.ClaimClinicians)}</td>
-        <td>${escapeHtml(
-          result.RequiredMatchComplete
-            ? `${result.EligibilityRequestNumber} (Selected)`
-            : result.MemberIdCorrection
-              ? `${result.EligibilityRequestNumber} (Member ID correction candidate; not selected)`
-              : `${result.EligibilityRequestNumber || '(none)'} (Closest candidate; not selected)`
+        <td style="white-space:pre-line">${escapeHtml(
+          Array.isArray(result.EligibilityCandidates) && result.EligibilityCandidates.length
+            ? result.EligibilityCandidates
+                .map(candidate => candidate?.row?.requestNumber || '(none)')
+                .join('\n')
+            : '(none)'
         )}</td>
         <td>${escapeHtml(result.EligibilityOrderedOn)}</td>
         <td>${escapeHtml(result.EligibilityClinician)}</td>
@@ -1754,6 +1756,14 @@
             </div>
 
             <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin-top:10px;">
+              <div style="min-width:0;">
+                <div style="font-size:9px;text-transform:uppercase;color:#6c757d;font-weight:700;">Member Name</div>
+                <div style="font-size:12px;overflow-wrap:anywhere;">${escapeHtml(candidate.memberName || '(blank)')}</div>
+              </div>
+              <div style="min-width:0;">
+                <div style="font-size:9px;text-transform:uppercase;color:#6c757d;font-weight:700;">Clinician Name</div>
+                <div style="font-size:12px;overflow-wrap:anywhere;">${escapeHtml(candidate.clinicianName || '(blank)')}</div>
+              </div>
               <div style="min-width:0;">
                 <div style="font-size:9px;text-transform:uppercase;color:#6c757d;font-weight:700;">Basis</div>
                 <div style="font-size:12px;overflow-wrap:anywhere;">${escapeHtml(candidate.bases?.join(' + ') || candidate.basis)}</div>
