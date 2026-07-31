@@ -4,14 +4,20 @@
 //   1. Collect every eligibility row from the same encounter date that
 //      matches the claim by Member ID or Emirates ID. Clinician-only rows are
 //      not eligible for partial-match review.
-//   2. A valid candidate must match encounter date, Member ID, Emirates ID,
-//      and clinician license. Emirates ID is always mandatory for validity.
-//   3. A same-date candidate whose Emirates ID and clinician match, but whose
-//      Member ID differs, is an Unknown correction case rather than Invalid.
-//   4. Complete four-field matches outrank correction and partial candidates.
-//      Provider, eligibility status, and time proximity only break ties.
-//   5. Different-date rows are not shown as partial matches in the modal.
-//   6. When no complete or Member-ID-correction match exists, every same-date
+//   2. A valid candidate must match encounter date, Member ID, the required
+//      clinician license, and Emirates ID when the Eligibility Excel supplies
+//      one. A blank Eligibility Excel EID is accepted only through Member ID.
+//      The claim Emirates ID itself remains mandatory.
+//   3. Clinician matching uses every GT-prefixed license found in the claim
+//      when any GT license exists; otherwise it uses OrderingClinician only.
+//      Performing Clinician is not used unless it is the GT override.
+//   4. A same-date candidate whose actual, nonblank Emirates ID and clinician
+//      match, but whose Member ID differs, is an Unknown correction case.
+//   5. Complete required-field matches outrank correction and partial
+//      candidates. Provider, eligibility status, and time proximity only
+//      break ties.
+//   6. Different-date rows are not shown as partial matches in the modal.
+//   7. When no complete or Member-ID-correction match exists, every same-date
 //      partial identity match produces an explicit mismatch remark.
 //
 // The View All modal uses delegated document-level handling and a per-run
@@ -106,6 +112,37 @@
 
   function normalizeClinician(value) {
     return normalizeUpper(value).replace(/\s+/g, '');
+  }
+
+  function isGtClinician(value) {
+    return normalizeClinician(value).startsWith('GT');
+  }
+
+  function isEligibilityEidBlank(row) {
+    return normalizeText(row?.eidRaw) === '';
+  }
+
+  function getRequiredClinicians(performingClinicians, orderingClinicians) {
+    const performing = performingClinicians instanceof Set
+      ? performingClinicians
+      : new Set(performingClinicians || []);
+    const ordering = orderingClinicians instanceof Set
+      ? orderingClinicians
+      : new Set(orderingClinicians || []);
+
+    const gtClinicians = new Set(
+      [...performing, ...ordering].filter(isGtClinician)
+    );
+
+    return {
+      gtClinicians,
+      requiredClinicians: gtClinicians.size
+        ? gtClinicians
+        : new Set(ordering),
+      clinicianMatchRule: gtClinicians.size
+        ? 'GT override'
+        : 'Ordering Clinician'
+    };
   }
 
   function normalizeProvider(value) {
@@ -312,6 +349,12 @@
         }
       });
 
+      const {
+        gtClinicians,
+        requiredClinicians,
+        clinicianMatchRule
+      } = getRequiredClinicians(performingClinicians, orderingClinicians);
+
       const activityTypes = new Set(
         activities.map(activity => normalizeText(getNestedText(activity, 'Type'))).filter(Boolean)
       );
@@ -336,6 +379,9 @@
         clinicians,
         performingClinicians,
         orderingClinicians,
+        gtClinicians,
+        requiredClinicians,
+        clinicianMatchRule,
         isDental,
         claimXML: claim.outerHTML
       };
@@ -543,12 +589,17 @@
 
   function scoreCandidate(claim, row, basis) {
     const comparison = buildCandidateComparison(claim, row);
-    const matchedFieldCount = Object.values(comparison).filter(Boolean).length;
+    const matchedFieldCount = [
+      comparison.orderedOn,
+      comparison.memberId,
+      comparison.eid,
+      comparison.clinician
+    ].filter(Boolean).length;
     const completeMatch = matchedFieldCount === 4;
 
-    // Complete identity matches must always outrank partial candidates.
+    // Complete required-field matches must always outrank partial candidates.
     // The remaining score only determines which complete match is selected
-    // when more than one eligibility satisfies all four required fields.
+    // when more than one eligibility satisfies every required condition.
     let score = completeMatch ? 1000000 : 0;
 
     if (comparison.orderedOn) score += 10000;
@@ -578,10 +629,16 @@
   function isMemberIdCorrectionCandidate(claim, candidate) {
     const row = candidate?.row;
     const comparison = candidate?.comparison || buildCandidateComparison(claim, row);
+    const hasActualMatchingEid = Boolean(
+      !isEligibilityEidBlank(row) &&
+      isUsableEid(claim?.eid) &&
+      isUsableEid(row?.eid) &&
+      claim.eid === row.eid
+    );
 
     return Boolean(
       comparison.orderedOn &&
-      comparison.eid &&
+      hasActualMatchingEid &&
       comparison.clinician &&
       !comparison.memberId &&
       row?.memberID
@@ -618,9 +675,10 @@
     /*
      * A partial eligibility candidate is only useful for this modal when it is
      * from the claim's encounter date and matches at least one patient identity
-     * field: Member ID or Emirates ID. Clinician-only matches are deliberately
-     * excluded because they may belong to a different patient seen by the same
-     * clinician on the same date.
+     * field: Member ID or an actual nonblank Emirates ID. A blank Eligibility
+     * Excel EID can satisfy the final EID condition only after Member ID locates
+     * the row; it cannot qualify a row by itself. Clinician-only matches remain
+     * excluded because they may belong to another patient seen on the same date.
      */
     const sameDateRows = claim.encounterDate
       ? (indexes.date?.get(claim.encounterDate) || [])
@@ -704,8 +762,8 @@
       : rankedForReview.find(candidate => isMemberIdCorrectionCandidate(claim, candidate)) || null;
     const reviewEntry = selectedEntry || memberIdCorrectionEntry || rankedForReview[0];
 
-    // Only a complete four-field match receives the Selected badge. A Member
-    // ID correction candidate remains unselected and produces an Unknown result.
+    // Only a complete required-field match receives the Selected badge. A
+    // Member ID correction candidate remains unselected and produces Unknown.
     if (selectedEntry) selectedEntry.selected = true;
     if (memberIdCorrectionEntry) memberIdCorrectionEntry.memberIdCorrection = true;
 
@@ -727,7 +785,7 @@
   function buildEligibilityNotFoundRemark(claim) {
     const memberID = claim?.memberIDRaw || claim?.memberID || '(blank)';
     const claimDate = claim?.encounterDate || claim?.encounterStartRaw || '(unknown date)';
-    const clinicians = Array.from(claim?.clinicians || []);
+    const clinicians = Array.from(claim?.requiredClinicians || []);
     const clinicianID = clinicians.length ? clinicians.join(', ') : '(blank)';
 
     return `Eligibility for ${memberID} cannot be found on ${claimDate} for ${clinicianID}.`;
@@ -757,8 +815,8 @@
       unknownRemarks.push(buildWrongMemberIdRemark(memberIdCorrectionCandidate));
       notes.push(
         `Eligibility ${memberIdCorrectionRow?.requestNumber || '(unknown)'} matched ` +
-        'encounter date, Emirates ID, and clinician license. It was not selected ' +
-        'because the Member ID differs.'
+        'encounter date, a nonblank Emirates ID, and the required clinician. ' +
+        'It was not selected because the Member ID differs.'
       );
 
       if (match.candidateCount > 1) {
@@ -817,7 +875,7 @@
       if (selectedRow && match.candidateCount > 1) {
         notes.push(
           `${match.candidateCount} eligibility candidates were found; ` +
-          `the candidate matching date, Member ID, Emirates ID, and clinician was selected.`
+          `the candidate matching date, Member ID, the EID rule, and the required clinician was selected.`
         );
       }
     }
@@ -835,7 +893,7 @@
       EmiratesID: claim.eidRaw,
       EncounterStart: claim.encounterStartRaw,
       EncounterDate: claim.encounterDate,
-      ClaimClinicians: Array.from(claim.clinicians).join(', '),
+      ClaimClinicians: Array.from(claim.requiredClinicians || []).join(', '),
       ProviderID: claim.providerIDRaw,
       MatchBasis: match.basis || '',
       RequiredMatchComplete: match.completeMatch === true,
@@ -868,9 +926,15 @@
   }
 
   function buildCandidateComparison(claim, row) {
-    const claimClinicians = claim?.clinicians instanceof Set
-      ? claim.clinicians
+    const requiredClinicians = claim?.requiredClinicians instanceof Set
+      ? claim.requiredClinicians
       : new Set();
+    const eligibilityEidBlank = isEligibilityEidBlank(row);
+    const actualEidMatch = Boolean(
+      isUsableEid(claim?.eid) &&
+      isUsableEid(row?.eid) &&
+      claim.eid === row.eid
+    );
 
     return {
       orderedOn: Boolean(
@@ -885,13 +949,16 @@
       ),
       eid: Boolean(
         isUsableEid(claim?.eid) &&
-        isUsableEid(row?.eid) &&
-        claim.eid === row.eid
+        (eligibilityEidBlank || actualEidMatch)
       ),
       clinician: Boolean(
         row?.clinician &&
-        claimClinicians.size &&
-        claimClinicians.has(row.clinician)
+        requiredClinicians.size &&
+        requiredClinicians.has(row.clinician)
+      ),
+      eidBlankAccepted: Boolean(
+        isUsableEid(claim?.eid) &&
+        eligibilityEidBlank
       )
     };
   }
@@ -927,6 +994,9 @@
         'Encounter Start': result.EncounterStart,
         'Performing Clinicians': Array.from(claimContext?.performingClinicians || []).join(', '),
         'Ordering Clinicians': Array.from(claimContext?.orderingClinicians || []).join(', '),
+        'GT Clinicians': Array.from(claimContext?.gtClinicians || []).join(', '),
+        'Required Eligibility Clinicians': Array.from(claimContext?.requiredClinicians || []).join(', '),
+        'Clinician Match Rule': claimContext?.clinicianMatchRule || '',
         'Provider ID': result.ProviderID,
         'Selected Match Basis': result.MatchBasis,
         'Selected Eligibility Request': result.RequiredMatchComplete
@@ -1141,13 +1211,7 @@
       orderedOn: claim.encounterStartRaw || claim.encounterDate || '',
       memberId: claim.memberIDRaw || '',
       eid: claim.eidRaw || '',
-      clinician: (() => {
-        const primaryClinicians =
-          claim.performingClinicians instanceof Set && claim.performingClinicians.size
-            ? claim.performingClinicians
-            : claim.orderingClinicians;
-        return Array.from(primaryClinicians || []).join(', ');
-      })()
+      clinician: Array.from(claim.requiredClinicians || []).join(', ')
     }[field] || '';
   }
 
@@ -1169,10 +1233,17 @@
         }
 
         const matched = candidate.comparison?.[field] === true;
+        const eidBlankAccepted =
+          field === 'eid' &&
+          candidate.comparison?.eidBlankAccepted === true;
         const background = matched ? '#d1e7dd' : '#f8d7da';
         const border = matched ? '#badbcc' : '#f5c2c7';
         const badgeBackground = matched ? '#198754' : '#dc3545';
-        const badgeText = matched ? 'Match' : 'Mismatch';
+        const badgeText = eidBlankAccepted
+          ? 'Accepted: blank in Excel'
+          : matched
+            ? 'Match'
+            : 'Mismatch';
         const claimValue = comparisonClaimValue(field, claim);
 
         return `
@@ -1200,9 +1271,13 @@
       .join('');
   }
 
-  function comparisonCell(matched) {
+  function comparisonCell(matched, acceptedBlank = false) {
     const background = matched ? '#d1e7dd' : '#f8d7da';
-    const text = matched ? 'Match' : 'Mismatch';
+    const text = acceptedBlank
+      ? 'Accepted: blank'
+      : matched
+        ? 'Match'
+        : 'Mismatch';
     return `<td style="background:${background};font-weight:600;">${text}</td>`;
   }
 
@@ -1248,7 +1323,10 @@
                 <td>${escapeHtml(candidate.orderedOnDisplay)}</td>
                 ${comparisonCell(candidate.comparison?.orderedOn === true)}
                 ${comparisonCell(candidate.comparison?.memberId === true)}
-                ${comparisonCell(candidate.comparison?.eid === true)}
+                ${comparisonCell(
+                  candidate.comparison?.eid === true,
+                  candidate.comparison?.eidBlankAccepted === true
+                )}
                 ${comparisonCell(candidate.comparison?.clinician === true)}
                 ${comparisonCell(candidate.completeMatch === true)}
               </tr>
@@ -1606,6 +1684,9 @@
     normalizeMemberId,
     normalizeEid,
     normalizeClinician,
+    isGtClinician,
+    isEligibilityEidBlank,
+    getRequiredClinicians,
     parseDateTime,
     getSubmissionReceiverID,
     parseXMLClaims,
