@@ -7,7 +7,8 @@
 //   2. A valid candidate must match encounter date, Member ID, the required
 //      clinician license, and Emirates ID when the Eligibility Excel supplies
 //      one. A blank Eligibility Excel EID is accepted only through Member ID.
-//      The claim Emirates ID itself remains mandatory.
+//      An all-zero claim EID is treated as the supported unknown-EID marker,
+//      not as a missing/invalid EID. A genuinely blank claim EID remains invalid.
 //   3. Clinician matching uses every GT-prefixed license found in the claim
 //      when any GT license exists; otherwise it uses OrderingClinician only.
 //      Performing Clinician is not used unless it is the GT override.
@@ -32,6 +33,7 @@
   const ELIGIBLE_STATUS_PATTERN = /^eligible$/i;
   const DENTAL_CATEGORY_PATTERN = /dental/i;
   const PLACEHOLDER_EID_PATTERN = /^(0+|1+|2+|9+)$/;
+  const UNKNOWN_EID_PATTERN = /^0+$/;
 
   const HEADER_ALIASES = Object.freeze({
     payerName: ['Payer Name', 'Payer'],
@@ -108,6 +110,15 @@
   function isUsableEid(value) {
     const eid = normalizeEid(value);
     return eid.length >= 12 && !PLACEHOLDER_EID_PATTERN.test(eid);
+  }
+
+  function isUnknownEid(value) {
+    const eid = normalizeEid(value);
+    return eid.length >= 12 && UNKNOWN_EID_PATTERN.test(eid);
+  }
+
+  function hasAcceptableClaimEid(value) {
+    return isUsableEid(value) || isUnknownEid(value);
   }
 
   function normalizeClinician(value) {
@@ -805,7 +816,7 @@
       invalidRemarks.push('Encounter Start is missing or has an invalid date.');
     }
 
-    if (!isUsableEid(claim.eid)) {
+    if (!hasAcceptableClaimEid(claim.eid)) {
       invalidRemarks.push('Emirates ID is missing or invalid.');
     }
 
@@ -935,6 +946,10 @@
       isUsableEid(row?.eid) &&
       claim.eid === row.eid
     );
+    const blankEligibilityEidAccepted = Boolean(
+      eligibilityEidBlank &&
+      hasAcceptableClaimEid(claim?.eid)
+    );
 
     return {
       orderedOn: Boolean(
@@ -948,17 +963,17 @@
         claim.memberID === row.memberID
       ),
       eid: Boolean(
-        isUsableEid(claim?.eid) &&
-        (eligibilityEidBlank || actualEidMatch)
+        blankEligibilityEidAccepted || actualEidMatch
       ),
       clinician: Boolean(
         row?.clinician &&
         requiredClinicians.size &&
         requiredClinicians.has(row.clinician)
       ),
-      eidBlankAccepted: Boolean(
-        isUsableEid(claim?.eid) &&
-        eligibilityEidBlank
+      eidBlankAccepted: blankEligibilityEidAccepted,
+      unknownClaimEidAccepted: Boolean(
+        blankEligibilityEidAccepted &&
+        isUnknownEid(claim?.eid)
       )
     };
   }
@@ -1683,6 +1698,9 @@
   root._eligibilityCheckerTestApi = {
     normalizeMemberId,
     normalizeEid,
+    isUsableEid,
+    isUnknownEid,
+    hasAcceptableClaimEid,
     normalizeClinician,
     isGtClinician,
     isEligibilityEidBlank,
