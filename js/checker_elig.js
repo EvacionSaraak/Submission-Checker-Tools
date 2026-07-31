@@ -313,15 +313,54 @@
     return input?.files?.[0] || null;
   }
 
-  function getSubmissionReceiverID(xmlText) {
-    const parser = new DOMParser();
-    const xmlDocument = parser.parseFromString(xmlText, 'application/xml');
-    const parserError = xmlDocument.getElementsByTagName('parsererror')[0];
+  function getXmlParserError(xmlDocument) {
+    const parserError = xmlDocument?.getElementsByTagName?.('parsererror')?.[0];
+    return parserError ? normalizeText(parserError.textContent) : '';
+  }
 
-    if (parserError) {
-      throw new Error(`XML parsing failed: ${normalizeText(parserError.textContent)}`);
+  function repairMalformedXmlText(xmlText) {
+    const source = String(xmlText == null ? '' : xmlText)
+      .replace(/^\uFEFF/, '')
+      .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '');
+
+    // A raw ampersand is illegal in XML text and attributes. Preserve the five
+    // built-in XML entities and numeric entities. Comments and CDATA sections
+    // are left untouched because ampersands are valid inside them.
+    return source.replace(
+      /<!\[CDATA\[[\s\S]*?\]\]>|<!--[\s\S]*?-->|&(?!(?:amp|lt|gt|apos|quot|#\d+|#x[0-9A-Fa-f]+);)/g,
+      token => token.startsWith('<') ? token : '&amp;'
+    );
+  }
+
+  function parseXmlDocument(xmlText) {
+    const source = String(xmlText == null ? '' : xmlText);
+    let xmlDocument = new DOMParser().parseFromString(source, 'application/xml');
+    const originalError = getXmlParserError(xmlDocument);
+
+    if (!originalError) return xmlDocument;
+
+    const repairedSource = repairMalformedXmlText(source);
+    if (repairedSource !== source) {
+      xmlDocument = new DOMParser().parseFromString(repairedSource, 'application/xml');
+      const repairedError = getXmlParserError(xmlDocument);
+
+      if (!repairedError) {
+        console.warn(
+          '[Eligibility Checker] The XML contained an unescaped ampersand or invalid control character. ' +
+          'It was repaired in memory before parsing.',
+          originalError
+        );
+        return xmlDocument;
+      }
+
+      throw new Error(`XML parsing failed after automatic repair: ${repairedError}`);
     }
 
+    throw new Error(`XML parsing failed: ${originalError}`);
+  }
+
+  function getSubmissionReceiverID(xmlText) {
+    const xmlDocument = parseXmlDocument(xmlText);
     const header = xmlDocument.getElementsByTagName('Header')[0] || null;
     return normalizeUpper(
       getDirectText(header, 'ReceiverID') || getNestedText(header, 'ReceiverID')
@@ -329,13 +368,7 @@
   }
 
   function parseXMLClaims(xmlText) {
-    const parser = new DOMParser();
-    const xmlDocument = parser.parseFromString(xmlText, 'application/xml');
-    const parserError = xmlDocument.getElementsByTagName('parsererror')[0];
-
-    if (parserError) {
-      throw new Error(`XML parsing failed: ${normalizeText(parserError.textContent)}`);
-    }
+    const xmlDocument = parseXmlDocument(xmlText);
 
     const claims = Array.from(xmlDocument.getElementsByTagName('Claim'));
     if (!claims.length) throw new Error('The XML contains no Claim entries.');
