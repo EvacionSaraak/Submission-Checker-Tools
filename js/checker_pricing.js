@@ -11,7 +11,6 @@ function getDrugShared(required = true) {
 
 // Payer IDs that have a defined factor in Factors.xlsx and are valid for Medical mode
 const MEDICAL_CONFIGURED_PAYERS = new Set(['D001', 'A001', 'D004', 'A025', 'A024', 'C002', 'C004']);
-
 // Activity Type → Mandatory Tariff Type mapping
 const ACTIVITY_TYPE_TO_TARIFF_TYPE = {
   '3': 'CPT',
@@ -32,7 +31,6 @@ function moneyEqual(a, b) {
   const centsB = moneyToCents(b);
   return centsA !== null && centsB !== null && centsA === centsB;
 }
-
 function compareMoney(a, b) {
   const centsA = moneyToCents(a);
   const centsB = moneyToCents(b);
@@ -51,7 +49,6 @@ function formatMoney(value) {
   const n = Number(value);
   return Number.isFinite(n) ? String(n) : String(value);
 }
-
 function parseOptionalMoney(value) {
   const raw = String(value == null ? '' : value).trim();
   if (!raw) return null;
@@ -66,7 +63,6 @@ function normalizeDrugCode(value) {
   }
   return String(value || '').trim().toUpperCase();
 }
-
 function isDrugActivityType(activityType) {
   return String(activityType || '').trim() === '5';
 }
@@ -82,7 +78,6 @@ function getPricingRowActivityType(row) {
 function getPricingRowCode(row) {
   return normalizeCode(row && (row.CPT || row.code || row.Code || ''));
 }
-
 function getPricingRowNet(row) {
   if (row && row.xmlNetNum != null) return Number(row.xmlNetNum || 0);
   return Number(row && (row.Net || row.net || 0));
@@ -95,7 +90,6 @@ function getPricingRowClaimGross(row) {
 function getPricingRowClaimNet(row) {
   return parseOptionalMoney(row && (row.ClaimNet || (row.XmlRow && row.XmlRow.ClaimNet) || ''));
 }
-
 function buildConfiguredZeroPriceCodeSet(receiverID, medicalRules) {
   const normalizedReceiver = String(receiverID || '').trim().toUpperCase();
   const zeroPriceRules = (medicalRules && medicalRules.zeroPriceCodes) || {};
@@ -103,7 +97,6 @@ function buildConfiguredZeroPriceCodeSet(receiverID, medicalRules) {
     ...((zeroPriceRules.always) || []),
     ...(((zeroPriceRules.byReceiver || {})[normalizedReceiver]) || [])
   ].map(normalizeCode));
-
   if (allowed.size === 0) {
     allowed.add('99173');
     if (['A001', 'D001', 'D004', 'A025'].includes(normalizedReceiver)) {
@@ -128,7 +121,6 @@ function isValidZeroPricedConsultationCompanion(row, claimRows) {
   if (!pairedCode) {
     return false;
   }
-
   return (claimRows || []).some(other =>
     getPricingRowCode(other) === pairedCode
     && Number(getPricingRowNet(other)) > 0
@@ -144,7 +136,6 @@ function isAllowedZeroPricedActivityForPricing(row, claimRows, options = {}) {
     options.receiverID || (row && (row.ReceiverID || row.PayerID)) || '',
     options.medicalRules || null
   );
-
   return allowedCodes.has(getPricingRowCode(row))
     || isValidZeroPricedConsultationCompanion(row, claimRows);
 }
@@ -153,7 +144,6 @@ function requiresNonZeroMedicalPrice({ facilityID, receiverID, code, rules }) {
   const normalizedFacility = String(facilityID || '').trim().toUpperCase();
   const normalizedReceiver = String(receiverID || '').trim().toUpperCase();
   const normalizedCode = normalizeCode(code);
-
   return ((rules && rules.requiredPricedActivities) || []).some(rule => {
     const ruleCodes = Array.isArray(rule.codes)
       ? rule.codes
@@ -164,7 +154,6 @@ function requiresNonZeroMedicalPrice({ facilityID, receiverID, code, rules }) {
       && ruleCodes.map(normalizeCode).includes(normalizedCode);
   });
 }
-
 function getZeroPricePricingDecision({
   isMedicalMode,
   isDrugActivity,
@@ -175,7 +164,6 @@ function getZeroPricePricingDecision({
   const isZeroBilled = moneyEqual(xmlNet, 0);
   const isZeroPricedDentalActivity = !isMedicalMode && !isDrugActivity && isZeroBilled;
   const mayUseMedicalZeroPrice = isMedicalMode && isZeroBilled && !requiresMedicalPrice;
-
   return {
     isZeroBilled,
     isZeroPricedDentalActivity,
@@ -183,7 +171,6 @@ function getZeroPricePricingDecision({
     zeroPricePassesPricing: isConfiguredZeroPricedActivity || isZeroPricedDentalActivity || mayUseMedicalZeroPrice
   };
 }
-
 function shouldDeferA001PricingToClaimLevel({ receiverID, xmlNet, effectiveRef, xmlQty, isAllowedZeroPricedActivity, claimPatientShare }) {
   if (isAllowedZeroPricedActivity) return false;
   // D001 (Thiqa) uses 0 patient share — no deferral
@@ -198,7 +185,6 @@ function shouldDeferA001PricingToClaimLevel({ receiverID, xmlNet, effectiveRef, 
     && Number(xmlNet) > 0
     && Number(xmlNet) < referenceTotal;
 }
-
 function getPatientShareReferenceRows(actRows, options = {}) {
   return (actRows || []).filter(row =>
     !isAllowedZeroPricedActivityForPricing(row, actRows, {
@@ -207,7 +193,6 @@ function getPatientShareReferenceRows(actRows, options = {}) {
     })
   );
 }
-
 function calculatePatientShareSummary(actRows, options = {}) {
   const patientShareRows = getPatientShareReferenceRows(actRows, options);
   const totalRef = roundMoney(patientShareRows.reduce((sum, row) => {
@@ -222,7 +207,6 @@ function calculatePatientShareSummary(actRows, options = {}) {
   const claimGross = (actRows || []).map(getPricingRowClaimGross).find(value => value !== null) ?? null;
   const claimNet = (actRows || []).map(getPricingRowClaimNet).find(value => value !== null) ?? null;
   const actualPatientShare = Number(((actRows || [])[0] && (actRows[0].PatientShare || actRows[0].ClaimPatientShare)) || 0);
-
   return {
     patientShareRows,
     totalRef,
@@ -235,7 +219,6 @@ function calculatePatientShareSummary(actRows, options = {}) {
       : null
   };
 }
-
 // Apply the 3-way patient share comparison (below=Invalid, equal=Valid, above=Unknown) to the
 // primary row of a claim group. Uses severity merging so existing findings are never erased.
 function applyClaimLevelPatientShare(actRows, options) {
@@ -246,7 +229,6 @@ function applyClaimLevelPatientShare(actRows, options) {
   const totalClaimedNet = summary.totalXmlNet;
   const totalRef = summary.totalRef;
   const isMulti = actRows.length > 1;
-
   const comparison = compareMoney(totalClaimedNet + actualPS, totalRef);
   if (comparison === null) return;
 
@@ -257,7 +239,6 @@ function applyClaimLevelPatientShare(actRows, options) {
   const refLabel = isMulti
     ? `total reference of ${formatMoney(totalRef)}`
     : `reference price of ${formatMoney(totalRef)}`;
-
   let psStatus, psRemark, psRuleId;
   if (comparison < 0) {
     psStatus = 'Invalid';
@@ -272,7 +253,6 @@ function applyClaimLevelPatientShare(actRows, options) {
     psRemark = `${netLabel} plus ${psLabel} exceeds the ${refLabel}; manual review is required.`;
     psRuleId = 'MED_PATIENT_SHARE_ABOVE';
   }
-
   if (isMedicalMode && medicalShared && medicalRules) {
     primaryRow.findings = medicalShared.mergeFindingsBySeverity(
       primaryRow.findings,
@@ -300,7 +280,6 @@ function applyClaimLevelPatientShare(actRows, options) {
     }
   }
 }
-
 function shouldAddNoPricingMatchRemark({ match, endoEntry, isZeroPricedActivity }) {
   return !match && !endoEntry && !isZeroPricedActivity;
 }
@@ -312,7 +291,6 @@ function shouldAddMissingEndoPriceRemark({ endoEntry, refPrice, isZeroPricedActi
 function shouldAddInvalidReferenceRemark({ match, endoEntry, refPrice, ref, isZeroPricedActivity }) {
   return (match || endoEntry) && refPrice !== null && Number.isNaN(ref) && !isZeroPricedActivity;
 }
-
 // Return the Bootstrap row-class for a pricing result row.
 function getPricingRowClass(row) {
   const status = String(row.status || '').trim().toLowerCase();
@@ -320,7 +298,6 @@ function getPricingRowClass(row) {
   if (status === 'unknown') return 'table-warning';
   return 'table-danger';
 }
-
 function buildModifierPriceMismatchRemark({ claimedNet, code, modifier, expectedPrice }) {
   return (
     `Claimed Net ${formatMoney(claimedNet)} ` +
@@ -336,7 +313,6 @@ function buildMissingModifierRemark({ modifier, code, multiplier }) {
     `but price was changed with ${multiplier} quantity.`
   );
 }
-
 function asMedicalFinding({ ruleId, status, remark, claimID, activityID, code }) {
   return {
     ruleId: ruleId || 'PRICING',
@@ -351,7 +327,6 @@ function asMedicalFinding({ ruleId, status, remark, claimID, activityID, code })
 function findingKey(claimID, activityID) {
   return `${String(claimID || '')}|${String(activityID || '')}`;
 }
-
 function dedupeFindingsByRuleAndSeverity(findings) {
   const list = Array.isArray(findings) ? findings : [];
   const deduped = [];
@@ -365,12 +340,10 @@ function dedupeFindingsByRuleAndSeverity(findings) {
   });
   return deduped;
 }
-
 function getKnownCptTypeResult(rec, drugsMap, knownCptCodeSet, drugListSource) {
   const codeRaw = String(rec.CPT || '').trim();
   const code = normalizeCode(codeRaw);
   const hasDrugMatch = !!(drugsMap && drugsMap.has(normalizeDrugCode(codeRaw)));
-
   if (!hasDrugMatch && code && knownCptCodeSet && knownCptCodeSet.has(code)) {
     return {
       status: 'Invalid',
@@ -391,7 +364,6 @@ function getKnownCptTypeResult(rec, drugsMap, knownCptCodeSet, drugListSource) {
     }]
   };
 }
-
 function analyzeDrugActivity(rec, options = {}) {
   const shared = getDrugShared();
   const receiverID = String(options.receiverID || '').trim().toUpperCase();
@@ -404,14 +376,12 @@ function analyzeDrugActivity(rec, options = {}) {
   const knownCptCodeSet = options.knownCptCodeSet || new Set();
   const quantityAuditorReceivers = options.quantityAuditorReceivers || shared.DEFAULT_QUANTITY_AUDITOR_RECEIVERS;
   const isZeroPriced = moneyEqual(claimedNet, 0);
-
   let findings = [];
   let drug = null;
   const normalizedDrugCode = normalizeDrugCode(codeRaw);
   if (drugsMap) {
     drug = drugsMap.get(normalizedDrugCode) || null;
   }
-
   if (!codeRaw) {
     findings.push({
       ruleId: 'DRUG_CODE_MISSING',
@@ -422,7 +392,6 @@ function analyzeDrugActivity(rec, options = {}) {
     const unknownCodeResult = getKnownCptTypeResult(rec, drugsMap, knownCptCodeSet, drugListSource);
     findings = findings.concat(unknownCodeResult.findings);
   }
-
   const statusInfo = drug ? shared.validateDrugStatus(drug, codeRaw) : null;
   if (statusInfo && statusInfo.remark) {
     findings.push({
@@ -435,7 +404,6 @@ function analyzeDrugActivity(rec, options = {}) {
   const formularyInfo = drug
     ? shared.validateDrugFormulary(drug, receiverID, codeRaw)
     : { formularyName: '', valueRaw: '', applies: false, included: null };
-
   if (!isZeroPriced && formularyInfo && formularyInfo.remark) {
     findings.push({
       ruleId: formularyInfo.ruleId,
@@ -454,11 +422,9 @@ function analyzeDrugActivity(rec, options = {}) {
       quantityAuditorReceivers
     }));
   }
-
   const selectedPricing = drug ? shared.selectDrugPricing(drug, quantity) : { value: null, source: '', basis: '' };
   const expectedNet = shared.calculateExpectedDrugNet(selectedPricing.value, quantity);
   let priceResult = 'Unknown';
-
   if (isZeroPriced) {
     priceResult = 'Valid';
   } else if (!formularyInfo.applies || formularyInfo.included === true) {
@@ -481,11 +447,9 @@ function analyzeDrugActivity(rec, options = {}) {
       }
     }
   }
-
   findings = dedupeFindingsByRuleAndSeverity(shared.mergeDrugFindings(findings));
   const finalStatus = shared.getFinalStatusFromFindings(findings);
   const nonValidRemarks = findings.filter(f => f.status !== 'Valid').map(f => f.remark).filter(Boolean);
-
   return {
     ClaimID: rec.ClaimID || '',
     ActivityID: rec.ActivityID || '',
@@ -535,7 +499,6 @@ function analyzeDrugActivity(rec, options = {}) {
     }))
   };
 }
-
 document.addEventListener('DOMContentLoaded', () => {
   try {
     const runBtn = el('run-button');
@@ -547,13 +510,11 @@ document.addEventListener('DOMContentLoaded', () => {
     resetUI();
   } catch (error) { console.error('[PRICING] DOMContentLoaded initialization error:', error); }
 });
-
 // ----------------- Main run handler -----------------
 function normalizeClaimTypeMode(value) {
   const normalized = String(value || '').trim().toUpperCase();
   return normalized === 'MEDICAL' || normalized === 'DENTAL' ? normalized : null;
 }
-
 async function handleRun(options = {}) {
   resetUI();
   try {
@@ -562,7 +523,6 @@ async function handleRun(options = {}) {
     const isMedicalMode = selectedMode === 'MEDICAL';
 
     console.log(`[PRICING] Claim type mode: ${selectedMode || '(missing)'}`);
-
     if (!['MEDICAL', 'DENTAL'].includes(selectedMode)) {
       throw new Error('Pricing Checker could not determine the selected claim type.');
     }
@@ -577,7 +537,6 @@ async function handleRun(options = {}) {
       fileEl('xlsx-file') ||
       window.unifiedCheckerFiles?.pricing ||
       null;
-
     let drugsFile =
       options.drugsFile ||
       fileEl('drugs-file') ||
@@ -586,7 +545,6 @@ async function handleRun(options = {}) {
 
     if (!xmlFile) throw new Error('Please select an XML file.');
     showProgress(5, 'Reading files');
-
     const [xmlText, dentalPricingRaw, clinicianData, endoPricingRaw, medicalPricingRaw, minorProceduresRaw] = await Promise.all([
       readFileText(xmlFile),
       fetch('../json/dental_pricing.json').then(r => r.json()).catch(e => { console.warn('[PRICING] Failed to load dental_pricing.json:', e); return []; }),
@@ -595,21 +553,18 @@ async function handleRun(options = {}) {
       fetch('../json/medical_pricing.json').then(r => r.json()).catch(e => { console.warn('[PRICING] Failed to load medical_pricing.json:', e); return []; }),
       fetch('../json/minor_procedures.json').then(r => r.json()).catch(() => [])
     ]);
-
     if (!Array.isArray(dentalPricingRaw) || dentalPricingRaw.length === 0) throw new Error('Dental pricing data could not be loaded.\nEnsure dental_pricing.json is present in the json/ folder.');
 
     // Build set of minor procedure codes for modifier 50 multiplier
     const minorProcedureCodes = new Set((Array.isArray(minorProceduresRaw) ? minorProceduresRaw : [])
       .map(item => normalizeCode(typeof item === 'string' ? item : (item && item.code) ? item.code : ''))
       .filter(Boolean));
-
     let xlsxMatcher = null;
     if (xlsxFile) {
       const xlsxObj = await readXlsx(xlsxFile);
       xlsxMatcher = buildPricingMatcher(xlsxObj.rows);
       console.log('[PRICING] Using uploaded XLSX for pricing override');
     }
-
     // Load drug pricing from Drugs XLSX ("Drugs" sheet), then fallback to bundled resources/Drugs.xlsx
     let drugsMap = null;
     let usingBundledDrugs = false;
@@ -623,21 +578,17 @@ async function handleRun(options = {}) {
       usingBundledDrugs = !!drugsMap;
       console.log('[PRICING] Bundled drugs map loaded, entries:', drugsMap ? drugsMap.size : 0);
     }
-
     // Load factor rules from bundled resources/Factors.xlsx (Medical mode only; throws user-facing error if unavailable in medical mode)
     const factorRules = await loadBundledFactorRules(isMedicalMode);
     console.log('[PRICING] Factor rules loaded, count:', factorRules ? factorRules.length : 0);
 
     showProgress(25, 'Parsing XML & pricing data');
-
     const xmlDoc = parseXml(xmlText);
     const headerNode = xmlDoc.querySelector('Header');
     const receiverID = headerNode?.querySelector('ReceiverID')?.textContent.trim() || '';
     const pricingReceiverID = receiverID.toUpperCase();
-
     console.log(`[PRICING] ReceiverID: ${pricingReceiverID || '(MISSING)'}`);
     if (pricingReceiverID !== 'D001' && pricingReceiverID !== 'A001') console.log(`[PRICING] ReceiverID "${pricingReceiverID}" is non-Thiqa/non-Daman — prices will be marked Unknown; PS=0 check will still apply.`);
-
     const extracted = extractPricingRecords(xmlDoc);
     const jsonMatcher = buildJsonPricingMatcher(dentalPricingRaw);
     const medicalMatcher = buildMedicalPricingMatcher(medicalPricingRaw);
@@ -646,7 +597,6 @@ async function handleRun(options = {}) {
       xlsxMatcher,
       medicalPricingRaw
     });
-
     const clinicianSpecialtyMap = new Map();
     (Array.isArray(clinicianData) ? clinicianData : []).forEach(e => {
       const lic = String(e['Phy Lic'] || '').trim();
@@ -657,7 +607,6 @@ async function handleRun(options = {}) {
       if (!claimRecordsByID.has(rec.ClaimID)) claimRecordsByID.set(rec.ClaimID, []);
       claimRecordsByID.get(rec.ClaimID).push(rec);
     });
-
     const endoPricingMap = new Map();
     (Array.isArray(endoPricingRaw) ? endoPricingRaw : []).forEach(e => {
       if (e.code) endoPricingMap.set(normalizeCode(e.code), e);
@@ -667,7 +616,6 @@ async function handleRun(options = {}) {
     let medicalRules = null;
     const businessFindingsByRowKey = new Map();
     const claimLevelBusinessFindings = new Map();
-
     if (isMedicalMode) {
       if (!medicalShared) {
         throw new Error('Medical validation shared module is unavailable.');
@@ -681,13 +629,11 @@ async function handleRun(options = {}) {
         modifierRules.minorProcedureCodes = Array.from(minorProcedureCodes || []);
       }
       medicalRules.modifierRules = modifierRules;
-
       const historicalIndex = null;
       const contexts = medicalShared.parseMedicalClaimContexts(xmlDoc, {
         requiredEncounterType: '3',
         clinicianSpecialtyMap
       });
-
       contexts.forEach(ctx => {
         const sharedFindings = medicalShared.mergeFindingsBySeverity(
           medicalShared.validateClaimPayerAndPlan(ctx, medicalRules),
@@ -706,7 +652,6 @@ async function handleRun(options = {}) {
           medicalShared.validateMaternityRules(ctx, medicalRules),
           medicalShared.validateTherapyRules(ctx, medicalRules)
         );
-
         sharedFindings.forEach(finding => {
           const key = findingKey(finding.claimID || ctx.claimID, finding.activityID || '');
           if (!finding.activityID) {
@@ -719,9 +664,7 @@ async function handleRun(options = {}) {
         });
       });
     }
-
     showProgress(50, 'Comparing records');
-
     const output = extracted.map(rec => {
       const remarks = [];
       let status = 'Invalid';
@@ -735,7 +678,6 @@ async function handleRun(options = {}) {
         medicalRules
       });
       const claimPayerID = String(rec.PayerID || '').trim().toUpperCase();
-
       if (!isDrugActivity && pricingReceiverID !== 'D001' && pricingReceiverID !== 'A001') {
         if (isMedicalMode && MEDICAL_CONFIGURED_PAYERS.has(pricingReceiverID)) {
           // Configured medical payer — fall through to medical pricing
@@ -799,7 +741,6 @@ async function handleRun(options = {}) {
           };
         }
       }
-
       if (isDrugActivity) {
         const drugListSource = usingBundledDrugs ? 'resources/Drugs.xlsx' : 'the uploaded Drugs sheet';
         return analyzeDrugActivity(rec, {
@@ -812,7 +753,6 @@ async function handleRun(options = {}) {
             : getDrugShared().DEFAULT_QUANTITY_AUDITOR_RECEIVERS
         });
       }
-
       if (normalizeCode(rec.CPT) === '2111' && (pricingReceiverID === 'D001' || pricingReceiverID === 'A001')) {
         const insurerLabel = pricingReceiverID === 'D001' ? 'Thiqa' : 'Daman';
         if (xmlNet === 0) {
@@ -849,12 +789,10 @@ async function handleRun(options = {}) {
           _modifierMultiplier: 1
         };
       }
-
       let refPrice = '';
       let matchRow = null;
       let pricingContext;
       let isMedicalPricingMatch = false;
-
       if (!isMedicalMode && xlsxMatcher) {
         const isAlyaharGroup = facility === 'MF5357' || facility === 'MF7231' || facility === 'MF232';
         pricingContext = isAlyaharGroup ? 'Alyahar/Emirates/Al Wagan Thiqa Pricing' : 'Standard Thiqa Pricing';
@@ -866,7 +804,6 @@ async function handleRun(options = {}) {
         pricingContext = isThiqaAlyaharGroup ? 'Alyahar/Emirates/Al Wagan Thiqa Pricing' : 'Standard Thiqa Pricing';
       }
       // Medical mode: pricingContext will be set after medicalMatch is found below
-
       if (!isMedicalMode && xlsxMatcher) {
         const xlsxMatch = xlsxMatcher.find(rec.CPT);
         if (xlsxMatch) {
@@ -897,7 +834,6 @@ async function handleRun(options = {}) {
           isMedicalPricingMatch = true;
         }
       }
-
       let drugPricingMeta = null;
 
       let endoEntry = null;
@@ -909,14 +845,12 @@ async function handleRun(options = {}) {
         const isAfterCutoff = encounterDate !== null && encounterDate >= ENDO_PRICING_CUTOFF;
         const clinicianSpec = clinicianSpecialtyMap.get(rec.ClinicianLic || '') || '';
         const isEndo = clinicianSpec === 'Endodontics';
-
         if (isAfterCutoff) {
           const pricingEntry = endoPricingMap.get(normalizeCode(rec.CPT)) || null;
           if (pricingEntry) {
             const endoRef = Number(pricingEntry.endo_price);
             const gpRef = pricingEntry.gp_price;
             const xmlUnit = xmlQty > 0 ? xmlNet / xmlQty : NaN;
-
             if (isEndo) {
               endoEntry = pricingEntry;
               refPrice = pricingEntry.endo_price;
@@ -924,7 +858,6 @@ async function handleRun(options = {}) {
             } else {
               nonEndoClinicianSpec = clinicianSpec || 'General Dentist';
               nonEndoUsedEndoPrice = Number.isFinite(endoRef) && (moneyEqual(xmlNet, endoRef) || moneyEqual(xmlUnit, endoRef) || moneyEqual(xmlNet * 2, endoRef));
-
               if (gpRef !== undefined && gpRef !== null && gpRef !== '') {
                 endoEntry = pricingEntry;
                 refPrice = gpRef;
@@ -934,7 +867,6 @@ async function handleRun(options = {}) {
           }
         }
       }
-
       const match = matchRow;
       let ref = Number(refPrice ?? NaN);
       let effectiveRef = ref; // ref after applying factor and modifier multipliers
@@ -942,13 +874,11 @@ async function handleRun(options = {}) {
       let appliedFactor = 1;
       let modifierMultiplier = 1;
       let matchedFactorRule = null;
-
       if (isMedicalMode && isMedicalPricingMatch) {
         // Step 1: look up the facility/payer factor from Factors.xlsx rules
         const factorResult = findFactorFromRules(factorRules || [], rec.FacilityID, rec.CPT, pricingReceiverID);
         appliedFactor = factorResult.factor;
         matchedFactorRule = factorResult.rule;
-
         // Step 2: modifier multiplier is a separate adjustment on top of the factor
         if (rec.Modifier === '52') modifierMultiplier = 0.5;
         else if (rec.Modifier === '50') modifierMultiplier = 1.5;
@@ -958,7 +888,6 @@ async function handleRun(options = {}) {
         if (!Number.isNaN(ref) && ref > 0) {
           effectiveRef = Math.round(ref * referenceFactor * 100) / 100;
         }
-
         // Update pricing context with matched rule details for remark/audit
         if (matchedFactorRule) {
           pricingContext = `Mandatory Tariff [${matchedFactorRule.serviceType || matchedFactorRule.matchType}; Factor ${appliedFactor} for ${pricingReceiverID}]`;
@@ -977,14 +906,12 @@ async function handleRun(options = {}) {
         }
         // Modifier 25 and 24: no price change
       }
-
       // Ensure pricingContext has a fallback for Medical mode when no tariff match was found
       if (!pricingContext) {
         pricingContext = isMedicalMode ? 'Mandatory Tariff Pricing' : 'Standard Thiqa Pricing';
       }
 
       const computedRef = (match || endoEntry) && refPrice !== null && !Number.isNaN(ref) ? effectiveRef : null;
-
       if (xmlQty <= 0) remarks.push(xmlQty === 0 ? 'Quantity is 0 (invalid)' : 'Quantity is less than 0 (invalid)');
       const requiresMedicalPrice = isMedicalMode
         ? requiresNonZeroMedicalPrice({
@@ -1007,7 +934,6 @@ async function handleRun(options = {}) {
         mayUseMedicalZeroPrice,
         zeroPricePassesPricing: isZeroPricedActivity
       } = zeroPriceDecision;
-
       if (shouldAddNoPricingMatchRemark({ match, endoEntry, isZeroPricedActivity })) {
         if (isDrugActivity) {
           status = 'Unknown';
@@ -1023,9 +949,7 @@ async function handleRun(options = {}) {
       }
       if (shouldAddMissingEndoPriceRemark({ endoEntry, refPrice, isZeroPricedActivity })) remarks.push(`Code ${rec.CPT} has no available price under ${pricingContext}.`);
       if (shouldAddInvalidReferenceRemark({ match, endoEntry, refPrice, ref, isZeroPricedActivity })) remarks.push(`The reference price is not a valid number under ${pricingContext}.`);
-
       const hasValidRef = (match || endoEntry) && refPrice !== null && !Number.isNaN(ref);
-
       if (isZeroPricedDentalActivity) {
         status = 'Valid';
       } else if (isMedicalMode && isZeroBilled && requiresMedicalPrice) {
@@ -1089,13 +1013,11 @@ async function handleRun(options = {}) {
           }
         }
       }
-
       const normalizedCode = normalizeCode(rec.CPT);
       if ((normalizedCode === '87400' || normalizedCode === '87804') && xmlQty !== 2) {
         status = 'Invalid';
         remarks.push(`Code ${rec.CPT} must always have quantity 2.`);
       }
-
       if ((normalizedCode === '82307' || normalizedCode === '82652') && !['A001', 'D001'].includes(pricingReceiverID) && xmlNet !== 0) {
         status = 'Invalid';
         remarks.push(`Code ${rec.CPT} must have net price 0 for payer ${pricingReceiverID || '(missing)'}.`);
@@ -1105,7 +1027,6 @@ async function handleRun(options = {}) {
         status = 'Invalid';
         remarks.push(`Code 92015 can only have price for payer D001.`);
       }
-
       if (normalizedCode === '99173' && xmlNet !== 0) {
         status = 'Invalid';
         remarks.push('Code 99173 cannot have price.');
@@ -1115,7 +1036,6 @@ async function handleRun(options = {}) {
         status = 'Invalid';
         remarks.push(`Code 36415 must have net price 0 for payer ${pricingReceiverID}.`);
       }
-
       return {
         ClaimID: rec.ClaimID || '',
         ActivityID: rec.ActivityID || '',
@@ -1145,12 +1065,10 @@ async function handleRun(options = {}) {
         _drugExpectedNet: null
       };
     });
-
     output.forEach(row => {
       const pricingRemark = String(row.Remarks || '').trim();
       const pricingStatus = String(row.status || '').trim() || 'Invalid';
       row.findings = Array.isArray(row.findings) ? row.findings.slice() : [];
-
       if (row._drugPricingMeta == null && (pricingStatus !== 'Valid' || pricingRemark)) {
         row.findings.push(asMedicalFinding({
           ruleId: 'PRICING',
@@ -1161,7 +1079,6 @@ async function handleRun(options = {}) {
           code: row.CPT
         }));
       }
-
       if (isMedicalMode && medicalShared && medicalRules) {
         const rowKey = findingKey(row.ClaimID, row.ActivityID);
         const activityFindings = businessFindingsByRowKey.get(rowKey) || [];
@@ -1175,29 +1092,102 @@ async function handleRun(options = {}) {
         row.Remarks = row.findings.filter(f => f.status !== 'Valid').map(f => f.remark).filter(Boolean).join(' ');
       }
     });
+    // Claim-level Patient Share validation
+    const claimGroups = new Map();
+    output.forEach(r => {
+      if (!claimGroups.has(r.ClaimID)) claimGroups.set(r.ClaimID, []);
+      claimGroups.get(r.ClaimID).push(r);
+    });
 
-    // Claim-level Patient Share validation (all non-D001 payers)
-    if (pricingReceiverID !== 'D001') {
-      const claimGroups = new Map();
-      output.forEach(r => {
-        if (!claimGroups.has(r.ClaimID)) claimGroups.set(r.ClaimID, []);
-        claimGroups.get(r.ClaimID).push(r);
-      });
+    for (const [, actRows] of claimGroups) {
+      const primaryRow = actRows[0];
+      const actualPS = Number(primaryRow.PatientShare || 0);
+      const hasMedicalHighPtShare =
+        isMedicalMode &&
+        pricingReceiverID !== 'HAAD' &&
+        Number.isFinite(actualPS) &&
+        actualPS > 100;
 
-      for (const [, actRows] of claimGroups) {
-        const primaryRow = actRows[0];
-        const actualPS = Number(primaryRow.PatientShare || 0);
+      // Medical-only manual-review warning for every non-HAAD receiver, including D001.
+      if (hasMedicalHighPtShare) {
+        const msg = 'PT Share above 100. Manual Review is advised.';
+        if (medicalShared && medicalRules) {
+          primaryRow.findings = medicalShared.mergeFindingsBySeverity(
+            primaryRow.findings,
+            [asMedicalFinding({
+              ruleId: 'MED_PATIENT_SHARE_ABOVE_100',
+              status: 'Unknown',
+              remark: msg,
+              claimID: primaryRow.ClaimID,
+              activityID: primaryRow.ActivityID,
+              code: primaryRow.CPT
+            })]
+          );
+          medicalShared.applyFinalStatus(primaryRow);
+        } else {
+          const sev = { 'Invalid': 3, 'Unknown': 2, 'Valid': 1 };
+          if ((sev['Unknown'] || 0) > (sev[primaryRow.status] || 0)) {
+            primaryRow.status = 'Unknown';
+            primaryRow.isValid = false;
+          }
+          primaryRow.Remarks = primaryRow.Remarks ? `${primaryRow.Remarks} ${msg}` : msg;
+        }
+      }
 
-        // A001 (Daman): flag zero patient share for non-Thiqa
-        if (pricingReceiverID === 'A001' && actualPS === 0) {
-          const msg = 'Patient Share is 0 — this is invalid for Daman (non-Thiqa) claims.';
+      // Preserve the existing rule that D001 does not use the standard
+      // claim-level Patient Share comparison.
+      if (pricingReceiverID === 'D001') continue;
+
+      // A001 (Daman): flag zero patient share for non-Thiqa
+      if (pricingReceiverID === 'A001' && actualPS === 0) {
+        const msg = 'Patient Share is 0 — this is invalid for Daman (non-Thiqa) claims.';
+        if (isMedicalMode && medicalShared && medicalRules) {
+          primaryRow.findings = medicalShared.mergeFindingsBySeverity(
+            primaryRow.findings,
+            [asMedicalFinding({
+              ruleId: 'MED_PATIENT_SHARE_ZERO',
+              status: 'Unknown',
+              remark: msg,
+              claimID: primaryRow.ClaimID,
+              activityID: primaryRow.ActivityID,
+              code: primaryRow.CPT
+            })]
+          );
+          medicalShared.applyFinalStatus(primaryRow);
+        } else {
+          const sev = { 'Invalid': 3, 'Unknown': 2, 'Valid': 1 };
+          if ((sev['Unknown'] || 0) > (sev[primaryRow.status] || 0)) {
+            primaryRow.status = 'Unknown';
+            primaryRow.isValid = false;
+          }
+          primaryRow.Remarks = primaryRow.Remarks ? `${primaryRow.Remarks} ${msg}` : msg;
+        }
+        continue;
+      }
+
+      // Avoid adding the old generic Net + Patient Share comparison when the
+      // exact above-100 Medical warning has already been applied.
+      if (!hasMedicalHighPtShare) {
+        applyClaimLevelPatientShare(actRows, {
+          receiverID: pricingReceiverID,
+          medicalRules,
+          isMedicalMode,
+          medicalShared
+        });
+      }
+
+      // A001: also validate claim-level gross/net/PS consistency
+      if (pricingReceiverID === 'A001') {
+        const summary = calculatePatientShareSummary(actRows, { receiverID: pricingReceiverID, medicalRules });
+        if (summary.claimTotalsConsistent === false) {
+          const consistencyMsg = `Claim totals are inconsistent.\nGross: ${summary.claimGross}.\nNet: ${summary.claimNet}.\nPatient Share: ${actualPS}.`;
           if (isMedicalMode && medicalShared && medicalRules) {
             primaryRow.findings = medicalShared.mergeFindingsBySeverity(
               primaryRow.findings,
               [asMedicalFinding({
-                ruleId: 'MED_PATIENT_SHARE_ZERO',
-                status: 'Unknown',
-                remark: msg,
+                ruleId: 'MED_PATIENT_SHARE_CLAIM_TOTALS',
+                status: 'Invalid',
+                remark: consistencyMsg,
                 claimID: primaryRow.ClaimID,
                 activityID: primaryRow.ActivityID,
                 code: primaryRow.CPT
@@ -1205,58 +1195,18 @@ async function handleRun(options = {}) {
             );
             medicalShared.applyFinalStatus(primaryRow);
           } else {
-            const sev = { 'Invalid': 3, 'Unknown': 2, 'Valid': 1 };
-            if ((sev['Unknown'] || 0) > (sev[primaryRow.status] || 0)) {
-              primaryRow.status = 'Unknown';
-              primaryRow.isValid = false;
-            }
-            primaryRow.Remarks = primaryRow.Remarks ? `${primaryRow.Remarks} ${msg}` : msg;
-          }
-          continue;
-        }
-
-        // 3-way patient share comparison: Net + PS vs Reference
-        applyClaimLevelPatientShare(actRows, {
-          receiverID: pricingReceiverID,
-          medicalRules,
-          isMedicalMode,
-          medicalShared
-        });
-
-        // A001: also validate claim-level gross/net/PS consistency
-        if (pricingReceiverID === 'A001') {
-          const summary = calculatePatientShareSummary(actRows, { receiverID: pricingReceiverID, medicalRules });
-          if (summary.claimTotalsConsistent === false) {
-            const consistencyMsg = `Claim totals are inconsistent.\nGross: ${summary.claimGross}.\nNet: ${summary.claimNet}.\nPatient Share: ${actualPS}.`;
-            if (isMedicalMode && medicalShared && medicalRules) {
-              primaryRow.findings = medicalShared.mergeFindingsBySeverity(
-                primaryRow.findings,
-                [asMedicalFinding({
-                  ruleId: 'MED_PATIENT_SHARE_CLAIM_TOTALS',
-                  status: 'Invalid',
-                  remark: consistencyMsg,
-                  claimID: primaryRow.ClaimID,
-                  activityID: primaryRow.ActivityID,
-                  code: primaryRow.CPT
-                })]
-              );
-              medicalShared.applyFinalStatus(primaryRow);
-            } else {
-              primaryRow.status = 'Invalid';
-              primaryRow.isValid = false;
-              primaryRow.Remarks = primaryRow.Remarks ? `${primaryRow.Remarks} ${consistencyMsg}` : consistencyMsg;
-            }
+            primaryRow.status = 'Invalid';
+            primaryRow.isValid = false;
+            primaryRow.Remarks = primaryRow.Remarks ? `${primaryRow.Remarks} ${consistencyMsg}` : consistencyMsg;
           }
         }
       }
     }
-
     const mergedOutput = output;
     lastResults = mergedOutput;
     const tableElement = buildResultsTable(mergedOutput);
     lastWorkbook = makeWorkbookFromJson(mergedOutput, 'checker_pricing_results');
     toggleDownload(mergedOutput.length > 0);
-
     const validCount = mergedOutput.filter(r => r.isValid).length;
     const totalCount = mergedOutput.length;
     const numericPercent = totalCount ? (validCount / totalCount) * 100 : 0;
@@ -1269,7 +1219,6 @@ async function handleRun(options = {}) {
     return null;
   }
 }
-
 // ----------------- Download -----------------
 function handleDownload() {
   if (!lastResults.length) {
@@ -1287,7 +1236,6 @@ function handleDownload() {
     XLSX.writeFile(makeWorkbookFromJson(invalids, 'checker_pricing_invalids'), 'checker_pricing_invalids.xlsx');
   } catch (err) { showError(err); }
 }
-
 function handleDownloadAll() {
   if (!lastWorkbook || !lastResults.length) {
     showError(new Error('Nothing to download'));
@@ -1302,7 +1250,6 @@ function handleDownloadAll() {
     } catch (e) { showError(e); }
   }
 }
-
 // ----------------- File helpers -----------------
 function readFileText(file) {
   return new Promise((resolve, reject) => {
@@ -1312,7 +1259,6 @@ function readFileText(file) {
     fr.readAsText(file);
   });
 }
-
 async function readXlsx(file) {
   const arrayBuffer = await file.arrayBuffer();
   const wb = XLSX.read(arrayBuffer, { type: 'array' });
@@ -1321,7 +1267,6 @@ async function readXlsx(file) {
   const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
   return { rows, sheetName };
 }
-
 // Load drug pricing from a Drugs XLSX file (expects a "Drugs" sheet)
 async function loadDrugsMap(file) {
   try {
@@ -1333,7 +1278,6 @@ async function loadDrugsMap(file) {
     throw new Error(`Unable to load uploaded Drugs.xlsx: ${e && e.message ? e.message : e}`);
   }
 }
-
 async function loadBundledDrugsMap() {
   try {
     const response = await fetch('../resources/Drugs.xlsx');
@@ -1348,7 +1292,6 @@ async function loadBundledDrugsMap() {
     throw new Error(`Unable to load resources/Drugs.xlsx: ${e && e.message ? e.message : e}`);
   }
 }
-
 function buildDrugsMapFromWorkbook(wb, sourceLabel) {
   const parsed = getDrugShared().parseDrugWorkbook(wb, XLSX);
   if (parsed.error) {
@@ -1359,7 +1302,6 @@ function buildDrugsMapFromWorkbook(wb, sourceLabel) {
     rows: parsed.rows
   };
 }
-
 async function loadBundledFactorRules(isMedicalMode) {
   try {
     const response = await fetch('../resources/Factors.xlsx');
@@ -1377,12 +1319,10 @@ async function loadBundledFactorRules(isMedicalMode) {
     return null;
   }
 }
-
 function buildFactorRulesFromWorkbook(wb) {
   const ws = wb.Sheets[wb.SheetNames[0]];
   if (!ws) return [];
   const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
-
   // Discover payer columns by extracting IDs from parentheses in column headers (e.g. "Thiqa (D001)" → D001)
   const payerColumns = [];
   if (rows.length > 0) {
@@ -1394,7 +1334,6 @@ function buildFactorRulesFromWorkbook(wb) {
       }
     });
   }
-
   const rules = [];
   rows.forEach(row => {
     const facilityId = String(row['Facility ID'] || '').trim();
@@ -1405,7 +1344,6 @@ function buildFactorRulesFromWorkbook(wb) {
 
     const facility = String(row['Facility'] || '').trim();
     const serviceType = String(row['Service Type'] || '').trim();
-
     let matchValues = [];
     if (matchType === 'Exact List') {
       matchValues = matchValueRaw.split(',').map(v => normalizeCode(v.trim())).filter(Boolean);
@@ -1415,7 +1353,6 @@ function buildFactorRulesFromWorkbook(wb) {
     }
 
     if (!matchValues.length) return;
-
     const factors = {};
     payerColumns.forEach(({ colKey, payerId }) => {
       const val = row[colKey];
@@ -1433,14 +1370,12 @@ function buildFactorRulesFromWorkbook(wb) {
 
 function findFactorFromRules(rules, facilityId, code, payerId) {
   if (!rules || !rules.length) return { factor: 1, rule: null };
-
   const normCode = normalizeCode(code);
   const normFacility = String(facilityId || '').trim().toUpperCase();
   const normPayer = String(payerId || '').toUpperCase();
 
   const facilityRules = rules.filter(r => r.facilityId.trim().toUpperCase() === normFacility);
   if (!facilityRules.length) return { factor: 1, rule: null };
-
   // Exact List has priority over Starts With
   let matchedRule = null;
   for (const rule of facilityRules) {
@@ -1459,7 +1394,6 @@ function findFactorFromRules(rules, facilityId, code, payerId) {
       }
     }
   }
-
   if (!matchedRule) return { factor: 1, rule: null };
 
   const factorVal = matchedRule.factors[normPayer];
@@ -1470,7 +1404,6 @@ function findFactorFromRules(rules, facilityId, code, payerId) {
 
   return { factor: factorVal, rule: matchedRule };
 }
-
 function getSelectedClaimTypeMode() {
   const claimTypeDental = document.getElementById('claimTypeDental');
   const claimTypeMedical = document.getElementById('claimTypeMedical');
@@ -1478,7 +1411,6 @@ function getSelectedClaimTypeMode() {
   if (claimTypeDental && claimTypeDental.checked) return 'DENTAL';
   return null;
 }
-
 // ----------------- XML parsing & extraction -----------------
 function parseXml(text) {
   const xmlContent = text.replace(/&(?!(amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;))/g, 'and');
@@ -1487,11 +1419,9 @@ function parseXml(text) {
   if (pe) throw new Error('Invalid XML: ' + (pe.textContent || 'parse error').trim());
   return doc;
 }
-
 function extractPricingRecords(xmlDoc) {
   const records = [];
   const claims = Array.from(xmlDoc.getElementsByTagName('Claim'));
-
   for (const claim of claims) {
     const claimId = textValue(claim, 'ID') || '';
     const payerId = textValue(claim, 'PayerID') || '';
@@ -1502,7 +1432,6 @@ function extractPricingRecords(xmlDoc) {
     const claimPatientShare = textValue(claim, 'PatientShare').trim() || '0';
     const claimGross = textValue(claim, 'Gross').trim() || '';
     const claimNet = textValue(claim, 'Net').trim() || '';
-
     for (const act of activities) {
       const activityId = textValue(act, 'ID') || '';
       const cpt = firstNonEmpty([
@@ -1516,7 +1445,6 @@ function extractPricingRecords(xmlDoc) {
         textValue(act, 'GrossAmount'),
         textValue(act, 'Price')
       ]).trim();
-
       const qty = firstNonEmpty([
         textValue(act, 'Quantity'),
         textValue(act, 'Qty')
@@ -1526,7 +1454,6 @@ function extractPricingRecords(xmlDoc) {
         textValue(act, 'OrderingClinician'),
         textValue(act, 'Clinician')
       ]).trim();
-
       // Extract CPT modifiers from Observation (ValueType = 'Modifiers')
       const modifierSet = new Set();
       const observations = Array.from(act.getElementsByTagName('Observation'));
@@ -1543,7 +1470,6 @@ function extractPricingRecords(xmlDoc) {
       const modifierList = ['24', '25', '50', '52'].filter(m => modifierSet.has(m));
       const modifiers = modifierList.join(', ');
       const modifier = modifierList[0] || '';
-
       records.push({
         ClaimID: claimId,
         ActivityID: activityId,
@@ -1563,7 +1489,6 @@ function extractPricingRecords(xmlDoc) {
       });
     }
   }
-
   return records;
 }
 
@@ -1581,7 +1506,6 @@ const ENDO_PRICING_CUTOFF = new Date(2026, 1, 20);
 function normalizeCode(c) {
   return String(c || '').trim().replace(/^0+/, '');
 }
-
 function buildPricingMatcher(rows) {
   const index = new Map();
 
@@ -1597,7 +1521,6 @@ function buildPricingMatcher(rows) {
 
     const primaryKey = keys['other facilities'];
     const secondaryKey = keys['alyahar, emirates, al wagan'];
-
     r._primaryPrice = primaryKey ? Number(String(r[primaryKey]).replace(/[^0-9.\-]/g, '')) : null;
     r._secondaryPrice = secondaryKey ? Number(String(r[secondaryKey]).replace(/[^0-9.\-]/g, '')) : null;
 
@@ -1614,7 +1537,6 @@ function buildPricingMatcher(rows) {
     _index: index
   };
 }
-
 function buildJsonPricingMatcher(data) {
   const index = new Map();
 
@@ -1637,7 +1559,6 @@ function normalizeTariffType(value) {
 
 function buildMedicalPricingMatcher(data) {
   const index = new Map();
-
   (Array.isArray(data) ? data : []).forEach(entry => {
     const code = normalizeCode(entry.code);
     if (!code) return;
@@ -1645,7 +1566,6 @@ function buildMedicalPricingMatcher(data) {
     const key = `${type}|${code}`;
     if (!index.has(key)) index.set(key, entry);
   });
-
   return {
     find(activityType, code) {
       const tariffType = ACTIVITY_TYPE_TO_TARIFF_TYPE[String(activityType || '').trim()] || 'CPT';
@@ -1663,7 +1583,6 @@ function buildKnownCptCodeSet({ jsonMatcher, xlsxMatcher, medicalPricingRaw }) {
       if (code) set.add(code);
     });
   }
-
   if (jsonMatcher && jsonMatcher._index instanceof Map) {
     jsonMatcher._index.forEach((_, code) => {
       if (code) set.add(code);
@@ -1679,7 +1598,6 @@ function buildKnownCptCodeSet({ jsonMatcher, xlsxMatcher, medicalPricingRaw }) {
 
   return set;
 }
-
 // ----------------- Results table -----------------
 function buildResultsTable(rows) {
   if (!rows || !rows.length) {
@@ -1695,12 +1613,10 @@ function buildResultsTable(rows) {
   table.className = 'table table-striped table-bordered';
   table.style.width = '100%';
   table.style.borderCollapse = 'collapse';
-
   const thead = document.createElement('thead');
   const tbody = document.createElement('tbody');
   table.appendChild(thead);
   table.appendChild(tbody);
-
   // Header row
   const headerRow = document.createElement('tr');
   const HEADERS = [
@@ -1715,7 +1631,6 @@ function buildResultsTable(rows) {
     headerRow.appendChild(th);
   });
   thead.appendChild(headerRow);
-
   // Helper: create a nowrap cell with standard padding/border
   function makeCell(text, wrap) {
     const td = document.createElement('td');
@@ -1727,7 +1642,6 @@ function buildResultsTable(rows) {
   }
 
   let prevClaimId = null;
-
   for (const r of rows) {
     const tr = document.createElement('tr');
     tr.className = getPricingRowClass(r);
@@ -1745,7 +1659,6 @@ function buildResultsTable(rows) {
 
     // Code
     tr.appendChild(makeCell(r.CPT || ''));
-
     // Claimed Net
     tr.appendChild(makeCell(r.ClaimedNet || ''));
 
@@ -1763,13 +1676,11 @@ function buildResultsTable(rows) {
 
     // Applied Factor
     tr.appendChild(makeCell(r.AppliedFactor || ''));
-
     // Factored Reference
     tr.appendChild(makeCell(r.FactoredReference || ''));
 
     // Status
     tr.appendChild(makeCell(r.status || ''));
-
     // Remarks (wrapping, may contain newlines)
     const remarksCell = document.createElement('td');
     remarksCell.style.padding = '6px';
@@ -1783,7 +1694,6 @@ function buildResultsTable(rows) {
       remarksCell.textContent = 'OK';
     }
     tr.appendChild(remarksCell);
-
     // Compare button
     const compareCell = makeCell('');
     if (r.PricingRow) {
@@ -1796,11 +1706,9 @@ function buildResultsTable(rows) {
       compareCell.appendChild(btn);
     }
     tr.appendChild(compareCell);
-
     tbody.appendChild(tr);
     prevClaimId = r.ClaimID;
   }
-
   // Hidden placeholder shown by applyFilter when no invalid rows are visible
   const noInvalidsRow = document.createElement('tr');
   noInvalidsRow.className = 'no-invalids-placeholder';
@@ -1811,7 +1719,6 @@ function buildResultsTable(rows) {
   noInvalidsCell.textContent = 'No invalid pricing records found.';
   noInvalidsRow.appendChild(noInvalidsCell);
   tbody.appendChild(noInvalidsRow);
-
   return table;
 }
 
@@ -1830,7 +1737,6 @@ function showComparisonModal(index) {
   const xmlQty = Number(xml.Quantity || 0);
 
   const isDrug = row._drugPricingMeta != null;
-
   const xmlTable = isDrug
     ? `
     <h4>XML Activity</h4>
@@ -1852,7 +1758,6 @@ function showComparisonModal(index) {
       <tr><th>Net ÷ Qty</th><td>${escapeHtml(xmlQty > 0 ? String(xmlNet / xmlQty) : 'N/A')}</td></tr>
     </table>
     `;
-
   const pricingTable = isDrug
     ? (() => {
         const dm = row._drugPricingMeta;
@@ -1897,7 +1802,6 @@ function showComparisonModal(index) {
         const modMult = row._modifierMultiplier != null ? row._modifierMultiplier : 1;
         const rowAppliedFactor = row.AppliedFactor || '';
         const facilityId = (row.XmlRow || {}).FacilityID || '';
-
         const factorRows = factorRule
           ? `<tr><th>Facility</th><td>${escapeHtml(factorRule.facility)} (${escapeHtml(facilityId)})</td></tr>
              <tr><th>Matched Service</th><td>${escapeHtml(factorRule.serviceType || factorRule.matchType)}</td></tr>
@@ -1908,7 +1812,6 @@ function showComparisonModal(index) {
           : (rowAppliedFactor
               ? `<tr><th>Applied Factor</th><td>${escapeHtml(rowAppliedFactor)}</td></tr>`
               : '');
-
         return `
     <h4>Pricing Reference</h4>
     <table class="table table-bordered table-sm">
@@ -1919,7 +1822,6 @@ function showComparisonModal(index) {
     </table>
     `;
       })();
-
   const modalHtml = `
     <div class="modal-content">
       <button type="button" class="close" onclick="window.closePricingComparison()">×</button>
@@ -1931,7 +1833,6 @@ function showComparisonModal(index) {
   `;
 
   closeComparisonModal();
-
   const modal = document.createElement('div');
   modal.id = 'comparisonModal';
   modal.className = 'modal';
@@ -1948,7 +1849,6 @@ function closeComparisonModal() {
   const modal = el('comparisonModal');
   if (modal) modal.remove();
 }
-
 // ----------------- Utilities -----------------
 function textValue(node, tag) {
   if (!node) return '';
@@ -1962,7 +1862,6 @@ function firstNonEmpty(arr) {
   }
   return '';
 }
-
 function firstNonEmptyKey(obj, keys) {
   for (const k of keys) {
     if (Object.prototype.hasOwnProperty.call(obj, k) && String(obj[k]).trim() !== '') return obj[k];
@@ -1981,7 +1880,6 @@ function makeWorkbookFromJson(json, sheetName) {
 function el(id) {
   return document.getElementById(id);
 }
-
 function fileEl(id) {
   const f = el(id);
   return f && f.files && f.files[0] ? f.files[0] : null;
@@ -2000,7 +1898,6 @@ function resetUI() {
 function toggleDownload(enabled) {
   const dl = el('export-invalids-button');
   if (dl) dl.disabled = !enabled;
-
   const dlAll = el('export-all-button');
   if (dlAll) dlAll.disabled = !enabled;
 }
@@ -2014,7 +1911,6 @@ function showProgress(percent, text) {
   if (bar) bar.style.width = (percent || 0) + '%';
   if (pText) pText.textContent = text ? `${percent}% — ${text}` : `${percent}%`;
 }
-
 function message(text, color) {
   const m = el('messageBox');
   if (!m) return;
@@ -2036,13 +1932,11 @@ function escapeHtml(str) {
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#039;');
 }
-
 window.runPricingCheck = async function (options = {}) {
   if (typeof handleRun === 'function') return await handleRun(options);
   console.error('handleRun function not found');
   return null;
 };
-
 window._pricingTestApi = {
   analyzeDrugActivity,
   isDrugActivityType,
@@ -2068,7 +1962,6 @@ window._pricingTestApi = {
   requiresNonZeroMedicalPrice,
   getZeroPricePricingDecision
 };
-
 window.showPricingComparison = showComparisonModal;
 window.closePricingComparison = closeComparisonModal;
 
