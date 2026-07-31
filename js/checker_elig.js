@@ -1061,30 +1061,101 @@
       wrapper.appendChild(warning);
     }
 
+    const tableStyle = document.createElement('style');
+    tableStyle.textContent = `
+      .elig-checker-results .eligibility-results-container {
+        width: 100%;
+        max-width: 100%;
+        overflow-x: hidden;
+      }
+      .elig-checker-results .eligibility-results-table {
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+        table-layout: fixed !important;
+        font-size: clamp(9px, 0.72vw, 12px);
+        margin-bottom: 0;
+      }
+      .elig-checker-results .eligibility-results-table th,
+      .elig-checker-results .eligibility-results-table td {
+        min-width: 0 !important;
+        max-width: none !important;
+        padding: 5px 4px !important;
+        white-space: normal !important;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+        vertical-align: top;
+        line-height: 1.25;
+      }
+      .elig-checker-results .eligibility-results-table th {
+        text-align: center;
+        vertical-align: middle;
+      }
+      .elig-checker-results .eligibility-results-table .claim-id-cell {
+        white-space: normal !important;
+      }
+      .elig-checker-results .eligibility-results-table .eligibility-action-cell {
+        text-align: center;
+        vertical-align: middle;
+      }
+      .elig-checker-results .eligibility-results-table .eligibility-details {
+        display: inline-block;
+        width: 100%;
+        max-width: 88px;
+        padding: 4px 3px;
+        font-size: inherit;
+        line-height: 1.2;
+        white-space: normal;
+      }
+      @media (max-width: 1000px) {
+        .elig-checker-results .eligibility-results-table {
+          font-size: 9px;
+        }
+        .elig-checker-results .eligibility-results-table th,
+        .elig-checker-results .eligibility-results-table td {
+          padding: 4px 2px !important;
+        }
+      }
+    `;
+    wrapper.appendChild(tableStyle);
+
     const responsive = document.createElement('div');
-    responsive.className = 'table-responsive';
+    responsive.className = 'eligibility-results-container';
 
     const table = document.createElement('table');
     table.className =
       'table table-bordered table-striped checker-table result-table eligibility-results-table';
     table.innerHTML = `
+      <colgroup>
+        <col style="width:8%">
+        <col style="width:4%">
+        <col style="width:7%">
+        <col style="width:9%">
+        <col style="width:8%">
+        <col style="width:7%">
+        <col style="width:10%">
+        <col style="width:8%">
+        <col style="width:7%">
+        <col style="width:7%">
+        <col style="width:5%">
+        <col style="width:13%">
+        <col style="width:7%">
+      </colgroup>
       <thead>
         <tr>
           <th>Claim ID</th>
-          <th>Payer ID</th>
+          <th>Payer</th>
           <th>Member ID</th>
-          <th>Emirates ID</th>
-          <th>Encounter Start</th>
+          <th>EID</th>
+          <th>Encounter</th>
           <th>Claim Clinician</th>
-          <th>Match Basis</th>
-          <th>Selected Eligibility / Closest Candidate</th>
+          <th>Eligibility Match</th>
           <th>Ordered On</th>
-          <th>Eligibility Clinician</th>
-          <th>Service Category</th>
+          <th>Elig Clinician</th>
+          <th>Service</th>
           <th>Status</th>
           <th>Remarks</th>
-          <th>Notes</th>
-          <th>Eligibility Details</th>
+          <th>Eligibility</th>
         </tr>
       </thead>
       <tbody></tbody>
@@ -1104,9 +1175,17 @@
       row.dataset.status = result.Status.toLowerCase();
 
       const detailId = result.EligibilityRow ? registerDetail(runId, result, index) : '';
+      const eligibilityCount = Array.isArray(result.EligibilityCandidates) && result.EligibilityCandidates.length
+        ? result.EligibilityCandidates.length
+        : result.EligibilityRow
+          ? 1
+          : 0;
+      const detailButtonLabel = eligibilityCount === 1
+        ? 'View Elig'
+        : `View All (${eligibilityCount})`;
       const detailButton = detailId
         ? `<button type="button" class="details-btn eligibility-details" ` +
-          `data-eligibility-detail-id="${escapeHtml(detailId)}">View All</button>`
+          `data-eligibility-detail-id="${escapeHtml(detailId)}">${escapeHtml(detailButtonLabel)}</button>`
         : '';
 
       row.innerHTML = `
@@ -1116,7 +1195,6 @@
         <td>${escapeHtml(result.EmiratesID)}</td>
         <td>${escapeHtml(result.EncounterStart)}</td>
         <td>${escapeHtml(result.ClaimClinicians)}</td>
-        <td>${escapeHtml(result.MatchBasis)}</td>
         <td>${escapeHtml(
           result.RequiredMatchComplete
             ? `${result.EligibilityRequestNumber} (Selected)`
@@ -1129,8 +1207,7 @@
         <td>${escapeHtml(result.ServiceCategory)}</td>
         <td>${escapeHtml(result.Status)}</td>
         <td style="white-space:pre-line">${escapeHtml(result.Remarks)}</td>
-        <td style="white-space:pre-line">${escapeHtml(result.Notes)}</td>
-        <td>${detailButton}</td>
+        <td class="eligibility-action-cell">${detailButton}</td>
       `;
 
       tbody.appendChild(row);
