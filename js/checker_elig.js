@@ -25,8 +25,8 @@
 // detail store, so it works in both the individual checker and cloned Check All
 // results. It displays a Claim Match tab followed by one tab for every matched
 // eligibility candidate. Each eligibility tab shows the eligibility status and
-// groups the row into request, member, clinician, provider, card, and additional
-// information tables.
+// groups the row into compact request, member, clinician, provider, card, and
+// additional-information panels that wrap without horizontal scrolling.
 
 (function eligibilityCheckerModule(root) {
   'use strict';
@@ -1422,76 +1422,93 @@
     return groups;
   }
 
-  function eligibilityFieldRow(entry, candidate, claim) {
+  function eligibilityFieldCard(entry, candidate, claim) {
     const field = resolveEligibilityComparisonField(entry.key);
-    const displayValue = entry.displayValue;
+    const displayValue = normalizeText(entry.displayValue) || '(blank)';
 
     if (!field) {
-      return `<tr><th>${escapeHtml(entry.baseKey)}</th><td>${escapeHtml(displayValue)}</td></tr>`;
+      return `
+        <div class="eligibility-field-card" style="
+          min-width:0;border:1px solid #e3e6e8;border-radius:7px;padding:9px 10px;
+          background:#fff;overflow-wrap:anywhere;word-break:break-word;
+        ">
+          <div style="font-size:10px;font-weight:700;letter-spacing:.02em;text-transform:uppercase;color:#6c757d;margin-bottom:4px;">
+            ${escapeHtml(entry.baseKey)}
+          </div>
+          <div style="font-size:13px;line-height:1.35;white-space:normal;overflow-wrap:anywhere;">
+            ${escapeHtml(displayValue)}
+          </div>
+        </div>
+      `;
     }
 
     const matched = candidate.comparison?.[field] === true;
     const eidBlankAccepted =
       field === 'eid' &&
       candidate.comparison?.eidBlankAccepted === true;
-    const background = matched ? '#d1e7dd' : '#f8d7da';
-    const border = matched ? '#badbcc' : '#f5c2c7';
+    const background = matched ? '#f0faf4' : '#fff3f4';
+    const border = matched ? '#75b798' : '#ea868f';
     const badgeBackground = matched ? '#198754' : '#dc3545';
     const badgeText = eidBlankAccepted
-      ? 'Accepted: blank in Excel'
+      ? 'Blank accepted'
       : matched
         ? 'Match'
         : 'Mismatch';
-    const claimValue = comparisonClaimValue(field, claim);
+    const claimValue = comparisonClaimValue(field, claim) || '(blank)';
 
     return `
-      <tr style="background:${background};border-color:${border};">
-        <th style="background:${background};border-color:${border};">
-          ${escapeHtml(entry.baseKey)}
-          <span style="display:block;font-size:11px;font-weight:normal;margin-top:3px;">
-            Compared with ${escapeHtml(comparisonLabel(field))}
+      <div class="eligibility-field-card eligibility-comparison-card" style="
+        grid-column:1 / -1;min-width:0;border:1px solid ${border};border-left:5px solid ${badgeBackground};
+        border-radius:7px;padding:10px 11px;background:${background};overflow-wrap:anywhere;
+      ">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;flex-wrap:wrap;">
+          <div style="min-width:0;">
+            <div style="font-size:11px;font-weight:700;color:#495057;">
+              ${escapeHtml(entry.baseKey)}
+            </div>
+            <div style="font-size:10px;color:#6c757d;margin-top:1px;">
+              Compared with ${escapeHtml(comparisonLabel(field))}
+            </div>
+          </div>
+          <span style="background:${badgeBackground};color:#fff;border-radius:999px;padding:2px 8px;font-size:10px;font-weight:700;white-space:nowrap;">
+            ${badgeText}
           </span>
-        </th>
-        <td style="background:${background};border-color:${border};">
-          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;">
-            <span>${escapeHtml(displayValue)}</span>
-            <span style="background:${badgeBackground};color:#fff;border-radius:999px;padding:2px 8px;font-size:11px;white-space:nowrap;">
-              ${badgeText}
-            </span>
-          </div>
-          <div style="font-size:11px;margin-top:4px;opacity:.8;">
-            Claim: ${escapeHtml(claimValue || '(blank)')}
-          </div>
-        </td>
-      </tr>
+        </div>
+        <div style="font-size:14px;font-weight:600;line-height:1.35;margin-top:7px;white-space:normal;overflow-wrap:anywhere;word-break:break-word;">
+          ${escapeHtml(displayValue)}
+        </div>
+        <div style="font-size:11px;color:#6c757d;margin-top:5px;white-space:normal;overflow-wrap:anywhere;">
+          Claim: ${escapeHtml(claimValue)}
+        </div>
+      </div>
     `;
   }
 
   function renderEligibilitySection(title, entries, candidate, claim, options = {}) {
-    const visibleEntries = options.hideEmpty
-      ? entries.filter(entry => normalizeText(entry.displayValue) !== '')
-      : entries;
+    const visibleEntries = entries.filter(entry => {
+      if (!options.hideEmpty) return true;
+      if (resolveEligibilityComparisonField(entry.key)) return true;
+      return normalizeText(entry.displayValue) !== '';
+    });
 
     if (!visibleEntries.length) return '';
 
     const subtitle = options.subtitle
-      ? `<div style="font-size:11px;opacity:.72;margin-top:2px;">${escapeHtml(options.subtitle)}</div>`
+      ? `<div style="font-size:11px;color:#6c757d;margin-top:2px;">${escapeHtml(options.subtitle)}</div>`
       : '';
 
     return `
-      <section class="eligibility-detail-section" style="min-width:0;">
-        <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:8px;margin-bottom:6px;">
-          <div>
-            <h5 style="margin:0;">${escapeHtml(title)}</h5>
-            ${subtitle}
-          </div>
+      <section class="eligibility-detail-section" style="
+        min-width:0;border:1px solid #dee2e6;border-radius:9px;padding:11px;background:#f8f9fa;
+      ">
+        <div style="margin-bottom:8px;">
+          <h5 style="margin:0;font-size:14px;">${escapeHtml(title)}</h5>
+          ${subtitle}
         </div>
-        <div class="table-responsive">
-          <table class="table table-bordered eligibility-detail-table" style="margin-bottom:0;">
-            <tbody>
-              ${visibleEntries.map(entry => eligibilityFieldRow(entry, candidate, claim)).join('')}
-            </tbody>
-          </table>
+        <div class="eligibility-field-grid" style="
+          display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:8px;min-width:0;
+        ">
+          ${visibleEntries.map(entry => eligibilityFieldCard(entry, candidate, claim)).join('')}
         </div>
       </section>
     `;
@@ -1508,19 +1525,20 @@
       .filter(([, entries]) => cardGroupHasValue(entries));
 
     const topSections = [
-      renderEligibilitySection('Request & Status', grouped.request, candidate, claim),
-      renderEligibilitySection('Member', grouped.member, candidate, claim),
-      renderEligibilitySection('Clinician', grouped.clinician, candidate, claim),
-      renderEligibilitySection('Provider', grouped.provider, candidate, claim)
+      renderEligibilitySection('Request & Status', grouped.request, candidate, claim, { hideEmpty: true }),
+      renderEligibilitySection('Member', grouped.member, candidate, claim, { hideEmpty: true }),
+      renderEligibilitySection('Clinician', grouped.clinician, candidate, claim, { hideEmpty: true }),
+      renderEligibilitySection('Provider', grouped.provider, candidate, claim, { hideEmpty: true })
     ].filter(Boolean);
 
-    const cardSections = cards.map(([groupNumber, entries], index) =>
+    const cardSections = cards.map(([groupNumber, entries]) =>
       renderEligibilitySection(
         `Card ${groupNumber}`,
         entries,
         candidate,
         claim,
         {
+          hideEmpty: true,
           subtitle: groupNumber === 1
             ? 'Primary card record'
             : `Workbook card group ${groupNumber}`
@@ -1541,23 +1559,28 @@
       : '<div class="alert alert-secondary" style="margin:0;">No populated card records were found in this eligibility row.</div>';
 
     return `
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:16px;align-items:start;">
+      <div class="eligibility-section-grid" style="
+        display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:11px;align-items:start;min-width:0;
+      ">
         ${topSections.join('')}
       </div>
 
-      <div style="margin-top:18px;">
-        <h4 style="margin:0 0 9px;">Cards</h4>
+      <div style="margin-top:14px;">
+        <h4 style="margin:0 0 8px;font-size:15px;">Cards</h4>
         ${noCardsMessage || `
-          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:16px;align-items:start;">
+          <div class="eligibility-section-grid" style="
+            display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:11px;align-items:start;min-width:0;
+          ">
             ${cardSections.join('')}
           </div>
         `}
       </div>
 
       ${additionalSection ? `
-        <div style="margin-top:18px;">
-          ${additionalSection}
-        </div>
+        <details style="margin-top:14px;border:1px solid #dee2e6;border-radius:9px;padding:9px 10px;background:#fff;">
+          <summary style="cursor:pointer;font-weight:700;font-size:13px;">Additional Information</summary>
+          <div style="margin-top:9px;">${additionalSection}</div>
+        </details>
       ` : ''}
     `;
   }
@@ -1565,26 +1588,66 @@
   function eligibilityRowToRows(candidate, claim) {
     const object = candidate?.row;
     if (!object || typeof object !== 'object') {
-      return '<tr><td colspan="2">No eligibility row data available.</td></tr>';
+      return '<div class="alert alert-secondary">No eligibility row data available.</div>';
     }
 
-    return Object.entries(object)
-      .map(([key, value]) => eligibilityFieldRow(
-        buildEligibilityFieldEntry(key, value),
-        candidate,
-        claim
-      ))
-      .join('');
+    return `
+      <div class="eligibility-field-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:8px;">
+        ${Object.entries(object)
+          .map(([key, value]) => eligibilityFieldCard(
+            buildEligibilityFieldEntry(key, value),
+            candidate,
+            claim
+          ))
+          .join('')}
+      </div>
+    `;
   }
 
-  function comparisonCell(matched, acceptedBlank = false) {
-    const background = matched ? '#d1e7dd' : '#f8d7da';
+  function comparisonBadge(matched, acceptedBlank = false) {
+    const background = matched ? '#198754' : '#dc3545';
     const text = acceptedBlank
-      ? 'Accepted: blank'
+      ? 'Blank accepted'
       : matched
         ? 'Match'
         : 'Mismatch';
-    return `<td style="background:${background};font-weight:600;">${text}</td>`;
+
+    return `
+      <span style="display:inline-block;background:${background};color:#fff;border-radius:999px;padding:2px 7px;font-size:10px;font-weight:700;white-space:nowrap;">
+        ${text}
+      </span>
+    `;
+  }
+
+  function claimFieldCard(key, value) {
+    const displayValue = normalizeText(value) || '(blank)';
+    const wide = /remarks|notes|required eligibility clinicians|performing clinicians|ordering clinicians|gt clinicians/i.test(key);
+
+    return `
+      <div style="
+        ${wide ? 'grid-column:1 / -1;' : ''}min-width:0;border:1px solid #e3e6e8;border-radius:7px;
+        padding:9px 10px;background:#fff;overflow-wrap:anywhere;word-break:break-word;
+      ">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#6c757d;margin-bottom:4px;">
+          ${escapeHtml(key)}
+        </div>
+        <div style="font-size:13px;line-height:1.35;white-space:pre-wrap;overflow-wrap:anywhere;">
+          ${escapeHtml(displayValue)}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderClaimOverview(claim) {
+    if (!claim || typeof claim !== 'object') {
+      return '<div class="alert alert-secondary">No claim details are available.</div>';
+    }
+
+    return `
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px;min-width:0;">
+        ${Object.entries(claim).map(([key, value]) => claimFieldCard(key, value)).join('')}
+      </div>
+    `;
   }
 
   function renderCandidateSummary(candidates) {
@@ -1593,54 +1656,53 @@
     }
 
     return `
-      <div class="table-responsive" style="margin-top:14px;">
-        <table class="table table-bordered eligibility-candidate-summary">
-          <thead>
-            <tr>
-              <th>Eligibility</th>
-              <th>Status</th>
-              <th>Basis</th>
-              <th>Ordered On</th>
-              <th>Date</th>
-              <th>Member ID</th>
-              <th>Emirates ID</th>
-              <th>Clinician</th>
-              <th>Overall</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${candidates.map((candidate, index) => `
-              <tr>
-                <td>
-                  <strong>${escapeHtml(candidate.requestNumber || `Eligibility ${index + 1}`)}</strong>
-                  ${candidate.selected ? `
-                    <span style="display:inline-block;margin-left:6px;background:#0d6efd;color:#fff;border-radius:999px;padding:2px 8px;font-size:11px;">
-                      Selected
-                    </span>
-                  ` : candidate.memberIdCorrection ? `
-                    <span style="display:inline-block;margin-left:6px;background:#ffc107;color:#212529;border-radius:999px;padding:2px 8px;font-size:11px;">
-                      Member ID Correction
-                    </span>
-                  ` : ''}
-                  <div style="font-size:11px;margin-top:3px;">
-                    ${escapeHtml(candidate.sheetName)} row ${escapeHtml(candidate.sheetRowNumber)}
-                  </div>
-                </td>
-                <td>${eligibilityStatusBadge(candidate.status, true)}</td>
-                <td>${escapeHtml(candidate.bases?.join(' + ') || candidate.basis)}</td>
-                <td>${escapeHtml(candidate.orderedOnDisplay)}</td>
-                ${comparisonCell(candidate.comparison?.orderedOn === true)}
-                ${comparisonCell(candidate.comparison?.memberId === true)}
-                ${comparisonCell(
-                  candidate.comparison?.eid === true,
-                  candidate.comparison?.eidBlankAccepted === true
-                )}
-                ${comparisonCell(candidate.comparison?.clinician === true)}
-                ${comparisonCell(candidate.completeMatch === true)}
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:10px;margin-top:10px;min-width:0;">
+        ${candidates.map((candidate, index) => `
+          <article style="min-width:0;border:1px solid ${candidate.completeMatch ? '#75b798' : '#ea868f'};border-radius:9px;padding:11px;background:#fff;">
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;flex-wrap:wrap;">
+              <div style="min-width:0;">
+                <strong style="font-size:13px;overflow-wrap:anywhere;">${escapeHtml(candidate.requestNumber || `Eligibility ${index + 1}`)}</strong>
+                <div style="font-size:10px;color:#6c757d;margin-top:2px;">
+                  ${escapeHtml(candidate.sheetName)} row ${escapeHtml(candidate.sheetRowNumber)}
+                </div>
+              </div>
+              <div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;">
+                ${eligibilityStatusBadge(candidate.status, true)}
+                ${candidate.selected ? `
+                  <span style="background:#0d6efd;color:#fff;border-radius:999px;padding:2px 7px;font-size:10px;font-weight:700;white-space:nowrap;">Selected</span>
+                ` : candidate.memberIdCorrection ? `
+                  <span style="background:#ffc107;color:#212529;border-radius:999px;padding:2px 7px;font-size:10px;font-weight:700;white-space:nowrap;">Member ID Correction</span>
+                ` : ''}
+              </div>
+            </div>
+
+            <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin-top:10px;">
+              <div style="min-width:0;">
+                <div style="font-size:9px;text-transform:uppercase;color:#6c757d;font-weight:700;">Basis</div>
+                <div style="font-size:12px;overflow-wrap:anywhere;">${escapeHtml(candidate.bases?.join(' + ') || candidate.basis)}</div>
+              </div>
+              <div style="min-width:0;">
+                <div style="font-size:9px;text-transform:uppercase;color:#6c757d;font-weight:700;">Ordered On</div>
+                <div style="font-size:12px;overflow-wrap:anywhere;">${escapeHtml(candidate.orderedOnDisplay)}</div>
+              </div>
+            </div>
+
+            <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:10px;align-items:center;">
+              <span style="font-size:10px;color:#6c757d;font-weight:700;">Date</span>${comparisonBadge(candidate.comparison?.orderedOn === true)}
+              <span style="font-size:10px;color:#6c757d;font-weight:700;">Member</span>${comparisonBadge(candidate.comparison?.memberId === true)}
+              <span style="font-size:10px;color:#6c757d;font-weight:700;">EID</span>${comparisonBadge(
+                candidate.comparison?.eid === true,
+                candidate.comparison?.eidBlankAccepted === true
+              )}
+              <span style="font-size:10px;color:#6c757d;font-weight:700;">Clinician</span>${comparisonBadge(candidate.comparison?.clinician === true)}
+            </div>
+
+            <div style="margin-top:9px;padding-top:8px;border-top:1px solid #e9ecef;display:flex;align-items:center;justify-content:space-between;gap:8px;">
+              <span style="font-size:11px;font-weight:700;">Overall</span>
+              ${comparisonBadge(candidate.completeMatch === true)}
+            </div>
+          </article>
+        `).join('')}
       </div>
     `;
   }
@@ -1652,7 +1714,7 @@
         class="details-btn eligibility-modal-tab active"
         data-eligibility-tab-target="eligibility-claim-tab"
         aria-selected="true"
-        style="border-bottom-left-radius:0;border-bottom-right-radius:0;"
+        style="border-bottom-left-radius:0;border-bottom-right-radius:0;max-width:100%;white-space:normal;"
       >
         Claim Match
       </button>
@@ -1664,23 +1726,19 @@
         class="details-btn eligibility-modal-tab"
         data-eligibility-tab-target="eligibility-candidate-tab-${index}"
         aria-selected="false"
-        style="border-bottom-left-radius:0;border-bottom-right-radius:0;"
+        style="border-bottom-left-radius:0;border-bottom-right-radius:0;max-width:100%;white-space:normal;"
       >
-        Eligibility ${index + 1}
-        <span style="display:inline-block;margin-left:5px;vertical-align:middle;">
+        <span>Eligibility ${index + 1}</span>
+        <span style="display:inline-flex;gap:4px;flex-wrap:wrap;margin-left:5px;vertical-align:middle;">
           ${eligibilityStatusBadge(candidate.status, true)}
-        </span>
-        ${candidate.selected ? `
-          <span style="display:inline-block;margin-left:5px;background:#0d6efd;color:#fff;border-radius:999px;padding:1px 7px;font-size:10px;">
-            Selected
+          ${candidate.selected ? `
+            <span style="background:#0d6efd;color:#fff;border-radius:999px;padding:1px 7px;font-size:10px;">Selected</span>
+          ` : candidate.memberIdCorrection ? `
+            <span style="background:#ffc107;color:#212529;border-radius:999px;padding:1px 7px;font-size:10px;">Member ID Correction</span>
+          ` : ''}
+          <span style="background:${candidate.completeMatch ? '#198754' : '#dc3545'};color:#fff;border-radius:999px;padding:1px 7px;font-size:10px;">
+            ${candidate.completeMatch ? 'Complete Match' : 'Mismatch'}
           </span>
-        ` : candidate.memberIdCorrection ? `
-          <span style="display:inline-block;margin-left:5px;background:#ffc107;color:#212529;border-radius:999px;padding:1px 7px;font-size:10px;">
-            Member ID Correction
-          </span>
-        ` : ''}
-        <span style="display:inline-block;margin-left:5px;background:${candidate.completeMatch ? '#198754' : '#dc3545'};color:#fff;border-radius:999px;padding:1px 7px;font-size:10px;">
-          ${candidate.completeMatch ? 'Complete Match' : 'Mismatch'}
         </span>
       </button>
     `).join('');
@@ -1695,13 +1753,9 @@
         class="eligibility-modal-pane"
         data-eligibility-tab-pane
       >
-        <h4>Claim Match</h4>
-        <div class="table-responsive">
-          <table class="table table-bordered eligibility-detail-table">
-            <tbody>${objectToRows(detail.claim)}</tbody>
-          </table>
-        </div>
-        <h4 style="margin-top:18px;">Matched Eligibility Comparison</h4>
+        <h4 style="margin:0 0 9px;">Claim Match</h4>
+        ${renderClaimOverview(detail.claim)}
+        <h4 style="margin:16px 0 0;">Matched Eligibility Comparison</h4>
         ${renderCandidateSummary(detail.candidates)}
       </section>
     `;
@@ -1713,30 +1767,26 @@
         data-eligibility-tab-pane
         hidden
       >
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
-          <h4 style="margin:0;display:flex;align-items:center;gap:7px;flex-wrap:wrap;">
-            <span>${escapeHtml(candidate.requestNumber || `Eligibility ${index + 1}`)}</span>
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+          <h4 style="margin:0;display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0;">
+            <span style="overflow-wrap:anywhere;">${escapeHtml(candidate.requestNumber || `Eligibility ${index + 1}`)}</span>
             ${eligibilityStatusBadge(candidate.status)}
             ${candidate.selected ? `
-              <span style="display:inline-block;margin-left:6px;background:#0d6efd;color:#fff;border-radius:999px;padding:2px 8px;font-size:11px;vertical-align:middle;">
-                Selected
-              </span>
+              <span style="background:#0d6efd;color:#fff;border-radius:999px;padding:2px 8px;font-size:11px;">Selected</span>
             ` : candidate.memberIdCorrection ? `
-              <span style="display:inline-block;margin-left:6px;background:#ffc107;color:#212529;border-radius:999px;padding:2px 8px;font-size:11px;vertical-align:middle;">
-                Member ID Correction
-              </span>
+              <span style="background:#ffc107;color:#212529;border-radius:999px;padding:2px 8px;font-size:11px;">Member ID Correction</span>
             ` : ''}
           </h4>
-          <div style="font-size:12px;">
+          <div style="font-size:11px;color:#6c757d;white-space:normal;">
             Sheet <strong>${escapeHtml(candidate.sheetName)}</strong>, row
             <strong>${escapeHtml(candidate.sheetRowNumber)}</strong>
           </div>
         </div>
-        <p style="margin:7px 0 12px;font-size:12px;">
-          Match basis: <strong>${escapeHtml(candidate.bases?.join(' + ') || candidate.basis)}</strong>
+        <div style="margin:6px 0 11px;font-size:11px;color:#495057;display:flex;gap:10px;flex-wrap:wrap;">
+          <span>Match basis: <strong>${escapeHtml(candidate.bases?.join(' + ') || candidate.basis)}</strong></span>
           ${candidate.minutesDifference == null ? '' :
-            ` · Time difference: <strong>${escapeHtml(candidate.minutesDifference.toFixed(2))} minute(s)</strong>`}
-        </p>
+            `<span>Time difference: <strong>${escapeHtml(candidate.minutesDifference.toFixed(2))} minute(s)</strong></span>`}
+        </div>
         ${renderGroupedEligibilityDetails(candidate, detail.claimContext)}
       </section>
     `).join('');
@@ -1780,8 +1830,21 @@
 
     modal.innerHTML = `
       <div class="modal-content eligibility-modal modal-scrollable" style="
-        width:min(1250px,97vw);max-height:94vh;overflow:auto;background:#fff;
-        border-radius:8px;padding:18px;box-shadow:0 10px 30px rgba(0,0,0,.3);">
+        width:min(1120px,97vw);max-height:94vh;overflow-y:auto;overflow-x:hidden;background:#fff;
+        border-radius:8px;padding:15px;box-shadow:0 10px 30px rgba(0,0,0,.3);box-sizing:border-box;">
+        <style>
+          #eligibilityDetailsModal, #eligibilityDetailsModal * { box-sizing:border-box; }
+          #eligibilityDetailsModal .eligibility-modal-pane { min-width:0; overflow-x:hidden; }
+          #eligibilityDetailsModal .eligibility-modal-tab { line-height:1.25; }
+          #eligibilityDetailsModal .eligibility-field-card { max-width:100%; }
+          @media (max-width:700px) {
+            #eligibilityDetailsModal { padding:7px !important; }
+            #eligibilityDetailsModal .eligibility-modal { width:100% !important; padding:11px !important; }
+            #eligibilityDetailsModal .eligibility-section-grid,
+            #eligibilityDetailsModal .eligibility-field-grid { grid-template-columns:minmax(0,1fr) !important; }
+            #eligibilityDetailsModal .eligibility-modal-tabs { gap:3px !important; }
+          }
+        </style>
         <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
           <h3 style="margin:0;">Eligibility Details</h3>
           <button type="button" class="details-btn eligibility-modal-close" aria-label="Close">&times;</button>
