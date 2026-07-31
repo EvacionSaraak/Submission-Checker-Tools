@@ -24,7 +24,9 @@
 // The View All modal uses delegated document-level handling and a per-run
 // detail store, so it works in both the individual checker and cloned Check All
 // results. It displays a Claim Match tab followed by one tab for every matched
-// eligibility candidate.
+// eligibility candidate. Each eligibility tab shows the eligibility status and
+// groups the row into request, member, clinician, provider, card, and additional
+// information tables.
 
 (function eligibilityCheckerModule(root) {
   'use strict';
@@ -994,6 +996,7 @@
       sheetName: candidate.row?.sheetName || '',
       sheetRowNumber: candidate.row?.sheetRowNumber || '',
       requestNumber: candidate.row?.requestNumber || '',
+      status: candidate.row?.status || '',
       orderedOnDisplay: candidate.row?.orderedOnDisplay || '',
       clinicianRaw: candidate.row?.clinicianRaw || '',
       row: candidate.row?.sourceRow || null,
@@ -1230,6 +1233,335 @@
     }[field] || '';
   }
 
+  function splitNumberedEligibilityHeader(header) {
+    const raw = normalizeText(header);
+    const match = raw.match(/^(.*?)(?:\s*\((\d+)\))?$/);
+    return {
+      original: raw,
+      base: normalizeText(match?.[1] || raw),
+      groupNumber: Number(match?.[2] || 1)
+    };
+  }
+
+  function normalizedHeaderMatches(baseHeader, aliases) {
+    const normalized = normalizeHeader(baseHeader);
+    return aliases.some(alias => normalizeHeader(alias) === normalized);
+  }
+
+  const MEMBER_MODAL_HEADERS = Object.freeze([
+    'Payer Name',
+    'Payer',
+    'Member Name',
+    'Patient Name',
+    'Card Number / DHA Member ID',
+    'DHA Member ID',
+    'Member ID',
+    'MemberID',
+    'EID',
+    'Emirates ID',
+    'EmiratesID',
+    'Emirates ID Number',
+    'EmiratesIDNumber',
+    'Mobile Number',
+    'Submitted via Emirates Id',
+    'Submitted via Emirates ID',
+    'Read By Card Reader',
+    'Has Multiple Policy'
+  ]);
+
+  const CLINICIAN_MODAL_HEADERS = Object.freeze([
+    ...HEADER_ALIASES.clinician,
+    ...HEADER_ALIASES.clinicianName,
+    'Reffering Clinician',
+    'Referring Clinician',
+    'Refferal Clinician',
+    'Referral Clinician',
+    'Refferal Letter Reference No',
+    'Referral Letter Reference No',
+    'User Name'
+  ]);
+
+  const PROVIDER_MODAL_HEADERS = Object.freeze([
+    ...HEADER_ALIASES.providerLicense,
+    ...HEADER_ALIASES.providerName,
+    ...HEADER_ALIASES.serviceCategory,
+    ...HEADER_ALIASES.consultationStatus
+  ]);
+
+  const REQUEST_MODAL_HEADERS = Object.freeze([
+    ...HEADER_ALIASES.transactionId,
+    ...HEADER_ALIASES.requestNumber,
+    ...HEADER_ALIASES.orderedOn,
+    ...HEADER_ALIASES.answeredOn,
+    ...HEADER_ALIASES.authorizationNumber,
+    ...HEADER_ALIASES.status,
+    ...HEADER_ALIASES.denialCode,
+    ...HEADER_ALIASES.denialDescription,
+    ...HEADER_ALIASES.voiNumber,
+    ...HEADER_ALIASES.voiMessage,
+    'Rule Ansswered',
+    'Rule Answered',
+    'Question',
+    'Answer'
+  ]);
+
+  const CARD_MODAL_HEADERS = Object.freeze([
+    'Card Number',
+    'PolicyId',
+    'Policy ID',
+    'PolicyName',
+    'Policy Name',
+    'EffectiveDate',
+    'Effective Date',
+    'ExpiryDate',
+    'Expiry Date',
+    ...HEADER_ALIASES.packageName,
+    ...HEADER_ALIASES.cardNetwork,
+    'Network Billing Reference'
+  ]);
+
+  function eligibilityStatusStyle(status) {
+    const normalized = normalizeUpper(status);
+
+    if (ELIGIBLE_STATUS_PATTERN.test(normalized)) {
+      return { background: '#198754', color: '#fff', classification: 'usable' };
+    }
+
+    if (
+      /CANCEL|INELIGIBLE|DENIED|REJECT|EXPIRED|TERMINAT|INVALID|NOT\s*ELIGIBLE/.test(normalized)
+    ) {
+      return { background: '#dc3545', color: '#fff', classification: 'unusable' };
+    }
+
+    if (/PENDING|PROCESS|REVIEW|UNKNOWN|PARTIAL|WAIT/.test(normalized)) {
+      return { background: '#ffc107', color: '#212529', classification: 'review' };
+    }
+
+    return { background: '#6c757d', color: '#fff', classification: 'unknown' };
+  }
+
+  function eligibilityStatusBadge(status, compact = false) {
+    const display = normalizeText(status) || 'Status unavailable';
+    const style = eligibilityStatusStyle(display);
+    const verticalPadding = compact ? '1px' : '2px';
+    const horizontalPadding = compact ? '7px' : '9px';
+    const fontSize = compact ? '10px' : '11px';
+
+    return `
+      <span
+        title="Eligibility status: ${escapeHtml(display)}"
+        data-eligibility-status-classification="${escapeHtml(style.classification)}"
+        style="display:inline-block;background:${style.background};color:${style.color};border-radius:999px;padding:${verticalPadding} ${horizontalPadding};font-size:${fontSize};font-weight:700;white-space:nowrap;"
+      >
+        ${escapeHtml(display)}
+      </span>
+    `;
+  }
+
+  function buildEligibilityFieldEntry(key, value) {
+    const header = splitNumberedEligibilityHeader(key);
+    let displayValue = value;
+    if (value instanceof Date) displayValue = formatDateTime(value);
+    else if (value && typeof value === 'object') displayValue = JSON.stringify(value);
+
+    return {
+      key: header.original,
+      baseKey: header.base,
+      groupNumber: header.groupNumber,
+      value,
+      displayValue
+    };
+  }
+
+  function classifyEligibilityFields(candidate) {
+    const source = candidate?.row;
+    const groups = {
+      request: [],
+      member: [],
+      clinician: [],
+      provider: [],
+      cards: new Map(),
+      additional: []
+    };
+
+    if (!source || typeof source !== 'object') return groups;
+
+    Object.entries(source).forEach(([key, value]) => {
+      const entry = buildEligibilityFieldEntry(key, value);
+      const base = entry.baseKey;
+
+      if (normalizedHeaderMatches(base, CARD_MODAL_HEADERS)) {
+        if (!groups.cards.has(entry.groupNumber)) groups.cards.set(entry.groupNumber, []);
+        groups.cards.get(entry.groupNumber).push(entry);
+        return;
+      }
+
+      if (normalizedHeaderMatches(base, REQUEST_MODAL_HEADERS)) {
+        groups.request.push(entry);
+        return;
+      }
+
+      if (normalizedHeaderMatches(base, MEMBER_MODAL_HEADERS)) {
+        groups.member.push(entry);
+        return;
+      }
+
+      if (normalizedHeaderMatches(base, CLINICIAN_MODAL_HEADERS)) {
+        groups.clinician.push(entry);
+        return;
+      }
+
+      if (normalizedHeaderMatches(base, PROVIDER_MODAL_HEADERS)) {
+        groups.provider.push(entry);
+        return;
+      }
+
+      groups.additional.push(entry);
+    });
+
+    return groups;
+  }
+
+  function eligibilityFieldRow(entry, candidate, claim) {
+    const field = resolveEligibilityComparisonField(entry.key);
+    const displayValue = entry.displayValue;
+
+    if (!field) {
+      return `<tr><th>${escapeHtml(entry.baseKey)}</th><td>${escapeHtml(displayValue)}</td></tr>`;
+    }
+
+    const matched = candidate.comparison?.[field] === true;
+    const eidBlankAccepted =
+      field === 'eid' &&
+      candidate.comparison?.eidBlankAccepted === true;
+    const background = matched ? '#d1e7dd' : '#f8d7da';
+    const border = matched ? '#badbcc' : '#f5c2c7';
+    const badgeBackground = matched ? '#198754' : '#dc3545';
+    const badgeText = eidBlankAccepted
+      ? 'Accepted: blank in Excel'
+      : matched
+        ? 'Match'
+        : 'Mismatch';
+    const claimValue = comparisonClaimValue(field, claim);
+
+    return `
+      <tr style="background:${background};border-color:${border};">
+        <th style="background:${background};border-color:${border};">
+          ${escapeHtml(entry.baseKey)}
+          <span style="display:block;font-size:11px;font-weight:normal;margin-top:3px;">
+            Compared with ${escapeHtml(comparisonLabel(field))}
+          </span>
+        </th>
+        <td style="background:${background};border-color:${border};">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;">
+            <span>${escapeHtml(displayValue)}</span>
+            <span style="background:${badgeBackground};color:#fff;border-radius:999px;padding:2px 8px;font-size:11px;white-space:nowrap;">
+              ${badgeText}
+            </span>
+          </div>
+          <div style="font-size:11px;margin-top:4px;opacity:.8;">
+            Claim: ${escapeHtml(claimValue || '(blank)')}
+          </div>
+        </td>
+      </tr>
+    `;
+  }
+
+  function renderEligibilitySection(title, entries, candidate, claim, options = {}) {
+    const visibleEntries = options.hideEmpty
+      ? entries.filter(entry => normalizeText(entry.displayValue) !== '')
+      : entries;
+
+    if (!visibleEntries.length) return '';
+
+    const subtitle = options.subtitle
+      ? `<div style="font-size:11px;opacity:.72;margin-top:2px;">${escapeHtml(options.subtitle)}</div>`
+      : '';
+
+    return `
+      <section class="eligibility-detail-section" style="min-width:0;">
+        <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:8px;margin-bottom:6px;">
+          <div>
+            <h5 style="margin:0;">${escapeHtml(title)}</h5>
+            ${subtitle}
+          </div>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-bordered eligibility-detail-table" style="margin-bottom:0;">
+            <tbody>
+              ${visibleEntries.map(entry => eligibilityFieldRow(entry, candidate, claim)).join('')}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    `;
+  }
+
+  function cardGroupHasValue(entries) {
+    return entries.some(entry => normalizeText(entry.displayValue) !== '');
+  }
+
+  function renderGroupedEligibilityDetails(candidate, claim) {
+    const grouped = classifyEligibilityFields(candidate);
+    const cards = Array.from(grouped.cards.entries())
+      .sort(([a], [b]) => a - b)
+      .filter(([, entries]) => cardGroupHasValue(entries));
+
+    const topSections = [
+      renderEligibilitySection('Request & Status', grouped.request, candidate, claim),
+      renderEligibilitySection('Member', grouped.member, candidate, claim),
+      renderEligibilitySection('Clinician', grouped.clinician, candidate, claim),
+      renderEligibilitySection('Provider', grouped.provider, candidate, claim)
+    ].filter(Boolean);
+
+    const cardSections = cards.map(([groupNumber, entries], index) =>
+      renderEligibilitySection(
+        `Card ${groupNumber}`,
+        entries,
+        candidate,
+        claim,
+        {
+          subtitle: groupNumber === 1
+            ? 'Primary card record'
+            : `Workbook card group ${groupNumber}`
+        }
+      )
+    );
+
+    const additionalSection = renderEligibilitySection(
+      'Additional Information',
+      grouped.additional,
+      candidate,
+      claim,
+      { hideEmpty: true }
+    );
+
+    const noCardsMessage = cardSections.length
+      ? ''
+      : '<div class="alert alert-secondary" style="margin:0;">No populated card records were found in this eligibility row.</div>';
+
+    return `
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:16px;align-items:start;">
+        ${topSections.join('')}
+      </div>
+
+      <div style="margin-top:18px;">
+        <h4 style="margin:0 0 9px;">Cards</h4>
+        ${noCardsMessage || `
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:16px;align-items:start;">
+            ${cardSections.join('')}
+          </div>
+        `}
+      </div>
+
+      ${additionalSection ? `
+        <div style="margin-top:18px;">
+          ${additionalSection}
+        </div>
+      ` : ''}
+    `;
+  }
+
   function eligibilityRowToRows(candidate, claim) {
     const object = candidate?.row;
     if (!object || typeof object !== 'object') {
@@ -1237,52 +1569,11 @@
     }
 
     return Object.entries(object)
-      .map(([key, value]) => {
-        let displayValue = value;
-        if (value instanceof Date) displayValue = formatDateTime(value);
-        else if (value && typeof value === 'object') displayValue = JSON.stringify(value);
-
-        const field = resolveEligibilityComparisonField(key);
-        if (!field) {
-          return `<tr><th>${escapeHtml(key)}</th><td>${escapeHtml(displayValue)}</td></tr>`;
-        }
-
-        const matched = candidate.comparison?.[field] === true;
-        const eidBlankAccepted =
-          field === 'eid' &&
-          candidate.comparison?.eidBlankAccepted === true;
-        const background = matched ? '#d1e7dd' : '#f8d7da';
-        const border = matched ? '#badbcc' : '#f5c2c7';
-        const badgeBackground = matched ? '#198754' : '#dc3545';
-        const badgeText = eidBlankAccepted
-          ? 'Accepted: blank in Excel'
-          : matched
-            ? 'Match'
-            : 'Mismatch';
-        const claimValue = comparisonClaimValue(field, claim);
-
-        return `
-          <tr style="background:${background};border-color:${border};">
-            <th style="background:${background};border-color:${border};">
-              ${escapeHtml(key)}
-              <span style="display:block;font-size:11px;font-weight:normal;margin-top:3px;">
-                Compared with ${escapeHtml(comparisonLabel(field))}
-              </span>
-            </th>
-            <td style="background:${background};border-color:${border};">
-              <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;">
-                <span>${escapeHtml(displayValue)}</span>
-                <span style="background:${badgeBackground};color:#fff;border-radius:999px;padding:2px 8px;font-size:11px;white-space:nowrap;">
-                  ${badgeText}
-                </span>
-              </div>
-              <div style="font-size:11px;margin-top:4px;opacity:.8;">
-                Claim: ${escapeHtml(claimValue || '(blank)')}
-              </div>
-            </td>
-          </tr>
-        `;
-      })
+      .map(([key, value]) => eligibilityFieldRow(
+        buildEligibilityFieldEntry(key, value),
+        candidate,
+        claim
+      ))
       .join('');
   }
 
@@ -1307,6 +1598,7 @@
           <thead>
             <tr>
               <th>Eligibility</th>
+              <th>Status</th>
               <th>Basis</th>
               <th>Ordered On</th>
               <th>Date</th>
@@ -1334,6 +1626,7 @@
                     ${escapeHtml(candidate.sheetName)} row ${escapeHtml(candidate.sheetRowNumber)}
                   </div>
                 </td>
+                <td>${eligibilityStatusBadge(candidate.status, true)}</td>
                 <td>${escapeHtml(candidate.bases?.join(' + ') || candidate.basis)}</td>
                 <td>${escapeHtml(candidate.orderedOnDisplay)}</td>
                 ${comparisonCell(candidate.comparison?.orderedOn === true)}
@@ -1374,6 +1667,9 @@
         style="border-bottom-left-radius:0;border-bottom-right-radius:0;"
       >
         Eligibility ${index + 1}
+        <span style="display:inline-block;margin-left:5px;vertical-align:middle;">
+          ${eligibilityStatusBadge(candidate.status, true)}
+        </span>
         ${candidate.selected ? `
           <span style="display:inline-block;margin-left:5px;background:#0d6efd;color:#fff;border-radius:999px;padding:1px 7px;font-size:10px;">
             Selected
@@ -1418,8 +1714,9 @@
         hidden
       >
         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
-          <h4 style="margin:0;">
-            ${escapeHtml(candidate.requestNumber || `Eligibility ${index + 1}`)}
+          <h4 style="margin:0;display:flex;align-items:center;gap:7px;flex-wrap:wrap;">
+            <span>${escapeHtml(candidate.requestNumber || `Eligibility ${index + 1}`)}</span>
+            ${eligibilityStatusBadge(candidate.status)}
             ${candidate.selected ? `
               <span style="display:inline-block;margin-left:6px;background:#0d6efd;color:#fff;border-radius:999px;padding:2px 8px;font-size:11px;vertical-align:middle;">
                 Selected
@@ -1440,11 +1737,7 @@
           ${candidate.minutesDifference == null ? '' :
             ` · Time difference: <strong>${escapeHtml(candidate.minutesDifference.toFixed(2))} minute(s)</strong>`}
         </p>
-        <div class="table-responsive">
-          <table class="table table-bordered eligibility-detail-table">
-            <tbody>${eligibilityRowToRows(candidate, detail.claimContext)}</tbody>
-          </table>
-        </div>
+        ${renderGroupedEligibilityDetails(candidate, detail.claimContext)}
       </section>
     `).join('');
 
@@ -1715,6 +2008,10 @@
     buildCandidateComparison,
     isMemberIdCorrectionCandidate,
     buildWrongMemberIdRemark,
+    eligibilityStatusStyle,
+    eligibilityStatusBadge,
+    classifyEligibilityFields,
+    renderGroupedEligibilityDetails,
     eligibilityRowToRows,
     buildModalTabs,
     buildModalPanes
