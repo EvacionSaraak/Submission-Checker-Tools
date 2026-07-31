@@ -1198,11 +1198,7 @@
         <td>${escapeHtml(result.EncounterStart)}</td>
         <td>${escapeHtml(result.ClaimClinicians)}</td>
         <td style="white-space:pre-line">${escapeHtml(
-          Array.isArray(result.EligibilityCandidates) && result.EligibilityCandidates.length
-            ? result.EligibilityCandidates
-                .map(candidate => candidate?.row?.requestNumber || '(none)')
-                .join('\n')
-            : '(none)'
+          result.SelectedEligibilityRequestNumber || '(none)'
         )}</td>
         <td>${escapeHtml(result.EligibilityOrderedOn)}</td>
         <td>${escapeHtml(result.EligibilityClinician)}</td>
@@ -1735,7 +1731,16 @@
     }
 
     return `
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:10px;margin-top:10px;min-width:0;">
+      <div
+        class="eligibility-candidate-comparison-grid"
+        style="
+          display:grid;
+          grid-template-columns:repeat(auto-fit,minmax(min(100%,615px),1fr));
+          gap:10px;
+          margin-top:10px;
+          min-width:0;
+        "
+      >
         ${candidates.map((candidate, index) => `
           <article style="min-width:0;border:1px solid ${candidate.completeMatch ? '#75b798' : '#ea868f'};border-radius:9px;padding:11px;background:#fff;">
             <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;flex-wrap:wrap;">
@@ -1917,7 +1922,7 @@
 
     modal.innerHTML = `
       <div class="modal-content eligibility-modal modal-scrollable" style="
-        width:min(1120px,97vw);max-height:94vh;overflow-y:auto;overflow-x:hidden;background:#fff;
+        width:97vw;max-width:none;max-height:94vh;overflow-y:auto;overflow-x:hidden;background:#fff;
         border-radius:8px;padding:15px;box-shadow:0 10px 30px rgba(0,0,0,.3);box-sizing:border-box;">
         <style>
           #eligibilityDetailsModal, #eligibilityDetailsModal * { box-sizing:border-box; }
@@ -1928,7 +1933,10 @@
             #eligibilityDetailsModal { padding:7px !important; }
             #eligibilityDetailsModal .eligibility-modal { width:100% !important; padding:11px !important; }
             #eligibilityDetailsModal .eligibility-section-grid,
-            #eligibilityDetailsModal .eligibility-field-grid { grid-template-columns:minmax(0,1fr) !important; }
+            #eligibilityDetailsModal .eligibility-field-grid,
+            #eligibilityDetailsModal .eligibility-candidate-comparison-grid {
+              grid-template-columns:minmax(0,1fr) !important;
+            }
             #eligibilityDetailsModal .eligibility-modal-tabs { gap:3px !important; }
           }
         </style>
