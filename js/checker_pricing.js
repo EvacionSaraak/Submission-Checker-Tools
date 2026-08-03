@@ -193,6 +193,68 @@ function getPatientShareReferenceRows(actRows, options = {}) {
     })
   );
 }
+function getPatientShareCodeLabel(patientShareRows) {
+  const codes = [];
+  const seen = new Set();
+  (patientShareRows || []).forEach(row => {
+    const code = getPricingRowCode(row);
+    if (!code || seen.has(code)) return;
+    seen.add(code);
+    codes.push(code);
+  });
+  if (!codes.length) return '';
+  return codes.length === 1
+    ? `Code ${codes[0]}: `
+    : `Codes ${codes.join(', ')}: `;
+}
+function getPatientSharePricingDetails(patientShareRows) {
+  const details = (patientShareRows || []).map(row => {
+    const code = getPricingRowCode(row) || '(unknown code)';
+    const quantityRaw = Number(row.ClaimedQty || row.Quantity || 1);
+    const quantity = Number.isFinite(quantityRaw) && quantityRaw > 0 ? quantityRaw : 1;
+    const baseReference = Number(row.ReferenceNetPrice);
+    const effectiveReference = row.ComputedRef !== null && row.ComputedRef !== undefined
+      ? Number(row.ComputedRef)
+      : Number(row.FactoredReference);
+    const referenceContribution = Number.isFinite(effectiveReference)
+      ? roundMoney(effectiveReference * quantity)
+      : null;
+    const pricingContext = String(row.PricingContext || '').trim() || 'Reference pricing';
+    const clinicianSpecialty = String(row._clinicianSpecialty || '').trim();
+    const appliedFactorRaw = String(row.AppliedFactor ?? '').trim();
+    const appliedFactor = appliedFactorRaw ? Number(appliedFactorRaw) : 1;
+    const modifierMultiplier = Number(row._modifierMultiplier);
+    const modifiers = String(row.Modifiers || '').trim();
+    const endoRate = String(row._endoPricingRate || '').trim();
+
+    const parts = [];
+    if (endoRate === 'ENDO') {
+      parts.push('endodontic pricing applied (Endodontist rate)');
+    } else if (endoRate === 'GD') {
+      parts.push('endodontic pricing applied (GD rate)');
+    } else {
+      parts.push(pricingContext);
+    }
+    if (clinicianSpecialty) parts.push(`clinician specialty ${clinicianSpecialty}`);
+    if (Number.isFinite(baseReference)) parts.push(`base unit price ${formatMoney(baseReference)}`);
+    if (Number.isFinite(appliedFactor) && !moneyEqual(appliedFactor, 1)) {
+      parts.push(`facility/payer factor ×${formatMoney(appliedFactor)}`);
+    }
+    if (Number.isFinite(modifierMultiplier) && !moneyEqual(modifierMultiplier, 1)) {
+      const modifierLabel = modifiers ? `modifier ${modifiers}` : 'modifier adjustment';
+      parts.push(`${modifierLabel} ×${formatMoney(modifierMultiplier)}`);
+    }
+    if (Number.isFinite(effectiveReference)) {
+      parts.push(`final unit reference ${formatMoney(effectiveReference)}`);
+    }
+    parts.push(`quantity ${formatMoney(quantity)}`);
+    if (referenceContribution !== null) {
+      parts.push(`reference contribution ${formatMoney(referenceContribution)}`);
+    }
+    return `${code} — ${parts.join('; ')}`;
+  });
+  return details.length ? ` Pricing details: ${details.join(' | ')}.` : '';
+}
 function calculatePatientShareSummary(actRows, options = {}) {
   const patientShareRows = getPatientShareReferenceRows(actRows, options);
   const totalRef = roundMoney(patientShareRows.reduce((sum, row) => {
@@ -228,6 +290,8 @@ function applyClaimLevelPatientShare(actRows, options) {
   const summary = calculatePatientShareSummary(actRows, { receiverID, medicalRules });
   const totalClaimedNet = summary.totalXmlNet;
   const totalRef = summary.totalRef;
+  const codeLabel = getPatientShareCodeLabel(summary.patientShareRows);
+  const pricingDetails = getPatientSharePricingDetails(summary.patientShareRows);
   const isMulti = actRows.length > 1;
   const comparison = compareMoney(totalClaimedNet + actualPS, totalRef);
   if (comparison === null) return;
@@ -242,7 +306,7 @@ function applyClaimLevelPatientShare(actRows, options) {
   let psStatus, psRemark, psRuleId;
   if (comparison < 0) {
     psStatus = 'Invalid';
-    psRemark = `${netLabel} plus ${psLabel} is below the ${refLabel}.`;
+    psRemark = `${codeLabel}${netLabel} plus ${psLabel} is below the ${refLabel}.${pricingDetails}`;
     psRuleId = 'MED_PATIENT_SHARE_BELOW';
   } else if (comparison === 0) {
     psStatus = 'Valid';
@@ -250,7 +314,7 @@ function applyClaimLevelPatientShare(actRows, options) {
     psRuleId = 'MED_PATIENT_SHARE_MATCH';
   } else {
     psStatus = 'Unknown';
-    psRemark = `${netLabel} plus ${psLabel} exceeds the ${refLabel}; manual review is required.`;
+    psRemark = `${codeLabel}${netLabel} plus ${psLabel} exceeds the ${refLabel}; manual review is required.${pricingDetails}`;
     psRuleId = 'MED_PATIENT_SHARE_ABOVE';
   }
   if (isMedicalMode && medicalShared && medicalRules) {
@@ -839,11 +903,12 @@ async function handleRun(options = {}) {
       let endoEntry = null;
       let nonEndoUsedEndoPrice = false;
       let nonEndoClinicianSpec = '';
+      let clinicianSpec = clinicianSpecialtyMap.get(rec.ClinicianLic || '') || '';
+      let endoPricingRate = '';
 
       if (pricingReceiverID === 'D001') {
         const encounterDate = parseEncounterDate(rec.EncounterDate);
         const isAfterCutoff = encounterDate !== null && encounterDate >= ENDO_PRICING_CUTOFF;
-        const clinicianSpec = clinicianSpecialtyMap.get(rec.ClinicianLic || '') || '';
         const isEndo = clinicianSpec === 'Endodontics';
         if (isAfterCutoff) {
           const pricingEntry = endoPricingMap.get(normalizeCode(rec.CPT)) || null;
@@ -855,6 +920,7 @@ async function handleRun(options = {}) {
               endoEntry = pricingEntry;
               refPrice = pricingEntry.endo_price;
               pricingContext = 'Endodontist Pricing';
+              endoPricingRate = 'ENDO';
             } else {
               nonEndoClinicianSpec = clinicianSpec || 'General Dentist';
               nonEndoUsedEndoPrice = Number.isFinite(endoRef) && (moneyEqual(xmlNet, endoRef) || moneyEqual(xmlUnit, endoRef) || moneyEqual(xmlNet * 2, endoRef));
@@ -862,6 +928,7 @@ async function handleRun(options = {}) {
                 endoEntry = pricingEntry;
                 refPrice = gpRef;
                 pricingContext = 'Endo GD Pricing';
+                endoPricingRate = 'GD';
               }
             }
           }
@@ -1046,6 +1113,7 @@ async function handleRun(options = {}) {
         ReferenceNetPrice: Number.isNaN(ref) ? (refPrice || '') : String(ref),
         AppliedFactor: (isMedicalMode && isMedicalPricingMatch) ? String(appliedFactor) : '',
         FactoredReference: Number.isNaN(effectiveRef) ? '' : String(effectiveRef),
+        PricingContext: pricingContext,
         PricingRow: endoEntry || matchRow || null,
         XmlRow: rec,
         isValid: status === 'Valid',
@@ -1061,6 +1129,8 @@ async function handleRun(options = {}) {
         PayerID: pricingReceiverID,
         _matchedFactorRule: matchedFactorRule,
         _modifierMultiplier: modifierMultiplier,
+        _clinicianSpecialty: clinicianSpec,
+        _endoPricingRate: endoPricingRate,
         _drugPricingMeta: drugPricingMeta,
         _drugExpectedNet: null
       };
@@ -1965,6 +2035,8 @@ window._pricingTestApi = {
   isValidZeroPricedConsultationCompanion,
   shouldDeferA001PricingToClaimLevel,
   getPatientShareReferenceRows,
+  getPatientShareCodeLabel,
+  getPatientSharePricingDetails,
   calculatePatientShareSummary,
   applyClaimLevelPatientShare,
   compareMoney,
