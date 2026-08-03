@@ -207,54 +207,6 @@ function getPatientShareCodeLabel(patientShareRows) {
     ? `Code ${codes[0]}: `
     : `Codes ${codes.join(', ')}: `;
 }
-function getPatientSharePricingDetails(patientShareRows) {
-  const details = (patientShareRows || []).map(row => {
-    const code = getPricingRowCode(row) || '(unknown code)';
-    const quantityRaw = Number(row.ClaimedQty || row.Quantity || 1);
-    const quantity = Number.isFinite(quantityRaw) && quantityRaw > 0 ? quantityRaw : 1;
-    const baseReference = Number(row.ReferenceNetPrice);
-    const effectiveReference = row.ComputedRef !== null && row.ComputedRef !== undefined
-      ? Number(row.ComputedRef)
-      : Number(row.FactoredReference);
-    const referenceContribution = Number.isFinite(effectiveReference)
-      ? roundMoney(effectiveReference * quantity)
-      : null;
-    const pricingContext = String(row.PricingContext || '').trim() || 'Reference pricing';
-    const clinicianSpecialty = String(row._clinicianSpecialty || '').trim();
-    const appliedFactorRaw = String(row.AppliedFactor ?? '').trim();
-    const appliedFactor = appliedFactorRaw ? Number(appliedFactorRaw) : 1;
-    const modifierMultiplier = Number(row._modifierMultiplier);
-    const modifiers = String(row.Modifiers || '').trim();
-    const endoRate = String(row._endoPricingRate || '').trim();
-
-    const parts = [];
-    if (endoRate === 'ENDO') {
-      parts.push('endodontic pricing applied (Endodontist rate)');
-    } else if (endoRate === 'GD') {
-      parts.push('endodontic pricing applied (GD rate)');
-    } else {
-      parts.push(pricingContext);
-    }
-    if (clinicianSpecialty) parts.push(`clinician specialty ${clinicianSpecialty}`);
-    if (Number.isFinite(baseReference)) parts.push(`base unit price ${formatMoney(baseReference)}`);
-    if (Number.isFinite(appliedFactor) && !moneyEqual(appliedFactor, 1)) {
-      parts.push(`facility/payer factor ×${formatMoney(appliedFactor)}`);
-    }
-    if (Number.isFinite(modifierMultiplier) && !moneyEqual(modifierMultiplier, 1)) {
-      const modifierLabel = modifiers ? `modifier ${modifiers}` : 'modifier adjustment';
-      parts.push(`${modifierLabel} ×${formatMoney(modifierMultiplier)}`);
-    }
-    if (Number.isFinite(effectiveReference)) {
-      parts.push(`final unit reference ${formatMoney(effectiveReference)}`);
-    }
-    parts.push(`quantity ${formatMoney(quantity)}`);
-    if (referenceContribution !== null) {
-      parts.push(`reference contribution ${formatMoney(referenceContribution)}`);
-    }
-    return `${code} — ${parts.join('; ')}`;
-  });
-  return details.length ? ` Pricing details: ${details.join(' | ')}.` : '';
-}
 function calculatePatientShareSummary(actRows, options = {}) {
   const patientShareRows = getPatientShareReferenceRows(actRows, options);
   const totalRef = roundMoney(patientShareRows.reduce((sum, row) => {
@@ -291,7 +243,6 @@ function applyClaimLevelPatientShare(actRows, options) {
   const totalClaimedNet = summary.totalXmlNet;
   const totalRef = summary.totalRef;
   const codeLabel = getPatientShareCodeLabel(summary.patientShareRows);
-  const pricingDetails = getPatientSharePricingDetails(summary.patientShareRows);
   const isMulti = actRows.length > 1;
   const comparison = compareMoney(totalClaimedNet + actualPS, totalRef);
   if (comparison === null) return;
@@ -300,13 +251,11 @@ function applyClaimLevelPatientShare(actRows, options) {
     ? `Total Net ${formatMoney(totalClaimedNet)}`
     : `Net ${formatMoney(totalClaimedNet)}`;
   const psLabel = `Patient Share ${formatMoney(actualPS)}`;
-  const refLabel = isMulti
-    ? `total reference of ${formatMoney(totalRef)}`
-    : `reference price of ${formatMoney(totalRef)}`;
+  const refLabel = `reference ${formatMoney(totalRef)}`;
   let psStatus, psRemark, psRuleId;
   if (comparison < 0) {
     psStatus = 'Invalid';
-    psRemark = `${codeLabel}${netLabel} plus ${psLabel} is below the ${refLabel}.${pricingDetails}`;
+    psRemark = `${codeLabel}${netLabel} + ${psLabel} is below ${refLabel}; see Compare.`;
     psRuleId = 'MED_PATIENT_SHARE_BELOW';
   } else if (comparison === 0) {
     psStatus = 'Valid';
@@ -314,7 +263,7 @@ function applyClaimLevelPatientShare(actRows, options) {
     psRuleId = 'MED_PATIENT_SHARE_MATCH';
   } else {
     psStatus = 'Unknown';
-    psRemark = `${codeLabel}${netLabel} plus ${psLabel} exceeds the ${refLabel}; manual review is required.${pricingDetails}`;
+    psRemark = `${codeLabel}${netLabel} + ${psLabel} exceeds ${refLabel}; see Compare.`;
     psRuleId = 'MED_PATIENT_SHARE_ABOVE';
   }
   if (isMedicalMode && medicalShared && medicalRules) {
@@ -662,9 +611,12 @@ async function handleRun(options = {}) {
       medicalPricingRaw
     });
     const clinicianSpecialtyMap = new Map();
+    const clinicianNameMap = new Map();
     (Array.isArray(clinicianData) ? clinicianData : []).forEach(e => {
       const lic = String(e['Phy Lic'] || '').trim();
-      if (lic) clinicianSpecialtyMap.set(lic, String(e['Specialty'] || '').trim());
+      if (!lic) return;
+      clinicianSpecialtyMap.set(lic, String(e['Specialty'] || '').trim());
+      clinicianNameMap.set(lic, String(e['Clinician Name'] || e['Name'] || '').trim());
     });
     const claimRecordsByID = new Map();
     extracted.forEach(rec => {
@@ -1131,11 +1083,24 @@ async function handleRun(options = {}) {
         _modifierMultiplier: modifierMultiplier,
         _clinicianSpecialty: clinicianSpec,
         _endoPricingRate: endoPricingRate,
+        _nonEndoUsedEndoPrice: nonEndoUsedEndoPrice,
         _drugPricingMeta: drugPricingMeta,
         _drugExpectedNet: null
       };
     });
     output.forEach(row => {
+      const xmlRow = row.XmlRow || {};
+      const clinicianLicense = String(
+        row._clinicianLicense ||
+        xmlRow.PerformingClinicianLic ||
+        xmlRow.ClinicianLic ||
+        xmlRow.OrderingClinicianLic ||
+        ''
+      ).trim();
+      row._clinicianLicense = clinicianLicense;
+      row._clinicianName = String(row._clinicianName || clinicianNameMap.get(clinicianLicense) || '').trim();
+      row._clinicianSpecialty = String(row._clinicianSpecialty || clinicianSpecialtyMap.get(clinicianLicense) || '').trim();
+
       const pricingRemark = String(row.Remarks || '').trim();
       const pricingStatus = String(row.status || '').trim() || 'Invalid';
       row.findings = Array.isArray(row.findings) ? row.findings.slice() : [];
@@ -1540,9 +1505,11 @@ function extractPricingRecords(xmlDoc) {
         textValue(act, 'Qty')
       ]).trim() || '0';
 
+      const performingClinicianLic = String(textValue(act, 'Clinician') || '').trim();
+      const orderingClinicianLic = String(textValue(act, 'OrderingClinician') || '').trim();
       const clinicianLic = firstNonEmpty([
-        textValue(act, 'OrderingClinician'),
-        textValue(act, 'Clinician')
+        performingClinicianLic,
+        orderingClinicianLic
       ]).trim();
       // Extract CPT modifiers from Observation (ValueType = 'Modifiers')
       const modifierSet = new Set();
@@ -1569,6 +1536,8 @@ function extractPricingRecords(xmlDoc) {
         Quantity: qty,
         FacilityID: facilityId,
         ClinicianLic: clinicianLic,
+        PerformingClinicianLic: performingClinicianLic,
+        OrderingClinicianLic: orderingClinicianLic,
         EncounterDate: encounterDateStr,
         PatientShare: claimPatientShare,
         ClaimGross: claimGross,
@@ -1786,10 +1755,10 @@ function buildResultsTable(rows) {
     tr.appendChild(remarksCell);
     // Compare button
     const compareCell = makeCell('');
-    if (r.PricingRow) {
+    if (r.ClaimID) {
       const btn = document.createElement('button');
       btn.type = 'button';
-      btn.textContent = 'View';
+      btn.textContent = 'Compare';
       btn.dataset.pricingIndex = String(r._originalIndex);
       // Use attribute so the handler survives table cloning during Check All
       btn.setAttribute('onclick', `window.showPricingComparison(${r._originalIndex})`);
@@ -1813,124 +1782,251 @@ function buildResultsTable(rows) {
 }
 
 // ----------------- Modal comparison -----------------
-function showComparisonModal(index) {
-  const row = lastResults[index];
+function getComparisonExpectedUnit(row) {
+  if (row && row._drugPricingMeta && row._drugPricingMeta.pricePerBasis != null) {
+    const drugUnit = Number(row._drugPricingMeta.pricePerBasis);
+    return Number.isFinite(drugUnit) ? drugUnit : null;
+  }
+  const computed = parseOptionalMoney(row && row.ComputedRef);
+  if (computed !== null) return computed;
+  const factored = parseOptionalMoney(row && row.FactoredReference);
+  if (factored !== null) return factored;
+  return parseOptionalMoney(row && row.ReferenceNetPrice);
+}
 
-  if (!row) {
+function getComparisonExpectedTotal(row) {
+  if (row && row._drugExpectedNet != null) {
+    const drugExpected = Number(row._drugExpectedNet);
+    return Number.isFinite(drugExpected) ? drugExpected : null;
+  }
+  const unit = getComparisonExpectedUnit(row);
+  if (!Number.isFinite(unit)) return null;
+  const qtyRaw = Number(row && (row.ClaimedQty || (row.XmlRow && row.XmlRow.Quantity) || 1));
+  const qty = Number.isFinite(qtyRaw) && qtyRaw > 0 ? qtyRaw : 1;
+  return roundMoney(unit * qty);
+}
+
+function getComparisonPricingBasis(row) {
+  if (row && row._drugPricingMeta) {
+    const basis = String(row._drugPricingMeta.basis || 'Drug pricing').trim();
+    const source = String(row._drugPricingMeta.source || '').trim();
+    return source ? `${basis} — ${source}` : basis;
+  }
+
+  let basis = String((row && row.PricingContext) || 'Reference pricing').trim();
+  if (row && row._endoPricingRate === 'ENDO') basis = 'Endodontist Pricing';
+  if (row && row._endoPricingRate === 'GD') basis = 'Endo GD Pricing';
+
+  const adjustments = [];
+  const factor = Number(row && row.AppliedFactor);
+  if (Number.isFinite(factor) && !moneyEqual(factor, 1)) adjustments.push(`factor ×${formatMoney(factor)}`);
+  const modifier = Number(row && row._modifierMultiplier);
+  if (Number.isFinite(modifier) && !moneyEqual(modifier, 1)) adjustments.push(`modifier ×${formatMoney(modifier)}`);
+  return adjustments.length ? `${basis}; ${adjustments.join(', ')}` : basis;
+}
+
+function getComparisonPriceResult(row, claimRows) {
+  const specialty = String((row && row._clinicianSpecialty) || '').trim();
+  const endoRate = String((row && row._endoPricingRate) || '').trim();
+
+  if (row && row._nonEndoUsedEndoPrice) {
+    return { correct: false, reason: 'Endodontist price was used by a non-Endodontist.' };
+  }
+  if (endoRate === 'ENDO' && specialty !== 'Endodontics') {
+    return { correct: false, reason: 'Endodontist rate does not match the clinician specialty.' };
+  }
+  if (endoRate === 'GD' && specialty === 'Endodontics') {
+    return { correct: false, reason: 'GD endodontic rate does not match the clinician specialty.' };
+  }
+
+  if (row && row._drugPricingMeta) {
+    const result = String(row._drugPriceResult || '').trim().toLowerCase();
+    if (result === 'valid') return { correct: true, reason: 'Correct' };
+    if (result === 'invalid') return { correct: false, reason: 'Incorrect' };
+    return { correct: null, reason: 'Unknown' };
+  }
+
+  const claimed = parseOptionalMoney(row && (row.ClaimedNet ?? (row.XmlRow && row.XmlRow.Net)));
+  const expectedUnit = getComparisonExpectedUnit(row);
+  const expectedTotal = getComparisonExpectedTotal(row);
+  const qtyRaw = Number(row && (row.ClaimedQty || (row.XmlRow && row.XmlRow.Quantity) || 1));
+  const qty = Number.isFinite(qtyRaw) && qtyRaw > 0 ? qtyRaw : 1;
+  const code = normalizeCode(row && row.CPT);
+
+  if (!Number.isFinite(claimed) || !Number.isFinite(expectedUnit) || !Number.isFinite(expectedTotal)) {
+    return { correct: null, reason: 'Unknown' };
+  }
+
+  if (
+    moneyEqual(claimed, expectedTotal) ||
+    moneyEqual(claimed, expectedUnit) ||
+    moneyEqual(claimed / qty, expectedUnit) ||
+    moneyEqual(claimed * 2, expectedUnit) ||
+    (code === '42702' && moneyEqual(claimed, expectedUnit * 2))
+  ) {
+    return { correct: true, reason: 'Correct' };
+  }
+
+  const positiveReferenceRows = (claimRows || []).filter(candidate => {
+    const total = getComparisonExpectedTotal(candidate);
+    return Number.isFinite(total) && total > 0;
+  });
+  const patientShare = Number(row && row.PatientShare || 0);
+  if (positiveReferenceRows.length === 1 && patientShare > 0 && moneyEqual(claimed + patientShare, expectedTotal)) {
+    return { correct: true, reason: 'Correct with Patient Share' };
+  }
+
+  return { correct: false, reason: 'Incorrect' };
+}
+
+function getComparisonClinicianResult(row) {
+  const license = String((row && row._clinicianLicense) || '').trim();
+  const name = String((row && row._clinicianName) || '').trim();
+  const specialty = String((row && row._clinicianSpecialty) || '').trim();
+  const resolved = Boolean(license && (name || specialty));
+  return { license, name, specialty, resolved };
+}
+
+function comparisonCellClass(value) {
+  if (value === true) return 'pricing-compare-good';
+  if (value === false) return 'pricing-compare-bad';
+  return 'pricing-compare-neutral';
+}
+
+function showComparisonModal(index) {
+  const selectedRow = lastResults[index];
+  if (!selectedRow) {
     alert('Row not found');
     return;
   }
 
-  const xml = row.XmlRow || {};
-  const pricing = row.PricingRow || {};
-  const xmlNet = Number(xml.Net || 0);
-  const xmlQty = Number(xml.Quantity || 0);
+  const claimRows = lastResults.filter(row => String(row.ClaimID || '') === String(selectedRow.ClaimID || ''));
+  const rows = claimRows.length ? claimRows : [selectedRow];
+  const totalNet = roundMoney(rows.reduce((sum, row) => sum + Number(row.xmlNetNum ?? row.ClaimedNet ?? 0), 0)) || 0;
+  const patientShare = Number(rows[0] && rows[0].PatientShare || 0);
+  const totalReference = roundMoney(rows.reduce((sum, row) => {
+    const expected = getComparisonExpectedTotal(row);
+    return sum + (Number.isFinite(expected) ? expected : 0);
+  }, 0)) || 0;
+  const claimComparison = compareMoney(totalNet + patientShare, totalReference);
+  const claimResultText = claimComparison === null ? 'Unknown' : claimComparison === 0 ? 'Matches' : claimComparison < 0 ? 'Below reference' : 'Above reference';
+  const claimResultClass = comparisonCellClass(claimComparison === null ? null : claimComparison === 0);
 
-  const isDrug = row._drugPricingMeta != null;
-  const xmlTable = isDrug
-    ? `
-    <h4>XML Activity</h4>
-    <table class="table table-bordered table-sm">
-      <tr><th>Claim ID</th><td>${escapeHtml(String(row.ClaimID || ''))}</td></tr>
-      <tr><th>Activity ID</th><td>${escapeHtml(String(row.ActivityID || ''))}</td></tr>
-      <tr><th>Type</th><td>${escapeHtml(String(row.ActivityType || xml.ActivityType || '5'))}</td></tr>
-      <tr><th>Drug Code</th><td>${escapeHtml(row._drugPricingMeta?.drug?.['Drug Code'] || row.CPT || '')}</td></tr>
-      <tr><th>Claimed Net</th><td>${escapeHtml(String(xml.Net || row.ClaimedNet || ''))}</td></tr>
-      <tr><th>Quantity</th><td>${escapeHtml(String(xml.Quantity || row.ClaimedQty || ''))}</td></tr>
-    </table>
-    `
-    : `
-    <h4>XML (Claim)</h4>
-    <table class="table table-bordered table-sm">
-      <tr><th>Code</th><td>${escapeHtml(xml.CPT || row.CPT)}</td></tr>
-      <tr><th>Net</th><td>${escapeHtml(String(xml.Net || row.ClaimedNet || ''))}</td></tr>
-      <tr><th>Quantity</th><td>${escapeHtml(String(xml.Quantity || row.ClaimedQty || ''))}</td></tr>
-      <tr><th>Net ÷ Qty</th><td>${escapeHtml(xmlQty > 0 ? String(xmlNet / xmlQty) : 'N/A')}</td></tr>
-    </table>
-    `;
-  const pricingTable = isDrug
-    ? (() => {
-        const dm = row._drugPricingMeta;
-        const expectedNet = row._drugExpectedNet;
-        const drug = dm.drug || {};
-        return `
-    <h4>Drug Reference</h4>
-    <table class="table table-bordered table-sm">
-      <tr><th>Package Name</th><td>${escapeHtml(String(drug['Package Name'] || ''))}</td></tr>
-      <tr><th>Dosage Form</th><td>${escapeHtml(String(drug['Dosage Form'] || ''))}</td></tr>
-      <tr><th>Package Size</th><td>${escapeHtml(String(drug['Package Size'] || ''))}</td></tr>
-      <tr><th>Status</th><td>${escapeHtml(String(drug['Status'] || row._drugStatus || ''))}</td></tr>
-      <tr><th>Effective Date</th><td>${escapeHtml(String(drug['UPP Effective Date'] || ''))}</td></tr>
-      <tr><th>Delete Effective Date</th><td>${escapeHtml(String(drug['Delete Effective Date'] || ''))}</td></tr>
-      <tr><th>Thiqa Formulary</th><td>${escapeHtml(String(drug['Included in Thiqa/ ABM - other than 1&7- Drug Formulary'] || ''))}</td></tr>
-      <tr><th>Daman Basic Formulary</th><td>${escapeHtml(String(drug['Included In Basic Drug Formulary'] || ''))}</td></tr>
-    </table>
-    <h4>Quantity Analysis</h4>
-    <table class="table table-bordered table-sm">
-      <tr><th>Package Price to Public</th><td>${escapeHtml(String(drug['Package Price to Public'] || ''))}</td></tr>
-      <tr><th>Unit Price to Public</th><td>${escapeHtml(String(drug['Unit Price to Public'] || ''))}</td></tr>
-      <tr><th>Required Quantity</th><td>${escapeHtml(row._drugRequiredQuantity != null ? String(row._drugRequiredQuantity) : 'N/A')}</td></tr>
-      <tr><th>Claimed Quantity</th><td>${escapeHtml(String(xml.Quantity || row.ClaimedQty || ''))}</td></tr>
-      <tr><th>Quantity Result</th><td>${escapeHtml(String(row._drugQuantityResult || ''))}</td></tr>
-    </table>
-    <h4>Price Analysis</h4>
-    <table class="table table-bordered table-sm">
-      <tr><th>Pricing Basis</th><td>${escapeHtml(dm.basis)}</td></tr>
-      <tr><th>Pricing Source</th><td>${escapeHtml(dm.source)}</td></tr>
-      <tr><th>Selected Price</th><td>${escapeHtml(String(dm.pricePerBasis))}</td></tr>
-      <tr><th>Calculation</th><td>${escapeHtml(String(dm.pricePerBasis))} × ${escapeHtml(String(xml.Quantity || row.ClaimedQty || ''))}</td></tr>
-      <tr><th>Expected Net</th><td>${escapeHtml(expectedNet != null ? String(expectedNet) : 'N/A')}</td></tr>
-      <tr><th>Claimed Net</th><td>${escapeHtml(String(xml.Net || row.ClaimedNet || ''))}</td></tr>
-      <tr><th>Price Result</th><td>${escapeHtml(String(row._drugPriceResult || ''))}</td></tr>
-    </table>
-    `;
-      })()
-    : (() => {
-        const refPrice = String(row.ReferenceNetPrice || '');
-        const factoredRefPrice = String(row.FactoredReference || '');
-        const factorRule = row._matchedFactorRule;
-        const modMult = row._modifierMultiplier != null ? row._modifierMultiplier : 1;
-        const rowAppliedFactor = row.AppliedFactor || '';
-        const facilityId = (row.XmlRow || {}).FacilityID || '';
-        const factorRows = factorRule
-          ? `<tr><th>Facility</th><td>${escapeHtml(factorRule.facility)} (${escapeHtml(facilityId)})</td></tr>
-             <tr><th>Matched Service</th><td>${escapeHtml(factorRule.serviceType || factorRule.matchType)}</td></tr>
-             <tr><th>Receiver ID</th><td>${escapeHtml(row.ReceiverID || row.PayerID || '')}</td></tr>
-             <tr><th>Claim Payer ID</th><td>${escapeHtml(row.ClaimPayerID || '')}</td></tr>
-             <tr><th>Applied Factor</th><td>${escapeHtml(rowAppliedFactor)}</td></tr>
-             <tr><th>Modifier Multiplier</th><td>${escapeHtml(String(modMult))}</td></tr>`
-          : (rowAppliedFactor
-              ? `<tr><th>Applied Factor</th><td>${escapeHtml(rowAppliedFactor)}</td></tr>`
-              : '');
-        return `
-    <h4>Pricing Reference</h4>
-    <table class="table table-bordered table-sm">
-      <tr><th>Code</th><td>${escapeHtml(String(firstNonEmptyKey(pricing, ['Drug Code', 'Code', 'CPT', 'code']) || ''))}</td></tr>
-      <tr><th>Mandatory Tariff Base</th><td>${escapeHtml(refPrice)}</td></tr>
-      ${factorRows}
-      <tr><th>Factored Net Price</th><td>${escapeHtml(factoredRefPrice)}</td></tr>
-    </table>
-    `;
-      })();
+  const activityRowsHtml = rows.map(row => {
+    const expectedUnit = getComparisonExpectedUnit(row);
+    const expectedTotal = getComparisonExpectedTotal(row);
+    const priceResult = getComparisonPriceResult(row, rows);
+    const clinician = getComparisonClinicianResult(row);
+    const priceClass = comparisonCellClass(priceResult.correct);
+    const clinicianClass = comparisonCellClass(clinician.resolved);
+    const basisClass = comparisonCellClass(priceResult.correct);
+    const qty = String(row.ClaimedQty || (row.XmlRow && row.XmlRow.Quantity) || '');
+    const expectedDisplay = Number.isFinite(expectedTotal)
+      ? `${formatMoney(expectedTotal)}${Number.isFinite(expectedUnit) && !moneyEqual(expectedUnit, expectedTotal) ? `<small>unit ${escapeHtml(formatMoney(expectedUnit))}</small>` : ''}`
+      : 'N/A';
+
+    return `
+      <tr>
+        <td>${escapeHtml(String(row.CPT || ''))}<small>${escapeHtml(String(row.ActivityID || ''))}</small></td>
+        <td class="${priceClass}">${escapeHtml(parseOptionalMoney(row.ClaimedNet) === null ? 'N/A' : formatMoney(row.ClaimedNet))}</td>
+        <td>${escapeHtml(qty)}</td>
+        <td class="${basisClass}">${expectedDisplay}</td>
+        <td class="${basisClass}">${escapeHtml(getComparisonPricingBasis(row))}</td>
+        <td class="${priceClass}">${escapeHtml(priceResult.reason)}</td>
+        <td class="${clinicianClass}">${escapeHtml(clinician.name || '(not found)')}</td>
+        <td class="${clinicianClass}">${escapeHtml(clinician.license || '(missing)')}</td>
+        <td class="${clinicianClass}">${escapeHtml(clinician.specialty || '(not found)')}</td>
+      </tr>`;
+  }).join('');
+
   const modalHtml = `
+    <style>
+      #comparisonModal .modal-content {
+        width: min(1500px, 97vw);
+        max-height: 92vh;
+        overflow-y: auto;
+        overflow-x: hidden;
+        padding: 18px;
+      }
+      #comparisonModal .pricing-compare-summary,
+      #comparisonModal .pricing-compare-table {
+        width: 100%;
+        border-collapse: collapse;
+        table-layout: fixed;
+        margin-bottom: 14px;
+        font-size: 12px;
+      }
+      #comparisonModal th,
+      #comparisonModal td {
+        border: 1px solid #cfd4da;
+        padding: 7px;
+        vertical-align: top;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+      }
+      #comparisonModal th { background: #f3f4f6; text-align: left; }
+      #comparisonModal .pricing-compare-good { background: #d1e7dd; color: #0f5132; }
+      #comparisonModal .pricing-compare-bad { background: #f8d7da; color: #842029; }
+      #comparisonModal .pricing-compare-neutral { background: #fff3cd; color: #664d03; }
+      #comparisonModal small { display: block; margin-top: 2px; opacity: .75; }
+      #comparisonModal .pricing-compare-table th:nth-child(1) { width: 7%; }
+      #comparisonModal .pricing-compare-table th:nth-child(2) { width: 8%; }
+      #comparisonModal .pricing-compare-table th:nth-child(3) { width: 5%; }
+      #comparisonModal .pricing-compare-table th:nth-child(4) { width: 9%; }
+      #comparisonModal .pricing-compare-table th:nth-child(5) { width: 16%; }
+      #comparisonModal .pricing-compare-table th:nth-child(6) { width: 9%; }
+      #comparisonModal .pricing-compare-table th:nth-child(7) { width: 17%; }
+      #comparisonModal .pricing-compare-table th:nth-child(8) { width: 10%; }
+      #comparisonModal .pricing-compare-table th:nth-child(9) { width: 19%; }
+      @media (max-width: 900px) {
+        #comparisonModal .pricing-compare-table { font-size: 11px; }
+        #comparisonModal th, #comparisonModal td { padding: 5px; }
+      }
+    </style>
     <div class="modal-content">
       <button type="button" class="close" onclick="window.closePricingComparison()">×</button>
-      <h3>Price Comparison</h3>
-      ${xmlTable}
-      ${pricingTable}
+      <h3>Price Comparison — ${escapeHtml(String(selectedRow.ClaimID || ''))}</h3>
+      <table class="pricing-compare-summary">
+        <thead>
+          <tr><th>Total Net</th><th>Patient Share</th><th>Net + Patient Share</th><th>Total Reference</th><th>Claim Result</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>${escapeHtml(formatMoney(totalNet))}</td>
+            <td>${escapeHtml(formatMoney(patientShare))}</td>
+            <td class="${claimResultClass}">${escapeHtml(formatMoney(totalNet + patientShare))}</td>
+            <td class="${claimResultClass}">${escapeHtml(formatMoney(totalReference))}</td>
+            <td class="${claimResultClass}">${escapeHtml(claimResultText)}</td>
+          </tr>
+        </tbody>
+      </table>
+      <table class="pricing-compare-table">
+        <thead>
+          <tr>
+            <th>Code</th>
+            <th>Claimed Net</th>
+            <th>Qty</th>
+            <th>Expected Net</th>
+            <th>Pricing Basis</th>
+            <th>Price Result</th>
+            <th>Clinician Name</th>
+            <th>License</th>
+            <th>Specialty</th>
+          </tr>
+        </thead>
+        <tbody>${activityRowsHtml}</tbody>
+      </table>
       <button type="button" onclick="window.closePricingComparison()">Close</button>
-    </div>
-  `;
+    </div>`;
 
   closeComparisonModal();
   const modal = document.createElement('div');
   modal.id = 'comparisonModal';
   modal.className = 'modal';
   modal.innerHTML = modalHtml;
-  modal.addEventListener('click', e => {
-    if (e.target === modal) closeComparisonModal();
+  modal.addEventListener('click', event => {
+    if (event.target === modal) closeComparisonModal();
   });
-
   document.body.appendChild(modal);
   modal.style.display = 'flex';
 }
@@ -2036,9 +2132,11 @@ window._pricingTestApi = {
   shouldDeferA001PricingToClaimLevel,
   getPatientShareReferenceRows,
   getPatientShareCodeLabel,
-  getPatientSharePricingDetails,
   calculatePatientShareSummary,
   applyClaimLevelPatientShare,
+  getComparisonExpectedUnit,
+  getComparisonExpectedTotal,
+  getComparisonPriceResult,
   compareMoney,
   shouldAddNoPricingMatchRemark,
   shouldAddMissingEndoPriceRemark,
