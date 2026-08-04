@@ -3,9 +3,9 @@
         'use strict';
         // checker_schema.js with modal table view and Person schema support.
         // Includes medical validation, pregnancy diagnosis validation,
-        // Activity ID validation, and Mandatory Tariff occurrence limits.
+        // Mandatory Tariff occurrence limits.
         // medical consistency rules, pregnancy diagnosis validation,
-        // global Activity ID validation, and Mandatory Tariff occurrence limits.
+        // Mandatory Tariff occurrence limits.
         //
         // Expected resources:
         // ../json/clinician_licenses.json
@@ -461,47 +461,6 @@
             }
         }
         // =====================================================================
-        // GLOBAL ACTIVITY ID UNIQUENESS
-        // =====================================================================
-        function buildDuplicateActivityReferenceRemarksByClaim(claims) {
-            const occurrencesByID = new Map();
-            Array.from(claims || []).forEach(claim => {
-                const claimID = getDirectChildText(claim, 'ID') || 'Unknown';
-                const activities = Array.from(claim?.children || []).filter(child => String(child?.nodeName || child?.tagName || '').trim() === 'Activity');
-                activities.forEach(activity => {
-                    const activityID = getDirectChildText(activity, 'ID').trim().toUpperCase();
-                    if (!activityID) {
-                        return;
-                    }
-                    if (!occurrencesByID.has(activityID)) {
-                        occurrencesByID.set(activityID,[]);
-                    }
-                    occurrencesByID.get(activityID).push({ claim, claimID, activityID });
-                });
-            });
-            const remarksByClaim = new Map();
-            occurrencesByID.forEach((occurrences, activityID) => {
-                if (occurrences.length < 2) {
-                    return;
-                }
-                occurrences.forEach(current => {
-                    const otherClaimIDs = Array.from(new Set(occurrences.filter(item => item !== current).map(item => item.claimID).filter(Boolean))).sort();
-                    if (!otherClaimIDs.length) {
-                        return;
-                    }
-                    if (!remarksByClaim.has(current.claim)) {
-                        remarksByClaim.set(current.claim,[]);
-                    }
-                    const remark = `Activity reference ${activityID} ` + `already exists in ` + `${formatNaturalList(otherClaimIDs)}.`;
-                    const remarks = remarksByClaim.get(current.claim);
-                    if (!remarks.includes(remark)) {
-                        remarks.push(remark);
-                    }
-                });
-            });
-            return remarksByClaim;
-        }
-        // =====================================================================
         // MANDATORY TARIFF OCCURRENCE LIMITS
         // =====================================================================
         function cleanSchemaRemarkLines(remark) {
@@ -746,10 +705,6 @@
         function specialtyContains(specialty, searchText) {
             return normalizeSpecialty(specialty).includes(normalizeSpecialty(searchText));
         }
-        function isOphthalmologyOrPsychiatrySpecialty(specialty) {
-            const normalized = normalizeSpecialty(specialty);
-            return (normalized.includes('OPTHALMOLOGY') || normalized.includes('OPHTHALMOLOGY') || normalized.includes('PSYCHIATRY'));
-        }
         function validateMedicalOrderingConsistency(activities, getText, invalidFields, options = {}) {
             if (!options.isMedicalClaim) {
                 return;
@@ -788,95 +743,46 @@
                 invalidFields.push(`Duplicate code ${code} with Ordering Clinician ` + `${orderingClinician}.`);
             });
         }
-        
         function validateConsultationAndSpecialtyRules(activities, text, invalidFields, clinicianSpecialtyMap, options = {}) {
-          if (!options.isMedicalClaim) return;
-        
-          const contexts = Array.from(activities || []).map(activity => {
-            const clinician = String(text('Clinician', activity) || '').trim().toUpperCase();
-            const orderingClinician = String(text('OrderingClinician', activity) || '').trim().toUpperCase();
-        
-            return {
-              code: String(text('Code', activity) || '').trim(),
-              quantityRaw: String(text('Quantity', activity) || '').trim(),
-              quantity: Number(text('Quantity', activity) || 0),
-              net: Number(text('Net', activity) || 0),
-              clinicianSpecialty: clinicianSpecialtyMap.get(clinician) || '',
-              orderingSpecialty: clinicianSpecialtyMap.get(orderingClinician) || ''
-            };
-          });
-        
-          const requires992SpecialtyCheck = contexts.length > 1;
-          const infusionCodes = new Set();
-          const consultationCodes = new Set();
-        
-          contexts.forEach(context => {
-            const { code, quantityRaw, quantity, net, clinicianSpecialty, orderingSpecialty } = context;
-            if (!code) return;
-        
-            if (MUTUALLY_EXCLUSIVE_INFUSION_CODES.has(code)) infusionCodes.add(code);
-            if (GP_992_CODES.has(code)) consultationCodes.add(code);
-        
-            if (INVALID_ACTIVITY_CODES.has(code)) {
-              invalidFields.push(`Activity ${code} is invalid and cannot be used.`);
-            }
-        
-            if (/^8/.test(code) && code !== '82948' && !specialtyContains(clinicianSpecialty, 'Pathology')) {
-              invalidFields.push(`Activity ${code} requires Clinician specialty containing Pathology (Currently \`${clinicianSpecialty || 'Unknown'}\`).`);
-            }
-        
-            if ((code === '97802' || code === '97803') && !specialtyContains(clinicianSpecialty, 'Dietician')) {
-              invalidFields.push(`Activity ${code} requires Clinician specialty containing Dietician (Currently \`${clinicianSpecialty || 'Unknown'}\`).`);
-            }
-        
-            if (
-              requires992SpecialtyCheck &&
-              GP_992_REQUIRED_CODES.has(code) &&
-              !specialtyContains(orderingSpecialty, 'General Practitioner')
-            ) {
-              invalidFields.push(`Activity ${code} requires OrderingClinician specialty as General Practitioner (Currently \`${orderingSpecialty || 'Unknown'}\`).`);
-            }
-        
-            if (
-              GP_992_FORBIDDEN_CODES.has(code) &&
-              net !== 0 &&
-              specialtyContains(orderingSpecialty, 'General Practitioner')
-            ) {
-              invalidFields.push(`Activity ${code} requires OrderingClinician specialty to NOT be General Practitioner (Currently \`${orderingSpecialty || 'Unknown'}\`).`);
-            }
-        
-            // Psychiatry is valid for 99203/99213; only Ophthalmology remains restricted.
-            if (
-              GP_992_FORBIDDEN_CODES.has(code) &&
-              (
-                specialtyContains(orderingSpecialty, 'Ophthalmology') ||
-                specialtyContains(orderingSpecialty, 'Opthalmology')
-              )
-            ) {
-              invalidFields.push(`${orderingSpecialty || 'OrderingClinician Specialty'} cannot be used for ${code}.`);
-            }
-        
-            if (
-              MUTUALLY_EXCLUSIVE_INFUSION_CODES.has(code) &&
-              quantityRaw &&
-              quantity !== 1
-            ) {
-              invalidFields.push(`Activity ${code} must have Quantity of 1.`);
-            }
-          });
-        
-          const hasNewPatientCode = consultationCodes.has('99202') || consultationCodes.has('99203');
-          const hasEstablishedPatientCode = consultationCodes.has('99212') || consultationCodes.has('99213');
-        
-          if (hasNewPatientCode && hasEstablishedPatientCode) {
-            invalidFields.push('99202/99203 cannot be combined with 99212/99213 in the same claim.');
-          }
-        
-          if (infusionCodes.size > 1) {
-            invalidFields.push(`Codes ${Array.from(infusionCodes).join(', ')} cannot coexist in the same claim.`);
-          }
+            if (!options.isMedicalClaim) return;
+            const contexts = Array.from(activities || []).map(activity => {
+                const clinician = String(text('Clinician', activity) || '').trim().toUpperCase();
+                const orderingClinician = String(text('OrderingClinician', activity) || '').trim().toUpperCase();
+                return { code: String(text('Code', activity) || '').trim(), quantityRaw: String(text('Quantity', activity) || '').trim(), quantity: Number(text('Quantity', activity) || 0),
+                    net: Number(text('Net', activity) || 0), clinicianSpecialty: clinicianSpecialtyMap.get(clinician) || '', orderingSpecialty: clinicianSpecialtyMap.get(orderingClinician) || ''
+                };
+            });
+            const requires992SpecialtyCheck = contexts.length > 1;
+            const infusionCodes = new Set();
+            const consultationCodes = new Set();
+            contexts.forEach(context => {
+                const { code, quantityRaw, quantity, net, clinicianSpecialty, orderingSpecialty } = context;
+                if (!code) return;
+                if (MUTUALLY_EXCLUSIVE_INFUSION_CODES.has(code)) infusionCodes.add(code);
+                if (GP_992_CODES.has(code)) consultationCodes.add(code);
+                if (INVALID_ACTIVITY_CODES.has(code)) invalidFields.push(`Activity ${code} is invalid and cannot be used.`);
+                if (/^8/.test(code) && code !== '82948' && !specialtyContains(clinicianSpecialty, 'Pathology')) {
+                    invalidFields.push(`Activity ${code} requires Clinician specialty containing Pathology (Currently \`${clinicianSpecialty || 'Unknown'}\`).`);
+                }
+                if ((code === '97802' || code === '97803') && !specialtyContains(clinicianSpecialty, 'Dietician')) {
+                    invalidFields.push(`Activity ${code} requires Clinician specialty containing Dietician (Currently \`${clinicianSpecialty || 'Unknown'}\`).`);
+                }
+                if (requires992SpecialtyCheck && GP_992_REQUIRED_CODES.has(code) && !specialtyContains(orderingSpecialty, 'General Practitioner')) {
+                    invalidFields.push(`Activity ${code} requires OrderingClinician specialty as General Practitioner (Currently \`${orderingSpecialty || 'Unknown'}\`).`);
+                }
+                if (GP_992_FORBIDDEN_CODES.has(code) && net !== 0 && specialtyContains(orderingSpecialty, 'General Practitioner')) {
+                    invalidFields.push(`Activity ${code} requires OrderingClinician specialty to NOT be General Practitioner (Currently \`${orderingSpecialty || 'Unknown'}\`).`);
+                }
+                if (GP_992_FORBIDDEN_CODES.has(code) && (specialtyContains(orderingSpecialty, 'Ophthalmology') || specialtyContains(orderingSpecialty, 'Opthalmology'))) {
+                    invalidFields.push(`${orderingSpecialty || 'OrderingClinician Specialty'} cannot be used for ${code}.`);
+                }
+                if (MUTUALLY_EXCLUSIVE_INFUSION_CODES.has(code) && quantityRaw && quantity !== 1) invalidFields.push(`Activity ${code} must have Quantity of 1.`);
+            });
+            const hasNewPatientCode = consultationCodes.has('99202') || consultationCodes.has('99203');
+            const hasEstablishedPatientCode = consultationCodes.has('99212') || consultationCodes.has('99213');
+            if (hasNewPatientCode && hasEstablishedPatientCode) invalidFields.push('99202/99203 cannot be combined with 99212/99213 in the same claim.');
+            if (infusionCodes.size > 1) invalidFields.push(`Codes ${Array.from(infusionCodes).join(', ')} cannot coexist in the same claim.`);
         }
-        
         // =====================================================================
         // PERSON VALIDATION
         // =====================================================================
@@ -992,7 +898,6 @@
             const duplicateClaimIDs = new Set(Array.from(claimIDCounts.entries()).filter(([, count]) => count > 1).map(([claimID]) => claimID));
             const receiverID = safeTextByTag(xmlDocument.querySelector('Header'), 'ReceiverID');
             const mergeRemarks = detectNotMergedRemarksByClaim(claims, receiverID);
-            const duplicateActivityRemarks = buildDuplicateActivityReferenceRemarksByClaim(claims);
             Array.from(claims).forEach(claim => {
                 const missingFields = [];
                 const invalidFields = [];
@@ -1011,7 +916,6 @@
                 if (claimID && duplicateClaimIDs.has(claimID)) {
                     invalidFields.push(`Duplicate Claim ID '${claimID}' found within this submission.`);
                 }
-                (duplicateActivityRemarks.get(claim) || []).forEach(message => invalidFields.push(message));
                 let claimHadAmpersand = false;
                 if (originalXMLContent && claimID) {
                     const idTag = `<ID>${claimID}</ID>`;
@@ -1402,7 +1306,7 @@
         window.NOT_MERGED_RECEIVER_IDS = Array.from(NOT_MERGED_RECEIVER_IDS);
         window._schemaNotMergedUtils = { CLAIM_NOT_MERGED, parseEncounterDateTime, buildNotMergedRemarksFromContexts };
         window._schemaTestApi = { validateXmlSchema, validateClaimSchema, validatePersonSchema, renderResults, validateMedicalOrderingConsistency, validateConsultationAndSpecialtyRules,
-            applyTariffOccurrenceLimits, loadPregnancyDiagnosisData, checkPregnancyDiagnosisTrimesterConsistency, normalizeDiagnosisCode, validateDiagnosisCodeValue, buildDuplicateActivityReferenceRemarksByClaim
+            applyTariffOccurrenceLimits, loadPregnancyDiagnosisData, checkPregnancyDiagnosisTrimesterConsistency, normalizeDiagnosisCode, validateDiagnosisCodeValue
         };
         console.log('[SCHEMA] checker_schema.js loaded successfully.');
     } catch (error) {
