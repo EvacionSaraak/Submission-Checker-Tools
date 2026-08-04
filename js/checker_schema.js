@@ -23,6 +23,10 @@
         const GP_992_CODES = new Set(['99202', '99203', '99212', '99213']);
         const MUTUALLY_EXCLUSIVE_INFUSION_CODES = new Set(['96360', '96365', '96374']);
         const INVALID_ACTIVITY_CODES = new Set(['36591']);
+        const ICD10_CM_FORMAT_PATTERN = /^[A-Z][0-9][A-Z0-9](?:\.[A-Z0-9]{1,4})?$/;
+        const NON_REPORTABLE_ICD10_CODES = new Map([
+            ['O34.21', ['O34.211', 'O34.212', 'O34.218', 'O34.219']]
+        ]);
         const OLD_DUPLICATE_ORDERING_PATTERN = /^Duplicate code\s+.+?\s+with Ordering Clinician\s+.+?\.?$/i;
         const OK_REMARK_PATTERN = /^OK\.?$/i;
         let clinicianSpecialtyMapPromise = null;
@@ -221,6 +225,24 @@
         }
         function normalizeDiagnosisCode(value) {
             return String(value == null ? '' : value).trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+        }
+        function validateDiagnosisCodeValue(value, invalidFields) {
+            const code = String(value == null ? '' : value).trim();
+            if (!code) {
+                return;
+            }
+            if (code !== code.toUpperCase()) {
+                invalidFields.push(`Diagnosis Code ${code} contains lowercase characters. ` + `ICD-10-CM codes are case sensitive and must be uppercase.`);
+                return;
+            }
+            if (!ICD10_CM_FORMAT_PATTERN.test(code)) {
+                invalidFields.push(`Diagnosis Code ${code} has an invalid ICD-10-CM format.`);
+                return;
+            }
+            const reportableAlternatives = NON_REPORTABLE_ICD10_CODES.get(code);
+            if (reportableAlternatives) {
+                invalidFields.push(`Diagnosis Code ${code} is an incomplete ICD-10-CM category. ` + `Use a specific reportable code: ${formatNaturalList(reportableAlternatives)}, ` + `according to the documented scar type.`);
+            }
         }
         function formatNaturalList(values) {
             const items = Array.from(values || []).filter(Boolean);
@@ -1058,6 +1080,8 @@
                         }
                         if (!code) {
                             missingFields.push(`Diagnosis[${index}].Code`);
+                        } else {
+                            validateDiagnosisCodeValue(code, invalidFields);
                         }
                         if (type === 'Principal') {
                             if (principalCode) {
@@ -1352,7 +1376,7 @@
         window.NOT_MERGED_RECEIVER_IDS = Array.from(NOT_MERGED_RECEIVER_IDS);
         window._schemaNotMergedUtils = { CLAIM_NOT_MERGED, parseEncounterDateTime, buildNotMergedRemarksFromContexts };
         window._schemaTestApi = { validateXmlSchema, validateClaimSchema, validatePersonSchema, renderResults, validateMedicalOrderingConsistency, validateConsultationAndSpecialtyRules,
-            applyTariffOccurrenceLimits, loadPregnancyDiagnosisData, checkPregnancyDiagnosisTrimesterConsistency, normalizeDiagnosisCode, buildDuplicateActivityReferenceRemarksByClaim
+            applyTariffOccurrenceLimits, loadPregnancyDiagnosisData, checkPregnancyDiagnosisTrimesterConsistency, normalizeDiagnosisCode, validateDiagnosisCodeValue, buildDuplicateActivityReferenceRemarksByClaim
         };
         console.log('[SCHEMA] checker_schema.js loaded successfully.');
     } catch (error) {
