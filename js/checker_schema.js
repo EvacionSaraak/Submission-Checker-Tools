@@ -788,69 +788,95 @@
                 invalidFields.push(`Duplicate code ${code} with Ordering Clinician ` + `${orderingClinician}.`);
             });
         }
-        function validateConsultationAndSpecialtyRules(activities, getText, invalidFields, clinicianSpecialtyMap, options = {}) {
-            if (!options.isMedicalClaim) {
-                return;
+        
+        function validateConsultationAndSpecialtyRules(activities, text, invalidFields, clinicianSpecialtyMap, options = {}) {
+          if (!options.isMedicalClaim) return;
+        
+          const contexts = Array.from(activities || []).map(activity => {
+            const clinician = String(text('Clinician', activity) || '').trim().toUpperCase();
+            const orderingClinician = String(text('OrderingClinician', activity) || '').trim().toUpperCase();
+        
+            return {
+              code: String(text('Code', activity) || '').trim(),
+              quantityRaw: String(text('Quantity', activity) || '').trim(),
+              quantity: Number(text('Quantity', activity) || 0),
+              net: Number(text('Net', activity) || 0),
+              clinicianSpecialty: clinicianSpecialtyMap.get(clinician) || '',
+              orderingSpecialty: clinicianSpecialtyMap.get(orderingClinician) || ''
+            };
+          });
+        
+          const requires992SpecialtyCheck = contexts.length > 1;
+          const infusionCodes = new Set();
+          const consultationCodes = new Set();
+        
+          contexts.forEach(context => {
+            const { code, quantityRaw, quantity, net, clinicianSpecialty, orderingSpecialty } = context;
+            if (!code) return;
+        
+            if (MUTUALLY_EXCLUSIVE_INFUSION_CODES.has(code)) infusionCodes.add(code);
+            if (GP_992_CODES.has(code)) consultationCodes.add(code);
+        
+            if (INVALID_ACTIVITY_CODES.has(code)) {
+              invalidFields.push(`Activity ${code} is invalid and cannot be used.`);
             }
-            const contexts = Array.from(activities || []).map(activity => {
-                const code = String(getText('Code', activity) || '').trim();
-                const quantityRaw = String(getText('Quantity', activity) || '').trim();
-                const quantity = Number(quantityRaw || 0);
-                const net = Number(getText('Net', activity) || 0);
-                const clinician = String(getText('Clinician', activity) || '').trim().toUpperCase();
-                const orderingClinician = String(getText('OrderingClinician', activity) || '').trim().toUpperCase();
-                return { code, quantityRaw, quantity, net, clinicianSpecialty: clinicianSpecialtyMap.get(clinician) || '', orderingSpecialty: clinicianSpecialtyMap.get(orderingClinician) || '' };
-            });
-            const requires992SpecialtyCheck = contexts.length > 1;
-            const infusionCodes = new Set();
-            const consultationCodes = new Set();
-            contexts.forEach(context => {
-                const code = context.code;
-                if (!code) {
-                    return;
-                }
-                if (MUTUALLY_EXCLUSIVE_INFUSION_CODES.has(code)) {
-                    infusionCodes.add(code);
-                }
-                if (GP_992_CODES.has(code)) {
-                    consultationCodes.add(code);
-                }
-                if (INVALID_ACTIVITY_CODES.has(code)) {
-                    invalidFields.push(`Activity ${code} is invalid and cannot be used.`);
-                }
-                if (/^8/.test(code) && code !== '82948' && !specialtyContains(context.clinicianSpecialty, 'Pathology')) {
-                    invalidFields.push(`Activity ${code} requires Clinician specialty ` + `containing Pathology (Currently ` + `\`${context.clinicianSpecialty || 'Unknown'}\`).`);
-                }
-                if ((code === '97802' || code === '97803') && !specialtyContains(context.clinicianSpecialty, 'Dietician')) {
-                    invalidFields.push(`Activity ${code} requires Clinician specialty ` + `containing Dietician (Currently ` + `\`${context.clinicianSpecialty || 'Unknown'}\`).`);
-                }
-                if (requires992SpecialtyCheck && GP_992_REQUIRED_CODES.has(code) && !specialtyContains(context.orderingSpecialty, 'General Practitioner')) {
-                    invalidFields.push(`Activity ${code} requires OrderingClinician specialty ` + `as General Practitioner (Currently ` + `\`${context.orderingSpecialty || 'Unknown'}\`).`);
-                }
-                if (GP_992_FORBIDDEN_CODES.has(code)) {
-                    if (context.net !== 0 && specialtyContains(context.orderingSpecialty, 'General Practitioner')) {
-                        invalidFields.push(`Activity ${code} requires OrderingClinician specialty ` + `to NOT be General Practitioner (Currently ` + `\`${context.orderingSpecialty || 'Unknown'}\`).`);
-                    }
-                    if (isOphthalmologyOrPsychiatrySpecialty(context.orderingSpecialty)) {
-                        invalidFields.push(`${context.orderingSpecialty || 'OrderingClinician Specialty'} ` + `cannot be used for ${code}.`);
-                    }
-                }
-                if ((specialtyContains(context.orderingSpecialty, 'Opthalmology') || specialtyContains(context.orderingSpecialty, 'Ophthalmology')) && isConsultationCode(code) && code.startsWith('992')) {
-                    invalidFields.push(`Ophthalmology consultation codes must start with 92, ` + `not ${code}.`);
-                }
-                if (MUTUALLY_EXCLUSIVE_INFUSION_CODES.has(code) && context.quantityRaw && context.quantity !== 1) {
-                    invalidFields.push(`Activity ${code} must have Quantity of 1.`);
-                }
-            });
-            const hasNewPatientCode = consultationCodes.has('99202') || consultationCodes.has('99203');
-            const hasEstablishedPatientCode = consultationCodes.has('99212') || consultationCodes.has('99213');
-            if (hasNewPatientCode && hasEstablishedPatientCode) {
-                invalidFields.push('99202/99203 cannot be combined with ' + '99212/99213 in the same claim.');
+        
+            if (/^8/.test(code) && code !== '82948' && !specialtyContains(clinicianSpecialty, 'Pathology')) {
+              invalidFields.push(`Activity ${code} requires Clinician specialty containing Pathology (Currently \`${clinicianSpecialty || 'Unknown'}\`).`);
             }
-            if (infusionCodes.size > 1) {
-                invalidFields.push(`Codes ${Array.from(infusionCodes).join(', ')} ` + `cannot coexist in the same claim.`);
+        
+            if ((code === '97802' || code === '97803') && !specialtyContains(clinicianSpecialty, 'Dietician')) {
+              invalidFields.push(`Activity ${code} requires Clinician specialty containing Dietician (Currently \`${clinicianSpecialty || 'Unknown'}\`).`);
             }
+        
+            if (
+              requires992SpecialtyCheck &&
+              GP_992_REQUIRED_CODES.has(code) &&
+              !specialtyContains(orderingSpecialty, 'General Practitioner')
+            ) {
+              invalidFields.push(`Activity ${code} requires OrderingClinician specialty as General Practitioner (Currently \`${orderingSpecialty || 'Unknown'}\`).`);
+            }
+        
+            if (
+              GP_992_FORBIDDEN_CODES.has(code) &&
+              net !== 0 &&
+              specialtyContains(orderingSpecialty, 'General Practitioner')
+            ) {
+              invalidFields.push(`Activity ${code} requires OrderingClinician specialty to NOT be General Practitioner (Currently \`${orderingSpecialty || 'Unknown'}\`).`);
+            }
+        
+            // Psychiatry is valid for 99203/99213; only Ophthalmology remains restricted.
+            if (
+              GP_992_FORBIDDEN_CODES.has(code) &&
+              (
+                specialtyContains(orderingSpecialty, 'Ophthalmology') ||
+                specialtyContains(orderingSpecialty, 'Opthalmology')
+              )
+            ) {
+              invalidFields.push(`${orderingSpecialty || 'OrderingClinician Specialty'} cannot be used for ${code}.`);
+            }
+        
+            if (
+              MUTUALLY_EXCLUSIVE_INFUSION_CODES.has(code) &&
+              quantityRaw &&
+              quantity !== 1
+            ) {
+              invalidFields.push(`Activity ${code} must have Quantity of 1.`);
+            }
+          });
+        
+          const hasNewPatientCode = consultationCodes.has('99202') || consultationCodes.has('99203');
+          const hasEstablishedPatientCode = consultationCodes.has('99212') || consultationCodes.has('99213');
+        
+          if (hasNewPatientCode && hasEstablishedPatientCode) {
+            invalidFields.push('99202/99203 cannot be combined with 99212/99213 in the same claim.');
+          }
+        
+          if (infusionCodes.size > 1) {
+            invalidFields.push(`Codes ${Array.from(infusionCodes).join(', ')} cannot coexist in the same claim.`);
+          }
         }
+        
         // =====================================================================
         // PERSON VALIDATION
         // =====================================================================
