@@ -760,10 +760,10 @@
                 };
             });
         
-            const payerID = String(options.payerID || text('PayerID') || '')
+            const receiverID = String(options.receiverID || text('ReceiverID') || '')
                 .trim()
                 .toUpperCase();
-            const isHAADSelfPay = payerID === 'HAAD';
+            const isHAADSelfPay = receiverID === 'HAAD';
         
             // Performing Clinician validation.
             // This intentionally checks Activity.Clinician only and does not check
