@@ -760,32 +760,40 @@
                 };
             });
         
+            const payerID = String(options.payerID || text('PayerID') || '')
+                .trim()
+                .toUpperCase();
+            const isHAADSelfPay = payerID === 'HAAD';
+        
             // Performing Clinician validation.
             // This intentionally checks Activity.Clinician only and does not check
-            // Activity.OrderingClinician. A nurse cannot be the Performing Clinician.
-            const nursePerformingClinicians = new Map();
+            // Activity.OrderingClinician. A nurse cannot be the Performing Clinician,
+            // except when the payer is HAAD because that indicates a self-pay claim.
+            if (!isHAADSelfPay) {
+                const nursePerformingClinicians = new Map();
         
-            contexts.forEach(context => {
-                const normalizedSpecialty = normalizeSpecialty(context.clinicianSpecialty);
-                const isNurse = /(^|[^A-Z])(NURSE|NURSING)([^A-Z]|$)/.test(normalizedSpecialty);
+                contexts.forEach(context => {
+                    const normalizedSpecialty = normalizeSpecialty(context.clinicianSpecialty);
+                    const isNurse = /(^|[^A-Z])(NURSE|NURSING)([^A-Z]|$)/.test(normalizedSpecialty);
         
-                if (context.clinician && isNurse) {
-                    nursePerformingClinicians.set(
-                        context.clinician,
-                        context.clinicianSpecialty || 'Nurse'
+                    if (context.clinician && isNurse) {
+                        nursePerformingClinicians.set(
+                            context.clinician,
+                            context.clinicianSpecialty || 'Nurse'
+                        );
+                    }
+                });
+        
+                nursePerformingClinicians.forEach((specialty, clinician) => {
+                    invalidFields.push(
+                        `Performing Clinician ${clinician} is invalid because the clinician is a nurse ` +
+                        `(Specialty: \`${specialty}\`).`
                     );
-                }
-            });
+                });
+            }
         
-            nursePerformingClinicians.forEach((specialty, clinician) => {
-                invalidFields.push(
-                    `Performing Clinician ${clinician} is invalid because the clinician is a nurse ` +
-                    `(Specialty: \`${specialty}\`).`
-                );
-            });
-        
-            // The nurse Performing Clinician rule applies to both Medical and Dental.
-            // The remaining rules in this function are Medical-only.
+            // Except for HAAD self-pay claims, the nurse Performing Clinician rule
+            // applies to both Medical and Dental. The remaining rules are Medical-only.
             if (!options.isMedicalClaim) return;
         
             const requires992SpecialtyCheck = contexts.length > 1;
