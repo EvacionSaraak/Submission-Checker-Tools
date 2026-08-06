@@ -78,6 +78,28 @@ function getPricingRowActivityType(row) {
 function getPricingRowCode(row) {
   return normalizeCode(row && (row.CPT || row.code || row.Code || ''));
 }
+
+// Patient Share is required only for the specified Medical code families.
+// 97-series activities are explicitly excluded, even for Daman (A001).
+function isPatientShareRequiredForPricingRow(row, options = {}) {
+  const receiverID = String(
+    options.receiverID || (row && (row.ReceiverID || row.PayerID)) || ''
+  ).trim().toUpperCase();
+
+  // HAAD/self-pay and D001 (Thiqa) submissions remain exempt from this
+  // Patient Share requirement. The original rule was for non-Thiqa claims.
+  if (receiverID === 'HAAD' || receiverID === 'D001') return false;
+
+  const code = getPricingRowCode(row);
+  if (!code || code.startsWith('97')) return false;
+
+  // All 99-series codes require Patient Share for applicable non-HAAD payers.
+  if (code.startsWith('99')) return true;
+
+  // In Medical mode, codes beginning with 1 through 6 also require it.
+  return options.isMedicalMode === true && /^[1-6]/.test(code);
+}
+
 function getPricingRowNet(row) {
   if (row && row.xmlNetNum != null) return Number(row.xmlNetNum || 0);
   return Number(row && (row.Net || row.net || 0));
@@ -187,7 +209,8 @@ function shouldDeferA001PricingToClaimLevel({ receiverID, xmlNet, effectiveRef, 
 }
 function getPatientShareReferenceRows(actRows, options = {}) {
   return (actRows || []).filter(row =>
-    !isAllowedZeroPricedActivityForPricing(row, actRows, {
+    isPatientShareRequiredForPricingRow(row, options)
+    && !isAllowedZeroPricedActivityForPricing(row, actRows, {
       receiverID: options.receiverID || (row && row.ReceiverID) || '',
       medicalRules: options.medicalRules || null
     })
@@ -216,7 +239,12 @@ function calculatePatientShareSummary(actRows, options = {}) {
       : getPricingRowNet(row);
     return sum + (reference * quantity);
   }, 0)) || 0;
-  const totalXmlNet = roundMoney((actRows || []).reduce((sum, row) => sum + getPricingRowNet(row), 0)) || 0;
+  // Compare only rows for which Patient Share is actually required.
+  // This prevents excluded 97-series rows from affecting mixed-claim totals.
+  const totalXmlNet = roundMoney(patientShareRows.reduce(
+    (sum, row) => sum + getPricingRowNet(row),
+    0
+  )) || 0;
   const expectedPatientShare = roundMoney(totalRef - totalXmlNet) || 0;
   const claimGross = (actRows || []).map(getPricingRowClaimGross).find(value => value !== null) ?? null;
   const claimNet = (actRows || []).map(getPricingRowClaimNet).find(value => value !== null) ?? null;
@@ -239,7 +267,12 @@ function applyClaimLevelPatientShare(actRows, options) {
   const { receiverID, medicalRules, isMedicalMode, medicalShared } = options || {};
   const primaryRow = actRows[0];
   const actualPS = Number(primaryRow.PatientShare || 0);
-  const summary = calculatePatientShareSummary(actRows, { receiverID, medicalRules });
+  const summary = calculatePatientShareSummary(actRows, {
+    receiverID,
+    medicalRules,
+    isMedicalMode
+  });
+  if (!summary.patientShareRows.length) return;
   const totalClaimedNet = summary.totalXmlNet;
   const totalRef = summary.totalRef;
   const codeLabel = getPatientShareCodeLabel(summary.patientShareRows);
@@ -1137,13 +1170,23 @@ async function handleRun(options = {}) {
     for (const [, actRows] of claimGroups) {
       const primaryRow = actRows[0];
       const actualPS = Number(primaryRow.PatientShare || 0);
+      const isHaadClaim = pricingReceiverID === 'HAAD';
+      const requiredPatientShareRows = actRows.filter(row =>
+        isPatientShareRequiredForPricingRow(row, {
+          receiverID: pricingReceiverID,
+          isMedicalMode
+        })
+      );
+      const requiredPatientShareCodes = getPatientShareCodeLabel(requiredPatientShareRows)
+        .replace(/:\s*$/, '');
+      const hasRequiredPatientShareCode = requiredPatientShareRows.length > 0;
       const hasMedicalHighPtShare =
         isMedicalMode &&
-        pricingReceiverID !== 'HAAD' &&
+        !isHaadClaim &&
         Number.isFinite(actualPS) &&
         actualPS > 100;
 
-      // Medical-only manual-review warning for every non-HAAD receiver, including D001.
+      // Medical-only manual-review warning for every non-HAAD receiver.
       if (hasMedicalHighPtShare) {
         const msg = 'PT Share above 100. Manual Review is advised.';
         if (medicalShared && medicalRules) {
@@ -1169,19 +1212,22 @@ async function handleRun(options = {}) {
         }
       }
 
-      // Preserve the existing rule that D001 does not use the standard
-      // claim-level Patient Share comparison.
-      if (pricingReceiverID === 'D001') continue;
+      // HAAD/self-pay claims do not require Patient Share under this rule.
+      if (isHaadClaim) continue;
 
-      // A001 (Daman): flag zero patient share for non-Thiqa
-      if (pricingReceiverID === 'A001' && actualPS === 0) {
-        const msg = 'Patient Share is 0 — this is invalid for Daman (non-Thiqa) claims.';
+      // A zero Patient Share is invalid only when the claim contains a code
+      // that requires it: any 99-series code, or (in Medical mode) a code
+      // beginning with 1 through 6. 97-series codes never trigger this rule.
+      if (actualPS === 0 && hasRequiredPatientShareCode) {
+        const codeText = requiredPatientShareCodes || 'Applicable code';
+        const requirementVerb = codeText.startsWith('Code ') ? 'requires' : 'require';
+        const msg = `${codeText} ${requirementVerb} Patient Share for non-HAAD claims.`;
         if (isMedicalMode && medicalShared && medicalRules) {
           primaryRow.findings = medicalShared.mergeFindingsBySeverity(
             primaryRow.findings,
             [asMedicalFinding({
               ruleId: 'MED_PATIENT_SHARE_ZERO',
-              status: 'Unknown',
+              status: 'Invalid',
               remark: msg,
               claimID: primaryRow.ClaimID,
               activityID: primaryRow.ActivityID,
@@ -1190,19 +1236,20 @@ async function handleRun(options = {}) {
           );
           medicalShared.applyFinalStatus(primaryRow);
         } else {
-          const sev = { 'Invalid': 3, 'Unknown': 2, 'Valid': 1 };
-          if ((sev['Unknown'] || 0) > (sev[primaryRow.status] || 0)) {
-            primaryRow.status = 'Unknown';
-            primaryRow.isValid = false;
-          }
+          primaryRow.status = 'Invalid';
+          primaryRow.isValid = false;
           primaryRow.Remarks = primaryRow.Remarks ? `${primaryRow.Remarks} ${msg}` : msg;
         }
         continue;
       }
 
-      // Avoid adding the old generic Net + Patient Share comparison when the
-      // exact above-100 Medical warning has already been applied.
-      if (!hasMedicalHighPtShare) {
+      // Preserve the existing Thiqa rule: D001 does not require Patient Share
+      // and does not use the standard claim-level Patient Share comparison.
+      if (pricingReceiverID === 'D001') continue;
+
+      // Compare Patient Share only against activities in the required code
+      // families. Excluded 97-series rows do not contribute Net or reference.
+      if (!hasMedicalHighPtShare && hasRequiredPatientShareCode) {
         applyClaimLevelPatientShare(actRows, {
           receiverID: pricingReceiverID,
           medicalRules,
@@ -1211,9 +1258,13 @@ async function handleRun(options = {}) {
         });
       }
 
-      // A001: also validate claim-level gross/net/PS consistency
+      // A001: also validate whole-claim Gross/Net/Patient Share arithmetic.
       if (pricingReceiverID === 'A001') {
-        const summary = calculatePatientShareSummary(actRows, { receiverID: pricingReceiverID, medicalRules });
+        const summary = calculatePatientShareSummary(actRows, {
+          receiverID: pricingReceiverID,
+          medicalRules,
+          isMedicalMode
+        });
         if (summary.claimTotalsConsistent === false) {
           const consistencyMsg = `Claim totals are inconsistent.\nGross: ${summary.claimGross}.\nNet: ${summary.claimNet}.\nPatient Share: ${actualPS}.`;
           if (isMedicalMode && medicalShared && medicalRules) {
@@ -2129,6 +2180,7 @@ window._pricingTestApi = {
   isZeroPricedActivityForPricing,
   isAllowedZeroPricedActivityForPricing,
   isValidZeroPricedConsultationCompanion,
+  isPatientShareRequiredForPricingRow,
   shouldDeferA001PricingToClaimLevel,
   getPatientShareReferenceRows,
   getPatientShareCodeLabel,
