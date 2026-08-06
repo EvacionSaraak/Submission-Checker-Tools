@@ -49,6 +49,25 @@ function formatMoney(value) {
   const n = Number(value);
   return Number.isFinite(n) ? String(n) : String(value);
 }
+
+function getConcisePricingContextLabel(pricingContext) {
+  const context = String(pricingContext || '').trim();
+  if (/mandatory tariff/i.test(context)) return 'Mandatory Tariff';
+  if (/endodontist/i.test(context)) return 'Endodontist Pricing';
+  if (/endo\s+gd/i.test(context)) return 'Endo GD Pricing';
+  if (/daman/i.test(context)) return 'Daman Pricing';
+  if (/thiqa/i.test(context)) return 'Thiqa Pricing';
+  return context.replace(/\s+Pricing$/i, '').trim() || 'reference pricing';
+}
+
+function buildConcisePriceMismatchRemark({ claimedNet, code, pricingContext }) {
+  return (
+    `Claimed Net ${formatMoney(claimedNet)} ` +
+    `(for ${code}) is invalid under ` +
+    `${getConcisePricingContextLabel(pricingContext)}.`
+  );
+}
+
 function parseOptionalMoney(value) {
   const raw = String(value == null ? '' : value).trim();
   if (!raw) return null;
@@ -273,32 +292,86 @@ function applyClaimLevelPatientShare(actRows, options) {
     isMedicalMode
   });
   if (!summary.patientShareRows.length) return;
+
   const totalClaimedNet = summary.totalXmlNet;
   const totalRef = summary.totalRef;
-  const codeLabel = getPatientShareCodeLabel(summary.patientShareRows);
-  const isMulti = actRows.length > 1;
-  const comparison = compareMoney(totalClaimedNet + actualPS, totalRef);
+  const combinedTotal = roundMoney(totalClaimedNet + actualPS);
+  const comparison = compareMoney(combinedTotal, totalRef);
   if (comparison === null) return;
 
-  const netLabel = isMulti
-    ? `Total Net ${formatMoney(totalClaimedNet)}`
-    : `Net ${formatMoney(totalClaimedNet)}`;
-  const psLabel = `Patient Share ${formatMoney(actualPS)}`;
-  const refLabel = `reference ${formatMoney(totalRef)}`;
-  let psStatus, psRemark, psRuleId;
+  const codes = [];
+  const seenCodes = new Set();
+  summary.patientShareRows.forEach(row => {
+    const code = getPricingRowCode(row);
+    if (!code || seenCodes.has(code)) return;
+    seenCodes.add(code);
+    codes.push(code);
+  });
+
+  let psStatus;
+  let psRuleId;
+  let modalResult;
+  let modalExplanation;
+
   if (comparison < 0) {
     psStatus = 'Invalid';
-    psRemark = `${codeLabel}${netLabel} + ${psLabel} is below ${refLabel}; see Compare.`;
     psRuleId = 'MED_PATIENT_SHARE_BELOW';
+    modalResult = 'Below reference';
+    modalExplanation =
+      `Total Net ${formatMoney(totalClaimedNet)} + Patient Share ${formatMoney(actualPS)} ` +
+      `= ${formatMoney(combinedTotal)}, which is below the reference total of ${formatMoney(totalRef)}.`;
   } else if (comparison === 0) {
     psStatus = 'Valid';
-    psRemark = '';
     psRuleId = 'MED_PATIENT_SHARE_MATCH';
+    modalResult = 'Matches';
+    modalExplanation =
+      `Total Net ${formatMoney(totalClaimedNet)} + Patient Share ${formatMoney(actualPS)} ` +
+      `= ${formatMoney(totalRef)}, which matches the reference total.`;
   } else {
     psStatus = 'Unknown';
-    psRemark = `${codeLabel}${netLabel} + ${psLabel} exceeds ${refLabel}; see Compare.`;
     psRuleId = 'MED_PATIENT_SHARE_ABOVE';
+    modalResult = 'Above reference';
+    modalExplanation =
+      `Total Net ${formatMoney(totalClaimedNet)} + Patient Share ${formatMoney(actualPS)} ` +
+      `= ${formatMoney(combinedTotal)}, which exceeds the reference total of ${formatMoney(totalRef)}. ` +
+      'Manual review is required.';
   }
+
+  const comparisonDetails = {
+    status: psStatus,
+    result: modalResult,
+    explanation: modalExplanation,
+    codes,
+    totalClaimedNet,
+    patientShare: actualPS,
+    combinedTotal,
+    totalReference: totalRef
+  };
+  actRows.forEach(row => {
+    row._patientShareComparison = comparisonDetails;
+  });
+
+  // Do not repeat claim-level arithmetic in the Remarks column when an
+  // activity-level pricing error already identifies the problem. The full
+  // calculation remains available in the Compare modal.
+  const hasActivityPricingError = actRows.some(row =>
+    (Array.isArray(row.findings) && row.findings.some(finding =>
+      finding &&
+      finding.ruleId === 'PRICING' &&
+      String(finding.status || '').toLowerCase() === 'invalid' &&
+      String(finding.remark || '').trim()
+    )) || (
+      String(row.status || '').toLowerCase() === 'invalid' &&
+      String(row.Remarks || '').trim()
+    )
+  );
+
+  let psRemark = '';
+  if (!hasActivityPricingError) {
+    if (psStatus === 'Invalid') psRemark = 'Patient Share is invalid for this claim.';
+    else if (psStatus === 'Unknown') psRemark = 'Patient Share requires manual review.';
+  }
+
   if (isMedicalMode && medicalShared && medicalRules) {
     primaryRow.findings = medicalShared.mergeFindingsBySeverity(
       primaryRow.findings,
@@ -313,7 +386,6 @@ function applyClaimLevelPatientShare(actRows, options) {
     );
     medicalShared.applyFinalStatus(primaryRow);
   } else {
-    // Only escalate severity; never lower an existing Invalid/Unknown status
     const sev = { 'Invalid': 3, 'Unknown': 2, 'Valid': 1 };
     const existingSev = sev[primaryRow.status] || 0;
     const psSev = sev[psStatus] || 0;
@@ -1061,7 +1133,7 @@ async function handleRun(options = {}) {
                 multiplier: '1.5'
               }));
             } else {
-              remarks.push(`Claimed Net ${formatMoney(xmlNet)} (for ${rec.CPT}) does not match the reference price of ${formatMoney(effectiveRef)} under ${pricingContext}.`);
+              remarks.push(buildConcisePriceMismatchRemark({ claimedNet: xmlNet, code: rec.CPT, pricingContext }));
           }
         }
       }
@@ -1927,7 +1999,13 @@ function getComparisonPriceResult(row, claimRows) {
     return { correct: true, reason: 'Correct with Patient Share' };
   }
 
-  return { correct: false, reason: 'Incorrect' };
+  const pricingBasis = getComparisonPricingBasis(row);
+  return {
+    correct: false,
+    reason:
+      `Claimed ${formatMoney(claimed)} does not match expected ${formatMoney(expectedTotal)} ` +
+      `under ${pricingBasis}.`
+  };
 }
 
 function getComparisonClinicianResult(row) {
@@ -1953,15 +2031,44 @@ function showComparisonModal(index) {
 
   const claimRows = lastResults.filter(row => String(row.ClaimID || '') === String(selectedRow.ClaimID || ''));
   const rows = claimRows.length ? claimRows : [selectedRow];
-  const totalNet = roundMoney(rows.reduce((sum, row) => sum + Number(row.xmlNetNum ?? row.ClaimedNet ?? 0), 0)) || 0;
-  const patientShare = Number(rows[0] && rows[0].PatientShare || 0);
-  const totalReference = roundMoney(rows.reduce((sum, row) => {
-    const expected = getComparisonExpectedTotal(row);
-    return sum + (Number.isFinite(expected) ? expected : 0);
-  }, 0)) || 0;
-  const claimComparison = compareMoney(totalNet + patientShare, totalReference);
-  const claimResultText = claimComparison === null ? 'Unknown' : claimComparison === 0 ? 'Matches' : claimComparison < 0 ? 'Below reference' : 'Above reference';
+  const patientShareDetails = rows
+    .map(row => row && row._patientShareComparison)
+    .find(details => details && typeof details === 'object') || null;
+
+  const totalNet = patientShareDetails
+    ? Number(patientShareDetails.totalClaimedNet || 0)
+    : (roundMoney(rows.reduce((sum, row) => sum + Number(row.xmlNetNum ?? row.ClaimedNet ?? 0), 0)) || 0);
+  const patientShare = patientShareDetails
+    ? Number(patientShareDetails.patientShare || 0)
+    : Number(rows[0] && rows[0].PatientShare || 0);
+  const totalReference = patientShareDetails
+    ? Number(patientShareDetails.totalReference || 0)
+    : (roundMoney(rows.reduce((sum, row) => {
+        const expected = getComparisonExpectedTotal(row);
+        return sum + (Number.isFinite(expected) ? expected : 0);
+      }, 0)) || 0);
+  const combinedTotal = patientShareDetails
+    ? Number(patientShareDetails.combinedTotal || 0)
+    : (roundMoney(totalNet + patientShare) || 0);
+  const claimComparison = compareMoney(combinedTotal, totalReference);
+  const claimResultText = patientShareDetails
+    ? String(patientShareDetails.result || 'Unknown')
+    : (claimComparison === null ? 'Unknown' : claimComparison === 0 ? 'Matches' : claimComparison < 0 ? 'Below reference' : 'Above reference');
   const claimResultClass = comparisonCellClass(claimComparison === null ? null : claimComparison === 0);
+  const claimExplanation = patientShareDetails
+    ? String(patientShareDetails.explanation || '')
+    : (
+        claimComparison === null
+          ? 'The claim-level comparison could not be calculated.'
+          : claimComparison === 0
+            ? `Total Net ${formatMoney(totalNet)} + Patient Share ${formatMoney(patientShare)} matches the total reference of ${formatMoney(totalReference)}.`
+            : claimComparison < 0
+              ? `Total Net ${formatMoney(totalNet)} + Patient Share ${formatMoney(patientShare)} = ${formatMoney(combinedTotal)}, which is below the total reference of ${formatMoney(totalReference)}.`
+              : `Total Net ${formatMoney(totalNet)} + Patient Share ${formatMoney(patientShare)} = ${formatMoney(combinedTotal)}, which exceeds the total reference of ${formatMoney(totalReference)}.`
+      );
+  const patientShareCodeText = patientShareDetails && Array.isArray(patientShareDetails.codes) && patientShareDetails.codes.length
+    ? patientShareDetails.codes.join(', ')
+    : '';
 
   const activityRowsHtml = rows.map(row => {
     const expectedUnit = getComparisonExpectedUnit(row);
@@ -2020,6 +2127,14 @@ function showComparisonModal(index) {
       #comparisonModal .pricing-compare-bad { background: #f8d7da; color: #842029; }
       #comparisonModal .pricing-compare-neutral { background: #fff3cd; color: #664d03; }
       #comparisonModal small { display: block; margin-top: 2px; opacity: .75; }
+      #comparisonModal .pricing-compare-explanation {
+        border: 1px solid #cfd4da;
+        background: #f8f9fa;
+        padding: 10px;
+        margin: -2px 0 14px;
+        font-size: 12px;
+        line-height: 1.45;
+      }
       #comparisonModal .pricing-compare-table th:nth-child(1) { width: 7%; }
       #comparisonModal .pricing-compare-table th:nth-child(2) { width: 8%; }
       #comparisonModal .pricing-compare-table th:nth-child(3) { width: 5%; }
@@ -2045,12 +2160,16 @@ function showComparisonModal(index) {
           <tr>
             <td>${escapeHtml(formatMoney(totalNet))}</td>
             <td>${escapeHtml(formatMoney(patientShare))}</td>
-            <td class="${claimResultClass}">${escapeHtml(formatMoney(totalNet + patientShare))}</td>
+            <td class="${claimResultClass}">${escapeHtml(formatMoney(combinedTotal))}</td>
             <td class="${claimResultClass}">${escapeHtml(formatMoney(totalReference))}</td>
             <td class="${claimResultClass}">${escapeHtml(claimResultText)}</td>
           </tr>
         </tbody>
       </table>
+      <div class="pricing-compare-explanation">
+        <strong>Claim comparison:</strong> ${escapeHtml(claimExplanation)}
+        ${patientShareCodeText ? `<small>Patient Share comparison codes: ${escapeHtml(patientShareCodeText)}</small>` : ''}
+      </div>
       <table class="pricing-compare-table">
         <thead>
           <tr>
@@ -2175,6 +2294,8 @@ window.runPricingCheck = async function (options = {}) {
   return null;
 };
 window._pricingTestApi = {
+  buildConcisePriceMismatchRemark,
+  getConcisePricingContextLabel,
   analyzeDrugActivity,
   isDrugActivityType,
   isZeroPricedActivityForPricing,
