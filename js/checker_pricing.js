@@ -1,4 +1,5 @@
 (function () { try { // checker_pricing.js
+// A001_MULTI_ACTIVITY_PATIENT_SHARE_FIX_20260806
 let lastResults = [];
 let lastWorkbook = null;
 function getDrugShared(required = true) {
@@ -134,17 +135,40 @@ function isPatientShareComparableForPricingRow(row, options = {}) {
   // validated separately and must not distort Patient Share arithmetic.
   if (!Number.isFinite(claimedNet) || claimedNet <= 0) return false;
 
+  const expectedNet = getComparisonExpectedTotal(row);
+
+  // Patient Share can only cover a shortfall. It must never be used to offset
+  // an activity that is already above its tariff reference.
+  if (Number.isFinite(expectedNet) && compareMoney(claimedNet, expectedNet) > 0) {
+    return false;
+  }
+
   if (isPatientShareRequiredForPricingRow(row, options)) return true;
 
   const receiverID = String(
     options.receiverID || (row && (row.ReceiverID || row.PayerID)) || ''
   ).trim().toUpperCase();
   const code = getPricingRowCode(row);
+  const isMedicalNonDrug = options.isMedicalMode === true
+    && !isDrugActivityType(getPricingRowActivityType(row));
+
+  // A001 Patient Share is stored at claim level and may be distributed across
+  // every positively priced, under-tariff Medical activity in the claim. This
+  // includes Laboratory/Radiology codes such as 81000. The code-family rules
+  // above still determine whether Patient Share is mandatory when it is zero.
+  if (
+    receiverID === 'A001'
+    && isMedicalNonDrug
+    && !code.startsWith('97')
+    && Number.isFinite(expectedNet)
+    && compareMoney(claimedNet, expectedNet) < 0
+  ) {
+    return true;
+  }
 
   return receiverID === 'D004'
-    && options.isMedicalMode === true
-    && /^[78]/.test(code)
-    && !isDrugActivityType(getPricingRowActivityType(row));
+    && isMedicalNonDrug
+    && /^[78]/.test(code);
 }
 
 const D004_CONSULTATION_PATIENT_SHARE_CAPS = Object.freeze({
@@ -558,8 +582,9 @@ function calculatePatientShareSummary(actRows, options = {}) {
       : getPricingRowNet(row);
     return sum + (reference * quantity);
   }, 0)) || 0;
-  // Compare only rows for which Patient Share is actually required.
-  // This prevents excluded 97-series rows from affecting mixed-claim totals.
+  // Compare rows that can legitimately receive claim-level Patient Share.
+  // For A001 this includes positive under-tariff activities outside the
+  // mandatory code families, while 97-series and valid zero-priced rows stay excluded.
   const totalXmlNet = roundMoney(patientShareRows.reduce(
     (sum, row) => sum + getPricingRowNet(row),
     0
@@ -580,6 +605,54 @@ function calculatePatientShareSummary(actRows, options = {}) {
       : null
   };
 }
+
+function allocateClaimPatientShareToPricingRows(patientShareRows, actualPatientShare) {
+  const rows = Array.isArray(patientShareRows) ? patientShareRows : [];
+  const actualRaw = Number(actualPatientShare || 0);
+  const actual = Number.isFinite(actualRaw)
+    ? Math.max(0, roundMoney(actualRaw) || 0)
+    : 0;
+  let remaining = actual;
+  const allocations = [];
+
+  rows.forEach(row => {
+    const claimedNet = getPricingRowNet(row);
+    const expectedNet = getComparisonExpectedTotal(row);
+    const shortfall = (
+      Number.isFinite(claimedNet)
+      && Number.isFinite(expectedNet)
+      && claimedNet > 0
+      && compareMoney(claimedNet, expectedNet) < 0
+    )
+      ? Math.max(0, roundMoney(expectedNet - claimedNet) || 0)
+      : 0;
+    const allocatedPatientShare = Math.min(shortfall, remaining);
+    const allocated = roundMoney(allocatedPatientShare) || 0;
+    remaining = Math.max(0, roundMoney(remaining - allocated) || 0);
+
+    const detail = {
+      code: getPricingRowCode(row),
+      activityID: String(row && row.ActivityID || ''),
+      claimedNet,
+      expectedNet,
+      shortfall,
+      allocatedPatientShare: allocated,
+      fullyCovered: moneyEqual(allocated, shortfall),
+      resultingPrice: Number.isFinite(claimedNet)
+        ? (roundMoney(claimedNet + allocated) || 0)
+        : null
+    };
+    row._patientShareAllocation = detail;
+    allocations.push(detail);
+  });
+
+  return {
+    actualPatientShare: actual,
+    allocatedPatientShare: roundMoney(actual - remaining) || 0,
+    unallocatedPatientShare: remaining,
+    allocations
+  };
+}
 // Apply the 3-way patient share comparison (below=Invalid, equal=Valid, above=Unknown) to the
 // primary row of a claim group. Uses severity merging so existing findings are never erased.
 function applyClaimLevelPatientShare(actRows, options) {
@@ -595,6 +668,10 @@ function applyClaimLevelPatientShare(actRows, options) {
 
   const totalClaimedNet = summary.totalXmlNet;
   const totalRef = summary.totalRef;
+  const allocationSummary = allocateClaimPatientShareToPricingRows(
+    summary.patientShareRows,
+    actualPS
+  );
   const combinedTotal = roundMoney(totalClaimedNet + actualPS);
   const comparison = compareMoney(combinedTotal, totalRef);
   if (comparison === null) return;
@@ -637,6 +714,11 @@ function applyClaimLevelPatientShare(actRows, options) {
       'Manual review is required.';
   }
 
+  allocationSummary.allocations.forEach(detail => {
+    detail.claimStatus = psStatus;
+    detail.claimResult = modalResult;
+  });
+
   const comparisonDetails = {
     status: psStatus,
     result: modalResult,
@@ -645,7 +727,10 @@ function applyClaimLevelPatientShare(actRows, options) {
     totalClaimedNet,
     patientShare: actualPS,
     combinedTotal,
-    totalReference: totalRef
+    totalReference: totalRef,
+    allocatedPatientShare: allocationSummary.allocatedPatientShare,
+    unallocatedPatientShare: allocationSummary.unallocatedPatientShare,
+    allocations: allocationSummary.allocations
   };
   actRows.forEach(row => {
     row._patientShareComparison = comparisonDetails;
@@ -2319,6 +2404,41 @@ function getComparisonPriceResult(row, claimRows) {
     return { correct: true, reason: 'Correct' };
   }
 
+  const genericPatientShareAllocation = row && row._patientShareAllocation;
+  const comparisonReceiverID = String(row && (row.ReceiverID || row.PayerID) || '').trim().toUpperCase();
+  if (
+    comparisonReceiverID !== 'D004'
+    && genericPatientShareAllocation
+    && Number.isFinite(genericPatientShareAllocation.shortfall)
+    && genericPatientShareAllocation.shortfall > 0
+  ) {
+    if (
+      genericPatientShareAllocation.claimStatus === 'Valid'
+      && genericPatientShareAllocation.fullyCovered
+      && moneyEqual(
+        genericPatientShareAllocation.resultingPrice,
+        genericPatientShareAllocation.expectedNet
+      )
+    ) {
+      return {
+        correct: true,
+        reason:
+          `Correct with Patient Share ` +
+          `${formatMoney(genericPatientShareAllocation.allocatedPatientShare)}.`
+      };
+    }
+
+    if (genericPatientShareAllocation.allocatedPatientShare > 0) {
+      return {
+        correct: false,
+        reason:
+          `Patient Share ${formatMoney(genericPatientShareAllocation.allocatedPatientShare)} ` +
+          `was applied, but the tariff shortfall is ` +
+          `${formatMoney(genericPatientShareAllocation.shortfall)}.`
+      };
+    }
+  }
+
   const d004PatientShareLine = row && row._d004PatientShareLine;
   if (
     d004PatientShareLine &&
@@ -2779,6 +2899,7 @@ window._pricingTestApi = {
   getPatientShareReferenceRows,
   getPatientShareCodeLabel,
   calculatePatientShareSummary,
+  allocateClaimPatientShareToPricingRows,
   applyClaimLevelPatientShare,
   getComparisonExpectedUnit,
   getComparisonExpectedTotal,
