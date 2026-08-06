@@ -1,4 +1,5 @@
 (function () { try { // checker_pricing.js
+// C001 cumulative Patient Share / no-reference fix: 2026-08-06
 // A001_MULTI_ACTIVITY_PATIENT_SHARE_FIX_20260806
 let lastResults = [];
 let lastWorkbook = null;
@@ -122,6 +123,34 @@ function isPatientShareRequiredForPricingRow(row, options = {}) {
 
   // In Medical mode, codes beginning with 1 through 6 also require it.
   return options.isMedicalMode === true && /^[1-6]/.test(code);
+}
+
+
+// For receivers without configured Medical factor/reference pricing, Patient
+// Share exists only as a claim-level cumulative value. A small cumulative
+// share (0 through 10) cannot be reliably assigned to one activity when the
+// claim contains multiple activities, so the missing-Patient-Share error must
+// not be raised in that situation. Pricing remains Unknown because there is no
+// reference against which to validate the activities.
+function shouldSuppressUnconfiguredCumulativePatientShareError({
+  receiverID,
+  actualPatientShare,
+  activityRows,
+  isMedicalMode
+} = {}) {
+  const normalizedReceiver = String(receiverID || '').trim().toUpperCase();
+  const patientShare = Number(actualPatientShare);
+  const rows = Array.isArray(activityRows) ? activityRows : [];
+  const isUnconfiguredReceiver = !!normalizedReceiver
+    && normalizedReceiver !== 'HAAD'
+    && !MEDICAL_CONFIGURED_PAYERS.has(normalizedReceiver);
+
+  return isMedicalMode === true
+    && isUnconfiguredReceiver
+    && rows.length > 1
+    && Number.isFinite(patientShare)
+    && patientShare >= 0
+    && patientShare <= 10;
 }
 
 // Some D004 rows participate in Patient Share arithmetic without requiring
@@ -657,6 +686,10 @@ function allocateClaimPatientShareToPricingRows(patientShareRows, actualPatientS
 // primary row of a claim group. Uses severity merging so existing findings are never erased.
 function applyClaimLevelPatientShare(actRows, options) {
   const { receiverID, medicalRules, isMedicalMode, medicalShared } = options || {};
+  const normalizedReceiver = String(receiverID || '').trim().toUpperCase();
+  if (isMedicalMode === true && !MEDICAL_CONFIGURED_PAYERS.has(normalizedReceiver)) {
+    return;
+  }
   const primaryRow = actRows[0];
   const actualPS = Number(primaryRow.PatientShare || 0);
   const summary = calculatePatientShareSummary(actRows, {
@@ -1193,6 +1226,7 @@ async function handleRun(options = {}) {
           return {
             ClaimID: rec.ClaimID || '',
             ActivityID: rec.ActivityID || '',
+            ActivityType: rec.ActivityType || '',
             CPT: rec.CPT || '',
             ClaimedNet: rec.Net || '',
             ClaimedQty: rec.Quantity || '',
@@ -1200,6 +1234,9 @@ async function handleRun(options = {}) {
             ReferenceNetPrice: '',
             AppliedFactor: '',
             FactoredReference: '',
+            PricingContext: missingReceiver
+              ? 'Medical pricing reference is unavailable because Header ReceiverID is missing.'
+              : `No configured medical pricing reference for receiver ${pricingReceiverID}`,
             PricingRow: null,
             XmlRow: rec,
             isValid: false,
@@ -1216,7 +1253,8 @@ async function handleRun(options = {}) {
             ClaimPayerID: claimPayerID,
             PayerID: pricingReceiverID,
             _matchedFactorRule: null,
-            _modifierMultiplier: 1
+            _modifierMultiplier: 1,
+            _pricingReferenceUnavailable: true
           };
         } else {
           return {
@@ -1655,6 +1693,17 @@ async function handleRun(options = {}) {
         .replace(/:\s*$/, '');
       const hasRequiredPatientShareCode = requiredPatientShareRows.length > 0;
       const hasPatientShareComparisonCode = comparisonPatientShareRows.length > 0;
+      const suppressUnconfiguredCumulativePatientShareError =
+        shouldSuppressUnconfiguredCumulativePatientShareError({
+          receiverID: pricingReceiverID,
+          actualPatientShare: actualPS,
+          activityRows: actRows,
+          isMedicalMode
+        });
+
+      actRows.forEach(row => {
+        row._patientShareRequirementSuppressed = suppressUnconfiguredCumulativePatientShareError;
+      });
 
       // D004 applies code-specific Patient Share maximums. This runs before
       // the general claim-level arithmetic so cap failures remain distinct.
@@ -1698,7 +1747,11 @@ async function handleRun(options = {}) {
       // A zero Patient Share is invalid only when the claim contains a code
       // that requires it: any 99-series code, or (in Medical mode) a code
       // beginning with 1 through 6. 97-series codes never trigger this rule.
-      if (actualPS === 0 && hasRequiredPatientShareCode) {
+      if (
+        actualPS === 0
+        && hasRequiredPatientShareCode
+        && !suppressUnconfiguredCumulativePatientShareError
+      ) {
         const codeText = requiredPatientShareCodes || 'Applicable code';
         const requirementVerb = codeText.startsWith('Code ') ? 'requires' : 'require';
         const msg = `${codeText} ${requirementVerb} Patient Share for non-HAAD claims.`;
@@ -2333,6 +2386,13 @@ function getComparisonExpectedTotal(row) {
 }
 
 function getComparisonPricingBasis(row) {
+  if (row && row._pricingReferenceUnavailable) {
+    const receiver = String(row.ReceiverID || row.PayerID || '').trim().toUpperCase();
+    return receiver
+      ? `No configured medical pricing reference for receiver ${receiver}`
+      : 'Medical pricing reference unavailable';
+  }
+
   if (row && row._drugPricingMeta) {
     const basis = String(row._drugPricingMeta.basis || 'Drug pricing').trim();
     const source = String(row._drugPricingMeta.source || '').trim();
@@ -2344,7 +2404,8 @@ function getComparisonPricingBasis(row) {
   if (row && row._endoPricingRate === 'GD') basis = 'Endo GD Pricing';
 
   const adjustments = [];
-  const factor = Number(row && row.AppliedFactor);
+  const factorRaw = String(row && row.AppliedFactor != null ? row.AppliedFactor : '').trim();
+  const factor = factorRaw === '' ? null : Number(factorRaw);
   if (Number.isFinite(factor) && !moneyEqual(factor, 1)) adjustments.push(`factor ×${formatMoney(factor)}`);
   const modifier = Number(row && row._modifierMultiplier);
   if (Number.isFinite(modifier) && !moneyEqual(modifier, 1)) adjustments.push(`modifier ×${formatMoney(modifier)}`);
@@ -2521,6 +2582,11 @@ function showComparisonModal(index) {
   const d004PatientShareCaps = rows
     .map(row => row && row._d004PatientShareCaps)
     .find(details => details && typeof details === 'object') || null;
+  const referenceRows = rows.filter(row => Number.isFinite(getComparisonExpectedTotal(row)));
+  const hasConfiguredReference = !!patientShareDetails || referenceRows.length > 0;
+  const referenceUnavailableReceiver = String(
+    rows.find(row => row && row._pricingReferenceUnavailable)?.ReceiverID || ''
+  ).trim().toUpperCase();
 
   const totalNet = patientShareDetails
     ? Number(patientShareDetails.totalClaimedNet || 0)
@@ -2530,21 +2596,33 @@ function showComparisonModal(index) {
     : Number(rows[0] && rows[0].PatientShare || 0);
   const totalReference = patientShareDetails
     ? Number(patientShareDetails.totalReference || 0)
-    : (roundMoney(rows.reduce((sum, row) => {
-        const expected = getComparisonExpectedTotal(row);
-        return sum + (Number.isFinite(expected) ? expected : 0);
-      }, 0)) || 0);
+    : hasConfiguredReference
+      ? (roundMoney(referenceRows.reduce((sum, row) => {
+          const expected = getComparisonExpectedTotal(row);
+          return sum + (Number.isFinite(expected) ? expected : 0);
+        }, 0)) || 0)
+      : null;
   const combinedTotal = patientShareDetails
     ? Number(patientShareDetails.combinedTotal || 0)
     : (roundMoney(totalNet + patientShare) || 0);
-  const claimComparison = compareMoney(combinedTotal, totalReference);
+  const claimComparison = hasConfiguredReference
+    ? compareMoney(combinedTotal, totalReference)
+    : null;
   const claimResultText = patientShareDetails
     ? String(patientShareDetails.result || 'Unknown')
-    : (claimComparison === null ? 'Unknown' : claimComparison === 0 ? 'Matches' : claimComparison < 0 ? 'Below reference' : 'Above reference');
+    : !hasConfiguredReference
+      ? 'Not evaluated'
+      : (claimComparison === null ? 'Unknown' : claimComparison === 0 ? 'Matches' : claimComparison < 0 ? 'Below reference' : 'Above reference');
   const claimResultClass = comparisonCellClass(claimComparison === null ? null : claimComparison === 0);
   const claimExplanation = patientShareDetails
     ? String(patientShareDetails.explanation || '')
-    : (
+    : !hasConfiguredReference
+      ? (
+          referenceUnavailableReceiver
+            ? `Claim-level tariff comparison was not performed because receiver ${referenceUnavailableReceiver} has no configured medical pricing factor or reference.`
+            : 'Claim-level tariff comparison was not performed because no configured medical pricing reference is available.'
+        )
+      : (
         claimComparison === null
           ? 'The claim-level comparison could not be calculated.'
           : claimComparison === 0
@@ -2750,7 +2828,7 @@ function showComparisonModal(index) {
             <td>${escapeHtml(formatMoney(totalNet))}</td>
             <td>${escapeHtml(formatMoney(patientShare))}</td>
             <td class="${claimResultClass}">${escapeHtml(formatMoney(combinedTotal))}</td>
-            <td class="${claimResultClass}">${escapeHtml(formatMoney(totalReference))}</td>
+            <td class="${claimResultClass}">${escapeHtml(Number.isFinite(totalReference) ? formatMoney(totalReference) : 'N/A')}</td>
             <td class="${claimResultClass}">${escapeHtml(claimResultText)}</td>
           </tr>
         </tbody>
@@ -2892,6 +2970,7 @@ window._pricingTestApi = {
   isAllowedZeroPricedActivityForPricing,
   isValidZeroPricedConsultationCompanion,
   isPatientShareRequiredForPricingRow,
+  shouldSuppressUnconfiguredCumulativePatientShareError,
   isPatientShareComparableForPricingRow,
   getInferredPatientShareForPricingRow,
   applyD004PatientShareCapValidation,
