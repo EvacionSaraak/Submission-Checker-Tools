@@ -127,6 +127,13 @@ function isPatientShareRequiredForPricingRow(row, options = {}) {
 // a non-zero Patient Share. In particular, 7/8-series Laboratory/Radiology
 // activities may have Patient Share, but their cumulative share is capped.
 function isPatientShareComparableForPricingRow(row, options = {}) {
+  const claimedNet = getPricingRowNet(row);
+
+  // A zero-priced Medical activity is a valid zero-price line, not evidence
+  // that the entire tariff amount was paid as Patient Share. Negative Net is
+  // validated separately and must not distort Patient Share arithmetic.
+  if (!Number.isFinite(claimedNet) || claimedNet <= 0) return false;
+
   if (isPatientShareRequiredForPricingRow(row, options)) return true;
 
   const receiverID = String(
@@ -156,8 +163,10 @@ function getInferredPatientShareForPricingRow(row) {
     return {
       claimedNet,
       expectedNet,
+      rawPatientShare: null,
       patientShare: null,
       negativeNet: false,
+      zeroPriced: false,
       evaluable: false
     };
   }
@@ -166,17 +175,41 @@ function getInferredPatientShareForPricingRow(row) {
     return {
       claimedNet,
       expectedNet,
+      rawPatientShare: null,
       patientShare: null,
       negativeNet: true,
+      zeroPriced: false,
       evaluable: false
     };
   }
 
+  // Net 0 is permitted for Medical activities unless a separate rule requires
+  // a price. It must not be converted into Patient Share by subtracting it
+  // from the Mandatory Tariff reference.
+  if (moneyEqual(claimedNet, 0)) {
+    return {
+      claimedNet,
+      expectedNet,
+      rawPatientShare: 0,
+      patientShare: 0,
+      negativeNet: false,
+      zeroPriced: true,
+      evaluable: true
+    };
+  }
+
+  const rawPatientShare = Math.max(
+    0,
+    roundMoney(expectedNet - claimedNet) || 0
+  );
+
   return {
     claimedNet,
     expectedNet,
-    patientShare: Math.max(0, roundMoney(expectedNet - claimedNet) || 0),
+    rawPatientShare,
+    patientShare: rawPatientShare,
     negativeNet: false,
+    zeroPriced: false,
     evaluable: true
   };
 }
@@ -219,43 +252,36 @@ function applyD004PatientShareCapValidation(actRows, options = {}) {
   const receiverID = String(options.receiverID || '').trim().toUpperCase();
   if (receiverID !== 'D004' || options.isMedicalMode !== true) return null;
 
+  const rows = Array.isArray(actRows) ? actRows : [];
+  const actualClaimPatientShareRaw = Number(
+    rows[0] && (rows[0].PatientShare || rows[0].ClaimPatientShare) || 0
+  );
+  const actualClaimPatientShare = Number.isFinite(actualClaimPatientShareRaw)
+    ? Math.max(0, roundMoney(actualClaimPatientShareRaw) || 0)
+    : 0;
+
   const consultationDetails = [];
   const labRadiologyDetails = [];
 
-  (actRows || []).forEach((row, rowIndex) => {
+  rows.forEach((row, rowIndex) => {
     const code = getPricingRowCode(row);
     const inference = getInferredPatientShareForPricingRow(row);
 
     if (Object.prototype.hasOwnProperty.call(D004_CONSULTATION_PATIENT_SHARE_CAPS, code)) {
-      const maximum = D004_CONSULTATION_PATIENT_SHARE_CAPS[code];
-      const withinCap = inference.evaluable
-        ? compareMoney(inference.patientShare, maximum) <= 0
-        : null;
-      const detail = {
+      consultationDetails.push({
         rowIndex,
         activityID: String(row.ActivityID || ''),
         code,
         claimedNet: inference.claimedNet,
         expectedNet: inference.expectedNet,
-        patientShare: inference.patientShare,
-        maximum,
+        rawPatientShare: inference.rawPatientShare,
+        patientShare: 0,
+        maximum: D004_CONSULTATION_PATIENT_SHARE_CAPS[code],
         negativeNet: inference.negativeNet,
+        zeroPriced: inference.zeroPriced,
         evaluable: inference.evaluable,
-        withinCap
-      };
-      consultationDetails.push(detail);
-      row._d004PatientShareLine = {
-        type: 'consultation',
-        ...detail
-      };
-
-      if (withinCap === false) {
-        addPricingFindingToRow(row, {
-          ruleId: 'MED_D004_CONSULTATION_PT_SHARE_CAP',
-          status: 'Invalid',
-          remark: `Patient Share for ${code} exceeds the maximum of ${formatMoney(maximum)}.`
-        }, options);
-      }
+        withinCap: null
+      });
       return;
     }
 
@@ -263,33 +289,83 @@ function applyD004PatientShareCapValidation(actRows, options = {}) {
       /^[78]/.test(code)
       && !isDrugActivityType(getPricingRowActivityType(row))
     ) {
-      const detail = {
+      labRadiologyDetails.push({
         rowIndex,
         activityID: String(row.ActivityID || ''),
         code,
         claimedNet: inference.claimedNet,
         expectedNet: inference.expectedNet,
-        patientShare: inference.patientShare,
+        rawPatientShare: inference.rawPatientShare,
+        patientShare: 0,
+        maximum: D004_LAB_RAD_PATIENT_SHARE_CAP,
         negativeNet: inference.negativeNet,
-        evaluable: inference.evaluable
-      };
-      labRadiologyDetails.push(detail);
-      row._d004PatientShareLine = {
-        type: 'lab-radiology',
-        ...detail,
-        maximum: D004_LAB_RAD_PATIENT_SHARE_CAP
-      };
+        zeroPriced: inference.zeroPriced,
+        evaluable: inference.evaluable,
+        withinCap: null
+      });
     }
   });
 
-  const labRadiologyPatientShare = roundMoney(labRadiologyDetails.reduce(
-    (sum, detail) => sum + (
-      detail.evaluable && Number.isFinite(detail.patientShare)
-        ? detail.patientShare
-        : 0
-    ),
-    0
-  )) || 0;
+  // Patient Share exists only at claim level in the XML. Allocate no more than
+  // that actual claim amount. Consultation differences are assigned first,
+  // then any remaining supported amount is assigned to 7/8-series activities.
+  // This prevents a Net 0 line from inventing a tariff-sized Patient Share.
+  let remainingPatientShare = actualClaimPatientShare;
+
+  const allocateSupportedShare = detail => {
+    if (!detail.evaluable || detail.negativeNet || detail.zeroPriced) {
+      detail.patientShare = 0;
+      return;
+    }
+
+    const supportedDifference = Number.isFinite(detail.rawPatientShare)
+      ? Math.max(0, detail.rawPatientShare)
+      : 0;
+    const allocated = Math.min(supportedDifference, remainingPatientShare);
+    detail.patientShare = roundMoney(allocated) || 0;
+    remainingPatientShare = Math.max(
+      0,
+      roundMoney(remainingPatientShare - detail.patientShare) || 0
+    );
+  };
+
+  consultationDetails.forEach(allocateSupportedShare);
+  labRadiologyDetails.forEach(allocateSupportedShare);
+
+  consultationDetails.forEach(detail => {
+    detail.withinCap = detail.evaluable && !detail.negativeNet
+      ? compareMoney(detail.patientShare, detail.maximum) <= 0
+      : null;
+
+    const row = rows[detail.rowIndex];
+    if (row) {
+      row._d004PatientShareLine = {
+        type: 'consultation',
+        ...detail
+      };
+    }
+
+    if (detail.withinCap === false && row) {
+      addPricingFindingToRow(row, {
+        ruleId: 'MED_D004_CONSULTATION_PT_SHARE_CAP',
+        status: 'Invalid',
+        remark:
+          `Patient Share for ${detail.code} exceeds the maximum of ` +
+          `${formatMoney(detail.maximum)}.`
+      }, options);
+    }
+  });
+
+  const labRadiologyPatientShare = roundMoney(
+    labRadiologyDetails.reduce(
+      (sum, detail) => sum + (
+        detail.evaluable && Number.isFinite(detail.patientShare)
+          ? detail.patientShare
+          : 0
+      ),
+      0
+    )
+  ) || 0;
   const labRadiologyWithinCap = compareMoney(
     labRadiologyPatientShare,
     D004_LAB_RAD_PATIENT_SHARE_CAP
@@ -297,17 +373,21 @@ function applyD004PatientShareCapValidation(actRows, options = {}) {
 
   labRadiologyDetails.forEach(detail => {
     detail.cumulativePatientShare = labRadiologyPatientShare;
-    detail.maximum = D004_LAB_RAD_PATIENT_SHARE_CAP;
-    detail.withinCap = labRadiologyWithinCap;
+    detail.withinCap = detail.evaluable && !detail.negativeNet
+      ? labRadiologyWithinCap
+      : null;
 
-    const row = actRows[detail.rowIndex];
-    if (!row || !row._d004PatientShareLine) return;
-    row._d004PatientShareLine.cumulativePatientShare = labRadiologyPatientShare;
-    row._d004PatientShareLine.withinCap = labRadiologyWithinCap;
+    const row = rows[detail.rowIndex];
+    if (row) {
+      row._d004PatientShareLine = {
+        type: 'lab-radiology',
+        ...detail
+      };
+    }
   });
 
   if (!labRadiologyWithinCap && labRadiologyDetails.length) {
-    const firstLabRow = actRows[labRadiologyDetails[0].rowIndex] || actRows[0];
+    const firstLabRow = rows[labRadiologyDetails[0].rowIndex] || rows[0];
     addPricingFindingToRow(firstLabRow, {
       ruleId: 'MED_D004_LAB_RAD_PT_SHARE_CAP',
       status: 'Invalid',
@@ -319,6 +399,11 @@ function applyD004PatientShareCapValidation(actRows, options = {}) {
 
   const details = {
     receiverID: 'D004',
+    actualClaimPatientShare,
+    allocatedPatientShare: roundMoney(
+      actualClaimPatientShare - remainingPatientShare
+    ) || 0,
+    unallocatedPatientShare: remainingPatientShare,
     consultationMaximums: { ...D004_CONSULTATION_PATIENT_SHARE_CAPS },
     consultations: consultationDetails.map(detail => ({ ...detail })),
     laboratoryRadiology: labRadiologyDetails.map(detail => ({ ...detail })),
@@ -327,7 +412,7 @@ function applyD004PatientShareCapValidation(actRows, options = {}) {
     laboratoryRadiologyWithinCap: labRadiologyWithinCap
   };
 
-  (actRows || []).forEach(row => {
+  rows.forEach(row => {
     row._d004PatientShareCaps = details;
   });
 
@@ -1412,7 +1497,10 @@ async function handleRun(options = {}) {
         _endoPricingRate: endoPricingRate,
         _nonEndoUsedEndoPrice: nonEndoUsedEndoPrice,
         _drugPricingMeta: drugPricingMeta,
-        _drugExpectedNet: null
+        _drugExpectedNet: null,
+        _zeroPricePassesPricing: Boolean(isZeroPricedActivity),
+        _isZeroBilled: Boolean(isZeroBilled),
+        _requiresMedicalPrice: Boolean(requiresMedicalPrice)
       };
     });
     output.forEach(row => {
@@ -2214,6 +2302,13 @@ function getComparisonPriceResult(row, claimRows) {
     return { correct: null, reason: 'Unknown' };
   }
 
+  // A Medical activity that passed the zero-price rule is valid even when the
+  // Mandatory Tariff contains a positive reference. The reference remains
+  // visible for audit purposes but is not treated as unpaid Patient Share.
+  if (moneyEqual(claimed, 0) && row && row._zeroPricePassesPricing === true) {
+    return { correct: true, reason: 'Correct zero-priced medical activity.' };
+  }
+
   if (
     moneyEqual(claimed, expectedTotal) ||
     moneyEqual(claimed, expectedUnit) ||
@@ -2259,6 +2354,7 @@ function getComparisonPriceResult(row, claimRows) {
   }
 
   const positiveReferenceRows = (claimRows || []).filter(candidate => {
+    if (candidate && candidate._zeroPricePassesPricing === true) return false;
     const total = getComparisonExpectedTotal(candidate);
     return Number.isFinite(total) && total > 0;
   });
@@ -2359,6 +2455,12 @@ function showComparisonModal(index) {
           text: 'Not evaluated — Claimed Net is negative'
         };
       }
+      if (detail.zeroPriced) {
+        return {
+          className: 'pricing-compare-good',
+          text: 'Zero-priced; no Patient Share inferred'
+        };
+      }
       if (!detail.evaluable) {
         return {
           className: 'pricing-compare-neutral',
@@ -2412,6 +2514,11 @@ function showComparisonModal(index) {
 
     return `
       <h4>D004 Patient Share Maximums</h4>
+      <div class="pricing-compare-explanation">
+        <strong>Actual claim Patient Share:</strong>
+        ${escapeHtml(formatMoney(d004PatientShareCaps.actualClaimPatientShare || 0))}.
+        Zero-priced activities do not generate inferred Patient Share.
+      </div>
       <table class="pricing-compare-table">
         <thead>
           <tr>
