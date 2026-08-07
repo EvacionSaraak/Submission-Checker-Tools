@@ -85,7 +85,6 @@
             >
               &times;
             </button>
-
             <div id="modalTable"></div>
           </div>
         </div>
@@ -172,7 +171,6 @@
             <th style="background:#f0f0f0">Field</th>
             <th style="background:#f0f0f0">Value</th>
           </tr>
-
           ${renderNode(root)}
         </table>
       `;
@@ -348,7 +346,7 @@
                     }
                 });
                 return map;
-            }).catch (error => {
+            }).catch(error => {
                 console.warn('[SCHEMA] Failed to load clinician specialties:', error.message);
                 return new Map();
             });
@@ -417,7 +415,7 @@
                 const parsed = { sourcePath: path, zCodes: buildCodeMap(data.zCodes, 'zCodes'), oCodes: buildCodeMap(data.oCodes, 'oCodes'), trimesterLabels };
                 console.log(`[SCHEMA][PREGNANCY] Loaded ` + `${parsed.zCodes.size} Z-codes and ` + `${parsed.oCodes.size} O-codes from ` + `${path}.`);
                 return parsed;
-            }).catch (error => {
+            }).catch(error => {
                 pregnancyDiagnosisDataPromise = null;
                 throw error;
             });
@@ -747,149 +745,62 @@
             const contexts = Array.from(activities || []).map(activity => {
                 const clinician = String(text('Clinician', activity) || '').trim().toUpperCase();
                 const orderingClinician = String(text('OrderingClinician', activity) || '').trim().toUpperCase();
-        
-                return {
-                    code: String(text('Code', activity) || '').trim(),
-                    quantityRaw: String(text('Quantity', activity) || '').trim(),
-                    quantity: Number(text('Quantity', activity) || 0),
-                    net: Number(text('Net', activity) || 0),
-                    clinician,
-                    orderingClinician,
-                    clinicianSpecialty: clinicianSpecialtyMap.get(clinician) || '',
-                    orderingSpecialty: clinicianSpecialtyMap.get(orderingClinician) || ''
+                return { clinician, orderingClinician, code: String(text('Code', activity) || '').trim(), quantityRaw: String(text('Quantity', activity) || '').trim(), quantity: Number(text('Quantity', activity) || 0),
+                    net: Number(text('Net', activity) || 0), clinicianSpecialty: clinicianSpecialtyMap.get(clinician) || '', orderingSpecialty: clinicianSpecialtyMap.get(orderingClinician) || ''
                 };
             });
-        
-            const receiverID = String(options.receiverID || text('ReceiverID') || '')
-                .trim()
-                .toUpperCase();
-            const isHAADSelfPay = receiverID === 'HAAD';
-        
-            // Performing Clinician validation.
-            // This intentionally checks Activity.Clinician only and does not check
-            // Activity.OrderingClinician. A nurse cannot be the Performing Clinician,
-            // except when the payer is HAAD because that indicates a self-pay claim.
-            if (!isHAADSelfPay) {
-                const nursePerformingClinicians = new Map();
-        
-                contexts.forEach(context => {
-                    const normalizedSpecialty = normalizeSpecialty(context.clinicianSpecialty);
-                    const isNurse = /(^|[^A-Z])(NURSE|NURSING)([^A-Z]|$)/.test(normalizedSpecialty);
-        
-                    if (context.clinician && isNurse) {
-                        nursePerformingClinicians.set(
-                            context.clinician,
-                            context.clinicianSpecialty || 'Nurse'
-                        );
+
+            // HAAD submissions may use nurses as the Performing Clinician.
+            // The exemption is determined solely by the Header ReceiverID; PayerID
+            // does not affect this rule. Ordering Clinician validation is unchanged.
+            const receiverID = String(options.receiverID || '').trim().toUpperCase();
+            const isHaadReceiver = receiverID === 'HAAD';
+
+            // This validation applies only to the Performing Clinician (<Clinician>),
+            // never to the Ordering Clinician. All HAAD ReceiverID claims are exempt.
+            if (!isHaadReceiver) {
+                const reportedNurseClinicians = new Set();
+                contexts.forEach(({ clinician, clinicianSpecialty }) => {
+                    const normalizedSpecialty = normalizeSpecialty(clinicianSpecialty);
+                    const isNurse = /\bNURS(?:E|ES|ING)\b/.test(normalizedSpecialty);
+                    if (clinician && isNurse && !reportedNurseClinicians.has(clinician)) {
+                        invalidFields.push(`Performing Clinician ${clinician} is invalid because the clinician is a nurse (Specialty: \`${clinicianSpecialty || 'Unknown'}\`).`);
+                        reportedNurseClinicians.add(clinician);
                     }
                 });
-        
-                nursePerformingClinicians.forEach((specialty, clinician) => {
-                    invalidFields.push(
-                        `Performing Clinician ${clinician} is invalid because the clinician is a nurse ` +
-                        `(Specialty: \`${specialty}\`).`
-                    );
-                });
             }
-        
-            // Except for HAAD self-pay claims, the nurse Performing Clinician rule
-            // applies to both Medical and Dental. The remaining rules are Medical-only.
+
             if (!options.isMedicalClaim) return;
-        
             const requires992SpecialtyCheck = contexts.length > 1;
             const infusionCodes = new Set();
             const consultationCodes = new Set();
-        
             contexts.forEach(context => {
-                const {
-                    code,
-                    quantityRaw,
-                    quantity,
-                    net,
-                    clinicianSpecialty,
-                    orderingSpecialty
-                } = context;
-        
+                const { code, quantityRaw, quantity, net, clinicianSpecialty, orderingSpecialty } = context;
                 if (!code) return;
-        
-                if (MUTUALLY_EXCLUSIVE_INFUSION_CODES.has(code)) {
-                    infusionCodes.add(code);
+                if (MUTUALLY_EXCLUSIVE_INFUSION_CODES.has(code)) infusionCodes.add(code);
+                if (GP_992_CODES.has(code)) consultationCodes.add(code);
+                if (INVALID_ACTIVITY_CODES.has(code)) invalidFields.push(`Activity ${code} is invalid and cannot be used.`);
+                if (/^8/.test(code) && code !== '82948' && !specialtyContains(clinicianSpecialty, 'Pathology')) {
+                    invalidFields.push(`Activity ${code} requires Clinician specialty containing Pathology (Currently \`${clinicianSpecialty || 'Unknown'}\`).`);
                 }
-        
-                if (GP_992_CODES.has(code)) {
-                    consultationCodes.add(code);
+                if ((code === '97802' || code === '97803') && !specialtyContains(clinicianSpecialty, 'Dietician')) {
+                    invalidFields.push(`Activity ${code} requires Clinician specialty containing Dietician (Currently \`${clinicianSpecialty || 'Unknown'}\`).`);
                 }
-        
-                if (INVALID_ACTIVITY_CODES.has(code)) {
-                    invalidFields.push(`Activity ${code} is invalid and cannot be used.`);
+                if (requires992SpecialtyCheck && GP_992_REQUIRED_CODES.has(code) && !specialtyContains(orderingSpecialty, 'General Practitioner')) {
+                    invalidFields.push(`Activity ${code} requires OrderingClinician specialty as General Practitioner (Currently \`${orderingSpecialty || 'Unknown'}\`).`);
                 }
-        
-                if (/^8/.test(code) &&
-                    code !== '82948' &&
-                    !specialtyContains(clinicianSpecialty, 'Pathology')) {
-                    invalidFields.push(
-                        `Activity ${code} requires Clinician specialty containing Pathology ` +
-                        `(Currently \`${clinicianSpecialty || 'Unknown'}\`).`
-                    );
+                if (GP_992_FORBIDDEN_CODES.has(code) && net !== 0 && specialtyContains(orderingSpecialty, 'General Practitioner')) {
+                    invalidFields.push(`Activity ${code} requires OrderingClinician specialty to NOT be General Practitioner (Currently \`${orderingSpecialty || 'Unknown'}\`).`);
                 }
-        
-                if ((code === '97802' || code === '97803') &&
-                    !specialtyContains(clinicianSpecialty, 'Dietician')) {
-                    invalidFields.push(
-                        `Activity ${code} requires Clinician specialty containing Dietician ` +
-                        `(Currently \`${clinicianSpecialty || 'Unknown'}\`).`
-                    );
+                if (GP_992_FORBIDDEN_CODES.has(code) && (specialtyContains(orderingSpecialty, 'Ophthalmology') || specialtyContains(orderingSpecialty, 'Opthalmology'))) {
+                    invalidFields.push(`${orderingSpecialty || 'OrderingClinician Specialty'} cannot be used for ${code}.`);
                 }
-        
-                if (requires992SpecialtyCheck &&
-                    GP_992_REQUIRED_CODES.has(code) &&
-                    !specialtyContains(orderingSpecialty, 'General Practitioner')) {
-                    invalidFields.push(
-                        `Activity ${code} requires OrderingClinician specialty as General Practitioner ` +
-                        `(Currently \`${orderingSpecialty || 'Unknown'}\`).`
-                    );
-                }
-        
-                if (GP_992_FORBIDDEN_CODES.has(code) &&
-                    net !== 0 &&
-                    specialtyContains(orderingSpecialty, 'General Practitioner')) {
-                    invalidFields.push(
-                        `Activity ${code} requires OrderingClinician specialty to NOT be General Practitioner ` +
-                        `(Currently \`${orderingSpecialty || 'Unknown'}\`).`
-                    );
-                }
-        
-                if (GP_992_FORBIDDEN_CODES.has(code) &&
-                    (specialtyContains(orderingSpecialty, 'Ophthalmology') ||
-                     specialtyContains(orderingSpecialty, 'Opthalmology'))) {
-                    invalidFields.push(
-                        `${orderingSpecialty || 'OrderingClinician Specialty'} cannot be used for ${code}.`
-                    );
-                }
-        
-                if (MUTUALLY_EXCLUSIVE_INFUSION_CODES.has(code) &&
-                    quantityRaw &&
-                    quantity !== 1) {
-                    invalidFields.push(`Activity ${code} must have Quantity of 1.`);
-                }
+                if (MUTUALLY_EXCLUSIVE_INFUSION_CODES.has(code) && quantityRaw && quantity !== 1) invalidFields.push(`Activity ${code} must have Quantity of 1.`);
             });
-        
-            const hasNewPatientCode =
-                consultationCodes.has('99202') || consultationCodes.has('99203');
-            const hasEstablishedPatientCode =
-                consultationCodes.has('99212') || consultationCodes.has('99213');
-        
-            if (hasNewPatientCode && hasEstablishedPatientCode) {
-                invalidFields.push(
-                    '99202/99203 cannot be combined with 99212/99213 in the same claim.'
-                );
-            }
-        
-            if (infusionCodes.size > 1) {
-                invalidFields.push(
-                    `Codes ${Array.from(infusionCodes).join(', ')} cannot coexist in the same claim.`
-                );
-            }
+            const hasNewPatientCode = consultationCodes.has('99202') || consultationCodes.has('99203');
+            const hasEstablishedPatientCode = consultationCodes.has('99212') || consultationCodes.has('99213');
+            if (hasNewPatientCode && hasEstablishedPatientCode) invalidFields.push('99202/99203 cannot be combined with 99212/99213 in the same claim.');
+            if (infusionCodes.size > 1) invalidFields.push(`Codes ${Array.from(infusionCodes).join(', ')} cannot coexist in the same claim.`);
         }
         // =====================================================================
         // PERSON VALIDATION
@@ -1212,7 +1123,10 @@
                 checkGTLicenseValidation(activities, text, invalidFields);
                 const encounterType = encounter ? text('Type', encounter) : '';
                 const isMedicalClaim = claimTypeMode ? claimTypeMode === 'MEDICAL' : String(encounterType).trim() === '3';
-                validateConsultationAndSpecialtyRules(activities, text, invalidFields, clinicianSpecialtyMap, { isMedicalClaim });
+                validateConsultationAndSpecialtyRules(activities, text, invalidFields, clinicianSpecialtyMap, {
+                    isMedicalClaim,
+                    receiverID
+                });
                 validateMedicalOrderingConsistency(activities, text, invalidFields, { isMedicalClaim });
                 const contract = claim.getElementsByTagName('Contract')[0];
                 if (contract && !text('PackageName', contract)) {
@@ -1259,7 +1173,6 @@
             <th style="padding:8px;border:1px solid #ccc">
               ${identifierLabel}
             </th>
-
             <th style="padding:8px;border:1px solid #ccc">
               Remark
             </th>
@@ -1277,7 +1190,6 @@
         <tbody>
           ${safeResults.map((row, index) => {
             const rowClass = row.Unknown ? 'table-warning' : (row.Valid ? 'table-success' : 'table-danger');
-
             return `
               <tr class="${rowClass}">
                 <td style="padding:6px;border:1px solid #ccc">
@@ -1293,11 +1205,9 @@
                 >
                   ${sanitizeForHTML(row.Remark)}
                 </td>
-
                 <td style="padding:6px;border:1px solid #ccc">
                   ${row.Valid ? 'Yes' : 'No'}
                 </td>
-
                 <td style="padding:6px;border:1px solid #ccc">
                   <button
                     type="button"
