@@ -2402,14 +2402,32 @@ function getComparisonPostFactorUnit(row) {
   return roundMoney(base * factor);
 }
 
-function getComparisonCurrentFactor(row) {
+function getComparisonAllocatedPatientShare(row) {
+  const generic = row && row._patientShareAllocation;
+  if (generic && Number.isFinite(Number(generic.allocatedPatientShare))) {
+    return Math.max(0, Number(generic.allocatedPatientShare));
+  }
+
+  const d004 = row && row._d004PatientShareLine;
+  if (d004 && Number.isFinite(Number(d004.patientShare))) {
+    return Math.max(0, Number(d004.patientShare));
+  }
+
+  return 0;
+}
+
+function getComparisonCurrentFactor(row, includePatientShare = false) {
   const claimed = parseOptionalMoney(row && (row.ClaimedNet ?? (row.XmlRow && row.XmlRow.Net)));
   const base = getComparisonPreFactorUnit(row);
   const qtyRaw = Number(row && (row.ClaimedQty || (row.XmlRow && row.XmlRow.Quantity) || 1));
   const qty = Number.isFinite(qtyRaw) && qtyRaw > 0 ? qtyRaw : 1;
   const preFactorTotal = Number(base) * qty;
   if (!Number.isFinite(claimed) || !Number.isFinite(preFactorTotal) || preFactorTotal === 0) return null;
-  return roundFactor(claimed / preFactorTotal);
+
+  const allocatedPatientShare = includePatientShare
+    ? getComparisonAllocatedPatientShare(row)
+    : 0;
+  return roundFactor((claimed + allocatedPatientShare) / preFactorTotal);
 }
 function getComparisonExpectedUnit(row) {
   if (row && row._drugPricingMeta && row._drugPricingMeta.pricePerBasis != null) {
@@ -2793,7 +2811,9 @@ function showComparisonModal(index) {
     const preFactorUnit = getComparisonPreFactorUnit(row);
     const expectedFactor = getComparisonExpectedFactor(row);
     const postFactorUnit = getComparisonPostFactorUnit(row);
-    const currentFactor = getComparisonCurrentFactor(row);
+    const currentFactor = getComparisonCurrentFactor(row, false);
+    const currentFactorWithPatientShare = getComparisonCurrentFactor(row, true);
+    const allocatedPatientShare = getComparisonAllocatedPatientShare(row);
     const priceResult = getComparisonPriceResult(row, rows);
     const clinician = getComparisonClinicianResult(row);
     const priceClass = comparisonCellClass(priceResult.correct);
@@ -2815,7 +2835,7 @@ function showComparisonModal(index) {
         <td class="${basisClass}">${escapeHtml(Number.isFinite(preFactorUnit) ? formatMoney(preFactorUnit) : 'N/A')}</td>
         <td class="${factorClass}">${escapeHtml(Number.isFinite(expectedFactor) ? formatMoney(expectedFactor) : 'N/A')}</td>
         <td class="${basisClass}">${escapeHtml(Number.isFinite(postFactorUnit) ? formatMoney(postFactorUnit) : 'N/A')}</td>
-        <td class="${factorClass}">${escapeHtml(Number.isFinite(currentFactor) ? formatMoney(currentFactor) : 'N/A')}</td>
+        <td class="${factorClass} pricing-current-factor" data-factor-without-ps="${escapeHtml(Number.isFinite(currentFactor) ? String(currentFactor) : '')}" data-factor-with-ps="${escapeHtml(Number.isFinite(currentFactorWithPatientShare) ? String(currentFactorWithPatientShare) : '')}" data-allocated-patient-share="${escapeHtml(formatMoney(allocatedPatientShare))}">${escapeHtml(Number.isFinite(currentFactor) ? formatMoney(currentFactor) : 'N/A')}</td>
         <td class="${basisClass}">${expectedDisplay}</td>
         <td class="${basisClass}">${escapeHtml(getComparisonPricingBasis(row))}</td>
         <td class="${priceClass}">${escapeHtml(priceResult.reason)}</td>
@@ -2855,6 +2875,25 @@ function showComparisonModal(index) {
       #comparisonModal .pricing-compare-bad { background: #f8d7da; color: #842029; }
       #comparisonModal .pricing-compare-neutral { background: #fff3cd; color: #664d03; }
       #comparisonModal small { display: block; margin-top: 2px; opacity: .75; }
+      #comparisonModal .pricing-factor-controls {
+        margin: 12px 0;
+        padding: 10px 12px;
+        border: 1px solid #ced4da;
+        border-radius: 6px;
+        background: #f8f9fa;
+      }
+      #comparisonModal .pricing-factor-controls label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-weight: 600;
+        margin: 0;
+      }
+      #comparisonModal .pricing-factor-controls small {
+        display: block;
+        margin-top: 4px;
+        color: #666;
+      }
       #comparisonModal .pricing-compare-explanation {
         border: 1px solid #cfd4da;
         background: #f8f9fa;
@@ -2904,6 +2943,13 @@ function showComparisonModal(index) {
         ${patientShareCodeText ? `<small>Patient Share comparison codes: ${escapeHtml(patientShareCodeText)}</small>` : ''}
       </div>
       ${d004PatientShareCapsHtml}
+      <div class="pricing-factor-controls">
+        <label>
+          <input type="checkbox" id="pricingIncludePatientShareFactor">
+          Include Patient Share in Current Factor calculation
+        </label>
+        <small>Uses the Patient Share amount allocated to each activity by the pricing checker.</small>
+      </div>
       <table class="pricing-compare-table">
         <thead>
           <tr>
@@ -2927,8 +2973,8 @@ function showComparisonModal(index) {
       <div class="pricing-compare-explanation">
         <strong>Factor audit:</strong>
         Post-Factor Price = Pre-Factor Price × Expected Factor.
-        Current Factor = Claimed Net ÷ (Pre-Factor Price × Quantity).
-        Patient Share is not added when calculating Current Factor.
+        Current Factor = (Claimed Net + optional allocated Patient Share) ÷ (Pre-Factor Price × Quantity).
+        Use the checkbox above to include or exclude Patient Share without reopening the modal.
       </div>
       <button type="button" onclick="window.closePricingComparison()">Close</button>
     </div>`;
@@ -2942,6 +2988,23 @@ function showComparisonModal(index) {
     if (event.target === modal) closeComparisonModal();
   });
   document.body.appendChild(modal);
+
+  const patientShareFactorCheckbox = modal.querySelector('#pricingIncludePatientShareFactor');
+  if (patientShareFactorCheckbox) {
+    patientShareFactorCheckbox.addEventListener('change', () => {
+      const includePatientShare = patientShareFactorCheckbox.checked;
+      modal.querySelectorAll('.pricing-current-factor').forEach(cell => {
+        const raw = includePatientShare
+          ? cell.getAttribute('data-factor-with-ps')
+          : cell.getAttribute('data-factor-without-ps');
+        const factor = Number(raw);
+        cell.textContent = raw !== null && raw !== '' && Number.isFinite(factor)
+          ? formatMoney(factor)
+          : 'N/A';
+      });
+    });
+  }
+
   modal.style.display = 'flex';
 }
 
