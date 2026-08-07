@@ -2369,6 +2369,48 @@ function buildResultsTable(rows) {
 }
 
 // ----------------- Modal comparison -----------------
+// Factor audit helpers used by the comparison modal.
+// "Current Factor" is inferred strictly from the submitted activity price:
+//   Claimed Net / (Pre-Factor Price * Quantity)
+// This intentionally does not add Patient Share, because the purpose of the
+// column is to show the factor implied by the price actually submitted.
+function roundFactor(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.round(n * 10000) / 10000 : null;
+}
+
+function getComparisonPreFactorUnit(row) {
+  if (row && row._drugPricingMeta) {
+    const drugBase = Number(row._drugPricingMeta.pricePerBasis);
+    return Number.isFinite(drugBase) ? drugBase : null;
+  }
+  return parseOptionalMoney(row && row.ReferenceNetPrice);
+}
+
+function getComparisonExpectedFactor(row) {
+  if (!row || row._drugPricingMeta) return null;
+  const raw = String(row.AppliedFactor == null ? '' : row.AppliedFactor).trim();
+  if (!raw) return null;
+  const factor = Number(raw);
+  return Number.isFinite(factor) ? factor : null;
+}
+
+function getComparisonPostFactorUnit(row) {
+  const base = getComparisonPreFactorUnit(row);
+  const factor = getComparisonExpectedFactor(row);
+  if (!Number.isFinite(base) || !Number.isFinite(factor)) return null;
+  return roundMoney(base * factor);
+}
+
+function getComparisonCurrentFactor(row) {
+  const claimed = parseOptionalMoney(row && (row.ClaimedNet ?? (row.XmlRow && row.XmlRow.Net)));
+  const base = getComparisonPreFactorUnit(row);
+  const qtyRaw = Number(row && (row.ClaimedQty || (row.XmlRow && row.XmlRow.Quantity) || 1));
+  const qty = Number.isFinite(qtyRaw) && qtyRaw > 0 ? qtyRaw : 1;
+  const preFactorTotal = Number(base) * qty;
+  if (!Number.isFinite(claimed) || !Number.isFinite(preFactorTotal) || preFactorTotal === 0) return null;
+  return roundFactor(claimed / preFactorTotal);
+}
 function getComparisonExpectedUnit(row) {
   if (row && row._drugPricingMeta && row._drugPricingMeta.pricePerBasis != null) {
     const drugUnit = Number(row._drugPricingMeta.pricePerBasis);
@@ -2748,6 +2790,10 @@ function showComparisonModal(index) {
   const activityRowsHtml = rows.map(row => {
     const expectedUnit = getComparisonExpectedUnit(row);
     const expectedTotal = getComparisonExpectedTotal(row);
+    const preFactorUnit = getComparisonPreFactorUnit(row);
+    const expectedFactor = getComparisonExpectedFactor(row);
+    const postFactorUnit = getComparisonPostFactorUnit(row);
+    const currentFactor = getComparisonCurrentFactor(row);
     const priceResult = getComparisonPriceResult(row, rows);
     const clinician = getComparisonClinicianResult(row);
     const priceClass = comparisonCellClass(priceResult.correct);
@@ -2757,12 +2803,19 @@ function showComparisonModal(index) {
     const expectedDisplay = Number.isFinite(expectedTotal)
       ? `${formatMoney(expectedTotal)}${Number.isFinite(expectedUnit) && !moneyEqual(expectedUnit, expectedTotal) ? `<small>unit ${escapeHtml(formatMoney(expectedUnit))}</small>` : ''}`
       : 'N/A';
+    const factorClass = Number.isFinite(expectedFactor) && Number.isFinite(currentFactor)
+      ? comparisonCellClass(moneyEqual(expectedFactor, currentFactor))
+      : 'pricing-compare-neutral';
 
     return `
       <tr>
         <td>${escapeHtml(String(row.CPT || ''))}<small>${escapeHtml(String(row.ActivityID || ''))}</small></td>
         <td class="${priceClass}">${escapeHtml(parseOptionalMoney(row.ClaimedNet) === null ? 'N/A' : formatMoney(row.ClaimedNet))}</td>
         <td>${escapeHtml(qty)}</td>
+        <td class="${basisClass}">${escapeHtml(Number.isFinite(preFactorUnit) ? formatMoney(preFactorUnit) : 'N/A')}</td>
+        <td class="${factorClass}">${escapeHtml(Number.isFinite(expectedFactor) ? formatMoney(expectedFactor) : 'N/A')}</td>
+        <td class="${basisClass}">${escapeHtml(Number.isFinite(postFactorUnit) ? formatMoney(postFactorUnit) : 'N/A')}</td>
+        <td class="${factorClass}">${escapeHtml(Number.isFinite(currentFactor) ? formatMoney(currentFactor) : 'N/A')}</td>
         <td class="${basisClass}">${expectedDisplay}</td>
         <td class="${basisClass}">${escapeHtml(getComparisonPricingBasis(row))}</td>
         <td class="${priceClass}">${escapeHtml(priceResult.reason)}</td>
@@ -2810,15 +2863,20 @@ function showComparisonModal(index) {
         font-size: 12px;
         line-height: 1.45;
       }
+      #comparisonModal .pricing-compare-table { min-width: 1500px; }
       #comparisonModal .pricing-compare-table th:nth-child(1) { width: 7%; }
-      #comparisonModal .pricing-compare-table th:nth-child(2) { width: 8%; }
-      #comparisonModal .pricing-compare-table th:nth-child(3) { width: 5%; }
-      #comparisonModal .pricing-compare-table th:nth-child(4) { width: 9%; }
-      #comparisonModal .pricing-compare-table th:nth-child(5) { width: 16%; }
-      #comparisonModal .pricing-compare-table th:nth-child(6) { width: 9%; }
-      #comparisonModal .pricing-compare-table th:nth-child(7) { width: 17%; }
-      #comparisonModal .pricing-compare-table th:nth-child(8) { width: 10%; }
-      #comparisonModal .pricing-compare-table th:nth-child(9) { width: 19%; }
+      #comparisonModal .pricing-compare-table th:nth-child(2) { width: 7%; }
+      #comparisonModal .pricing-compare-table th:nth-child(3) { width: 4%; }
+      #comparisonModal .pricing-compare-table th:nth-child(4) { width: 8%; }
+      #comparisonModal .pricing-compare-table th:nth-child(5) { width: 7%; }
+      #comparisonModal .pricing-compare-table th:nth-child(6) { width: 8%; }
+      #comparisonModal .pricing-compare-table th:nth-child(7) { width: 7%; }
+      #comparisonModal .pricing-compare-table th:nth-child(8) { width: 8%; }
+      #comparisonModal .pricing-compare-table th:nth-child(9) { width: 13%; }
+      #comparisonModal .pricing-compare-table th:nth-child(10) { width: 10%; }
+      #comparisonModal .pricing-compare-table th:nth-child(11) { width: 9%; }
+      #comparisonModal .pricing-compare-table th:nth-child(12) { width: 7%; }
+      #comparisonModal .pricing-compare-table th:nth-child(13) { width: 10%; }
       @media (max-width: 900px) {
         #comparisonModal .pricing-compare-table { font-size: 11px; }
         #comparisonModal th, #comparisonModal td { padding: 5px; }
@@ -2852,6 +2910,10 @@ function showComparisonModal(index) {
             <th>Code</th>
             <th>Claimed Net</th>
             <th>Qty</th>
+            <th>Pre-Factor Price</th>
+            <th>Expected Factor</th>
+            <th>Post-Factor Price</th>
+            <th>Current Factor</th>
             <th>Expected Net</th>
             <th>Pricing Basis</th>
             <th>Price Result</th>
@@ -2862,6 +2924,12 @@ function showComparisonModal(index) {
         </thead>
         <tbody>${activityRowsHtml}</tbody>
       </table>
+      <div class="pricing-compare-explanation">
+        <strong>Factor audit:</strong>
+        Post-Factor Price = Pre-Factor Price × Expected Factor.
+        Current Factor = Claimed Net ÷ (Pre-Factor Price × Quantity).
+        Patient Share is not added when calculating Current Factor.
+      </div>
       <button type="button" onclick="window.closePricingComparison()">Close</button>
     </div>`;
 
