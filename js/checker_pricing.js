@@ -3025,10 +3025,10 @@ function showComparisonModal(index) {
       ${d004PatientShareCapsHtml}
       <div class="pricing-factor-controls">
         <label>
-          <input type="checkbox" id="pricingIncludePatientShareFactor">
+          <input type="checkbox" id="pricingIncludePatientShareFactor" checked>
           Include Patient Share in Current Factor calculation
         </label>
-        <strong id="pricingFactorModeLabel">Patient Share excluded.</strong>
+        <strong id="pricingFactorModeLabel">Patient Share included by default.</strong>
         <small>When enabled, the modal allocates claim Patient Share to positive under-reference activities up to their shortfalls, then recalculates Current Factor live.</small>
       </div>
       <table class="pricing-compare-table">
@@ -3040,7 +3040,7 @@ function showComparisonModal(index) {
             <th>Pre-Factor Price</th>
             <th>Expected Factor</th>
             <th>Post-Factor Price</th>
-            <th id="pricingCurrentFactorHeader">Current Factor</th>
+            <th id="pricingCurrentFactorHeader">Current Factor (+ PT Share)</th>
             <th>PT Share Used</th>
             <th>Expected Net</th>
             <th>Pricing Basis</th>
