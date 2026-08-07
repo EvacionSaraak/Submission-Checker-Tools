@@ -11,8 +11,10 @@ function getDrugShared(required = true) {
   return shared;
 }
 
-// Payer IDs that have a defined factor in Factors.xlsx and are valid for Medical mode
-const MEDICAL_CONFIGURED_PAYERS = new Set(['D001', 'A001', 'D004', 'A025', 'A024', 'C002', 'C004']);
+// Receiver IDs that are valid for Medical Mandatory Tariff pricing.
+// C001 is cross-referenced directly against Mandatory Tariff and uses factor 1
+// whenever Factors.xlsx has no explicit C001 factor value.
+const MEDICAL_CONFIGURED_PAYERS = new Set(['D001', 'A001', 'D004', 'C001', 'A025', 'A024', 'C002', 'C004']);
 // Activity Type → Mandatory Tariff Type mapping
 const ACTIVITY_TYPE_TO_TARIFF_TYPE = {
   '3': 'CPT',
@@ -1986,6 +1988,12 @@ function findFactorFromRules(rules, facilityId, code, payerId) {
   const normCode = normalizeCode(code);
   const normFacility = String(facilityId || '').trim().toUpperCase();
   const normPayer = String(payerId || '').trim().toUpperCase();
+
+  // C001 uses Mandatory Tariff directly. It does not require a Factors.xlsx
+  // configuration; the tariff reference is therefore always evaluated at factor 1.
+  if (normPayer === 'C001') {
+    return { factor: 1, rule: null };
+  }
 
   // Explicit medical pricing override:
   // True Life (MF7003), Thiqa (D001), CPT 90792 uses factor 1.3.
