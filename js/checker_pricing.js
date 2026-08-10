@@ -16,6 +16,9 @@ function getDrugShared(required = true) {
 // C001 is cross-referenced directly against Mandatory Tariff and uses factor 1
 // whenever Factors.xlsx has no explicit C001 factor value.
 const MEDICAL_CONFIGURED_PAYERS = new Set(['D001', 'A001', 'D004', 'C001', 'A025', 'A024', 'C002', 'C004']);
+// Khabisi (MF5020) infusion services that always use factor 1.3.
+// The user's list repeated 96365; 96360 is included as the likely intended fourth infusion code.
+const KHABISI_INFUSION_FACTOR_13_CODES = new Set(['96360', '96361', '96365', '96367']);
 // Activity Type → Mandatory Tariff Type mapping
 const ACTIVITY_TYPE_TO_TARIFF_TYPE = {
   '3': 'CPT',
@@ -1990,11 +1993,30 @@ function findFactorFromRules(rules, facilityId, code, payerId) {
   const normFacility = String(facilityId || '').trim().toUpperCase();
   const normPayer = String(payerId || '').trim().toUpperCase();
 
-  // C001 uses Mandatory Tariff directly. It does not require a Factors.xlsx
-  // configuration; the tariff reference is therefore always evaluated at factor 1.
-  if (normPayer === 'C001') {
-    return { factor: 1, rule: null };
+  // Explicit medical pricing override:
+  // Khabisi (MF5020) infusion codes use factor 1.3 regardless of whether
+  // Factors.xlsx contains/matches a row for the current receiver. Keep this
+  // before the C001 direct-tariff fallback so the Khabisi override is visible
+  // in Expected Factor, Post-Factor Price, final validation, and the modal.
+  if (normFacility === 'MF5020' && KHABISI_INFUSION_FACTOR_13_CODES.has(normCode)) {
+    return {
+      factor: 1.3,
+      rule: {
+        facility: 'Khabisi',
+        facilityId: 'MF5020',
+        serviceType: 'Khabisi infusion factor override',
+        matchType: 'Exact List',
+        matchValues: Array.from(KHABISI_INFUSION_FACTOR_13_CODES),
+        factors: { [normPayer || 'DEFAULT']: 1.3 },
+        isOverride: true
+      }
+    };
   }
+
+  // C001 uses Mandatory Tariff directly. It does not require a Factors.xlsx
+  // configuration; the tariff reference is therefore evaluated at factor 1
+  // except where a more specific facility/code override above applies.
+  if (normPayer === 'C001') return { factor: 1, rule: null };
 
   // Explicit medical pricing override:
   // True Life (MF7003), Thiqa (D001), CPT 90792 uses factor 1.3.
