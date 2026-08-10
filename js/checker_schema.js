@@ -16,13 +16,18 @@
         const CLAIM_NOT_MERGED = "CLAIM_NOT_MERGED";
         const NOT_MERGED_RECEIVER_IDS = new Set(['D001', 'A001', 'D004']);
         const CONSULTATION_CODE_REGEX = /^(92|992)/;
-        const GP_992_REQUIRED_CODES = new Set(['99202', '99212']);
-        const GP_992_FORBIDDEN_CODES = new Set(['99203', '99213']);
         const GP_992_CODES = new Set(['99202', '99203', '99212', '99213']);
+        const GP_992_FORBIDDEN_CODES = new Set(['99203', '99213']);
+        const GP_992_FORBIDDEN_SPECIALTY_EXCEPTIONS = [
+            { clinicianLicense: 'D5230', codes: ['99203', '99213'] }
+        ];
+        const GP_992_REQUIRED_CODES = new Set(['99202', '99212']);
         const MUTUALLY_EXCLUSIVE_INFUSION_CODES = new Set(['96360', '96365', '96374']);
         const INVALID_ACTIVITY_CODES = new Set(['36591']);
         const ICD10_CM_FORMAT_PATTERN = /^[A-Z][0-9][A-Z0-9](?:\.[A-Z0-9]{1,4})?$/;
-        const NON_REPORTABLE_ICD10_CODES = new Map([ ['O34.21', ['O34.211', 'O34.212', 'O34.218', 'O34.219']] ]);
+        const NON_REPORTABLE_ICD10_CODES = new Map([
+            ['O34.21', ['O34.211', 'O34.212', 'O34.218', 'O34.219']]
+        ]);
         const OLD_DUPLICATE_ORDERING_PATTERN = /^Duplicate code\s+.+?\s+with Ordering Clinician\s+.+?\.?$/i;
         const OK_REMARK_PATTERN = /^OK\.?$/i;
         let clinicianSpecialtyMapPromise = null;
@@ -137,7 +142,9 @@
             const overlay = document.getElementById('modalOverlay');
             if (closeButton) closeButton.onclick = hideModal;
             if (overlay) {
-                overlay.onclick = event => { if (event.target === overlay) hideModal(); };
+                overlay.onclick = event => {
+                    if (event.target === overlay) hideModal();
+                };
             }
         }
 
@@ -253,7 +260,11 @@
       `;
             safeResults.forEach((row, index) => {
                 const button = table.querySelector(`.view-claim-btn[data-index="${index}"]`);
-                if (button) { button.onclick = () => { showModal(claimToHtmlTable(row.ClaimXML)); }; }
+                if (button) {
+                    button.onclick = () => {
+                        showModal(claimToHtmlTable(row.ClaimXML));
+                    };
+                }
             });
             return table;
         }
@@ -282,17 +293,23 @@
             return element;
         }
 
-        function cleanSchemaRemarkLines(remark) { return String(remark == null ? '' : remark).split(/\r?\n/).map(line => line.trim()).filter(Boolean).filter(line => !OLD_DUPLICATE_ORDERING_PATTERN.test(line)); }
+        function cleanSchemaRemarkLines(remark) {
+            return String(remark == null ? '' : remark).split(/\r?\n/).map(line => line.trim()).filter(Boolean).filter(line => !OLD_DUPLICATE_ORDERING_PATTERN.test(line));
+        }
 
         function formatNaturalList(values) {
             const items = Array.from(values || []).filter(Boolean);
             if (!items.length) return '';
             if (items.length === 1) return items[0];
-            if (items.length === 2) { return `${items[0]} and ${items[1]}`; }
+            if (items.length === 2) {
+                return `${items[0]} and ${items[1]}`;
+            }
             return (`${items.slice(0, -1).join(', ')}, ` + `and ${items[items.length - 1]}`);
         }
 
-        function getDirectChildElement(parent, tagName) { return (Array.from(parent?.children || []).find(child => String(child?.nodeName || child?.tagName || '').trim() === tagName) || null); }
+        function getDirectChildElement(parent, tagName) {
+            return (Array.from(parent?.children || []).find(child => String(child?.nodeName || child?.tagName || '').trim() === tagName) || null);
+        }
 
         function getDirectChildText(parent, tagName) {
             const child = getDirectChildElement(parent, tagName);
@@ -316,9 +333,13 @@
             return null;
         }
 
-        function normalizeDiagnosisCode(value) { return String(value == null ? '' : value).trim().toUpperCase().replace(/[^A-Z0-9]/g, ''); }
+        function normalizeDiagnosisCode(value) {
+            return String(value == null ? '' : value).trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+        }
 
-        function normalizeSpecialty(value) { return String(value || '').trim().toUpperCase(); }
+        function normalizeSpecialty(value) {
+            return String(value || '').trim().toUpperCase();
+        }
 
         function parseEncounterDateTime(value) {
             const raw = String(value || '').trim();
@@ -342,7 +363,9 @@
             return element?.textContent ? element.textContent.trim() : '';
         }
 
-        function specialtyContains(specialty, searchText) { return normalizeSpecialty(specialty).includes(normalizeSpecialty(searchText)); }
+        function specialtyContains(specialty, searchText) {
+            return normalizeSpecialty(specialty).includes(normalizeSpecialty(searchText));
+        }
 
         function validateDiagnosisCodeValue(value, invalidFields) {
             const code = String(value == null ? '' : value).trim();
@@ -356,7 +379,9 @@
                 return;
             }
             const reportableAlternatives = NON_REPORTABLE_ICD10_CODES.get(code);
-            if (reportableAlternatives) { invalidFields.push(`Diagnosis Code ${code} is an incomplete ICD-10-CM category. ` + `Use a specific reportable code: ${formatNaturalList(reportableAlternatives)}, ` + `according to the documented scar type.`); }
+            if (reportableAlternatives) {
+                invalidFields.push(`Diagnosis Code ${code} is an incomplete ICD-10-CM category. ` + `Use a specific reportable code: ${formatNaturalList(reportableAlternatives)}, ` + `according to the documented scar type.`);
+            }
         }
 
 
@@ -373,7 +398,9 @@
                         continue;
                     }
                     return { path, data: await response.json() };
-                } catch (error) { failures.push(`${path}: ` + `${error?.message || String(error)}`); }
+                } catch (error) {
+                    failures.push(`${path}: ` + `${error?.message || String(error)}`);
+                }
             }
             throw new Error('Pregnancy diagnosis code data could not be loaded. ' + failures.join(' | '));
         }
@@ -381,7 +408,9 @@
         function loadClinicianSpecialtyMap() {
             if (clinicianSpecialtyMapPromise) return clinicianSpecialtyMapPromise;
             clinicianSpecialtyMapPromise = fetch('../json/clinician_licenses.json', { cache: 'no-store' }).then(response => {
-                if (!response.ok) { throw new Error(`Failed to load clinician specialties ` + `(HTTP ${response.status}).`); }
+                if (!response.ok) {
+                    throw new Error(`Failed to load clinician specialties ` + `(HTTP ${response.status}).`);
+                }
                 return response.json();
             }).then(rows => {
                 const map = new Map();
@@ -411,9 +440,15 @@
                         const code = normalizeDiagnosisCode(row?.code);
                         const trimester = Number(row?.trimester);
                         const description = String(row?.description || '').trim();
-                        if (!code) { throw new Error(`${listName}[${index}] has no code.`); }
-                        if (![0, 1, 2, 3].includes(trimester)) { throw new Error(`${listName}[${index}] ` + `(${row?.code || code}) ` + `has invalid trimester ` + `${row?.trimester}.`); }
-                        if (map.has(code)) { throw new Error(`${listName} contains duplicate code ` + `${row?.code || code}.`); }
+                        if (!code) {
+                            throw new Error(`${listName}[${index}] has no code.`);
+                        }
+                        if (![0, 1, 2, 3].includes(trimester)) {
+                            throw new Error(`${listName}[${index}] ` + `(${row?.code || code}) ` + `has invalid trimester ` + `${row?.trimester}.`);
+                        }
+                        if (map.has(code)) {
+                            throw new Error(`${listName} contains duplicate code ` + `${row?.code || code}.`);
+                        }
                         map.set(code, { code: String(row?.code || code).trim().toUpperCase(), normalizedCode: code, description, trimester });
                     });
                     return map;
@@ -579,7 +614,10 @@
                 const code = normalizeDiagnosisCode(safeTextByTag(diagnosis, 'Code'));
                 if (code) diagnoses.add(code);
             });
-            return { receiverID: String(receiverID || '').trim().toUpperCase(), claimID: safeTextByTag(claim, 'ID'), memberID: safeTextByTag(claim, 'MemberID').toUpperCase(), providerID: safeTextByTag(claim, 'ProviderID').toUpperCase(), facilityID: safeTextByTag(encounter, 'FacilityID').toUpperCase(), encounterDate: parsedStart?.dateKey || parsedEnd?.dateKey || null, startRaw, endRaw, parsedStart, parsedEnd, clinicians, diagnoses, has97Activity };
+            return { receiverID: String(receiverID || '').trim().toUpperCase(), claimID: safeTextByTag(claim, 'ID'), memberID: safeTextByTag(claim, 'MemberID').toUpperCase(),
+                providerID: safeTextByTag(claim, 'ProviderID').toUpperCase(), facilityID: safeTextByTag(encounter, 'FacilityID').toUpperCase(), encounterDate: parsedStart?.dateKey || parsedEnd?.dateKey || null,
+                startRaw, endRaw, parsedStart, parsedEnd, clinicians, diagnoses, has97Activity
+            };
         }
 
         function detectNotMergedRemarksByClaim(claims, receiverID = '') {
@@ -630,7 +668,9 @@
                         errors.nonActivity.push(`${field} has invalid value of \`false\`.`);
                     }
                 }
-                if (element.children.length) { checkForFalseValues(element, invalidFields, prefix ? `${prefix} → ${element.nodeName}` : element.nodeName, currentActivity, errors); }
+                if (element.children.length) {
+                    checkForFalseValues(element, invalidFields, prefix ? `${prefix} → ${element.nodeName}` : element.nodeName, currentActivity, errors);
+                }
             });
             if (prefix === 'Claim.' && activityContext === null) {
                 errors.nonActivity.forEach(message => invalidFields.push(message));
@@ -664,10 +704,23 @@
             const diagnosisCodes = Array.from(diagnoses || []).map(diagnosis => String(getText('Code', diagnosis) || '').trim().toUpperCase()).filter(Boolean);
             const validPrefixes = ['K05.0', 'K05.1', 'K03.6'];
             const hasRequiredDiagnosis = diagnosisCodes.some(code => validPrefixes.some(prefix => code.startsWith(prefix)));
-            if (!hasRequiredDiagnosis) { invalidFields.push(`Activity code(s) ` + `${formatNaturalList(new Set(foundCodes))} ` + `require Diagnosis code K05.0, K05.1, or K03.6.`); }
+            if (!hasRequiredDiagnosis) {
+                invalidFields.push(`Activity code(s) ` + `${formatNaturalList(new Set(foundCodes))} ` + `require Diagnosis code K05.0, K05.1, or K03.6.`);
+            }
         }
 
-        function isConsultationCode(code) { return CONSULTATION_CODE_REGEX.test(String(code || '').trim()); }
+        function isConsultationCode(code) {
+            return CONSULTATION_CODE_REGEX.test(String(code || '').trim());
+        }
+
+        function isGp992ForbiddenSpecialtyException(clinicianLicense, code) {
+            const normalizedLicense = String(clinicianLicense || '').trim().toUpperCase();
+            const normalizedCode = String(code || '').trim();
+            return GP_992_FORBIDDEN_SPECIALTY_EXCEPTIONS.some(exception =>
+                String(exception.clinicianLicense || '').trim().toUpperCase() === normalizedLicense &&
+                Array.isArray(exception.codes) && exception.codes.includes(normalizedCode)
+            );
+        }
 
         function validateConsultationAndSpecialtyRules(activities, text, invalidFields, clinicianSpecialtyMap, options = {}) {
             const contexts = Array.from(activities || []).map(activity => {
@@ -703,16 +756,26 @@
             const infusionCodes = new Set();
             const consultationCodes = new Set();
             contexts.forEach(context => {
-                const { code, quantityRaw, quantity, net, clinicianSpecialty, orderingSpecialty } = context;
+                const { code, quantityRaw, quantity, net, clinicianSpecialty, orderingClinician, orderingSpecialty } = context;
                 if (!code) return;
                 if (MUTUALLY_EXCLUSIVE_INFUSION_CODES.has(code)) infusionCodes.add(code);
                 if (GP_992_CODES.has(code)) consultationCodes.add(code);
                 if (INVALID_ACTIVITY_CODES.has(code)) invalidFields.push(`Activity ${code} is invalid and cannot be used.`);
-                if (/^8/.test(code) && code !== '82948' && !specialtyContains(clinicianSpecialty, 'Pathology')) { invalidFields.push(`Activity ${code} requires Clinician specialty containing Pathology (Currently \`${clinicianSpecialty || 'Unknown'}\`).`); }
-                if ((code === '97802' || code === '97803') && !specialtyContains(clinicianSpecialty, 'Dietician')) { invalidFields.push(`Activity ${code} requires Clinician specialty containing Dietician (Currently \`${clinicianSpecialty || 'Unknown'}\`).`); }
-                if (requires992SpecialtyCheck && GP_992_REQUIRED_CODES.has(code) && !specialtyContains(orderingSpecialty, 'General Practitioner')) { invalidFields.push(`Activity ${code} requires OrderingClinician specialty as General Practitioner (Currently \`${orderingSpecialty || 'Unknown'}\`).`); }
-                if (GP_992_FORBIDDEN_CODES.has(code) && net !== 0 && specialtyContains(orderingSpecialty, 'General Practitioner')) { invalidFields.push(`Activity ${code} requires OrderingClinician specialty to NOT be General Practitioner (Currently \`${orderingSpecialty || 'Unknown'}\`).`); }
-                if (GP_992_FORBIDDEN_CODES.has(code) && (specialtyContains(orderingSpecialty, 'Ophthalmology') || specialtyContains(orderingSpecialty, 'Opthalmology'))) { invalidFields.push(`${orderingSpecialty || 'OrderingClinician Specialty'} cannot be used for ${code}.`); }
+                if (/^8/.test(code) && code !== '82948' && !specialtyContains(clinicianSpecialty, 'Pathology')) {
+                    invalidFields.push(`Activity ${code} requires Clinician specialty containing Pathology (Currently \`${clinicianSpecialty || 'Unknown'}\`).`);
+                }
+                if ((code === '97802' || code === '97803') && !specialtyContains(clinicianSpecialty, 'Dietician')) {
+                    invalidFields.push(`Activity ${code} requires Clinician specialty containing Dietician (Currently \`${clinicianSpecialty || 'Unknown'}\`).`);
+                }
+                if (requires992SpecialtyCheck && GP_992_REQUIRED_CODES.has(code) && !specialtyContains(orderingSpecialty, 'General Practitioner')) {
+                    invalidFields.push(`Activity ${code} requires OrderingClinician specialty as General Practitioner (Currently \`${orderingSpecialty || 'Unknown'}\`).`);
+                }
+                if (GP_992_FORBIDDEN_CODES.has(code) && net !== 0 && specialtyContains(orderingSpecialty, 'General Practitioner') && !isGp992ForbiddenSpecialtyException(orderingClinician, code)) {
+                    invalidFields.push(`Activity ${code} requires OrderingClinician specialty to NOT be General Practitioner (Currently \`${orderingSpecialty || 'Unknown'}\`).`);
+                }
+                if (GP_992_FORBIDDEN_CODES.has(code) && (specialtyContains(orderingSpecialty, 'Ophthalmology') || specialtyContains(orderingSpecialty, 'Opthalmology'))) {
+                    invalidFields.push(`${orderingSpecialty || 'OrderingClinician Specialty'} cannot be used for ${code}.`);
+                }
                 if (MUTUALLY_EXCLUSIVE_INFUSION_CODES.has(code) && quantityRaw && quantity !== 1) invalidFields.push(`Activity ${code} must have Quantity of 1.`);
             });
             const hasNewPatientCode = consultationCodes.has('99202') || consultationCodes.has('99203');
@@ -739,8 +802,12 @@
                 const pairKey = `${normalizedCode}|${orderingClinician}`;
                 duplicatePairs.set(pairKey,(duplicatePairs.get(pairKey) || 0) + 1);
             });
-            if (orderingClinicians.size > 1) { invalidFields.push(`Claim has multiple Ordering Clinicians: ` + `${Array.from(orderingClinicians).join(', ')}.`); }
-            if (missingOrderingCodes.length) { invalidFields.push(`Missing OrderingClinician for activities: ` + `${formatNaturalList(new Set(missingOrderingCodes))}.`); }
+            if (orderingClinicians.size > 1) {
+                invalidFields.push(`Claim has multiple Ordering Clinicians: ` + `${Array.from(orderingClinicians).join(', ')}.`);
+            }
+            if (missingOrderingCodes.length) {
+                invalidFields.push(`Missing OrderingClinician for activities: ` + `${formatNaturalList(new Set(missingOrderingCodes))}.`);
+            }
             duplicatePairs.forEach((count, pairKey) => {
                 if (count < 2) return;
                 const [code, orderingClinician] = pairKey.split('|');
@@ -827,10 +894,18 @@
                     if (parts.length !== 4) {
                         invalidFields.push(`EmiratesIDNumber '${emiratesID}' must have ` + `4 parts separated by dashes.`);
                     } else {
-                        if (!placeholder && parts[0] !== '784') { invalidFields.push(`EmiratesIDNumber '${emiratesID}' first part ` + `must be 784.`); }
-                        if (!/^\d{4}$/.test(parts[1])) { invalidFields.push(`EmiratesIDNumber '${emiratesID}' second part ` + `must be 4 digits.`); }
-                        if (!/^\d{7}$/.test(parts[2])) { invalidFields.push(`EmiratesIDNumber '${emiratesID}' third part ` + `must be 7 digits.`); }
-                        if (!/^\d$/.test(parts[3])) { invalidFields.push(`EmiratesIDNumber '${emiratesID}' fourth part ` + `must be 1 digit.`); }
+                        if (!placeholder && parts[0] !== '784') {
+                            invalidFields.push(`EmiratesIDNumber '${emiratesID}' first part ` + `must be 784.`);
+                        }
+                        if (!/^\d{4}$/.test(parts[1])) {
+                            invalidFields.push(`EmiratesIDNumber '${emiratesID}' second part ` + `must be 4 digits.`);
+                        }
+                        if (!/^\d{7}$/.test(parts[2])) {
+                            invalidFields.push(`EmiratesIDNumber '${emiratesID}' third part ` + `must be 7 digits.`);
+                        }
+                        if (!/^\d$/.test(parts[3])) {
+                            invalidFields.push(`EmiratesIDNumber '${emiratesID}' fourth part ` + `must be 1 digit.`);
+                        }
                     }
                     if (allZeros) remarks.push('Kindly confirm if the PT is a national resident.'); else if (allOnes) remarks.push('Kindly confirm if the PT is a non-national resident.'); else if (allTwos) {
                         remarks.push('Kindly confirm if the PT is a non-national and non-resident.');
@@ -841,28 +916,39 @@
                     }
                 }
                 const encounter = claim.getElementsByTagName('Encounter')[0];
-                if (!encounter) missingFields.push('Encounter'); 
-                else { ['FacilityID', 'Type', 'PatientID', 'Start', 'End', 'StartType', 'EndType'].forEach(field => invalidIfEmpty(field, encounter, 'Encounter.')); }
+                if (!encounter) missingFields.push('Encounter'); else {
+                    ['FacilityID', 'Type', 'PatientID', 'Start', 'End', 'StartType', 'EndType'].forEach(field => invalidIfEmpty(field, encounter, 'Encounter.'));
+                }
                 const diagnoses = claim.getElementsByTagName('Diagnosis');
-                if (!diagnoses.length) missingFields.push('Diagnosis'); 
-                else {
+                if (!diagnoses.length) missingFields.push('Diagnosis'); else {
                     let principalCode = null;
                     const codesByType = new Map();
                     Array.from(diagnoses).forEach((diagnosis, index) => {
                         const type = text('Type', diagnosis);
                         const code = text('Code', diagnosis);
-                        if (!type) { missingFields.push(`Diagnosis[${index}].Type`); }
-                        if (!code) { missingFields.push(`Diagnosis[${index}].Code`); } 
-                        else { validateDiagnosisCodeValue(code, invalidFields); }
+                        if (!type) {
+                            missingFields.push(`Diagnosis[${index}].Type`);
+                        }
+                        if (!code) {
+                            missingFields.push(`Diagnosis[${index}].Code`);
+                        } else {
+                            validateDiagnosisCodeValue(code, invalidFields);
+                        }
                         if (type === 'Principal') {
-                            if (principalCode) invalidFields.push('Principal Diagnosis (multiple found)'); 
-                            else { principalCode = code; }
+                            if (principalCode) invalidFields.push('Principal Diagnosis (multiple found)'); else {
+                                principalCode = code;
+                            }
                         } else if (code) {
                             if (!codesByType.has(type)) codesByType.set(type, new Set());
                             const set = codesByType.get(type);
-                            if (set.has(code)) { invalidFields.push(`Duplicate Diagnosis Code within Type ` + `'${type}': ${code}`); } 
-                            else { set.add(code); }
-                            if (principalCode && code === principalCode) { invalidFields.push(`Diagnosis Code ${code} duplicates Principal.`); }
+                            if (set.has(code)) {
+                                invalidFields.push(`Duplicate Diagnosis Code within Type ` + `'${type}': ${code}`);
+                            } else {
+                                set.add(code);
+                            }
+                            if (principalCode && code === principalCode) {
+                                invalidFields.push(`Diagnosis Code ${code} duplicates Principal.`);
+                            }
                         }
                     });
                     if (!principalCode) invalidFields.push('Principal Diagnosis (none found)');
@@ -870,11 +956,14 @@
                 checkPregnancyDiagnosisTrimesterConsistency(diagnoses, text, invalidFields, pregnancyData);
                 const activities = claim.getElementsByTagName('Activity');
                 const invalidQuantityCodes = [];
+                const isThiqaClaim = String(receiverID || '').trim().toUpperCase() === 'D001' || String(payerID || '').trim().toUpperCase() === 'E001';
+                let requiresOpticalEligibilityCheck = false;
                 const specialMedicalCodes = new Set(['17999', '96999', '0232T', 'J3490', '81479', '41899']);
                 if (!activities.length) invalidFields.push('Kindly verify activities as there are no codes ' + 'showing in the XML for this claim.');
                 Array.from(activities).forEach((activity, index) => {
                     const code = text('Code', activity);
                     const quantity = text('Quantity', activity);
+                    if (code === '92015' && !isThiqaClaim) requiresOpticalEligibilityCheck = true;
                     ['Start', 'Type', 'Code', 'Quantity', 'Net', 'Clinician'].forEach(field => invalidIfEmpty(field, activity, `Activity[${index}].`));
                     if (quantity === '0') invalidQuantityCodes.push(code || '(unknown)');
                     Array.from(activity.getElementsByTagName('Observation')).forEach((observation, observationIndex) => {
@@ -890,12 +979,19 @@
                             // It is intentionally a Flags observation and must not be
                             // validated as the free-text activity description.
                             if (isMedicalTourismUnplannedFlag) return;
-                            if (type && type.toUpperCase() !== 'TEXT') { invalidFields.push(`Activity ${code} has invalid Observation Type ` + `of \`${type}\` but must be \`Text\`.`); }
-                            if (valueType && valueType.toUpperCase() !== 'TEXT') { invalidFields.push(`Activity ${code} has invalid Observation ValueType ` + `of \`${valueType}\` but must be \`Text\`.`); }
+                            if (type && type.toUpperCase() !== 'TEXT') {
+                                invalidFields.push(`Activity ${code} has invalid Observation Type ` + `of \`${type}\` but must be \`Text\`.`);
+                            }
+                            if (valueType && valueType.toUpperCase() !== 'TEXT') {
+                                invalidFields.push(`Activity ${code} has invalid Observation ValueType ` + `of \`${valueType}\` but must be \`Text\`.`);
+                            }
                         });
                     }
                 });
-                if (invalidQuantityCodes.length) { invalidFields.push(`${invalidQuantityCodes.length === 1 ? 'Activity' : 'Activities'} ` + `${formatNaturalList(invalidQuantityCodes)} ` + `${invalidQuantityCodes.length === 1 ? 'has' : 'have'} ` + `invalid quantity of 0.`); }
+                if (requiresOpticalEligibilityCheck) { remarks.push('Code 92015 is on a non-Thiqa claim. Please check the eligibility and confirm whether `Optical` is `Covered` before proceeding.'); isUnknown = true; }
+                if (invalidQuantityCodes.length) {
+                    invalidFields.push(`${invalidQuantityCodes.length === 1 ? 'Activity' : 'Activities'} ` + `${formatNaturalList(invalidQuantityCodes)} ` + `${invalidQuantityCodes.length === 1 ? 'has' : 'have'} ` + `invalid quantity of 0.`);
+                }
                 if (emiratesID) {
                     let hasMedicalTourismObservation = false;
                     activityLoop: for (const activity of Array.from(activities)) {
@@ -925,10 +1021,14 @@
                 checkForFalseValues(claim, invalidFields, 'Claim.');
                 if (claimHadAmpersand) invalidFields.push(AMPERSAND_REPLACEMENT_ERROR);
                 if (claimID && mergeRemarks.has(claimID)) mergeRemarks.get(claimID).forEach(message => invalidFields.push(message));
-                if (missingFields.length) { remarks.push(`Missing: ${missingFields.join(', ')}`); }
+                if (missingFields.length) {
+                    remarks.push(`Missing: ${missingFields.join(', ')}`);
+                }
                 invalidFields.forEach(error => remarks.push(error));
                 if (!remarks.length) remarks.push('OK');
-                results.push({ ClaimID: claimID || 'Unknown', Valid: !missingFields.length && !invalidFields.length, Unknown: isUnknown, Remark: remarks.map(message => message && !message.endsWith('.') ? `${message}.` : message).join('\n'), ClaimXML: claim.outerHTML, SchemaType: 'claim' });
+                results.push({ ClaimID: claimID || 'Unknown', Valid: !missingFields.length && !invalidFields.length, Unknown: isUnknown, Remark: remarks.map(message => message && !message.endsWith('.') ? `${message}.` : message).join('\n'),
+                    ClaimXML: claim.outerHTML, SchemaType: 'claim'
+                });
             });
             return results;
         }
@@ -943,7 +1043,9 @@
                 let isUnknown = false;
                 const text = (tagName, parent = person) => safeTextByTag(parent, tagName);
                 const invalidIfEmpty = (tagName, parent = person, prefix = '') => {
-                    if (!text(tagName, parent)) { invalidFields.push(`${prefix}${tagName} (null/empty)`); }
+                    if (!text(tagName, parent)) {
+                        invalidFields.push(`${prefix}${tagName} (null/empty)`);
+                    }
                 };
                 const unifiedNumber = text('UnifiedNumber');
                 let hadAmpersand = false;
@@ -971,12 +1073,21 @@
                     const allTwos = /^2+$/.test(digits);
                     const allNines = /^9+$/.test(digits);
                     const placeholder = allZeros || allOnes || allTwos || allNines;
-                    if (parts.length !== 4) { invalidFields.push(`EmiratesIDNumber '${emiratesID}' must have ` + `4 parts separated by dashes.`); } 
-                    else {
-                        if (!placeholder && parts[0] !== '784') { invalidFields.push(`EmiratesIDNumber '${emiratesID}' first part ` + `must be 784.`); }
-                        if (!/^\d{4}$/.test(parts[1])) { invalidFields.push(`EmiratesIDNumber '${emiratesID}' second part ` + `must be 4 digits.`); }
-                        if (!/^\d{7}$/.test(parts[2])) { invalidFields.push(`EmiratesIDNumber '${emiratesID}' third part ` + `must be 7 digits.`); }
-                        if (!/^\d$/.test(parts[3])) { invalidFields.push(`EmiratesIDNumber '${emiratesID}' fourth part ` + `must be 1 digit.`); }
+                    if (parts.length !== 4) {
+                        invalidFields.push(`EmiratesIDNumber '${emiratesID}' must have ` + `4 parts separated by dashes.`);
+                    } else {
+                        if (!placeholder && parts[0] !== '784') {
+                            invalidFields.push(`EmiratesIDNumber '${emiratesID}' first part ` + `must be 784.`);
+                        }
+                        if (!/^\d{4}$/.test(parts[1])) {
+                            invalidFields.push(`EmiratesIDNumber '${emiratesID}' second part ` + `must be 4 digits.`);
+                        }
+                        if (!/^\d{7}$/.test(parts[2])) {
+                            invalidFields.push(`EmiratesIDNumber '${emiratesID}' third part ` + `must be 7 digits.`);
+                        }
+                        if (!/^\d$/.test(parts[3])) {
+                            invalidFields.push(`EmiratesIDNumber '${emiratesID}' fourth part ` + `must be 1 digit.`);
+                        }
                     }
                     if (allZeros) remarks.push('Kindly confirm if the PT is a national resident.'); else if (allOnes) remarks.push('Kindly confirm if the PT is a non-national resident.'); else if (allTwos) {
                         remarks.push('Kindly confirm if the PT is a non-national and non-resident.');
@@ -991,7 +1102,9 @@
                 if (!memberID) invalidFields.push('Member.ID (null/empty)');
                 checkForFalseValues(person, invalidFields);
                 if (hadAmpersand) invalidFields.push(AMPERSAND_REPLACEMENT_ERROR);
-                if (missingFields.length) { remarks.push(`Missing: ${missingFields.join(', ')}`); }
+                if (missingFields.length) {
+                    remarks.push(`Missing: ${missingFields.join(', ')}`);
+                }
                 invalidFields.forEach(error => remarks.push(error));
                 if (!remarks.length) remarks.push('OK');
                 results.push({ ClaimID: memberID || unifiedNumber || 'Unknown', Valid: !missingFields.length && !invalidFields.length, Unknown: isUnknown,
@@ -1048,11 +1161,15 @@
                         const total = results.length;
                         const valid = results.filter(result => result.Valid).length;
                         const percentage = total ? (valid / total * 100).toFixed(1) : '0.0';
-                        if (status) { status.textContent = `Valid ` + `${schemaType === 'claim' ? 'claims' : 'persons'}: ` + `${valid} / ${total} (${percentage}%)`; }
+                        if (status) {
+                            status.textContent = `Valid ` + `${schemaType === 'claim' ? 'claims' : 'persons'}: ` + `${valid} / ${total} (${percentage}%)`;
+                        }
                         resolve(table);
                     } catch (error) {
                         console.error('[SCHEMA] Error during validation:', error);
-                        if (status) { status.textContent = `Error: ${error.message}`; }
+                        if (status) {
+                            status.textContent = `Error: ${error.message}`;
+                        }
                         resolve(buildSchemaMessageElement(`Schema Checker failed: ${error.message}`));
                     }
                 };
