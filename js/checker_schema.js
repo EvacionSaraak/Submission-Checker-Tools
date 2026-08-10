@@ -530,7 +530,12 @@
             const parsedStart = parseEncounterDateTime(startRaw);
             const parsedEnd = parseEncounterDateTime(endRaw);
             const clinicians = new Set();
+            let has97Activity = false;
             Array.from(claim.getElementsByTagName('Activity')).forEach(activity => {
+                const activityCode = String(safeTextByTag(activity, 'Code') || '').trim();
+                if (activityCode.startsWith('97')) {
+                    has97Activity = true;
+                }
                 const clinician = safeTextByTag(activity, 'OrderingClinician').toUpperCase();
                 if (clinician) {
                     clinicians.add(clinician);
@@ -545,7 +550,7 @@
             });
             return { receiverID: String(receiverID || '').trim().toUpperCase(), claimID: safeTextByTag(claim, 'ID'), memberID: safeTextByTag(claim, 'MemberID').toUpperCase(),
                 providerID: safeTextByTag(claim, 'ProviderID').toUpperCase(), facilityID: safeTextByTag(encounter, 'FacilityID').toUpperCase(), encounterDate: parsedStart?.dateKey || parsedEnd?.dateKey || null,
-                startRaw, endRaw, parsedStart, parsedEnd, clinicians, diagnoses
+                startRaw, endRaw, parsedStart, parsedEnd, clinicians, diagnoses, has97Activity
             };
         }
         function buildNotMergedRemarksFromContexts(contexts) {
@@ -555,6 +560,11 @@
                     return;
                 }
                 if (!NOT_MERGED_RECEIVER_IDS.has(context.receiverID)) {
+                    return;
+                }
+                // Merge detection only applies to claims containing at least one
+                // activity code beginning with 97.
+                if (!context.has97Activity) {
                     return;
                 }
                 const groupKey = [context.receiverID, context.memberID, context.providerID, context.facilityID, context.encounterDate].join('|');
