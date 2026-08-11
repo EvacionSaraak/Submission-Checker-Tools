@@ -1,3 +1,14 @@
+// Public entry point required by unified_checker.js.
+// Keep this binding in the global script scope: unified_checker references
+// `runPricingCheck` directly rather than resolving window.runPricingCheck.
+async function runPricingCheck(options = {}) {
+  if (typeof window !== 'undefined' && typeof window.__pricingRunImpl === 'function') {
+    return window.__pricingRunImpl(options);
+  }
+  throw new Error('Pricing Checker failed to initialize its run handler.');
+}
+if (typeof window !== 'undefined') window.runPricingCheck = runPricingCheck;
+
 (function () { try { // checker_pricing.js
 // Factor audit Patient Share toggle live recalculation fix: 2026-08-07
 // C001 cumulative Patient Share / no-reference fix: 2026-08-06
@@ -3453,11 +3464,9 @@ function escapeHtml(str) {
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#039;');
 }
-window.runPricingCheck = async function (options = {}) {
-  if (typeof handleRun === 'function') return await handleRun(options);
-  console.error('handleRun function not found');
-  return null;
-};
+// Register the internal implementation behind the public global entry point.
+window.__pricingRunImpl = handleRun;
+window.runPricingCheck = runPricingCheck;
 window._pricingTestApi = {
   buildConcisePriceMismatchRemark,
   getConcisePricingContextLabel,
@@ -3502,5 +3511,4 @@ window.closePricingComparison = closeComparisonModal;
   console.error('[CHECKER-ERROR] Failed to load checker:', error);
   console.error(error.stack);
 }
-})();
 })();
