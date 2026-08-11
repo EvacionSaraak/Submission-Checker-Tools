@@ -18,7 +18,7 @@ function getDrugShared(required = true) {
 const MEDICAL_CONFIGURED_PAYERS = new Set(['D001', 'A001', 'D004', 'C001', 'A025', 'A024', 'C002', 'C004']);
 // Khabisi (MF5020) services that always use factor 1.3.
 // This includes the infusion services plus 94640 and 96372.
-const KHABISI_FACTOR_13_CODES = new Set(['94640', '96360', '96361', '96365', '96367', '96372']);
+const KHABISI_FACTOR_13_CODES = new Set(['94640', '96360', '96361', '96365', '96367', '96372', '96374', '92504', '92567', '92567']);
 // Khabisi nutrition services use factor 1.3 only when the specific activity
 // contains a non-empty PriorAuthorizationID; otherwise they remain factor 1.
 const KHABISI_AUTH_FACTOR_13_CODES = new Set(['97802', '97803']);
