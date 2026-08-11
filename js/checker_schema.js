@@ -19,7 +19,8 @@
         const GP_992_CODES = new Set(['99202', '99203', '99212', '99213']);
         const GP_992_FORBIDDEN_CODES = new Set(['99203', '99213']);
         const GP_992_FORBIDDEN_SPECIALTY_EXCEPTIONS = [
-            { clinicianLicense: 'D5230', codes: ['99203', '99213'] }
+            { clinicianLicense: 'D5230', codes: ['99203', '99213'] },
+            { clinicianLicense: 'GD11027', codes: ['99203', '99213'] }
         ];
         const GP_992_REQUIRED_CODES = new Set(['99202', '99212']);
         const MUTUALLY_EXCLUSIVE_INFUSION_CODES = new Set(['96360', '96365', '96374']);
