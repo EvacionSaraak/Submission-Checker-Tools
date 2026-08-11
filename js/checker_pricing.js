@@ -865,21 +865,6 @@ function getPricingRowClass(row) {
   if (status === 'unknown') return 'table-warning';
   return 'table-danger';
 }
-function buildModifierPriceMismatchRemark({ claimedNet, code, modifier, expectedPrice }) {
-  return (
-    `Claimed Net ${formatMoney(claimedNet)} ` +
-    `(for ${code}) does not match the price under ` +
-    `modifier ${modifier} ` +
-    `(should be ${formatMoney(expectedPrice)}).`
-  );
-}
-
-function buildMissingModifierRemark({ modifier, code, multiplier }) {
-  return (
-    `Modifier ${modifier} is missing from ${code} ` +
-    `but price was changed with ${multiplier} quantity.`
-  );
-}
 function asMedicalFinding({ ruleId, status, remark, claimID, activityID, code }) {
   return {
     ruleId: ruleId || 'PRICING',
@@ -1145,7 +1130,6 @@ function analyzeDrugActivity(rec, options = {}) {
     ClaimPayerID: String(rec.PayerID || '').trim().toUpperCase(),
     PayerID: receiverID,
     _matchedFactorRule: null,
-    _modifierMultiplier: 1,
     _drugPricingMeta: drug ? {
       drug,
       basis: selectedPricing.basis,
@@ -1217,20 +1201,14 @@ async function handleRun(options = {}) {
 
     if (!xmlFile) throw new Error('Please select an XML file.');
     showProgress(5, 'Reading files');
-    const [xmlText, dentalPricingRaw, clinicianData, endoPricingRaw, medicalPricingRaw, minorProceduresRaw] = await Promise.all([
+    const [xmlText, dentalPricingRaw, clinicianData, endoPricingRaw, medicalPricingRaw] = await Promise.all([
       readFileText(xmlFile),
       fetch('../json/dental_pricing.json').then(r => r.json()).catch(e => { console.warn('[PRICING] Failed to load dental_pricing.json:', e); return []; }),
       fetch('../json/clinician_licenses.json').then(r => r.json()).catch(() => []),
       fetch('../json/endo_pricing.json').then(r => r.json()).catch(() => []),
-      fetch('../json/medical_pricing.json').then(r => r.json()).catch(e => { console.warn('[PRICING] Failed to load medical_pricing.json:', e); return []; }),
-      fetch('../json/minor_procedures.json').then(r => r.json()).catch(() => [])
+      fetch('../json/medical_pricing.json').then(r => r.json()).catch(e => { console.warn('[PRICING] Failed to load medical_pricing.json:', e); return []; })
     ]);
     if (!Array.isArray(dentalPricingRaw) || dentalPricingRaw.length === 0) throw new Error('Dental pricing data could not be loaded.\nEnsure dental_pricing.json is present in the json/ folder.');
-
-    // Build set of minor procedure codes for modifier 50 multiplier
-    const minorProcedureCodes = new Set((Array.isArray(minorProceduresRaw) ? minorProceduresRaw : [])
-      .map(item => normalizeCode(typeof item === 'string' ? item : (item && item.code) ? item.code : ''))
-      .filter(Boolean));
     let xlsxMatcher = null;
     if (xlsxFile) {
       const xlsxObj = await readXlsx(xlsxFile);
@@ -1298,13 +1276,7 @@ async function handleRun(options = {}) {
       medicalRules = await medicalShared.loadMedicalValidationRules();
       if (!medicalRules || typeof medicalRules !== 'object') {
         throw new Error('Unable to load Medical validation rules.');
-      }
-      const modifierRules = medicalRules.modifierRules || {};
-      if (!Array.isArray(modifierRules.minorProcedureCodes) || modifierRules.minorProcedureCodes.length === 0) {
-        modifierRules.minorProcedureCodes = Array.from(minorProcedureCodes || []);
-      }
-      medicalRules.modifierRules = modifierRules;
-      const historicalIndex = null;
+      }      const historicalIndex = null;
       const contexts = medicalShared.parseMedicalClaimContexts(xmlDoc, {
         requiredEncounterType: '3',
         clinicianSpecialtyMap
@@ -1321,7 +1293,6 @@ async function handleRun(options = {}) {
           medicalShared.validateActivityCoverageRules(ctx, medicalRules),
           medicalShared.validateDiagnosisRules(ctx, medicalRules),
           medicalShared.validateAuthorizationRules(ctx, medicalRules, { approvalIndex: null }),
-          medicalShared.validateModifierRules(ctx, medicalRules),
           medicalShared.validateDrugRules(ctx, medicalRules, { drugsMap }),
           medicalShared.validateHistoricalFrequencyRules(ctx, medicalRules, { historicalIndex }),
           medicalShared.validateMaternityRules(ctx, medicalRules),
@@ -1368,7 +1339,6 @@ async function handleRun(options = {}) {
           CPT: rec.CPT || '',
           ClaimedNet: rec.Net || '',
           ClaimedQty: rec.Quantity || '',
-          Modifiers: rec.Modifiers || '',
           ReferenceNetPrice: '',
           AppliedFactor: '',
           FactoredReference: '',
@@ -1387,7 +1357,6 @@ async function handleRun(options = {}) {
           ClaimPayerID: claimPayerID,
           PayerID: pricingReceiverID,
           _matchedFactorRule: null,
-          _modifierMultiplier: 1,
           _drugPricingMeta: null,
           _drugExpectedNet: null,
           _zeroPricePassesPricing: true,
@@ -1410,8 +1379,7 @@ async function handleRun(options = {}) {
             CPT: rec.CPT || '',
             ClaimedNet: rec.Net || '',
             ClaimedQty: rec.Quantity || '',
-            Modifiers: rec.Modifiers || '',
-            ReferenceNetPrice: '',
+              ReferenceNetPrice: '',
             AppliedFactor: '',
             FactoredReference: '',
             PricingContext: missingReceiver
@@ -1433,8 +1401,7 @@ async function handleRun(options = {}) {
             ClaimPayerID: claimPayerID,
             PayerID: pricingReceiverID,
             _matchedFactorRule: null,
-            _modifierMultiplier: 1,
-            _pricingReferenceUnavailable: true
+              _pricingReferenceUnavailable: true
           };
         } else {
           return {
@@ -1443,8 +1410,7 @@ async function handleRun(options = {}) {
             CPT: rec.CPT || '',
             ClaimedNet: rec.Net || '',
             ClaimedQty: rec.Quantity || '',
-            Modifiers: rec.Modifiers || '',
-            ReferenceNetPrice: '',
+              ReferenceNetPrice: '',
             AppliedFactor: '',
             FactoredReference: '',
             PricingRow: null,
@@ -1461,7 +1427,6 @@ async function handleRun(options = {}) {
             ClaimPayerID: claimPayerID,
             PayerID: pricingReceiverID,
             _matchedFactorRule: null,
-            _modifierMultiplier: 1
           };
         }
       }
@@ -1492,7 +1457,6 @@ async function handleRun(options = {}) {
           CPT: rec.CPT || '',
           ClaimedNet: rec.Net || '',
           ClaimedQty: rec.Quantity || '',
-          Modifiers: rec.Modifiers || '',
           ReferenceNetPrice: '0',
           AppliedFactor: '',
           FactoredReference: '0',
@@ -1510,7 +1474,6 @@ async function handleRun(options = {}) {
           ClaimPayerID: claimPayerID,
           PayerID: pricingReceiverID,
           _matchedFactorRule: null,
-          _modifierMultiplier: 1
         };
       }
       let refPrice = '';
@@ -1596,42 +1559,17 @@ async function handleRun(options = {}) {
       }
       const match = matchRow;
       let ref = Number(refPrice ?? NaN);
-      let effectiveRef = ref; // ref after applying factor and modifier multipliers
-      let referenceFactor = 1;
+      let effectiveRef = ref; // reference after pricing factor only
       let appliedFactor = 1;
-      let modifierMultiplier = 1;
       let matchedFactorRule = null;
       if (isMedicalMode && isMedicalPricingMatch) {
-        // Step 1: look up the facility/payer factor from Factors.xlsx rules
         const factorResult = findFactorFromRules(factorRules || [], rec.FacilityID, rec.CPT, pricingReceiverID, rec.PriorAuthorizationID);
         appliedFactor = factorResult.factor;
         matchedFactorRule = factorResult.rule;
-        // Step 2: modifier multiplier is a separate adjustment on top of the factor
-        if (rec.Modifier === '52') modifierMultiplier = 0.5;
-        else if (rec.Modifier === '50') modifierMultiplier = 1.5;
-        // Modifiers 24 and 25: no price change (multiplier stays 1)
-
-        referenceFactor = appliedFactor * modifierMultiplier;
-        if (!Number.isNaN(ref) && ref > 0) {
-          effectiveRef = Math.round(ref * referenceFactor * 100) / 100;
-        }
-        // Update pricing context with matched rule details for remark/audit
+        if (!Number.isNaN(ref) && ref > 0) effectiveRef = Math.round(ref * appliedFactor * 100) / 100;
         if (matchedFactorRule) {
           pricingContext = `Mandatory Tariff [${matchedFactorRule.serviceType || matchedFactorRule.matchType}; Factor ${appliedFactor} for ${pricingReceiverID}]`;
         }
-      } else if (!Number.isNaN(ref) && ref > 0 && rec.Modifier) {
-        // Apply modifier price multipliers (dental/non-medical pricing, existing behavior)
-        if (rec.Modifier === '52') {
-          // Consultation price halved
-          referenceFactor = 0.5;
-          effectiveRef = Math.round(ref * referenceFactor * 100) / 100;
-        } else if (rec.Modifier === '50') {
-          // Minor procedure: ×1.5 for A001, ×(1.3×1.5) for D001
-          const mult = pricingReceiverID === 'D001' ? 1.3 * 1.5 : 1.5;
-          referenceFactor = mult;
-          effectiveRef = Math.round(ref * referenceFactor * 100) / 100;
-        }
-        // Modifier 25 and 24: no price change
       }
       // Ensure pricingContext has a fallback for Medical mode when no tariff match was found
       if (!pricingContext) {
@@ -1698,53 +1636,30 @@ async function handleRun(options = {}) {
         status = 'Unknown';
         remarks.push(`The reference price is 0 under ${pricingContext} (status Unknown).`);
       } else if (hasValidRef && xmlQty > 0) {
-          // Price-changing modifiers (52 = ×0.5, 50 = ×1.5); 24 and 25 do not change the price
-          const isPriceModifier = rec.Modifier === '52' || rec.Modifier === '50';
-          if (moneyEqual(xmlNet, effectiveRef)) {
-            status = 'Valid';
-          } else if (moneyEqual(xmlNet / xmlQty, effectiveRef)) {
-            status = 'Valid';
-          } else if (moneyEqual(xmlNet * 2, effectiveRef)) {
-            status = 'Valid';
-          } else if (normalizeCode(rec.CPT) === '42702' && moneyEqual(xmlNet, effectiveRef * 2)) {
-            status = 'Valid';
-          } else if (nonEndoUsedEndoPrice) {
-            remarks.push(`Pricing for ${rec.CPT} is ${effectiveRef} following ${pricingContext}.\nEndo Pricing cannot be used for ${nonEndoClinicianSpec}.`);
-          } else if (shouldDeferA001PricingToClaimLevel({
-            receiverID: pricingReceiverID,
-            xmlNet,
-            effectiveRef,
-            xmlQty,
-            isAllowedZeroPricedActivity: isZeroPricedActivity,
-            claimPatientShare: rec.PatientShare
-          })) {
-            status = 'Valid';
-          } else if (pricingReceiverID === 'A001') {
-            const copayPct = Math.round((effectiveRef * xmlQty - xmlNet) / (effectiveRef * xmlQty) * 10000) / 100;
-            remarks.push(`Copay: ${copayPct}%.`);
-          } else if (isPriceModifier) {
-            // Modifier is present but the claimed price doesn't match — use simplified message
-            remarks.push(buildModifierPriceMismatchRemark({
-              claimedNet: xmlNet,
-              code: rec.CPT,
-              modifier: rec.Modifier,
-              expectedPrice: effectiveRef
-            }));
-          } else {
-            // No price-changing modifier present — check if claimed price matches a modifier-adjusted alternative
-            const baseForModCheck = isMedicalMode && isMedicalPricingMatch ? ref * appliedFactor : effectiveRef;
-            const mod50Price = Math.round(baseForModCheck * 1.5 * 100) / 100;
-            const mod52Price = Math.round(baseForModCheck * 0.5 * 100) / 100;
-            const modifiersPresent = String(rec.Modifiers || '');
-            if (moneyEqual(xmlNet, mod50Price) && !modifiersPresent.includes('50')) {
-              remarks.push(buildMissingModifierRemark({
-                modifier: '50',
-                code: rec.CPT,
-                multiplier: '1.5'
-              }));
-            } else {
-              remarks.push(buildConcisePriceMismatchRemark({ claimedNet: xmlNet, code: rec.CPT, pricingContext }));
-          }
+        if (moneyEqual(xmlNet, effectiveRef)) {
+          status = 'Valid';
+        } else if (moneyEqual(xmlNet / xmlQty, effectiveRef)) {
+          status = 'Valid';
+        } else if (moneyEqual(xmlNet * 2, effectiveRef)) {
+          status = 'Valid';
+        } else if (normalizeCode(rec.CPT) === '42702' && moneyEqual(xmlNet, effectiveRef * 2)) {
+          status = 'Valid';
+        } else if (nonEndoUsedEndoPrice) {
+          remarks.push(`Pricing for ${rec.CPT} is ${effectiveRef} following ${pricingContext}.\nEndo Pricing cannot be used for ${nonEndoClinicianSpec}.`);
+        } else if (shouldDeferA001PricingToClaimLevel({
+          receiverID: pricingReceiverID,
+          xmlNet,
+          effectiveRef,
+          xmlQty,
+          isAllowedZeroPricedActivity: isZeroPricedActivity,
+          claimPatientShare: rec.PatientShare
+        })) {
+          status = 'Valid';
+        } else if (pricingReceiverID === 'A001') {
+          const copayPct = Math.round((effectiveRef * xmlQty - xmlNet) / (effectiveRef * xmlQty) * 10000) / 100;
+          remarks.push(`Copay: ${copayPct}%.`);
+        } else {
+          remarks.push(buildConcisePriceMismatchRemark({ claimedNet: xmlNet, code: rec.CPT, pricingContext }));
         }
       }
       const normalizedCode = normalizeCode(rec.CPT);
@@ -1776,7 +1691,6 @@ async function handleRun(options = {}) {
         CPT: rec.CPT || '',
         ClaimedNet: rec.Net || '',
         ClaimedQty: rec.Quantity || '',
-        Modifiers: rec.Modifiers || '',
         ReferenceNetPrice: Number.isNaN(ref) ? (refPrice || '') : String(ref),
         AppliedFactor: (isMedicalMode && isMedicalPricingMatch) ? String(appliedFactor) : '',
         FactoredReference: Number.isNaN(effectiveRef) ? '' : String(effectiveRef),
@@ -1795,7 +1709,6 @@ async function handleRun(options = {}) {
         ClaimPayerID: claimPayerID,
         PayerID: pricingReceiverID,
         _matchedFactorRule: matchedFactorRule,
-        _modifierMultiplier: modifierMultiplier,
         _clinicianSpecialty: clinicianSpec,
         _endoPricingRate: endoPricingRate,
         _nonEndoUsedEndoPrice: nonEndoUsedEndoPrice,
@@ -2331,22 +2244,6 @@ function extractPricingRecords(xmlDoc) {
         performingClinicianLic,
         orderingClinicianLic
       ]).trim();
-      // Extract CPT modifiers from Observation (ValueType = 'Modifiers')
-      const modifierSet = new Set();
-      const observations = Array.from(act.getElementsByTagName('Observation'));
-      for (const obs of observations) {
-        const valueType = textValue(obs, 'ValueType') || '';
-        if (valueType.trim().toLowerCase() === 'modifiers') {
-          const voiVal = (textValue(obs, 'Value') || textValue(obs, 'ValueText') || '').toUpperCase().replace(/[_\s]/g, '');
-          if (voiVal === 'VOID' || voiVal === '24') modifierSet.add('24');
-          if (voiVal === 'VOIEF1' || voiVal === '52') modifierSet.add('52');
-          if (voiVal === '25') modifierSet.add('25');
-          if (voiVal === '50') modifierSet.add('50');
-        }
-      }
-      const modifierList = ['24', '25', '50', '52'].filter(m => modifierSet.has(m));
-      const modifiers = modifierList.join(', ');
-      const modifier = modifierList[0] || '';
       records.push({
         ClaimID: claimId,
         ActivityID: activityId,
@@ -2363,9 +2260,7 @@ function extractPricingRecords(xmlDoc) {
         ClaimGross: claimGross,
         ClaimNet: claimNet,
         PayerID: payerId,
-        PriorAuthorizationID: String(textValue(act, 'PriorAuthorizationID') || '').trim(),
-        Modifiers: modifiers,
-        Modifier: modifier
+        PriorAuthorizationID: String(textValue(act, 'PriorAuthorizationID') || '').trim()
       });
     }
   }
@@ -2500,7 +2395,7 @@ function buildResultsTable(rows) {
   // Header row
   const headerRow = document.createElement('tr');
   const HEADERS = [
-    'Claim ID', 'Activity ID', 'Code', 'Claimed Net', 'Quantity', 'Modifiers',
+    'Claim ID', 'Activity ID', 'Code', 'Claimed Net', 'Quantity',
     'Reference Net Price', 'Applied Factor', 'Factored Reference', 'Status', 'Remarks', 'Compare'
   ];
   HEADERS.forEach(h => {
@@ -2545,8 +2440,6 @@ function buildResultsTable(rows) {
     // Quantity
     tr.appendChild(makeCell(r.ClaimedQty || ''));
 
-    // Modifiers
-    tr.appendChild(makeCell(r.Modifiers || ''));
 
     // Reference Net Price
     const refText = r._estimatedTotal != null
@@ -2773,8 +2666,6 @@ function getComparisonPricingBasis(row) {
   const factorRaw = String(row && row.AppliedFactor != null ? row.AppliedFactor : '').trim();
   const factor = factorRaw === '' ? null : Number(factorRaw);
   if (Number.isFinite(factor) && !moneyEqual(factor, 1)) adjustments.push(`factor ×${formatMoney(factor)}`);
-  const modifier = Number(row && row._modifierMultiplier);
-  if (Number.isFinite(modifier) && !moneyEqual(modifier, 1)) adjustments.push(`modifier ×${formatMoney(modifier)}`);
   return adjustments.length ? `${basis}; ${adjustments.join(', ')}` : basis;
 }
 
