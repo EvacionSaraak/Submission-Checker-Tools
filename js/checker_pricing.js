@@ -16,9 +16,12 @@ function getDrugShared(required = true) {
 // C001 is cross-referenced directly against Mandatory Tariff and uses factor 1
 // whenever Factors.xlsx has no explicit C001 factor value.
 const MEDICAL_CONFIGURED_PAYERS = new Set(['D001', 'A001', 'D004', 'C001', 'A025', 'A024', 'C002', 'C004']);
-// Khabisi (MF5020) infusion services that always use factor 1.3.
-// The user's list repeated 96365; 96360 is included as the likely intended fourth infusion code.
-const KHABISI_INFUSION_FACTOR_13_CODES = new Set(['96360', '96361', '96365', '96367']);
+// Khabisi (MF5020) services that always use factor 1.3.
+// This includes the infusion services plus 94640 and 96372.
+const KHABISI_FACTOR_13_CODES = new Set(['94640', '96360', '96361', '96365', '96367', '96372']);
+// Khabisi nutrition services use factor 1.3 only when the specific activity
+// contains a non-empty PriorAuthorizationID; otherwise they remain factor 1.
+const KHABISI_AUTH_FACTOR_13_CODES = new Set(['97802', '97803']);
 // Activity Type → Mandatory Tariff Type mapping
 const ACTIVITY_TYPE_TO_TARIFF_TYPE = {
   '3': 'CPT',
@@ -1216,6 +1219,8 @@ async function handleRun(options = {}) {
       const facility = rec.FacilityID || '';
       const xmlNet = Number(rec.Net || 0);
       const xmlQty = Number(rec.Quantity || 0);
+      const claimNetValue = parseOptionalMoney(rec.ClaimNet);
+      const isZeroClaimNet = claimNetValue !== null && moneyEqual(claimNetValue, 0);
       const isDrugActivity = isDrugActivityType(rec.ActivityType);
       const claimRows = claimRecordsByID.get(rec.ClaimID) || [];
       const isConfiguredZeroPricedActivity = isAllowedZeroPricedActivityForPricing(rec, claimRows, {
@@ -1223,6 +1228,48 @@ async function handleRun(options = {}) {
         medicalRules
       });
       const claimPayerID = String(rec.PayerID || '').trim().toUpperCase();
+
+      // Claim-level zero-Net bypass: if the submitted Claim.Net is exactly 0,
+      // pricing validation considers every activity in that claim Valid. Later
+      // medical-business and Patient Share passes also respect this marker so
+      // they cannot reclassify the pricing result.
+      if (isZeroClaimNet) {
+        return {
+          ClaimID: rec.ClaimID || '',
+          ActivityID: rec.ActivityID || '',
+          ActivityType: rec.ActivityType || '',
+          CPT: rec.CPT || '',
+          ClaimedNet: rec.Net || '',
+          ClaimedQty: rec.Quantity || '',
+          Modifiers: rec.Modifiers || '',
+          ReferenceNetPrice: '',
+          AppliedFactor: '',
+          FactoredReference: '',
+          PricingContext: 'Claim Net is 0; pricing validation bypassed.',
+          PricingRow: null,
+          XmlRow: rec,
+          isValid: true,
+          status: 'Valid',
+          Remarks: '',
+          ComputedRef: null,
+          xmlNetNum: xmlNet,
+          PatientShare: rec.PatientShare || '0',
+          ClaimGross: rec.ClaimGross || '',
+          ClaimNet: rec.ClaimNet || '',
+          ReceiverID: pricingReceiverID,
+          ClaimPayerID: claimPayerID,
+          PayerID: pricingReceiverID,
+          _matchedFactorRule: null,
+          _modifierMultiplier: 1,
+          _drugPricingMeta: null,
+          _drugExpectedNet: null,
+          _zeroPricePassesPricing: true,
+          _isZeroBilled: xmlNet === 0,
+          _requiresMedicalPrice: false,
+          _claimNetZeroBypass: true
+        };
+      }
+
       if (!isDrugActivity && pricingReceiverID !== 'D001' && pricingReceiverID !== 'A001') {
         if (isMedicalMode && MEDICAL_CONFIGURED_PAYERS.has(pricingReceiverID)) {
           // Configured medical payer — fall through to medical pricing
@@ -1429,7 +1476,7 @@ async function handleRun(options = {}) {
       let matchedFactorRule = null;
       if (isMedicalMode && isMedicalPricingMatch) {
         // Step 1: look up the facility/payer factor from Factors.xlsx rules
-        const factorResult = findFactorFromRules(factorRules || [], rec.FacilityID, rec.CPT, pricingReceiverID);
+        const factorResult = findFactorFromRules(factorRules || [], rec.FacilityID, rec.CPT, pricingReceiverID, rec.PriorAuthorizationID);
         appliedFactor = factorResult.factor;
         matchedFactorRule = factorResult.rule;
         // Step 2: modifier multiplier is a separate adjustment on top of the factor
@@ -1645,6 +1692,14 @@ async function handleRun(options = {}) {
       row._clinicianName = String(row._clinicianName || clinicianNameMap.get(clinicianLicense) || '').trim();
       row._clinicianSpecialty = String(row._clinicianSpecialty || clinicianSpecialtyMap.get(clinicianLicense) || '').trim();
 
+      if (row._claimNetZeroBypass) {
+        row.findings = [];
+        row.status = 'Valid';
+        row.isValid = true;
+        row.Remarks = '';
+        return;
+      }
+
       const pricingRemark = String(row.Remarks || '').trim();
       const pricingStatus = String(row.status || '').trim() || 'Invalid';
       row.findings = Array.isArray(row.findings) ? row.findings.slice() : [];
@@ -1680,6 +1735,7 @@ async function handleRun(options = {}) {
 
     for (const [, actRows] of claimGroups) {
       const primaryRow = actRows[0];
+      if (primaryRow && primaryRow._claimNetZeroBypass) continue;
       const actualPS = Number(primaryRow.PatientShare || 0);
       const isHaadClaim = pricingReceiverID === 'HAAD';
       const patientShareOptions = {
@@ -1988,29 +2044,56 @@ function buildFactorRulesFromWorkbook(wb) {
   return rules;
 }
 
-function findFactorFromRules(rules, facilityId, code, payerId) {
+function findFactorFromRules(rules, facilityId, code, payerId, priorAuthorizationId = '') {
   const normCode = normalizeCode(code);
   const normFacility = String(facilityId || '').trim().toUpperCase();
   const normPayer = String(payerId || '').trim().toUpperCase();
+  const priorAuthorization = String(priorAuthorizationId || '').trim();
 
-  // Explicit medical pricing override:
-  // Khabisi (MF5020) infusion codes use factor 1.3 regardless of whether
-  // Factors.xlsx contains/matches a row for the current receiver. Keep this
-  // before the C001 direct-tariff fallback so the Khabisi override is visible
-  // in Expected Factor, Post-Factor Price, final validation, and the modal.
-  if (normFacility === 'MF5020' && KHABISI_INFUSION_FACTOR_13_CODES.has(normCode)) {
+  // Explicit medical pricing overrides for Khabisi (MF5020).
+  // These run before the C001 direct-tariff fallback and Factors.xlsx so the
+  // Expected Factor, Post-Factor Price, final validation, and modal agree.
+  if (normFacility === 'MF5020' && KHABISI_FACTOR_13_CODES.has(normCode)) {
     return {
       factor: 1.3,
       rule: {
         facility: 'Khabisi',
         facilityId: 'MF5020',
-        serviceType: 'Khabisi infusion factor override',
+        serviceType: 'Khabisi factor 1.3 override',
         matchType: 'Exact List',
-        matchValues: Array.from(KHABISI_INFUSION_FACTOR_13_CODES),
+        matchValues: Array.from(KHABISI_FACTOR_13_CODES),
         factors: { [normPayer || 'DEFAULT']: 1.3 },
         isOverride: true
       }
     };
+  }
+
+  if (normFacility === 'MF5020' && KHABISI_AUTH_FACTOR_13_CODES.has(normCode)) {
+    if (priorAuthorization) {
+      return {
+        factor: 1.3,
+        rule: {
+          facility: 'Khabisi',
+          facilityId: 'MF5020',
+          serviceType: 'Khabisi authorized nutrition factor 1.3 override',
+          matchType: 'Exact List + PriorAuthorizationID',
+          matchValues: Array.from(KHABISI_AUTH_FACTOR_13_CODES),
+          factors: { [normPayer || 'DEFAULT']: 1.3 },
+          isOverride: true
+        }
+      };
+    }
+    // For 97802/97803 in Khabisi, absence of an activity-level authorization
+    // explicitly means factor 1; do not let a broader Factors.xlsx row raise it.
+    return { factor: 1, rule: {
+      facility: 'Khabisi',
+      facilityId: 'MF5020',
+      serviceType: 'Khabisi nutrition without authorization',
+      matchType: 'Exact List + PriorAuthorizationID',
+      matchValues: Array.from(KHABISI_AUTH_FACTOR_13_CODES),
+      factors: { [normPayer || 'DEFAULT']: 1 },
+      isOverride: true
+    } };
   }
 
   // C001 uses Mandatory Tariff directly. It does not require a Factors.xlsx
@@ -2153,6 +2236,7 @@ function extractPricingRecords(xmlDoc) {
         ClaimGross: claimGross,
         ClaimNet: claimNet,
         PayerID: payerId,
+        PriorAuthorizationID: String(textValue(act, 'PriorAuthorizationID') || '').trim(),
         Modifiers: modifiers,
         Modifier: modifier
       });
