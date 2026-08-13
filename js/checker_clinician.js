@@ -42,6 +42,20 @@
     'MEDICAL LABORATORY'
   ];
 
+  // Approved temporary/secondment facility exceptions.
+  // These waive only the facility-affiliation requirement; an ACTIVE license
+  // effective on the encounter date is still required.
+  const SECONDMENT_AFFILIATIONS = Object.freeze({
+    GD42887: Object.freeze(['MF4456'])
+  });
+
+  function isSecondedToFacility(clinicianId, providerId) {
+    const clinician = String(clinicianId || '').trim().toUpperCase();
+    const provider = String(providerId || '').trim().toUpperCase();
+    const allowedFacilities = SECONDMENT_AFFILIATIONS[clinician];
+    return Array.isArray(allowedFacilities) && allowedFacilities.includes(provider);
+  }
+
   // Helper function to check if a clinician's profession is pathology-related
   function isPathologyProfession(clinicianId) {
     if (!clinicianId) return false;
@@ -626,22 +640,23 @@
         // Check if performing clinician is pathology-related (exempt from affiliation requirement)
         const isPathology = isPathologyProfession(pid);
 
-        // Get facility from ClinicianLicenses (reliable source)
+        // Get facility from ClinicianLicenses (reliable source).
         const clinicianFacility = (clinicianMap[pid]?.facility || '').toString().trim().toUpperCase();
+        const isSecondment = isSecondedToFacility(pid, normalizedProviderId);
 
-        // -- FIX: Use facility from ClinicianLicenses instead of License History --
-        // For pathology professions, accept any active license regardless of facility affiliation
+        // Use facility from ClinicianLicenses instead of License History.
+        // Pathology and approved secondments waive only the affiliation requirement.
         const eligible = entries.filter(e => {
           const effDate = parseDMY(e.effective);
           const effOk = !!e.effective && !isNaN(effDate) && effDate <= encounterD;
           const isActive = (e.status || '').toLowerCase() === 'active';
           
-          // If pathology profession, accept any active license with valid effective date
-          if (isPathology) {
+          // Pathology professions and approved secondments only need an active,
+          // effective license; standard clinicians must also be affiliated.
+          if (isPathology || isSecondment) {
             return effOk && isActive;
           }
-          
-          // For non-pathology professions, require affiliated facility (from ClinicianLicenses)
+
           const isAffiliated = affiliatedLicenses.has(clinicianFacility);
           return isAffiliated && effOk && isActive;
         });
@@ -654,6 +669,8 @@
         } else {
           if (isPathology) {
             remarks.push('No ACTIVE license for encounter date (pathology profession - affiliation not required)');
+          } else if (isSecondment) {
+            remarks.push(`No ACTIVE license for encounter date (approved secondment to ${normalizedProviderId})`);
           } else {
             const facilityDetails = formatFacilityDetails(pid);
             remarks.push('No ACTIVE affiliated facility license for encounter date' + (facilityDetails ? '.' + facilityDetails : ''));
@@ -672,14 +689,16 @@
           performingStatusDisplay = (formattedEff ? `${formattedEff}${performingStatus ? ' (' + performingStatus + ')' : ''}` : '');
         }
 
-        // Grouping key: performing clinician and full license history
-        const logKey = `${pid}|${fullHistory}`;
+        // Provider is part of the key because secondment eligibility is provider-specific.
+        const logKey = `${pid}|${normalizedProviderId}|${fullHistory}`;
 
         if (!clinicianLogs[logKey]) {
-          // Get affiliated status based on facility from ClinicianLicenses
-          const isAffiliated = affiliatedLicenses.has(clinicianFacility);
-          const affiliatedFacilities = clinicianFacility && isAffiliated ? [clinicianFacility] : [];
-          
+          const hasStandardAffiliation = affiliatedLicenses.has(clinicianFacility);
+          const affiliatedFacilities = clinicianFacility && hasStandardAffiliation ? [clinicianFacility] : [];
+          if (isSecondment && normalizedProviderId && !affiliatedFacilities.includes(normalizedProviderId)) {
+            affiliatedFacilities.push(`${normalizedProviderId} (secondment)`);
+          }
+
           clinicianLogs[logKey] = {
             pid,
             performingDisplay,
