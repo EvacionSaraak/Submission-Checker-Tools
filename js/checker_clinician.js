@@ -644,36 +644,45 @@
         const clinicianFacility = (clinicianMap[pid]?.facility || '').toString().trim().toUpperCase();
         const isSecondment = isSecondedToFacility(pid, normalizedProviderId);
 
-        // Use facility from ClinicianLicenses instead of License History.
-        // Pathology and approved secondments waive only the affiliation requirement.
-        const eligible = entries.filter(e => {
-          const effDate = parseDMY(e.effective);
-          const effOk = !!e.effective && !isNaN(effDate) && effDate <= encounterD;
-          const isActive = (e.status || '').toLowerCase() === 'active';
-          
-          // Pathology professions and approved secondments only need an active,
-          // effective license; standard clinicians must also be affiliated.
-          if (isPathology || isSecondment) {
-            return effOk && isActive;
-          }
-
-          const isAffiliated = affiliatedLicenses.has(clinicianFacility);
-          return isAffiliated && effOk && isActive;
-        });
+        // If the clinician exists in ClinicianLicenses but has no history entries,
+        // their presence in the license file is sufficient — treat as VALID.
+        const inLicenseFile = !!clinicianMap[pid];
+        const noHistoryEntries = entries.length === 0;
 
         let mostRecent = null;
-        if (eligible.length > 0) {
-          eligible.sort((a, b) => parseDMY(b.effective) - parseDMY(a.effective));
-          mostRecent = eligible[0];
+        if (noHistoryEntries && inLicenseFile) {
           valid = true;
         } else {
-          if (isPathology) {
-            remarks.push('No ACTIVE license for encounter date (pathology profession - affiliation not required)');
-          } else if (isSecondment) {
-            remarks.push(`No ACTIVE license for encounter date (approved secondment to ${normalizedProviderId})`);
+          // Use facility from ClinicianLicenses instead of License History.
+          // Pathology and approved secondments waive only the affiliation requirement.
+          const eligible = entries.filter(e => {
+            const effDate = parseDMY(e.effective);
+            const effOk = !!e.effective && !isNaN(effDate) && effDate <= encounterD;
+            const isActive = (e.status || '').toLowerCase() === 'active';
+            
+            // Pathology professions and approved secondments only need an active,
+            // effective license; standard clinicians must also be affiliated.
+            if (isPathology || isSecondment) {
+              return effOk && isActive;
+            }
+
+            const isAffiliated = affiliatedLicenses.has(clinicianFacility);
+            return isAffiliated && effOk && isActive;
+          });
+
+          if (eligible.length > 0) {
+            eligible.sort((a, b) => parseDMY(b.effective) - parseDMY(a.effective));
+            mostRecent = eligible[0];
+            valid = true;
           } else {
-            const facilityDetails = formatFacilityDetails(pid);
-            remarks.push('No ACTIVE affiliated facility license for encounter date' + (facilityDetails ? '.' + facilityDetails : ''));
+            if (isPathology) {
+              remarks.push('No ACTIVE license for encounter date (pathology profession - affiliation not required)');
+            } else if (isSecondment) {
+              remarks.push(`No ACTIVE license for encounter date (approved secondment to ${normalizedProviderId})`);
+            } else {
+              const facilityDetails = formatFacilityDetails(pid);
+              remarks.push('No ACTIVE affiliated facility license for encounter date' + (facilityDetails ? '.' + facilityDetails : ''));
+            }
           }
         }
 
