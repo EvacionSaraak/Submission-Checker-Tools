@@ -4,10 +4,14 @@
 (function() {
   'use strict';
 
+  // BUILD: HISTORY_RESTORE_REAL_v4_20260806
+  const UNIFIED_CHECKER_BUILD = 'HISTORY_RESTORE_REAL_v4_20260806';
+
   // Constants
   const CLIPBOARD_FEEDBACK_DURATION_MS = 2000;
   const ERROR_FEEDBACK_DURATION_EXTENSION_FACTOR = 1.5; // Extend error messages display time by 50%
-  const INVALID_ROW_CLASSES = 'tbody tr.table-danger, tbody tr.table-warning';
+  const INVALID_ROW_CLASSES = 'tbody tr.table-danger, tbody tr.invalid';
+  const UNKNOWN_ROW_CLASSES = 'tbody tr.table-warning, tbody tr.unknown';
 
   // Checkers that are only applicable in Medical mode
   const MEDICAL_ONLY_CHECKERS = new Set(['exclusion', 'modifiers']);
@@ -93,8 +97,18 @@
 
   let activeChecker = null;
   
-  // Filter state for floating button
-  let filterActive = false;
+  // Result-status filter state. A true value means that status is visible.
+  const FILTER_STATUSES = ['valid', 'unknown', 'invalid'];
+  const FILTER_VARIANTS = {
+    valid: 'success',
+    unknown: 'warning',
+    invalid: 'danger'
+  };
+  const filterVisibility = {
+    valid: true,
+    unknown: true,
+    invalid: true
+  };
   
   // Debug log for Check All functionality
   let debugLog = [];
@@ -115,8 +129,17 @@
   }
 
   // Returns true when the Medical claim-type radio is checked
+  function getGlobalClaimTypeMode() {
+    const medical = document.getElementById('claimTypeMedical');
+    const dental = document.getElementById('claimTypeDental');
+    if (medical && medical.checked) return 'MEDICAL';
+    if (dental && dental.checked) return 'DENTAL';
+    return null;
+  }
+
+  // Returns true when the Medical claim-type radio is checked
   function isMedicalModeSelected() {
-    return Boolean(document.getElementById('claimTypeMedical')?.checked);
+    return getGlobalClaimTypeMode() === 'MEDICAL';
   }
 
   // Returns the sidebar button element for a given checker name
@@ -167,11 +190,23 @@
 
   // DOM elements
   let elements = {};
+  let unifiedCheckerInitialized = false;
 
-  document.addEventListener('DOMContentLoaded', init);
+  function startUnifiedChecker() {
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', init, { once: true });
+    } else {
+      init();
+    }
+  }
+
+  startUnifiedChecker();
 
   // LocalStorage helpers for file persistence
   function init() {
+    if (unifiedCheckerInitialized) return;
+    unifiedCheckerInitialized = true;
+    console.log(`[INIT] Unified checker build: ${UNIFIED_CHECKER_BUILD}`);
     elements = {
       // File inputs
       xmlInput: document.getElementById('xmlFileInput'),
@@ -213,6 +248,18 @@
       uploadStatus: document.getElementById('uploadStatus'),
       resultsContainer: document.getElementById('results-container')
     };
+
+    initializeStatusFilterControls();
+
+    const installedFilterButtons = document.querySelectorAll('#floatingFilterGroup [data-filter-status]');
+    if (installedFilterButtons.length !== 3) {
+      console.error(
+        `[FILTER] ${UNIFIED_CHECKER_BUILD} failed to install all three status buttons.`,
+        { installed: installedFilterButtons.length }
+      );
+    } else {
+      console.log('[FILTER] Installed buttons in order: Valid | Unknown | Invalid');
+    }
 
     // File input event listeners - add null checks to prevent crashes
     // Also add click listeners to reset input value (allows re-uploading same filename)
@@ -297,11 +344,16 @@
       runAllCheckers();
     });
 
-    // Filter button - make it toggleable
-    elements.floatingFilterBtn.addEventListener('click', () => {
-      filterActive = !filterActive;
-      elements.floatingFilterBtn.classList.toggle('active', filterActive);
-      applyFilter();
+    // Each status button independently controls whether that result type is visible.
+    Object.values(elements.statusFilterButtons || {}).forEach(button => {
+      button.addEventListener('click', () => {
+        const status = button.dataset.filterStatus;
+        if (!FILTER_STATUSES.includes(status)) return;
+
+        filterVisibility[status] = !filterVisibility[status];
+        updateStatusFilterButtons();
+        applyFilter();
+      });
     });
 
     // Claim type radio buttons - update button states when changed
@@ -415,11 +467,8 @@
     hideAllCheckerContainers();
     activeChecker = null;
 
-    // Reset filter state
-    filterActive = false;
-    if (elements.floatingFilterBtn) {
-      elements.floatingFilterBtn.classList.remove('active');
-    }
+    // Reset all status filters to visible.
+    resetStatusFilters();
 
     // Clear file cache
     if (window.FileCache && typeof window.FileCache.clear === 'function') window.FileCache.clear();
@@ -533,13 +582,9 @@
       setActiveButton(checkerName);
       activeChecker = checkerName;
 
-      // Reset filter when starting a new checker (Bug #26 fix)
-      // Always set to inactive state when new tables are loaded
-      filterActive = false;
-      if (elements.floatingFilterBtn) {
-        elements.floatingFilterBtn.classList.remove('active');
-      }
-      console.log('[FILTER] Auto-reset: Filter set to off when running new checker');
+      // Reset all three status filters whenever a new checker starts.
+      resetStatusFilters();
+      console.log('[FILTER] Auto-reset: Valid, Unknown, and Invalid are all visible');
 
       // Hide all checker containers and show the active one
       hideAllCheckerContainers();
@@ -608,10 +653,8 @@
       }
       console.log(`[DEBUG] ${checkerName} checker completed successfully`);
 
-      // Apply filter if button is active (works on already-rendered tables)
-      if (filterActive) {
-        setTimeout(() => applyFilter(), 100); // Small delay to ensure table is fully rendered
-      }
+      // Apply the current three-button filter state after rendering.
+      setTimeout(() => applyFilter(), 100); // Small delay to ensure table is fully rendered
       
       // Hide loading overlay after completion
       hideLoadingOverlay();
@@ -685,9 +728,9 @@
         <div id="results"></div>
       `,
       schema: `
-        <input type="file" id="xmlFile" accept=".xml" style="display:none" />
-        <div id="uploadStatus" aria-live="polite"></div>
-        <div id="results"></div>
+        <input type="file" data-role="schema-xml-file" accept=".xml" style="display:none" />
+        <div data-role="schema-status" aria-live="polite"></div>
+        <div data-role="schema-results"></div>
       `,
       exclusion: `
         <input type="file" id="xmlFile" accept=".xml" style="display:none" />
@@ -789,7 +832,7 @@
     console.log(`[DEBUG] executeChecker called for: ${checkerName}`);
     
     // ✅ Clear previous results before running checker
-    const resultsDiv = container.querySelector('#results');
+    const resultsDiv = container.querySelector('#results, [data-role="schema-results"]');
     if (resultsDiv) {
       resultsDiv.innerHTML = '';
       console.log(`[DEBUG] Cleared previous results for ${checkerName}`);
@@ -806,7 +849,7 @@
       messageBox.innerHTML = '';
     }
     
-    const uploadStatus = container.querySelector('#uploadStatus');
+    const uploadStatus = container.querySelector('#uploadStatus, [data-role="schema-status"]');
     if (uploadStatus) {
       uploadStatus.innerHTML = '';
     }
@@ -822,7 +865,7 @@
       auths: { xmlInput: 'xml', xlsxInput: 'auth' },
       timings: { xmlFileInput: 'xml' },
       observations: { xmlFile: 'xml' },
-      schema: { xmlFile: 'xml' },
+      schema: {},
       exclusion: { xmlFile: 'xml' },
       pricing: { 'xml-file': 'xml', 'xlsx-file': 'pricing' },
       modifiers: { 'xml-file': 'xml', 'xlsx-file': 'eligibility' }
@@ -858,16 +901,45 @@
       console.log(`[DEBUG] Calling ${checkerName} checker function...`);
       
       const checkerFunctions = {
-        schema: validateXmlSchema,
+        schema: () => {
+          if (typeof window.validateXmlSchema !== 'function') {
+            throw new Error(
+              'Schema Checker failed to load: window.validateXmlSchema is unavailable.'
+            );
+          }
+
+          return window.validateXmlSchema({
+            file: files.xml,
+            container,
+            claimTypeMode: getGlobalClaimTypeMode()
+          });
+        },
         exclusion: runExclusionCheck,
         timings: validateTimingsAsync,
         observations: () => parseXML(files.xml),
-        elig: runEligCheck,
+        elig: () => {
+          if (typeof window.runEligCheck !== 'function') {
+            throw new Error(
+              'Eligibility Checker failed to load: window.runEligCheck is unavailable.'
+            );
+          }
+
+          return window.runEligCheck({
+            xmlFile: files.xml,
+            eligibilityFile: files.eligibility,
+            container
+          });
+        },
         auths: runAuthsCheck,
         // Pass the shared XML file directly so the clinician checker can read it
         // without depending on an asynchronous dispatched-event side-effect.
         clinician: () => runClinicianCheck(files.xml),
-        pricing: runPricingCheck,
+        pricing: () => runPricingCheck({
+          xmlFile: files.xml,
+          xlsxFile: files.pricing || null,
+          drugsFile: files.drugs || null,
+          claimTypeMode: isMedicalModeSelected() ? 'MEDICAL' : 'DENTAL'
+        }),
         modifiers: runModifiersCheck
       };
       
@@ -932,42 +1004,39 @@
     
     try {
       if (checkerName === 'schema') {
-        // Schema checker uses .view-claim-btn buttons with data-index
-        const results = window._lastValidationResults;
-        if (!results || !Array.isArray(results)) {
-          console.warn('[CHECK-ALL] No validation results found for schema checker');
-          return;
-        }
-        
-        results.forEach((row, index) => {
-          const btn = clonedTable.querySelector(`.view-claim-btn[data-index="${index}"]`);
-          if (btn) {
-            btn.onclick = () => {
-              if (typeof window.showModal === 'function' && typeof window.claimToHtmlTable === 'function') {
-                window.showModal(window.claimToHtmlTable(row.ClaimXML));
-              } else {
-                console.error('[CHECK-ALL] Modal functions not available');
-              }
-            };
-          }
+        const buttons = clonedTable.querySelectorAll('.view-claim-btn[data-claim-xml]');
+        buttons.forEach(btn => {
+          btn.onclick = () => {
+            if (typeof window.showModal === 'function' && typeof window.claimToHtmlTable === 'function') {
+              const claimXml = decodeURIComponent(btn.getAttribute('data-claim-xml') || '');
+              window.showModal(window.claimToHtmlTable(claimXml));
+            } else {
+              console.error('[CHECK-ALL] Modal functions not available');
+            }
+          };
         });
-        console.log(`[CHECK-ALL] Re-attached ${results.length} event listeners for schema checker`);
+        console.log(`[CHECK-ALL] Re-attached ${buttons.length} event listeners for schema checker`);
       } else if (checkerName === 'elig') {
-        // Eligibility checker uses .eligibility-details buttons
-        // Note: initEligibilityModal should be called with the results
+        // Eligibility detail buttons carry a stable detail ID. The Eligibility
+        // checker registers one delegated document-level click handler, so the
+        // buttons continue to work after Check All clones the result wrapper.
         if (typeof window.initEligibilityModal === 'function') {
-          // The eligibility modal initialization needs the results array
-          // For now, we'll attach basic click handlers that use global modal functions
-          const detailButtons = clonedTable.querySelectorAll('.eligibility-details');
-          console.log(`[CHECK-ALL] Found ${detailButtons.length} eligibility detail buttons`);
-          
-          detailButtons.forEach(btn => {
-            btn.onclick = function() {
-              console.log('[CHECK-ALL] Eligibility detail button clicked, but full data not available in cloned table');
-              alert('For detailed eligibility information, please run the Eligibility checker individually.');
-            };
-          });
+          window.initEligibilityModal();
         }
+
+        const detailButtons = clonedTable.querySelectorAll(
+          'button.eligibility-details[data-eligibility-detail-id]'
+        );
+
+        detailButtons.forEach(button => {
+          // Remove stale inline handlers from older Eligibility checker builds.
+          button.removeAttribute('onclick');
+        });
+
+        console.log(
+          `[CHECK-ALL] Found ${detailButtons.length} eligibility detail button(s) ` +
+          '(handled by delegated modal listener).'
+        );
       } else if (checkerName === 'clinician') {
         // Clinician checker uses .view-activities and .view-license-history buttons.
         // clonedTable is the full cloned root element (a <div> that contains the
@@ -1204,13 +1273,9 @@
     setActiveButton('checkAll');
     activeChecker = 'check-all';
     
-    // Reset filter when starting Check All
-    // Always set to inactive state when new tables are loaded
-    filterActive = false;
-    if (elements.floatingFilterBtn) {
-      elements.floatingFilterBtn.classList.remove('active');
-    }
-    console.log('[FILTER] Auto-reset: Filter set to off when running Check All');
+    // Reset all three status filters whenever Check All starts.
+    resetStatusFilters();
+    console.log('[FILTER] Auto-reset: Valid, Unknown, and Invalid are all visible');
     
     // Hide all containers and show the check-all container
     hideAllCheckerContainers();
@@ -1256,26 +1321,36 @@
         sectionDiv.id = `${checkerName}-section`;
         sectionDiv.style.marginBottom = '30px';
         
-        // Add clipboard button for ALL checkers
-        const clipboardButton = `<button class="btn btn-sm btn-outline-primary checker-copy-button" data-checker="${checkerName}" style="margin-left:10px;" title="Copy invalid ${checkerName.toUpperCase()} results to clipboard">📋 Copy Invalids</button>`;
+        // Add separate clipboard buttons for Unknown and Invalid findings.
+        // Requested order: Unknown on the left, Invalid on the right.
+        const clipboardButtons = `
+          <div class="checker-copy-buttons" style="display:flex;gap:6px;margin-left:10px;">
+            <button class="btn btn-sm btn-outline-warning checker-copy-button checker-copy-unknown-button" data-checker="${checkerName}" title="Copy only unknown ${checkerName.toUpperCase()} results to clipboard">📋 Copy Unknowns</button>
+            <button class="btn btn-sm btn-outline-danger checker-copy-button checker-copy-invalid-button" data-checker="${checkerName}" title="Copy only invalid ${checkerName.toUpperCase()} results to clipboard">📋 Copy Invalids</button>
+          </div>`;
         
         sectionDiv.innerHTML = `
           <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #0d6efd;padding-bottom:10px;margin-top:20px;">
             <h3 style="color:#0d6efd;margin:0;">
               ${checkerName.toUpperCase()} Checker Results
             </h3>
-            ${clipboardButton}
+            ${clipboardButtons}
           </div>
           <div id="${checkerName}-results"></div>
         `;
         if (checkAllContainer) {
           checkAllContainer.appendChild(sectionDiv);
           
-          // Attach event listener to clipboard button
-          const copyBtn = sectionDiv.querySelector('.checker-copy-button');
-          if (copyBtn) {
-            copyBtn.addEventListener('click', () => copyCheckerInvalidResults(checkerName));
-            logDebug(`${checkerName} copy button event listener attached`);
+          const invalidCopyBtn = sectionDiv.querySelector('.checker-copy-invalid-button');
+          if (invalidCopyBtn) {
+            invalidCopyBtn.addEventListener('click', () => copyCheckerInvalidResults(checkerName));
+            logDebug(`${checkerName} invalid-copy button event listener attached`);
+          }
+
+          const unknownCopyBtn = sectionDiv.querySelector('.checker-copy-unknown-button');
+          if (unknownCopyBtn) {
+            unknownCopyBtn.addEventListener('click', () => copyCheckerUnknownResults(checkerName));
+            logDebug(`${checkerName} unknown-copy button event listener attached`);
           }
         }
         
@@ -1357,6 +1432,25 @@
           allResults.push({
             checkerName: checkerName,
             table: tableEl.cloneNode(true)
+          });
+        } else if (table instanceof HTMLElement) {
+          successCount++;
+          console.log(`[CHECK-ALL] ✓ ${checkerName} checker returned a non-table result element`);
+          if (sectionResults) {
+            sectionResults.appendChild(table.cloneNode(true));
+          }
+          logDebug(`Checker Success: ${checkerName}`, {
+            status: 'success',
+            executionTimeMs: executionTime,
+            rowsGenerated: 0,
+            tableGenerated: false,
+            elementType: table.className || table.tagName
+          });
+          checkerTimings.push({
+            checker: checkerName,
+            executionTimeMs: executionTime,
+            status: 'success',
+            rowCount: 0
           });
         } else {
           errorCount++;
@@ -1497,84 +1591,186 @@
   }
   }
 
+  function initializeStatusFilterControls() {
+    const originalButton = elements.floatingFilterBtn;
+    if (!originalButton) {
+      console.warn('[FILTER] Original floating filter button was not found');
+      elements.statusFilterButtons = {};
+      return;
+    }
+
+    const group = document.createElement('div');
+    group.id = 'floatingFilterGroup';
+    group.dataset.filterBuild = UNIFIED_CHECKER_BUILD;
+    group.className = 'floating-filter-btn';
+    group.setAttribute('role', 'group');
+    group.setAttribute('aria-label', 'Result status filters');
+    group.style.display = 'flex';
+    group.style.alignItems = 'center';
+    group.style.gap = '6px';
+    group.style.padding = '6px';
+    group.style.background = '#fff';
+    group.style.border = '1px solid #ced4da';
+    group.style.borderRadius = '10px';
+    group.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.16)';
+    group.style.whiteSpace = 'nowrap';
+
+    FILTER_STATUSES.forEach(status => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'btn btn-sm status-filter-btn';
+      button.dataset.filterStatus = status;
+      button.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+      group.appendChild(button);
+    });
+
+    originalButton.replaceWith(group);
+    elements.floatingFilterBtn = group;
+    elements.statusFilterButtons = Object.fromEntries(
+      FILTER_STATUSES.map(status => [
+        status,
+        group.querySelector(`[data-filter-status="${status}"]`)
+      ])
+    );
+
+    updateStatusFilterButtons();
+  }
+
+  function updateStatusFilterButtons() {
+    FILTER_STATUSES.forEach(status => {
+      const button = elements.statusFilterButtons?.[status];
+      if (!button) return;
+
+      const visible = filterVisibility[status];
+      const variant = FILTER_VARIANTS[status];
+      const label = status.charAt(0).toUpperCase() + status.slice(1);
+
+      button.classList.toggle(`btn-${variant}`, visible);
+      button.classList.toggle(`btn-outline-${variant}`, !visible);
+      button.setAttribute('aria-pressed', String(visible));
+      button.title = visible
+        ? `${label} rows are visible. Click to hide them.`
+        : `${label} rows are hidden. Click to show them.`;
+      button.style.opacity = visible ? '1' : '0.62';
+      button.style.textDecoration = visible ? 'none' : 'line-through';
+    });
+  }
+
+  function resetStatusFilters() {
+    FILTER_STATUSES.forEach(status => {
+      filterVisibility[status] = true;
+    });
+    updateStatusFilterButtons();
+  }
+
+  function hasActiveStatusFilter() {
+    return FILTER_STATUSES.some(status => !filterVisibility[status]);
+  }
+
+  function getRowFilterStatus(row) {
+    // Rows explicitly excluded from the old Invalid-only view are treated as
+    // normal/valid display rows in the new three-status filter.
+    if (row.getAttribute('data-hide-invalid-only') === 'true') return 'valid';
+
+    // Invalid takes precedence if a checker accidentally applies both classes.
+    if (
+      row.classList.contains('table-danger') ||
+      row.classList.contains('invalid')
+    ) {
+      return 'invalid';
+    }
+
+    if (
+      row.classList.contains('table-warning') ||
+      row.classList.contains('unknown')
+    ) {
+      return 'unknown';
+    }
+
+    return 'valid';
+  }
+
+  function clearInjectedClaimIds(table) {
+    table.querySelectorAll('.claim-id-cell[data-filter-injected="true"]').forEach(cell => {
+      cell.textContent = '';
+      cell.style.color = '';
+      cell.style.fontStyle = '';
+      cell.removeAttribute('data-filter-injected');
+    });
+  }
+
   function applyFilter() {
-    const filterEnabled = filterActive;
-    
-    // Get tables from the active checker's container
     const container = document.getElementById(`checker-container-${activeChecker}`);
     if (!container) {
       console.warn('[FILTER] No active checker container found');
       return;
     }
-    
+
     const tables = container.querySelectorAll('table');
-    console.log('[FILTER] Applying filter, enabled:', filterEnabled, 'to', tables.length, 'tables');
+    const filtering = hasActiveStatusFilter();
+    console.log(
+      '[FILTER] Applying status filters:',
+      { ...filterVisibility },
+      'to',
+      tables.length,
+      'table(s)'
+    );
 
     tables.forEach(table => {
-      const rows = table.querySelectorAll('tbody tr');
-      
-      // Track which Claim IDs have been shown in the filtered view
-      // This is used to fill the claim ID for the first invalid occurrence only
-      const shownClaimIds = new Set();
-      
-      rows.forEach(row => {
-        // Skip the "no invalids" placeholder — handled separately below
-        if (row.classList.contains('no-invalids-placeholder')) return;
+      clearInjectedClaimIds(table);
 
-        if (filterEnabled) {
-          // Check for invalid/error indicators based on CSS classes only
-          // CSS classes are set by the checker logic based on whether remarks exist
-          // 1. Bootstrap danger class (red rows - has remarks/errors)
-          // 2. Bootstrap warning class (yellow rows - warnings)
-          // 3. Old 'invalid' or 'unknown' class (backward compatibility for other checkers)
-          const hasInvalid = row.classList.contains('table-danger') ||
-                            row.classList.contains('table-warning') ||
-                            row.classList.contains('invalid') ||
-                            row.classList.contains('unknown');
-          const hideForInvalidOnly = row.getAttribute('data-hide-invalid-only') === 'true';
-          
-          if (hasInvalid && !hideForInvalidOnly) {
-            // Show all invalid rows
-            row.style.display = '';
-            
-            // Get the Claim ID from this row (if it has one)
-            const claimId = row.getAttribute('data-claim-id');
-            
-            if (claimId && !shownClaimIds.has(claimId)) {
-              // First invalid occurrence of this Claim ID - ensure it's displayed
-              shownClaimIds.add(claimId);
-              
-              const claimIdCell = row.querySelector('.claim-id-cell');
-              if (claimIdCell && claimIdCell.textContent.trim() === '') {
-                claimIdCell.textContent = claimId;
-                claimIdCell.style.color = '#666';
-                claimIdCell.style.fontStyle = 'italic';
-              }
-            }
-            // Subsequent invalid rows with the same Claim ID keep their blank cells
-          } else {
-            row.style.display = 'none';
-          }
-        } else {
-          row.style.display = '';
-        }
+      const rows = Array.from(table.querySelectorAll('tbody tr'));
+      const resultRows = rows.filter(row => !row.classList.contains('no-invalids-placeholder'));
+
+      resultRows.forEach(row => {
+        const status = getRowFilterStatus(row);
+        row.style.display = filterVisibility[status] ? '' : 'none';
       });
 
-      // Show the "no invalids" placeholder row only when filtering reveals no invalid rows
+      // When one or more categories are hidden, restore the Claim ID on the
+      // first visible row for each claim so filtered tables remain readable.
+      if (filtering) {
+        const shownClaimIds = new Set();
+
+        resultRows.forEach(row => {
+          if (row.style.display === 'none') return;
+
+          const claimId = row.getAttribute('data-claim-id');
+          if (!claimId || shownClaimIds.has(claimId)) return;
+
+          shownClaimIds.add(claimId);
+          const claimIdCell = row.querySelector('.claim-id-cell');
+
+          if (claimIdCell && claimIdCell.textContent.trim() === '') {
+            claimIdCell.textContent = claimId;
+            claimIdCell.style.color = '#666';
+            claimIdCell.style.fontStyle = 'italic';
+            claimIdCell.setAttribute('data-filter-injected', 'true');
+          }
+        });
+      }
+
+      const hasVisibleRows = resultRows.some(row => row.style.display !== 'none');
       const placeholder = table.querySelector('tbody tr.no-invalids-placeholder');
+
       if (placeholder) {
-        if (filterEnabled) {
-          const hasVisibleInvalid = Array.from(
-            table.querySelectorAll('tbody tr.table-danger, tbody tr.table-warning, tbody tr.invalid, tbody tr.unknown')
-          ).some(r => r.style.display !== 'none');
-          placeholder.style.display = hasVisibleInvalid ? 'none' : '';
+        const placeholderCell = placeholder.querySelector('td') || placeholder;
+
+        if (!placeholder.dataset.originalFilterText) {
+          placeholder.dataset.originalFilterText = placeholderCell.textContent;
+        }
+
+        if (filtering && !hasVisibleRows) {
+          placeholderCell.textContent = 'No rows match the selected status filters.';
+          placeholder.style.display = '';
         } else {
+          placeholderCell.textContent = placeholder.dataset.originalFilterText;
           placeholder.style.display = 'none';
         }
       }
     });
 
-    console.log('[FILTER] Filter applied to', tables.length, 'tables');
+    console.log('[FILTER] Status filter applied to', tables.length, 'table(s)');
   }
 
   /**
@@ -1887,152 +2083,164 @@
   }
   
   /**
-   * Copy checker invalid results to clipboard in specified format
+   * Copy checker findings of one severity to the clipboard.
    * Format: CLAIM_ID\t\tRemark
-   * Only copies invalid/unknown rows (table-danger or table-warning)
-   * @param {string} checkerName - The name of the checker (e.g., 'elig', 'auths', 'pricing')
+   *
+   * Pricing rows expose individual remark severities through
+   * data-finding-status. Other checker tables fall back to their row class.
+   * This prevents Unknown findings from being included in Copy Invalids and
+   * also prevents the same remark from being duplicated across activities.
+   *
+   * @param {string} checkerName
+   * @param {'Invalid'|'Unknown'} requestedStatus
    */
-  function copyCheckerInvalidResults(checkerName) {
-    console.log(`[CLIPBOARD] Copying ${checkerName.toUpperCase()} checker invalid results...`);
-    
-    const button = document.querySelector(`.checker-copy-button[data-checker="${checkerName}"]`);
-    
-    // Helper function to show button feedback (uses textContent for security)
+  function copyCheckerResultsByStatus(checkerName, requestedStatus) {
+    const normalizedStatus = requestedStatus === 'Unknown' ? 'Unknown' : 'Invalid';
+    const isUnknown = normalizedStatus === 'Unknown';
+    const buttonSelector = isUnknown
+      ? `.checker-copy-unknown-button[data-checker="${checkerName}"]`
+      : `.checker-copy-invalid-button[data-checker="${checkerName}"]`;
+    const rowSelector = isUnknown ? UNKNOWN_ROW_CLASSES : INVALID_ROW_CLASSES;
+    const emptyLabel = isUnknown ? 'Unknowns' : 'Invalids';
+
+    console.log(`[CLIPBOARD] Copying ${normalizedStatus.toLowerCase()} ${checkerName.toUpperCase()} findings...`);
+    const button = document.querySelector(buttonSelector);
+
     const showButtonFeedback = (message, backgroundColor, duration = CLIPBOARD_FEEDBACK_DURATION_MS) => {
       if (!button) return;
       const originalText = button.textContent;
       button.textContent = message;
       button.style.backgroundColor = backgroundColor;
       button.style.color = 'white';
-      
+
       setTimeout(() => {
         button.textContent = originalText;
         button.style.backgroundColor = '';
         button.style.color = '';
       }, duration);
     };
-    
-    // Find the checker results section
+
     const checkerSection = document.getElementById(`${checkerName}-results`);
     if (!checkerSection) {
       console.error(`[CLIPBOARD] ${checkerName} results section not found`);
       showButtonFeedback('⚠ Section Not Found', '#dc3545');
       return;
     }
-    
-    // Find the table in the checker section
+
     const table = checkerSection.querySelector('table');
     if (!table) {
       console.error(`[CLIPBOARD] ${checkerName} results table not found`);
       showButtonFeedback('⚠ Table Not Found', '#dc3545');
       return;
     }
-    
-    // Find the Remarks column index by searching table headers
+
     const headers = table.querySelectorAll('thead th');
     let remarksColumnIndex = -1;
-    
-    // Find first header matching "Remark" or "Remarks" (exact match, case-insensitive)
     for (let i = 0; i < headers.length; i++) {
-      const headerText = headers[i].textContent.trim();
-      const headerLower = headerText.toLowerCase();
-      // Use exact match for "remark" or "remarks" to avoid false positives
+      const headerLower = headers[i].textContent.trim().toLowerCase();
       if (headerLower === 'remark' || headerLower === 'remarks') {
         remarksColumnIndex = i;
-        console.log(`[CLIPBOARD] Found remarks column at index ${i}: "${headerText}"`);
-        break; // Stop after finding first match
+        break;
       }
     }
-    
+
     if (remarksColumnIndex === -1) {
       console.error(`[CLIPBOARD] Could not find Remarks column in ${checkerName} table headers`);
       showButtonFeedback('⚠ No Remarks Column', '#dc3545');
       return;
     }
-    
-    // Extract data from INVALID rows only (table-danger or table-warning)
-    const invalidRows = table.querySelectorAll(INVALID_ROW_CLASSES);
-    if (invalidRows.length === 0) {
-      console.log(`[CLIPBOARD] No invalid rows found in ${checkerName}`);
-      showButtonFeedback('⚠ No Invalids', '#ffc107');
-      return;
-    }
-    
-    // Use a Map to group remarks by ClaimID: key = claimID, value = Set of remark texts
+
     const claimRemarks = new Map();
-    
-    invalidRows.forEach(row => {
-      // Get all cells in the row
-      const cells = row.querySelectorAll('td');
-      if (cells.length < 2) return; // Skip if not enough cells
-      
-      // Get Claim ID from data attribute first (for checkers that hide duplicate IDs visually)
-      // or fall back to first cell's textContent
-      let claimID = row.getAttribute('data-claim-id') || cells[0].textContent.trim();
-      
-      // Skip empty claim IDs
-      if (!claimID) return;
-      
+    let lastSeenClaimID = '';
+    const allRows = Array.from(table.querySelectorAll('tbody tr'));
+
+    const addRemark = (claimID, rawText) => {
+      const remarkText = String(rawText || '')
+        .trim()
+        .replace(/\n+/g, ' ')
+        .replace(/\s+/g, ' ');
+      if (!claimID || !remarkText || remarkText === 'No remarks' || remarkText === 'OK') return;
       if (!claimRemarks.has(claimID)) claimRemarks.set(claimID, new Set());
-      const remarks = claimRemarks.get(claimID);
-      
-      // Get the Remarks cell using the dynamically found column index
+      claimRemarks.get(claimID).add(remarkText);
+    };
+
+    allRows.forEach(row => {
+      if (row.classList.contains('no-invalids-placeholder')) return;
+
+      const cells = row.querySelectorAll('td');
+      if (cells.length <= remarksColumnIndex) return;
+
+      const dataClaimID = String(row.getAttribute('data-claim-id') || '').trim();
+      const firstCellClaimID = cells[0] ? cells[0].textContent.trim() : '';
+      if (dataClaimID) lastSeenClaimID = dataClaimID;
+      else if (firstCellClaimID) lastSeenClaimID = firstCellClaimID;
+      const claimID = dataClaimID || firstCellClaimID || lastSeenClaimID;
+      if (!claimID) return;
+
       const remarksCell = cells[remarksColumnIndex];
-      
-      if (!remarksCell) return;
-      
-      // Get all remark divs from the cell
-      const remarkDivs = remarksCell.querySelectorAll('div');
-      
-      // Only include rows that have remarks (not "No remarks")
-      if (remarkDivs.length > 0) {
-        remarkDivs.forEach(div => {
-          // Replace newlines with spaces to keep everything on one line
-          const remarkText = div.textContent.trim().replace(/\n+/g, ' ').replace(/\s+/g, ' ');
-          // Skip "No remarks" entries and source notes
-          if (remarkText && remarkText !== 'No remarks' && !div.classList.contains('source-note')) {
-            remarks.add(remarkText);
+      const taggedRemarks = Array.from(remarksCell.querySelectorAll('[data-finding-status]'));
+
+      if (taggedRemarks.length > 0) {
+        taggedRemarks.forEach(element => {
+          const findingStatus = String(element.dataset.findingStatus || '').trim().toLowerCase();
+          const matchesRequestedStatus = isUnknown
+            ? findingStatus === 'unknown' || findingStatus === 'warning'
+            : findingStatus === 'invalid' || findingStatus === 'error';
+          if (matchesRequestedStatus && !element.classList.contains('source-note')) {
+            addRemark(claimID, element.textContent);
           }
         });
+        return;
+      }
+
+      // Backward-compatible fallback for checkers that do not tag each remark.
+      if (!row.matches(rowSelector)) return;
+      const remarkDivs = Array.from(remarksCell.querySelectorAll('div'))
+        .filter(div => !div.classList.contains('source-note'));
+      if (remarkDivs.length > 0) {
+        remarkDivs.forEach(div => addRemark(claimID, div.textContent));
       } else {
-        // If no divs, try getting text content directly (some checkers may use plain text)
-        const remarkText = remarksCell.textContent.trim().replace(/\n+/g, ' ').replace(/\s+/g, ' ');
-        if (remarkText && remarkText !== 'No remarks' && remarkText !== '') {
-          remarks.add(remarkText);
-        }
+        addRemark(claimID, remarksCell.textContent);
       }
     });
-    
-    // Build one line per claim: CLAIM_ID\t\t<all remarks joined with a space>
+
     const results = Array.from(claimRemarks.entries())
       .filter(([, remarks]) => remarks.size > 0)
       .map(([claimID, remarks]) => `${claimID}\t\t${Array.from(remarks).join(' ')}`);
-    
+
     if (results.length === 0) {
-      console.log(`[CLIPBOARD] Invalid rows found in ${checkerName} but no remarks to copy`);
-      showButtonFeedback('⚠ No Remarks', '#ffc107');
+      console.log(`[CLIPBOARD] No ${normalizedStatus.toLowerCase()} findings found in ${checkerName}`);
+      showButtonFeedback(`⚠ No ${emptyLabel}`, '#ffc107');
       return;
     }
-    
-    // Join all results with newlines
+
     const textToCopy = results.join('\n');
-    
-    // Copy to clipboard
     navigator.clipboard.writeText(textToCopy).then(() => {
-      console.log(`[CLIPBOARD] ✓ Copied ${results.length} invalid ${checkerName.toUpperCase()} results`);
+      console.log(`[CLIPBOARD] ✓ Copied ${results.length} ${normalizedStatus.toLowerCase()} ${checkerName.toUpperCase()} result(s)`);
       showButtonFeedback(`✓ Copied ${results.length}!`, '#198754');
     }).catch(err => {
       console.error(`[CLIPBOARD] Copy failed for ${checkerName}:`, err);
-      // Use a safe, fixed error message instead of potentially unsafe error content
-      const safeErrorMsg = err.name === 'NotAllowedError' 
-        ? 'Permission denied' 
+      const safeErrorMsg = err.name === 'NotAllowedError'
+        ? 'Permission denied'
         : err.name === 'SecurityError'
-        ? 'Security error'
-        : 'Check console for details';
-      showButtonFeedback(`❌ Copy Failed: ${safeErrorMsg}`, '#dc3545', CLIPBOARD_FEEDBACK_DURATION_MS * ERROR_FEEDBACK_DURATION_EXTENSION_FACTOR);
+          ? 'Security error'
+          : 'Check console for details';
+      showButtonFeedback(
+        `❌ Copy Failed: ${safeErrorMsg}`,
+        '#dc3545',
+        CLIPBOARD_FEEDBACK_DURATION_MS * ERROR_FEEDBACK_DURATION_EXTENSION_FACTOR
+      );
     });
   }
-  
+
+  function copyCheckerInvalidResults(checkerName) {
+    copyCheckerResultsByStatus(checkerName, 'Invalid');
+  }
+
+  function copyCheckerUnknownResults(checkerName) {
+    copyCheckerResultsByStatus(checkerName, 'Unknown');
+  }
+
   // Bug #7 fix: Auto-table generation system removed (obsolete with persistent containers)
   // Bug #8 fix: Dead code in checkForExistingTable removed (lines after early return)
 

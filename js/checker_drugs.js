@@ -10,6 +10,14 @@ let currentModalIdx = null;
 let claimsMapGlobal = {};
 let lastXmlRows = [];
 let lastXMLFileNameBase = "export";
+const drugShared = window.DrugAnalysisShared || null;
+
+function normalizeDrugCode(value) {
+  if (drugShared && typeof drugShared.normalizeDrugCode === 'function') {
+    return drugShared.normalizeDrugCode(value);
+  }
+  return String(value || '').trim().toUpperCase();
+}
 
 const modeRadios = document.querySelectorAll('input[name="mode"]');
 const lookupPanel = document.getElementById('lookup-panel');
@@ -95,8 +103,16 @@ xlsxUpload.addEventListener('change', (e) => {
   const reader = new FileReader();
   reader.onload = (ev) => {
     const wb = XLSX.read(ev.target.result, { type: 'binary' });
-    const sheet = wb.Sheets[wb.SheetNames[1]];
-    const json = XLSX.utils.sheet_to_json(sheet);
+    if (!drugShared) {
+      drugCount.textContent = 'Drug analysis helpers are unavailable.';
+      return;
+    }
+    const parsed = drugShared.parseDrugWorkbook(wb, XLSX);
+    if (parsed.error) {
+      drugCount.textContent = parsed.error;
+      return;
+    }
+    const json = parsed.rows;
     drugData = json
       .map(row => {
         const norm = {};
@@ -136,7 +152,7 @@ searchDrugBtn && searchDrugBtn.addEventListener('click', () => {
   calculateBtn.disabled = true;
 
   const matches = drugData.filter(r => {
-    const codeMatch = r["Drug Code"] === query;
+    const codeMatch = normalizeDrugCode(r["Drug Code"]) === normalizeDrugCode(query);
     const pkg = (r["Package Name"] || '').toLowerCase();
     const nameMatch = exact
       ? pkg === lowerQuery
@@ -261,19 +277,20 @@ analyzeBtn.addEventListener('click', () => {
     document.getElementById('export-invalids-btn').style.display = 'none';
     return;
   }
-  // Build a map of drug codes to drug rows for quick lookup
-  const drugMap = {};
-  drugData.forEach(d => { drugMap[d["Drug Code"]] = d; });
-
   // Collect all activities, grouped by claim
   const claims = Array.from(xmlData.getElementsByTagName('Claim'));
   let xmlRows = [];
+  const drugMap = new Map();
+  drugData.forEach(d => {
+    const code = normalizeDrugCode(d["Drug Code"]);
+    if (code) drugMap.set(code, d);
+  });
   claims.forEach(claim => {
     const claimID = (claim.getElementsByTagName('ID')[0] || {}).textContent || 'N/A';
     const activities = Array.from(claim.getElementsByTagName('Activity'));
     activities.forEach(activity => {
       const code = (activity.getElementsByTagName('Code')[0] || {}).textContent || '';
-      const drug = drugMap[code];
+      const drug = drugMap.get(normalizeDrugCode(code));
       if (!drug) return;
       xmlRows.push({
         claimId: claimID,
@@ -295,16 +312,12 @@ analyzeBtn.addEventListener('click', () => {
 });
 
 function isActivityValid(drugRow, inclusionType) {
-  let status = (drugRow["Status"]||"").toLowerCase();
-  if (status === "grace") status = "active";
-  const statusActive = status === "active";
-  let included = true;
-  if (inclusionType === "THIQA") {
-    included = (drugRow["Included in Thiqa/ ABM - other than 1&7- Drug Formulary"]||"").toLowerCase() === "yes";
-  } else if (inclusionType === "DAMAN") {
-    included = (drugRow["Included In Basic Drug Formulary"]||"").toLowerCase() === "yes";
-  }
-  return statusActive && included;
+  if (!drugShared) return false;
+  const code = String(drugRow["Drug Code"] || '').trim();
+  const statusInfo = drugShared.validateDrugStatus(drugRow, code);
+  const receiver = inclusionType === 'THIQA' ? 'D001' : (inclusionType === 'DAMAN' ? 'D004' : '');
+  const formularyInfo = drugShared.validateDrugFormulary(drugRow, receiver, code);
+  return statusInfo.status === 'Valid' && (formularyInfo.status === 'Valid' || !formularyInfo.applies);
 }
 
 // --- EXPORT LOGIC WITH ORDERING ---

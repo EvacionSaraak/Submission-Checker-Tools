@@ -1,25 +1,24 @@
 (function() {
   try {
     // checker_timings.js
-
     // --- Main Entry Point (called by unified interface) ---
     async function validateTimingsAsync() {
   const xmlInput = document.getElementById('xmlFileInput');
   const status = document.getElementById('uploadStatus');
-  
+
   if (!xmlInput || !xmlInput.files || !xmlInput.files.length) {
     if (status) status.textContent = 'No XML file selected.';
     return null;
   }
-  
+
   const file = xmlInput.files[0];
-  
+
   try {
     if (status) status.textContent = 'Processing file...';
     const xmlText = await file.text();
     validateXMLString(xmlText);
     const xmlDoc = parseXML(xmlText);
-    
+
     const checkedRadio = document.querySelector('input[name="claimTypeGlobal"]:checked');
     const selectedType = checkedRadio?.value || "DENTAL";
     const requiredType = (selectedType === "DENTAL") ? "6" : "3";
@@ -30,13 +29,12 @@
         ?.trim()
         ?.toUpperCase()
       || '';
-    
     const claims = extractClaims(xmlDoc, {
       requiredType,
       claimMode: selectedType,
       receiverID
     });
-    
+
     // Update summary status
     const invalidRows = claims.filter(r => !r.isValid);
     window.invalidRows = invalidRows;
@@ -44,7 +42,7 @@
     if (summaryBox) {
       summaryBox.textContent = `Valid: ${claims.length - invalidRows.length} / ${claims.length} (${((claims.length - invalidRows.length)/claims.length*100).toFixed(1)}%)`;
     }
-    
+
     // Export button handler (add if button exists)
     const exportBtn = document.getElementById('exportBtn');
     if (exportBtn) {
@@ -62,7 +60,7 @@
         XLSX.writeFile(wb, 'invalid_timings.xlsx');
       };
     }
-    
+
     if (status) status.textContent = '';
     return buildResultsTable(claims);
   } catch (err) {
@@ -70,7 +68,6 @@
     return null;
   }
 }
-
 // --- Legacy onFileChange (kept for backward compatibility) ---
 async function onFileChange(event) {
   clearResults();
@@ -82,8 +79,8 @@ async function onFileChange(event) {
     validateXMLString(xmlText);
     const xmlDoc = parseXML(xmlText);
     // Use claimType for standalone, claimTypeGlobal for unified
-    const selectedType = document.querySelector('input[name="claimType"]:checked')?.value || 
-                         document.querySelector('input[name="claimTypeGlobal"]:checked')?.value || 
+    const selectedType = document.querySelector('input[name="claimType"]:checked')?.value ||
+                         document.querySelector('input[name="claimTypeGlobal"]:checked')?.value ||
                          "DENTAL";
     const requiredType = (selectedType === "DENTAL") ? "6" : "3";
     const receiverID =
@@ -98,12 +95,14 @@ async function onFileChange(event) {
       claimMode: selectedType,
       receiverID
     });
-    renderResults(document.getElementById('results'), claims);
+    const resultsContainer = getStandaloneResultsContainer();
+    if (resultsContainer) {
+      renderResults(resultsContainer, claims);
+    }
   } catch (err) {
     renderMessage(`❌ Error: ${sanitize(String(err.message))}`);
   }
 }
-
 // --- XML Parsing/Validation ---
 function validateXMLString(str) {
   if (typeof str !== 'string' || !str.trim().startsWith('<')) throw new Error('File does not appear to be valid XML.');
@@ -115,14 +114,38 @@ function parseXML(xmlString) {
   if (doc.querySelector('parsererror')) throw new Error('Invalid XML format.');
   return doc;
 }
+const SERIES_97_BANDS = [
+  { min: 8, max: 22, quantity: 1 },
+  { min: 23, max: 37, quantity: 2 },
+  { min: 38, max: 52, quantity: 3 },
+  { min: 53, max: 67, quantity: 4 }
+];
 
-function minMinutesFor97Quantity(quantity) {
-  if (quantity >= 4) return 53;
-  if (quantity === 3) return 38;
-  if (quantity === 2) return 23;
-  return 8;
+function get97BandForDuration(durationMinutes) {
+  return SERIES_97_BANDS.find(band => durationMinutes >= band.min && durationMinutes <= band.max) || null;
 }
 
+function calculate97DurationRange(timedActivities) {
+  const positiveActivities = timedActivities.filter(activity =>
+    activity.code && Number.isFinite(activity.quantity) && activity.quantity > 0
+  );
+  const timedCodes = Array.from(new Set(positiveActivities.map(activity => activity.code)));
+  const totalQuantity = positiveActivities.reduce((sum, activity) => sum + activity.quantity, 0);
+  const uniqueCodeCount = timedCodes.length;
+  const duplicateQuantity = Math.max(0, totalQuantity - uniqueCodeCount);
+
+  return {
+    timedCodes,
+    totalQuantity,
+    uniqueCodeCount,
+    duplicateQuantity,
+    minimumMinutes: (uniqueCodeCount * 7) + (duplicateQuantity * 15)
+  };
+}
+
+function formatMinuteValue(value) {
+  return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(2)));
+}
 // --- Claims Extraction/Validation ---
 function getMaximumEncounterMinutes({ claimMode, receiverID }) {
   const isMedical = String(claimMode || '').trim().toUpperCase() === 'MEDICAL';
@@ -134,89 +157,294 @@ function getMaximumEncounterMinutes({ claimMode, receiverID }) {
 
   return 240;
 }
-
 function extractClaims(xmlDoc, options = {}) {
-  const requiredType = options.requiredType || "6";
-  const claimMode = options.claimMode || "DENTAL";
-  const receiverID = options.receiverID || '';
-  const maximumEncounterMinutes = getMaximumEncounterMinutes({ claimMode, receiverID });
-  const maximumEncounterHours = Math.floor(maximumEncounterMinutes / 60);
-  const results = [];
-  xmlDoc.querySelectorAll('Claim').forEach(claim => {
-    const claimId = claim.querySelector('ID')?.textContent || 'Unknown';
-    const enc = claim.querySelector('Encounter');
-    const encounterStartStr = enc?.querySelector('Start')?.textContent, encounterEndStr = enc?.querySelector('End')?.textContent;
-    if (!encounterStartStr || !encounterEndStr) return;
-    const encounterStart = parseDateTime(encounterStartStr), encounterEnd = parseDateTime(encounterEndStr);
-    if (!encounterStart || !encounterEnd) return;
-    const encMin = Math.floor((encounterEnd - encounterStart) / 60000);
-    let baseValid = true, baseRemarks = [];
-    if (encMin < 0) { baseValid = false; baseRemarks.push('Encounter end is before encounter start.');}
-    const activities = Array.from(claim.querySelectorAll('Activity'));
-    const timeBased97Activities = activities
-      .map(activity => ({
-        code: activity.querySelector('Code')?.textContent?.trim() || '',
-        quantity: Number(activity.querySelector('Quantity')?.textContent?.trim() || '0')
-      }))
-      .filter(activity => /^97/.test(activity.code));
-    const totalRequired97Minutes = timeBased97Activities.reduce((sum, activity) => {
-      const quantity = Number.isFinite(activity.quantity) && activity.quantity > 0 ? activity.quantity : 1;
-      return sum + minMinutesFor97Quantity(quantity);
-    }, 0);
-    const notEnough97Time = timeBased97Activities.length > 0 && encMin < totalRequired97Minutes;
+    const requiredType = options.requiredType || "6";
+    const claimMode = String(options.claimMode || "DENTAL")
+        .trim()
+        .toUpperCase();
 
-    activities.forEach(activity => {
-      const activityId = activity.querySelector('ID')?.textContent || 'Unknown';
-      const activityStartStr = activity.querySelector('Start')?.textContent;
-      const typeValue = activity.querySelector('Type')?.textContent?.trim() || '';
-      const codeValue = activity.querySelector('Code')?.textContent?.trim() || '';
-      const qtyValue = Number(activity.querySelector('Quantity')?.textContent?.trim() || '0');
-      let isValid = baseValid, remarks = [...baseRemarks];
-      
-      // Type validation has been moved to the teeths checker
-      // This checker now only validates timing-related aspects
-      
-      if (!activityStartStr) {
-        remarks.push('Missing Activity Start');
-        results.push({
-          claimId, activityId, type: typeValue, encounterStart: encounterStartStr, encounterEnd: encounterEndStr,
-          start: 'N/A', duration: formatDuration(encMin), excess: 'N/A', isValid, remarks
-        });
-        return;
-      }
-      const activityStart = parseDateTime(activityStartStr);
-      if (!activityStart) { isValid = false; remarks.push('Invalid Activity Start format'); }
-      const excessMin = (activityStart instanceof Date && !isNaN(activityStart))
-        ? Math.floor((encounterEnd - activityStart) / 60000)
-        : NaN;
-      if (activityStart && activityStart < encounterStart) { isValid = false; remarks.push('Activity start is before encounter start.'); }
-      if (activityStart && activityStart > encounterEnd) { isValid = false; remarks.push('Activity start is after encounter end.'); }
-      if (encMin >= 0 && encMin < 10) { isValid = false; remarks.push(`Encounter duration too short (${encMin} min). Should be 10 minutes minimum.`);}
-      else if (encMin > maximumEncounterMinutes) {
-        isValid = false;
-        if (encMin >= 1440) {
-          const [startDate] = encounterStartStr.split(' '), [endDate] = encounterEndStr.split(' ');
-          remarks.push(`Encounter crosses days: ${startDate} → ${endDate}`);
-        } else {
-          const hours = Math.floor(encMin / 60), minutes = encMin % 60;
-          remarks.push(`Encounter duration too long (${hours}h ${minutes}m). Should be ${maximumEncounterHours} hours maximum.`);
-        }
-      }
-      if (notEnough97Time && /^97/.test(codeValue)) {
-        isValid = false;
-        const safeQty = Number.isFinite(qtyValue) && qtyValue > 0 ? qtyValue : 1;
-        remarks.push(`Not enough time for ${safeQty} quantity of ${codeValue}`);
-      }
-      results.push({
-        claimId, activityId, type: typeValue, encounterStart: encounterStartStr, encounterEnd: encounterEndStr,
-        start: activityStartStr, duration: formatDuration(encMin),
-        excess: isNaN(excessMin) ? 'N/A' : formatDuration(excessMin), isValid, remarks
-      });
+    const receiverID = options.receiverID || "";
+
+    const maximumEncounterMinutes = getMaximumEncounterMinutes({
+        claimMode,
+        receiverID
     });
-  });
-  return results;
-}
 
+    const maximumEncounterHours = Math.floor(
+        maximumEncounterMinutes / 60
+    );
+    const isMedicalClaim = claimMode === "MEDICAL";
+    const results = [];
+
+    xmlDoc.querySelectorAll("Claim").forEach(claim => {
+        const claimId =
+            claim.querySelector("ID")?.textContent?.trim() ||
+            "Unknown";
+
+        const encounter = claim.querySelector("Encounter");
+
+        const encounterStartStr =
+            encounter?.querySelector("Start")?.textContent?.trim() ||
+            "";
+        const encounterEndStr =
+            encounter?.querySelector("End")?.textContent?.trim() ||
+            "";
+
+        if (!encounterStartStr || !encounterEndStr) {
+            return;
+        }
+
+        const encounterStart = parseDateTime(encounterStartStr);
+        const encounterEnd = parseDateTime(encounterEndStr);
+
+        if (!encounterStart || !encounterEnd) {
+            return;
+        }
+        const encounterMinutes = Math.floor(
+            (encounterEnd - encounterStart) / 60000
+        );
+
+        let baseValid = true;
+        const baseRemarks = [];
+
+        if (encounterMinutes < 0) {
+            baseValid = false;
+            baseRemarks.push(
+                "Encounter end is before encounter start."
+            );
+        }
+
+        const activities = Array.from(
+            claim.querySelectorAll("Activity")
+        );
+        /*
+         * Timed 97-code validation applies only to Medical claims.
+         *
+         * The first unit of each unique 97-code may use the maximum seven-minute
+         * leeway. Every additional unit of a code already present requires the
+         * full 15 minutes.
+         *
+         * Minimum = (unique codes × 7) + (duplicate units × 15)
+         *
+         * Only the minimum is enforced. A longer encounter may include other
+         * procedures that also contribute to the total encounter duration.
+         *
+         * Examples for three total units:
+         *   1, 2, 3 => at least 21 minutes.
+         *   1, 2, 2 => at least 29 minutes.
+         *   1, 1, 1 => at least 37 minutes.
+         */
+        const timed97Activities = isMedicalClaim
+            ? activities
+                .map(activity => {
+                    const code =
+                        activity
+                            .querySelector("Code")
+                            ?.textContent
+                            ?.trim() || "";
+                    const quantityRaw =
+                        activity
+                            .querySelector("Quantity")
+                            ?.textContent
+                            ?.trim() || "0";
+
+                    const quantity = Number(quantityRaw);
+                    return {
+                        code,
+                        quantity:
+                            Number.isFinite(quantity) && quantity > 0
+                                ? quantity
+                                : 0
+                    };
+                })
+                .filter(activity => /^97/.test(activity.code))
+            : [];
+        const duration97Range = calculate97DurationRange(timed97Activities);
+        const timed97Codes = duration97Range.timedCodes;
+        const total97Quantity = duration97Range.totalQuantity;
+        const minimum97Minutes = duration97Range.minimumMinutes;
+        const has97Activities =
+            isMedicalClaim &&
+            timed97Codes.length > 0 &&
+            total97Quantity > 0;
+        const hasInvalid97Duration =
+            has97Activities &&
+            encounterMinutes >= 0 &&
+            encounterMinutes < minimum97Minutes;
+        const timed97CodeLabel =
+            timed97Codes.length === 1
+                ? `Code ${timed97Codes[0]}`
+                : `Codes ${timed97Codes.join(", ")}`;
+
+        activities.forEach(activity => {
+            const activityId =
+                activity
+                    .querySelector("ID")
+                    ?.textContent
+                    ?.trim() ||
+                "Unknown";
+            const activityStartStr =
+                activity
+                    .querySelector("Start")
+                    ?.textContent
+                    ?.trim() ||
+                "";
+
+            const typeValue =
+                activity
+                    .querySelector("Type")
+                    ?.textContent
+                    ?.trim() ||
+                "";
+            const codeValue =
+                activity
+                    .querySelector("Code")
+                    ?.textContent
+                    ?.trim() ||
+                "";
+
+            let isValid = baseValid;
+            const remarks = [...baseRemarks];
+
+            // Type validation is handled by the teeth/checker logic.
+            // This function validates timing-related aspects only.
+            if (!activityStartStr) {
+                isValid = false;
+                remarks.push("Missing Activity Start");
+                results.push({
+                    claimId,
+                    activityId,
+                    type: typeValue,
+                    encounterStart: encounterStartStr,
+                    encounterEnd: encounterEndStr,
+                    start: "N/A",
+                    duration: formatDuration(encounterMinutes),
+                    excess: "N/A",
+                    isValid,
+                    remarks
+                });
+
+                return;
+            }
+            const activityStart = parseDateTime(
+                activityStartStr
+            );
+
+            if (!activityStart) {
+                isValid = false;
+                remarks.push(
+                    "Invalid Activity Start format"
+                );
+            }
+            const excessMinutes =
+                activityStart instanceof Date &&
+                !Number.isNaN(activityStart.getTime())
+                    ? Math.floor(
+                        (encounterEnd - activityStart) /
+                        60000
+                    )
+                    : NaN;
+            if (
+                activityStart &&
+                activityStart < encounterStart
+            ) {
+                isValid = false;
+                remarks.push(
+                    "Activity start is before encounter start."
+                );
+            }
+            if (
+                activityStart &&
+                activityStart > encounterEnd
+            ) {
+                isValid = false;
+                remarks.push(
+                    "Activity start is after encounter end."
+                );
+            }
+
+            if (
+                encounterMinutes >= 0 &&
+                encounterMinutes < 10 &&
+                !has97Activities
+            ) {
+                isValid = false;
+                remarks.push(
+                    `Encounter duration too short ` +
+                    `(${encounterMinutes} min). ` +
+                    `Should be 10 minutes minimum.`
+                );
+            } else if (
+                encounterMinutes >
+                maximumEncounterMinutes
+            ) {
+                isValid = false;
+
+                if (encounterMinutes >= 1440) {
+                    const [startDate] =
+                        encounterStartStr.split(" ");
+                    const [endDate] =
+                        encounterEndStr.split(" ");
+
+                    remarks.push(
+                        `Encounter crosses days: ` +
+                        `${startDate} → ${endDate}`
+                    );
+                } else {
+                    const hours = Math.floor(
+                        encounterMinutes / 60
+                    );
+
+                    const minutes =
+                        encounterMinutes % 60;
+                    remarks.push(
+                        `Encounter duration too long ` +
+                        `(${hours}h ${minutes}m). ` +
+                        `Should be ${maximumEncounterHours} ` +
+                        `hours maximum.`
+                    );
+                }
+            }
+            /*
+             * Add the aggregate timed-code error only to affected 97-code rows.
+             * Do not reset isValid when the timing is acceptable, because another
+             * timing validation may already have marked the activity invalid.
+             */
+            if (
+                isMedicalClaim &&
+                /^97/.test(codeValue) &&
+                hasInvalid97Duration
+            ) {
+                isValid = false;
+                remarks.push(
+                    `${timed97CodeLabel}: total quantity ` +
+                    `${formatMinuteValue(total97Quantity)} requires an ` +
+                    `encounter duration of at least ` +
+                    `${formatMinuteValue(minimum97Minutes)} minutes, but the ` +
+                    `encounter duration is ` +
+                    `${encounterMinutes} minutes.`
+                );
+            }
+            results.push({
+                claimId,
+                activityId,
+                type: typeValue,
+                encounterStart: encounterStartStr,
+                encounterEnd: encounterEndStr,
+                start: activityStartStr,
+                duration: formatDuration(
+                    encounterMinutes
+                ),
+                excess: Number.isNaN(excessMinutes)
+                    ? "N/A"
+                    : formatDuration(excessMinutes),
+                isValid,
+                remarks
+            });
+        });
+    });
+    return results;
+}
 // --- Utilities ---
 function parseDateTime(dt) {
   if (!dt.includes(' ')) return null;
@@ -239,13 +467,29 @@ function sanitize(str) {
     .replace(/>/g, "&gt;").replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
 }
-function renderMessage(msg) {
-  document.getElementById('results').innerHTML = `<p>${sanitize(msg)}</p>`;
+
+function getStandaloneResultsContainer() {
+  return document.getElementById('results');
 }
-function clearResults() {
-  document.getElementById('results').innerHTML = '';
+function renderMessage(msg) {
+  const container = getStandaloneResultsContainer();
+
+  if (!container) {
+    return;
+  }
+
+  container.innerHTML = `<p>${sanitize(msg)}</p>`;
 }
 
+function clearResults() {
+  const container = getStandaloneResultsContainer();
+
+  if (!container) {
+    return;
+  }
+
+  container.innerHTML = '';
+}
 // --- Results Rendering ---
 function renderResults(container, rows) {
   const summaryBox = document.getElementById('resultsSummary');
@@ -261,21 +505,21 @@ function renderResults(container, rows) {
   exportBtn.style.display = invalidRows.length ? 'inline-block' : 'none';
   summaryBox.textContent = `Valid: ${rows.length - invalidRows.length} / ${rows.length} (${((rows.length - invalidRows.length)/rows.length*100).toFixed(1)}%)`;
   container.innerHTML = buildResultsTable(rows);
-  
+
   // Add MutationObserver to detect when filter hides/shows rows
   const observer = new MutationObserver(() => {
     fillMissingClaimIds();
   });
-  
+
   const tbody = container.querySelector('tbody');
   if (tbody) {
-    observer.observe(tbody, { 
-      attributes: true, 
+    observer.observe(tbody, {
+      attributes: true,
       attributeFilter: ['style'],
-      subtree: true 
+      subtree: true
     });
   }
-  
+
   // Fill immediately if filter is already active
   fillMissingClaimIds();
 }
@@ -288,18 +532,18 @@ function buildResultsTable(rows) {
     errorDiv.textContent = 'Error: Invalid data structure for results table';
     return errorDiv;
   }
-  
+
   if (!rows.length) {
     const emptyDiv = document.createElement('p');
     emptyDiv.textContent = 'No entries found.';
     return emptyDiv;
   }
-  
+
   const table = document.createElement('table');
   table.className = 'table table-striped table-bordered';
   table.style.width = '100%';
   table.style.borderCollapse = 'collapse';
-  
+
   let prevClaimId = null;
   const html = `
     <thead><tr>
@@ -331,41 +575,40 @@ function buildResultsTable(rows) {
     }).join('')}
     </tbody>
   `;
-  
+
   table.innerHTML = html;
-  
+
   // Add MutationObserver to detect when filter hides/shows rows
   const observer = new MutationObserver(() => {
     fillMissingClaimIds();
   });
-  
+
   const tbody = table.querySelector('tbody');
   if (tbody) {
-    observer.observe(tbody, { 
-      attributes: true, 
+    observer.observe(tbody, {
+      attributes: true,
       attributeFilter: ['style'],
-      subtree: true 
+      subtree: true
     });
   }
-  
+
   // Fill immediately if filter is already active
   setTimeout(() => fillMissingClaimIds(), 0);
-  
+
   return table;
 }
-
 // Helper function to fill missing Claim IDs when rows are filtered
 function fillMissingClaimIds() {
   const table = document.querySelector('#results table');
   if (!table) return;
-  
+
   const rows = Array.from(table.querySelectorAll('tbody tr'));
-  
+
   rows.forEach(row => {
     const isHidden = row.style.display === 'none';
     const claimIdCell = row.querySelector('.claim-id-cell');
     const claimId = row.getAttribute('data-claim-id');
-    
+
     if (!isHidden && claimIdCell && claimId) {
       if (claimIdCell.textContent.trim() === '') {
         // Empty cell - fill it in for visibility
@@ -380,9 +623,7 @@ function fillMissingClaimIds() {
     }
   });
 }
-
 // --- Superfluous/Unused Functions (fully commented out) ---
-
 /**
 function extractEncounterDetails(claimEl) {
   const enc = claimEl.querySelector('Encounter');
@@ -407,7 +648,6 @@ function extractEncounterDetails(claimEl) {
   };
 }
 **/
-
 /**
 function extractActivityDetails(claimEl) {
   const act = claimEl.querySelector('Activity');
@@ -424,7 +664,6 @@ function getTextContent(parent, selector) {
   return parent.querySelector(selector)?.textContent.trim() ?? 'N/A';
 }
 **/
-
 /**
 function isSameDay(a, b) {
   return a && b &&
@@ -446,7 +685,6 @@ function computeDuration(start, end) {
   return `${hours}h ${minutes}m`;
 }
 **/
-
 /**
 function validateEncounter(start, end, startType, endType) {
   // Check for missing fields
@@ -462,7 +700,6 @@ function validateEncounter(start, end, startType, endType) {
   return 'Valid';
 }
 **/
-
 /**
 function validateDateAndStatus(row, start) {
   const remarks = [];
@@ -491,7 +728,6 @@ function validateDateAndStatus(row, start) {
   return remarks;
 }
 **/
-
 /**
 function formatDateTimeCell(datetimeStr) {
   if (!datetimeStr) return '';
@@ -506,12 +742,29 @@ function formatDateTimeCell(datetimeStr) {
     // Expose function globally for unified checker
     window.validateTimingsAsync = validateTimingsAsync;
 
-    // Initialize standalone mode if xmlFileInput exists
-    const xmlFileInput = document.getElementById('xmlFileInput');
-    if (xmlFileInput) {
-      xmlFileInput.addEventListener('change', onFileChange);
-    }
+    // Expose test API for Node.js tests
+    window._timingsTestApi = {
+      extractClaims,
+      get97BandForDuration,
+      calculate97DurationRange,
+      SERIES_97_BANDS
+    };
+  // Initialize the legacy file-change handler only on the standalone
+  // Timing checker page. Unified Checker also has xmlFileInput, but it
+  // does not have the standalone results elements.
+  const xmlFileInput = document.getElementById('xmlFileInput');
+  const standaloneResults = document.getElementById('results');
+  const standaloneSummary = document.getElementById('resultsSummary');
 
+  const isStandaloneTimingsPage = Boolean(
+    xmlFileInput
+    && standaloneResults
+    && standaloneSummary
+  );
+
+  if (isStandaloneTimingsPage) {
+    xmlFileInput.addEventListener('change', onFileChange);
+  }
   } catch (error) {
     console.error('[CHECKER-ERROR] Failed to load checker:', error);
     console.error(error.stack);

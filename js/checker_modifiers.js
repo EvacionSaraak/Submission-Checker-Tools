@@ -1,561 +1,2831 @@
-(function() {
-  try {
-    // checker_modifiers.js
-    let lastResults = [];
-    let lastWorkbook = null;
+(function (root) {
+  'use strict';
 
-document.addEventListener('DOMContentLoaded', () => {
-  try {
-    const runBtn = el('run-button');
-    const dlBtn = el('download-button');
-    if (runBtn) runBtn.addEventListener('click', handleRun);
-    if (dlBtn) dlBtn.addEventListener('click', handleDownload);
-    resetUI();
-  } catch (error) {
-    console.error('[MODIFIERS] DOMContentLoaded initialization error:', error);
+  const RECEIVER_CONFIG = Object.freeze({
+    D001: Object.freeze({ insurer: 'Thiqa' }),
+    A001: Object.freeze({ insurer: 'Daman Enhanced' }),
+    D004: Object.freeze({ insurer: 'Daman Basic' })
+  });
+
+  const MODIFIER_RULES = Object.freeze({
+    '24': Object.freeze({ expectedVOI: 'VOI_D', consultationOnly: true }),
+    '25': Object.freeze({ expectedVOI: '', consultationOnly: true }),
+    '50': Object.freeze({ expectedVOI: '', consultationOnly: false }),
+    '52': Object.freeze({ expectedVOI: 'VOI_EF1', consultationOnly: true })
+  });
+
+  const ELIGIBILITY_HEADERS = Object.freeze({
+    member: 'Card Number / DHA Member ID',
+    date: 'Ordered On',
+    clinician: 'Clinician',
+    voi: 'VOI Number'
+  });
+
+  let lastResults = [];
+  let lastWorkbook = null;
+  let standaloneBound = false;
+  let claimIdObserver = null;
+  let claimIdStyleInjected = false;
+
+  function escapeHtml(value) {
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
   }
-});
 
-// ----------------- Main run handler -----------------
-async function handleRun() {
-  resetUI();
-  try {
-    let xmlFile = fileEl('xml-file');
-    let xlsxFile = fileEl('xlsx-file');
-    
-    // Fallback to unified checker files cache
-    if (!xmlFile && window.unifiedCheckerFiles && window.unifiedCheckerFiles.xml) {
-      xmlFile = window.unifiedCheckerFiles.xml;
-      console.log('[MODIFIERS] Using XML file from unified cache:', xmlFile.name);
-    }
-    if (!xlsxFile && window.unifiedCheckerFiles && window.unifiedCheckerFiles.eligibility) {
-      xlsxFile = window.unifiedCheckerFiles.eligibility;
-      console.log('[MODIFIERS] Using eligibility file from unified cache:', xlsxFile.name);
-    }
-    
-    if (!xmlFile || !xlsxFile) throw new Error('Please select both an XML file and an XLSX file.');
-
-    const [xmlText, xlsxObj, minorProceduresRaw] = await Promise.all([
-      readFileText(xmlFile),
-      readXlsx(xlsxFile),
-      fetch('../json/minor_procedures.json').then(r => r.ok ? r.json() : []).catch(() => [])
-    ]);
-    const xmlDoc = parseXml(xmlText);
-    const extracted = extractModifierRecords(xmlDoc);
-    const minorProcedureCodes = new Set((Array.isArray(minorProceduresRaw) ? minorProceduresRaw : [])
-      .map(item => normalizeCode(typeof item === 'string' ? item : (item && item.code) ? item.code : ''))
-      .filter(Boolean));
-    const claimModifierContext = buildClaimModifierContext(extracted, minorProcedureCodes);
-
-    const matcher = buildXlsxMatcher(xlsxObj.rows);
-
-    const output = extracted.map(rec => {
-      const xmlDate = normalizeDate(rec.Date);
-      const match = matcher.find(rec.MemberID, xmlDate, rec.OrderingClinician);
-    
-      const remarks = [];
-    
-      // Determine VOI number: prefer matched eligibility, fallback to XML
-      let voiNumber = '';
-      if (match) {
-        voiNumber = String(match['VOI Number'] || '').trim(); // <-- VOI from eligibility
-      } else {
-        voiNumber = rec.VOINumber || ''; // fallback to XML
-      }
-    
-      // Check Observation Code
-      if (rec.ObsCode !== 'CPT modifier') {
-        remarks.push(`Observation Code incorrect; expected "CPT modifier" but found "${rec.ObsCode}"`);
-      }
-    
-      // Check VOI against modifier
-      const voiNorm = normForCompare(voiNumber);
-      if (rec.Modifier === '52' && voiNorm !== normForCompare('VOI_EF1')) remarks.push(`Modifier 52 does not match VOI (expected VOI_EF1).`);
-      if (rec.Modifier === '24' && voiNorm !== normForCompare('VOI_D')) remarks.push(`Modifier 24 does not match VOI (expected VOI_D).`);
-      if (rec.Quantity !== 1) remarks.push('Qty must be 1 for modifiers.');
-
-      const claimCtx = claimModifierContext.get(rec.ClaimID) || { hasMinorProcedure: false, hasPricedConsultation: false };
-      if ((rec.Modifier === '24' || rec.Modifier === '25' || rec.Modifier === '52') && !isConsultationCode(rec.ActivityCode)) {
-        remarks.push(`Modifier ${rec.Modifier} must only be on consultation codes.`);
-      }
-      if (rec.Modifier === '24' && !normForCompare(voiNumber).includes(normForCompare('Vol D'))) {
-        remarks.push('Modifier 24 requires eligibility containing Vol D.');
-      }
-      if (rec.Modifier === '25') {
-        if (!claimCtx.hasMinorProcedure) remarks.push('Modifier 25 requires a minor procedure in the same claim.');
-        if (!claimCtx.hasPricedConsultation) remarks.push('Modifier 25 requires a consultation code with price in the same claim.');
-      }
-      if (rec.Modifier === '50') {
-        if (!minorProcedureCodes.has(normalizeCode(rec.ActivityCode))) {
-          remarks.push(`Modifier 50 cannot be used on \`${rec.ActivityCode || '(unknown)'}\`.`);
-        }
-      }
-
-      if (!match) remarks.push('No matching eligibility found');
-
-      const payer = String(rec.PayerID || '').trim().toUpperCase();
-      const isUnknownPayer = payer !== 'A001' && payer !== 'D001';
-    
-      return {
-        ClaimID: rec.ClaimID || '',
-        MemberID: rec.MemberID || '',
-        ActivityID: rec.ActivityID || '',
-        OrderingClinician: rec.OrderingClinician || '',
-        Modifier: rec.Modifier || '',
-        ActivityCode: rec.ActivityCode || '',
-        Quantity: rec.Quantity,
-        Net: rec.Net,
-        ObsCode: rec.ObsCode || '',
-        VOINumber: voiNumber,
-        PayerID: rec.PayerID || '',
-        EligibilityRow: match || null,
-        isUnknown: isUnknownPayer,
-        isValid: !isUnknownPayer && remarks.length === 0,
-        Remarks: remarks.map(s => s && !s.endsWith('.') ? s + '.' : s).join('; ')
-      };
-    });
-
-    lastResults = output;
-    const tableElement = buildResultsTable(output);
-    lastWorkbook = makeWorkbookFromJson(output, 'checker_modifiers_results');
-    toggleDownload(output.length > 0);
-
-    // Count valid rows and display percentage (unknown payer rows excluded from percent)
-    const knownRows = output.filter(r => !r.isUnknown);
-    const validCount = knownRows.filter(r => r.isValid).length;
-    const totalCount = knownRows.length;
-    const percent = totalCount ? Math.round((validCount / totalCount) * 100) : 0;
-    message(`Completed — ${validCount}/${totalCount} rows correct (${percent}%)${output.length > knownRows.length ? ` · ${output.length - knownRows.length} unknown payer row(s)` : ''}`, percent === 100 ? 'green' : 'orange');
-
-    return tableElement;
-  } catch (err) {
-    showError(err);
-    return null;
+  function normalizeIdentifier(value) {
+    return String(value == null ? '' : value)
+      .trim()
+      .toUpperCase();
   }
-}
 
-// ----------------- Download -----------------
-function handleDownload() {
-  if (!lastWorkbook || !lastResults.length) { showError(new Error('Nothing to download')); return; }
-  try { XLSX.writeFile(lastWorkbook, 'checker_modifiers_results.xlsx'); }
-  catch(err) { try { XLSX.writeFile(makeWorkbookFromJson(lastResults, 'checker_modifiers_results'), 'checker_modifiers_results.xlsx'); } catch(e) { showError(e); } }
-}
+  function normalizeMemberId(value) {
+    return String(value == null ? '' : value)
+      .trim()
+      .replace(/^0+(?=\d)/, '');
+  }
 
-// ----------------- File helpers -----------------
-function readFileText(file) {
-  return new Promise((resolve, reject) => {
-    const fr = new FileReader();
-    fr.onload = () => resolve(String(fr.result || ''));
-    fr.onerror = () => reject(fr.error || new Error('Failed to read file'));
-    fr.readAsText(file);
-  });
-}
+  function normalizeClinician(value) {
+    return normalizeIdentifier(value)
+      .replace(/\s+/g, '');
+  }
 
-async function readXlsx(file) {
-  const arrayBuffer = await file.arrayBuffer();
-  const wb = XLSX.read(arrayBuffer, { type: 'array' });
-  const sheetName = wb.SheetNames[0];
-  const ws = wb.Sheets[sheetName];
-  // header row is on row 2 in sample -> range:1
-  const rows = XLSX.utils.sheet_to_json(ws, { defval: '', range: 1 });
-  return { rows, sheetName };
-}
+  function normalizeCode(value) {
+    return String(value == null ? '' : value)
+      .trim()
+      .replace(/^0+(?=\d)/, '');
+  }
 
-// ----------------- XML parsing & extraction -----------------
-function parseXml(text) {
-  // Preprocess XML to replace unescaped & with "and" for parseability
-  const xmlContent = text.replace(/&(?!(amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;))/g, "and");
-  const doc = new DOMParser().parseFromString(xmlContent, 'text/xml');
-  const pe = doc.getElementsByTagName('parsererror')[0];
-  if (pe) throw new Error('Invalid XML: ' + (pe.textContent || 'parse error').trim());
-  return doc;
-}
+  function normForCompare(value) {
+    return normalizeIdentifier(value)
+      .replace(/[^A-Z0-9]/g, '');
+  }
 
-// Extract records where Observation contains Code === 'CPT modifier' and Value is '24' or '52'
-// ----------------- XML parsing & extraction -----------------
-function extractModifierRecords(xmlDoc) {
-  const records = [];
-  const claims = Array.from(xmlDoc.getElementsByTagName('Claim'));
+  function isConsultationCode(code) {
+    return /^(92|992)/.test(
+      String(code || '').trim()
+    );
+  }
 
-  claims.forEach(claim => {
-    const claimId = textValue(claim, 'ID');
-    const payerId = textValue(claim, 'PayerID');
-    const memberIdRaw = textValue(claim, 'MemberID');
+  function getDirectChildren(parent, tagName) {
+    if (
+      !parent
+      || !parent.childNodes
+    ) {
+      return [];
+    }
 
-    const encNode = claim.getElementsByTagName('Encounter')[0] || claim.getElementsByTagName('Encounte')[0];
-    const encDateRaw = encNode ? (textValue(encNode, 'Date') || textValue(encNode, 'Start') || textValue(encNode, 'EncounterDate') || '') : '';
-    const encDate = normalizeDate(encDateRaw);
+    return Array.from(
+      parent.childNodes
+    ).filter((node) => {
+      if (
+        !node
+        || node.nodeType !== 1
+      ) {
+        return false;
+      }
 
-    const activities = Array.from(claim.getElementsByTagName('Activity'));
-    activities.forEach(act => {
-      const activityId = textValue(act, 'ID');
-      const clinician = firstNonEmpty([
-        textValue(act, 'OrderingClnician'),
-        textValue(act, 'OrderingClinician'),
-        textValue(act, 'Ordering_Clinician'),
-        textValue(act, 'OrderingClin')
-      ]).trim().toUpperCase();
-
-      const observations = Array.from(act.getElementsByTagName('Observation'));
-      observations.forEach(obs => {
-        const code = textValue(obs, 'Code');
-        const voiVal = textValue(obs, 'Value') || textValue(obs, 'ValueText') || '';
-        const valueType = textValue(obs, 'ValueType') || '';
-
-        // Only accept observations with ValueType of "Modifiers"
-        if (!valueType || valueType.trim().toLowerCase() !== 'modifiers') return;
-
-        const activityCode = textValue(act, 'Code');
-        const quantity = Number(textValue(act, 'Quantity') || '0');
-        const net = Number(textValue(act, 'Net') || '0');
-
-        // Only accept valid modifier values
-        let modifier = '';
-        const voiNorm = (voiVal || '').toUpperCase().replace(/[_\s]/g, '');
-        if (voiNorm === 'VOI_D' || voiNorm === '24') modifier = '24';
-        else if (voiNorm === 'VOI_EF1' || voiNorm === '52') modifier = '52';
-        else if (voiNorm === '25') modifier = '25';
-        else if (voiNorm === '50') modifier = '50';
-        else return; // skip anything else
-
-        // Check for exact Observation Code match
-        const remarks = [];
-        if (code !== 'CPT modifier') {
-          remarks.push(`Observation Code incorrect; expected "CPT modifier" but found "${code}"`);
-        }
-
-        records.push({
-          ClaimID: claimId,
-          ActivityID: activityId,
-          MemberID: normalizeMemberId(memberIdRaw),
-          Date: encDate,
-          OrderingClinician: clinician,
-          Modifier: modifier,
-          ActivityCode: activityCode,
-          Quantity: quantity,
-          Net: net,
-          PayerID: payerId,
-          ObsCode: code,
-          VOINumber: voiVal,
-          Remarks: remarks.map(s => s && !s.endsWith('.') ? s + '.' : s).join('; ')
-        });
-      });
+      return (
+        node.localName
+        || node.nodeName
+      ) === tagName;
     });
-  });
+  }
 
-  // Deduplicate rows based on key
-  const seen = new Set();
-  return records.filter(r => {
-    const key = [r.ClaimID, r.ActivityID, r.MemberID, r.Modifier, r.ObsCode].join('|');
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
+  function getDirectChildText(parent, tagName) {
+    const child =
+      getDirectChildren(
+        parent,
+        tagName
+      )[0];
 
-// ----------------- XLSX matcher -----------------
-function buildXlsxMatcher(rows) {
-  const index = new Map();
+    return child
+      ? String(
+          child.textContent || ''
+        ).trim()
+      : '';
+  }
 
-  // Build index
-  rows.forEach(r => {
-    const member = normalizeMemberId(String(r['Card Number / DHA Member ID'] || ''));
-    const date = normalizeDate(String(r['Ordered On'] || ''));
-    const clinician = String(r['Clinician'] || '').trim().toUpperCase();
-    r._VOINumber = String(r['VOI Number'] || '').trim();
-    r._used = false; // add used flag
+  function firstDirectChildText(
+    parent,
+    tagNames
+  ) {
+    for (
+      const tagName
+      of tagNames
+    ) {
+      const value =
+        getDirectChildText(
+          parent,
+          tagName
+        );
 
-    const key = [member, date, clinician].join('|');
-    if (!index.has(key)) index.set(key, []);
-    index.get(key).push(r);
-  });
-
-  return {
-    find(memberId, date, clinicianLicense) {
-      const normalizedMember = normalizeMemberId(memberId);
-      const normalizedDate = normalizeDate(date);
-      const normalizedClinician = String(clinicianLicense || '').trim().toUpperCase();
-
-      const fullKey = [normalizedMember, normalizedDate, normalizedClinician].join('|');
-      const arr = index.get(fullKey);
-
-      if (arr && arr.length) {
-        // find first unused eligibility
-        const eligibleRow = arr.find(r => !r._used);
-        if (eligibleRow) {
-          eligibleRow._used = true; // mark as used
-          console.log(`[MATCH] Full match found for Member: ${memberId}, Clinician: ${clinicianLicense}, Date: ${date}`);
-          return eligibleRow;
-        }
+      if (value) {
+        return value;
       }
+    }
 
-      // Partial match logging (member+clinician, date mismatch)
-      const partialKeyPattern = new RegExp(`^${escapeRegex(normalizedMember)}\\|.*\\|${escapeRegex(normalizedClinician)}$`);
-      for (const k of index.keys()) {
-        if (partialKeyPattern.test(k)) {
-          console.warn(`[PARTIAL MATCH] Member and Clinician matched but date mismatch. XML date: ${date}, XLSX key: ${k}`);
-          break;
-        }
+    return '';
+  }
+
+  function getModifierContainer() {
+    return document.getElementById(
+      'checker-container-modifiers'
+    );
+  }
+
+  function getScopedElement(id) {
+    const container =
+      getModifierContainer();
+
+    return (
+      (
+        container
+        && container.querySelector(
+          `#${id}`
+        )
+      )
+      || document.getElementById(id)
+    );
+  }
+
+  function resolveInputFile(
+    id,
+    cacheKey,
+    explicitFile
+  ) {
+    if (explicitFile) {
+      return explicitFile;
+    }
+
+    const input =
+      getScopedElement(id);
+
+    return (
+      input?.files?.[0]
+      || root.unifiedCheckerFiles?.[
+        cacheKey
+      ]
+      || null
+    );
+  }
+
+  function updateMessage(
+    text,
+    isError
+  ) {
+    const messageBox =
+      getScopedElement(
+        'messageBox'
+      );
+
+    if (!messageBox) {
+      return;
+    }
+
+    messageBox.textContent =
+      text || '';
+
+    messageBox.style.color =
+      isError
+        ? '#b42318'
+        : '';
+  }
+
+  function updateDownloadButton() {
+    const button =
+      getScopedElement(
+        'download-button'
+      );
+
+    if (!button) {
+      return;
+    }
+
+    button.disabled =
+      lastResults.length === 0;
+
+    button.style.display =
+      lastResults.length
+        ? ''
+        : 'none';
+  }
+
+  async function readFileText(file) {
+    if (!file) {
+      throw new Error(
+        'XML file is missing.'
+      );
+    }
+
+    if (
+      typeof file.text
+      === 'function'
+    ) {
+      return file.text();
+    }
+
+    return new Promise(
+      (resolve, reject) => {
+        const reader =
+          new FileReader();
+
+        reader.onload = () => {
+          resolve(
+            String(
+              reader.result || ''
+            )
+          );
+        };
+
+        reader.onerror = () => {
+          reject(
+            reader.error
+            || new Error(
+              'Failed to read XML file.'
+            )
+          );
+        };
+
+        reader.readAsText(file);
       }
+    );
+  }
 
+  async function readFileArrayBuffer(file) {
+    if (!file) {
+      throw new Error(
+        'Eligibility workbook is missing.'
+      );
+    }
+
+    if (
+      typeof file.arrayBuffer
+      === 'function'
+    ) {
+      return file.arrayBuffer();
+    }
+
+    return new Promise(
+      (resolve, reject) => {
+        const reader =
+          new FileReader();
+
+        reader.onload = () => {
+          resolve(reader.result);
+        };
+
+        reader.onerror = () => {
+          reject(
+            reader.error
+            || new Error(
+              'Failed to read eligibility workbook.'
+            )
+          );
+        };
+
+        reader.readAsArrayBuffer(
+          file
+        );
+      }
+    );
+  }
+
+  function parseXml(text) {
+    const safeXml =
+      String(text || '').replace(
+        /&(?!(amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;))/g,
+        'and'
+      );
+
+    const xmlDoc =
+      new DOMParser()
+        .parseFromString(
+          safeXml,
+          'application/xml'
+        );
+
+    const parserError =
+      xmlDoc.getElementsByTagName(
+        'parsererror'
+      )[0];
+
+    if (parserError) {
+      throw new Error(
+        `Invalid XML: ${
+          String(
+            parserError.textContent
+            || 'parse error'
+          ).trim()
+        }`
+      );
+    }
+
+    if (
+      !xmlDoc.documentElement
+      || xmlDoc.documentElement
+        .nodeName !==
+        'Claim.Submission'
+    ) {
+      throw new Error(
+        'Modifier checker requires a Claim.Submission XML file.'
+      );
+    }
+
+    return xmlDoc;
+  }
+
+  function excelSerialToDate(serial) {
+    if (!Number.isFinite(serial)) {
       return null;
-    },
+    }
 
-    _index: index // expose index for debugging
-  };
-}
+    if (
+      root.XLSX
+        ?.SSF
+        ?.parse_date_code
+    ) {
+      const parsed =
+        root.XLSX.SSF
+          .parse_date_code(
+            serial
+          );
 
-// ----------------- Validation / business rules -----------------
-function isModifierTarget(val) { const v = String(val || '').trim(); return v === '24' || v === '25' || v === '50' || v === '52'; }
-function normForCompare(s) { return String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
-function escapeRegex(s) { return String(s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
-function isConsultationCode(code) { return /^(92|992)/.test(String(code || '').trim()); }
-function normalizeCode(code) { return String(code || '').trim().replace(/^0+/, ''); }
+      if (parsed) {
+        return new Date(
+          Date.UTC(
+            parsed.y,
+            parsed.m - 1,
+            parsed.d
+          )
+        );
+      }
+    }
 
-function buildClaimModifierContext(records, minorProcedureCodes) {
-  const byClaim = new Map();
-  (records || []).forEach(rec => {
-    if (!byClaim.has(rec.ClaimID)) {
-      byClaim.set(rec.ClaimID, {
-        hasMinorProcedure: false,
-        hasPricedConsultation: false
+    return new Date(
+      Math.round(
+        (
+          serial
+          - 25569
+        )
+        * 86400
+        * 1000
+      )
+    );
+  }
+
+  function dateToKey(date) {
+    if (
+      !(date instanceof Date)
+      || Number.isNaN(
+        date.getTime()
+      )
+    ) {
+      return '';
+    }
+
+    const year =
+      date.getUTCFullYear();
+
+    const month =
+      String(
+        date.getUTCMonth() + 1
+      ).padStart(2, '0');
+
+    const day =
+      String(
+        date.getUTCDate()
+      ).padStart(2, '0');
+
+    return (
+      `${year}-`
+      + `${month}-`
+      + day
+    );
+  }
+
+  function normalizeDate(value) {
+    if (
+      value == null
+      || value === ''
+    ) {
+      return '';
+    }
+
+    if (
+      value instanceof Date
+    ) {
+      return dateToKey(value);
+    }
+
+    if (
+      typeof value
+      === 'number'
+    ) {
+      const parsed =
+        excelSerialToDate(
+          value
+        );
+
+      return parsed
+        ? dateToKey(parsed)
+        : '';
+    }
+
+    const raw =
+      String(value).trim();
+
+    if (!raw) {
+      return '';
+    }
+
+    const dateOnly =
+      raw.split(/[ T]/)[0];
+
+    let match =
+      dateOnly.match(
+        /^(\d{4})[-\/]([01]?\d)[-\/]([0-3]?\d)$/
+      );
+
+    if (match) {
+      return (
+        `${match[1]}-`
+        + `${String(
+          Number(match[2])
+        ).padStart(2, '0')}-`
+        + String(
+          Number(match[3])
+        ).padStart(2, '0')
+      );
+    }
+
+    match =
+      dateOnly.match(
+        /^([0-3]?\d)[-\/]([01]?\d)[-\/](\d{2}|\d{4})$/
+      );
+
+    if (match) {
+      const year =
+        match[3].length === 2
+          ? (
+              2000
+              + Number(match[3])
+            )
+          : Number(match[3]);
+
+      return (
+        `${year}-`
+        + `${String(
+          Number(match[2])
+        ).padStart(2, '0')}-`
+        + String(
+          Number(match[1])
+        ).padStart(2, '0')
+      );
+    }
+
+    const parsed =
+      new Date(raw);
+
+    return Number.isNaN(
+      parsed.getTime()
+    )
+      ? ''
+      : dateToKey(parsed);
+  }
+
+  function resolveExactHeader(
+    headers,
+    requiredName
+  ) {
+    const expected =
+      String(requiredName)
+        .trim()
+        .toLowerCase();
+
+    return (
+      headers.find(
+        (header) =>
+          String(header)
+            .trim()
+            .toLowerCase()
+          === expected
+      )
+      || null
+    );
+  }
+
+  function parseEligibilityWorkbook(
+    workbookFile,
+    arrayBuffer
+  ) {
+    if (
+      !root.XLSX
+      || typeof root.XLSX.read
+        !== 'function'
+    ) {
+      throw new Error(
+        'SheetJS (XLSX) is unavailable.'
+      );
+    }
+
+    const workbook =
+      root.XLSX.read(
+        arrayBuffer,
+        {
+          type: 'array',
+          cellDates: true
+        }
+      );
+
+    const sheetName =
+      workbook.SheetNames?.[0];
+
+    if (!sheetName) {
+      throw new Error(
+        'Eligibility workbook contains no worksheet.'
+      );
+    }
+
+    const worksheet =
+      workbook.Sheets[
+        sheetName
+      ];
+
+    /*
+     * Established eligibility format:
+     * headers are located on Excel row 2.
+     */
+    const sourceRows =
+      root.XLSX.utils
+        .sheet_to_json(
+          worksheet,
+          {
+            defval: '',
+            range: 1,
+            raw: true,
+            blankrows: false
+          }
+        );
+
+    if (!sourceRows.length) {
+      throw new Error(
+        'Eligibility workbook contains no data rows.'
+      );
+    }
+
+    const headers =
+      Array.from(
+        new Set(
+          sourceRows.flatMap(
+            (row) =>
+              Object.keys(
+                row || {}
+              )
+          )
+        )
+      );
+
+    const memberHeader =
+      resolveExactHeader(
+        headers,
+        ELIGIBILITY_HEADERS.member
+      );
+
+    const dateHeader =
+      resolveExactHeader(
+        headers,
+        ELIGIBILITY_HEADERS.date
+      );
+
+    const clinicianHeader =
+      resolveExactHeader(
+        headers,
+        ELIGIBILITY_HEADERS.clinician
+      );
+
+    const voiHeader =
+      resolveExactHeader(
+        headers,
+        ELIGIBILITY_HEADERS.voi
+      );
+
+    const missing = [];
+
+    if (!memberHeader) {
+      missing.push(
+        ELIGIBILITY_HEADERS.member
+      );
+    }
+
+    if (!dateHeader) {
+      missing.push(
+        ELIGIBILITY_HEADERS.date
+      );
+    }
+
+    if (!clinicianHeader) {
+      missing.push(
+        ELIGIBILITY_HEADERS.clinician
+      );
+    }
+
+    if (!voiHeader) {
+      missing.push(
+        ELIGIBILITY_HEADERS.voi
+      );
+    }
+
+    if (missing.length) {
+      throw new Error(
+        `Eligibility workbook is missing required column${
+          missing.length === 1
+            ? ''
+            : 's'
+        }: ${missing.join(', ')}.`
+      );
+    }
+
+    const rows =
+      sourceRows.map(
+        (
+          sourceRow,
+          index
+        ) => ({
+          sourceRow,
+          sheetName,
+
+          /*
+           * Headers are row 2, therefore
+           * the first data row is row 3.
+           */
+          sheetRowNumber:
+            index + 3,
+
+          memberID:
+            normalizeMemberId(
+              sourceRow[
+                memberHeader
+              ]
+            ),
+
+          orderedOn:
+            normalizeDate(
+              sourceRow[
+                dateHeader
+              ]
+            ),
+
+          clinician:
+            normalizeClinician(
+              sourceRow[
+                clinicianHeader
+              ]
+            ),
+
+          voiNumber:
+            String(
+              sourceRow[
+                voiHeader
+              ] == null
+                ? ''
+                : sourceRow[
+                    voiHeader
+                  ]
+            ).trim(),
+
+          used: false
+        })
+      );
+
+    return {
+      workbook,
+      sheetName,
+      rows
+    };
+  }
+
+  function buildEligibilityMatcher(rows) {
+    const index =
+      new Map();
+
+    const claimCache =
+      new Map();
+
+    for (const row of rows) {
+      const key = [
+        row.memberID,
+        row.orderedOn,
+        row.clinician
+      ].join('|');
+
+      if (!index.has(key)) {
+        index.set(
+          key,
+          []
+        );
+      }
+
+      index.get(key).push(row);
+    }
+
+    function findUnusedExact(
+      memberID,
+      orderedOn,
+      orderingClinician
+    ) {
+      const key = [
+        normalizeMemberId(
+          memberID
+        ),
+
+        normalizeDate(
+          orderedOn
+        ),
+
+        normalizeClinician(
+          orderingClinician
+        )
+      ].join('|');
+
+      const candidates =
+        index.get(key) || [];
+
+      return (
+        candidates.find(
+          (row) =>
+            !row.used
+        )
+        || null
+      );
+    }
+
+    return {
+      /*
+       * One eligibility row is assigned to
+       * one Claim ID.
+       *
+       * Every modifier activity inside that
+       * claim reuses the same matched row.
+       */
+      findForClaim(
+        claimID,
+        memberID,
+        orderedOn,
+        orderingClinicians
+      ) {
+        const normalizedClaimID =
+          String(
+            claimID || ''
+          ).trim();
+
+        if (
+          claimCache.has(
+            normalizedClaimID
+          )
+        ) {
+          return claimCache.get(
+            normalizedClaimID
+          );
+        }
+
+        const clinicians =
+          Array.from(
+            new Set(
+              (
+                Array.isArray(
+                  orderingClinicians
+                )
+                  ? orderingClinicians
+                  : [
+                      orderingClinicians
+                    ]
+              )
+                .map(
+                  normalizeClinician
+                )
+                .filter(Boolean)
+            )
+          );
+
+        let match = null;
+
+        for (
+          const clinician
+          of clinicians
+        ) {
+          match =
+            findUnusedExact(
+              memberID,
+              orderedOn,
+              clinician
+            );
+
+          if (match) {
+            break;
+          }
+        }
+
+        /*
+         * Consume the eligibility row once
+         * for the entire claim.
+         */
+        if (match) {
+          match.used = true;
+        }
+
+        /*
+         * Cache null as well. This prevents
+         * contradictory rows where one
+         * activity says no eligibility but
+         * another activity in the same claim
+         * finds one later.
+         */
+        claimCache.set(
+          normalizedClaimID,
+          match
+        );
+
+        return match;
+      },
+
+      getClaimMatch(claimID) {
+        const normalizedClaimID =
+          String(
+            claimID || ''
+          ).trim();
+
+        return claimCache.has(
+          normalizedClaimID
+        )
+          ? claimCache.get(
+              normalizedClaimID
+            )
+          : undefined;
+      },
+
+      index,
+      claimCache
+    };
+  }
+
+  function resolveClaimEligibilityMatches(
+    records,
+    claimActivities,
+    matcher
+  ) {
+    const recordsByClaim =
+      new Map();
+
+    for (const record of records) {
+      if (
+        !recordsByClaim.has(
+          record.ClaimID
+        )
+      ) {
+        recordsByClaim.set(
+          record.ClaimID,
+          []
+        );
+      }
+
+      recordsByClaim
+        .get(record.ClaimID)
+        .push(record);
+    }
+
+    const matches =
+      new Map();
+
+    for (
+      const [
+        claimID,
+        claimRecords
+      ]
+      of recordsByClaim.entries()
+    ) {
+      const firstRecord =
+        claimRecords[0];
+
+      /*
+       * Match using the exact established:
+       *
+       * Member ID
+       * + Encounter date
+       * + Ordering Clinician
+       *
+       * Try all Ordering Clinicians appearing
+       * in the claim before declaring that the
+       * claim has no eligibility.
+       */
+      const orderingClinicians = [
+        ...claimRecords.map(
+          (record) =>
+            record.OrderingClinician
+        ),
+
+        ...(
+          claimActivities.get(
+            claimID
+          )
+          || []
+        ).map(
+          (activity) =>
+            activity.orderingClinician
+        )
+      ];
+
+      const match =
+        matcher.findForClaim(
+          claimID,
+          firstRecord.MemberID,
+          firstRecord.Date,
+          orderingClinicians
+        );
+
+      matches.set(
+        claimID,
+        match
+      );
+    }
+
+    return matches;
+  }
+
+  function parseModifierValue(
+    rawValue
+  ) {
+    const normalized =
+      normForCompare(rawValue);
+
+    if (
+      normalized === '24'
+      || normalized === 'VOID'
+      || normalized === 'VOLD'
+    ) {
+      return '24';
+    }
+
+    if (normalized === '25') {
+      return '25';
+    }
+
+    if (normalized === '50') {
+      return '50';
+    }
+
+    if (
+      normalized === '52'
+      || normalized === 'VOIEF1'
+    ) {
+      return '52';
+    }
+
+    return '';
+  }
+
+  function collectXmlData(xmlDoc) {
+    const rootElement =
+      xmlDoc.documentElement;
+
+    const header =
+      getDirectChildren(
+        rootElement,
+        'Header'
+      )[0];
+
+    /*
+     * Insurer routing uses Header ReceiverID.
+     * Claim-level PayerID remains separate.
+     */
+    const receiverID =
+      normalizeIdentifier(
+        getDirectChildText(
+          header,
+          'ReceiverID'
+        )
+      );
+
+    const receiver =
+      RECEIVER_CONFIG[
+        receiverID
+      ]
+      || null;
+
+    const records = [];
+    const claimActivities =
+      new Map();
+
+    for (
+      const claim
+      of getDirectChildren(
+        rootElement,
+        'Claim'
+      )
+    ) {
+      const claimID =
+        getDirectChildText(
+          claim,
+          'ID'
+        )
+        || 'Unknown';
+
+      const memberID =
+        normalizeMemberId(
+          getDirectChildText(
+            claim,
+            'MemberID'
+          )
+        );
+
+      const claimPayerID =
+        normalizeIdentifier(
+          getDirectChildText(
+            claim,
+            'PayerID'
+          )
+        );
+
+      const encounter =
+        getDirectChildren(
+          claim,
+          'Encounter'
+        )[0]
+        || getDirectChildren(
+          claim,
+          'Encounte'
+        )[0];
+
+      const encounterDate =
+        normalizeDate(
+          firstDirectChildText(
+            encounter,
+            [
+              'Date',
+              'Start',
+              'EncounterDate'
+            ]
+          )
+        );
+
+      const activities = [];
+
+      for (
+        const activity
+        of getDirectChildren(
+          claim,
+          'Activity'
+        )
+      ) {
+        const activityID =
+          getDirectChildText(
+            activity,
+            'ID'
+          );
+
+        const activityCode =
+          getDirectChildText(
+            activity,
+            'Code'
+          );
+
+        const quantity =
+          Number(
+            getDirectChildText(
+              activity,
+              'Quantity'
+            )
+            || 0
+          );
+
+        const net =
+          Number(
+            getDirectChildText(
+              activity,
+              'Net'
+            )
+            || 0
+          );
+
+        const orderingClinicianRaw =
+          firstDirectChildText(
+            activity,
+            [
+              'OrderingClnician',
+              'OrderingClinician',
+              'Ordering_Clinician',
+              'OrderingClin'
+            ]
+          );
+
+        const orderingClinician =
+          normalizeClinician(
+            orderingClinicianRaw
+          );
+
+        activities.push({
+          claimID,
+          activityID,
+          activityCode,
+          quantity,
+          net,
+          orderingClinician,
+          orderingClinicianRaw
+        });
+
+        for (
+          const observation
+          of getDirectChildren(
+            activity,
+            'Observation'
+          )
+        ) {
+          const valueType =
+            getDirectChildText(
+              observation,
+              'ValueType'
+            );
+
+          /*
+           * Only observations explicitly marked
+           * as Modifiers may be processed here.
+           *
+           * LOINC values such as 24, 25, 50 or
+           * 52 are not CPT modifiers.
+           */
+          if (
+            String(
+              valueType || ''
+            )
+              .trim()
+              .toLowerCase()
+            !== 'modifiers'
+          ) {
+            continue;
+          }
+
+          const rawValue =
+            firstDirectChildText(
+              observation,
+              [
+                'Value',
+                'ValueText'
+              ]
+            );
+
+          const modifier =
+            parseModifierValue(
+              rawValue
+            );
+
+          if (
+            !modifier
+            || !MODIFIER_RULES[
+              modifier
+            ]
+          ) {
+            continue;
+          }
+
+          const observationCode =
+            getDirectChildText(
+              observation,
+              'Code'
+            );
+
+          records.push({
+            ClaimID:
+              claimID,
+
+            MemberID:
+              memberID,
+
+            ActivityID:
+              activityID,
+
+            Date:
+              encounterDate,
+
+            OrderingClinician:
+              orderingClinician,
+
+            OrderingClinicianRaw:
+              orderingClinicianRaw,
+
+            Modifier:
+              modifier,
+
+            ActivityCode:
+              activityCode,
+
+            Quantity:
+              quantity,
+
+            Net:
+              net,
+
+            ReceiverID:
+              receiverID,
+
+            PayerID:
+              claimPayerID,
+
+            Insurer:
+              receiver?.insurer
+              || 'Unknown',
+
+            ObsCode:
+              observationCode,
+
+            ObsValueType:
+              valueType,
+
+            VOINumber:
+              String(
+                rawValue || ''
+              ).trim()
+          });
+        }
+      }
+
+      claimActivities.set(
+        claimID,
+        activities
+      );
+    }
+
+    const seen =
+      new Set();
+
+    const uniqueRecords =
+      records.filter(
+        (record) => {
+          const key = [
+            record.ClaimID,
+            record.ActivityID,
+            record.MemberID,
+            record.Modifier,
+            record.ObsCode
+          ].join('|');
+
+          if (seen.has(key)) {
+            return false;
+          }
+
+          seen.add(key);
+          return true;
+        }
+      );
+
+    return {
+      receiverID,
+      receiver,
+      records:
+        uniqueRecords,
+      claimActivities
+    };
+  }
+
+  function buildClaimModifierContext(
+    claimActivities,
+    minorProcedureCodes
+  ) {
+    const context =
+      new Map();
+
+    for (
+      const [
+        claimID,
+        activities
+      ]
+      of claimActivities.entries()
+    ) {
+      const claimContext = {
+        hasMinorProcedure:
+          false,
+
+        hasPricedConsultation:
+          false
+      };
+
+      for (
+        const activity
+        of activities
+      ) {
+        const normalizedActivityCode =
+          normalizeCode(
+            activity.activityCode
+          );
+
+        if (
+          minorProcedureCodes.has(
+            normalizedActivityCode
+          )
+        ) {
+          claimContext
+            .hasMinorProcedure =
+              true;
+        }
+
+        if (
+          isConsultationCode(
+            activity.activityCode
+          )
+          && Number(
+            activity.net || 0
+          ) > 0
+        ) {
+          claimContext
+            .hasPricedConsultation =
+              true;
+        }
+      }
+
+      context.set(
+        claimID,
+        claimContext
+      );
+    }
+
+    return context;
+  }
+
+  function voiMatchesModifier(
+    modifier,
+    voiNumber
+  ) {
+    const normalized =
+      normForCompare(
+        voiNumber
+      );
+
+    if (modifier === '24') {
+      return (
+        normalized === '24'
+        || normalized.includes(
+          'VOID'
+        )
+        || normalized.includes(
+          'VOLD'
+        )
+      );
+    }
+
+    if (modifier === '52') {
+      return (
+        normalized === '52'
+        || normalized.includes(
+          'VOIEF1'
+        )
+      );
+    }
+
+    return true;
+  }
+
+  function analyzeRecord(
+    record,
+    eligibilityMatch,
+    receiver,
+    claimContext,
+    minorProcedureCodes
+  ) {
+    const remarks = [];
+    let unknownPayer = false;
+
+    if (!record.ReceiverID) {
+      unknownPayer = true;
+
+      remarks.push(
+        'ReceiverID is missing from the XML Header; modifier payer rules could not be determined.'
+      );
+    } else if (!receiver) {
+      unknownPayer = true;
+
+      remarks.push(
+        `Modifier rules are not configured for ReceiverID ${record.ReceiverID}.`
+      );
+    }
+
+    /*
+     * This is only checked after ValueType
+     * has already been confirmed as Modifiers.
+     */
+    if (
+      record.ObsCode
+      !== 'CPT modifier'
+    ) {
+      remarks.push(
+        'Observation Code incorrect; '
+        + 'expected "CPT modifier" '
+        + `but found "${
+          record.ObsCode
+          || '(blank)'
+        }".`
+      );
+    }
+
+    /*
+     * All modifier activities in this claim
+     * receive the same eligibilityMatch object.
+     */
+    const voiNumber =
+      eligibilityMatch
+        ? String(
+            eligibilityMatch
+              .voiNumber
+            || ''
+          ).trim()
+        : String(
+            record.VOINumber
+            || ''
+          ).trim();
+
+    if (!eligibilityMatch) {
+      remarks.push(
+        'No matching eligibility found.'
+      );
+    }
+
+    const rule =
+      MODIFIER_RULES[
+        record.Modifier
+      ];
+
+    if (
+      record.Modifier === '24'
+      || record.Modifier === '52'
+    ) {
+      if (
+        !voiMatchesModifier(
+          record.Modifier,
+          voiNumber
+        )
+      ) {
+        remarks.push(
+          `Modifier ${record.Modifier} `
+          + 'does not match VOI '
+          + `(expected ${
+            rule.expectedVOI
+          }).`
+        );
+      }
+    }
+
+    if (
+      Number(record.Quantity)
+      !== 1
+    ) {
+      remarks.push(
+        'Qty must be 1 for modifiers.'
+      );
+    }
+
+    if (
+      rule.consultationOnly
+      && !isConsultationCode(
+        record.ActivityCode
+      )
+    ) {
+      remarks.push(
+        `Modifier ${record.Modifier} `
+        + 'must only be on '
+        + 'consultation codes.'
+      );
+    }
+
+    const currentClaimContext =
+      claimContext.get(
+        record.ClaimID
+      )
+      || {
+        hasMinorProcedure:
+          false,
+
+        hasPricedConsultation:
+          false
+      };
+
+    if (
+      record.Modifier === '25'
+    ) {
+      if (
+        !currentClaimContext
+          .hasMinorProcedure
+      ) {
+        remarks.push(
+          'Modifier 25 requires a minor procedure in the same claim.'
+        );
+      }
+
+      if (
+        !currentClaimContext
+          .hasPricedConsultation
+      ) {
+        remarks.push(
+          'Modifier 25 requires a consultation code with price in the same claim.'
+        );
+      }
+    }
+
+    if (
+      record.Modifier === '50'
+      && !minorProcedureCodes.has(
+        normalizeCode(
+          record.ActivityCode
+        )
+      )
+    ) {
+      remarks.push(
+        `Modifier 50 cannot be used on \`${
+          record.ActivityCode
+          || '(unknown)'
+        }\`.`
+      );
+    }
+
+    let status = 'Valid';
+
+    const substantiveRemarks =
+      remarks.filter(
+        (remark) =>
+          !remark.startsWith(
+            'ReceiverID is missing'
+          )
+          && !remark.startsWith(
+            'Modifier rules are not configured'
+          )
+      );
+
+    if (
+      substantiveRemarks.length
+    ) {
+      status = 'Invalid';
+    } else if (unknownPayer) {
+      status = 'Unknown';
+    }
+
+    return {
+      ...record,
+
+      VOINumber:
+        voiNumber,
+
+      EligibilityRow:
+        eligibilityMatch
+          ?.sourceRow
+        || null,
+
+      EligibilitySheet:
+        eligibilityMatch
+          ?.sheetName
+        || '',
+
+      EligibilityRowNumber:
+        eligibilityMatch
+          ?.sheetRowNumber
+        || '',
+
+      Status:
+        status,
+
+      valid:
+        status === 'Valid',
+
+      Remarks:
+        remarks.join(' ')
+        || 'OK'
+    };
+  }
+
+  function ensureClaimIdFormattingStyle() {
+    if (claimIdStyleInjected) {
+      return;
+    }
+
+    const style =
+      document.createElement(
+        'style'
+      );
+
+    style.id =
+      'modifier-claim-id-formatting-style';
+
+    style.textContent = `
+      .modifier-results-table
+      .claim-id-cell.restored-claim-id {
+        color: #666;
+        font-style: italic;
+      }
+    `;
+
+    document.head.appendChild(
+      style
+    );
+
+    claimIdStyleInjected = true;
+  }
+
+  function isRowVisible(row) {
+    if (!row) {
+      return false;
+    }
+
+    if (row.hidden) {
+      return false;
+    }
+
+    if (
+      row.style.display
+      === 'none'
+    ) {
+      return false;
+    }
+
+    return (
+      getComputedStyle(row)
+        .display
+      !== 'none'
+    );
+  }
+
+  function refreshModifierClaimIds(scope) {
+    const rootScope =
+      scope || document;
+
+    const tables =
+      rootScope.matches
+        ?.(
+          '.modifier-results-table'
+        )
+        ? [rootScope]
+        : Array.from(
+            rootScope.querySelectorAll
+              ?.(
+                '.modifier-results-table'
+              )
+            || []
+          );
+
+    for (const table of tables) {
+      let lastVisibleClaimID =
+        null;
+
+      const rows =
+        Array.from(
+          table.querySelectorAll(
+            'tbody tr[data-claim-id]'
+          )
+        );
+
+      for (const row of rows) {
+        const claimID =
+          row.dataset.claimId
+          || '';
+
+        const cell =
+          row.querySelector(
+            '.claim-id-cell'
+          );
+
+        if (!cell) {
+          continue;
+        }
+
+        if (!isRowVisible(row)) {
+          continue;
+        }
+
+        /*
+         * Show the Claim ID on the first
+         * currently visible row of each claim.
+         */
+        const shouldShow =
+          claimID
+          && claimID
+            !== lastVisibleClaimID;
+
+        cell.textContent =
+          shouldShow
+            ? claimID
+            : '';
+
+        const wasOriginallyShown =
+          row.dataset
+            .originalClaimVisible
+          === 'true';
+
+        /*
+         * Match Auth checker formatting:
+         * restored IDs are gray and italic.
+         */
+        cell.classList.toggle(
+          'restored-claim-id',
+          Boolean(
+            shouldShow
+            && !wasOriginallyShown
+          )
+        );
+
+        if (claimID) {
+          lastVisibleClaimID =
+            claimID;
+        }
+      }
+    }
+  }
+
+  function installModifierClaimIdObserver() {
+    ensureClaimIdFormattingStyle();
+
+    if (claimIdObserver) {
+      return;
+    }
+
+    let refreshQueued = false;
+
+    const queueRefresh = () => {
+      if (refreshQueued) {
+        return;
+      }
+
+      refreshQueued = true;
+
+      requestAnimationFrame(() => {
+        refreshQueued = false;
+
+        refreshModifierClaimIds(
+          document
+        );
       });
-    }
-    const ctx = byClaim.get(rec.ClaimID);
-    const activityCode = normalizeCode(rec.ActivityCode);
-    if (minorProcedureCodes.has(activityCode)) ctx.hasMinorProcedure = true;
-    if (isConsultationCode(rec.ActivityCode) && Number(rec.Net || 0) > 0) ctx.hasPricedConsultation = true;
-  });
-  return byClaim;
-}
-function expectedModifierForVOI(voi) {
-  if (!voi) return '';
-  const v = String(voi || '').toUpperCase().replace(/[_\s]/g, '');
-  if (v === 'VOID') return '24';      // VOI_D
-  if (v === 'VOIEF1') return '52';    // VOI_EF1
-  return '';
-}
+    };
 
-// ----------------- Rendering -----------------
-function buildResultsTable(rows) {
-  if (!rows || !rows.length) {
-    const emptyDiv = document.createElement('div');
-    emptyDiv.textContent = 'No results';
-    return emptyDiv;
+    claimIdObserver =
+      new MutationObserver(
+        (mutations) => {
+          const relevant =
+            mutations.some(
+              (mutation) => {
+                if (
+                  mutation.type
+                  === 'childList'
+                ) {
+                  return Array.from(
+                    mutation.addedNodes
+                    || []
+                  ).some(
+                    (node) =>
+                      node.nodeType === 1
+                      && (
+                        node.matches
+                          ?.(
+                            '.modifier-results-table, .modifier-results-table *'
+                          )
+                        || node.querySelector
+                          ?.(
+                            '.modifier-results-table'
+                          )
+                      )
+                  );
+                }
+
+                if (
+                  mutation.type
+                  === 'attributes'
+                ) {
+                  const element =
+                    mutation.target;
+
+                  return (
+                    element?.nodeType
+                    === 1
+                    && (
+                      element.matches
+                        ?.(
+                          '.modifier-results-table tbody tr'
+                        )
+                      || element.closest
+                        ?.(
+                          '.modifier-results-table'
+                        )
+                    )
+                  );
+                }
+
+                return false;
+              }
+            );
+
+          if (relevant) {
+            queueRefresh();
+          }
+        }
+      );
+
+    claimIdObserver.observe(
+      document.body,
+      {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        attributeFilter: [
+          'style',
+          'hidden'
+        ]
+      }
+    );
   }
 
-  console.info('[DEBUG] total rows from mapping:', rows.length);
-  const payerSet = new Set(rows.map(r => String(r.PayerID || '').trim().toUpperCase()).filter(x => x));
-  console.info('[DEBUG] unique Payer IDs in results:', Array.from(payerSet).join(', ') || '(none)');
+  function createResultsWrapper(
+    results,
+    context
+  ) {
+    installModifierClaimIdObserver();
 
-  // Show all rows; assign an _originalIndex for modal linking
-  rows.forEach((r, i) => { r._originalIndex = i; });
+    const wrapper =
+      document.createElement(
+        'div'
+      );
 
-  const container = document.createElement('div');
-  let prevClaimId = null, prevMemberId = null, prevActivityId = null;
+    wrapper.className =
+      'modifier-checker-results';
 
-  let html = `<table class="table table-striped table-bordered" style="width:100%;border-collapse:collapse">
-    <thead>
-      <tr>
-        <th style="padding:8px;border:1px solid #ccc">Claim ID</th>
-        <th style="padding:8px;border:1px solid #ccc">Member ID</th>
-        <th style="padding:8px;border:1px solid #ccc">Activity ID</th>
-        <th style="padding:8px;border:1px solid #ccc">Ordering Clinician</th>
-        <th style="padding:8px;border:1px solid #ccc">Observation Code</th>
-        <th style="padding:8px;border:1px solid #ccc">Observation CPT Modifier</th>
-        <th style="padding:8px;border:1px solid #ccc">VOI Number</th>
-        <th style="padding:8px;border:1px solid #ccc">Payer ID</th>
-        <th style="padding:8px;border:1px solid #ccc">Remarks</th>
-        <th style="padding:8px;border:1px solid #ccc">Eligibility Details</th>
-      </tr>
-    </thead>
-    <tbody>`;
+    const total =
+      results.length;
 
-  rows.forEach(r => {
-    const showClaim = r.ClaimID !== prevClaimId;
-    const showMember = showClaim || r.MemberID !== prevMemberId;
-    const showActivity = showMember || r.ActivityID !== prevActivityId;
+    const valid =
+      results.filter(
+        (result) =>
+          result.Status
+          === 'Valid'
+      ).length;
 
-    let rowClass;
-    if (r.isUnknown) {
-      rowClass = 'table-warning';
+    const invalid =
+      results.filter(
+        (result) =>
+          result.Status
+          === 'Invalid'
+      ).length;
+
+    const unknown =
+      results.filter(
+        (result) =>
+          result.Status
+          === 'Unknown'
+      ).length;
+
+    const summary =
+      document.createElement(
+        'div'
+      );
+
+    summary.className =
+      'alert alert-info';
+
+    summary.innerHTML =
+      '<strong>Modifier results:</strong> '
+      + `${valid} valid / ${total} total. `
+      + `${invalid} invalid, `
+      + `${unknown} unknown. `
+      + `ReceiverID: ${
+        escapeHtml(
+          context.receiverID
+          || '(missing)'
+        )
+      } (${
+        escapeHtml(
+          context.receiver
+            ?.insurer
+          || 'Unknown'
+        )
+      }).`;
+
+    wrapper.appendChild(
+      summary
+    );
+
+    const responsive =
+      document.createElement(
+        'div'
+      );
+
+    responsive.className =
+      'table-responsive';
+
+    const table =
+      document.createElement(
+        'table'
+      );
+
+    table.className =
+      'table table-bordered '
+      + 'table-striped '
+      + 'checker-table '
+      + 'result-table '
+      + 'modifier-results-table';
+
+    table.innerHTML = `
+      <thead>
+        <tr>
+          <th>Claim ID</th>
+          <th>Member ID</th>
+          <th>Activity ID</th>
+          <th>Ordering Clinician</th>
+          <th>CPT Code</th>
+          <th>Quantity</th>
+          <th>Net</th>
+          <th>Observation Code</th>
+          <th>Modifier</th>
+          <th>VOI Number</th>
+          <th>Receiver ID</th>
+          <th>Payer ID</th>
+          <th>Insurer</th>
+          <th>Status</th>
+          <th>Remarks</th>
+          <th>Eligibility Details</th>
+        </tr>
+      </thead>
+
+      <tbody></tbody>
+    `;
+
+    const tbody =
+      table.querySelector(
+        'tbody'
+      );
+
+    if (!results.length) {
+      const row =
+        document.createElement(
+          'tr'
+        );
+
+      row.className =
+        'table-success valid-row';
+
+      row.innerHTML =
+        '<td colspan="16">'
+        + 'No modifier 24, 25, 50, '
+        + 'or 52 activities were found.'
+        + '</td>';
+
+      tbody.appendChild(row);
     } else {
-      const remarks = String(r.Remarks || '').split(';').map(s => s.trim()).filter(Boolean);
-      rowClass = remarks.length === 0 ? 'table-success' : 'table-danger';
+      let previousClaim = null;
+      let previousMember = null;
+      let previousActivity = null;
+
+      results.forEach(
+        (
+          result,
+          index
+        ) => {
+          const row =
+            document.createElement(
+              'tr'
+            );
+
+          row.className =
+            result.Status
+              === 'Invalid'
+              ? (
+                  'table-danger '
+                  + 'invalid-row invalid'
+                )
+              : result.Status
+                === 'Unknown'
+                ? (
+                    'table-warning '
+                    + 'unknown-row unknown'
+                  )
+                : (
+                    'table-success '
+                    + 'valid-row valid'
+                  );
+
+          row.dataset.index =
+            String(index);
+
+          row.dataset.status =
+            result.Status
+              .toLowerCase();
+
+          /*
+           * The complete Claim ID is stored on
+           * every row so it can be restored after
+           * invalid-only filtering.
+           */
+          row.dataset.claimId =
+            result.ClaimID
+            || '';
+
+          const showClaim =
+            result.ClaimID
+            !== previousClaim;
+
+          row.dataset
+            .originalClaimVisible =
+              showClaim
+                ? 'true'
+                : 'false';
+
+          const showMember =
+            showClaim
+            || result.MemberID
+              !== previousMember;
+
+          const showActivity =
+            showClaim
+            || result.ActivityID
+              !== previousActivity;
+
+          row.innerHTML = `
+            <td class="nowrap-col claim-id-cell">
+              ${
+                showClaim
+                  ? escapeHtml(
+                      result.ClaimID
+                    )
+                  : ''
+              }
+            </td>
+
+            <td>
+              ${
+                showMember
+                  ? escapeHtml(
+                      result.MemberID
+                    )
+                  : ''
+              }
+            </td>
+
+            <td>
+              ${
+                showActivity
+                  ? escapeHtml(
+                      result.ActivityID
+                    )
+                  : ''
+              }
+            </td>
+
+            <td>
+              ${
+                escapeHtml(
+                  result
+                    .OrderingClinicianRaw
+                  || result
+                    .OrderingClinician
+                )
+              }
+            </td>
+
+            <td>
+              ${
+                escapeHtml(
+                  result.ActivityCode
+                )
+              }
+            </td>
+
+            <td>
+              ${
+                escapeHtml(
+                  result.Quantity
+                )
+              }
+            </td>
+
+            <td>
+              ${
+                escapeHtml(
+                  result.Net
+                )
+              }
+            </td>
+
+            <td>
+              ${
+                escapeHtml(
+                  result.ObsCode
+                )
+              }
+            </td>
+
+            <td>
+              ${
+                escapeHtml(
+                  result.Modifier
+                )
+              }
+            </td>
+
+            <td>
+              ${
+                escapeHtml(
+                  result.VOINumber
+                )
+              }
+            </td>
+
+            <td>
+              ${
+                escapeHtml(
+                  result.ReceiverID
+                )
+              }
+            </td>
+
+            <td>
+              ${
+                escapeHtml(
+                  result.PayerID
+                )
+              }
+            </td>
+
+            <td>
+              ${
+                escapeHtml(
+                  result.Insurer
+                )
+              }
+            </td>
+
+            <td>
+              ${
+                escapeHtml(
+                  result.Status
+                )
+              }
+            </td>
+
+            <td>
+              ${
+                escapeHtml(
+                  result.Remarks
+                )
+              }
+            </td>
+
+            <td>
+              ${
+                result.EligibilityRow
+                  ? (
+                      '<button '
+                      + 'type="button" '
+                      + 'class="details-btn eligibility-details" '
+                      + `data-index="${index}" `
+                      + `onclick="showModifierEligibility(${index})">`
+                      + 'View'
+                      + '</button>'
+                    )
+                  : ''
+              }
+            </td>
+          `;
+
+          tbody.appendChild(row);
+
+          previousClaim =
+            result.ClaimID;
+
+          previousMember =
+            result.MemberID;
+
+          previousActivity =
+            result.ActivityID;
+        }
+      );
     }
 
-    const remarksText = r.isUnknown
-      ? 'Unknown payer (not A001 or D001).'
-      : (String(r.Remarks || '').split(';').map(s => s.trim()).filter(Boolean)
-          .map(s => s && !s.endsWith('.') ? s + '.' : s).join('; ') || 'OK');
+    responsive.appendChild(table);
+    wrapper.appendChild(responsive);
 
-    html += `<tr class="${rowClass}">
-      <td style="padding:6px;border:1px solid #ccc">${showClaim ? escapeHtml(r.ClaimID) : ''}</td>
-      <td style="padding:6px;border:1px solid #ccc">${showMember ? escapeHtml(r.MemberID) : ''}</td>
-      <td style="padding:6px;border:1px solid #ccc">${showActivity ? escapeHtml(r.ActivityID) : ''}</td>
-      <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.OrderingClinician)}</td>
-      <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.ObsCode || '')}</td>
-      <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.Modifier)}</td>
-      <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.VOINumber || '')}</td>
-      <td style="padding:6px;border:1px solid #ccc">${escapeHtml(r.PayerID)}</td>
-      <td style="padding:6px;border:1px solid #ccc">${escapeHtml(remarksText)}</td>
-      <td style="padding:6px;border:1px solid #ccc">${r.EligibilityRow ? `<button type="button" class="details-btn eligibility-details" onclick="showEligibility(${r._originalIndex})">View</button>` : ''}</td>
-    </tr>`;
+    /*
+     * The invalid-only filter may already be
+     * active when the result is inserted.
+     */
+    requestAnimationFrame(() => {
+      refreshModifierClaimIds(
+        wrapper
+      );
+    });
 
-    prevClaimId = r.ClaimID;
-    prevMemberId = r.MemberID;
-    prevActivityId = r.ActivityID;
-  });
-
-  html += `</tbody></table>`;
-  container.innerHTML = html;
-  return container;
-}
-
-// ----------------- Utilities -----------------
-function textValue(node, tag) { if (!node) return ''; const el = node.getElementsByTagName(tag)[0]; return el ? String(el.textContent || '').trim() : ''; }
-function firstNonEmpty(arr) { for (const s of arr) if (s !== undefined && s !== null && String(s).trim() !== '') return String(s).trim(); return ''; }
-
-// Only remove leading zeros per requirement; keep other characters intact
-function normalizeMemberId(id) { return String(id || '').replace(/^0+/, '').trim(); }
-
-// normalizeName retains spacing normalization and lowercases (used only in a few debug paths)
-function normalizeName(name) { return String(name || '').replace(/\s+/g, ' ').trim().toLowerCase(); }
-
-// normalizeDate: robust handling of common formats; returns YYYY-MM-DD
-function normalizeDate(input) {
-  const s = String(input || '').trim();
-  if (!s) return '';
-
-  // Remove time portion if present
-  const dateOnly = s.split(' ')[0].trim();
-
-  // Check for DD/MM/YYYY or DD-MM-YYYY (day-first)
-  let m = dateOnly.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
-  if (m) {
-    let [, d, mo, y] = m;
-    if (y.length === 2) y = String(2000 + Number(y));
-    const dt = new Date(Number(y), Number(mo) - 1, Number(d));
-    if (!Number.isNaN(dt.getTime())) return toYMD(dt);
+    return wrapper;
   }
 
-  // Check for DD-MMM-YYYY e.g., 11-Aug-2025
-  m = dateOnly.match(/^(\d{1,2})-([A-Za-z]+)-(\d{4})$/);
-  if (m) {
-    let [, d, mon, y] = m;
-    const monthMap = { Jan:0, Feb:1, Mar:2, Apr:3, May:4, Jun:5, Jul:6, Aug:7, Sep:8, Oct:9, Nov:10, Dec:11 };
-    const dt = new Date(Number(y), monthMap[mon] ?? 0, Number(d));
-    if (!Number.isNaN(dt.getTime())) return toYMD(dt);
+  function createErrorWrapper(error) {
+    const wrapper =
+      document.createElement(
+        'div'
+      );
+
+    wrapper.className =
+      'modifier-checker-results';
+
+    const alert =
+      document.createElement(
+        'div'
+      );
+
+    alert.className =
+      'alert alert-danger';
+
+    alert.textContent =
+      `Modifier Checker failed: ${
+        error?.message
+        || String(error)
+      }`;
+
+    wrapper.appendChild(alert);
+
+    const table =
+      document.createElement(
+        'table'
+      );
+
+    table.className =
+      'table checker-table';
+
+    table.innerHTML =
+      '<tbody>'
+      + '<tr class="table-danger invalid-row">'
+      + '<td>Modifier checker did not complete.</td>'
+      + '</tr>'
+      + '</tbody>';
+
+    wrapper.appendChild(table);
+
+    return wrapper;
   }
 
-  // Try ISO/parseable numeric date
-  let t = Date.parse(dateOnly);
-  if (!Number.isNaN(t)) return toYMD(new Date(t));
+  function closeModifierEligibilityModal() {
+    document
+      .getElementById(
+        'modifierEligibilityModal'
+      )
+      ?.remove();
+  }
 
-  return dateOnly; // fallback (unchanged)
-}
+  function showModifierEligibility(index) {
+    const result =
+      lastResults[
+        Number(index)
+      ];
 
-function toYMD(d) {
-  const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, '0'), da = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${da}`;
-}
+    if (
+      !result
+      ?.EligibilityRow
+    ) {
+      alert(
+        'No eligibility data found for this claim.'
+      );
 
-function escapeHtml(str) {
-  return String(str == null ? '' : str)
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
-}
+      return;
+    }
 
-function firstNonEmptyKey(obj, keys) {
-  for (const k of keys) if (Object.prototype.hasOwnProperty.call(obj, k) && String(obj[k]).trim() !== '') return obj[k];
-  return null;
-}
+    closeModifierEligibilityModal();
 
-function makeWorkbookFromJson(json, sheetName) {
-  const ws = XLSX.utils.json_to_sheet(json);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, sheetName || 'Results');
-  return wb;
-}
+    const rows =
+      Object.entries(
+        result.EligibilityRow
+      )
+        .map(
+          ([key, value]) =>
+            '<tr>'
+            + `<th>${escapeHtml(key)}</th>`
+            + `<td>${escapeHtml(value)}</td>`
+            + '</tr>'
+        )
+        .join('');
 
-// ----------------- UI helpers -----------------
-function el(id) { return document.getElementById(id); }
-function fileEl(id) { const f = el(id); return f && f.files && f.files[0] ? f.files[0] : null; }
+    const modal =
+      document.createElement(
+        'div'
+      );
 
-function resetUI() {
-  const container = el('outputTableContainer');
-  if (container) container.innerHTML = '';
-  toggleDownload(false);
-  message('', '');
-  showProgress(0, '');
-  lastResults = [];
-  lastWorkbook = null;
-}
+    modal.id =
+      'modifierEligibilityModal';
 
-function toggleDownload(enabled) { const dl = el('download-button'); if (!dl) return; dl.disabled = !enabled; }
+    modal.className =
+      'modal';
 
-function showProgress(percent, text) {
-  const barContainer = el('progress-bar-container'), bar = el('progress-bar'), pText = el('progress-text');
-  if (barContainer) barContainer.style.display = percent > 0 ? 'block' : 'none';
-  if (bar) bar.style.width = (percent || 0) + '%';
-  if (pText) pText.textContent = text ? `${percent}% — ${text}` : `${percent}%`;
-}
+    modal.style.display =
+      'flex';
 
-function message(text, color) { const m = el('messageBox'); if (!m) return; m.textContent = text || ''; m.style.color = color || ''; }
+    modal.innerHTML = `
+      <div class="modal-content eligibility-modal modal-scrollable">
+        <span
+          class="close"
+          role="button"
+          aria-label="Close"
+          onclick="closeModifierEligibilityModal()"
+        >&times;</span>
 
-function showError(err) { message(err && err.message ? err.message : String(err), 'red'); showProgress(0, ''); toggleDownload(false); }
+        <h3>Eligibility Details</h3>
 
-// ----------------- Modal logic -----------------
-function showEligibility(index) {
-  const row = lastResults[index];
-  if (!row || !row.EligibilityRow) { alert('No eligibility data found for this claim.'); return; }
+        <table class="eligibility-details">
+          ${rows}
+        </table>
 
-  const data = row.EligibilityRow;
-  const keys = Object.keys(data);
-  const details = keys.map(k => `<tr><th>${escapeHtml(k)}</th><td>${escapeHtml(data[k])}</td></tr>`).join('');
+        <div style="text-align:right;margin-top:10px;">
+          <button
+            type="button"
+            class="details-btn"
+            onclick="closeModifierEligibilityModal()"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    `;
 
-  const modalHtml = `<div class="modal-content eligibility-modal modal-scrollable">
-    <span class="close" onclick="closeEligibilityModal()">&times;</span>
-    <h3>Eligibility Details</h3>
-    <table class="eligibility-details">${details}</table>
-    <div style="text-align:right;margin-top:10px;">
-      <button class="details-btn eligibility-details" onclick="closeEligibilityModal()">Close</button>
-    </div>
-  </div>`;
+    modal.addEventListener(
+      'click',
+      (event) => {
+        if (
+          event.target
+          === modal
+        ) {
+          closeModifierEligibilityModal();
+        }
+      }
+    );
 
-  // Remove existing modal if present
-  closeEligibilityModal();
+    document.body.appendChild(
+      modal
+    );
+  }
 
-  const modal = document.createElement('div');
-  modal.id = "eligibilityModal";
-  modal.className = "modal";
-  modal.innerHTML = modalHtml;
-  modal.addEventListener('click', e => { if (e.target === modal) closeEligibilityModal(); });
-  document.body.appendChild(modal);
-  modal.style.display = "flex";
-}
+  function makeExportRows(results) {
+    return results.map(
+      (result) => ({
+        'Claim ID':
+          result.ClaimID,
 
-function closeEligibilityModal() { const modal = el('eligibilityModal'); if (modal) modal.remove(); }
+        'Member ID':
+          result.MemberID,
 
-// Unified checker entry point
-window.runModifiersCheck = async function() {
-  if (typeof handleRun === 'function') {
-    return await handleRun();
+        'Activity ID':
+          result.ActivityID,
+
+        'Ordering Clinician':
+          result
+            .OrderingClinicianRaw
+          || result
+            .OrderingClinician,
+
+        'CPT Code':
+          result.ActivityCode,
+
+        Quantity:
+          result.Quantity,
+
+        Net:
+          result.Net,
+
+        'Observation Code':
+          result.ObsCode,
+
+        Modifier:
+          result.Modifier,
+
+        'VOI Number':
+          result.VOINumber,
+
+        'Receiver ID':
+          result.ReceiverID,
+
+        'Payer ID':
+          result.PayerID,
+
+        Insurer:
+          result.Insurer,
+
+        Status:
+          result.Status,
+
+        Remarks:
+          result.Remarks,
+
+        'Eligibility Sheet':
+          result.EligibilitySheet,
+
+        'Eligibility Row':
+          result
+            .EligibilityRowNumber
+      })
+    );
+  }
+
+  function buildResultsWorkbook(results) {
+    const workbook =
+      root.XLSX.utils
+        .book_new();
+
+    const worksheet =
+      root.XLSX.utils
+        .json_to_sheet(
+          makeExportRows(
+            results
+          )
+        );
+
+    root.XLSX.utils
+      .book_append_sheet(
+        workbook,
+        worksheet,
+        'Modifier Results'
+      );
+
+    return workbook;
+  }
+
+  function downloadModifierResults() {
+    if (!lastResults.length) {
+      return;
+    }
+
+    if (
+      !root.XLSX
+      || typeof root.XLSX.writeFile
+        !== 'function'
+    ) {
+      throw new Error(
+        'SheetJS (XLSX) is unavailable.'
+      );
+    }
+
+    const workbook =
+      lastWorkbook
+      || buildResultsWorkbook(
+        lastResults
+      );
+
+    root.XLSX.writeFile(
+      workbook,
+      'checker_modifiers_results.xlsx'
+    );
+  }
+
+  async function loadMinorProcedureCodes() {
+    try {
+      const response =
+        await fetch(
+          '../json/minor_procedures.json'
+        );
+
+      if (!response.ok) {
+        return new Set();
+      }
+
+      const data =
+        await response.json();
+
+      return new Set(
+        (
+          Array.isArray(data)
+            ? data
+            : []
+        )
+          .map(
+            (item) =>
+              normalizeCode(
+                typeof item
+                  === 'string'
+                  ? item
+                  : item?.code
+              )
+          )
+          .filter(Boolean)
+      );
+    } catch (error) {
+      console.warn(
+        '[MODIFIERS] Could not load minor_procedures.json:',
+        error
+      );
+
+      return new Set();
+    }
+  }
+
+  async function runModifiersCheck(options) {
+    const config =
+      options || {};
+
+    const xmlFile =
+      resolveInputFile(
+        'xml-file',
+        'xml',
+        config.xmlFile
+      );
+
+    const eligibilityFile =
+      resolveInputFile(
+        'xlsx-file',
+        'eligibility',
+        config.eligibilityFile
+      );
+
+    if (
+      !xmlFile
+      || !eligibilityFile
+    ) {
+      const missing = [
+        !xmlFile
+          ? 'XML file'
+          : '',
+
+        !eligibilityFile
+          ? 'Eligibility workbook'
+          : ''
+      ]
+        .filter(Boolean)
+        .join(' and ');
+
+      const error =
+        new Error(
+          `${missing} is required.`
+        );
+
+      updateMessage(
+        error.message,
+        true
+      );
+
+      return createErrorWrapper(
+        error
+      );
+    }
+
+    updateMessage(
+      'Checking CPT modifiers...',
+      false
+    );
+
+    try {
+      const [
+        xmlText,
+        eligibilityBuffer,
+        minorProcedureCodes
+      ] = await Promise.all([
+        readFileText(
+          xmlFile
+        ),
+
+        readFileArrayBuffer(
+          eligibilityFile
+        ),
+
+        loadMinorProcedureCodes()
+      ]);
+
+      const xmlDoc =
+        parseXml(xmlText);
+
+      const eligibility =
+        parseEligibilityWorkbook(
+          eligibilityFile,
+          eligibilityBuffer
+        );
+
+      const matcher =
+        buildEligibilityMatcher(
+          eligibility.rows
+        );
+
+      const xmlData =
+        collectXmlData(
+          xmlDoc
+        );
+
+      const claimContext =
+        buildClaimModifierContext(
+          xmlData.claimActivities,
+          minorProcedureCodes
+        );
+
+      /*
+       * Resolve one eligibility result for
+       * each claim before processing rows.
+       */
+      const claimEligibilityMatches =
+        resolveClaimEligibilityMatches(
+          xmlData.records,
+          xmlData.claimActivities,
+          matcher
+        );
+
+      const results =
+        xmlData.records.map(
+          (record) =>
+            analyzeRecord(
+              record,
+
+              claimEligibilityMatches
+                .get(
+                  record.ClaimID
+                )
+              || null,
+
+              xmlData.receiver,
+              claimContext,
+              minorProcedureCodes
+            )
+        );
+
+      lastResults =
+        results;
+
+      lastWorkbook =
+        buildResultsWorkbook(
+          results
+        );
+
+      root._lastModifierResults =
+        results;
+
+      root._lastModifierEligibilityRows =
+        results.map(
+          (result) =>
+            result.EligibilityRow
+        );
+
+      updateDownloadButton();
+
+      updateMessage(
+        'Modifier check completed '
+        + 'using Header ReceiverID '
+        + `${
+          xmlData.receiverID
+          || '(missing)'
+        }.`,
+        false
+      );
+
+      return createResultsWrapper(
+        results,
+        xmlData
+      );
+    } catch (error) {
+      console.error(
+        '[MODIFIERS] Checker failed:',
+        error
+      );
+
+      lastResults = [];
+      lastWorkbook = null;
+
+      root._lastModifierResults =
+        [];
+
+      updateDownloadButton();
+
+      updateMessage(
+        error?.message
+        || String(error),
+        true
+      );
+
+      return createErrorWrapper(
+        error
+      );
+    }
+  }
+
+  async function handleStandaloneRun() {
+    const wrapper =
+      await runModifiersCheck();
+
+    const output =
+      getScopedElement(
+        'outputTableContainer'
+      )
+      || getScopedElement(
+        'results'
+      );
+
+    if (output) {
+      output.innerHTML = '';
+
+      output.appendChild(
+        wrapper
+      );
+    }
+  }
+
+  function bindStandaloneListeners() {
+    if (standaloneBound) {
+      return;
+    }
+
+    const runButton =
+      getScopedElement(
+        'run-button'
+      );
+
+    const downloadButton =
+      getScopedElement(
+        'download-button'
+      );
+
+    if (
+      runButton
+      && !runButton.dataset
+        .modifierBound
+    ) {
+      runButton.dataset
+        .modifierBound = '1';
+
+      runButton.addEventListener(
+        'click',
+        handleStandaloneRun
+      );
+    }
+
+    if (
+      downloadButton
+      && !downloadButton.dataset
+        .modifierBound
+    ) {
+      downloadButton.dataset
+        .modifierBound = '1';
+
+      downloadButton.addEventListener(
+        'click',
+        () => {
+          try {
+            downloadModifierResults();
+          } catch (error) {
+            updateMessage(
+              error?.message
+              || String(error),
+              true
+            );
+          }
+        }
+      );
+    }
+
+    standaloneBound =
+      Boolean(
+        runButton
+        || downloadButton
+      );
+  }
+
+  root.runModifiersCheck =
+    runModifiersCheck;
+
+  root.downloadModifierResults =
+    downloadModifierResults;
+
+  root.showModifierEligibility =
+    showModifierEligibility;
+
+  root.closeModifierEligibilityModal =
+    closeModifierEligibilityModal;
+
+  root.refreshModifierClaimIds =
+    refreshModifierClaimIds;
+
+  root.ModifierChecker =
+    Object.freeze({
+      RECEIVER_CONFIG,
+      MODIFIER_RULES,
+      ELIGIBILITY_HEADERS,
+      normalizeMemberId,
+      normalizeDate,
+      normalizeClinician,
+      parseEligibilityWorkbook,
+      buildEligibilityMatcher,
+      resolveClaimEligibilityMatches,
+      collectXmlData,
+      refreshModifierClaimIds,
+      runModifiersCheck
+    });
+
+  if (
+    document.readyState
+    === 'loading'
+  ) {
+    document.addEventListener(
+      'DOMContentLoaded',
+      bindStandaloneListeners,
+      {
+        once: true
+      }
+    );
   } else {
-    console.error('handleRun function not found');
-    return null;
+    bindStandaloneListeners();
   }
-};
-
-// Expose showEligibility to global scope for onclick handlers
-window.showEligibility = showEligibility;
-window.closeEligibilityModal = closeEligibilityModal;
-
-  } catch (error) {
-    console.error('[CHECKER-ERROR] Failed to load checker:', error);
-    console.error(error.stack);
-  }
-})();
+})(
+  typeof window !== 'undefined'
+    ? window
+    : globalThis
+);
