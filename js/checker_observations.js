@@ -71,8 +71,11 @@ const DUAL_TYPE_CODES = new Set([
   '92511'  // Type 6 = dental version; Type 3 = medical version
 ]);
 const AUTH_DEPENDENT_DUAL_CODES = new Set(['86301', '73521']);
-// CPT codes explicitly requiring LOINC observations.
-const LOINC_REQUIRED_CODES = new Set(['83036', '80061']);
+// Accepted LOINC observation codes for CPT 83718 (HDL cholesterol).
+const CODE_83718_LOINC_CODES = new Set([
+  '14646-4', '12772-0', '26015-8', '26017-4', '18263-4', '2085-9',
+  '35243-5', '35197-3', '49130-8', '9832-7', '9833-5'
+]);
 // Root canal codes requiring a Subcode observation from 20-Feb-2026 onward
 const ROOT_CANAL_SUBCODE_CODES = new Set(['33111', '33121', '33131', '33141', '33115', '33125', '33135', '33145']);
 const SUBCODE_OBS_CUTOFF = new Date(2026, 1, 20); // 20 Feb 2026 (month is 0-indexed)
@@ -241,6 +244,18 @@ function parseEncounterDate(dateStr) {
   if (isNaN(d) || isNaN(m) || isNaN(y)) return null;
   return new Date(y, m - 1, d);
 }
+// A qualifying LOINC observation must use Type "LOINC", an allowed Code,
+// and contain both Value and ValueType.
+function hasRequiredLoincObservation(obsList, allowedCodes) {
+  return Array.from(obsList).some(obs => {
+    const type = (obs.querySelector('Type')?.textContent || '').trim().toUpperCase();
+    const code = (obs.querySelector('Code')?.textContent || '').trim();
+    const value = (obs.querySelector('Value')?.textContent || '').trim();
+    const valueType = (obs.querySelector('ValueType')?.textContent || '').trim();
+    return type === 'LOINC' && allowedCodes.has(code) && value !== '' && valueType !== '';
+  });
+}
+
 // Check if an activity has a valid Subcode observation (Observation Code = "Subcode", Value = "01")
 function hasSubcodeObservation(obsList) {
   return Array.from(obsList).some(obs => {
@@ -255,16 +270,6 @@ function countSubcodeObservations(obsList) {
     const code = (obs.querySelector('Code')?.textContent || '').trim().toUpperCase();
     return code === 'SUBCODE';
   }).length;
-}
-
-// A qualifying LOINC observation must explicitly use Type "LOINC"
-// and contain a non-empty LOINC code in its Code element.
-function hasLoincObservation(obsList) {
-  return Array.from(obsList).some(obs => {
-    const type = (obs.querySelector('Type')?.textContent || '').trim().toUpperCase();
-    const code = (obs.querySelector('Code')?.textContent || '').trim();
-    return type === 'LOINC' && code !== '';
-  });
 }
 
 // Special code utilities
@@ -736,10 +741,8 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
         });
       }
 
-      // CPTs explicitly identified as LOINC-based must include at least one
-      // LOINC observation with a non-empty Code element.
-      if (LOINC_REQUIRED_CODES.has(code) && !hasLoincObservation(obsList)) {
-        row.remarks.push(`Code ${code} must have LOINC codes.`);
+      if (code === '83718' && !hasRequiredLoincObservation(obsList, CODE_83718_LOINC_CODES)) {
+        row.remarks.push('Code 83718 must have observation with appropriate LOINC codes.');
       }
 
       // Check Subcode observation requirement for root canal codes from 20-Feb-2026 onward
