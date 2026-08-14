@@ -27,18 +27,22 @@ function getDrugShared(required = true) {
 // C001 is cross-referenced directly against Mandatory Tariff and uses factor 1
 // whenever Factors.xlsx has no explicit C001 factor value.
 const MEDICAL_CONFIGURED_PAYERS = new Set(['D001', 'A001', 'D004', 'C001', 'A025', 'A024', 'C002', 'C004']);
+const DAMAN_RECEIVER_IDS = new Set(['D004', 'A001']);
+const DRUG_FORMULARY_RECEIVER_IDS = new Set(['D004', 'D001']);
+const DRUG_MANUAL_QUANTITY_RECEIVER_IDS = new Set(['D004', 'A001', 'D001']);
+const THIQA_RECEIVER_ID = 'D001';
 // Khabisi (MF5020) services that always use factor 1.3.
 // This includes the infusion services plus 94640 and 96372.
 const KHABISI_FACTOR_13_CODES = new Set([
-  '92504', 
-  '92567', 
-  '94640', 
-  '96360', 
-  '96361', 
-  '96365', 
-  '96367', 
-  '96372', 
-  '96374', 
+  '92504',
+  '92567',
+  '94640',
+  '96360',
+  '96361',
+  '96365',
+  '96367',
+  '96372',
+  '96374',
   '96375'
 ]);
 // Khabisi nutrition services use factor 1.3 only when the specific activity
@@ -1040,7 +1044,7 @@ function analyzeDrugActivity(rec, options = {}) {
     });
   }
 
-  const formularyInfo = drug
+  const formularyInfo = drug && DRUG_FORMULARY_RECEIVER_IDS.has(receiverID)
     ? shared.validateDrugFormulary(drug, receiverID, codeRaw)
     : { formularyName: '', valueRaw: '', applies: false, included: null };
   if (!isZeroPriced && formularyInfo && formularyInfo.remark) {
@@ -1101,6 +1105,18 @@ function analyzeDrugActivity(rec, options = {}) {
         });
       }
     }
+  }
+  if (!isZeroPriced && normalizedDrugCode === 'L88-5151-05757-02' && receiverID !== THIQA_RECEIVER_ID) {
+    findings.push({ ruleId: 'DRUG_THIQA_ONLY', status: 'Invalid', remark: 'Drug L88-5151-05757-02 can only be charged for Thiqa.' });
+  }
+  if (!isZeroPriced && normalizedDrugCode.startsWith('O') && receiverID !== THIQA_RECEIVER_ID) {
+    findings.push({ ruleId: 'DRUG_O_SERIES_THIQA_ONLY', status: 'Invalid', remark: `O-series drug ${codeRaw} can only be charged for Thiqa.` });
+  }
+  if (!isZeroPriced && claimedNet > 500) {
+    findings.push({ ruleId: 'DRUG_AMOUNT_MANUAL_REVIEW', status: 'Unknown', remark: `Drug ${codeRaw} amount is above 500. Manual auditor review is required.` });
+  }
+  if (quantity > 1 && DRUG_MANUAL_QUANTITY_RECEIVER_IDS.has(receiverID)) {
+    findings.push({ ruleId: 'DRUG_QUANTITY_MANUAL_REVIEW', status: 'Unknown', remark: `Drug ${codeRaw} quantity is above 1. Manual auditor review is required.` });
   }
   findings = dedupeFindingsByRuleAndSeverity(shared.mergeDrugFindings(findings));
   const finalStatus = shared.getFinalStatusFromFindings(findings);
@@ -1684,6 +1700,38 @@ async function handleRun(options = {}) {
       if (normalizedCode === '36415' && ['A001', 'D001', 'D004', 'A025'].includes(pricingReceiverID) && xmlNet !== 0) {
         status = 'Invalid';
         remarks.push(`Code 36415 must have net price 0 for payer ${pricingReceiverID}.`);
+      }
+
+      const normalizedClaimRows = claimRows.map(row => ({
+        code: normalizeCode(row.CPT),
+        net: Number(row.Net || 0)
+      }));
+      const claimHasCode = code => normalizedClaimRows.some(row => row.code === code);
+      const claimHasPricedCode = code => normalizedClaimRows.some(row => row.code === code && Number(row.net) > 0);
+      const claimHasConsultation = normalizedClaimRows.some(row => /^(92|992)/.test(row.code));
+      const claimPatientShare = Number(rec.PatientShare || 0);
+
+      if (/^920(?:0[2-9]|1[0-4])$/.test(normalizedCode) && pricingReceiverID !== THIQA_RECEIVER_ID && pricingReceiverID !== 'HAAD' && !(claimPatientShare > 0)) {
+        status = 'Invalid';
+        remarks.push(`Code ${rec.CPT} requires Patient Share for non-Thiqa insurance.`);
+      }
+      if ((normalizedCode === '82947' || normalizedCode === '82948') && claimHasCode('82947') && claimHasCode('82948') && !claimHasPricedCode('82947') && !claimHasPricedCode('82948')) {
+        status = 'Invalid';
+        remarks.push('When 82947 and 82948 are both present, at least one must have a price.');
+      } else if (normalizedCode === '82948' && !claimHasCode('82947') && xmlNet === 0) {
+        status = 'Invalid';
+        remarks.push('Code 82948 must have a price.');
+      }
+      if ((normalizedCode === '82150' || normalizedCode === '83690') && claimHasCode('82150') && claimHasCode('83690') && claimHasPricedCode('82150') && claimHasPricedCode('83690')) {
+        status = 'Invalid';
+        remarks.push('When 82150 and 83690 are both present, one of them must have net price 0.');
+      }
+      if ((normalizedCode === '51-01' || /^(92|992)/.test(normalizedCode)) && claimHasCode('51-01') && claimHasConsultation) {
+        const relevantRows = normalizedClaimRows.filter(row => row.code === '51-01' || /^(92|992)/.test(row.code));
+        if (relevantRows.length && relevantRows.every(row => Number(row.net) > 0)) {
+          status = 'Invalid';
+          remarks.push('When 51-01 is coded with E/M, one of the services must have net price 0.');
+        }
       }
       return {
         ClaimID: rec.ClaimID || '',
