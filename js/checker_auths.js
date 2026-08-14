@@ -33,6 +33,29 @@ const MEDICAL_CODES_REQUIRING_AUTH = new Set([
   '77022', '77046', '77047', '77048', '77049', '77078', '77084'
 ]);
 
+// === CHECKPOINT AUTH ADDITIONS 2026-08-14 (ADD-ONLY) ===
+// Existing MEDICAL_CODES_REQUIRING_AUTH entries remain untouched.
+const CHECKPOINT_MEDICAL_CODES_REQUIRING_AUTH_20260814 = Object.freeze([
+  // Physiotherapy codes from CHECKPOINTS.docx.
+  '97161', '97164', '97110', '97140', '97032', '97530', '97112', '97116',
+  // Dietician / nutrition activities documented as requiring approval.
+  '97802', '97803',
+  // Follow-up obstetric ultrasound explicitly documented as requiring approval.
+  '76816'
+]);
+CHECKPOINT_MEDICAL_CODES_REQUIRING_AUTH_20260814.forEach(code => {
+  MEDICAL_CODES_REQUIRING_AUTH.add(code);
+});
+
+// Deferred deliberately instead of guessing:
+// - 97-series blanket authorization: the checkpoint omits its exception list.
+// - 76815: Thiqa/Nextcare use eligibility instead of attached approval.
+// - Nextcare physio attachment and 97802/97803 referral-form 30-day checks:
+//   the exact HCPRequests attachment/referral column names are not verified.
+// - Maternity 768-series eligibility-or-approval: checker_auths does not receive
+//   eligibility data, so the eligibility-only branch cannot be evaluated here.
+// === END CHECKPOINT AUTH ADDITIONS 2026-08-14 ===
+
 const AUTH_PRESENCE_CLASSIFIED_CODES = new Set(['86301', '73521']);
 
 function normalizeProcedureCode(value) {
