@@ -898,6 +898,7 @@
       const memberID = normalizeMemberId(getDirectChildText(claim, 'MemberID'));
       const claimPayerID = normalizeIdentifier(getDirectChildText(claim, 'PayerID'));
       const encounter = getDirectChildren(claim, 'Encounter')[0] || getDirectChildren(claim, 'Encounte')[0];
+      const facilityID = normalizeIdentifier(getDirectChildText(encounter, 'FacilityID'));
       const encounterDate = normalizeDate(firstDirectChildText(encounter, ['Date', 'Start', 'EncounterDate']));
       const diagnoses = getDirectChildren(claim, 'Diagnosis').map(diagnosis => ({
         type: getDirectChildText(diagnosis, 'Type'),
@@ -920,6 +921,7 @@
         const orderingClinician = normalizeClinician(orderingClinicianRaw);
         const performingClinicianRaw = firstDirectChildText(activity, ['Clinician', 'PerformingClinician']);
         const performingClinician = normalizeClinician(performingClinicianRaw);
+        const priorAuthorizationID = firstDirectChildText(activity, ['PriorAuthorizationID', 'PriorAuthorization']);
 
         activities.push({
           claimID,
@@ -927,6 +929,8 @@
           date: encounterDate,
           receiverID,
           payerID: claimPayerID,
+          facilityID,
+          priorAuthorizationID,
           activityID,
           activityCode,
           quantity,
@@ -965,6 +969,8 @@
             Net: net,
             ReceiverID: receiverID,
             PayerID: claimPayerID,
+            FacilityID: facilityID,
+            PriorAuthorizationID: priorAuthorizationID,
             Insurer: receiver?.insurer || 'Unknown',
             ObsCode: observationCode,
             ObsValueType: valueType,
@@ -1062,7 +1068,7 @@
     return true;
   }
 
-  function analyzeRecord(record, eligibilityMatch, receiver, claimContext, minorProcedureCodes, minorProcedureRules, clinicianSpecialtyMap) {
+  function analyzeRecord(record, eligibilityMatch, receiver, claimContext, minorProcedureCodes, minorProcedureRules, clinicianSpecialtyMap, medicalPricingMap, modifierFactorRules) {
     const remarks = [];
     const manualReviewRemarks = [];
     let unknownPayer = false;
@@ -1143,7 +1149,31 @@
       if (orderingSpecialty.includes('PSYCHIATR') || performingSpecialty.includes('PSYCHIATR')) remarks.push('Modifier 52 cannot be used for Psychiatry.');
       else if (!orderingSpecialty && !performingSpecialty) manualReviewRemarks.push('Modifier 52 Psychiatry restriction could not be verified because clinician specialty is unavailable.');
 
-      manualReviewRemarks.push('Modifier 52 uses a 50% E/M discount; verify the discounted price.');
+      const basePrice = Number(
+        medicalPricingMap instanceof Map
+          ? medicalPricingMap.get(normalizeCode(record.ActivityCode))
+          : NaN
+      );
+      if (Number.isFinite(basePrice)) {
+        const factor = findModifierFactor(
+          modifierFactorRules,
+          record.FacilityID,
+          record.ActivityCode,
+          record.ReceiverID
+        );
+        const factoredBasePrice = Math.round((basePrice * factor + Number.EPSILON) * 100) / 100;
+        const expectedDiscountedPrice = Math.round((factoredBasePrice * 0.5 + Number.EPSILON) * 100) / 100;
+        if (!moneyEqual(record.Net, expectedDiscountedPrice)) {
+          remarks.push(
+            `Modifier 52 on ${record.ActivityCode} must use the 50% E/M price ` +
+            `${expectedDiscountedPrice} (standard ${basePrice} × factor ${factor}); claimed Net is ${record.Net}.`
+          );
+        }
+      } else {
+        manualReviewRemarks.push(
+          `Modifier 52 price could not be verified because standard Medical pricing for ${record.ActivityCode} is unavailable.`
+        );
+      }
     }
 
     let status = 'Valid';
@@ -2055,6 +2085,77 @@
     }
   }
 
+  async function loadMedicalPricingMap() {
+    const map = new Map();
+    try {
+      const response = await fetch('../json/medical_pricing.json');
+      if (!response.ok) return map;
+      const data = await response.json();
+      (Array.isArray(data) ? data : []).forEach(row => {
+        const code = normalizeCode(row?.code);
+        const type = String(row?.type || '').trim().toUpperCase();
+        const price = Number(row?.price);
+        if (code && (!type || type === 'CPT') && Number.isFinite(price)) {
+          map.set(code, price);
+        }
+      });
+    } catch (error) {
+      console.warn('[MODIFIERS] Could not load medical_pricing.json for Modifier 52 price validation:', error);
+    }
+    return map;
+  }
+
+  async function loadModifierFactorRules() {
+    try {
+      const response = await fetch('../resources/Factors.xlsx');
+      if (!response.ok || !root.XLSX?.read) return [];
+      const workbook = root.XLSX.read(await response.arrayBuffer(), { type: 'array' });
+      const worksheet = workbook.Sheets[workbook.SheetNames?.[0]];
+      if (!worksheet) return [];
+      const rows = root.XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+      const payerColumns = [];
+      if (rows.length) {
+        Object.keys(rows[0]).forEach(key => {
+          const match = key.match(/\(([^)]+)\)/);
+          const payer = match ? String(match[1] || '').trim().toUpperCase() : '';
+          if (/^[A-Z]\d{3,4}$/.test(payer)) payerColumns.push({ key, payer });
+        });
+      }
+      return rows.map(row => {
+        const facilityID = String(row['Facility ID'] || '').trim().toUpperCase();
+        const matchType = String(row['Code Match Type'] || '').trim();
+        const rawValue = String(row['Code Match Value'] || '').trim();
+        if (!facilityID || !matchType || !rawValue) return null;
+        const matchValues = matchType === 'Exact List'
+          ? rawValue.split(',').map(value => normalizeCode(value)).filter(Boolean)
+          : rawValue.split(/[\s,]+/).map(value => value.replace(/^or$/i, '').trim()).filter(value => /^\d+$/.test(value));
+        const factors = {};
+        payerColumns.forEach(({ key, payer }) => {
+          const rawValue = row[key];
+          const value = Number(rawValue);
+          if (rawValue !== '' && rawValue != null && Number.isFinite(value)) factors[payer] = value;
+        });
+        return matchValues.length ? { facilityID, matchType, matchValues, factors } : null;
+      }).filter(Boolean);
+    } catch (error) {
+      console.warn('[MODIFIERS] Could not load Factors.xlsx for Modifier 52 price validation:', error);
+      return [];
+    }
+  }
+
+  function findModifierFactor(rules, facilityID, code, receiverID) {
+    const facility = String(facilityID || '').trim().toUpperCase();
+    const normalizedCode = normalizeCode(code);
+    const receiver = String(receiverID || '').trim().toUpperCase();
+    const facilityRules = (Array.isArray(rules) ? rules : []).filter(rule => rule.facilityID === facility);
+    let matched = facilityRules.find(rule => rule.matchType === 'Exact List' && rule.matchValues.includes(normalizedCode));
+    if (!matched) {
+      matched = facilityRules.find(rule => rule.matchType === 'Starts With' && rule.matchValues.some(prefix => normalizedCode.startsWith(prefix)));
+    }
+    const factor = matched ? Number(matched.factors?.[receiver]) : 1;
+    return Number.isFinite(factor) ? factor : 1;
+  }
+
   async function loadClinicianSpecialtyMap() {
     const map = new Map();
     try {
@@ -2157,11 +2258,13 @@
     updateMessage('Checking CPT modifiers...', false);
 
     try {
-      const [xmlText, eligibilityBuffer, minorProcedureData, clinicianSpecialtyMap] = await Promise.all([
+      const [xmlText, eligibilityBuffer, minorProcedureData, clinicianSpecialtyMap, medicalPricingMap, modifierFactorRules] = await Promise.all([
         readFileText(xmlFile),
         readFileArrayBuffer(eligibilityFile),
         loadMinorProcedureData(),
-        loadClinicianSpecialtyMap()
+        loadClinicianSpecialtyMap(),
+        loadMedicalPricingMap(),
+        loadModifierFactorRules()
       ]);
 
       const { codes: minorProcedureCodes, rules: minorProcedureRules } = minorProcedureData;
@@ -2185,7 +2288,9 @@
           claimContext,
           minorProcedureCodes,
           minorProcedureRules,
-          clinicianSpecialtyMap
+          clinicianSpecialtyMap,
+          medicalPricingMap,
+          modifierFactorRules
         )
       );
 
