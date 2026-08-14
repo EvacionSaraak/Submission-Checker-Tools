@@ -106,6 +106,18 @@
     return normalizeText(value).toUpperCase();
   }
 
+  function normalizePackageNameForComparison(value) {
+    const normalized = normalizeHeader(value);
+
+    // Thiqa eligibility exports may represent the same plan tier as either
+    // "Thiqa 1" or "Thiqa C1" (likewise for other numeric tiers).
+    // Treat the optional C as an export-format marker, not a package mismatch.
+    const thiqaTier = normalized.match(/^thiqac?(\d+)$/);
+    if (thiqaTier) return `thiqa${thiqaTier[1]}`;
+
+    return normalized;
+  }
+
   function normalizeMemberId(value) {
     const raw = normalizeText(value);
     if (!raw) return '';
@@ -892,7 +904,7 @@
         unknownRemarks.push(
           `Claim Contract PackageName \`${claim.packageName}\` is present but Eligibility Package Name is blank.`
         );
-      } else if (normalizeHeader(claim.packageName) !== normalizeHeader(eligibilityPackage)) {
+      } else if (normalizePackageNameForComparison(claim.packageName) !== normalizePackageNameForComparison(eligibilityPackage)) {
         invalidRemarks.push(
           `Claim Contract PackageName \`${claim.packageName}\` does not match Eligibility Package Name \`${eligibilityPackage}\`.`
         );
