@@ -47,13 +47,15 @@ CHECKPOINT_MEDICAL_CODES_REQUIRING_AUTH_20260814.forEach(code => {
   MEDICAL_CODES_REQUIRING_AUTH.add(code);
 });
 
-// Deferred deliberately instead of guessing:
-// - 97-series blanket authorization: the checkpoint omits its exception list.
-// - 76815: Thiqa/Nextcare use eligibility instead of attached approval.
-// - Nextcare physio attachment and 97802/97803 referral-form 30-day checks:
-//   the exact HCPRequests attachment/referral column names are not verified.
-// - Maternity 768-series eligibility-or-approval: checker_auths does not receive
-//   eligibility data, so the eligibility-only branch cannot be evaluated here.
+// The source checkpoint omitted the 97-series exception list. The rule is
+// active with an editable empty exception set rather than being silently skipped.
+const CHECKPOINT_97_AUTH_EXCEPTIONS = new Set([]);
+const CHECKPOINT_PHYSIOTHERAPY_CODES = new Set([
+  '97161', '97164', '97110', '97140', '97032', '97530', '97112', '97116'
+]);
+const CHECKPOINT_DIETICIAN_CODES = new Set(['97802', '97803']);
+const CHECKPOINT_THIQA_RECEIVER_ID = 'D001';
+const CHECKPOINT_NEXTCARE_RECEIVER_ID = 'C002';
 // === END CHECKPOINT AUTH ADDITIONS 2026-08-14 ===
 
 const AUTH_PRESENCE_CLASSIFIED_CODES = new Set(['86301', '73521']);
@@ -67,6 +69,189 @@ function normalizeMemberId(value) {
   if (!raw) return '';
   const withoutLeadingZeroes = raw.replace(/^0+/, '');
   return withoutLeadingZeroes || '0';
+}
+
+function normalizeHeaderKey(value) {
+  return String(value == null ? '' : value)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+}
+
+function parseDateKey(value) {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
+  }
+  if (typeof value === 'number' && Number.isFinite(value) && typeof XLSX !== 'undefined' && XLSX.SSF?.parse_date_code) {
+    const parsed = XLSX.SSF.parse_date_code(value);
+    if (parsed) return `${parsed.y}-${String(parsed.m).padStart(2, '0')}-${String(parsed.d).padStart(2, '0')}`;
+  }
+  const raw = String(value == null ? '' : value).trim();
+  if (!raw) return '';
+  const dateOnly = raw.split(/[ T]/)[0];
+  let match = dateOnly.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (match) return `${match[3]}-${String(Number(match[2])).padStart(2, '0')}-${String(Number(match[1])).padStart(2, '0')}`;
+  match = dateOnly.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
+  if (match) return `${match[1]}-${String(Number(match[2])).padStart(2, '0')}-${String(Number(match[3])).padStart(2, '0')}`;
+  const fallback = new Date(raw);
+  if (!Number.isNaN(fallback.getTime())) {
+    return `${fallback.getFullYear()}-${String(fallback.getMonth() + 1).padStart(2, '0')}-${String(fallback.getDate()).padStart(2, '0')}`;
+  }
+  return '';
+}
+
+function dateKeyToUtc(value) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || ''));
+  return match ? Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])) : NaN;
+}
+
+function findHeaderIndex(headers, aliases) {
+  for (const alias of aliases) {
+    const expected = normalizeHeaderKey(alias);
+    const index = headers.findIndex(value => normalizeHeaderKey(value) === expected);
+    if (index >= 0) return index;
+  }
+  return -1;
+}
+
+async function parseEligibilityIndexForAuth(file) {
+  if (!file || typeof XLSX === 'undefined') return null;
+  const buffer = typeof file.arrayBuffer === 'function'
+    ? await file.arrayBuffer()
+    : await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(reader.error || new Error('Failed to read Eligibility workbook.'));
+        reader.readAsArrayBuffer(file);
+      });
+  const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+  const index = new Map();
+  let identified = false;
+
+  for (const sheetName of workbook.SheetNames || []) {
+    const matrix = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], {
+      header: 1,
+      defval: '',
+      raw: true,
+      blankrows: false
+    });
+    for (let headerRow = 0; headerRow < Math.min(matrix.length, 25); headerRow += 1) {
+      const headers = matrix[headerRow] || [];
+      const memberIndex = findHeaderIndex(headers, ['Card Number / DHA Member ID', 'DHA Member ID', 'Member ID', 'MemberID', 'Card Number']);
+      const dateIndex = findHeaderIndex(headers, ['Ordered On', 'Answered On', 'Requested On', 'Request Date']);
+      const statusIndex = findHeaderIndex(headers, ['Status', 'Eligibility Status']);
+      if (memberIndex < 0 || dateIndex < 0 || statusIndex < 0) continue;
+      identified = true;
+      for (let rowIndex = headerRow + 1; rowIndex < matrix.length; rowIndex += 1) {
+        const row = matrix[rowIndex] || [];
+        const memberID = normalizeMemberId(row[memberIndex]);
+        const dateKey = parseDateKey(row[dateIndex]);
+        const status = String(row[statusIndex] || '').trim();
+        if (!memberID || !dateKey) continue;
+        const key = `${memberID}|${dateKey}`;
+        if (!index.has(key)) index.set(key, []);
+        index.get(key).push({ status, sheetName, rowNumber: rowIndex + 1 });
+      }
+      break;
+    }
+  }
+
+  if (!identified) {
+    console.warn('[AUTHS] Eligibility workbook columns could not be identified for 768-series validation.');
+    return null;
+  }
+  return index;
+}
+
+function getEligibilityState(eligibilityIndex, memberID, start) {
+  if (!(eligibilityIndex instanceof Map)) return null;
+  const dateKey = parseDateKey(start);
+  if (!dateKey) return false;
+  const rows = eligibilityIndex.get(`${normalizeMemberId(memberID)}|${dateKey}`) || [];
+  return rows.some(row => /^eligible$/i.test(String(row.status || '').trim()));
+}
+
+function findRowField(row, predicate) {
+  if (!row || typeof row !== 'object') return { known: false, key: '', value: '' };
+  const keys = Object.keys(row);
+  const key = keys.find(candidate => predicate(normalizeHeaderKey(candidate), candidate));
+  return key
+    ? { known: true, key, value: row[key] }
+    : { known: false, key: '', value: '' };
+}
+
+function hasMeaningfulFieldValue(value) {
+  const text = String(value == null ? '' : value).trim();
+  return !!text && !/^(?:N\/?A|NONE|NO|FALSE|0|NOT\s+AVAILABLE)$/i.test(text);
+}
+
+function inspectAttachmentField(row) {
+  return findRowField(row, normalized =>
+    normalized.includes('attachment') ||
+    normalized.includes('attachedfile') ||
+    normalized.includes('approvaldocument') ||
+    normalized.includes('supportingdocument')
+  );
+}
+
+function inspectReferralField(row) {
+  const direct = findRowField(row, normalized =>
+    (normalized.includes('referral') || normalized.includes('referal')) &&
+    !normalized.includes('date') &&
+    !normalized.endsWith('on')
+  );
+  if (direct.known) return direct;
+  const attachment = inspectAttachmentField(row);
+  if (attachment.known && /referr?al/i.test(String(attachment.value || ''))) return attachment;
+  return { known: false, key: '', value: '' };
+}
+
+function inspectReferralDateField(row) {
+  const direct = findRowField(row, normalized =>
+    (normalized.includes('referral') || normalized.includes('referal')) &&
+    (normalized.includes('date') || normalized.endsWith('on'))
+  );
+  if (direct.known) return direct;
+  const documentDate = findRowField(row, normalized => normalized.includes('documentdate') || normalized.includes('attachmentdate'));
+  if (documentDate.known) return documentDate;
+  if (Object.prototype.hasOwnProperty.call(row || {}, 'Ordered On')) {
+    return { known: true, key: 'Ordered On', value: row['Ordered On'] };
+  }
+  return { known: false, key: '', value: '' };
+}
+
+function validateReferralForm(row, serviceStart) {
+  const remarks = [];
+  let unknown = false;
+  const form = inspectReferralField(row);
+  if (!form.known) {
+    unknown = true;
+    remarks.push('Referral-form field could not be identified in HCPRequests.');
+    return { remarks, unknown };
+  }
+  if (!hasMeaningfulFieldValue(form.value)) {
+    remarks.push(`Referral form is required but ${form.key} is blank.`);
+    return { remarks, unknown };
+  }
+
+  const referralDate = inspectReferralDateField(row);
+  if (!referralDate.known || !parseDateKey(referralDate.value)) {
+    unknown = true;
+    remarks.push('Referral form is present but its date could not be verified for 30-day validity.');
+    return { remarks, unknown };
+  }
+
+  const referralTs = dateKeyToUtc(parseDateKey(referralDate.value));
+  const serviceTs = dateKeyToUtc(parseDateKey(serviceStart));
+  if (!Number.isFinite(referralTs) || !Number.isFinite(serviceTs)) {
+    unknown = true;
+    remarks.push('Referral form 30-day validity could not be calculated.');
+    return { remarks, unknown };
+  }
+  const ageDays = Math.floor((serviceTs - referralTs) / 86400000);
+  if (ageDays < 0) remarks.push('Referral form date is after the procedure date.');
+  else if (ageDays > 30) remarks.push(`Referral form is ${ageDays} days old; maximum validity is 30 days.`);
+  return { remarks, unknown };
 }
 
 function isRemarkFreePartiallyApproved(row) {
@@ -84,7 +269,10 @@ function isRemarkFreePartiallyApproved(row) {
 }
 
 function codeRequiresAuthorization(code, rule = {}) {
-  return MEDICAL_CODES_REQUIRING_AUTH.has(String(code || '').trim()) ||
+  const normalizedCode = String(code || '').trim();
+  const checkpoint97Required = normalizedCode.startsWith('97') && !CHECKPOINT_97_AUTH_EXCEPTIONS.has(normalizedCode);
+  return MEDICAL_CODES_REQUIRING_AUTH.has(normalizedCode) ||
+    checkpoint97Required ||
     (rule.approval_details !== undefined && !/NOT\s+REQUIRED/i.test(rule.approval_details));
 }
 
@@ -311,7 +499,7 @@ function logInvalidRow(xlsRow, context, remarks) {
   }
 }
 
-function validateActivity(activityEl, xlsxMap, claimId, memberId, claimType = '') {
+function validateActivity(activityEl, xlsxMap, claimId, memberId, claimType = '', options = {}) {
   const id       = getText(activityEl, "ID");
   const code     = getText(activityEl, "Code");
   const start    = getText(activityEl, "Start");
@@ -325,14 +513,66 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId, claimType = ''
   const authID   = rawAuthText.trim();
 
   const isMedicalClaim = String(claimType || '').trim() === '3';
+  const normalizedCode = String(code || '').trim();
+  const normalizedReceiverID = String(options.receiverID || '').trim().toUpperCase();
   const rule     = authRules[code] || {};
-  const isAuthPresenceClassifiedCode = AUTH_PRESENCE_CLASSIFIED_CODES.has(String(code || '').trim());
-  // For medical claims (Type 3) only the explicit medical auth list applies;
-  // dental authRules from checker_auths.json are not relevant.
+  const isAuthPresenceClassifiedCode = AUTH_PRESENCE_CLASSIFIED_CODES.has(normalizedCode);
+  const is97AuthorizationCode = normalizedCode.startsWith('97') && !CHECKPOINT_97_AUTH_EXCEPTIONS.has(normalizedCode);
+  const is76815EligibilityOnly = isMedicalClaim &&
+    normalizedCode === '76815' &&
+    [CHECKPOINT_THIQA_RECEIVER_ID, CHECKPOINT_NEXTCARE_RECEIVER_ID].includes(normalizedReceiverID);
+  const isMaternity768 = isMedicalClaim && options.isMaternity === true && normalizedCode.startsWith('768');
+  const isMaternityEligibilityOrApproval =
+    isMaternity768 &&
+    normalizedCode !== '76816' &&
+    !is76815EligibilityOnly;
+  const eligibilityState = (is76815EligibilityOnly || isMaternityEligibilityOrApproval)
+    ? getEligibilityState(options.eligibilityIndex, memberId, start)
+    : null;
+
+  if (is76815EligibilityOnly) {
+    const eligibilityRemarks = [];
+    let eligibilityUnknown = false;
+    if (eligibilityState === true) {
+      // Thiqa/Nextcare 76815 explicitly uses Eligibility rather than attached approval.
+    } else if (eligibilityState === false) {
+      eligibilityRemarks.push('76815 requires a matching Eligible eligibility row for Thiqa/Nextcare.');
+    } else {
+      eligibilityUnknown = true;
+      eligibilityRemarks.push('76815 requires Eligibility for Thiqa/Nextcare, but no Eligibility workbook was available to verify it.');
+    }
+    return {
+      claimId, memberId, id, code, description: rule.description || "", netTotal, qty,
+      ordering, authID, start, xlsRow: {}, xlsAllAuthRows: [], denialCode: "",
+      denialReason: "", remarks: eligibilityRemarks, unknown: eligibilityUnknown
+    };
+  }
+
+  if (isMaternityEligibilityOrApproval && !authID) {
+    const maternityRemarks = [];
+    let maternityUnknown = false;
+    if (eligibilityState === true) {
+      // Eligibility satisfies the general maternity 768-series checkpoint.
+    } else if (eligibilityState === false) {
+      maternityRemarks.push(`${normalizedCode} in a maternity claim requires either matching Eligibility or Approval.`);
+    } else {
+      maternityUnknown = true;
+      maternityRemarks.push(`${normalizedCode} in a maternity claim requires Eligibility or Approval; Eligibility data was not available.`);
+    }
+    return {
+      claimId, memberId, id, code, description: rule.description || "", netTotal, qty,
+      ordering, authID, start, xlsRow: {}, xlsAllAuthRows: [], denialCode: "",
+      denialReason: "", remarks: maternityRemarks, unknown: maternityUnknown
+    };
+  }
+
+  // For medical claims, explicit CT/MRI/therapy/76816 codes plus all 97-series
+  // codes require authorization. The source checkpoint's 97 exception set is
+  // intentionally editable above and currently empty.
   const needsAuth = isAuthPresenceClassifiedCode
     ? Boolean(authID)
     : (isMedicalClaim
-      ? MEDICAL_CODES_REQUIRING_AUTH.has(String(code || '').trim())
+      ? (MEDICAL_CODES_REQUIRING_AUTH.has(normalizedCode) || is97AuthorizationCode || isMaternity768)
       : codeRequiresAuthorization(code, rule));
 
   if (!needsAuth && !authID) {
@@ -356,7 +596,7 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId, claimType = ''
     };
   }
 
-  if (parseFloat(netTotal || "0") === 0) {
+  if (parseFloat(netTotal || "0") === 0 && !needsAuth) {
     return {
       claimId,
       memberId,
@@ -438,6 +678,26 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId, claimType = ''
       unknown = true;
     }
 
+    if (
+      isMedicalClaim &&
+      normalizedReceiverID === CHECKPOINT_NEXTCARE_RECEIVER_ID &&
+      CHECKPOINT_PHYSIOTHERAPY_CODES.has(normalizedCode)
+    ) {
+      const attachment = inspectAttachmentField(matchedRow);
+      if (!attachment.known) {
+        unknown = true;
+        remarks.push('Nextcare physiotherapy approval attachment field could not be identified in HCPRequests.');
+      } else if (!hasMeaningfulFieldValue(attachment.value)) {
+        remarks.push(`Nextcare physiotherapy approval attachment is required but ${attachment.key} is blank.`);
+      }
+    }
+
+    if (isMedicalClaim && CHECKPOINT_DIETICIAN_CODES.has(normalizedCode)) {
+      const referralResult = validateReferralForm(matchedRow, start);
+      remarks.push(...referralResult.remarks);
+      if (referralResult.unknown) unknown = true;
+    }
+
     return {
       claimId,
       memberId,
@@ -474,11 +734,11 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId, claimType = ''
     denialCode,
     denialReason,
     remarks,
-    unknown: false
+    unknown
   };
 }
 
-function validateClaims(xmlDoc, xlsxData, receiverID = '') {
+function validateClaims(xmlDoc, xlsxData, receiverID = '', options = {}) {
   // If ReceiverID is HAAD, skip validation and treat all activities as valid (cash file with no authorization required)
   if (receiverID.toUpperCase() === 'HAAD') {
     console.log('[AUTHS] ReceiverID is HAAD - treating all activities as valid (cash file, no authorization required)');
@@ -529,13 +789,20 @@ function validateClaims(xmlDoc, xlsxData, receiverID = '') {
     const encounter = claimEl.getElementsByTagName("Encounter")[0];
     const claimType = getText(encounter || claimEl, "Type");
     const isMedicalClaim = String(claimType || '').trim() === '3';
+    const isMaternity = Array.from(claimEl.getElementsByTagName('Diagnosis')).some(
+      diagnosis => String(getText(diagnosis, 'Code') || '').trim().toUpperCase().startsWith('O')
+    );
 
     const orderingClinicians = acts
       .map(a => getText(a, "OrderingClinician").trim().toUpperCase())
       .filter(Boolean);
     const uniqueOrderingClinicians = new Set(orderingClinicians);
 
-    acts.forEach(a => results.push(validateActivity(a, xlsxMap, cid, mid, claimType)));
+    acts.forEach(a => results.push(validateActivity(a, xlsxMap, cid, mid, claimType, {
+      receiverID,
+      isMaternity,
+      eligibilityIndex: options.eligibilityIndex || null
+    })));
 
     if (isMedicalClaim && uniqueOrderingClinicians.size > 1) {
       const claimRows = results.filter(r => r.claimId === cid);
@@ -1049,6 +1316,13 @@ async function runAuthsCheck() {
     console.log('[AUTHS] Using Auth file from unified cache:', xlsxFile.name);
   }
   
+  // Eligibility is optional for most authorization checks, but it is used for
+  // 76815 Thiqa/Nextcare and maternity 768-series eligibility-or-approval.
+  const eligibilityFile =
+    document.getElementById('eligibilityInput')?.files?.[0] ||
+    window.unifiedCheckerFiles?.eligibility ||
+    null;
+
   // Validate files are uploaded
   if (!xmlFile) {
     if (statusDiv) statusDiv.textContent = 'Please select an XML file first.';
@@ -1077,8 +1351,14 @@ async function runAuthsCheck() {
       throw new Error('Invalid authorization file structure - expected array of rows');
     }
     
+    const eligibilityIndex = eligibilityFile
+      ? await parseEligibilityIndexForAuth(eligibilityFile)
+      : null;
+
     // Validate claims against authorizations (pass receiverID to skip validation for HAAD)
-    const results = validateClaims(xmlResult.doc, xlsxData, xmlResult.receiverID);
+    const results = validateClaims(xmlResult.doc, xlsxData, xmlResult.receiverID, {
+      eligibilityIndex
+    });
     console.log('[DEBUG] Auth validation complete:', {
       resultsCount: results.length,
       xmlClaimCount,
