@@ -1138,10 +1138,6 @@
     }
 
     if (record.Modifier === '52') {
-      const age = ageOnDate(eligibilityMatch?.ageRaw, eligibilityMatch?.dobRaw, record.Date);
-      if (Number.isFinite(age) && (age <= 18 || age > 60)) remarks.push(`Modifier 52 cannot be used for age ${age}.`);
-      else if (!Number.isFinite(age)) manualReviewRemarks.push('Modifier 52 age restriction could not be verified from Eligibility data.');
-
       if (currentClaimContext.hasPregnancyDiagnosis) remarks.push('Modifier 52 cannot be used for pregnancy claims.');
 
       const orderingSpecialty = String(clinicianSpecialtyMap.get(normalizeClinician(record.OrderingClinicianRaw)) || '').toUpperCase();
