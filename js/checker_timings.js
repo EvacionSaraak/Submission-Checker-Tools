@@ -278,20 +278,10 @@ function extractClaims(xmlDoc, options = {}) {
             isMedicalClaim &&
             timed97Codes.length > 0 &&
             total97Quantity > 0;
-        const expected97Band = has97Activities && encounterMinutes >= 0
-            ? get97BandForDuration(encounterMinutes)
-            : null;
         const hasInvalid97Duration =
             has97Activities &&
             encounterMinutes >= 0 &&
-            (
-                !expected97Band ||
-                total97Quantity !== expected97Band.quantity
-            );
-        const hasCheckpointTherapyActivities = isMedicalClaim && activities.some(activity => {
-            const code = activity.querySelector("Code")?.textContent?.trim() || "";
-            return CHECKPOINT_THERAPY_TIMING_CODES.has(code);
-        });
+            encounterMinutes < minimum97Minutes;
         const timed97CodeLabel =
             timed97Codes.length === 1
                 ? `Code ${timed97Codes[0]}`
@@ -387,7 +377,7 @@ function extractClaims(xmlDoc, options = {}) {
             if (
                 encounterMinutes >= 0 &&
                 encounterMinutes < 10 &&
-                (!has97Activities || hasCheckpointTherapyActivities)
+                !has97Activities
             ) {
                 isValid = false;
                 remarks.push(
@@ -437,29 +427,13 @@ function extractClaims(xmlDoc, options = {}) {
                 hasInvalid97Duration
             ) {
                 isValid = false;
-                if (!expected97Band) {
-                    remarks.push(
-                        `${timed97CodeLabel}: encounter duration ${encounterMinutes} minutes is outside ` +
-                        `the supported 97-code bands (8-22=Qty1, 23-37=Qty2, 38-52=Qty3, 53-67=Qty4).`
-                    );
-                } else {
-                    remarks.push(
-                        `${timed97CodeLabel}: encounter duration ${encounterMinutes} minutes requires ` +
-                        `total quantity ${expected97Band.quantity}, but total 97-code quantity is ` +
-                        `${formatMinuteValue(total97Quantity)}.`
-                    );
-                }
-            }
-
-            if (
-                isMedicalClaim &&
-                CHECKPOINT_THERAPY_TIMING_CODES.has(codeValue) &&
-                encounterMinutes >= 0 &&
-                encounterMinutes < 10
-            ) {
-                isValid = false;
                 remarks.push(
-                    `${codeValue} is a checkpoint therapy/dietician activity and requires at least 10 minutes of encounter time.`
+                    `${timed97CodeLabel}: total quantity ` +
+                    `${formatMinuteValue(total97Quantity)} requires an ` +
+                    `encounter duration of at least ` +
+                    `${formatMinuteValue(minimum97Minutes)} minutes, but the ` +
+                    `encounter duration is ` +
+                    `${encounterMinutes} minutes.`
                 );
             }
 
