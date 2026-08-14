@@ -37,6 +37,18 @@
   const PLACEHOLDER_EID_PATTERN = /^(0+|1+|2+|9+)$/;
   const UNKNOWN_EID_PATTERN = /^0+$/;
 
+  const CHECKPOINT_PAYER_RULES = Object.freeze({
+    D001: Object.freeze({ name: 'Thiqa', expectedClaimPayerIDs: ['E001'], payerNamePattern: /THIQA/i }),
+    A001: Object.freeze({ name: 'Daman Enhanced', expectedClaimPayerIDs: ['A001'], payerNamePattern: /DAMAN/i }),
+    D004: Object.freeze({ name: 'Daman Basic', expectedClaimPayerIDs: ['A001'], payerNamePattern: /DAMAN/i }),
+    A025: Object.freeze({ name: 'NGI', expectedClaimPayerIDs: [], payerNamePattern: /(NGI|NATIONAL\s+GENERAL)/i }),
+    C002: Object.freeze({ name: 'Nextcare', expectedClaimPayerIDs: [], payerNamePattern: /NEXTCARE/i })
+  });
+  const CHECKPOINT_OCCUPATIONAL_THERAPY_CODES = new Set(['97166', '97168', '97530', '97533', '97535', '97129']);
+  const CHECKPOINT_PHYSIOTHERAPY_CODES = new Set(['97161', '97164', '97110', '97140', '97032', '97530', '97112', '97116']);
+  const CHECKPOINT_SPEECH_THERAPY_CODES = new Set(['92523', '92507']);
+  const CHECKPOINT_DIETICIAN_CODES = new Set(['97802', '97803']);
+
   const HEADER_ALIASES = Object.freeze({
     payerName: ['Payer Name', 'Payer'],
     memberName: ['Member Name', 'Patient Name'],
@@ -369,6 +381,8 @@
 
   function parseXMLClaims(xmlText) {
     const xmlDocument = parseXmlDocument(xmlText);
+    const header = xmlDocument.getElementsByTagName('Header')[0] || null;
+    const receiverID = normalizeUpper(getDirectText(header, 'ReceiverID') || getNestedText(header, 'ReceiverID'));
 
     const claims = Array.from(xmlDocument.getElementsByTagName('Claim'));
     if (!claims.length) throw new Error('The XML contains no Claim entries.');
@@ -378,6 +392,11 @@
       const encounterStartRaw = getNestedText(encounter, 'Start');
       const encounterStart = parseDateTime(encounterStartRaw);
       const activities = Array.from(claim.getElementsByTagName('Activity'));
+      const activityCodes = new Set(
+        activities.map(activity => normalizeUpper(getNestedText(activity, 'Code'))).filter(Boolean)
+      );
+      const contract = claim.getElementsByTagName('Contract')[0] || null;
+      const packageName = getNestedText(contract, 'PackageName');
       const clinicians = new Set();
       const performingClinicians = new Set();
       const orderingClinicians = new Set();
@@ -409,6 +428,7 @@
       return {
         claimIndex,
         claimID: getDirectText(claim, 'ID') || `Claim ${claimIndex + 1}`,
+        receiverID,
         payerIDRaw: getDirectText(claim, 'PayerID'),
         payerID: normalizeUpper(getDirectText(claim, 'PayerID')),
         memberIDRaw: getDirectText(claim, 'MemberID'),
@@ -429,6 +449,8 @@
         requiredClinicians,
         clinicianMatchRule,
         isDental,
+        activityCodes,
+        packageName,
         claimXML: claim.outerHTML
       };
     });
@@ -837,6 +859,85 @@
     return `Eligibility for ${memberID} cannot be found on ${claimDate} for ${clinicianID}.`;
   }
 
+  function validateCheckpointPayerPlanAndTherapy(claim, validationRow, invalidRemarks, unknownRemarks) {
+    const receiverID = normalizeUpper(claim?.receiverID);
+    const payerRule = CHECKPOINT_PAYER_RULES[receiverID] || null;
+
+    if (payerRule) {
+      const expectedPayers = Array.isArray(payerRule.expectedClaimPayerIDs)
+        ? payerRule.expectedClaimPayerIDs.map(normalizeUpper)
+        : [];
+      if (expectedPayers.length && !expectedPayers.includes(normalizeUpper(claim?.payerID))) {
+        invalidRemarks.push(
+          `Claim PayerID ${claim?.payerIDRaw || '(blank)'} does not match ReceiverID ${receiverID}; ` +
+          `expected ${expectedPayers.join(' or ')}.`
+        );
+      }
+
+      if (validationRow) {
+        const eligibilityPayerName = normalizeText(validationRow.payerName);
+        if (!eligibilityPayerName) {
+          unknownRemarks.push(`Eligibility Payer Name is blank, so ${payerRule.name} payer consistency could not be verified.`);
+        } else if (payerRule.payerNamePattern && !payerRule.payerNamePattern.test(eligibilityPayerName)) {
+          invalidRemarks.push(
+            `Eligibility Payer Name \`${eligibilityPayerName}\` does not match ReceiverID ${receiverID} (${payerRule.name}).`
+          );
+        }
+      }
+    }
+
+    if (validationRow && claim?.packageName) {
+      const eligibilityPackage = normalizeText(validationRow.packageName);
+      if (!eligibilityPackage) {
+        unknownRemarks.push(
+          `Claim Contract PackageName \`${claim.packageName}\` is present but Eligibility Package Name is blank.`
+        );
+      } else if (normalizeHeader(claim.packageName) !== normalizeHeader(eligibilityPackage)) {
+        invalidRemarks.push(
+          `Claim Contract PackageName \`${claim.packageName}\` does not match Eligibility Package Name \`${eligibilityPackage}\`.`
+        );
+      }
+    }
+
+    if (!validationRow) return;
+
+    const codes = claim?.activityCodes instanceof Set ? claim.activityCodes : new Set();
+    const serviceCategory = normalizeText(validationRow.serviceCategory);
+    const categoryChecks = [];
+
+    if ([...codes].some(code => CHECKPOINT_SPEECH_THERAPY_CODES.has(code))) {
+      categoryChecks.push({ label: 'Speech Therapy', pattern: /speech/i });
+    }
+    if ([...codes].some(code => CHECKPOINT_DIETICIAN_CODES.has(code))) {
+      categoryChecks.push({ label: 'Dietician/Nutrition', pattern: /(diet|nutrition)/i });
+    }
+    if ([...codes].some(code => CHECKPOINT_OCCUPATIONAL_THERAPY_CODES.has(code) && code !== '97530')) {
+      categoryChecks.push({ label: 'Occupational Therapy', pattern: /occupational/i });
+    }
+    if ([...codes].some(code => CHECKPOINT_PHYSIOTHERAPY_CODES.has(code) && code !== '97530')) {
+      categoryChecks.push({ label: 'Physiotherapy', pattern: /(physio|physical)/i });
+    }
+    if (codes.has('97530')) {
+      categoryChecks.push({ label: 'Therapy (97530)', pattern: /(physio|physical|occupational)/i });
+    }
+
+    if (categoryChecks.length) {
+      if (!serviceCategory) {
+        unknownRemarks.push(
+          `Eligibility Service Category is blank, so ${categoryChecks.map(check => check.label).join(', ')} coverage could not be verified.`
+        );
+      } else {
+        categoryChecks.forEach(check => {
+          if (!check.pattern.test(serviceCategory)) {
+            invalidRemarks.push(
+              `${check.label} activity matched Eligibility Service Category \`${serviceCategory}\`, which does not match the required therapy category.`
+            );
+          }
+        });
+      }
+    }
+  }
+
   function analyzeClaim(claim, match) {
     const matchedRow = match.row;
     const selectedRow = match.selectedRow || null;
@@ -896,6 +997,8 @@
         );
       }
 
+      validateCheckpointPayerPlanAndTherapy(claim, validationRow, invalidRemarks, unknownRemarks);
+
       if (
         claim.isDental &&
         validationRow.serviceCategory &&
@@ -926,6 +1029,10 @@
       }
     }
 
+    if (!validationRow) {
+      validateCheckpointPayerPlanAndTherapy(claim, null, invalidRemarks, unknownRemarks);
+    }
+
     const status = invalidRemarks.length
       ? 'Invalid'
       : unknownRemarks.length
@@ -935,6 +1042,10 @@
     return {
       ClaimID: claim.claimID,
       PayerID: claim.payerIDRaw,
+      ReceiverID: claim.receiverID,
+      ClaimPackageName: claim.packageName || '',
+      EligibilityPayerName: matchedRow?.payerName || '',
+      EligibilityPackageName: matchedRow?.packageName || '',
       MemberID: claim.memberIDRaw,
       EmiratesID: claim.eidRaw,
       EncounterStart: claim.encounterStartRaw,
