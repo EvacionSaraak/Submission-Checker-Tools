@@ -921,7 +921,7 @@
       categoryChecks.push({ label: 'Speech Therapy', pattern: /speech/i });
     }
     if ([...codes].some(code => CHECKPOINT_DIETICIAN_CODES.has(code))) {
-      categoryChecks.push({ label: 'Dietician/Nutrition', pattern: /(diet|nutrition)/i });
+      categoryChecks.push({ label: 'Dietician/Nutrition', pattern: /(diet|nutrition)|^other\s+op\s+services?$/i });
     }
     if ([...codes].some(code => CHECKPOINT_OCCUPATIONAL_THERAPY_CODES.has(code) && code !== '97530')) {
       categoryChecks.push({ label: 'Occupational Therapy', pattern: /occupational/i });
