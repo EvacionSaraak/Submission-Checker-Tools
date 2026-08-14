@@ -29,9 +29,26 @@
         const DAMAN_RECEIVER_IDS = new Set(['D004', 'A001']);
         const DAMAN_BASIC_RECEIVER_ID = 'D004';
         const THIQA_RECEIVER_ID = 'D001';
-        const DAMAN_BASIC_PRIMARY_EXACT_EXCLUSIONS = new Set(['L91.0', 'N52.9', 'A53.9', 'E28.2', 'R53.83']);
-        const O_CODE_PRIMARY_SECONDARY_EXCLUSIONS = new Set(['D64.9', 'R53.83', 'N76.0', 'N96']);
+        const CHECKPOINT_EXPECTED_CLAIM_PAYER_IDS = Object.freeze({
+            D001: new Set(['E001']),
+            A001: new Set(['A001']),
+            D004: new Set(['A001'])
+        });
+        const DAMAN_BASIC_PRIMARY_EXACT_EXCLUSIONS = new Set(['L910', 'N529', 'A539', 'E282', 'R5383']);
+        const O_CODE_PRIMARY_SECONDARY_EXCLUSIONS = new Set(['D649', 'R5383', 'N760', 'N96']);
         const O_CODE_FORBIDDEN_ACTIVITY_CODES = new Set(['76856', '76857', '76830']);
+        // CHECKPOINTS.docx says "Z68 must not be coded with O codes - except"
+        // but does not identify the exceptions. Keep the rule active and the
+        // exception list explicitly editable rather than silently disabling it.
+        const CHECKPOINT_Z68_O_CODE_EXCEPTIONS = new Set([]);
+        const CHECKPOINT_CBC_REPEAT_EXEMPT_CODES = new Set(['85025', '85027', '85004', '85007', '85009']);
+        const CHECKPOINT_CRP_REPEAT_EXEMPT_CODES = new Set(['86140', '86141']);
+        const CHECKPOINT_BHCG_REPEAT_EXEMPT_CODES = new Set(['84702', '84703']);
+        const CHECKPOINT_LAB_REPEAT_EXEMPT_CODES = new Set([
+            ...CHECKPOINT_CBC_REPEAT_EXEMPT_CODES,
+            ...CHECKPOINT_CRP_REPEAT_EXEMPT_CODES,
+            ...CHECKPOINT_BHCG_REPEAT_EXEMPT_CODES
+        ]);
         const CHECKPOINT_MUTUALLY_EXCLUSIVE_ACTIVITY_PAIRS = [
             ['31231', '31575'],
             ['30901', '31231'],
@@ -744,8 +761,13 @@
         function validateCheckpointClaimRules(diagnoses, activities, text, invalidFields, options = {}) {
             if (!options.isMedicalClaim) return;
             const receiverID = String(options.receiverID || '').trim().toUpperCase();
+            const claimPayerID = String(options.claimPayerID || '').trim().toUpperCase();
+            const packageName = String(options.packageName || '').trim().toUpperCase();
             const isDamanBasic = receiverID === DAMAN_BASIC_RECEIVER_ID;
             const isDaman = DAMAN_RECEIVER_IDS.has(receiverID);
+            const isNas = receiverID === 'NAS' || receiverID.startsWith('NAS') ||
+                claimPayerID === 'NAS' || claimPayerID.startsWith('NAS') ||
+                packageName.includes('NAS');
             const diagnosisRows = Array.from(diagnoses || []).map(diagnosis => ({
                 type: String(text('Type', diagnosis) || '').trim(),
                 code: normalizeDiagnosisCode(text('Code', diagnosis))
@@ -759,20 +781,29 @@
             const principal = diagnosisRows.find(row => row.type === 'Principal') || null;
             const hasOCode = diagnosisRows.some(row => row.code.startsWith('O'));
 
+            const expectedClaimPayers = CHECKPOINT_EXPECTED_CLAIM_PAYER_IDS[receiverID] || null;
+            if (expectedClaimPayers && !expectedClaimPayers.has(claimPayerID)) {
+                invalidFields.push(
+                    `Claim PayerID ${claimPayerID || '(blank)'} does not match ReceiverID ${receiverID}; ` +
+                    `expected ${Array.from(expectedClaimPayers).join(' or ')}.`
+                );
+            }
+
             if (isDamanBasic && principal && (principal.code.startsWith('Q') || principal.code.startsWith('F'))) invalidFields.push(`Principal Diagnosis ${principal.code} is not covered for Daman Basic.`);
             if (isDamanBasic && principal && principal.code.startsWith('E66')) invalidFields.push(`Principal Diagnosis ${principal.code} is not covered for Daman Basic.`);
-            if (isDamanBasic && principal && principal.code.startsWith('O99.21')) invalidFields.push(`Principal Diagnosis ${principal.code} is not covered for Daman Basic.`);
+            if (isDamanBasic && principal && principal.code.startsWith('O9921')) invalidFields.push(`Principal Diagnosis ${principal.code} is not covered for Daman Basic.`);
             if (isDamanBasic && principal && DAMAN_BASIC_PRIMARY_EXACT_EXCLUSIONS.has(principal.code)) invalidFields.push(`Principal Diagnosis ${principal.code} is not covered for Daman Basic.`);
+            if (isNas && principal?.code === 'E282') invalidFields.push('Principal Diagnosis E28.2 is not covered for NAS.');
 
-            if (isDaman && diagnosisCodes.has('L70.0')) invalidFields.push('Diagnosis L70.0 is not covered for Daman Basic or Daman Enhanced.');
-            if (receiverID === THIQA_RECEIVER_ID && principal?.code === 'L70.0') {
-                const hasRequiredReason = diagnosisRows.some(row => row.type === 'Reason for Visit' && row.code === 'B96.89');
+            if (isDaman && diagnosisCodes.has('L700')) invalidFields.push('Diagnosis L70.0 is not covered for Daman Basic or Daman Enhanced.');
+            if (receiverID === THIQA_RECEIVER_ID && principal?.code === 'L700') {
+                const hasRequiredReason = diagnosisRows.some(row => row.type === 'Reason for Visit' && row.code === 'B9689');
                 if (!hasRequiredReason) invalidFields.push('Principal Diagnosis L70.0 for Thiqa requires B96.89 as Reason for Visit.');
             }
 
-            if (diagnosisCodes.has('J30.9') && diagnosisCodes.has('J45.9')) invalidFields.push('Diagnosis codes J30.9 and J45.9 cannot be coded together.');
+            if (diagnosisCodes.has('J309') && diagnosisCodes.has('J459')) invalidFields.push('Diagnosis codes J30.9 and J45.9 cannot be coded together.');
             if (diagnosisCodes.has('J00') && diagnosisRows.some(row => row.code.startsWith('J02'))) invalidFields.push('J02 diagnosis codes cannot be coded together with J00.');
-            if (diagnosisCodes.has('N39') && ['O23.41', 'O23.42', 'O23.43'].some(code => diagnosisCodes.has(code))) invalidFields.push('O23.41/O23.42/O23.43 cannot be coded together with N39.');
+            if (diagnosisCodes.has('N39') && ['O2341', 'O2342', 'O2343'].some(code => diagnosisCodes.has(code))) invalidFields.push('O23.41/O23.42/O23.43 cannot be coded together with N39.');
 
             if (hasOCode) {
                 diagnosisRows.forEach(row => {
@@ -784,8 +815,20 @@
 
             const z68Rows = diagnosisRows.filter(row => row.code.startsWith('Z68'));
             if (z68Rows.length) {
+                if (hasOCode) {
+                    const oRows = diagnosisRows.filter(row => row.code.startsWith('O'));
+                    const unexceptedPair = z68Rows.some(z68Row =>
+                        oRows.some(oRow => !CHECKPOINT_Z68_O_CODE_EXCEPTIONS.has(`${z68Row.code}|${oRow.code}`))
+                    );
+                    if (unexceptedPair) {
+                        invalidFields.push(
+                            'Z68 diagnoses cannot be coded with O-series diagnoses. ' +
+                            'No CHECKPOINT_Z68_O_CODE_EXCEPTIONS entry matched this claim.'
+                        );
+                    }
+                }
                 const e66Rows = diagnosisRows.filter(row => row.code.startsWith('E66'));
-                const hasAlternativeCompanions = diagnosisCodes.has('R63.6') && diagnosisCodes.has('Z71.3');
+                const hasAlternativeCompanions = diagnosisCodes.has('R636') && diagnosisCodes.has('Z713');
                 if (!e66Rows.length && !hasAlternativeCompanions) invalidFields.push('Z68 diagnosis requires E66 or both R63.6 and Z71.3.');
                 if (e66Rows.length) {
                     const e66Types = new Set(e66Rows.map(row => row.type));
@@ -802,6 +845,106 @@
             if (isDamanBasic && activityCodes.has('86703')) invalidFields.push('Activity 86703 is not covered for Daman Basic.');
             if (isDaman && activityCodes.has('82785')) invalidFields.push(`Activity 82785 is not covered for Daman receiver ${receiverID}.`);
             if (receiverID && receiverID !== 'HAAD' && activityCodes.has('87635')) invalidFields.push('Activity 87635 cannot be coded for insurance claims.');
+        }
+
+        function buildCheckpointHistoricalRemarksByClaim(claims) {
+            const remarksByClaim = new Map();
+            const eventsByMember = new Map();
+            const addRemark = (claimID, message) => {
+                if (!claimID || !message) return;
+                if (!remarksByClaim.has(claimID)) remarksByClaim.set(claimID, []);
+                const rows = remarksByClaim.get(claimID);
+                if (!rows.includes(message)) rows.push(message);
+            };
+            const dayMs = 24 * 60 * 60 * 1000;
+            const toDayTimestamp = value => {
+                const parsed = parseEncounterDateTime(value);
+                if (!parsed?.dateKey) return null;
+                const [y, m, d] = parsed.dateKey.split('-').map(Number);
+                const date = new Date(Date.UTC(y, m - 1, d));
+                return Number.isNaN(date.getTime()) ? null : date.getTime();
+            };
+            const calendarDayDiff = (left, right) => Math.round((left - right) / dayMs);
+            const sixMonthsAfter = timestamp => {
+                const date = new Date(timestamp);
+                const copy = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+                copy.setUTCMonth(copy.getUTCMonth() + 6);
+                return copy.getTime();
+            };
+
+            Array.from(claims || []).forEach(claim => {
+                const claimID = getDirectChildText(claim, 'ID') || 'Unknown';
+                const memberID = String(getDirectChildText(claim, 'MemberID') || '').trim();
+                const encounter = claim.getElementsByTagName('Encounter')[0] || null;
+                const timestamp = toDayTimestamp(safeTextByTag(encounter, 'Start') || safeTextByTag(encounter, 'End'));
+                if (!memberID || timestamp == null) return;
+                if (!eventsByMember.has(memberID)) eventsByMember.set(memberID, []);
+                Array.from(claim.getElementsByTagName('Activity')).forEach(activity => {
+                    const code = String(safeTextByTag(activity, 'Code') || '').trim().toUpperCase();
+                    if (!code) return;
+                    eventsByMember.get(memberID).push({ claimID, code, timestamp });
+                });
+            });
+
+            eventsByMember.forEach(events => {
+                events.sort((a, b) => a.timestamp - b.timestamp || a.claimID.localeCompare(b.claimID));
+                const seenByCode = new Map();
+                const dietHistory = [];
+
+                events.forEach(event => {
+                    const previousSameCode = seenByCode.get(event.code) || [];
+
+                    if (event.code === '83036' && previousSameCode.length) {
+                        const previous = previousSameCode[previousSameCode.length - 1];
+                        const days = calendarDayDiff(event.timestamp, previous.timestamp);
+                        if (days >= 0 && days < 90) {
+                            addRemark(event.claimID, `83036 can only be repeated after 90 days; previous occurrence was ${days} day${days === 1 ? '' : 's'} earlier.`);
+                        }
+                    } else if (event.code.startsWith('800') && previousSameCode.length) {
+                        const previous = previousSameCode[previousSameCode.length - 1];
+                        if (event.timestamp < sixMonthsAfter(previous.timestamp)) {
+                            addRemark(event.claimID, `${event.code} can only be repeated after 6 months.`);
+                        }
+                    } else if (
+                        /^8/.test(event.code) &&
+                        !event.code.startsWith('800') &&
+                        event.code !== '83036' &&
+                        !CHECKPOINT_LAB_REPEAT_EXEMPT_CODES.has(event.code) &&
+                        previousSameCode.length
+                    ) {
+                        const previous = previousSameCode[previousSameCode.length - 1];
+                        const days = calendarDayDiff(event.timestamp, previous.timestamp);
+                        if (days >= 0 && days < 3) {
+                            addRemark(event.claimID, `${event.code} should only be repeated after 3 days; previous occurrence was ${days} day${days === 1 ? '' : 's'} earlier.`);
+                        }
+                    }
+
+                    if (event.code === '97802' || event.code === '97803') {
+                        const previousDiet = dietHistory[dietHistory.length - 1] || null;
+                        if (event.code === '97802' && previousDiet) {
+                            addRemark(event.claimID, '97802 is the initial dietician visit code and cannot follow an earlier 97802/97803 visit in the same submission history.');
+                        }
+                        if (event.code === '97803') {
+                            const initialExists = dietHistory.some(row => row.code === '97802');
+                            const previousDayVisit = dietHistory.some(row =>
+                                calendarDayDiff(event.timestamp, row.timestamp) === 1
+                            );
+                            if (!initialExists) {
+                                addRemark(event.claimID, '97803 requires a prior 97802 initial dietician visit.');
+                            }
+                            if (!previousDayVisit) {
+                                addRemark(event.claimID, '97803 is for the next-day dietician visit and requires a dietician visit on the previous calendar day.');
+                            }
+                        }
+                        dietHistory.push(event);
+                    }
+
+                    if (!seenByCode.has(event.code)) seenByCode.set(event.code, []);
+                    seenByCode.get(event.code).push(event);
+                });
+            });
+
+            return remarksByClaim;
         }
 
         function validateConsultationAndSpecialtyRules(activities, text, invalidFields, clinicianSpecialtyMap, options = {}) {
@@ -911,6 +1054,7 @@
             const duplicateClaimIDs = new Set(Array.from(claimIDCounts.entries()).filter(([, count]) => count > 1).map(([claimID]) => claimID));
             const receiverID = safeTextByTag(xmlDocument.querySelector('Header'), 'ReceiverID');
             const mergeRemarks = detectNotMergedRemarksByClaim(claims, receiverID);
+            const checkpointHistoricalRemarks = buildCheckpointHistoricalRemarksByClaim(claims);
             Array.from(claims).forEach(claim => {
                 const missingFields = [];
                 const invalidFields = [];
@@ -1094,12 +1238,19 @@
                     receiverID
                 });
                 validateMedicalOrderingConsistency(activities, text, invalidFields, { isMedicalClaim });
-                validateCheckpointClaimRules(diagnoses, activities, text, invalidFields, { isMedicalClaim, receiverID });
                 const contract = claim.getElementsByTagName('Contract')[0];
-                if (contract && !text('PackageName', contract)) invalidFields.push('Contract.PackageName (null/empty)');
+                const packageName = contract ? text('PackageName', contract) : '';
+                validateCheckpointClaimRules(diagnoses, activities, text, invalidFields, {
+                    isMedicalClaim,
+                    receiverID,
+                    claimPayerID: payerID,
+                    packageName
+                });
+                if (contract && !packageName) invalidFields.push('Contract.PackageName (null/empty)');
                 checkForFalseValues(claim, invalidFields, 'Claim.');
                 if (claimHadAmpersand) invalidFields.push(AMPERSAND_REPLACEMENT_ERROR);
                 if (claimID && mergeRemarks.has(claimID)) mergeRemarks.get(claimID).forEach(message => invalidFields.push(message));
+                if (claimID && checkpointHistoricalRemarks.has(claimID)) checkpointHistoricalRemarks.get(claimID).forEach(message => invalidFields.push(message));
                 if (missingFields.length) {
                     remarks.push(`Missing: ${missingFields.join(', ')}`);
                 }
