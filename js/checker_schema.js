@@ -25,6 +25,19 @@
         const GP_992_REQUIRED_CODES = new Set(['99202', '99212']);
         const MUTUALLY_EXCLUSIVE_INFUSION_CODES = new Set(['96360', '96365', '96374']);
         const INVALID_ACTIVITY_CODES = new Set(['36591']);
+        const FIXED_QUANTITY_TWO_CODES = new Set(['87400', '87804']);
+        const DAMAN_RECEIVER_IDS = new Set(['D004', 'A001']);
+        const DAMAN_BASIC_RECEIVER_ID = 'D004';
+        const THIQA_RECEIVER_ID = 'D001';
+        const DAMAN_BASIC_PRIMARY_EXACT_EXCLUSIONS = new Set(['L91.0', 'N52.9', 'A53.9', 'E28.2', 'R53.83']);
+        const O_CODE_PRIMARY_SECONDARY_EXCLUSIONS = new Set(['D64.9', 'R53.83', 'N76.0', 'N96']);
+        const O_CODE_FORBIDDEN_ACTIVITY_CODES = new Set(['76856', '76857', '76830']);
+        const CHECKPOINT_MUTUALLY_EXCLUSIVE_ACTIVITY_PAIRS = [
+            ['31231', '31575'],
+            ['30901', '31231'],
+            ['76770', '76775'],
+            ['86140', '85651']
+        ];
         const ICD10_CM_FORMAT_PATTERN = /^[A-Z][0-9][A-Z0-9](?:\.[A-Z0-9]{1,4})?$/;
         const NON_REPORTABLE_ICD10_CODES = new Map([
             ['O34.21', ['O34.211', 'O34.212', 'O34.218', 'O34.219']]
@@ -723,6 +736,74 @@
             );
         }
 
+        function isOphthalmologyOrPsychiatrySpecialty(value) {
+            const specialty = normalizeSpecialty(value);
+            return specialty.includes('OPHTHALMOLOGY') || specialty.includes('OPTHALMOLOGY') || specialty.includes('PSYCHIATRY') || specialty.includes('PSYCHIATR');
+        }
+
+        function validateCheckpointClaimRules(diagnoses, activities, text, invalidFields, options = {}) {
+            if (!options.isMedicalClaim) return;
+            const receiverID = String(options.receiverID || '').trim().toUpperCase();
+            const isDamanBasic = receiverID === DAMAN_BASIC_RECEIVER_ID;
+            const isDaman = DAMAN_RECEIVER_IDS.has(receiverID);
+            const diagnosisRows = Array.from(diagnoses || []).map(diagnosis => ({
+                type: String(text('Type', diagnosis) || '').trim(),
+                code: normalizeDiagnosisCode(text('Code', diagnosis))
+            })).filter(row => row.code);
+            const activityRows = Array.from(activities || []).map(activity => ({
+                code: String(text('Code', activity) || '').trim().toUpperCase(),
+                net: Number(text('Net', activity) || 0)
+            })).filter(row => row.code);
+            const diagnosisCodes = new Set(diagnosisRows.map(row => row.code));
+            const activityCodes = new Set(activityRows.map(row => row.code));
+            const principal = diagnosisRows.find(row => row.type === 'Principal') || null;
+            const hasOCode = diagnosisRows.some(row => row.code.startsWith('O'));
+
+            if (isDamanBasic && principal && (principal.code.startsWith('Q') || principal.code.startsWith('F'))) invalidFields.push(`Principal Diagnosis ${principal.code} is not covered for Daman Basic.`);
+            if (isDamanBasic && principal && principal.code.startsWith('E66')) invalidFields.push(`Principal Diagnosis ${principal.code} is not covered for Daman Basic.`);
+            if (isDamanBasic && principal && principal.code.startsWith('O99.21')) invalidFields.push(`Principal Diagnosis ${principal.code} is not covered for Daman Basic.`);
+            if (isDamanBasic && principal && DAMAN_BASIC_PRIMARY_EXACT_EXCLUSIONS.has(principal.code)) invalidFields.push(`Principal Diagnosis ${principal.code} is not covered for Daman Basic.`);
+
+            if (isDaman && diagnosisCodes.has('L70.0')) invalidFields.push('Diagnosis L70.0 is not covered for Daman Basic or Daman Enhanced.');
+            if (receiverID === THIQA_RECEIVER_ID && principal?.code === 'L70.0') {
+                const hasRequiredReason = diagnosisRows.some(row => row.type === 'Reason for Visit' && row.code === 'B96.89');
+                if (!hasRequiredReason) invalidFields.push('Principal Diagnosis L70.0 for Thiqa requires B96.89 as Reason for Visit.');
+            }
+
+            if (diagnosisCodes.has('J30.9') && diagnosisCodes.has('J45.9')) invalidFields.push('Diagnosis codes J30.9 and J45.9 cannot be coded together.');
+            if (diagnosisCodes.has('J00') && diagnosisRows.some(row => row.code.startsWith('J02'))) invalidFields.push('J02 diagnosis codes cannot be coded together with J00.');
+            if (diagnosisCodes.has('N39') && ['O23.41', 'O23.42', 'O23.43'].some(code => diagnosisCodes.has(code))) invalidFields.push('O23.41/O23.42/O23.43 cannot be coded together with N39.');
+
+            if (hasOCode) {
+                diagnosisRows.forEach(row => {
+                    if ((row.type === 'Principal' || row.type === 'Secondary') && O_CODE_PRIMARY_SECONDARY_EXCLUSIONS.has(row.code)) invalidFields.push(`Diagnosis ${row.code} cannot be coded as ${row.type} when an O-series diagnosis is present.`);
+                });
+                const forbiddenOActivities = Array.from(activityCodes).filter(code => O_CODE_FORBIDDEN_ACTIVITY_CODES.has(code));
+                if (forbiddenOActivities.length) invalidFields.push(`Activities ${formatNaturalList(forbiddenOActivities)} cannot be coded with O-series diagnoses.`);
+            }
+
+            const z68Rows = diagnosisRows.filter(row => row.code.startsWith('Z68'));
+            if (z68Rows.length) {
+                const e66Rows = diagnosisRows.filter(row => row.code.startsWith('E66'));
+                const hasAlternativeCompanions = diagnosisCodes.has('R63.6') && diagnosisCodes.has('Z71.3');
+                if (!e66Rows.length && !hasAlternativeCompanions) invalidFields.push('Z68 diagnosis requires E66 or both R63.6 and Z71.3.');
+                if (e66Rows.length) {
+                    const e66Types = new Set(e66Rows.map(row => row.type));
+                    z68Rows.forEach(row => {
+                        if (!e66Types.has(row.type)) invalidFields.push(`Z68 and E66 diagnoses must use the same Diagnosis Type (Z68 is ${row.type || 'Unknown'}).`);
+                    });
+                }
+            }
+
+            CHECKPOINT_MUTUALLY_EXCLUSIVE_ACTIVITY_PAIRS.forEach(([left, right]) => {
+                if (activityCodes.has(left) && activityCodes.has(right)) invalidFields.push(`Activities ${left} and ${right} cannot be coded together.`);
+            });
+            if (activityCodes.has('94760') && Array.from(activityCodes).some(isConsultationCode)) invalidFields.push('Activity 94760 cannot be coded together with an E/M consultation code.');
+            if (isDamanBasic && activityCodes.has('86703')) invalidFields.push('Activity 86703 is not covered for Daman Basic.');
+            if (isDaman && activityCodes.has('82785')) invalidFields.push(`Activity 82785 is not covered for Daman receiver ${receiverID}.`);
+            if (receiverID && receiverID !== 'HAAD' && activityCodes.has('87635')) invalidFields.push('Activity 87635 cannot be coded for insurance claims.');
+        }
+
         function validateConsultationAndSpecialtyRules(activities, text, invalidFields, clinicianSpecialtyMap, options = {}) {
             const contexts = Array.from(activities || []).map(activity => {
                 const clinician = String(text('Clinician', activity) || '').trim().toUpperCase();
@@ -753,7 +834,6 @@
             }
 
             if (!options.isMedicalClaim) return;
-            const requires992SpecialtyCheck = contexts.length > 1;
             const infusionCodes = new Set();
             const consultationCodes = new Set();
             contexts.forEach(context => {
@@ -765,19 +845,16 @@
                 if (/^8/.test(code) && code !== '82948' && !specialtyContains(clinicianSpecialty, 'Pathology')) {
                     invalidFields.push(`Activity ${code} requires Clinician specialty containing Pathology (Currently \`${clinicianSpecialty || 'Unknown'}\`).`);
                 }
-                if ((code === '97802' || code === '97803') && !specialtyContains(clinicianSpecialty, 'Dietician')) {
-                    invalidFields.push(`Activity ${code} requires Clinician specialty containing Dietician (Currently \`${clinicianSpecialty || 'Unknown'}\`).`);
-                }
-                if (requires992SpecialtyCheck && GP_992_REQUIRED_CODES.has(code) && !specialtyContains(orderingSpecialty, 'General Practitioner')) {
-                    invalidFields.push(`Activity ${code} requires OrderingClinician specialty as General Practitioner (Currently \`${orderingSpecialty || 'Unknown'}\`).`);
-                }
-                if (GP_992_FORBIDDEN_CODES.has(code) && net !== 0 && specialtyContains(orderingSpecialty, 'General Practitioner') && !isGp992ForbiddenSpecialtyException(orderingClinician, code)) {
-                    invalidFields.push(`Activity ${code} requires OrderingClinician specialty to NOT be General Practitioner (Currently \`${orderingSpecialty || 'Unknown'}\`).`);
-                }
-                if (GP_992_FORBIDDEN_CODES.has(code) && (specialtyContains(orderingSpecialty, 'Ophthalmology') || specialtyContains(orderingSpecialty, 'Opthalmology'))) {
-                    invalidFields.push(`${orderingSpecialty || 'OrderingClinician Specialty'} cannot be used for ${code}.`);
-                }
+                if ((code === '97802' || code === '97803') && !specialtyContains(clinicianSpecialty, 'Dietician')) invalidFields.push(`Activity ${code} requires Clinician specialty containing Dietician (Currently \`${clinicianSpecialty || 'Unknown'}\`).`);
+                if (specialtyContains(clinicianSpecialty, 'Dietician') && code !== '97802' && code !== '97803') invalidFields.push(`Performing Clinician specialty Dietician can only be used for 97802/97803 (Currently ${code}).`);
+                if (specialtyContains(clinicianSpecialty, 'Pathology') && !/^8/.test(code)) invalidFields.push(`Performing Clinician specialty ${clinicianSpecialty || 'Pathology'} can only be used for 8-series laboratory codes (Currently ${code}).`);
+                if (GP_992_REQUIRED_CODES.has(code) && !specialtyContains(orderingSpecialty, 'General Practitioner')) invalidFields.push(`Activity ${code} requires OrderingClinician specialty as General Practitioner (Currently \`${orderingSpecialty || 'Unknown'}\`).`);
+                if (GP_992_FORBIDDEN_CODES.has(code) && net !== 0 && specialtyContains(orderingSpecialty, 'General Practitioner') && !isGp992ForbiddenSpecialtyException(orderingClinician, code)) invalidFields.push(`Activity ${code} requires OrderingClinician specialty to NOT be General Practitioner (Currently \`${orderingSpecialty || 'Unknown'}\`).`);
+                if (/^992/.test(code) && isOphthalmologyOrPsychiatrySpecialty(orderingSpecialty)) invalidFields.push(`${orderingSpecialty || 'OrderingClinician Specialty'} cannot be used as OrderingClinician specialty for ${code}.`);
+                if (/^992/.test(code) && isOphthalmologyOrPsychiatrySpecialty(clinicianSpecialty)) invalidFields.push(`${clinicianSpecialty || 'Performing Clinician Specialty'} cannot be used as Performing Clinician specialty for ${code}.`);
+                if (code === '82607' && DAMAN_RECEIVER_IDS.has(receiverID) && (specialtyContains(orderingSpecialty, 'General Practitioner') || specialtyContains(clinicianSpecialty, 'General Practitioner'))) invalidFields.push(`Activity 82607 cannot use a General Practitioner as Ordering or Performing Clinician for Daman receiver ${receiverID}.`);
                 if (MUTUALLY_EXCLUSIVE_INFUSION_CODES.has(code) && quantityRaw && quantity !== 1) invalidFields.push(`Activity ${code} must have Quantity of 1.`);
+                if (FIXED_QUANTITY_TWO_CODES.has(code) && quantityRaw && quantity !== 2) invalidFields.push(`Activity ${code} must have Quantity of 2.`);
             });
             const hasNewPatientCode = consultationCodes.has('99202') || consultationCodes.has('99203');
             const hasEstablishedPatientCode = consultationCodes.has('99212') || consultationCodes.has('99213');
@@ -1017,6 +1094,7 @@
                     receiverID
                 });
                 validateMedicalOrderingConsistency(activities, text, invalidFields, { isMedicalClaim });
+                validateCheckpointClaimRules(diagnoses, activities, text, invalidFields, { isMedicalClaim, receiverID });
                 const contract = claim.getElementsByTagName('Contract')[0];
                 if (contract && !text('PackageName', contract)) invalidFields.push('Contract.PackageName (null/empty)');
                 checkForFalseValues(claim, invalidFields, 'Claim.');
