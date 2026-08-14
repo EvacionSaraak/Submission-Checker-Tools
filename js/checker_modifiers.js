@@ -18,7 +18,9 @@
     member: 'Card Number / DHA Member ID',
     date: 'Ordered On',
     clinician: 'Clinician',
-    voi: 'VOI Number'
+    voi: 'VOI Number',
+    age: ['Age', 'Member Age', 'Patient Age'],
+    dob: ['Date of Birth', 'DOB', 'Birth Date', 'Member DOB']
   });
 
   let lastResults = [];
@@ -68,6 +70,12 @@
     return /^(92|992)/.test(
       String(code || '').trim()
     );
+  }
+
+  function moneyEqual(a, b) {
+    const left = Number(a);
+    const right = Number(b);
+    return Number.isFinite(left) && Number.isFinite(right) && Math.abs(left - right) < 0.01;
   }
 
   function getDirectChildren(parent, tagName) {
@@ -518,194 +526,83 @@
     );
   }
 
-  function parseEligibilityWorkbook(
-    workbookFile,
-    arrayBuffer
-  ) {
-    if (
-      !root.XLSX
-      || typeof root.XLSX.read
-        !== 'function'
-    ) {
-      throw new Error(
-        'SheetJS (XLSX) is unavailable.'
-      );
+  function resolveOptionalHeader(headers, aliases) {
+    const expected = new Set((Array.isArray(aliases) ? aliases : [aliases]).map(value => String(value || '').trim().toLowerCase()));
+    return headers.find(header => expected.has(String(header || '').trim().toLowerCase())) || null;
+  }
+
+  function ageOnDate(ageValue, dobValue, encounterDate) {
+    const numericAge = Number(String(ageValue == null ? '' : ageValue).trim());
+    if (Number.isFinite(numericAge) && numericAge >= 0 && numericAge < 130) return numericAge;
+    if (!dobValue || !encounterDate) return null;
+    const dob = dobValue instanceof Date ? dobValue : new Date(dobValue);
+    const encounter = new Date(`${encounterDate}T00:00:00`);
+    if (Number.isNaN(dob.getTime()) || Number.isNaN(encounter.getTime())) return null;
+    let age = encounter.getFullYear() - dob.getFullYear();
+    const month = encounter.getMonth() - dob.getMonth();
+    if (month < 0 || (month === 0 && encounter.getDate() < dob.getDate())) age -= 1;
+    return age >= 0 && age < 130 ? age : null;
+  }
+
+  function parseEligibilityWorkbook(workbookFile, arrayBuffer) {
+    if (!root.XLSX || typeof root.XLSX.read !== 'function') {
+      throw new Error('SheetJS (XLSX) is unavailable.');
     }
 
-    const workbook =
-      root.XLSX.read(
-        arrayBuffer,
-        {
-          type: 'array',
-          cellDates: true
-        }
-      );
+    const workbook = root.XLSX.read(arrayBuffer, {
+      type: 'array',
+      cellDates: true
+    });
 
-    const sheetName =
-      workbook.SheetNames?.[0];
+    const sheetName = workbook.SheetNames?.[0];
+    if (!sheetName) throw new Error('Eligibility workbook contains no worksheet.');
 
-    if (!sheetName) {
-      throw new Error(
-        'Eligibility workbook contains no worksheet.'
-      );
-    }
+    const worksheet = workbook.Sheets[sheetName];
 
-    const worksheet =
-      workbook.Sheets[
-        sheetName
-      ];
-
-    /*
-     * Established eligibility format:
-     * headers are located on Excel row 2.
-     */
-    const sourceRows =
-      root.XLSX.utils
-        .sheet_to_json(
-          worksheet,
-          {
-            defval: '',
-            range: 1,
-            raw: true,
-            blankrows: false
-          }
-        );
+    // Established eligibility layout: headers are on workbook row 2.
+    const sourceRows = root.XLSX.utils.sheet_to_json(worksheet, {
+      defval: '',
+      range: 1,
+      raw: true,
+      blankrows: false
+    });
 
     if (!sourceRows.length) {
-      throw new Error(
-        'Eligibility workbook contains no data rows.'
-      );
+      throw new Error('Eligibility workbook contains no data rows.');
     }
 
-    const headers =
-      Array.from(
-        new Set(
-          sourceRows.flatMap(
-            (row) =>
-              Object.keys(
-                row || {}
-              )
-          )
-        )
-      );
-
-    const memberHeader =
-      resolveExactHeader(
-        headers,
-        ELIGIBILITY_HEADERS.member
-      );
-
-    const dateHeader =
-      resolveExactHeader(
-        headers,
-        ELIGIBILITY_HEADERS.date
-      );
-
-    const clinicianHeader =
-      resolveExactHeader(
-        headers,
-        ELIGIBILITY_HEADERS.clinician
-      );
-
-    const voiHeader =
-      resolveExactHeader(
-        headers,
-        ELIGIBILITY_HEADERS.voi
-      );
+    const headers = Array.from(new Set(sourceRows.flatMap((row) => Object.keys(row || {}))));
+    const memberHeader = resolveExactHeader(headers, ELIGIBILITY_HEADERS.member);
+    const dateHeader = resolveExactHeader(headers, ELIGIBILITY_HEADERS.date);
+    const clinicianHeader = resolveExactHeader(headers, ELIGIBILITY_HEADERS.clinician);
+    const voiHeader = resolveExactHeader(headers, ELIGIBILITY_HEADERS.voi);
+    const ageHeader = resolveOptionalHeader(headers, ELIGIBILITY_HEADERS.age);
+    const dobHeader = resolveOptionalHeader(headers, ELIGIBILITY_HEADERS.dob);
 
     const missing = [];
-
-    if (!memberHeader) {
-      missing.push(
-        ELIGIBILITY_HEADERS.member
-      );
-    }
-
-    if (!dateHeader) {
-      missing.push(
-        ELIGIBILITY_HEADERS.date
-      );
-    }
-
-    if (!clinicianHeader) {
-      missing.push(
-        ELIGIBILITY_HEADERS.clinician
-      );
-    }
-
-    if (!voiHeader) {
-      missing.push(
-        ELIGIBILITY_HEADERS.voi
-      );
-    }
+    if (!memberHeader) missing.push(ELIGIBILITY_HEADERS.member);
+    if (!dateHeader) missing.push(ELIGIBILITY_HEADERS.date);
+    if (!clinicianHeader) missing.push(ELIGIBILITY_HEADERS.clinician);
+    if (!voiHeader) missing.push(ELIGIBILITY_HEADERS.voi);
 
     if (missing.length) {
-      throw new Error(
-        `Eligibility workbook is missing required column${
-          missing.length === 1
-            ? ''
-            : 's'
-        }: ${missing.join(', ')}.`
-      );
+      throw new Error(`Eligibility workbook is missing required column${missing.length === 1 ? '' : 's'}: ${missing.join(', ')}.`);
     }
 
-    const rows =
-      sourceRows.map(
-        (
-          sourceRow,
-          index
-        ) => ({
-          sourceRow,
-          sheetName,
-
-          /*
-           * Headers are row 2, therefore
-           * the first data row is row 3.
-           */
-          sheetRowNumber:
-            index + 3,
-
-          memberID:
-            normalizeMemberId(
-              sourceRow[
-                memberHeader
-              ]
-            ),
-
-          orderedOn:
-            normalizeDate(
-              sourceRow[
-                dateHeader
-              ]
-            ),
-
-          clinician:
-            normalizeClinician(
-              sourceRow[
-                clinicianHeader
-              ]
-            ),
-
-          voiNumber:
-            String(
-              sourceRow[
-                voiHeader
-              ] == null
-                ? ''
-                : sourceRow[
-                    voiHeader
-                  ]
-            ).trim(),
-
-          used: false
-        })
-      );
-
-    return {
-      workbook,
+    const rows = sourceRows.map((sourceRow, index) => ({
+      sourceRow,
       sheetName,
-      rows
-    };
+      sheetRowNumber: index + 3,
+      memberID: normalizeMemberId(sourceRow[memberHeader]),
+      orderedOn: normalizeDate(sourceRow[dateHeader]),
+      clinician: normalizeClinician(sourceRow[clinicianHeader]),
+      voiNumber: String(sourceRow[voiHeader] == null ? '' : sourceRow[voiHeader]).trim(),
+      ageRaw: ageHeader ? sourceRow[ageHeader] : '',
+      dobRaw: dobHeader ? sourceRow[dobHeader] : '',
+      used: false
+    }));
+
+    return { workbook, sheetName, rows };
   }
 
   function buildEligibilityMatcher(rows) {
@@ -988,366 +885,145 @@
   }
 
   function collectXmlData(xmlDoc) {
-    const rootElement =
-      xmlDoc.documentElement;
-
-    const header =
-      getDirectChildren(
-        rootElement,
-        'Header'
-      )[0];
-
-    /*
-     * Insurer routing uses Header ReceiverID.
-     * Claim-level PayerID remains separate.
-     */
-    const receiverID =
-      normalizeIdentifier(
-        getDirectChildText(
-          header,
-          'ReceiverID'
-        )
-      );
-
-    const receiver =
-      RECEIVER_CONFIG[
-        receiverID
-      ]
-      || null;
-
+    const rootElement = xmlDoc.documentElement;
+    const header = getDirectChildren(rootElement, 'Header')[0];
+    const receiverID = normalizeIdentifier(getDirectChildText(header, 'ReceiverID'));
+    const receiver = RECEIVER_CONFIG[receiverID] || null;
     const records = [];
-    const claimActivities =
-      new Map();
+    const claimActivities = new Map();
+    const claimDiagnoses = new Map();
 
-    for (
-      const claim
-      of getDirectChildren(
-        rootElement,
-        'Claim'
-      )
-    ) {
-      const claimID =
-        getDirectChildText(
-          claim,
-          'ID'
-        )
-        || 'Unknown';
-
-      const memberID =
-        normalizeMemberId(
-          getDirectChildText(
-            claim,
-            'MemberID'
-          )
-        );
-
-      const claimPayerID =
-        normalizeIdentifier(
-          getDirectChildText(
-            claim,
-            'PayerID'
-          )
-        );
-
-      const encounter =
-        getDirectChildren(
-          claim,
-          'Encounter'
-        )[0]
-        || getDirectChildren(
-          claim,
-          'Encounte'
-        )[0];
-
-      const encounterDate =
-        normalizeDate(
-          firstDirectChildText(
-            encounter,
-            [
-              'Date',
-              'Start',
-              'EncounterDate'
-            ]
-          )
-        );
-
+    for (const claim of getDirectChildren(rootElement, 'Claim')) {
+      const claimID = getDirectChildText(claim, 'ID') || 'Unknown';
+      const memberID = normalizeMemberId(getDirectChildText(claim, 'MemberID'));
+      const claimPayerID = normalizeIdentifier(getDirectChildText(claim, 'PayerID'));
+      const encounter = getDirectChildren(claim, 'Encounter')[0] || getDirectChildren(claim, 'Encounte')[0];
+      const encounterDate = normalizeDate(firstDirectChildText(encounter, ['Date', 'Start', 'EncounterDate']));
+      const diagnoses = getDirectChildren(claim, 'Diagnosis').map(diagnosis => ({
+        type: getDirectChildText(diagnosis, 'Type'),
+        code: normalizeIdentifier(getDirectChildText(diagnosis, 'Code'))
+      }));
+      claimDiagnoses.set(claimID, diagnoses);
       const activities = [];
 
-      for (
-        const activity
-        of getDirectChildren(
-          claim,
-          'Activity'
-        )
-      ) {
-        const activityID =
-          getDirectChildText(
-            activity,
-            'ID'
-          );
-
-        const activityCode =
-          getDirectChildText(
-            activity,
-            'Code'
-          );
-
-        const quantity =
-          Number(
-            getDirectChildText(
-              activity,
-              'Quantity'
-            )
-            || 0
-          );
-
-        const net =
-          Number(
-            getDirectChildText(
-              activity,
-              'Net'
-            )
-            || 0
-          );
-
-        const orderingClinicianRaw =
-          firstDirectChildText(
-            activity,
-            [
-              'OrderingClnician',
-              'OrderingClinician',
-              'Ordering_Clinician',
-              'OrderingClin'
-            ]
-          );
-
-        const orderingClinician =
-          normalizeClinician(
-            orderingClinicianRaw
-          );
+      for (const activity of getDirectChildren(claim, 'Activity')) {
+        const activityID = getDirectChildText(activity, 'ID');
+        const activityCode = getDirectChildText(activity, 'Code');
+        const quantity = Number(getDirectChildText(activity, 'Quantity') || 0);
+        const net = Number(getDirectChildText(activity, 'Net') || 0);
+        const orderingClinicianRaw = firstDirectChildText(activity, [
+          'OrderingClnician',
+          'OrderingClinician',
+          'Ordering_Clinician',
+          'OrderingClin'
+        ]);
+        const orderingClinician = normalizeClinician(orderingClinicianRaw);
+        const performingClinicianRaw = firstDirectChildText(activity, ['Clinician', 'PerformingClinician']);
+        const performingClinician = normalizeClinician(performingClinicianRaw);
 
         activities.push({
           claimID,
+          memberID,
+          date: encounterDate,
+          receiverID,
+          payerID: claimPayerID,
           activityID,
           activityCode,
           quantity,
           net,
           orderingClinician,
-          orderingClinicianRaw
+          orderingClinicianRaw,
+          performingClinician,
+          performingClinicianRaw
         });
 
-        for (
-          const observation
-          of getDirectChildren(
-            activity,
-            'Observation'
-          )
-        ) {
-          const valueType =
-            getDirectChildText(
-              observation,
-              'ValueType'
-            );
+        for (const observation of getDirectChildren(activity, 'Observation')) {
+          const valueType = getDirectChildText(observation, 'ValueType');
 
-          /*
-           * Only observations explicitly marked
-           * as Modifiers may be processed here.
-           *
-           * LOINC values such as 24, 25, 50 or
-           * 52 are not CPT modifiers.
-           */
-          if (
-            String(
-              valueType || ''
-            )
-              .trim()
-              .toLowerCase()
-            !== 'modifiers'
-          ) {
-            continue;
-          }
+          // This check must happen before looking at Value. LOINC observations can
+          // legitimately have values 24, 25, 50 or 52 and are not modifiers.
+          if (String(valueType || '').trim().toLowerCase() !== 'modifiers') continue;
 
-          const rawValue =
-            firstDirectChildText(
-              observation,
-              [
-                'Value',
-                'ValueText'
-              ]
-            );
+          const rawValue = firstDirectChildText(observation, ['Value', 'ValueText']);
+          const modifier = parseModifierValue(rawValue);
+          if (!modifier || !MODIFIER_RULES[modifier]) continue;
 
-          const modifier =
-            parseModifierValue(
-              rawValue
-            );
-
-          if (
-            !modifier
-            || !MODIFIER_RULES[
-              modifier
-            ]
-          ) {
-            continue;
-          }
-
-          const observationCode =
-            getDirectChildText(
-              observation,
-              'Code'
-            );
+          const observationCode = getDirectChildText(observation, 'Code');
 
           records.push({
-            ClaimID:
-              claimID,
-
-            MemberID:
-              memberID,
-
-            ActivityID:
-              activityID,
-
-            Date:
-              encounterDate,
-
-            OrderingClinician:
-              orderingClinician,
-
-            OrderingClinicianRaw:
-              orderingClinicianRaw,
-
-            Modifier:
-              modifier,
-
-            ActivityCode:
-              activityCode,
-
-            Quantity:
-              quantity,
-
-            Net:
-              net,
-
-            ReceiverID:
-              receiverID,
-
-            PayerID:
-              claimPayerID,
-
-            Insurer:
-              receiver?.insurer
-              || 'Unknown',
-
-            ObsCode:
-              observationCode,
-
-            ObsValueType:
-              valueType,
-
-            VOINumber:
-              String(
-                rawValue || ''
-              ).trim()
+            ClaimID: claimID,
+            MemberID: memberID,
+            ActivityID: activityID,
+            Date: encounterDate,
+            OrderingClinician: orderingClinician,
+            OrderingClinicianRaw: orderingClinicianRaw,
+            PerformingClinician: performingClinician,
+            PerformingClinicianRaw: performingClinicianRaw,
+            Modifier: modifier,
+            ActivityCode: activityCode,
+            Quantity: quantity,
+            Net: net,
+            ReceiverID: receiverID,
+            PayerID: claimPayerID,
+            Insurer: receiver?.insurer || 'Unknown',
+            ObsCode: observationCode,
+            ObsValueType: valueType,
+            VOINumber: String(rawValue || '').trim()
           });
         }
       }
 
-      claimActivities.set(
-        claimID,
-        activities
-      );
+      claimActivities.set(claimID, activities);
     }
 
-    const seen =
-      new Set();
+    const seen = new Set();
+    const uniqueRecords = records.filter((record) => {
+      const key = [
+        record.ClaimID,
+        record.ActivityID,
+        record.MemberID,
+        record.Modifier,
+        record.ObsCode
+      ].join('|');
 
-    const uniqueRecords =
-      records.filter(
-        (record) => {
-          const key = [
-            record.ClaimID,
-            record.ActivityID,
-            record.MemberID,
-            record.Modifier,
-            record.ObsCode
-          ].join('|');
-
-          if (seen.has(key)) {
-            return false;
-          }
-
-          seen.add(key);
-          return true;
-        }
-      );
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 
     return {
       receiverID,
       receiver,
-      records:
-        uniqueRecords,
-      claimActivities
+      records: uniqueRecords,
+      claimActivities,
+      claimDiagnoses
     };
   }
 
-  function buildClaimModifierContext(
-    claimActivities,
-    minorProcedureCodes
-  ) {
-    const context =
-      new Map();
+  function buildClaimModifierContext(claimActivities, minorProcedureCodes, claimDiagnoses = new Map()) {
+    const context = new Map();
 
-    for (
-      const [
-        claimID,
-        activities
-      ]
-      of claimActivities.entries()
-    ) {
+    for (const [claimID, activities] of claimActivities.entries()) {
+      const diagnoses = claimDiagnoses.get(claimID) || [];
       const claimContext = {
-        hasMinorProcedure:
-          false,
-
-        hasPricedConsultation:
-          false
+        hasMinorProcedure: false,
+        hasPricedConsultation: false,
+        hasPregnancyDiagnosis: diagnoses.some(diagnosis => String(diagnosis.code || '').startsWith('O')),
+        diagnoses
       };
 
-      for (
-        const activity
-        of activities
-      ) {
-        const normalizedActivityCode =
-          normalizeCode(
-            activity.activityCode
-          );
-
-        if (
-          minorProcedureCodes.has(
-            normalizedActivityCode
-          )
-        ) {
-          claimContext
-            .hasMinorProcedure =
-              true;
+      for (const activity of activities) {
+        const normalizedActivityCode = normalizeCode(activity.activityCode);
+        if (minorProcedureCodes.has(normalizedActivityCode)) {
+          claimContext.hasMinorProcedure = true;
         }
 
-        if (
-          isConsultationCode(
-            activity.activityCode
-          )
-          && Number(
-            activity.net || 0
-          ) > 0
-        ) {
-          claimContext
-            .hasPricedConsultation =
-              true;
+        if (isConsultationCode(activity.activityCode) && Number(activity.net || 0) > 0) {
+          claimContext.hasPricedConsultation = true;
         }
       }
 
-      context.set(
-        claimID,
-        claimContext
-      );
+      context.set(claimID, claimContext);
     }
 
     return context;
@@ -1386,218 +1062,108 @@
     return true;
   }
 
-  function analyzeRecord(
-    record,
-    eligibilityMatch,
-    receiver,
-    claimContext,
-    minorProcedureCodes
-  ) {
+  function analyzeRecord(record, eligibilityMatch, receiver, claimContext, minorProcedureCodes, minorProcedureRules, clinicianSpecialtyMap) {
     const remarks = [];
+    const manualReviewRemarks = [];
     let unknownPayer = false;
 
     if (!record.ReceiverID) {
       unknownPayer = true;
-
-      remarks.push(
-        'ReceiverID is missing from the XML Header; modifier payer rules could not be determined.'
-      );
+      remarks.push('ReceiverID is missing from the XML Header; modifier payer rules could not be determined.');
     } else if (!receiver) {
       unknownPayer = true;
-
-      remarks.push(
-        `Modifier rules are not configured for ReceiverID ${record.ReceiverID}.`
-      );
+      remarks.push(`Modifier rules are not configured for ReceiverID ${record.ReceiverID}.`);
     }
 
-    /*
-     * This is only checked after ValueType
-     * has already been confirmed as Modifiers.
-     */
-    if (
-      record.ObsCode
-      !== 'CPT modifier'
-    ) {
-      remarks.push(
-        'Observation Code incorrect; '
-        + 'expected "CPT modifier" '
-        + `but found "${
-          record.ObsCode
-          || '(blank)'
-        }".`
-      );
+    if (record.MissingModifier) {
+      remarks.push(record.MissingRemark || `Modifier ${record.Modifier} is required but missing.`);
+    } else if (record.ObsCode !== 'CPT modifier') {
+      remarks.push(`Observation Code incorrect; expected "CPT modifier" but found "${record.ObsCode || '(blank)'}".`);
     }
 
-    /*
-     * All modifier activities in this claim
-     * receive the same eligibilityMatch object.
-     */
-    const voiNumber =
-      eligibilityMatch
-        ? String(
-            eligibilityMatch
-              .voiNumber
-            || ''
-          ).trim()
-        : String(
-            record.VOINumber
-            || ''
-          ).trim();
+    const voiNumber = eligibilityMatch
+      ? String(eligibilityMatch.voiNumber || '').trim()
+      : String(record.VOINumber || '').trim();
 
-    if (!eligibilityMatch) {
-      remarks.push(
-        'No matching eligibility found.'
-      );
+    if (!eligibilityMatch && (record.Modifier === '24' || record.Modifier === '52')) {
+      remarks.push('No matching eligibility found.');
     }
 
-    const rule =
-      MODIFIER_RULES[
-        record.Modifier
-      ];
+    const rule = MODIFIER_RULES[record.Modifier];
 
-    if (
-      record.Modifier === '24'
-      || record.Modifier === '52'
-    ) {
-      if (
-        !voiMatchesModifier(
-          record.Modifier,
-          voiNumber
-        )
-      ) {
-        remarks.push(
-          `Modifier ${record.Modifier} `
-          + 'does not match VOI '
-          + `(expected ${
-            rule.expectedVOI
-          }).`
-        );
+    if (record.Modifier === '24' || record.Modifier === '52') {
+      if (!voiMatchesModifier(record.Modifier, voiNumber)) {
+        remarks.push(`Modifier ${record.Modifier} does not match VOI (expected ${rule.expectedVOI}).`);
       }
     }
 
-    if (
-      Number(record.Quantity)
-      !== 1
-    ) {
-      remarks.push(
-        'Qty must be 1 for modifiers.'
-      );
+    if (Number(record.Quantity) !== 1) {
+      remarks.push('Qty must be 1 for modifiers.');
     }
 
-    if (
-      rule.consultationOnly
-      && !isConsultationCode(
-        record.ActivityCode
-      )
-    ) {
-      remarks.push(
-        `Modifier ${record.Modifier} `
-        + 'must only be on '
-        + 'consultation codes.'
-      );
+    if (rule.consultationOnly && !isConsultationCode(record.ActivityCode)) {
+      remarks.push(`Modifier ${record.Modifier} must only be on consultation codes.`);
     }
 
-    const currentClaimContext =
-      claimContext.get(
-        record.ClaimID
-      )
-      || {
-        hasMinorProcedure:
-          false,
+    const currentClaimContext = claimContext.get(record.ClaimID) || {
+      hasMinorProcedure: false,
+      hasPricedConsultation: false,
+      hasPregnancyDiagnosis: false,
+      diagnoses: []
+    };
 
-        hasPricedConsultation:
-          false
-      };
-
-    if (
-      record.Modifier === '25'
-    ) {
-      if (
-        !currentClaimContext
-          .hasMinorProcedure
-      ) {
-        remarks.push(
-          'Modifier 25 requires a minor procedure in the same claim.'
-        );
+    if (record.Modifier === '25') {
+      if (!currentClaimContext.hasMinorProcedure) {
+        remarks.push('Modifier 25 requires a minor procedure in the same claim.');
       }
-
-      if (
-        !currentClaimContext
-          .hasPricedConsultation
-      ) {
-        remarks.push(
-          'Modifier 25 requires a consultation code with price in the same claim.'
-        );
+      if (!currentClaimContext.hasPricedConsultation) {
+        remarks.push('Modifier 25 requires a consultation code with price in the same claim.');
       }
     }
 
-    if (
-      record.Modifier === '50'
-      && !minorProcedureCodes.has(
-        normalizeCode(
-          record.ActivityCode
-        )
-      )
-    ) {
-      remarks.push(
-        `Modifier 50 cannot be used on \`${
-          record.ActivityCode
-          || '(unknown)'
-        }\`.`
-      );
+    if (record.Modifier === '50' && !minorProcedureCodes.has(normalizeCode(record.ActivityCode))) {
+      remarks.push(`Modifier 50 cannot be used on \`${record.ActivityCode || '(unknown)'}\`.`);
+    }
+
+    if (record.Modifier === '50' && !record.MissingModifier) {
+      const procedureRule = minorProcedureRules.get(normalizeCode(record.ActivityCode)) || null;
+      const expected = Number(procedureRule?.claimed_amount_1_5);
+      if (Number.isFinite(expected) && !moneyEqual(record.Net, expected)) remarks.push(`Modifier 50 on ${record.ActivityCode} must use the 1.5 quantity price of ${expected}.`);
+    }
+
+    if (record.Modifier === '52') {
+      const age = ageOnDate(eligibilityMatch?.ageRaw, eligibilityMatch?.dobRaw, record.Date);
+      if (Number.isFinite(age) && (age <= 18 || age > 60)) remarks.push(`Modifier 52 cannot be used for age ${age}.`);
+      else if (!Number.isFinite(age)) manualReviewRemarks.push('Modifier 52 age restriction could not be verified from Eligibility data.');
+
+      if (currentClaimContext.hasPregnancyDiagnosis) remarks.push('Modifier 52 cannot be used for pregnancy claims.');
+
+      const orderingSpecialty = String(clinicianSpecialtyMap.get(normalizeClinician(record.OrderingClinicianRaw)) || '').toUpperCase();
+      const performingSpecialty = String(clinicianSpecialtyMap.get(normalizeClinician(record.PerformingClinicianRaw)) || '').toUpperCase();
+      if (orderingSpecialty.includes('PSYCHIATR') || performingSpecialty.includes('PSYCHIATR')) remarks.push('Modifier 52 cannot be used for Psychiatry.');
+      else if (!orderingSpecialty && !performingSpecialty) manualReviewRemarks.push('Modifier 52 Psychiatry restriction could not be verified because clinician specialty is unavailable.');
+
+      manualReviewRemarks.push('Modifier 52 uses a 50% E/M discount; verify the discounted price.');
     }
 
     let status = 'Valid';
+    const substantiveRemarks = remarks.filter((remark) =>
+      !remark.startsWith('ReceiverID is missing') &&
+      !remark.startsWith('Modifier rules are not configured')
+    );
 
-    const substantiveRemarks =
-      remarks.filter(
-        (remark) =>
-          !remark.startsWith(
-            'ReceiverID is missing'
-          )
-          && !remark.startsWith(
-            'Modifier rules are not configured'
-          )
-      );
-
-    if (
-      substantiveRemarks.length
-    ) {
-      status = 'Invalid';
-    } else if (unknownPayer) {
-      status = 'Unknown';
-    }
+    if (substantiveRemarks.length) status = 'Invalid';
+    else if (unknownPayer || manualReviewRemarks.length) status = 'Unknown';
 
     return {
       ...record,
-
-      VOINumber:
-        voiNumber,
-
-      EligibilityRow:
-        eligibilityMatch
-          ?.sourceRow
-        || null,
-
-      EligibilitySheet:
-        eligibilityMatch
-          ?.sheetName
-        || '',
-
-      EligibilityRowNumber:
-        eligibilityMatch
-          ?.sheetRowNumber
-        || '',
-
-      Status:
-        status,
-
-      valid:
-        status === 'Valid',
-
-      Remarks:
-        remarks.join(' ')
-        || 'OK'
+      VOINumber: voiNumber,
+      EligibilityRow: eligibilityMatch?.sourceRow || null,
+      EligibilitySheet: eligibilityMatch?.sheetName || '',
+      EligibilityRowNumber: eligibilityMatch?.sheetRowNumber || '',
+      Status: status,
+      valid: status === 'Valid',
+      Remarks: [...remarks, ...manualReviewRemarks].join(' ') || 'OK'
     };
   }
 
@@ -2472,229 +2038,176 @@
       'checker_modifiers_results.xlsx'
     );
   }
-
-  async function loadMinorProcedureCodes() {
+  async function loadMinorProcedureData() {
     try {
-      const response =
-        await fetch(
-          '../json/minor_procedures.json'
-        );
-
-      if (!response.ok) {
-        return new Set();
-      }
-
-      const data =
-        await response.json();
-
-      return new Set(
-        (
-          Array.isArray(data)
-            ? data
-            : []
-        )
-          .map(
-            (item) =>
-              normalizeCode(
-                typeof item
-                  === 'string'
-                  ? item
-                  : item?.code
-              )
-          )
-          .filter(Boolean)
-      );
+      const response = await fetch('../json/minor_procedures.json');
+      if (!response.ok) return { codes: new Set(), rules: new Map() };
+      const data = await response.json();
+      const rules = new Map();
+      (Array.isArray(data) ? data : []).forEach(item => {
+        const code = normalizeCode(typeof item === 'string' ? item : item?.code);
+        if (code) rules.set(code, typeof item === 'string' ? { code } : item);
+      });
+      return { codes: new Set(rules.keys()), rules };
     } catch (error) {
-      console.warn(
-        '[MODIFIERS] Could not load minor_procedures.json:',
-        error
-      );
-
-      return new Set();
+      console.warn('[MODIFIERS] Could not load minor_procedures.json:', error);
+      return { codes: new Set(), rules: new Map() };
     }
   }
 
+  async function loadClinicianSpecialtyMap() {
+    const map = new Map();
+    try {
+      const response = await fetch('../resources/ClinicianLicenses.xlsx');
+      if (response.ok && root.XLSX?.read) {
+        const workbook = root.XLSX.read(await response.arrayBuffer(), { type: 'array', cellDates: true });
+        for (const sheetName of workbook.SheetNames || []) {
+          const matrix = root.XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, defval: '', raw: false, blankrows: false });
+          for (let rowIndex = 0; rowIndex < Math.min(matrix.length, 30); rowIndex += 1) {
+            const headers = (matrix[rowIndex] || []).map(value => String(value || '').trim().toLowerCase().replace(/[^a-z0-9]/g, ''));
+            const licenseIndex = headers.findIndex(header => ['phylic', 'clinicianlicense', 'licensenumber', 'license'].includes(header));
+            const specialtyIndex = headers.findIndex(header => header.includes('specialty') || header.includes('speciality'));
+            if (licenseIndex < 0 || specialtyIndex < 0) continue;
+            for (let dataIndex = rowIndex + 1; dataIndex < matrix.length; dataIndex += 1) {
+              const row = matrix[dataIndex] || [];
+              const license = normalizeClinician(row[licenseIndex]);
+              const specialty = String(row[specialtyIndex] || '').trim();
+              if (license && specialty && !map.has(license)) map.set(license, specialty);
+            }
+            if (map.size) return map;
+          }
+        }
+      }
+    } catch (error) {
+      console.warn('[MODIFIERS] Could not load ClinicianLicenses.xlsx:', error);
+    }
+    try {
+      const response = await fetch('../json/clinician_licenses.json');
+      if (!response.ok) return map;
+      const data = await response.json();
+      (Array.isArray(data) ? data : []).forEach(row => {
+        const license = normalizeClinician(row?.['Phy Lic'] || row?.['Clinician License'] || row?.License);
+        const specialty = String(row?.Specialty || row?.Speciality || '').trim();
+        if (license && specialty && !map.has(license)) map.set(license, specialty);
+      });
+    } catch (error) {
+      console.warn('[MODIFIERS] Could not load clinician specialty JSON:', error);
+    }
+    return map;
+  }
+
+  function buildMissingMandatoryModifierRecords(xmlData, minorProcedureRules) {
+    const existing = new Set(xmlData.records.map(record => `${record.ClaimID}|${record.ActivityID}|${record.Modifier}`));
+    const synthetic = [];
+    for (const [claimID, activities] of xmlData.claimActivities.entries()) {
+      const hasPricedConsultation = activities.some(activity => isConsultationCode(activity.activityCode) && Number(activity.net || 0) > 0);
+      const requires25 = activities.some(activity => {
+        const rule = minorProcedureRules.get(normalizeCode(activity.activityCode));
+        return /25/.test(String(rule?.modifiers || ''));
+      });
+      if (requires25 && hasPricedConsultation) {
+        const consultation = activities.find(activity => isConsultationCode(activity.activityCode) && Number(activity.net || 0) > 0);
+        if (consultation && !existing.has(`${claimID}|${consultation.activityID}|25`)) {
+          synthetic.push({
+            ClaimID: claimID, MemberID: consultation.memberID, ActivityID: consultation.activityID, Date: consultation.date,
+            OrderingClinician: consultation.orderingClinician, OrderingClinicianRaw: consultation.orderingClinicianRaw,
+            PerformingClinician: consultation.performingClinician, PerformingClinicianRaw: consultation.performingClinicianRaw,
+            Modifier: '25', ActivityCode: consultation.activityCode, Quantity: consultation.quantity, Net: consultation.net,
+            ReceiverID: consultation.receiverID, PayerID: consultation.payerID, Insurer: xmlData.receiver?.insurer || 'Unknown',
+            ObsCode: '', ObsValueType: '', VOINumber: '', MissingModifier: true,
+            MissingRemark: `Modifier 25 is required on E/M ${consultation.activityCode} because a minor procedure is present.`
+          });
+        }
+      }
+      activities.forEach(activity => {
+        const rule = minorProcedureRules.get(normalizeCode(activity.activityCode));
+        if (!/50/.test(String(rule?.modifiers || ''))) return;
+        const expected = Number(rule?.claimed_amount_1_5);
+        if (!Number.isFinite(expected) || !moneyEqual(activity.net, expected) || existing.has(`${claimID}|${activity.activityID}|50`)) return;
+        synthetic.push({
+          ClaimID: claimID, MemberID: activity.memberID, ActivityID: activity.activityID, Date: activity.date,
+          OrderingClinician: activity.orderingClinician, OrderingClinicianRaw: activity.orderingClinicianRaw,
+          PerformingClinician: activity.performingClinician, PerformingClinicianRaw: activity.performingClinicianRaw,
+          Modifier: '50', ActivityCode: activity.activityCode, Quantity: activity.quantity, Net: activity.net,
+          ReceiverID: activity.receiverID, PayerID: activity.payerID, Insurer: xmlData.receiver?.insurer || 'Unknown',
+          ObsCode: '', ObsValueType: '', VOINumber: '', MissingModifier: true,
+          MissingRemark: `Modifier 50 is required on ${activity.activityCode} because the 1.5 quantity price is being claimed.`
+        });
+      });
+    }
+    return synthetic;
+  }
+
   async function runModifiersCheck(options) {
-    const config =
-      options || {};
+    const config = options || {};
+    const xmlFile = resolveInputFile('xml-file', 'xml', config.xmlFile);
+    const eligibilityFile = resolveInputFile('xlsx-file', 'eligibility', config.eligibilityFile);
 
-    const xmlFile =
-      resolveInputFile(
-        'xml-file',
-        'xml',
-        config.xmlFile
-      );
-
-    const eligibilityFile =
-      resolveInputFile(
-        'xlsx-file',
-        'eligibility',
-        config.eligibilityFile
-      );
-
-    if (
-      !xmlFile
-      || !eligibilityFile
-    ) {
+    if (!xmlFile || !eligibilityFile) {
       const missing = [
-        !xmlFile
-          ? 'XML file'
-          : '',
+        !xmlFile ? 'XML file' : '',
+        !eligibilityFile ? 'Eligibility workbook' : ''
+      ].filter(Boolean).join(' and ');
 
-        !eligibilityFile
-          ? 'Eligibility workbook'
-          : ''
-      ]
-        .filter(Boolean)
-        .join(' and ');
-
-      const error =
-        new Error(
-          `${missing} is required.`
-        );
-
-      updateMessage(
-        error.message,
-        true
-      );
-
-      return createErrorWrapper(
-        error
-      );
+      const error = new Error(`${missing} is required.`);
+      updateMessage(error.message, true);
+      return createErrorWrapper(error);
     }
 
-    updateMessage(
-      'Checking CPT modifiers...',
-      false
-    );
+    updateMessage('Checking CPT modifiers...', false);
 
     try {
-      const [
-        xmlText,
-        eligibilityBuffer,
-        minorProcedureCodes
-      ] = await Promise.all([
-        readFileText(
-          xmlFile
-        ),
-
-        readFileArrayBuffer(
-          eligibilityFile
-        ),
-
-        loadMinorProcedureCodes()
+      const [xmlText, eligibilityBuffer, minorProcedureData, clinicianSpecialtyMap] = await Promise.all([
+        readFileText(xmlFile),
+        readFileArrayBuffer(eligibilityFile),
+        loadMinorProcedureData(),
+        loadClinicianSpecialtyMap()
       ]);
 
-      const xmlDoc =
-        parseXml(xmlText);
+      const { codes: minorProcedureCodes, rules: minorProcedureRules } = minorProcedureData;
+      const xmlDoc = parseXml(xmlText);
+      const eligibility = parseEligibilityWorkbook(eligibilityFile, eligibilityBuffer);
+      const matcher = buildEligibilityMatcher(eligibility.rows);
+      const xmlData = collectXmlData(xmlDoc);
+      xmlData.records.push(...buildMissingMandatoryModifierRecords(xmlData, minorProcedureRules));
+      const claimContext = buildClaimModifierContext(xmlData.claimActivities, minorProcedureCodes, xmlData.claimDiagnoses);
+      const claimEligibilityMatches = resolveClaimEligibilityMatches(
+        xmlData.records,
+        xmlData.claimActivities,
+        matcher
+      );
 
-      const eligibility =
-        parseEligibilityWorkbook(
-          eligibilityFile,
-          eligibilityBuffer
-        );
+      const results = xmlData.records.map((record) =>
+        analyzeRecord(
+          record,
+          claimEligibilityMatches.get(record.ClaimID) || null,
+          xmlData.receiver,
+          claimContext,
+          minorProcedureCodes,
+          minorProcedureRules,
+          clinicianSpecialtyMap
+        )
+      );
 
-      const matcher =
-        buildEligibilityMatcher(
-          eligibility.rows
-        );
-
-      const xmlData =
-        collectXmlData(
-          xmlDoc
-        );
-
-      const claimContext =
-        buildClaimModifierContext(
-          xmlData.claimActivities,
-          minorProcedureCodes
-        );
-
-      /*
-       * Resolve one eligibility result for
-       * each claim before processing rows.
-       */
-      const claimEligibilityMatches =
-        resolveClaimEligibilityMatches(
-          xmlData.records,
-          xmlData.claimActivities,
-          matcher
-        );
-
-      const results =
-        xmlData.records.map(
-          (record) =>
-            analyzeRecord(
-              record,
-
-              claimEligibilityMatches
-                .get(
-                  record.ClaimID
-                )
-              || null,
-
-              xmlData.receiver,
-              claimContext,
-              minorProcedureCodes
-            )
-        );
-
-      lastResults =
-        results;
-
-      lastWorkbook =
-        buildResultsWorkbook(
-          results
-        );
-
-      root._lastModifierResults =
-        results;
-
-      root._lastModifierEligibilityRows =
-        results.map(
-          (result) =>
-            result.EligibilityRow
-        );
-
+      lastResults = results;
+      lastWorkbook = buildResultsWorkbook(results);
+      root._lastModifierResults = results;
+      root._lastModifierEligibilityRows = results.map((result) => result.EligibilityRow);
       updateDownloadButton();
-
       updateMessage(
-        'Modifier check completed '
-        + 'using Header ReceiverID '
-        + `${
-          xmlData.receiverID
-          || '(missing)'
-        }.`,
+        `Modifier check completed using Header ReceiverID ${xmlData.receiverID || '(missing)'}.`,
         false
       );
 
-      return createResultsWrapper(
-        results,
-        xmlData
-      );
+      return createResultsWrapper(results, xmlData);
     } catch (error) {
-      console.error(
-        '[MODIFIERS] Checker failed:',
-        error
-      );
-
+      console.error('[MODIFIERS] Checker failed:', error);
       lastResults = [];
       lastWorkbook = null;
-
-      root._lastModifierResults =
-        [];
-
+      root._lastModifierResults = [];
       updateDownloadButton();
-
-      updateMessage(
-        error?.message
-        || String(error),
-        true
-      );
-
-      return createErrorWrapper(
-        error
-      );
+      updateMessage(error?.message || String(error), true);
+      return createErrorWrapper(error);
     }
   }
 
