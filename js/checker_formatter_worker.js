@@ -788,6 +788,9 @@ async function combineReportingsFull(fileEntries) {
   let headerRow = null;
   let dataRowCount = 0;
 
+  const EXCEL_MAX_ROW = 1048575; // zero-based 1,048,576
+  const EXCEL_MAX_COL = 16383;   // zero-based XFD
+
   const isRowEmpty = (row) => {
     if (!Array.isArray(row)) return true;
     return row.every(cell => {
@@ -800,13 +803,100 @@ async function combineReportingsFull(fileEntries) {
     (row || []).map(cell => (cell === null || cell === undefined ? '' : String(cell).trim()))
   );
 
+  const isMeaningfulCell = (cell) => {
+    if (!cell || typeof cell !== 'object') return false;
+    if (cell.v !== undefined && cell.v !== null && String(cell.v).trim() !== '') return true;
+    // A formula with no cached value should still count as an occupied cell.
+    return typeof cell.f === 'string' && cell.f.trim() !== '';
+  };
+
+  const cellOutputValue = (cell) => {
+    if (!cell || typeof cell !== 'object') return '';
+    if (cell.v !== undefined && cell.v !== null) return cell.v;
+    return typeof cell.f === 'string' && cell.f.trim() ? `=${cell.f}` : '';
+  };
+
+  const getMergeRanges = (ws) => (Array.isArray(ws?.['!merges']) ? ws['!merges'] : [])
+    .filter(merge =>
+      merge && merge.s && merge.e &&
+      Number.isInteger(merge.s.r) && Number.isInteger(merge.e.r) &&
+      Number.isInteger(merge.s.c) && Number.isInteger(merge.e.c) &&
+      merge.s.r >= 0 && merge.s.c >= 0 &&
+      merge.e.r >= merge.s.r && merge.e.c >= merge.s.c
+    );
+
+  const isMergedRow = (rowIndex, merges) => merges.some(merge =>
+    rowIndex >= merge.s.r && rowIndex <= merge.e.r
+  );
+
+  // Read actual populated cells instead of trusting ws['!ref'].
+  // Some exported workbooks carry an inflated/corrupt used range; passing that
+  // directly to sheet_to_json can make SheetJS allocate a massive array and
+  // throw RangeError: Invalid array length.
+  const collectMeaningfulRows = (ws, fileName) => {
+    const rows = new Map();
+    let ignoredOutOfBounds = 0;
+    let ignoredInvalidAddress = 0;
+
+    for (const address of Object.keys(ws || {})) {
+      if (!address || address[0] === '!') continue;
+
+      let coord;
+      try {
+        coord = XLSX.utils.decode_cell(address);
+      } catch (err) {
+        ignoredInvalidAddress++;
+        continue;
+      }
+
+      if (
+        !coord ||
+        !Number.isInteger(coord.r) || !Number.isInteger(coord.c) ||
+        coord.r < 0 || coord.c < 0 ||
+        coord.r > EXCEL_MAX_ROW || coord.c > EXCEL_MAX_COL
+      ) {
+        ignoredOutOfBounds++;
+        continue;
+      }
+
+      const cell = ws[address];
+      if (!isMeaningfulCell(cell)) continue;
+
+      if (!rows.has(coord.r)) rows.set(coord.r, new Map());
+      rows.get(coord.r).set(coord.c, cellOutputValue(cell));
+    }
+
+    if (ignoredOutOfBounds || ignoredInvalidAddress) {
+      log(
+        `${fileName}: ignored ${ignoredOutOfBounds} out-of-bounds and ` +
+        `${ignoredInvalidAddress} invalid worksheet cell address(es).`,
+        'WARN'
+      );
+    }
+
+    return rows;
+  };
+
+  const buildRow = (cellMap, maxColumnIndex) => {
+    if (!(cellMap instanceof Map) || maxColumnIndex < 0) return [];
+    const safeMaxColumn = Math.min(maxColumnIndex, EXCEL_MAX_COL);
+    const row = new Array(safeMaxColumn + 1).fill('');
+
+    for (const [columnIndex, value] of cellMap.entries()) {
+      if (columnIndex < 0 || columnIndex > safeMaxColumn) continue;
+      row[columnIndex] = value;
+    }
+
+    return row;
+  };
+
   for (let i = 0; i < fileEntries.length; i++) {
     const { name, buffer } = fileEntries[i];
     log(`Reading reporting(full) file: ${name}`);
 
     let wb;
     try {
-      // Keep native Excel date serials intact (avoid JS Date conversion)
+      // Keep native Excel date serials intact (avoid JS Date conversion).
       wb = XLSX.read(buffer, { type: 'array', cellDates: false });
     } catch (err) {
       log(`Failed to read file ${name}: ${err.message}`, 'ERROR');
@@ -819,39 +909,73 @@ async function combineReportingsFull(fileEntries) {
     }
 
     const ws = wb.Sheets[wb.SheetNames[0]];
-    // raw:true preserves numeric serial values from the sheet
-    const sheetData = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: true });
-    if (!Array.isArray(sheetData) || sheetData.length === 0) {
-      log(`File ${name} skipped: no rows found`, 'WARN');
+    if (!ws) {
+      log(`File ${name} skipped: first sheet is missing`, 'WARN');
       continue;
     }
 
-    const mergedRows = new Set();
-    const merges = ws['!merges'] || [];
-    for (const merge of merges) {
-      if (merge && merge.s && merge.e) {
-        for (let r = merge.s.r; r <= merge.e.r; r++) mergedRows.add(r);
-      }
+    const merges = getMergeRanges(ws);
+    const meaningfulRows = collectMeaningfulRows(ws, name);
+    const rowIndexes = Array.from(meaningfulRows.keys()).sort((a, b) => a - b);
+
+    if (!rowIndexes.length) {
+      log(`File ${name} skipped: no populated cells found`, 'WARN');
+      continue;
     }
 
+    // Match previous behavior: the first non-empty, non-merged row is treated
+    // as the file header. Its last populated column defines this file's real
+    // row width, preventing stray formatting/cells far to the right from
+    // inflating every output row.
+    let fileHeaderRowIndex = -1;
+    let fileLastColumn = -1;
+
+    for (const rowIndex of rowIndexes) {
+      if (isMergedRow(rowIndex, merges)) continue;
+      const cells = meaningfulRows.get(rowIndex);
+      if (!cells || !cells.size) continue;
+      const lastColumn = Math.max(...cells.keys());
+      const candidate = buildRow(cells, lastColumn);
+      if (isRowEmpty(candidate)) continue;
+      fileHeaderRowIndex = rowIndex;
+      fileLastColumn = lastColumn;
+      break;
+    }
+
+    if (fileHeaderRowIndex < 0 || fileLastColumn < 0) {
+      log(`File ${name} skipped: no non-merged populated rows found`, 'WARN');
+      continue;
+    }
+
+    const fileHeaderRow = buildRow(meaningfulRows.get(fileHeaderRowIndex), fileLastColumn);
     const existingHeaderSig = headerRow ? rowSignature(headerRow) : null;
 
-    for (let r = 0; r < sheetData.length; r++) {
-      if (mergedRows.has(r)) continue;
-      const row = sheetData[r];
+    if (!headerRow) {
+      headerRow = fileHeaderRow.slice();
+      combinedRows.push(headerRow);
+    }
+
+    for (const rowIndex of rowIndexes) {
+      if (rowIndex < fileHeaderRowIndex) continue;
+      if (isMergedRow(rowIndex, merges)) continue;
+
+      const row = buildRow(meaningfulRows.get(rowIndex), fileLastColumn);
       if (isRowEmpty(row)) continue;
 
-      if (!headerRow) {
-        headerRow = row.slice();
-        combinedRows.push(headerRow);
-        continue;
+      // Skip the first file's header and repeated identical headers in later files.
+      if (rowIndex === fileHeaderRowIndex) {
+        if (!existingHeaderSig || rowSignature(row) === existingHeaderSig) continue;
       }
-
       if (existingHeaderSig && rowSignature(row) === existingHeaderSig) continue;
 
-      combinedRows.push(row.slice());
+      combinedRows.push(row);
       dataRowCount++;
     }
+
+    log(
+      `${name}: accepted ${rowIndexes.length} populated row index(es); ` +
+      `header row ${fileHeaderRowIndex + 1}, width ${fileLastColumn + 1} column(s).`
+    );
 
     const progress = 50 + Math.floor(((i + 1) / fileEntries.length) * 50);
     self.postMessage({ type: 'progress', progress });
