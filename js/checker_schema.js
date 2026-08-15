@@ -924,18 +924,6 @@
                         if (event.code === '97802' && previousDiet) {
                             addRemark(event.claimID, '97802 is the initial dietician visit code and cannot follow an earlier 97802/97803 visit in the same submission history.');
                         }
-                        if (event.code === '97803') {
-                            const initialExists = dietHistory.some(row => row.code === '97802');
-                            const previousDayVisit = dietHistory.some(row =>
-                                calendarDayDiff(event.timestamp, row.timestamp) === 1
-                            );
-                            if (!initialExists) {
-                                addRemark(event.claimID, '97803 requires a prior 97802 initial dietician visit.');
-                            }
-                            if (!previousDayVisit) {
-                                addRemark(event.claimID, '97803 is for the next-day dietician visit and requires a dietician visit on the previous calendar day.');
-                            }
-                        }
                         dietHistory.push(event);
                     }
 
