@@ -1166,6 +1166,7 @@
                 checkPregnancyDiagnosisTrimesterConsistency(diagnoses, text, invalidFields, pregnancyData);
                 const activities = claim.getElementsByTagName('Activity');
                 const invalidQuantityCodes = [];
+                const excessiveDecimalQuantityCodes = new Set();
                 const isThiqaClaim = String(receiverID || '').trim().toUpperCase() === 'D001' || String(payerID || '').trim().toUpperCase() === 'E001';
                 let requiresOpticalEligibilityCheck = false;
                 const specialMedicalCodes = new Set(['17999', '96999', '0232T', 'J3490', '81479', '41899']);
@@ -1176,6 +1177,10 @@
                     if (code === '92015' && !isThiqaClaim) requiresOpticalEligibilityCheck = true;
                     ['Start', 'Type', 'Code', 'Quantity', 'Net', 'Clinician'].forEach(field => invalidIfEmpty(field, activity, `Activity[${index}].`));
                     if (quantity === '0') invalidQuantityCodes.push(code || '(unknown)');
+                    const quantityDecimalMatch = /^[-+]?\d+\.(\d+)$/.exec(quantity);
+                    if (quantityDecimalMatch && quantityDecimalMatch[1].length > 4) {
+                        excessiveDecimalQuantityCodes.add(code || '(unknown)');
+                    }
                     Array.from(activity.getElementsByTagName('Observation')).forEach((observation, observationIndex) => {
                         ['Type', 'Code'].forEach(field => invalidIfEmpty(field, observation, `Activity[${index}].` + `Observation[${observationIndex}].`));
                     });
@@ -1202,6 +1207,9 @@
                 if (invalidQuantityCodes.length) {
                     invalidFields.push(`${invalidQuantityCodes.length === 1 ? 'Activity' : 'Activities'} ` + `${formatNaturalList(invalidQuantityCodes)} ` + `${invalidQuantityCodes.length === 1 ? 'has' : 'have'} ` + `invalid quantity of 0.`);
                 }
+                excessiveDecimalQuantityCodes.forEach(code => {
+                    invalidFields.push(`Quantity of ${code} must have 4 decimal values or less.`);
+                });
                 if (emiratesID) {
                     let hasMedicalTourismObservation = false;
                     activityLoop: for (const activity of Array.from(activities)) {
