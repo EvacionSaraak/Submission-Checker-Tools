@@ -1169,7 +1169,7 @@ function analyzeDrugActivity(rec, options = {}) {
       breakdown: selectedPricing.breakdown
     } : null,
     _drugExpectedNet: expectedNet,
-    _drugRequiredQuantity: requiredQuantity,
+    _drugRequiredQuantity: unitPackageQuantity,
     _drugQuantityResult: findings.find(f => f.ruleId === 'DRUG_QUANTITY')?.status || '',
     _drugPriceResult: priceResult,
     _drugStatus: statusInfo ? statusInfo.value : '',
