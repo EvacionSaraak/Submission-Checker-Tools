@@ -45,6 +45,9 @@ const KHABISI_FACTOR_13_CODES = new Set([
   '96374',
   '96375'
 ]);
+// Khabisi (MF5020) code 69210 uses factor 1.95.
+// Example: Mandatory Tariff 122.00 × 1.95 = 237.90.
+const KHABISI_FACTOR_195_CODES = new Set(['69210']);
 // Khabisi nutrition services use factor 1.3 only when the specific activity
 // contains a non-empty PriorAuthorizationID; otherwise they remain factor 1.
 const KHABISI_AUTH_FACTOR_13_CODES = new Set(['97802', '97803']);
@@ -2193,6 +2196,21 @@ function findFactorFromRules(rules, facilityId, code, payerId, priorAuthorizatio
   // Explicit medical pricing overrides for Khabisi (MF5020).
   // These run before the C001 direct-tariff fallback and Factors.xlsx so the
   // Expected Factor, Post-Factor Price, final validation, and modal agree.
+  if (normFacility === 'MF5020' && KHABISI_FACTOR_195_CODES.has(normCode)) {
+    return {
+      factor: 1.95,
+      rule: {
+        facility: 'Khabisi',
+        facilityId: 'MF5020',
+        serviceType: 'Khabisi factor 1.95 override',
+        matchType: 'Exact List',
+        matchValues: Array.from(KHABISI_FACTOR_195_CODES),
+        factors: { [normPayer || 'DEFAULT']: 1.95 },
+        isOverride: true
+      }
+    };
+  }
+
   if (normFacility === 'MF5020' && KHABISI_FACTOR_13_CODES.has(normCode)) {
     return {
       factor: 1.3,
