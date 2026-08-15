@@ -831,9 +831,29 @@
                 const hasAlternativeCompanions = diagnosisCodes.has('R636') && diagnosisCodes.has('Z713');
                 if (!e66Rows.length && !hasAlternativeCompanions) invalidFields.push('Z68 diagnosis requires E66 or both R63.6 and Z71.3.');
                 if (e66Rows.length) {
-                    const e66Types = new Set(e66Rows.map(row => row.type));
-                    z68Rows.forEach(row => {
-                        if (!e66Types.has(row.type)) invalidFields.push(`Z68 and E66 diagnoses must use the same Diagnosis Type (Z68 is ${row.type || 'Unknown'}).`);
+                    const sameTypeEligible = row =>
+                        row.type === 'Secondary' ||
+                        row.type === 'Reason for Visit' ||
+                        row.type === 'ReasonForVisit';
+
+                    // The Z68/E66 same-Diagnosis-Type checkpoint does not use
+                    // Principal diagnoses. Only Secondary and ReasonForVisit
+                    // diagnoses participate in this comparison.
+                    const comparableZ68Rows = z68Rows.filter(sameTypeEligible);
+                    const comparableE66Rows = e66Rows.filter(sameTypeEligible);
+                    const comparableE66Types = new Set(comparableE66Rows.map(row => row.type));
+
+                    comparableZ68Rows.forEach(row => {
+                        const normalizedZ68Type = row.type === 'ReasonForVisit'
+                            ? 'Reason for Visit'
+                            : row.type;
+                        const hasMatchingType = Array.from(comparableE66Types).some(type =>
+                            (type === 'ReasonForVisit' ? 'Reason for Visit' : type) === normalizedZ68Type
+                        );
+
+                        if (!hasMatchingType && comparableE66Rows.length) {
+                            invalidFields.push(`Z68 and E66 diagnoses must use the same Diagnosis Type (Z68 is ${row.type || 'Unknown'}).`);
+                        }
                     });
                 }
             }
