@@ -924,11 +924,62 @@ function getKnownCptTypeResult(rec, drugsMap, knownCptCodeSet, drugListSource) {
 function getDrugUnitPackageQuantity(drug) {
   if (!drug) return null;
 
-  const raw = drug['Unit QTY'];
+  // Resolve Unit QTY robustly in case the workbook header has harmless
+  // spacing/case differences such as "Unit Qty" or "Unit QTY ".
+  const matchingKey = Object.keys(drug).find(key => {
+    const normalized = String(key || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '');
+
+    return normalized === 'unitqty' || normalized === 'unitquantity';
+  });
+
+  if (!matchingKey) return null;
+
+  const raw = drug[matchingKey];
   if (raw === '' || raw === undefined || raw === null) return null;
 
   const value = Number(raw);
   return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+function resolveDrugUnitPackageQuantity(drug, sharedFallback = null) {
+  const configured = getDrugUnitPackageQuantity(drug);
+  if (configured !== null) {
+    return { value: configured, source: 'Unit QTY' };
+  }
+
+  // Prefer the markup ratio over the old public-price inference. These are
+  // the actual markup values used by checker_pricing.
+  const packageMarkup = parseOptionalMoney(drug && drug['Package Markup']);
+  const unitMarkup = parseOptionalMoney(drug && drug['Unit Markup']);
+
+  if (
+    packageMarkup !== null &&
+    unitMarkup !== null &&
+    packageMarkup > 0 &&
+    unitMarkup > 0
+  ) {
+    const ratio = unitMarkup / packageMarkup;
+
+    if (Number.isFinite(ratio) && ratio > 0) {
+      return {
+        value: ratio,
+        source: 'Unit Markup / Package Markup'
+      };
+    }
+  }
+
+  const fallback = Number(sharedFallback);
+  if (Number.isFinite(fallback) && fallback > 0) {
+    return {
+      value: fallback,
+      source: 'Public-price fallback'
+    };
+  }
+
+  return { value: null, source: '' };
 }
 
 function calculateDrugMarkupPricing(drug, quantity, unitPackageQuantity = null) {
@@ -1066,9 +1117,11 @@ function analyzeDrugActivity(rec, options = {}) {
     });
   }
 
-  const configuredUnitQuantity = drug ? getDrugUnitPackageQuantity(drug) : null;
   const inferredUnitQuantity = drug ? shared.calculateRequiredDrugQuantity(drug) : null;
-  const unitPackageQuantity = configuredUnitQuantity ?? inferredUnitQuantity;
+  const resolvedUnitQuantity = drug
+    ? resolveDrugUnitPackageQuantity(drug, inferredUnitQuantity)
+    : { value: null, source: '' };
+  const unitPackageQuantity = resolvedUnitQuantity.value;
 
   if (drug) {
     findings = findings.concat(shared.validateDrugQuantity({
@@ -1166,10 +1219,12 @@ function analyzeDrugActivity(rec, options = {}) {
       source: selectedPricing.source,
       pricePerBasis: selectedPricing.value,
       expectedNet,
-      breakdown: selectedPricing.breakdown
+      breakdown: selectedPricing.breakdown,
+      unitQuantitySource: resolvedUnitQuantity.source
     } : null,
     _drugExpectedNet: expectedNet,
     _drugRequiredQuantity: unitPackageQuantity,
+    _drugUnitQuantitySource: resolvedUnitQuantity.source,
     _drugQuantityResult: findings.find(f => f.ruleId === 'DRUG_QUANTITY')?.status || '',
     _drugPriceResult: priceResult,
     _drugStatus: statusInfo ? statusInfo.value : '',
@@ -2638,8 +2693,20 @@ function roundFactor(value) {
 
 function getComparisonPreFactorUnit(row) {
   if (row && row._drugPricingMeta) {
-    const drugBase = Number(row._drugPricingMeta.pricePerBasis);
-    return Number.isFinite(drugBase) ? drugBase : null;
+    // For drug rows, show the actual Package Markup from Drugs.xlsx.
+    // Do not use pricePerBasis here: that value is an effective price
+    // reconstructed from Expected Net / XML Quantity and can therefore
+    // differ from the source Package Markup when quantity/unit resolution
+    // is wrong or when mixed package/unit pricing is involved.
+    const packageMarkup = Number(
+      row._drugPricingMeta?.breakdown?.packageMarkup
+    );
+    if (Number.isFinite(packageMarkup)) return packageMarkup;
+
+    // Backward-compatible fallback for older result objects that may not
+    // contain the pricing breakdown.
+    const effectiveBase = Number(row._drugPricingMeta.pricePerBasis);
+    return Number.isFinite(effectiveBase) ? effectiveBase : null;
   }
   return parseOptionalMoney(row && row.ReferenceNetPrice);
 }
@@ -3541,6 +3608,8 @@ window._pricingTestApi = {
   buildConcisePriceMismatchRemark,
   getConcisePricingContextLabel,
   analyzeDrugActivity,
+  getDrugUnitPackageQuantity,
+  resolveDrugUnitPackageQuantity,
   isDrugActivityType,
   isZeroPricedActivityForPricing,
   isAllowedZeroPricedActivityForPricing,
