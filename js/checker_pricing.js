@@ -11,7 +11,6 @@ if (typeof window !== 'undefined') window.runPricingCheck = runPricingCheck;
 
 (function () { try { // checker_pricing.js
 // Factor audit Patient Share toggle live recalculation fix: 2026-08-07
-// C001 cumulative Patient Share / no-reference fix: 2026-08-06
 // A001_MULTI_ACTIVITY_PATIENT_SHARE_FIX_20260806
 let lastResults = [];
 let lastWorkbook = null;
@@ -24,9 +23,17 @@ function getDrugShared(required = true) {
 }
 
 // Receiver IDs that are valid for Medical Mandatory Tariff pricing.
-// C001 is cross-referenced directly against Mandatory Tariff and uses factor 1
-// whenever Factors.xlsx has no explicit C001 factor value.
-const MEDICAL_CONFIGURED_PAYERS = new Set(['D001', 'A001', 'D004', 'C001', 'A025', 'A024', 'C002', 'C004']);
+const MEDICAL_CONFIGURED_PAYERS = new Set(['D001', 'A001', 'D004', 'A025', 'A024', 'C002', 'C004']);
+
+// NAS (C001) is intentionally outside checker_pricing.
+// Submissions for these receivers are skipped before pricing resources are loaded.
+const PRICING_EXCLUDED_RECEIVERS = new Set(['C001']);
+
+function isPricingExcludedReceiver(receiverID) {
+  return PRICING_EXCLUDED_RECEIVERS.has(
+    String(receiverID || '').trim().toUpperCase()
+  );
+}
 const DAMAN_RECEIVER_IDS = new Set(['D004', 'A001']);
 const DRUG_FORMULARY_RECEIVER_IDS = new Set(['D004', 'D001']);
 const DRUG_MANUAL_QUANTITY_RECEIVER_IDS = new Set(['D004', 'A001', 'D001']);
@@ -1319,9 +1326,31 @@ async function handleRun(options = {}) {
       null;
 
     if (!xmlFile) throw new Error('Please select an XML file.');
-    showProgress(5, 'Reading files');
-    const [xmlText, dentalPricingRaw, clinicianData, endoPricingRaw, medicalPricingRaw] = await Promise.all([
-      readFileText(xmlFile),
+    showProgress(5, 'Reading XML');
+
+    // Read the submission first so excluded receivers can leave checker_pricing
+    // without loading tariff, factor, clinician, Endo, or drug pricing resources.
+    const xmlText = await readFileText(xmlFile);
+    const xmlDoc = parseXml(xmlText);
+    const headerNode = xmlDoc.querySelector('Header');
+    const receiverID = headerNode?.querySelector('ReceiverID')?.textContent.trim() || '';
+    const pricingReceiverID = receiverID.toUpperCase();
+
+    console.log(`[PRICING] ReceiverID: ${pricingReceiverID || '(MISSING)'}`);
+
+    if (isPricingExcludedReceiver(pricingReceiverID)) {
+      console.log(`[PRICING] ReceiverID "${pricingReceiverID}" is excluded from checker_pricing.`);
+      lastResults = [];
+      lastWorkbook = null;
+      toggleDownload(false);
+      showProgress(100, 'Pricing Checker not applicable');
+      const tableElement = buildResultsTable([]);
+      message(`Skipped — NAS (${pricingReceiverID}) is excluded from Pricing Checker.`, 'green');
+      return tableElement;
+    }
+
+    showProgress(10, 'Loading pricing resources');
+    const [dentalPricingRaw, clinicianData, endoPricingRaw, medicalPricingRaw] = await Promise.all([
       isMedicalMode
         ? Promise.resolve([])
         : loadBundledPricingJson('Dental pricing data', [
@@ -1369,13 +1398,10 @@ async function handleRun(options = {}) {
     const factorRules = await loadBundledFactorRules(isMedicalMode);
     console.log('[PRICING] Factor rules loaded, count:', factorRules ? factorRules.length : 0);
 
-    showProgress(25, 'Parsing XML & pricing data');
-    const xmlDoc = parseXml(xmlText);
-    const headerNode = xmlDoc.querySelector('Header');
-    const receiverID = headerNode?.querySelector('ReceiverID')?.textContent.trim() || '';
-    const pricingReceiverID = receiverID.toUpperCase();
-    console.log(`[PRICING] ReceiverID: ${pricingReceiverID || '(MISSING)'}`);
-    if (pricingReceiverID !== 'D001' && pricingReceiverID !== 'A001') console.log(`[PRICING] ReceiverID "${pricingReceiverID}" is non-Thiqa/non-Daman — prices will be marked Unknown; PS=0 check will still apply.`);
+    showProgress(25, 'Parsing pricing data');
+    if (pricingReceiverID !== 'D001' && pricingReceiverID !== 'A001') {
+      console.log(`[PRICING] ReceiverID "${pricingReceiverID}" is non-Thiqa/non-Daman — configured pricing rules will determine applicability.`);
+    }
     const extracted = extractPricingRecords(xmlDoc);
     const jsonMatcher = buildJsonPricingMatcher(dentalPricingRaw);
     const medicalMatcher = buildMedicalPricingMatcher(medicalPricingRaw);
@@ -2274,8 +2300,8 @@ function findFactorFromRules(rules, facilityId, code, payerId, priorAuthorizatio
   const priorAuthorization = String(priorAuthorizationId || '').trim();
 
   // Explicit medical pricing overrides for Khabisi (MF5020).
-  // These run before the C001 direct-tariff fallback and Factors.xlsx so the
-  // Expected Factor, Post-Factor Price, final validation, and modal agree.
+  // These run before Factors.xlsx so the Expected Factor, Post-Factor Price,
+  // final validation, and modal agree.
   if (normFacility === 'MF5020' && KHABISI_FACTOR_13_CODES.has(normCode)) {
     return {
       factor: 1.3,
@@ -2318,11 +2344,6 @@ function findFactorFromRules(rules, facilityId, code, payerId, priorAuthorizatio
       isOverride: true
     } };
   }
-
-  // C001 uses Mandatory Tariff directly. It does not require a Factors.xlsx
-  // configuration; the tariff reference is therefore evaluated at factor 1
-  // except where a more specific facility/code override above applies.
-  if (normPayer === 'C001') return { factor: 1, rule: null };
 
   // Explicit medical pricing override:
   // True Life (MF7003), Thiqa (D001), CPT 90792 uses factor 1.3.
@@ -3608,6 +3629,7 @@ window._pricingTestApi = {
   buildConcisePriceMismatchRemark,
   getConcisePricingContextLabel,
   analyzeDrugActivity,
+  isPricingExcludedReceiver,
   getDrugUnitPackageQuantity,
   resolveDrugUnitPackageQuantity,
   isDrugActivityType,
