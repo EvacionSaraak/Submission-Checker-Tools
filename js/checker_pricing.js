@@ -43,11 +43,9 @@ const KHABISI_FACTOR_13_CODES = new Set([
   '96367',
   '96372',
   '96374',
-  '96375'
+  '96375',
+  '69210'
 ]);
-// Khabisi (MF5020) code 69210 uses factor 1.95.
-// Example: Mandatory Tariff 122.00 × 1.95 = 237.90.
-const KHABISI_FACTOR_195_CODES = new Set(['69210']);
 // Khabisi nutrition services use factor 1.3 only when the specific activity
 // contains a non-empty PriorAuthorizationID; otherwise they remain factor 1.
 const KHABISI_AUTH_FACTOR_13_CODES = new Set(['97802', '97803']);
@@ -1630,16 +1628,27 @@ async function handleRun(options = {}) {
       }
       const match = matchRow;
       let ref = Number(refPrice ?? NaN);
-      let effectiveRef = ref; // reference after pricing factor only
+      let effectiveRef = ref;
+      let basePricingFactor = 1;
+      let modifierPriceFactor = 1;
       let appliedFactor = 1;
       let matchedFactorRule = null;
       if (isMedicalMode && isMedicalPricingMatch) {
         const factorResult = findFactorFromRules(factorRules || [], rec.FacilityID, rec.CPT, pricingReceiverID, rec.PriorAuthorizationID);
-        appliedFactor = factorResult.factor;
+        basePricingFactor = factorResult.factor;
+        modifierPriceFactor = getCptModifierPriceFactor(rec.CPTModifiers);
+        appliedFactor = combinePricingFactors(basePricingFactor, modifierPriceFactor);
         matchedFactorRule = factorResult.rule;
-        if (!Number.isNaN(ref) && ref > 0) effectiveRef = Math.round(ref * appliedFactor * 100) / 100;
+
+        if (!Number.isNaN(ref) && ref > 0) {
+          effectiveRef = Math.round(ref * appliedFactor * 100) / 100;
+        }
+
         if (matchedFactorRule) {
-          pricingContext = `Mandatory Tariff [${matchedFactorRule.serviceType || matchedFactorRule.matchType}; Factor ${appliedFactor} for ${pricingReceiverID}]`;
+          pricingContext = `Mandatory Tariff [${matchedFactorRule.serviceType || matchedFactorRule.matchType}; Factor ${basePricingFactor} for ${pricingReceiverID}]`;
+        }
+        if (modifierPriceFactor !== 1) {
+          pricingContext += `${pricingContext ? '; ' : ''}Modifier 50 ×1.5`;
         }
       }
       // Ensure pricingContext has a fallback for Medical mode when no tariff match was found
@@ -1812,6 +1821,9 @@ async function handleRun(options = {}) {
         ClaimPayerID: claimPayerID,
         PayerID: pricingReceiverID,
         _matchedFactorRule: matchedFactorRule,
+        _basePricingFactor: basePricingFactor,
+        _modifierPriceFactor: modifierPriceFactor,
+        _cptModifiers: Array.isArray(rec.CPTModifiers) ? rec.CPTModifiers.slice() : [],
         _clinicianSpecialty: clinicianSpec,
         _endoPricingRate: endoPricingRate,
         _nonEndoUsedEndoPrice: nonEndoUsedEndoPrice,
@@ -2196,21 +2208,6 @@ function findFactorFromRules(rules, facilityId, code, payerId, priorAuthorizatio
   // Explicit medical pricing overrides for Khabisi (MF5020).
   // These run before the C001 direct-tariff fallback and Factors.xlsx so the
   // Expected Factor, Post-Factor Price, final validation, and modal agree.
-  if (normFacility === 'MF5020' && KHABISI_FACTOR_195_CODES.has(normCode)) {
-    return {
-      factor: 1.95,
-      rule: {
-        facility: 'Khabisi',
-        facilityId: 'MF5020',
-        serviceType: 'Khabisi factor 1.95 override',
-        matchType: 'Exact List',
-        matchValues: Array.from(KHABISI_FACTOR_195_CODES),
-        factors: { [normPayer || 'DEFAULT']: 1.95 },
-        isOverride: true
-      }
-    };
-  }
-
   if (normFacility === 'MF5020' && KHABISI_FACTOR_13_CODES.has(normCode)) {
     return {
       factor: 1.3,
@@ -2362,6 +2359,7 @@ function extractPricingRecords(xmlDoc) {
         performingClinicianLic,
         orderingClinicianLic
       ]).trim();
+      const cptModifiers = extractCptModifiersFromActivity(act);
       records.push({
         ClaimID: claimId,
         ActivityID: activityId,
@@ -2378,7 +2376,8 @@ function extractPricingRecords(xmlDoc) {
         ClaimGross: claimGross,
         ClaimNet: claimNet,
         PayerID: payerId,
-        PriorAuthorizationID: String(textValue(act, 'PriorAuthorizationID') || '').trim()
+        PriorAuthorizationID: String(textValue(act, 'PriorAuthorizationID') || '').trim(),
+        CPTModifiers: cptModifiers
       });
     }
   }
@@ -2783,7 +2782,11 @@ function getComparisonPricingBasis(row) {
   const adjustments = [];
   const factorRaw = String(row && row.AppliedFactor != null ? row.AppliedFactor : '').trim();
   const factor = factorRaw === '' ? null : Number(factorRaw);
-  if (Number.isFinite(factor) && !moneyEqual(factor, 1)) adjustments.push(`factor ×${formatMoney(factor)}`);
+  const modifierPriceFactor = Number(row && row._modifierPriceFactor);
+  if (Number.isFinite(factor) && !moneyEqual(factor, 1)) adjustments.push(`combined factor ×${formatMoney(factor)}`);
+  if (Number.isFinite(modifierPriceFactor) && moneyEqual(modifierPriceFactor, 1.5)) {
+    adjustments.push('Modifier 50 ×1.5');
+  }
   return adjustments.length ? `${basis}; ${adjustments.join(', ')}` : basis;
 }
 
@@ -3403,6 +3406,51 @@ function firstNonEmpty(arr) {
   }
   return '';
 }
+
+function getDirectChildren(node, tagName) {
+  if (!node) return [];
+  return Array.from(node.children || []).filter(child =>
+    String(child.localName || child.nodeName || '').trim() === tagName
+  );
+}
+
+function getDirectChildText(node, tagName) {
+  const child = getDirectChildren(node, tagName)[0] || null;
+  return child ? String(child.textContent || '').trim() : '';
+}
+
+function extractCptModifiersFromActivity(activity) {
+  const modifiers = new Set();
+
+  getDirectChildren(activity, 'Observation').forEach(observation => {
+    const valueType = getDirectChildText(observation, 'ValueType').trim().toLowerCase();
+
+    // This must be checked before Value. Non-modifier observations can
+    // legitimately contain values such as 24, 25, 50, or 52.
+    if (valueType !== 'modifiers') return;
+
+    const rawValue = firstNonEmpty([
+      getDirectChildText(observation, 'Value'),
+      getDirectChildText(observation, 'ValueText')
+    ]).trim();
+
+    if (['24', '25', '50', '52'].includes(rawValue)) modifiers.add(rawValue);
+  });
+
+  return Array.from(modifiers);
+}
+
+function getCptModifierPriceFactor(modifiers) {
+  const values = new Set((Array.isArray(modifiers) ? modifiers : []).map(value => String(value || '').trim()));
+  return values.has('50') ? 1.5 : 1;
+}
+
+function combinePricingFactors(baseFactor, modifierFactor) {
+  const base = Number(baseFactor);
+  const modifier = Number(modifierFactor);
+  if (!Number.isFinite(base) || !Number.isFinite(modifier)) return 1;
+  return Math.round(base * modifier * 10000) / 10000;
+}
 function firstNonEmptyKey(obj, keys) {
   for (const k of keys) {
     if (Object.prototype.hasOwnProperty.call(obj, k) && String(obj[k]).trim() !== '') return obj[k];
@@ -3510,6 +3558,9 @@ window._pricingTestApi = {
   normalizeClaimTypeMode,
   buildFactorRulesFromWorkbook,
   findFactorFromRules,
+  extractCptModifiersFromActivity,
+  getCptModifierPriceFactor,
+  combinePricingFactors,
   requiresNonZeroMedicalPrice,
   getZeroPricePricingDecision
 };
