@@ -14,6 +14,22 @@
     '52': Object.freeze({ expectedVOI: 'VOI_EF1', consultationOnly: true })
   });
 
+  // Keep modifier price validation aligned with checker_pricing medical factors.
+  const KHABISI_FACTOR_13_CODES = new Set([
+    '92504',
+    '92567',
+    '94640',
+    '96360',
+    '96361',
+    '96365',
+    '96367',
+    '96372',
+    '96374',
+    '96375',
+    '69210'
+  ]);
+  const KHABISI_AUTH_FACTOR_13_CODES = new Set(['97802', '97803']);
+
   const ELIGIBILITY_HEADERS = Object.freeze({
     member: 'Card Number / DHA Member ID',
     date: 'Ordered On',
@@ -1133,8 +1149,25 @@
 
     if (record.Modifier === '50' && !record.MissingModifier) {
       const procedureRule = minorProcedureRules.get(normalizeCode(record.ActivityCode)) || null;
-      const expected = Number(procedureRule?.claimed_amount_1_5);
-      if (Number.isFinite(expected) && !moneyEqual(record.Net, expected)) remarks.push(`Modifier 50 on ${record.ActivityCode} must use the 1.5 quantity price of ${expected}.`);
+      const baseModifierPrice = Number(procedureRule?.claimed_amount_1_5);
+
+      if (Number.isFinite(baseModifierPrice)) {
+        const factor = findModifierFactor(
+          modifierFactorRules,
+          record.FacilityID,
+          record.ActivityCode,
+          record.ReceiverID,
+          record.PriorAuthorizationID
+        );
+        const expected = Math.round((baseModifierPrice * factor + Number.EPSILON) * 100) / 100;
+
+        if (!moneyEqual(record.Net, expected)) {
+          remarks.push(
+            `Modifier 50 on ${record.ActivityCode} must use the factored 1.5 quantity price of ${expected} ` +
+            `(1.5 quantity price ${baseModifierPrice} × factor ${factor}); claimed Net is ${record.Net}.`
+          );
+        }
+      }
     }
 
     if (record.Modifier === '52') {
@@ -1155,7 +1188,8 @@
           modifierFactorRules,
           record.FacilityID,
           record.ActivityCode,
-          record.ReceiverID
+          record.ReceiverID,
+          record.PriorAuthorizationID
         );
         const factoredBasePrice = Math.round((basePrice * factor + Number.EPSILON) * 100) / 100;
         const expectedDiscountedPrice = Math.round((factoredBasePrice * 0.5 + Number.EPSILON) * 100) / 100;
@@ -2134,20 +2168,49 @@
         return matchValues.length ? { facilityID, matchType, matchValues, factors } : null;
       }).filter(Boolean);
     } catch (error) {
-      console.warn('[MODIFIERS] Could not load Factors.xlsx for Modifier 52 price validation:', error);
+      console.warn('[MODIFIERS] Could not load Factors.xlsx for modifier price validation:', error);
       return [];
     }
   }
 
-  function findModifierFactor(rules, facilityID, code, receiverID) {
+  function findModifierFactor(rules, facilityID, code, receiverID, priorAuthorizationID = '') {
     const facility = String(facilityID || '').trim().toUpperCase();
     const normalizedCode = normalizeCode(code);
     const receiver = String(receiverID || '').trim().toUpperCase();
-    const facilityRules = (Array.isArray(rules) ? rules : []).filter(rule => rule.facilityID === facility);
-    let matched = facilityRules.find(rule => rule.matchType === 'Exact List' && rule.matchValues.includes(normalizedCode));
-    if (!matched) {
-      matched = facilityRules.find(rule => rule.matchType === 'Starts With' && rule.matchValues.some(prefix => normalizedCode.startsWith(prefix)));
+    const priorAuthorization = String(priorAuthorizationID || '').trim();
+
+    // Explicit medical pricing overrides shared with checker_pricing.
+    if (facility === 'MF5020' && KHABISI_FACTOR_13_CODES.has(normalizedCode)) {
+      return 1.3;
     }
+
+    if (facility === 'MF5020' && KHABISI_AUTH_FACTOR_13_CODES.has(normalizedCode)) {
+      return priorAuthorization ? 1.3 : 1;
+    }
+
+    // C001 uses Mandatory Tariff directly unless a more specific override above applies.
+    if (receiver === 'C001') return 1;
+
+    // True Life (MF7003), Thiqa (D001), CPT 90792 explicit pricing override.
+    if (facility === 'MF7003' && receiver === 'D001' && normalizedCode === '90792') {
+      return 1.3;
+    }
+
+    const facilityRules = (Array.isArray(rules) ? rules : []).filter(rule => rule.facilityID === facility);
+
+    // Exact List has priority over Starts With, matching checker_pricing.
+    let matched = facilityRules.find(rule =>
+      rule.matchType === 'Exact List' &&
+      rule.matchValues.includes(normalizedCode)
+    );
+
+    if (!matched) {
+      matched = facilityRules.find(rule =>
+        rule.matchType === 'Starts With' &&
+        rule.matchValues.some(prefix => normalizedCode.startsWith(prefix))
+      );
+    }
+
     const factor = matched ? Number(matched.factors?.[receiver]) : 1;
     return Number.isFinite(factor) ? factor : 1;
   }
@@ -2193,7 +2256,7 @@
     return map;
   }
 
-  function buildMissingMandatoryModifierRecords(xmlData, minorProcedureRules) {
+  function buildMissingMandatoryModifierRecords(xmlData, minorProcedureRules, modifierFactorRules) {
     const existing = new Set(xmlData.records.map(record => `${record.ClaimID}|${record.ActivityID}|${record.Modifier}`));
     const synthetic = [];
     for (const [claimID, activities] of xmlData.claimActivities.entries()) {
@@ -2210,7 +2273,9 @@
             OrderingClinician: consultation.orderingClinician, OrderingClinicianRaw: consultation.orderingClinicianRaw,
             PerformingClinician: consultation.performingClinician, PerformingClinicianRaw: consultation.performingClinicianRaw,
             Modifier: '25', ActivityCode: consultation.activityCode, Quantity: consultation.quantity, Net: consultation.net,
-            ReceiverID: consultation.receiverID, PayerID: consultation.payerID, Insurer: xmlData.receiver?.insurer || 'Unknown',
+            ReceiverID: consultation.receiverID, PayerID: consultation.payerID,
+            FacilityID: consultation.facilityID, PriorAuthorizationID: consultation.priorAuthorizationID,
+            Insurer: xmlData.receiver?.insurer || 'Unknown',
             ObsCode: '', ObsValueType: '', VOINumber: '', MissingModifier: true,
             MissingRemark: `Modifier 25 is required on E/M ${consultation.activityCode} because a minor procedure is present.`
           });
@@ -2219,16 +2284,33 @@
       activities.forEach(activity => {
         const rule = minorProcedureRules.get(normalizeCode(activity.activityCode));
         if (!/50/.test(String(rule?.modifiers || ''))) return;
-        const expected = Number(rule?.claimed_amount_1_5);
-        if (!Number.isFinite(expected) || !moneyEqual(activity.net, expected) || existing.has(`${claimID}|${activity.activityID}|50`)) return;
+
+        const baseModifierPrice = Number(rule?.claimed_amount_1_5);
+        if (!Number.isFinite(baseModifierPrice)) return;
+
+        const factor = findModifierFactor(
+          modifierFactorRules,
+          activity.facilityID,
+          activity.activityCode,
+          activity.receiverID,
+          activity.priorAuthorizationID
+        );
+        const expected = Math.round((baseModifierPrice * factor + Number.EPSILON) * 100) / 100;
+
+        if (!moneyEqual(activity.net, expected) || existing.has(`${claimID}|${activity.activityID}|50`)) return;
+
         synthetic.push({
           ClaimID: claimID, MemberID: activity.memberID, ActivityID: activity.activityID, Date: activity.date,
           OrderingClinician: activity.orderingClinician, OrderingClinicianRaw: activity.orderingClinicianRaw,
           PerformingClinician: activity.performingClinician, PerformingClinicianRaw: activity.performingClinicianRaw,
           Modifier: '50', ActivityCode: activity.activityCode, Quantity: activity.quantity, Net: activity.net,
-          ReceiverID: activity.receiverID, PayerID: activity.payerID, Insurer: xmlData.receiver?.insurer || 'Unknown',
+          ReceiverID: activity.receiverID, PayerID: activity.payerID,
+          FacilityID: activity.facilityID, PriorAuthorizationID: activity.priorAuthorizationID,
+          Insurer: xmlData.receiver?.insurer || 'Unknown',
           ObsCode: '', ObsValueType: '', VOINumber: '', MissingModifier: true,
-          MissingRemark: `Modifier 50 is required on ${activity.activityCode} because the 1.5 quantity price is being claimed.`
+          MissingRemark:
+            `Modifier 50 is required on ${activity.activityCode} because the factored 1.5 quantity price ` +
+            `${expected} is being claimed (base ${baseModifierPrice} × factor ${factor}).`
         });
       });
     }
@@ -2268,7 +2350,11 @@
       const eligibility = parseEligibilityWorkbook(eligibilityFile, eligibilityBuffer);
       const matcher = buildEligibilityMatcher(eligibility.rows);
       const xmlData = collectXmlData(xmlDoc);
-      xmlData.records.push(...buildMissingMandatoryModifierRecords(xmlData, minorProcedureRules));
+      xmlData.records.push(...buildMissingMandatoryModifierRecords(
+        xmlData,
+        minorProcedureRules,
+        modifierFactorRules
+      ));
       const claimContext = buildClaimModifierContext(xmlData.claimActivities, minorProcedureCodes, xmlData.claimDiagnoses);
       const claimEligibilityMatches = resolveClaimEligibilityMatches(
         xmlData.records,
