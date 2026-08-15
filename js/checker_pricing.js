@@ -1187,6 +1187,40 @@ function normalizeClaimTypeMode(value) {
   const normalized = String(value || '').trim().toUpperCase();
   return normalized === 'MEDICAL' || normalized === 'DENTAL' ? normalized : null;
 }
+
+async function loadBundledPricingJson(label, paths) {
+  const failures = [];
+
+  for (const path of paths) {
+    try {
+      const response = await fetch(path, { cache: 'no-store' });
+      if (!response.ok) {
+        failures.push(`${path}: HTTP ${response.status}`);
+        continue;
+      }
+
+      const data = await response.json();
+      if (!Array.isArray(data)) {
+        failures.push(`${path}: response is not a JSON array`);
+        continue;
+      }
+      if (!data.length) {
+        failures.push(`${path}: pricing array is empty`);
+        continue;
+      }
+
+      console.log(`[PRICING] ${label} loaded from ${path}; rows: ${data.length}`);
+      return data;
+    } catch (error) {
+      failures.push(`${path}: ${error?.message || String(error)}`);
+    }
+  }
+
+  throw new Error(
+    `${label} could not be loaded. ` +
+    `${failures.join(' | ')}`
+  );
+}
 async function handleRun(options = {}) {
   resetUI();
   try {
@@ -1219,12 +1253,30 @@ async function handleRun(options = {}) {
     showProgress(5, 'Reading files');
     const [xmlText, dentalPricingRaw, clinicianData, endoPricingRaw, medicalPricingRaw] = await Promise.all([
       readFileText(xmlFile),
-      fetch('../json/dental_pricing.json').then(r => r.json()).catch(e => { console.warn('[PRICING] Failed to load dental_pricing.json:', e); return []; }),
-      fetch('../json/clinician_licenses.json').then(r => r.json()).catch(() => []),
-      fetch('../json/endo_pricing.json').then(r => r.json()).catch(() => []),
-      fetch('../json/medical_pricing.json').then(r => r.json()).catch(e => { console.warn('[PRICING] Failed to load medical_pricing.json:', e); return []; })
+      isMedicalMode
+        ? Promise.resolve([])
+        : loadBundledPricingJson('Dental pricing data', [
+            '../json/dental_pricing.json',
+            'json/dental_pricing.json',
+            './json/dental_pricing.json'
+          ]),
+      fetch('../json/clinician_licenses.json', { cache: 'no-store' }).then(r => r.ok ? r.json() : []).catch(() => []),
+      fetch('../json/endo_pricing.json', { cache: 'no-store' }).then(r => r.ok ? r.json() : []).catch(() => []),
+      isMedicalMode
+        ? loadBundledPricingJson('Medical pricing data', [
+            '../json/medical_pricing.json',
+            'json/medical_pricing.json',
+            './json/medical_pricing.json'
+          ])
+        : Promise.resolve([])
     ]);
-    if (!Array.isArray(dentalPricingRaw) || dentalPricingRaw.length === 0) throw new Error('Dental pricing data could not be loaded.\nEnsure dental_pricing.json is present in the json/ folder.');
+
+    if (!isMedicalMode && (!Array.isArray(dentalPricingRaw) || dentalPricingRaw.length === 0)) {
+      throw new Error('Dental pricing data could not be loaded.\nEnsure dental_pricing.json is present in the json/ folder.');
+    }
+    if (isMedicalMode && (!Array.isArray(medicalPricingRaw) || medicalPricingRaw.length === 0)) {
+      throw new Error('Medical pricing data could not be loaded.\nEnsure medical_pricing.json is present in the json/ folder.');
+    }
     let xlsxMatcher = null;
     if (xlsxFile) {
       const xlsxObj = await readXlsx(xlsxFile);
