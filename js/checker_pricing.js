@@ -921,6 +921,16 @@ function getKnownCptTypeResult(rec, drugsMap, knownCptCodeSet, drugListSource) {
     }]
   };
 }
+function getDrugUnitPackageQuantity(drug) {
+  if (!drug) return null;
+
+  const raw = drug['Unit QTY'];
+  if (raw === '' || raw === undefined || raw === null) return null;
+
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
 function calculateDrugMarkupPricing(drug, quantity, unitPackageQuantity = null) {
   const qty = Number(quantity);
   if (!drug || !Number.isFinite(qty) || qty <= 0) {
@@ -933,8 +943,8 @@ function calculateDrugMarkupPricing(drug, quantity, unitPackageQuantity = null) 
   // XML drug Quantity is expressed as a package quantity. Whole-number portions
   // are full packages. For the decimal remainder, determine how much package
   // quantity represents one physical unit, then price those units with Unit Markup.
-  // The shared drug helper derives this from Unit Price to Public / Package Price
-  // to Public. If that is unavailable, the markup ratio provides a safe fallback.
+  // Prefer the explicit Drugs.xlsx Unit QTY value supplied by analyzeDrugActivity.
+  // Only when Unit QTY is unavailable do we fall back to an inferred quantity.
   let quantityPerUnit = Number(unitPackageQuantity);
   if (!Number.isFinite(quantityPerUnit) || quantityPerUnit <= 0) {
     if (packageMarkup !== null && unitMarkup !== null && packageMarkup > 0 && unitMarkup > 0) {
@@ -1056,18 +1066,21 @@ function analyzeDrugActivity(rec, options = {}) {
     });
   }
 
-  const requiredQuantity = drug ? shared.calculateRequiredDrugQuantity(drug) : null;
+  const configuredUnitQuantity = drug ? getDrugUnitPackageQuantity(drug) : null;
+  const inferredUnitQuantity = drug ? shared.calculateRequiredDrugQuantity(drug) : null;
+  const unitPackageQuantity = configuredUnitQuantity ?? inferredUnitQuantity;
+
   if (drug) {
     findings = findings.concat(shared.validateDrugQuantity({
       code: codeRaw,
       quantity,
-      requiredQuantity,
+      requiredQuantity: unitPackageQuantity,
       receiverID,
       quantityAuditorReceivers
     }));
   }
   const selectedPricing = drug
-    ? calculateDrugMarkupPricing(drug, quantity, requiredQuantity)
+    ? calculateDrugMarkupPricing(drug, quantity, unitPackageQuantity)
     : { value: null, expectedNet: null, source: '', basis: '', breakdown: null };
   const expectedNet = selectedPricing.expectedNet;
   let priceResult = 'Unknown';
@@ -1096,7 +1109,7 @@ function analyzeDrugActivity(rec, options = {}) {
             }
             if (Number(b.fractionalUnits) > 0) {
               const qtyPerUnitText = Number(b.quantityPerUnit) > 0
-                ? ` (${formatMoney(b.fractionalPackages)} package qty ÷ ${formatMoney(b.quantityPerUnit)} per unit)`
+                ? ` (${formatMoney(b.fractionalPackages)} package qty ÷ ${formatMoney(b.quantityPerUnit)} Unit QTY)`
                 : '';
               parts.push(`${formatMoney(b.fractionalUnits)} unit(s)${qtyPerUnitText} × Unit Markup ${formatMoney(b.unitMarkup)} = ${formatMoney(b.unitTotal)}`);
             }
