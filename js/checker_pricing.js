@@ -1846,9 +1846,11 @@ async function handleRun(options = {}) {
         remarks.push(`Code ${rec.CPT} must have net price 0 for payer ${pricingReceiverID || '(missing)'}.`);
       }
 
+      // Only Thiqa (D001) may have a priced 92015. Every other payer must
+      // submit this code at Net 0.
       if (normalizedCode === '92015' && pricingReceiverID !== 'D001' && xmlNet !== 0) {
         status = 'Invalid';
-        remarks.push(`Code 92015 can only have price for payer D001.`);
+        remarks.push(`Code 92015 must have net price 0 for non-Thiqa payer ${pricingReceiverID || '(missing)'}. Only D001 may have a price.`);
       }
       if (normalizedCode === '99173' && xmlNet !== 0) {
         status = 'Invalid';
