@@ -795,9 +795,22 @@
             if (isDamanBasic && principal && DAMAN_BASIC_PRIMARY_EXACT_EXCLUSIONS.has(principal.code)) invalidFields.push(`Principal Diagnosis ${principal.code} is not covered for Daman Basic.`);
             if (isNas && principal?.code === 'E282') invalidFields.push('Principal Diagnosis E28.2 is not covered for NAS.');
 
-            if (isDaman && diagnosisCodes.has('L700')) invalidFields.push('Diagnosis L70.0 is not covered for Daman Basic or Daman Enhanced.');
+            // L70.0 is excluded for Daman Basic/Enhanced only when it is the
+            // Principal diagnosis. Secondary/ReasonForVisit L70.0 does not
+            // trigger this coverage rule.
+            if (isDaman && principal?.code === 'L700') {
+                invalidFields.push('Principal Diagnosis L70.0 is not covered for Daman Basic or Daman Enhanced.');
+            }
+
+            // For Thiqa, Principal L70.0 requires B96.89 specifically as
+            // ReasonForVisit. Accept both common text spellings of the type.
             if (receiverID === THIQA_RECEIVER_ID && principal?.code === 'L700') {
-                const hasRequiredReason = diagnosisRows.some(row => row.type === 'Reason for Visit' && row.code === 'B9689');
+                const hasRequiredReason = diagnosisRows.some(row => {
+                    const normalizedType = String(row.type || '')
+                        .replace(/\s+/g, '')
+                        .toLowerCase();
+                    return normalizedType === 'reasonforvisit' && row.code === 'B9689';
+                });
                 if (!hasRequiredReason) invalidFields.push('Principal Diagnosis L70.0 for Thiqa requires B96.89 as Reason for Visit.');
             }
 
@@ -828,33 +841,72 @@
                     }
                 }
                 const e66Rows = diagnosisRows.filter(row => row.code.startsWith('E66'));
-                const hasAlternativeCompanions = diagnosisCodes.has('R636') && diagnosisCodes.has('Z713');
-                if (!e66Rows.length && !hasAlternativeCompanions) invalidFields.push('Z68 diagnosis requires E66 or both R63.6 and Z71.3.');
+
+                // Z68 should normally be coded with E66. When E66 is absent,
+                // either an R63-family or Z71-family diagnosis is an accepted
+                // alternative companion.
+                const hasAlternativeCompanion = diagnosisRows.some(row =>
+                    row.code.startsWith('R63') || row.code.startsWith('Z71')
+                );
+                if (!e66Rows.length && !hasAlternativeCompanion) {
+                    invalidFields.push('Z68 diagnosis requires E66, R63, or Z71.');
+                }
+
                 if (e66Rows.length) {
-                    const sameTypeEligible = row =>
-                        row.type === 'Secondary' ||
-                        row.type === 'Reason for Visit' ||
-                        row.type === 'ReasonForVisit';
+                    const normalizeComparableType = value => {
+                        const compact = String(value || '')
+                            .replace(/\s+/g, '')
+                            .toLowerCase();
+                        if (compact === 'principal') return 'Principal';
+                        if (compact === 'secondary') return 'Secondary';
+                        if (compact === 'reasonforvisit') return 'ReasonForVisit';
+                        return '';
+                    };
 
-                    // The Z68/E66 same-Diagnosis-Type checkpoint does not use
-                    // Principal diagnoses. Only Secondary and ReasonForVisit
-                    // diagnoses participate in this comparison.
-                    const comparableZ68Rows = z68Rows.filter(sameTypeEligible);
-                    const comparableE66Rows = e66Rows.filter(sameTypeEligible);
-                    const comparableE66Types = new Set(comparableE66Rows.map(row => row.type));
+                    const z68Types = z68Rows
+                        .map(row => normalizeComparableType(row.type))
+                        .filter(Boolean);
+                    const e66Types = e66Rows
+                        .map(row => normalizeComparableType(row.type))
+                        .filter(Boolean);
 
-                    comparableZ68Rows.forEach(row => {
-                        const normalizedZ68Type = row.type === 'ReasonForVisit'
-                            ? 'Reason for Visit'
-                            : row.type;
-                        const hasMatchingType = Array.from(comparableE66Types).some(type =>
-                            (type === 'ReasonForVisit' ? 'Reason for Visit' : type) === normalizedZ68Type
-                        );
+                    const z68TypeSet = new Set(z68Types);
+                    const e66TypeSet = new Set(e66Types);
 
-                        if (!hasMatchingType && comparableE66Rows.length) {
-                            invalidFields.push(`Z68 and E66 diagnoses must use the same Diagnosis Type (Z68 is ${row.type || 'Unknown'}).`);
+                    // Principal does not itself trigger a same-type requirement,
+                    // but it is an allowed counterpart. Therefore:
+                    // - Secondary must pair with Secondary OR Principal.
+                    // - ReasonForVisit must pair with ReasonForVisit OR Principal.
+                    // Apply this in both directions so either diagnosis can be
+                    // the non-Principal one that creates the requirement.
+                    const requirements = ['Secondary', 'ReasonForVisit'];
+                    const mismatchedTypes = [];
+
+                    requirements.forEach(type => {
+                        if (
+                            z68TypeSet.has(type) &&
+                            !e66TypeSet.has(type) &&
+                            !e66TypeSet.has('Principal')
+                        ) {
+                            mismatchedTypes.push(type);
+                        }
+
+                        if (
+                            e66TypeSet.has(type) &&
+                            !z68TypeSet.has(type) &&
+                            !z68TypeSet.has('Principal')
+                        ) {
+                            mismatchedTypes.push(type);
                         }
                     });
+
+                    const uniqueMismatchedTypes = [...new Set(mismatchedTypes)];
+                    if (uniqueMismatchedTypes.length) {
+                        invalidFields.push(
+                            `Z68 and E66 diagnoses must use the same non-Principal Diagnosis Type ` +
+                            `(or the counterpart may be Principal). Mismatch: ${uniqueMismatchedTypes.join(', ')}.`
+                        );
+                    }
                 }
             }
 
