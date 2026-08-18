@@ -815,7 +815,24 @@
             }
 
             if (diagnosisCodes.has('J309') && diagnosisCodes.has('J459')) invalidFields.push('Diagnosis codes J30.9 and J45.9 cannot be coded together.');
-            if (diagnosisCodes.has('J00') && diagnosisRows.some(row => row.code.startsWith('J02'))) invalidFields.push('J02 diagnosis codes cannot be coded together with J00.');
+            // J00 and J02-family diagnoses may coexist when at least one of
+            // them is coded as ReasonForVisit. Otherwise the combination is invalid.
+            const j00Rows = diagnosisRows.filter(row => row.code === 'J00');
+            const j02Rows = diagnosisRows.filter(row => row.code.startsWith('J02'));
+            if (j00Rows.length && j02Rows.length) {
+                const isReasonForVisit = row =>
+                    String(row.type || '')
+                        .replace(/\s+/g, '')
+                        .toLowerCase() === 'reasonforvisit';
+
+                const hasReasonForVisit =
+                    j00Rows.some(isReasonForVisit) ||
+                    j02Rows.some(isReasonForVisit);
+
+                if (!hasReasonForVisit) {
+                    invalidFields.push('J02 diagnosis codes cannot be coded together with J00 unless at least one is Reason for Visit.');
+                }
+            }
             if (diagnosisCodes.has('N39') && ['O2341', 'O2342', 'O2343'].some(code => diagnosisCodes.has(code))) invalidFields.push('O23.41/O23.42/O23.43 cannot be coded together with N39.');
 
             if (hasOCode) {
