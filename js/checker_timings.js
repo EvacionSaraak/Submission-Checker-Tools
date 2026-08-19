@@ -1,794 +1,366 @@
 (function() {
   try {
     // checker_timings.js
+
     // --- Main Entry Point (called by unified interface) ---
     async function validateTimingsAsync() {
-  const xmlInput = document.getElementById('xmlFileInput');
-  const status = document.getElementById('uploadStatus');
+      const xmlInput = document.getElementById('xmlFileInput');
+      const status = document.getElementById('uploadStatus');
+      if (!xmlInput || !xmlInput.files || !xmlInput.files.length) { if (status) status.textContent = 'No XML file selected.'; return null; }
 
-  if (!xmlInput || !xmlInput.files || !xmlInput.files.length) {
-    if (status) status.textContent = 'No XML file selected.';
-    return null;
-  }
+      const file = xmlInput.files[0];
+      try {
+        if (status) status.textContent = 'Processing file...';
+        const xmlText = await file.text();
+        validateXMLString(xmlText);
+        const xmlDoc = parseXML(xmlText);
+        const selectedType = document.querySelector('input[name="claimTypeGlobal"]:checked')?.value || 'DENTAL';
+        const requiredType = selectedType === 'DENTAL' ? '6' : '3';
+        const receiverID = xmlDoc.querySelector('Header > ReceiverID')?.textContent?.trim()?.toUpperCase() || '';
+        const claims = extractClaims(xmlDoc, { requiredType, claimMode: selectedType, receiverID });
 
-  const file = xmlInput.files[0];
+        const invalidRows = claims.filter(r => !r.isValid);
+        window.invalidRows = invalidRows;
+        const summaryBox = document.getElementById('resultsSummary');
+        if (summaryBox) summaryBox.textContent = `Valid: ${claims.length - invalidRows.length} / ${claims.length} (${((claims.length - invalidRows.length) / claims.length * 100).toFixed(1)}%)`;
 
-  try {
-    if (status) status.textContent = 'Processing file...';
-    const xmlText = await file.text();
-    validateXMLString(xmlText);
-    const xmlDoc = parseXML(xmlText);
-
-    const checkedRadio = document.querySelector('input[name="claimTypeGlobal"]:checked');
-    const selectedType = checkedRadio?.value || "DENTAL";
-    const requiredType = (selectedType === "DENTAL") ? "6" : "3";
-    const receiverID =
-      xmlDoc
-        .querySelector('Header > ReceiverID')
-        ?.textContent
-        ?.trim()
-        ?.toUpperCase()
-      || '';
-    const claims = extractClaims(xmlDoc, {
-      requiredType,
-      claimMode: selectedType,
-      receiverID
-    });
-
-    // Update summary status
-    const invalidRows = claims.filter(r => !r.isValid);
-    window.invalidRows = invalidRows;
-    const summaryBox = document.getElementById('resultsSummary');
-    if (summaryBox) {
-      summaryBox.textContent = `Valid: ${claims.length - invalidRows.length} / ${claims.length} (${((claims.length - invalidRows.length)/claims.length*100).toFixed(1)}%)`;
-    }
-
-    // Export button handler (add if button exists)
-    const exportBtn = document.getElementById('exportBtn');
-    if (exportBtn) {
-      exportBtn.style.display = invalidRows.length ? 'inline-block' : 'none';
-      exportBtn.onclick = () => {
-        const wb = XLSX.utils.book_new();
-        const wsData = [
-          ['Claim ID', 'Activity ID', 'Type', 'Encounter Start', 'Encounter End', 'Activity Start', 'Duration', 'Excess', 'Remarks'],
-          ...window.invalidRows.map(r => [
-            r.claimId, r.activityId, r.type, r.encounterStart, r.encounterEnd,
-            r.start, r.duration, r.excess, r.remarks.map(s => s && !s.endsWith('.') ? s + '.' : s).join('; ')
-          ])
-        ];
-        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(wsData), 'Invalid Timings');
-        XLSX.writeFile(wb, 'invalid_timings.xlsx');
-      };
-    }
-
-    if (status) status.textContent = '';
-    return buildResultsTable(claims);
-  } catch (err) {
-    if (status) status.textContent = `❌ Error: ${sanitize(String(err.message))}`;
-    return null;
-  }
-}
-// --- Legacy onFileChange (kept for backward compatibility) ---
-async function onFileChange(event) {
-  clearResults();
-  const file = event.target.files?.[0];
-  if (!file) return renderMessage('No file selected.');
-  try {
-    renderMessage('Processing file...');
-    const xmlText = await file.text();
-    validateXMLString(xmlText);
-    const xmlDoc = parseXML(xmlText);
-    // Use claimType for standalone, claimTypeGlobal for unified
-    const selectedType = document.querySelector('input[name="claimType"]:checked')?.value ||
-                         document.querySelector('input[name="claimTypeGlobal"]:checked')?.value ||
-                         "DENTAL";
-    const requiredType = (selectedType === "DENTAL") ? "6" : "3";
-    const receiverID =
-      xmlDoc
-        .querySelector('Header > ReceiverID')
-        ?.textContent
-        ?.trim()
-        ?.toUpperCase()
-      || '';
-    const claims = extractClaims(xmlDoc, {
-      requiredType,
-      claimMode: selectedType,
-      receiverID
-    });
-    const resultsContainer = getStandaloneResultsContainer();
-    if (resultsContainer) {
-      renderResults(resultsContainer, claims);
-    }
-  } catch (err) {
-    renderMessage(`❌ Error: ${sanitize(String(err.message))}`);
-  }
-}
-// --- XML Parsing/Validation ---
-function validateXMLString(str) {
-  if (typeof str !== 'string' || !str.trim().startsWith('<')) throw new Error('File does not appear to be valid XML.');
-}
-function parseXML(xmlString) {
-  // Preprocess XML to replace unescaped & with "and" for parseability
-  const xmlContent = xmlString.replace(/&(?!(amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;))/g, "and");
-  const doc = new DOMParser().parseFromString(xmlContent, 'application/xml');
-  if (doc.querySelector('parsererror')) throw new Error('Invalid XML format.');
-  return doc;
-}
-const SERIES_97_BANDS = [
-  { min: 8, max: 22, quantity: 1 },
-  { min: 23, max: 37, quantity: 2 },
-  { min: 38, max: 52, quantity: 3 },
-  { min: 53, max: 67, quantity: 4 }
-];
-
-const CHECKPOINT_OCCUPATIONAL_THERAPY_CODES = new Set(['97166', '97168', '97530', '97533', '97535', '97129']);
-const CHECKPOINT_PHYSIOTHERAPY_CODES = new Set(['97161', '97164', '97110', '97140', '97032', '97530', '97112', '97116']);
-const CHECKPOINT_SPEECH_THERAPY_CODES = new Set(['92523', '92507']);
-const CHECKPOINT_DIETICIAN_CODES = new Set(['97802', '97803']);
-const CHECKPOINT_THERAPY_TIMING_CODES = new Set([
-  ...CHECKPOINT_OCCUPATIONAL_THERAPY_CODES,
-  ...CHECKPOINT_PHYSIOTHERAPY_CODES,
-  ...CHECKPOINT_SPEECH_THERAPY_CODES,
-  ...CHECKPOINT_DIETICIAN_CODES
-]);
-
-function get97BandForDuration(durationMinutes) {
-  return SERIES_97_BANDS.find(band => durationMinutes >= band.min && durationMinutes <= band.max) || null;
-}
-
-function calculate97DurationRange(timedActivities) {
-  const positiveActivities = timedActivities.filter(activity =>
-    activity.code && Number.isFinite(activity.quantity) && activity.quantity > 0
-  );
-  const timedCodes = Array.from(new Set(positiveActivities.map(activity => activity.code)));
-  const totalQuantity = positiveActivities.reduce((sum, activity) => sum + activity.quantity, 0);
-  const uniqueCodeCount = timedCodes.length;
-  const duplicateQuantity = Math.max(0, totalQuantity - uniqueCodeCount);
-
-  return {
-    timedCodes,
-    totalQuantity,
-    uniqueCodeCount,
-    duplicateQuantity,
-    minimumMinutes: (uniqueCodeCount * 7) + (duplicateQuantity * 15)
-  };
-}
-
-function formatMinuteValue(value) {
-  return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(2)));
-}
-// --- Claims Extraction/Validation ---
-function getMaximumEncounterMinutes({ claimMode, receiverID }) {
-  const isMedical = String(claimMode || '').trim().toUpperCase() === 'MEDICAL';
-  const isHaad = String(receiverID || '').trim().toUpperCase() === 'HAAD';
-
-  if (isMedical && !isHaad) {
-    return 360;
-  }
-
-  return 240;
-}
-function extractClaims(xmlDoc, options = {}) {
-    const requiredType = options.requiredType || "6";
-    const claimMode = String(options.claimMode || "DENTAL")
-        .trim()
-        .toUpperCase();
-
-    const receiverID = options.receiverID || "";
-
-    const maximumEncounterMinutes = getMaximumEncounterMinutes({
-        claimMode,
-        receiverID
-    });
-
-    const maximumEncounterHours = Math.floor(
-        maximumEncounterMinutes / 60
-    );
-    const isMedicalClaim = claimMode === "MEDICAL";
-    const results = [];
-
-    xmlDoc.querySelectorAll("Claim").forEach(claim => {
-        const claimId =
-            claim.querySelector("ID")?.textContent?.trim() ||
-            "Unknown";
-
-        const encounter = claim.querySelector("Encounter");
-
-        const encounterStartStr =
-            encounter?.querySelector("Start")?.textContent?.trim() ||
-            "";
-        const encounterEndStr =
-            encounter?.querySelector("End")?.textContent?.trim() ||
-            "";
-
-        if (!encounterStartStr || !encounterEndStr) {
-            return;
+        const exportBtn = document.getElementById('exportBtn');
+        if (exportBtn) {
+          exportBtn.style.display = invalidRows.length ? 'inline-block' : 'none';
+          exportBtn.onclick = () => {
+            const wb = XLSX.utils.book_new();
+            const wsData = [
+              ['Claim ID', 'Activity ID', 'Type', 'Encounter Start', 'Encounter End', 'Activity Start', 'Duration', 'Excess', 'Remarks'],
+              ...window.invalidRows.map(r => [r.claimId, r.activityId, r.type, r.encounterStart, r.encounterEnd, r.start, r.duration, r.excess, r.remarks.map(s => s && !s.endsWith('.') ? s + '.' : s).join('; ')])
+            ];
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(wsData), 'Invalid Timings');
+            XLSX.writeFile(wb, 'invalid_timings.xlsx');
+          };
         }
+
+        if (status) status.textContent = '';
+        return buildResultsTable(claims);
+      } catch (err) {
+        if (status) status.textContent = `❌ Error: ${sanitize(String(err.message))}`;
+        return null;
+      }
+    }
+
+    // --- Legacy onFileChange (kept for backward compatibility) ---
+    async function onFileChange(event) {
+      clearResults();
+      const file = event.target.files?.[0];
+      if (!file) return renderMessage('No file selected.');
+
+      try {
+        renderMessage('Processing file...');
+        const xmlText = await file.text();
+        validateXMLString(xmlText);
+        const xmlDoc = parseXML(xmlText);
+        const selectedType = document.querySelector('input[name="claimType"]:checked')?.value || document.querySelector('input[name="claimTypeGlobal"]:checked')?.value || 'DENTAL';
+        const requiredType = selectedType === 'DENTAL' ? '6' : '3';
+        const receiverID = xmlDoc.querySelector('Header > ReceiverID')?.textContent?.trim()?.toUpperCase() || '';
+        const claims = extractClaims(xmlDoc, { requiredType, claimMode: selectedType, receiverID });
+        const resultsContainer = getStandaloneResultsContainer();
+        if (resultsContainer) renderResults(resultsContainer, claims);
+      } catch (err) {
+        renderMessage(`❌ Error: ${sanitize(String(err.message))}`);
+      }
+    }
+
+    // --- XML Parsing/Validation ---
+    function validateXMLString(str) {
+      if (typeof str !== 'string' || !str.trim().startsWith('<')) throw new Error('File does not appear to be valid XML.');
+    }
+
+    function parseXML(xmlString) {
+      const xmlContent = xmlString.replace(/&(?!(amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;))/g, 'and');
+      const doc = new DOMParser().parseFromString(xmlContent, 'application/xml');
+      if (doc.querySelector('parsererror')) throw new Error('Invalid XML format.');
+      return doc;
+    }
+
+    const SERIES_97_BANDS = [
+      { min: 8, max: 22, quantity: 1 }, { min: 23, max: 37, quantity: 2 },
+      { min: 38, max: 52, quantity: 3 }, { min: 53, max: 67, quantity: 4 }
+    ];
+
+    const CHECKPOINT_OCCUPATIONAL_THERAPY_CODES = new Set(['97166', '97168', '97530', '97533', '97535', '97129']);
+    const CHECKPOINT_PHYSIOTHERAPY_CODES = new Set(['97161', '97164', '97110', '97140', '97032', '97530', '97112', '97116']);
+    const CHECKPOINT_SPEECH_THERAPY_CODES = new Set(['92523', '92507']);
+    const CHECKPOINT_DIETICIAN_CODES = new Set(['97802', '97803']);
+    const CHECKPOINT_THERAPY_TIMING_CODES = new Set([...CHECKPOINT_OCCUPATIONAL_THERAPY_CODES, ...CHECKPOINT_PHYSIOTHERAPY_CODES, ...CHECKPOINT_SPEECH_THERAPY_CODES, ...CHECKPOINT_DIETICIAN_CODES]);
+
+    function get97BandForDuration(durationMinutes) {
+      return SERIES_97_BANDS.find(band => durationMinutes >= band.min && durationMinutes <= band.max) || null;
+    }
+
+    function calculate97DurationRange(timedActivities) {
+      const positiveActivities = timedActivities.filter(activity => activity.code && Number.isFinite(activity.quantity) && activity.quantity > 0);
+      const timedCodes = Array.from(new Set(positiveActivities.map(activity => activity.code)));
+      const totalQuantity = positiveActivities.reduce((sum, activity) => sum + activity.quantity, 0);
+      const uniqueCodeCount = timedCodes.length;
+      const duplicateQuantity = Math.max(0, totalQuantity - uniqueCodeCount);
+      return { timedCodes, totalQuantity, uniqueCodeCount, duplicateQuantity, minimumMinutes: (uniqueCodeCount * 7) + (duplicateQuantity * 15) };
+    }
+
+    function formatMinuteValue(value) {
+      return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(2)));
+    }
+
+    // --- Claims Extraction/Validation ---
+    function getMaximumEncounterMinutes({ claimMode, receiverID }) {
+      const isMedical = String(claimMode || '').trim().toUpperCase() === 'MEDICAL';
+      const isHaad = String(receiverID || '').trim().toUpperCase() === 'HAAD';
+      return isMedical && !isHaad ? 360 : 240;
+    }
+
+    function extractClaims(xmlDoc, options = {}) {
+      const requiredType = options.requiredType || '6';
+      const claimMode = String(options.claimMode || 'DENTAL').trim().toUpperCase();
+      const receiverID = options.receiverID || '';
+      const maximumEncounterMinutes = getMaximumEncounterMinutes({ claimMode, receiverID });
+      const maximumEncounterHours = Math.floor(maximumEncounterMinutes / 60);
+      const isMedicalClaim = claimMode === 'MEDICAL';
+      const results = [];
+
+      xmlDoc.querySelectorAll('Claim').forEach(claim => {
+        const claimId = claim.querySelector('ID')?.textContent?.trim() || 'Unknown';
+        const encounter = claim.querySelector('Encounter');
+        const encounterStartStr = encounter?.querySelector('Start')?.textContent?.trim() || '';
+        const encounterEndStr = encounter?.querySelector('End')?.textContent?.trim() || '';
+        if (!encounterStartStr || !encounterEndStr) return;
 
         const encounterStart = parseDateTime(encounterStartStr);
         const encounterEnd = parseDateTime(encounterEndStr);
+        if (!encounterStart || !encounterEnd) return;
 
-        if (!encounterStart || !encounterEnd) {
-            return;
-        }
-        const encounterMinutes = Math.floor(
-            (encounterEnd - encounterStart) / 60000
-        );
-
+        const encounterMinutes = Math.floor((encounterEnd - encounterStart) / 60000);
         let baseValid = true;
         const baseRemarks = [];
+        if (encounterMinutes < 0) { baseValid = false; baseRemarks.push('Encounter end is before encounter start.'); }
 
-        if (encounterMinutes < 0) {
-            baseValid = false;
-            baseRemarks.push(
-                "Encounter end is before encounter start."
-            );
-        }
+        const activities = Array.from(claim.querySelectorAll('Activity'));
 
-        const activities = Array.from(
-            claim.querySelectorAll("Activity")
-        );
         /*
          * Timed 97-code validation applies only to Medical claims.
-         *
-         * The first unit of each unique 97-code may use the maximum seven-minute
-         * leeway. Every additional unit of a code already present requires the
-         * full 15 minutes.
-         *
          * Minimum = (unique codes × 7) + (duplicate units × 15)
-         *
-         * Only the minimum is enforced. A longer encounter may include other
-         * procedures that also contribute to the total encounter duration.
-         *
-         * Examples for three total units:
-         *   1, 2, 3 => at least 21 minutes.
-         *   1, 2, 2 => at least 29 minutes.
-         *   1, 1, 1 => at least 37 minutes.
+         * Only the minimum is enforced; longer encounters are allowed.
          */
         const timed97Activities = isMedicalClaim
-            ? activities
-                .map(activity => {
-                    const code =
-                        activity
-                            .querySelector("Code")
-                            ?.textContent
-                            ?.trim() || "";
-                    const quantityRaw =
-                        activity
-                            .querySelector("Quantity")
-                            ?.textContent
-                            ?.trim() || "0";
+          ? activities.map(activity => {
+              const code = activity.querySelector('Code')?.textContent?.trim() || '';
+              const quantity = Number(activity.querySelector('Quantity')?.textContent?.trim() || '0');
+              return { code, quantity: Number.isFinite(quantity) && quantity > 0 ? quantity : 0 };
+            }).filter(activity => /^97/.test(activity.code))
+          : [];
 
-                    const quantity = Number(quantityRaw);
-                    return {
-                        code,
-                        quantity:
-                            Number.isFinite(quantity) && quantity > 0
-                                ? quantity
-                                : 0
-                    };
-                })
-                .filter(activity => /^97/.test(activity.code))
-            : [];
         const duration97Range = calculate97DurationRange(timed97Activities);
         const timed97Codes = duration97Range.timedCodes;
         const total97Quantity = duration97Range.totalQuantity;
         const minimum97Minutes = duration97Range.minimumMinutes;
-        const has97Activities =
-            isMedicalClaim &&
-            timed97Codes.length > 0 &&
-            total97Quantity > 0;
-        const hasInvalid97Duration =
-            has97Activities &&
-            encounterMinutes >= 0 &&
-            encounterMinutes < minimum97Minutes;
-        const timed97CodeLabel =
-            timed97Codes.length === 1
-                ? `Code ${timed97Codes[0]}`
-                : `Codes ${timed97Codes.join(", ")}`;
+        const has97Activities = isMedicalClaim && timed97Codes.length > 0 && total97Quantity > 0;
+        const hasInvalid97Duration = has97Activities && encounterMinutes >= 0 && encounterMinutes < minimum97Minutes;
+        const timed97CodeLabel = timed97Codes.length === 1 ? `Code ${timed97Codes[0]}` : `Codes ${timed97Codes.join(', ')}`;
 
         activities.forEach(activity => {
-            const activityId =
-                activity
-                    .querySelector("ID")
-                    ?.textContent
-                    ?.trim() ||
-                "Unknown";
-            const activityStartStr =
-                activity
-                    .querySelector("Start")
-                    ?.textContent
-                    ?.trim() ||
-                "";
+          const activityId = activity.querySelector('ID')?.textContent?.trim() || 'Unknown';
+          const activityStartStr = activity.querySelector('Start')?.textContent?.trim() || '';
+          const typeValue = activity.querySelector('Type')?.textContent?.trim() || '';
+          const codeValue = activity.querySelector('Code')?.textContent?.trim() || '';
+          let isValid = baseValid;
+          const remarks = [...baseRemarks];
 
-            const typeValue =
-                activity
-                    .querySelector("Type")
-                    ?.textContent
-                    ?.trim() ||
-                "";
-            const codeValue =
-                activity
-                    .querySelector("Code")
-                    ?.textContent
-                    ?.trim() ||
-                "";
+          // Type validation is handled elsewhere; this checker validates timing only.
+          if (!activityStartStr) {
+            isValid = false;
+            remarks.push('Missing Activity Start');
+            results.push({ claimId, activityId, type: typeValue, encounterStart: encounterStartStr, encounterEnd: encounterEndStr, start: 'N/A', duration: formatDuration(encounterMinutes), excess: 'N/A', isValid, remarks });
+            return;
+          }
 
-            let isValid = baseValid;
-            const remarks = [...baseRemarks];
+          const activityStart = parseDateTime(activityStartStr);
+          if (!activityStart) { isValid = false; remarks.push('Invalid Activity Start format'); }
 
-            // Type validation is handled by the teeth/checker logic.
-            // This function validates timing-related aspects only.
-            if (!activityStartStr) {
-                isValid = false;
-                remarks.push("Missing Activity Start");
-                results.push({
-                    claimId,
-                    activityId,
-                    type: typeValue,
-                    encounterStart: encounterStartStr,
-                    encounterEnd: encounterEndStr,
-                    start: "N/A",
-                    duration: formatDuration(encounterMinutes),
-                    excess: "N/A",
-                    isValid,
-                    remarks
-                });
+          const excessMinutes = activityStart instanceof Date && !Number.isNaN(activityStart.getTime()) ? Math.floor((encounterEnd - activityStart) / 60000) : NaN;
+          if (activityStart && activityStart < encounterStart) { isValid = false; remarks.push('Activity start is before encounter start.'); }
+          if (activityStart && activityStart > encounterEnd) { isValid = false; remarks.push('Activity start is after encounter end.'); }
 
-                return;
+          if (encounterMinutes >= 0 && encounterMinutes < 10 && !has97Activities) {
+            isValid = false;
+            remarks.push(`Encounter duration too short (${encounterMinutes} min). Should be 10 minutes minimum.`);
+          } else if (encounterMinutes > maximumEncounterMinutes) {
+            isValid = false;
+            if (encounterMinutes >= 1440) {
+              const [startDate] = encounterStartStr.split(' ');
+              const [endDate] = encounterEndStr.split(' ');
+              remarks.push(`Encounter crosses days: ${startDate} → ${endDate}.`);
+            } else {
+              const hours = Math.floor(encounterMinutes / 60);
+              const minutes = encounterMinutes % 60;
+              remarks.push(`Encounter duration too long (${hours}h ${minutes}m). Should be ${maximumEncounterHours} hours maximum.`);
             }
-            const activityStart = parseDateTime(
-                activityStartStr
-            );
+          }
 
-            if (!activityStart) {
-                isValid = false;
-                remarks.push(
-                    "Invalid Activity Start format"
-                );
-            }
-            const excessMinutes =
-                activityStart instanceof Date &&
-                !Number.isNaN(activityStart.getTime())
-                    ? Math.floor(
-                        (encounterEnd - activityStart) /
-                        60000
-                    )
-                    : NaN;
-            if (
-                activityStart &&
-                activityStart < encounterStart
-            ) {
-                isValid = false;
-                remarks.push(
-                    "Activity start is before encounter start."
-                );
-            }
-            if (
-                activityStart &&
-                activityStart > encounterEnd
-            ) {
-                isValid = false;
-                remarks.push(
-                    "Activity start is after encounter end."
-                );
-            }
+          // Aggregate timed-code error is added only to affected 97-code rows.
+          if (isMedicalClaim && /^97/.test(codeValue) && hasInvalid97Duration) {
+            isValid = false;
+            remarks.push(`${timed97CodeLabel}: total quantity ${formatMinuteValue(total97Quantity)} requires an encounter duration of at least ${formatMinuteValue(minimum97Minutes)} minutes, but the encounter duration is ${encounterMinutes} minutes.`);
+          }
 
-            if (
-                encounterMinutes >= 0 &&
-                encounterMinutes < 10 &&
-                !has97Activities
-            ) {
-                isValid = false;
-                remarks.push(
-                    `Encounter duration too short ` +
-                    `(${encounterMinutes} min). ` +
-                    `Should be 10 minutes minimum.`
-                );
-            } else if (
-                encounterMinutes >
-                maximumEncounterMinutes
-            ) {
-                isValid = false;
+          if (isMedicalClaim && CHECKPOINT_THERAPY_TIMING_CODES.has(codeValue)) {
+            const quantityValue = Number(activity.querySelector('Quantity')?.textContent?.trim() || '0');
+            if (!Number.isFinite(quantityValue) || quantityValue <= 0) { isValid = false; remarks.push(`${codeValue} has an invalid therapy quantity.`); }
+          }
 
-                if (encounterMinutes >= 1440) {
-                    const [startDate] =
-                        encounterStartStr.split(" ");
-                    const [endDate] =
-                        encounterEndStr.split(" ");
-
-                    remarks.push(
-                        `Encounter crosses days: ` +
-                        `${startDate} → ${endDate}`
-                    );
-                } else {
-                    const hours = Math.floor(
-                        encounterMinutes / 60
-                    );
-
-                    const minutes =
-                        encounterMinutes % 60;
-                    remarks.push(
-                        `Encounter duration too long ` +
-                        `(${hours}h ${minutes}m). ` +
-                        `Should be ${maximumEncounterHours} ` +
-                        `hours maximum.`
-                    );
-                }
-            }
-            /*
-             * Add the aggregate timed-code error only to affected 97-code rows.
-             * Do not reset isValid when the timing is acceptable, because another
-             * timing validation may already have marked the activity invalid.
-             */
-            if (
-                isMedicalClaim &&
-                /^97/.test(codeValue) &&
-                hasInvalid97Duration
-            ) {
-                isValid = false;
-                remarks.push(
-                    `${timed97CodeLabel}: total quantity ` +
-                    `${formatMinuteValue(total97Quantity)} requires an ` +
-                    `encounter duration of at least ` +
-                    `${formatMinuteValue(minimum97Minutes)} minutes, but the ` +
-                    `encounter duration is ` +
-                    `${encounterMinutes} minutes.`
-                );
-            }
-
-            if (
-                isMedicalClaim &&
-                CHECKPOINT_THERAPY_TIMING_CODES.has(codeValue)
-            ) {
-                const quantityValue = Number(
-                    activity.querySelector("Quantity")?.textContent?.trim() || "0"
-                );
-                if (!Number.isFinite(quantityValue) || quantityValue <= 0) {
-                    isValid = false;
-                    remarks.push(`${codeValue} has an invalid therapy quantity.`);
-                }
-            }
-            results.push({
-                claimId,
-                activityId,
-                type: typeValue,
-                encounterStart: encounterStartStr,
-                encounterEnd: encounterEndStr,
-                start: activityStartStr,
-                duration: formatDuration(
-                    encounterMinutes
-                ),
-                excess: Number.isNaN(excessMinutes)
-                    ? "N/A"
-                    : formatDuration(excessMinutes),
-                isValid,
-                remarks
-            });
+          results.push({ claimId, activityId, type: typeValue, encounterStart: encounterStartStr, encounterEnd: encounterEndStr, start: activityStartStr, duration: formatDuration(encounterMinutes), excess: Number.isNaN(excessMinutes) ? 'N/A' : formatDuration(excessMinutes), isValid, remarks });
         });
-    });
-    return results;
-}
-// --- Utilities ---
-function parseDateTime(dt) {
-  if (!dt.includes(' ')) return null;
-  const [date, time] = dt.split(' ');
-  const [d, m, y] = date.split('/').map(Number), [h, min] = time.split(':').map(Number);
-  if ([d, m, y, h, min].some(isNaN)) return null;
-  return new Date(y, m - 1, d, h, min);
-}
-function formatDuration(mins) {
-  if (isNaN(mins) || mins < 0) return 'N/A';
-  if (mins >= 60) {
-    const hours = (mins / 60).toFixed(1);
-    return `${hours} hr${hours !== '1.0' ? 's' : ''}`;
-  }
-  return `${mins} min`;
-}
-function sanitize(str) {
-  return String(str)
-    .replace(/&/g, "&amp;").replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;").replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
+      });
 
-function getStandaloneResultsContainer() {
-  return document.getElementById('results');
-}
-function renderMessage(msg) {
-  const container = getStandaloneResultsContainer();
-
-  if (!container) {
-    return;
-  }
-
-  container.innerHTML = `<p>${sanitize(msg)}</p>`;
-}
-
-function clearResults() {
-  const container = getStandaloneResultsContainer();
-
-  if (!container) {
-    return;
-  }
-
-  container.innerHTML = '';
-}
-// --- Results Rendering ---
-function renderResults(container, rows) {
-  const summaryBox = document.getElementById('resultsSummary');
-  const exportBtn = document.getElementById('exportBtn');
-  if (!rows.length) {
-    container.innerHTML = '<p>No entries found.</p>';
-    summaryBox.textContent = '';
-    exportBtn.style.display = 'none';
-    return;
-  }
-  const invalidRows = rows.filter(r => !r.isValid);
-  window.invalidRows = invalidRows;
-  exportBtn.style.display = invalidRows.length ? 'inline-block' : 'none';
-  summaryBox.textContent = `Valid: ${rows.length - invalidRows.length} / ${rows.length} (${((rows.length - invalidRows.length)/rows.length*100).toFixed(1)}%)`;
-  container.innerHTML = buildResultsTable(rows);
-
-  // Add MutationObserver to detect when filter hides/shows rows
-  const observer = new MutationObserver(() => {
-    fillMissingClaimIds();
-  });
-
-  const tbody = container.querySelector('tbody');
-  if (tbody) {
-    observer.observe(tbody, {
-      attributes: true,
-      attributeFilter: ['style'],
-      subtree: true
-    });
-  }
-
-  // Fill immediately if filter is already active
-  fillMissingClaimIds();
-}
-function buildResultsTable(rows) {
-  // Defensive check: ensure rows is an array
-  if (!Array.isArray(rows)) {
-    console.error('buildResultsTable: rows is not an array:', rows);
-    const errorDiv = document.createElement('div');
-    errorDiv.className = 'alert alert-danger';
-    errorDiv.textContent = 'Error: Invalid data structure for results table';
-    return errorDiv;
-  }
-
-  if (!rows.length) {
-    const emptyDiv = document.createElement('p');
-    emptyDiv.textContent = 'No entries found.';
-    return emptyDiv;
-  }
-
-  const table = document.createElement('table');
-  table.className = 'table table-striped table-bordered';
-  table.style.width = '100%';
-  table.style.borderCollapse = 'collapse';
-
-  let prevClaimId = null;
-  const html = `
-    <thead><tr>
-      <th style="padding:8px;border:1px solid #ccc">Claim ID</th>
-      <th style="padding:8px;border:1px solid #ccc">Activity ID</th>
-      <th style="padding:8px;border:1px solid #ccc">Type</th>
-      <th style="padding:8px;border:1px solid #ccc">Encounter Start</th>
-      <th style="padding:8px;border:1px solid #ccc">Encounter End</th>
-      <th style="padding:8px;border:1px solid #ccc">Activity Start</th>
-      <th style="padding:8px;border:1px solid #ccc">Duration</th>
-      <th style="padding:8px;border:1px solid #ccc">Excess</th>
-      <th style="padding:8px;border:1px solid #ccc">Remarks</th>
-    </tr></thead><tbody>
-    ${rows.map(r => {
-      const claimCell = (r.claimId !== prevClaimId) ? r.claimId : '';
-      prevClaimId = r.claimId;
-      const remarkLines = (r.remarks || []).map(line => `<div>${sanitize(line)}</div>`).join('');
-      return `<tr class="${r.isValid ? 'table-success' : 'table-danger'}" data-claim-id="${sanitize(r.claimId || '')}">
-        <td class="claim-id-cell" style="padding:6px;border:1px solid #ccc">${sanitize(claimCell)}</td>
-        <td style="padding:6px;border:1px solid #ccc">${sanitize(r.activityId)}</td>
-        <td style="padding:6px;border:1px solid #ccc">${sanitize(r.type || '')}</td>
-        <td style="padding:6px;border:1px solid #ccc">${sanitize(r.encounterStart)}</td>
-        <td style="padding:6px;border:1px solid #ccc">${sanitize(r.encounterEnd)}</td>
-        <td style="padding:6px;border:1px solid #ccc">${sanitize(r.start)}</td>
-        <td style="padding:6px;border:1px solid #ccc">${sanitize(r.duration)}</td>
-        <td style="padding:6px;border:1px solid #ccc">${sanitize(r.excess)}</td>
-        <td style="padding:6px;border:1px solid #ccc">${remarkLines}</td>
-      </tr>`;
-    }).join('')}
-    </tbody>
-  `;
-
-  table.innerHTML = html;
-
-  // Add MutationObserver to detect when filter hides/shows rows
-  const observer = new MutationObserver(() => {
-    fillMissingClaimIds();
-  });
-
-  const tbody = table.querySelector('tbody');
-  if (tbody) {
-    observer.observe(tbody, {
-      attributes: true,
-      attributeFilter: ['style'],
-      subtree: true
-    });
-  }
-
-  // Fill immediately if filter is already active
-  setTimeout(() => fillMissingClaimIds(), 0);
-
-  return table;
-}
-// Helper function to fill missing Claim IDs when rows are filtered
-function fillMissingClaimIds() {
-  const table = document.querySelector('#results table');
-  if (!table) return;
-
-  const rows = Array.from(table.querySelectorAll('tbody tr'));
-
-  rows.forEach(row => {
-    const isHidden = row.style.display === 'none';
-    const claimIdCell = row.querySelector('.claim-id-cell');
-    const claimId = row.getAttribute('data-claim-id');
-
-    if (!isHidden && claimIdCell && claimId) {
-      if (claimIdCell.textContent.trim() === '') {
-        // Empty cell - fill it in for visibility
-        claimIdCell.textContent = claimId;
-        claimIdCell.style.color = '#666';  // Gray color
-        claimIdCell.style.fontStyle = 'italic';  // Italic style
-      } else {
-        // Has claim ID - original first row
-        claimIdCell.style.color = '';  // Black color
-        claimIdCell.style.fontStyle = '';  // Normal style
-      }
+      return results;
     }
-  });
-}
-// --- Superfluous/Unused Functions (fully commented out) ---
-/**
-function extractEncounterDetails(claimEl) {
-  const enc = claimEl.querySelector('Encounter');
-  if (!enc) {
-    return {
-      start: 'N/A',
-      end: 'N/A',
-      patient: 'N/A',
-      validity: 'Invalid (missing Encounter)'
-    };
-  }
-  const start = getTextContent(enc, 'Start');
-  const end = getTextContent(enc, 'End');
-  const patient = getTextContent(enc, 'PatientID');
-  const startType = getTextContent(enc, 'StartType');
-  const endType = getTextContent(enc, 'EndType');
-  return {
-    start,
-    end,
-    patient,
-    validity: validateEncounter(start, end, startType, endType)
-  };
-}
-**/
-/**
-function extractActivityDetails(claimEl) {
-  const act = claimEl.querySelector('Activity');
-  return {
-    doctor: act ? getTextContent(act, 'Clinician') : 'N/A',
-    activityId: act ? getTextContent(act, 'ID') : 'N/A',
-    activityStart: act ? getTextContent(act, 'Start') : 'N/A'
-  };
-}
-**/
 
-/**
-function getTextContent(parent, selector) {
-  return parent.querySelector(selector)?.textContent.trim() ?? 'N/A';
-}
-**/
-/**
-function isSameDay(a, b) {
-  return a && b &&
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate();
-}
-**/
+    // --- Utilities ---
+    function parseDateTime(dt) {
+      if (!dt.includes(' ')) return null;
+      const [date, time] = dt.split(' ');
+      const [d, m, y] = date.split('/').map(Number), [h, min] = time.split(':').map(Number);
+      if ([d, m, y, h, min].some(isNaN)) return null;
+      return new Date(y, m - 1, d, h, min);
+    }
 
-/**
-function computeDuration(start, end) {
-  const sd = parseDateTime(start);
-  const ed = parseDateTime(end);
-  if (!sd || !ed || !(sd < ed)) return 'N/A';
+    function formatDuration(mins) {
+      if (isNaN(mins) || mins < 0) return 'N/A';
+      if (mins >= 60) { const hours = (mins / 60).toFixed(1); return `${hours} hr${hours !== '1.0' ? 's' : ''}`; }
+      return `${mins} min`;
+    }
 
-  const diffMinutes = Math.round((ed - sd) / 60000);
-  const hours = Math.floor(diffMinutes / 60);
-  const minutes = diffMinutes % 60;
-  return `${hours}h ${minutes}m`;
-}
-**/
-/**
-function validateEncounter(start, end, startType, endType) {
-  // Check for missing fields
-  if (!start || !end || start === 'N/A' || end === 'N/A') return 'Invalid (missing start/end)';
-  if (startType !== '1' || endType !== '1') return 'Invalid (type)';
-  const sd = parseDateTime(start), ed = parseDateTime(end);
-  if (!sd || !ed) return 'Invalid (format)';
-  if (!isSameDay(sd, ed)) return 'Invalid (date)';
-  if (!(sd < ed)) return 'Invalid (order)';
-  const diff = (ed - sd) / 1000 / 60;
-  if (diff < 10) return 'Invalid (<10m)';
-  if (diff > 240) return 'Invalid (>4h)';
-  return 'Valid';
-}
-**/
-/**
-function validateDateAndStatus(row, start) {
-  const remarks = [];
-  // Extract just the date portions (DD/MM/YYYY)
-  const xlsDateStr = String(row["Ordered On"] || "").split(' ')[0];
-  const xmlDateStr = String(start || "").split(' ')[0];
-  // Parse as dates at midnight (ignore time)
-  const [dx, mx, yx] = xlsDateStr.split('/').map(Number);
-  const [di, mi, yi] = xmlDateStr.split('/').map(Number);
-  const xlsDate = (!isNaN(dx) && !isNaN(mx) && !isNaN(yx))
-    ? new Date(yx, mx - 1, dx)
-    : null;
-  const xmlDate = (!isNaN(di) && !isNaN(mi) && !isNaN(yi))
-    ? new Date(yi, mi - 1, di)
-    : null;
-  if (!xlsDate) { remarks.push("Invalid XLSX Ordered On date"); }
-  if (!xmlDate) { remarks.push("Invalid XML Start date"); }
-  if (xlsDate && xmlDate && xlsDate > xmlDate) {
-    remarks.push("Approval must be on or before procedure date");
-  }
-  const rawStatus = row["Status"] ?? row.status;
-  const status = String(rawStatus || "").toLowerCase();
-  if (!status.includes("approved") && !status.includes("rejected")) {
-    remarks.push("Status not approved");
-  }
-  return remarks;
-}
-**/
-/**
-function formatDateTimeCell(datetimeStr) {
-  if (!datetimeStr) return '';
-  const [datePart, timePart] = String(datetimeStr).split(' ');
-  return `
-    <div>${sanitize(datePart)}</div>
-    <div>${sanitize(timePart || '')}</div>
-  `;
-}
-**/
+    function sanitize(str) {
+      return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+    }
 
-    // Expose function globally for unified checker
+    function getStandaloneResultsContainer() {
+      return document.getElementById('results');
+    }
+
+    function renderMessage(msg) {
+      const container = getStandaloneResultsContainer();
+      if (!container) return;
+      container.innerHTML = `<p>${sanitize(msg)}</p>`;
+    }
+
+    function clearResults() {
+      const container = getStandaloneResultsContainer();
+      if (!container) return;
+      container.innerHTML = '';
+    }
+
+    // --- Results Rendering ---
+    function renderResults(container, rows) {
+      const summaryBox = document.getElementById('resultsSummary');
+      const exportBtn = document.getElementById('exportBtn');
+      if (!rows.length) { container.innerHTML = '<p>No entries found.</p>'; summaryBox.textContent = ''; exportBtn.style.display = 'none'; return; }
+
+      const invalidRows = rows.filter(r => !r.isValid);
+      window.invalidRows = invalidRows;
+      exportBtn.style.display = invalidRows.length ? 'inline-block' : 'none';
+      summaryBox.textContent = `Valid: ${rows.length - invalidRows.length} / ${rows.length} (${((rows.length - invalidRows.length) / rows.length * 100).toFixed(1)}%)`;
+      container.innerHTML = buildResultsTable(rows);
+
+      const observer = new MutationObserver(() => fillMissingClaimIds());
+      const tbody = container.querySelector('tbody');
+      if (tbody) observer.observe(tbody, { attributes: true, attributeFilter: ['style'], subtree: true });
+      fillMissingClaimIds();
+    }
+
+    function buildResultsTable(rows) {
+      if (!Array.isArray(rows)) {
+        console.error('buildResultsTable: rows is not an array:', rows);
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'alert alert-danger';
+        errorDiv.textContent = 'Error: Invalid data structure for results table';
+        return errorDiv;
+      }
+
+      if (!rows.length) {
+        const emptyDiv = document.createElement('p');
+        emptyDiv.textContent = 'No entries found.';
+        return emptyDiv;
+      }
+
+      const table = document.createElement('table');
+      table.className = 'table table-striped table-bordered';
+      table.style.width = '100%';
+      table.style.borderCollapse = 'collapse';
+
+      let prevClaimId = null;
+      const html = `
+        <thead><tr>
+          <th style="padding:8px;border:1px solid #ccc">Claim ID</th>
+          <th style="padding:8px;border:1px solid #ccc">Activity ID</th>
+          <th style="padding:8px;border:1px solid #ccc">Type</th>
+          <th style="padding:8px;border:1px solid #ccc">Encounter Start</th>
+          <th style="padding:8px;border:1px solid #ccc">Encounter End</th>
+          <th style="padding:8px;border:1px solid #ccc">Activity Start</th>
+          <th style="padding:8px;border:1px solid #ccc">Duration</th>
+          <th style="padding:8px;border:1px solid #ccc">Excess</th>
+          <th style="padding:8px;border:1px solid #ccc">Remarks</th>
+        </tr></thead><tbody>
+        ${rows.map(r => {
+          const claimCell = r.claimId !== prevClaimId ? r.claimId : '';
+          prevClaimId = r.claimId;
+          const remarkLines = (r.remarks || []).map(line => `<div>${sanitize(line)}</div>`).join('');
+          return `<tr class="${r.isValid ? 'table-success' : 'table-danger'}" data-claim-id="${sanitize(r.claimId || '')}">
+            <td class="claim-id-cell" style="padding:6px;border:1px solid #ccc">${sanitize(claimCell)}</td>
+            <td style="padding:6px;border:1px solid #ccc">${sanitize(r.activityId)}</td>
+            <td style="padding:6px;border:1px solid #ccc">${sanitize(r.type || '')}</td>
+            <td style="padding:6px;border:1px solid #ccc">${sanitize(r.encounterStart)}</td>
+            <td style="padding:6px;border:1px solid #ccc">${sanitize(r.encounterEnd)}</td>
+            <td style="padding:6px;border:1px solid #ccc">${sanitize(r.start)}</td>
+            <td style="padding:6px;border:1px solid #ccc">${sanitize(r.duration)}</td>
+            <td style="padding:6px;border:1px solid #ccc">${sanitize(r.excess)}</td>
+            <td style="padding:6px;border:1px solid #ccc">${remarkLines}</td>
+          </tr>`;
+        }).join('')}
+        </tbody>
+      `;
+
+      table.innerHTML = html;
+      const observer = new MutationObserver(() => fillMissingClaimIds());
+      const tbody = table.querySelector('tbody');
+      if (tbody) observer.observe(tbody, { attributes: true, attributeFilter: ['style'], subtree: true });
+      setTimeout(() => fillMissingClaimIds(), 0);
+      return table;
+    }
+
+    // Fill missing Claim IDs when filtering hides the first row of a claim.
+    function fillMissingClaimIds() {
+      const table = document.querySelector('#results table');
+      if (!table) return;
+
+      Array.from(table.querySelectorAll('tbody tr')).forEach(row => {
+        const isHidden = row.style.display === 'none';
+        const claimIdCell = row.querySelector('.claim-id-cell');
+        const claimId = row.getAttribute('data-claim-id');
+        if (!isHidden && claimIdCell && claimId) {
+          if (claimIdCell.textContent.trim() === '') { claimIdCell.textContent = claimId; claimIdCell.style.color = '#666'; claimIdCell.style.fontStyle = 'italic'; }
+          else { claimIdCell.style.color = ''; claimIdCell.style.fontStyle = ''; }
+        }
+      });
+    }
+
+    // Expose function globally for unified checker.
     window.validateTimingsAsync = validateTimingsAsync;
 
-    // Expose test API for Node.js tests
-    window._timingsTestApi = {
-      extractClaims,
-      get97BandForDuration,
-      calculate97DurationRange,
-      SERIES_97_BANDS
-    };
-  // Initialize the legacy file-change handler only on the standalone
-  // Timing checker page. Unified Checker also has xmlFileInput, but it
-  // does not have the standalone results elements.
-  const xmlFileInput = document.getElementById('xmlFileInput');
-  const standaloneResults = document.getElementById('results');
-  const standaloneSummary = document.getElementById('resultsSummary');
+    // Expose test API for Node.js tests.
+    window._timingsTestApi = { extractClaims, get97BandForDuration, calculate97DurationRange, SERIES_97_BANDS };
 
-  const isStandaloneTimingsPage = Boolean(
-    xmlFileInput
-    && standaloneResults
-    && standaloneSummary
-  );
-
-  if (isStandaloneTimingsPage) {
-    xmlFileInput.addEventListener('change', onFileChange);
-  }
+    // Initialize legacy handler only on the standalone Timing checker page.
+    const xmlFileInput = document.getElementById('xmlFileInput');
+    const standaloneResults = document.getElementById('results');
+    const standaloneSummary = document.getElementById('resultsSummary');
+    const isStandaloneTimingsPage = Boolean(xmlFileInput && standaloneResults && standaloneSummary);
+    if (isStandaloneTimingsPage) xmlFileInput.addEventListener('change', onFileChange);
   } catch (error) {
     console.error('[CHECKER-ERROR] Failed to load checker:', error);
     console.error(error.stack);
