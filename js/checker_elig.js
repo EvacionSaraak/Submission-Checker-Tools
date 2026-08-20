@@ -15,8 +15,9 @@
 //   4. A same-date candidate whose actual, nonblank Emirates ID and clinician
 //      match, but whose Member ID differs, is an Unknown correction case.
 //   5. Complete required-field matches outrank correction and partial
-//      candidates. Provider, eligibility status, and time proximity only
-//      break ties.
+//      candidates. For therapy claims, a complete match with the correct
+//      Service Category outranks a complete match with a wrong category.
+//      Provider, eligibility status, and time proximity only break later ties.
 //   6. Different-date rows are not shown as partial matches in the modal.
 //   7. When no complete or Member-ID-correction match exists, every same-date
 //      partial identity match produces an explicit mismatch remark.
@@ -48,6 +49,7 @@
   const CHECKPOINT_PHYSIOTHERAPY_CODES = new Set(['97161', '97164', '97110', '97140', '97032', '97530', '97112', '97116']);
   const CHECKPOINT_SPEECH_THERAPY_CODES = new Set(['92523', '92507']);
   const CHECKPOINT_DIETICIAN_CODES = new Set(['97802', '97803']);
+  const OTHER_OP_SERVICES_PATTERN = /^other\s+op\s+services?$/i;
 
   const HEADER_ALIASES = Object.freeze({
     payerName: ['Payer Name', 'Payer'],
@@ -667,6 +669,45 @@
     return { date, eid, member, eidDate, memberDate };
   }
 
+  function getTherapyCategoryChecks(claim) {
+    const codes = claim?.activityCodes instanceof Set ? claim.activityCodes : new Set();
+    const checks = [];
+
+    if ([...codes].some(code => CHECKPOINT_SPEECH_THERAPY_CODES.has(code))) {
+      checks.push({ label: 'Speech Therapy', pattern: /speech/i });
+    }
+    if ([...codes].some(code => CHECKPOINT_DIETICIAN_CODES.has(code))) {
+      checks.push({ label: 'Dietician/Nutrition', pattern: /(diet|nutrition)/i });
+    }
+    if ([...codes].some(code => CHECKPOINT_OCCUPATIONAL_THERAPY_CODES.has(code) && code !== '97530')) {
+      checks.push({ label: 'Occupational Therapy', pattern: /occupational/i });
+    }
+    if ([...codes].some(code => CHECKPOINT_PHYSIOTHERAPY_CODES.has(code) && code !== '97530')) {
+      checks.push({ label: 'Physiotherapy', pattern: /(physio|physical)/i });
+    }
+    if (codes.has('97530')) {
+      checks.push({ label: 'Therapy (97530)', pattern: /(physio|physical|occupational)/i });
+    }
+
+    return checks;
+  }
+
+  function therapyCategoryMatches(check, serviceCategory) {
+    const category = normalizeText(serviceCategory);
+    if (!category) return false;
+    return OTHER_OP_SERVICES_PATTERN.test(category) || Boolean(check?.pattern?.test(category));
+  }
+
+  function getTherapyServiceCategoryRank(claim, row) {
+    const checks = getTherapyCategoryChecks(claim);
+    if (!checks.length) return 1;
+
+    const serviceCategory = normalizeText(row?.serviceCategory);
+    if (!serviceCategory) return 1;
+
+    return checks.every(check => therapyCategoryMatches(check, serviceCategory)) ? 2 : 0;
+  }
+
   function scoreCandidate(claim, row, basis) {
     const comparison = buildCandidateComparison(claim, row);
     const matchedFieldCount = [
@@ -702,7 +743,8 @@
       minutesDifference,
       comparison,
       matchedFieldCount,
-      completeMatch
+      completeMatch,
+      serviceCategoryRank: getTherapyServiceCategoryRank(claim, row)
     };
   }
 
@@ -822,6 +864,13 @@
       .slice()
       .sort((a, b) => {
         if (a.completeMatch !== b.completeMatch) return a.completeMatch ? -1 : 1;
+        if (
+          a.completeMatch &&
+          b.completeMatch &&
+          b.serviceCategoryRank !== a.serviceCategoryRank
+        ) {
+          return b.serviceCategoryRank - a.serviceCategoryRank;
+        }
         if (b.matchedFieldCount !== a.matchedFieldCount) {
           return b.matchedFieldCount - a.matchedFieldCount;
         }
@@ -913,25 +962,8 @@
 
     if (!validationRow) return;
 
-    const codes = claim?.activityCodes instanceof Set ? claim.activityCodes : new Set();
     const serviceCategory = normalizeText(validationRow.serviceCategory);
-    const categoryChecks = [];
-
-    if ([...codes].some(code => CHECKPOINT_SPEECH_THERAPY_CODES.has(code))) {
-      categoryChecks.push({ label: 'Speech Therapy', pattern: /speech/i });
-    }
-    if ([...codes].some(code => CHECKPOINT_DIETICIAN_CODES.has(code))) {
-      categoryChecks.push({ label: 'Dietician/Nutrition', pattern: /(diet|nutrition)|^other\s+op\s+services?$/i });
-    }
-    if ([...codes].some(code => CHECKPOINT_OCCUPATIONAL_THERAPY_CODES.has(code) && code !== '97530')) {
-      categoryChecks.push({ label: 'Occupational Therapy', pattern: /occupational/i });
-    }
-    if ([...codes].some(code => CHECKPOINT_PHYSIOTHERAPY_CODES.has(code) && code !== '97530')) {
-      categoryChecks.push({ label: 'Physiotherapy', pattern: /(physio|physical)/i });
-    }
-    if (codes.has('97530')) {
-      categoryChecks.push({ label: 'Therapy (97530)', pattern: /(physio|physical|occupational)/i });
-    }
+    const categoryChecks = getTherapyCategoryChecks(claim);
 
     if (categoryChecks.length) {
       if (!serviceCategory) {
@@ -940,7 +972,7 @@
         );
       } else {
         categoryChecks.forEach(check => {
-          if (!check.pattern.test(serviceCategory)) {
+          if (!therapyCategoryMatches(check, serviceCategory)) {
             invalidRemarks.push(
               `${check.label} activity matched Eligibility Service Category \`${serviceCategory}\`, which does not match the required therapy category.`
             );
