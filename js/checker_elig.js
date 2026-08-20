@@ -698,14 +698,57 @@
     return OTHER_OP_SERVICES_PATTERN.test(category) || Boolean(check?.pattern?.test(category));
   }
 
-  function getTherapyServiceCategoryRank(claim, row) {
-    const checks = getTherapyCategoryChecks(claim);
-    if (!checks.length) return 1;
-
+  function getServiceCategoryComparison(claim, row) {
     const serviceCategory = normalizeText(row?.serviceCategory);
-    if (!serviceCategory) return 1;
+    const therapyChecks = getTherapyCategoryChecks(claim);
+    const hasDentalRequirement = claim?.isDental === true;
+    const applicable = hasDentalRequirement || therapyChecks.length > 0;
 
-    return checks.every(check => therapyCategoryMatches(check, serviceCategory)) ? 2 : 0;
+    if (!applicable) {
+      return {
+        applicable: false,
+        matched: null,
+        blank: !serviceCategory,
+        rank: 1,
+        serviceCategory,
+        expected: ''
+      };
+    }
+
+    const expectedLabels = [];
+    if (hasDentalRequirement) expectedLabels.push('Dental Services');
+    therapyChecks.forEach(check => expectedLabels.push(check.label));
+
+    if (!serviceCategory) {
+      return {
+        applicable: true,
+        matched: null,
+        blank: true,
+        rank: 1,
+        serviceCategory: '',
+        expected: expectedLabels.join(', ')
+      };
+    }
+
+    const dentalMatches =
+      !hasDentalRequirement ||
+      DENTAL_CATEGORY_PATTERN.test(serviceCategory);
+
+    const therapyMatches =
+      therapyChecks.every(check =>
+        therapyCategoryMatches(check, serviceCategory)
+      );
+
+    const matched = dentalMatches && therapyMatches;
+
+    return {
+      applicable: true,
+      matched,
+      blank: false,
+      rank: matched ? 2 : 0,
+      serviceCategory,
+      expected: expectedLabels.join(', ')
+    };
   }
 
   function scoreCandidate(claim, row, basis) {
@@ -744,7 +787,7 @@
       comparison,
       matchedFieldCount,
       completeMatch,
-      serviceCategoryRank: getTherapyServiceCategoryRank(claim, row)
+      serviceCategoryRank: comparison.serviceCategoryRank
     };
   }
 
@@ -1068,7 +1111,7 @@
       if (selectedRow && match.candidateCount > 1) {
         notes.push(
           `${match.candidateCount} eligibility candidates were found; ` +
-          `the candidate matching date, Member ID, the EID rule, and the required clinician was selected.`
+          `complete identity matches were prioritized by Service Category correctness before the remaining tie-breakers.`
         );
       }
     }
@@ -1140,6 +1183,7 @@
       eligibilityEidBlank &&
       hasAcceptableClaimEid(claim?.eid)
     );
+    const serviceCategoryComparison = getServiceCategoryComparison(claim, row);
 
     return {
       orderedOn: Boolean(
@@ -1160,6 +1204,12 @@
         requiredClinicians.size &&
         requiredClinicians.has(row.clinician)
       ),
+      serviceCategory: serviceCategoryComparison.matched,
+      serviceCategoryApplicable: serviceCategoryComparison.applicable,
+      serviceCategoryBlank: serviceCategoryComparison.blank,
+      serviceCategoryRank: serviceCategoryComparison.rank,
+      serviceCategoryValue: serviceCategoryComparison.serviceCategory,
+      serviceCategoryExpected: serviceCategoryComparison.expected,
       eidBlankAccepted: blankEligibilityEidAccepted,
       unknownClaimEidAccepted: Boolean(
         blankEligibilityEidAccepted &&
@@ -1882,6 +1932,36 @@
     `;
   }
 
+  function serviceCategoryComparisonBadge(comparison) {
+    if (!comparison?.serviceCategoryApplicable) return '';
+
+    if (comparison.serviceCategory == null) {
+      return `
+        <span
+          title="Eligibility Service Category is blank; expected ${escapeHtml(comparison.serviceCategoryExpected || 'the required category')}."
+          style="display:inline-block;background:#6c757d;color:#fff;border-radius:999px;padding:2px 7px;font-size:10px;font-weight:700;white-space:nowrap;"
+        >
+          Unknown
+        </span>
+      `;
+    }
+
+    const expected = comparison.serviceCategoryExpected || 'required category';
+    const actual = comparison.serviceCategoryValue || '(blank)';
+    const title = comparison.serviceCategory
+      ? `Service Category matches: ${actual}.`
+      : `Service Category mismatch: ${actual}; expected ${expected}.`;
+
+    return `
+      <span
+        title="${escapeHtml(title)}"
+        style="display:inline-block;background:${comparison.serviceCategory ? '#198754' : '#dc3545'};color:#fff;border-radius:999px;padding:2px 7px;font-size:10px;font-weight:700;white-space:nowrap;"
+      >
+        ${comparison.serviceCategory ? 'Match' : 'Mismatch'}
+      </span>
+    `;
+  }
+
   function claimFieldCard(key, value) {
     const displayValue = normalizeText(value) || '(blank)';
     const wide = /remarks|notes|required eligibility clinicians|performing clinicians|ordering clinicians|gt clinicians/i.test(key);
@@ -1930,7 +2010,7 @@
         "
       >
         ${candidates.map((candidate, index) => `
-          <article style="min-width:0;border:1px solid ${candidate.completeMatch ? '#75b798' : '#ea868f'};border-radius:9px;padding:11px;background:#fff;">
+          <article style="min-width:0;border:1px solid ${candidate.completeMatch && candidate.comparison?.serviceCategory !== false ? '#75b798' : '#ea868f'};border-radius:9px;padding:11px;background:#fff;">
             <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;flex-wrap:wrap;">
               <div style="min-width:0;">
                 <strong style="font-size:13px;overflow-wrap:anywhere;">${escapeHtml(candidate.requestNumber || `Eligibility ${index + 1}`)}</strong>
@@ -1965,6 +2045,10 @@
                 <div style="font-size:9px;text-transform:uppercase;color:#6c757d;font-weight:700;">Ordered On</div>
                 <div style="font-size:12px;overflow-wrap:anywhere;">${escapeHtml(candidate.orderedOnDisplay)}</div>
               </div>
+              <div style="min-width:0;">
+                <div style="font-size:9px;text-transform:uppercase;color:#6c757d;font-weight:700;">Service Category</div>
+                <div style="font-size:12px;overflow-wrap:anywhere;">${escapeHtml(candidate.comparison?.serviceCategoryValue || '(blank)')}</div>
+              </div>
             </div>
 
             <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:10px;align-items:center;">
@@ -1975,11 +2059,14 @@
                 candidate.comparison?.eidBlankAccepted === true
               )}
               <span style="font-size:10px;color:#6c757d;font-weight:700;">Clinician</span>${comparisonBadge(candidate.comparison?.clinician === true)}
+              ${candidate.comparison?.serviceCategoryApplicable ? `
+                <span style="font-size:10px;color:#6c757d;font-weight:700;">Service Category</span>${serviceCategoryComparisonBadge(candidate.comparison)}
+              ` : ''}
             </div>
 
             <div style="margin-top:9px;padding-top:8px;border-top:1px solid #e9ecef;display:flex;align-items:center;justify-content:space-between;gap:8px;">
               <span style="font-size:11px;font-weight:700;">Overall</span>
-              ${comparisonBadge(candidate.completeMatch === true)}
+              ${comparisonBadge(candidate.completeMatch === true && candidate.comparison?.serviceCategory !== false)}
             </div>
           </article>
         `).join('')}
@@ -2016,8 +2103,8 @@
           ` : candidate.memberIdCorrection ? `
             <span style="background:#ffc107;color:#212529;border-radius:999px;padding:1px 7px;font-size:10px;">Member ID Correction</span>
           ` : ''}
-          <span style="background:${candidate.completeMatch ? '#198754' : '#dc3545'};color:#fff;border-radius:999px;padding:1px 7px;font-size:10px;">
-            ${candidate.completeMatch ? 'Complete Match' : 'Mismatch'}
+          <span style="background:${candidate.completeMatch && candidate.comparison?.serviceCategory !== false ? '#198754' : '#dc3545'};color:#fff;border-radius:999px;padding:1px 7px;font-size:10px;">
+            ${candidate.completeMatch && candidate.comparison?.serviceCategory !== false ? 'Complete Match' : 'Mismatch'}
           </span>
         </span>
       </button>
