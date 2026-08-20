@@ -931,8 +931,8 @@ function getKnownCptTypeResult(rec, drugsMap, knownCptCodeSet, drugListSource) {
 function getDrugUnitPackageQuantity(drug) {
   if (!drug) return null;
 
-  // Resolve Unit QTY robustly in case the workbook header has harmless
-  // spacing/case differences such as "Unit Qty" or "Unit QTY ".
+  // Unit QTY means physical units contained in one full package.
+  // XML Quantity still uses package quantity, where 1 = one full package.
   const matchingKey = Object.keys(drug).find(key => {
     const normalized = String(key || '')
       .trim()
@@ -951,29 +951,60 @@ function getDrugUnitPackageQuantity(drug) {
   return Number.isFinite(value) && value > 0 ? value : null;
 }
 
-function resolveDrugUnitPackageQuantity(drug, sharedFallback = null) {
-  const configured = getDrugUnitPackageQuantity(drug);
-  if (configured !== null) {
-    return { value: configured, source: 'Unit QTY' };
+function getDrugPricingProfile(drug, receiverID) {
+  const receiver = String(receiverID || '').trim().toUpperCase();
+  const isDaman = DAMAN_RECEIVER_IDS.has(receiver);
+
+  const packageColumn = isDaman ? 'Package Price to Public' : 'Package Markup';
+  const unitColumn = isDaman ? 'Unit Price to Public' : 'Unit Markup';
+  const packagePrice = parseOptionalMoney(drug && drug[packageColumn]);
+  const unitPrice = parseOptionalMoney(drug && drug[unitColumn]);
+
+  return {
+    receiverID: receiver,
+    payerName: isDaman ? 'Daman' : (receiver === THIQA_RECEIVER_ID ? 'Thiqa' : 'Reference'),
+    packageColumn,
+    unitColumn,
+    packagePrice,
+    unitPrice,
+    isDaman
+  };
+}
+
+function resolveDrugUnitPackageQuantity(drug, sharedFallback = null, receiverID = '') {
+  const configuredUnitsPerPackage = getDrugUnitPackageQuantity(drug);
+
+  if (configuredUnitsPerPackage !== null) {
+    const packageQuantityPerPhysicalUnit = 1 / configuredUnitsPerPackage;
+
+    if (Number.isFinite(packageQuantityPerPhysicalUnit) && packageQuantityPerPhysicalUnit > 0) {
+      return {
+        value: packageQuantityPerPhysicalUnit,
+        unitsPerPackage: configuredUnitsPerPackage,
+        source: 'Unit QTY'
+      };
+    }
   }
 
-  // Prefer the markup ratio over the old public-price inference. These are
-  // the actual markup values used by checker_pricing.
-  const packageMarkup = parseOptionalMoney(drug && drug['Package Markup']);
-  const unitMarkup = parseOptionalMoney(drug && drug['Unit Markup']);
+  // If Unit QTY is absent, infer the package fraction represented by one
+  // physical unit from the price columns used by this payer:
+  //   Daman (A001/D004): Unit Price to Public / Package Price to Public
+  //   Thiqa (D001):     Unit Markup / Package Markup
+  const profile = getDrugPricingProfile(drug, receiverID);
 
   if (
-    packageMarkup !== null &&
-    unitMarkup !== null &&
-    packageMarkup > 0 &&
-    unitMarkup > 0
+    profile.packagePrice !== null &&
+    profile.unitPrice !== null &&
+    profile.packagePrice > 0 &&
+    profile.unitPrice > 0
   ) {
-    const ratio = unitMarkup / packageMarkup;
+    const ratio = profile.unitPrice / profile.packagePrice;
 
     if (Number.isFinite(ratio) && ratio > 0) {
       return {
         value: ratio,
-        source: 'Unit Markup / Package Markup'
+        unitsPerPackage: ratio > 0 ? 1 / ratio : null,
+        source: `${profile.unitColumn} / ${profile.packageColumn}`
       };
     }
   }
@@ -982,80 +1013,142 @@ function resolveDrugUnitPackageQuantity(drug, sharedFallback = null) {
   if (Number.isFinite(fallback) && fallback > 0) {
     return {
       value: fallback,
+      unitsPerPackage: fallback > 0 ? 1 / fallback : null,
       source: 'Public-price fallback'
     };
   }
 
-  return { value: null, source: '' };
+  return { value: null, unitsPerPackage: null, source: '' };
 }
 
-function calculateDrugMarkupPricing(drug, quantity, unitPackageQuantity = null) {
+function calculateDrugMarkupPricing(drug, quantity, unitPackageQuantity = null, receiverID = '') {
   const qty = Number(quantity);
+
   if (!drug || !Number.isFinite(qty) || qty <= 0) {
-    return { value: null, expectedNet: null, source: '', basis: '', breakdown: null };
+    return {
+      value: null,
+      expectedNet: null,
+      source: '',
+      basis: '',
+      breakdown: null
+    };
   }
 
-  const packageMarkup = parseOptionalMoney(drug['Package Markup']);
-  const unitMarkup = parseOptionalMoney(drug['Unit Markup']);
+  const profile = getDrugPricingProfile(drug, receiverID);
+  const packagePrice = profile.packagePrice;
+  const unitPrice = profile.unitPrice;
 
-  // XML drug Quantity is expressed as a package quantity. Whole-number portions
-  // are full packages. For the decimal remainder, determine how much package
-  // quantity represents one physical unit, then price those units with Unit Markup.
-  // Prefer the explicit Drugs.xlsx Unit QTY value supplied by analyzeDrugActivity.
-  // Only when Unit QTY is unavailable do we fall back to an inferred quantity.
-  let quantityPerUnit = Number(unitPackageQuantity);
-  if (!Number.isFinite(quantityPerUnit) || quantityPerUnit <= 0) {
-    if (packageMarkup !== null && unitMarkup !== null && packageMarkup > 0 && unitMarkup > 0) {
-      quantityPerUnit = unitMarkup / packageMarkup;
+  // XML Quantity is package quantity:
+  //   1   = one full package
+  //   0.1 = one tenth of a package
+  //
+  // Whole-number portions therefore use the payer's package price.
+  // The decimal remainder is converted into physical units and priced using
+  // the payer's unit price.
+  let quantityPerPhysicalUnit = Number(unitPackageQuantity);
+
+  if (!Number.isFinite(quantityPerPhysicalUnit) || quantityPerPhysicalUnit <= 0) {
+    if (
+      packagePrice !== null &&
+      unitPrice !== null &&
+      packagePrice > 0 &&
+      unitPrice > 0
+    ) {
+      quantityPerPhysicalUnit = unitPrice / packagePrice;
     } else {
-      quantityPerUnit = NaN;
+      quantityPerPhysicalUnit = NaN;
     }
   }
 
   const wholePackages = Math.floor(qty + 1e-9);
   let fractionalPackages = qty - wholePackages;
-  if (Math.abs(fractionalPackages) < 1e-9) fractionalPackages = 0;
-  fractionalPackages = Math.max(0, Math.round(fractionalPackages * 1e8) / 1e8);
 
-  const needsPackageMarkup = wholePackages > 0;
-  const needsUnitMarkup = fractionalPackages > 0;
-  if ((needsPackageMarkup && packageMarkup === null) ||
-      (needsUnitMarkup && (unitMarkup === null || !Number.isFinite(quantityPerUnit) || quantityPerUnit <= 0))) {
+  if (Math.abs(fractionalPackages) < 1e-9) fractionalPackages = 0;
+  fractionalPackages = Math.max(
+    0,
+    Math.round(fractionalPackages * 1e8) / 1e8
+  );
+
+  const needsPackagePrice = wholePackages > 0;
+  const needsUnitPrice = fractionalPackages > 0;
+
+  if (
+    (needsPackagePrice && packagePrice === null) ||
+    (
+      needsUnitPrice &&
+      (
+        unitPrice === null ||
+        !Number.isFinite(quantityPerPhysicalUnit) ||
+        quantityPerPhysicalUnit <= 0
+      )
+    )
+  ) {
     return {
       value: null,
       expectedNet: null,
-      source: needsUnitMarkup ? 'Package Markup / Unit Markup' : 'Package Markup',
-      basis: needsUnitMarkup ? 'Mixed package/unit drug markup' : 'Package drug markup',
+      source: needsUnitPrice
+        ? `${profile.packageColumn} / ${profile.unitColumn}`
+        : profile.packageColumn,
+      basis: needsUnitPrice
+        ? `Mixed package/unit ${profile.payerName} drug pricing`
+        : `${profile.payerName} package drug pricing`,
       breakdown: {
         wholePackages,
         fractionalPackages,
-        packageMarkup,
-        unitMarkup,
-        quantityPerUnit: Number.isFinite(quantityPerUnit) ? quantityPerUnit : null,
+        packagePrice,
+        unitPrice,
+        packagePriceLabel: profile.packageColumn,
+        unitPriceLabel: profile.unitColumn,
+        payerName: profile.payerName,
+        quantityPerUnit: Number.isFinite(quantityPerPhysicalUnit)
+          ? quantityPerPhysicalUnit
+          : null,
+        unitsPerPackage: Number.isFinite(quantityPerPhysicalUnit) && quantityPerPhysicalUnit > 0
+          ? 1 / quantityPerPhysicalUnit
+          : null,
         fractionalUnits: null,
         packageTotal: null,
-        unitTotal: null
+        unitTotal: null,
+
+        // Backward-compatible aliases used by older modal/result code.
+        packageMarkup: packagePrice,
+        unitMarkup: unitPrice
       }
     };
   }
 
-  const fractionalUnitsRaw = needsUnitMarkup ? fractionalPackages / quantityPerUnit : 0;
-  const fractionalUnits = Math.abs(fractionalUnitsRaw - Math.round(fractionalUnitsRaw)) < 1e-8
-    ? Math.round(fractionalUnitsRaw)
-    : Math.round(fractionalUnitsRaw * 1e8) / 1e8;
-  const packageTotal = needsPackageMarkup ? roundMoney(wholePackages * packageMarkup) : 0;
-  const unitTotal = needsUnitMarkup ? roundMoney(fractionalUnits * unitMarkup) : 0;
-  const expectedNet = roundMoney((packageTotal || 0) + (unitTotal || 0));
-  const effectivePerPackageQuantity = expectedNet === null ? null : roundMoney(expectedNet / qty);
+  const fractionalUnitsRaw = needsUnitPrice
+    ? fractionalPackages / quantityPerPhysicalUnit
+    : 0;
 
-  let basis = 'Package Markup';
-  let source = 'Package Markup';
-  if (needsPackageMarkup && needsUnitMarkup) {
-    basis = 'Package + Unit Markup';
-    source = 'Package Markup + Unit Markup';
-  } else if (needsUnitMarkup) {
-    basis = 'Unit Markup';
-    source = 'Unit Markup';
+  const fractionalUnits =
+    Math.abs(fractionalUnitsRaw - Math.round(fractionalUnitsRaw)) < 1e-8
+      ? Math.round(fractionalUnitsRaw)
+      : Math.round(fractionalUnitsRaw * 1e8) / 1e8;
+
+  const packageTotal = needsPackagePrice
+    ? roundMoney(wholePackages * packagePrice)
+    : 0;
+
+  const unitTotal = needsUnitPrice
+    ? roundMoney(fractionalUnits * unitPrice)
+    : 0;
+
+  const expectedNet = roundMoney((packageTotal || 0) + (unitTotal || 0));
+  const effectivePerPackageQuantity =
+    expectedNet === null
+      ? null
+      : roundMoney(expectedNet / qty);
+
+  let basis = `${profile.payerName} ${profile.packageColumn}`;
+  let source = profile.packageColumn;
+
+  if (needsPackagePrice && needsUnitPrice) {
+    basis = `${profile.payerName} ${profile.packageColumn} + ${profile.unitColumn}`;
+    source = `${profile.packageColumn} + ${profile.unitColumn}`;
+  } else if (needsUnitPrice) {
+    basis = `${profile.payerName} ${profile.unitColumn}`;
+    source = profile.unitColumn;
   }
 
   return {
@@ -1066,12 +1159,24 @@ function calculateDrugMarkupPricing(drug, quantity, unitPackageQuantity = null) 
     breakdown: {
       wholePackages,
       fractionalPackages,
-      packageMarkup,
-      unitMarkup,
-      quantityPerUnit: Number.isFinite(quantityPerUnit) ? quantityPerUnit : null,
+      packagePrice,
+      unitPrice,
+      packagePriceLabel: profile.packageColumn,
+      unitPriceLabel: profile.unitColumn,
+      payerName: profile.payerName,
+      quantityPerUnit: Number.isFinite(quantityPerPhysicalUnit)
+        ? quantityPerPhysicalUnit
+        : null,
+      unitsPerPackage: Number.isFinite(quantityPerPhysicalUnit) && quantityPerPhysicalUnit > 0
+        ? 1 / quantityPerPhysicalUnit
+        : null,
       fractionalUnits,
       packageTotal,
-      unitTotal
+      unitTotal,
+
+      // Backward-compatible aliases used by older modal/result code.
+      packageMarkup: packagePrice,
+      unitMarkup: unitPrice
     }
   };
 }
@@ -1126,8 +1231,8 @@ function analyzeDrugActivity(rec, options = {}) {
 
   const inferredUnitQuantity = drug ? shared.calculateRequiredDrugQuantity(drug) : null;
   const resolvedUnitQuantity = drug
-    ? resolveDrugUnitPackageQuantity(drug, inferredUnitQuantity)
-    : { value: null, source: '' };
+    ? resolveDrugUnitPackageQuantity(drug, inferredUnitQuantity, receiverID)
+    : { value: null, unitsPerPackage: null, source: '' };
   const unitPackageQuantity = resolvedUnitQuantity.value;
 
   if (drug) {
@@ -1140,7 +1245,7 @@ function analyzeDrugActivity(rec, options = {}) {
     }));
   }
   const selectedPricing = drug
-    ? calculateDrugMarkupPricing(drug, quantity, unitPackageQuantity)
+    ? calculateDrugMarkupPricing(drug, quantity, unitPackageQuantity, receiverID)
     : { value: null, expectedNet: null, source: '', basis: '', breakdown: null };
   const expectedNet = selectedPricing.expectedNet;
   let priceResult = 'Unknown';
@@ -1165,13 +1270,15 @@ function analyzeDrugActivity(rec, options = {}) {
             const b = selectedPricing.breakdown || {};
             const parts = [];
             if (Number(b.wholePackages) > 0) {
-              parts.push(`${formatMoney(b.wholePackages)} package(s) × Package Markup ${formatMoney(b.packageMarkup)} = ${formatMoney(b.packageTotal)}`);
+              const packageLabel = b.packagePriceLabel || 'Package Price';
+              parts.push(`${formatMoney(b.wholePackages)} package(s) × ${packageLabel} ${formatMoney(b.packagePrice)} = ${formatMoney(b.packageTotal)}`);
             }
             if (Number(b.fractionalUnits) > 0) {
               const qtyPerUnitText = Number(b.quantityPerUnit) > 0
-                ? ` (${formatMoney(b.fractionalPackages)} package qty ÷ ${formatMoney(b.quantityPerUnit)} Unit QTY)`
+                ? ` (${formatMoney(b.fractionalPackages)} package qty ÷ ${formatMoney(b.quantityPerUnit)} package qty/unit)`
                 : '';
-              parts.push(`${formatMoney(b.fractionalUnits)} unit(s)${qtyPerUnitText} × Unit Markup ${formatMoney(b.unitMarkup)} = ${formatMoney(b.unitTotal)}`);
+              const unitLabel = b.unitPriceLabel || 'Unit Price';
+              parts.push(`${formatMoney(b.fractionalUnits)} unit(s)${qtyPerUnitText} × ${unitLabel} ${formatMoney(b.unitPrice)} = ${formatMoney(b.unitTotal)}`);
             }
             const calculation = parts.length ? parts.join(' + ') : 'unable to build markup calculation';
             return `Claimed Net ${formatMoney(claimedNet)} (for ${codeRaw}) does not match expected drug price ${formatMoney(expectedNet)} (${calculation}).`;
@@ -1227,7 +1334,8 @@ function analyzeDrugActivity(rec, options = {}) {
       pricePerBasis: selectedPricing.value,
       expectedNet,
       breakdown: selectedPricing.breakdown,
-      unitQuantitySource: resolvedUnitQuantity.source
+      unitQuantitySource: resolvedUnitQuantity.source,
+      unitsPerPackage: resolvedUnitQuantity.unitsPerPackage
     } : null,
     _drugExpectedNet: expectedNet,
     _drugRequiredQuantity: unitPackageQuantity,
@@ -2716,18 +2824,20 @@ function roundFactor(value) {
 
 function getComparisonPreFactorUnit(row) {
   if (row && row._drugPricingMeta) {
-    // For drug rows, show the actual Package Markup from Drugs.xlsx.
-    // Do not use pricePerBasis here: that value is an effective price
-    // reconstructed from Expected Net / XML Quantity and can therefore
-    // differ from the source Package Markup when quantity/unit resolution
-    // is wrong or when mixed package/unit pricing is involved.
-    const packageMarkup = Number(
+    // Drug rows display the actual package source used for the payer:
+    // Daman (A001/D004) => Package Price to Public
+    // Thiqa (D001)      => Package Markup
+    const packagePrice = Number(
+      row._drugPricingMeta?.breakdown?.packagePrice
+    );
+    if (Number.isFinite(packagePrice)) return packagePrice;
+
+    // Backward-compatible fallback for older result objects.
+    const legacyPackagePrice = Number(
       row._drugPricingMeta?.breakdown?.packageMarkup
     );
-    if (Number.isFinite(packageMarkup)) return packageMarkup;
+    if (Number.isFinite(legacyPackagePrice)) return legacyPackagePrice;
 
-    // Backward-compatible fallback for older result objects that may not
-    // contain the pricing breakdown.
     const effectiveBase = Number(row._drugPricingMeta.pricePerBasis);
     return Number.isFinite(effectiveBase) ? effectiveBase : null;
   }
@@ -3633,7 +3743,9 @@ window._pricingTestApi = {
   analyzeDrugActivity,
   isPricingExcludedReceiver,
   getDrugUnitPackageQuantity,
+  getDrugPricingProfile,
   resolveDrugUnitPackageQuantity,
+  calculateDrugMarkupPricing,
   isDrugActivityType,
   isZeroPricedActivityForPricing,
   isAllowedZeroPricedActivityForPricing,
