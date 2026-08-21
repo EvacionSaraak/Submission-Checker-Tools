@@ -753,9 +753,29 @@
             );
         }
 
-        function isOphthalmologyOrPsychiatrySpecialty(value) {
+        function isOphthalmologySpecialty(value) {
             const specialty = normalizeSpecialty(value);
-            return specialty.includes('OPHTHALMOLOGY') || specialty.includes('OPTHALMOLOGY') || specialty.includes('PSYCHIATRY') || specialty.includes('PSYCHIATR');
+            return specialty.includes('OPHTHALMOLOGY') || specialty.includes('OPTHALMOLOGY');
+        }
+
+        function isPsychiatrySpecialty(value) {
+            const specialty = normalizeSpecialty(value);
+            return specialty.includes('PSYCHIATRY') || specialty.includes('PSYCHIATR');
+        }
+
+        function isForbidden992Specialty(value, code) {
+            const normalizedCode = String(code || '').trim();
+
+            // Keep the existing Ophthalmology restriction for 992-series codes.
+            if (isOphthalmologySpecialty(value)) return /^992/.test(normalizedCode);
+
+            // Psychiatry is allowed for 99213. All other currently restricted
+            // 992-series psychiatry combinations remain invalid, including 99212.
+            if (isPsychiatrySpecialty(value)) {
+                return /^992/.test(normalizedCode) && normalizedCode !== '99213';
+            }
+
+            return false;
         }
 
         function validateCheckpointClaimRules(diagnoses, activities, text, invalidFields, options = {}) {
@@ -1070,8 +1090,8 @@
                 if (specialtyContains(clinicianSpecialty, 'Pathology') && !/^8/.test(code)) invalidFields.push(`Performing Clinician specialty ${clinicianSpecialty || 'Pathology'} can only be used for 8-series laboratory codes (Currently ${code}).`);
                 if (GP_992_REQUIRED_CODES.has(code) && !specialtyContains(orderingSpecialty, 'General Practitioner')) invalidFields.push(`Activity ${code} requires OrderingClinician specialty as General Practitioner (Currently \`${orderingSpecialty || 'Unknown'}\`).`);
                 if (GP_992_FORBIDDEN_CODES.has(code) && net !== 0 && specialtyContains(orderingSpecialty, 'General Practitioner') && !isGp992ForbiddenSpecialtyException(orderingClinician, code)) invalidFields.push(`Activity ${code} requires OrderingClinician specialty to NOT be General Practitioner (Currently \`${orderingSpecialty || 'Unknown'}\`).`);
-                if (/^992/.test(code) && isOphthalmologyOrPsychiatrySpecialty(orderingSpecialty)) invalidFields.push(`${orderingSpecialty || 'OrderingClinician Specialty'} cannot be used as OrderingClinician specialty for ${code}.`);
-                if (/^992/.test(code) && isOphthalmologyOrPsychiatrySpecialty(clinicianSpecialty)) invalidFields.push(`${clinicianSpecialty || 'Performing Clinician Specialty'} cannot be used as Performing Clinician specialty for ${code}.`);
+                if (isForbidden992Specialty(orderingSpecialty, code)) invalidFields.push(`${orderingSpecialty || 'OrderingClinician Specialty'} cannot be used as OrderingClinician specialty for ${code}.`);
+                if (isForbidden992Specialty(clinicianSpecialty, code)) invalidFields.push(`${clinicianSpecialty || 'Performing Clinician Specialty'} cannot be used as Performing Clinician specialty for ${code}.`);
                 if (code === '82607' && DAMAN_RECEIVER_IDS.has(receiverID) && (specialtyContains(orderingSpecialty, 'General Practitioner') || specialtyContains(clinicianSpecialty, 'General Practitioner'))) invalidFields.push(`Activity 82607 cannot use a General Practitioner as Ordering or Performing Clinician for Daman receiver ${receiverID}.`);
                 if (MUTUALLY_EXCLUSIVE_INFUSION_CODES.has(code) && quantityRaw && quantity !== 1) invalidFields.push(`Activity ${code} must have Quantity of 1.`);
                 if (FIXED_QUANTITY_TWO_CODES.has(code) && quantityRaw && quantity !== 2) invalidFields.push(`Activity ${code} must have Quantity of 2.`);
