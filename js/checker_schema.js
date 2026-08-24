@@ -1187,6 +1187,21 @@
                 const claimNet = Number.parseFloat(text('Net'));
                 if (payerID === 'A02' && Number.isFinite(claimNet) && claimNet < 500) invalidFields.push('ADNIC (A02) claim is auto-rejected because ' + 'total sponsor price is under 500.');
                 const patientShareRaw = text('PatientShare');
+                const patientShareValue = Number.parseFloat(patientShareRaw);
+
+                // Daman Basic (D004) claim-level Patient Share may not exceed 70.
+                // This is a schema validation only and does not alter any
+                // checker_pricing Patient Share calculations.
+                if (
+                    String(receiverID || '').trim().toUpperCase() === DAMAN_BASIC_RECEIVER_ID &&
+                    Number.isFinite(patientShareValue) &&
+                    patientShareValue > 70
+                ) {
+                    invalidFields.push(
+                        `Daman Basic Patient Share ${patientShareRaw} exceeds the maximum allowed amount of 70.`
+                    );
+                }
+
                 if (patientShareRaw.includes('.')) {
                     const decimalPlaces = patientShareRaw.length - patientShareRaw.indexOf('.') - 1;
                     if (decimalPlaces > 2) {
