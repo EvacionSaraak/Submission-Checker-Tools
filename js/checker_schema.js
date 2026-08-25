@@ -1298,9 +1298,19 @@
                 Array.from(activities).forEach((activity, index) => {
                     const code = text('Code', activity);
                     const quantity = text('Quantity', activity);
+                    const quantityValue = Number.parseFloat(quantity);
                     if (code === '92015' && !isThiqaClaim) requiresOpticalEligibilityCheck = true;
                     ['Start', 'Type', 'Code', 'Quantity', 'Net', 'Clinician'].forEach(field => invalidIfEmpty(field, activity, `Activity[${index}].`));
                     if (quantity === '0') invalidQuantityCodes.push(code || '(unknown)');
+
+                    // High activity quantities require manual confirmation rather
+                    // than making the claim invalid. Trigger for anything > 4.
+                    if (Number.isFinite(quantityValue) && quantityValue > 4) {
+                        remarks.push(
+                            `the quantity for ${code || '(unknown)'} is ${quantity}, kindly double check if this is corrext`
+                        );
+                        isUnknown = true;
+                    }
                     const quantityDecimalMatch = /^[-+]?\d+\.(\d+)$/.exec(quantity);
                     if (quantityDecimalMatch && quantityDecimalMatch[1].length > 4) {
                         excessiveDecimalQuantityCodes.add(code || '(unknown)');
