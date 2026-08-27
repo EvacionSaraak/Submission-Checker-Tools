@@ -1048,8 +1048,9 @@
             const contexts = Array.from(activities || []).map(activity => {
                 const clinician = String(text('Clinician', activity) || '').trim().toUpperCase();
                 const orderingClinician = String(text('OrderingClinician', activity) || '').trim().toUpperCase();
+                const netRaw = String(text('Net', activity) || '').trim();
                 return { clinician, orderingClinician, code: String(text('Code', activity) || '').trim(), quantityRaw: String(text('Quantity', activity) || '').trim(), quantity: Number(text('Quantity', activity) || 0),
-                    net: Number(text('Net', activity) || 0), clinicianSpecialty: clinicianSpecialtyMap.get(clinician) || '', orderingSpecialty: clinicianSpecialtyMap.get(orderingClinician) || ''
+                    netRaw, net: Number(netRaw || 0), clinicianSpecialty: clinicianSpecialtyMap.get(clinician) || '', orderingSpecialty: clinicianSpecialtyMap.get(orderingClinician) || ''
                 };
             });
 
@@ -1076,6 +1077,12 @@
             if (!options.isMedicalClaim) return;
             const infusionCodes = new Set();
             const consultationCodes = new Set();
+            const zeroPricedContexts = contexts.filter(context =>
+                context.code &&
+                context.netRaw !== '' &&
+                Number.isFinite(context.net) &&
+                context.net === 0
+            );
             contexts.forEach(context => {
                 const { code, quantityRaw, quantity, net, clinicianSpecialty, orderingClinician, orderingSpecialty } = context;
                 if (!code) return;
@@ -1088,7 +1095,18 @@
                 if ((code === '97802' || code === '97803') && !specialtyContains(clinicianSpecialty, 'Dietician')) invalidFields.push(`Activity ${code} requires Clinician specialty containing Dietician (Currently \`${clinicianSpecialty || 'Unknown'}\`).`);
                 if (specialtyContains(clinicianSpecialty, 'Dietician') && code !== '97802' && code !== '97803') invalidFields.push(`Performing Clinician specialty Dietician can only be used for 97802/97803 (Currently ${code}).`);
                 if (specialtyContains(clinicianSpecialty, 'Pathology') && !/^8/.test(code)) invalidFields.push(`Performing Clinician specialty ${clinicianSpecialty || 'Pathology'} can only be used for 8-series laboratory codes (Currently ${code}).`);
-                if (GP_992_REQUIRED_CODES.has(code) && !specialtyContains(orderingSpecialty, 'General Practitioner')) invalidFields.push(`Activity ${code} requires OrderingClinician specialty as General Practitioner (Currently \`${orderingSpecialty || 'Unknown'}\`).`);
+                const isSoleZeroPriced99202Or99212 =
+                    GP_992_REQUIRED_CODES.has(code) &&
+                    net === 0 &&
+                    zeroPricedContexts.length === 1 &&
+                    zeroPricedContexts[0] === context;
+                if (
+                    GP_992_REQUIRED_CODES.has(code) &&
+                    !isSoleZeroPriced99202Or99212 &&
+                    !specialtyContains(orderingSpecialty, 'General Practitioner')
+                ) {
+                    invalidFields.push(`Activity ${code} requires OrderingClinician specialty as General Practitioner (Currently \`${orderingSpecialty || 'Unknown'}\`).`);
+                }
                 if (GP_992_FORBIDDEN_CODES.has(code) && net !== 0 && specialtyContains(orderingSpecialty, 'General Practitioner') && !isGp992ForbiddenSpecialtyException(orderingClinician, code)) invalidFields.push(`Activity ${code} requires OrderingClinician specialty to NOT be General Practitioner (Currently \`${orderingSpecialty || 'Unknown'}\`).`);
                 if (isForbidden992Specialty(orderingSpecialty, code)) invalidFields.push(`${orderingSpecialty || 'OrderingClinician Specialty'} cannot be used as OrderingClinician specialty for ${code}.`);
                 if (isForbidden992Specialty(clinicianSpecialty, code)) invalidFields.push(`${clinicianSpecialty || 'Performing Clinician Specialty'} cannot be used as Performing Clinician specialty for ${code}.`);
