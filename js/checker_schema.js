@@ -394,26 +394,6 @@
             return element?.textContent ? element.textContent.trim() : '';
         }
 
-        function rawTextByTag(parent, tagName) {
-            if (!parent) return '';
-            const element = parent.getElementsByTagName(tagName)[0];
-            return element?.textContent == null ? '' : String(element.textContent);
-        }
-
-        function validateClinicianFieldWhitespace(activity, tagName, invalidFields, prefix = '') {
-            const rawValue = rawTextByTag(activity, tagName);
-            if (!rawValue || !/\s/.test(rawValue)) return;
-
-            // Whitespace-only values are already reported by the standard
-            // null/empty validation. Avoid duplicating the same problem.
-            if (!rawValue.trim()) return;
-
-            invalidFields.push(
-                `${prefix}${tagName} contains whitespace or newline characters. ` +
-                `Clinician license fields must not contain spaces, tabs, or line breaks.`
-            );
-        }
-
         function specialtyContains(specialty, searchText) {
             return normalizeSpecialty(specialty).includes(normalizeSpecialty(searchText));
         }
@@ -1339,12 +1319,6 @@
                     const quantityValue = Number.parseFloat(quantity);
                     if (code === '92015' && !isThiqaClaim) requiresOpticalEligibilityCheck = true;
                     ['Start', 'Type', 'Code', 'Quantity', 'Net', 'Clinician'].forEach(field => invalidIfEmpty(field, activity, `Activity[${index}].`));
-
-                    // Clinician license fields must be clean in the raw XML.
-                    // Do this before/independently of trim-based normalization.
-                    validateClinicianFieldWhitespace(activity, 'Clinician', invalidFields, `Activity[${index}].`);
-                    validateClinicianFieldWhitespace(activity, 'OrderingClinician', invalidFields, `Activity[${index}].`);
-
                     if (quantity === '0') invalidQuantityCodes.push(code || '(unknown)');
 
                     // High activity quantities require manual confirmation rather
