@@ -1807,20 +1807,37 @@ async function handleRun(options = {}) {
         const encounterDate = parseEncounterDate(rec.EncounterDate);
         const isAfterCutoff = encounterDate !== null && encounterDate >= ENDO_PRICING_CUTOFF;
         const isEndo = clinicianSpec === 'Endodontics';
+        const isThiqaEndoGdOverrideFacility =
+          facility === 'MF5357' || facility === 'MF7231' || facility === 'MF232';
+
         if (isAfterCutoff) {
           const pricingEntry = endoPricingMap.get(normalizeCode(rec.CPT)) || null;
           if (pricingEntry) {
             const endoRef = Number(pricingEntry.endo_price);
             const gpRef = pricingEntry.gp_price;
             const xmlUnit = xmlQty > 0 ? xmlNet / xmlQty : NaN;
+
             if (isEndo) {
+              // Endodontists use the Endodontist rate for applicable D001
+              // Endo codes after the cutoff, regardless of dental facility.
               endoEntry = pricingEntry;
               refPrice = pricingEntry.endo_price;
               pricingContext = 'Endodontist Pricing';
               endoPricingRate = 'ENDO';
-            } else {
+            } else if (isThiqaEndoGdOverrideFacility) {
+              // Al Yahar / Al Wagan / Emirates are the only D001 dental
+              // facilities where a General Dentist should use the dedicated
+              // GD rate from endo_pricing.json. Everywhere else, leave the
+              // previously selected dental_pricing.json Thiqa price untouched.
               nonEndoClinicianSpec = clinicianSpec || 'General Dentist';
-              nonEndoUsedEndoPrice = Number.isFinite(endoRef) && (moneyEqual(xmlNet, endoRef) || moneyEqual(xmlUnit, endoRef) || moneyEqual(xmlNet * 2, endoRef));
+              nonEndoUsedEndoPrice =
+                Number.isFinite(endoRef) &&
+                (
+                  moneyEqual(xmlNet, endoRef) ||
+                  moneyEqual(xmlUnit, endoRef) ||
+                  moneyEqual(xmlNet * 2, endoRef)
+                );
+
               if (gpRef !== undefined && gpRef !== null && gpRef !== '') {
                 endoEntry = pricingEntry;
                 refPrice = gpRef;
