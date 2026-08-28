@@ -161,7 +161,10 @@ function isPatientShareRequiredForPricingRow(row, options = {}) {
   const code = getPricingRowCode(row);
   if (!code || code.startsWith('97')) return false;
 
-  // All 99-series codes require Patient Share for applicable non-HAAD payers.
+  // A zero-priced 99213 is valid without Patient Share.
+  if (code === '99213' && moneyEqual(getPricingRowNet(row), 0)) return false;
+
+  // All other 99-series codes require Patient Share for applicable non-HAAD payers.
   if (code.startsWith('99')) return true;
 
   // In Medical mode, codes beginning with 1 through 6 also require it.
@@ -2403,16 +2406,34 @@ function buildFactorRulesFromWorkbook(wb) {
   return rules;
 }
 
+function normalizeMedicalFactorForPayer(factor, payerId) {
+  const normPayer = String(payerId || '').trim().toUpperCase();
+  const numericFactor = Number(factor);
+
+  if (!Number.isFinite(numericFactor)) return 1;
+
+  // Daman Enhanced (A001) and Daman Basic (D004) use a binary pricing factor:
+  // 0 = zero-priced / not chargeable under the factor table
+  // 1 = standard tariff price
+  // Never allow Thiqa-style 1.3 factors to leak into Daman pricing.
+  if (DAMAN_RECEIVER_IDS.has(normPayer)) return numericFactor === 0 ? 0 : 1;
+
+  return numericFactor;
+}
+
 function findFactorFromRules(rules, facilityId, code, payerId, priorAuthorizationId = '') {
   const normCode = normalizeCode(code);
   const normFacility = String(facilityId || '').trim().toUpperCase();
   const normPayer = String(payerId || '').trim().toUpperCase();
   const priorAuthorization = String(priorAuthorizationId || '').trim();
 
-  // Explicit medical pricing overrides for Khabisi (MF5020).
-  // These run before Factors.xlsx so the Expected Factor, Post-Factor Price,
-  // final validation, and modal agree.
-  if (normFacility === 'MF5020' && KHABISI_FACTOR_13_CODES.has(normCode)) {
+  // Khabisi 1.3 overrides are Thiqa-only. Daman (A001/D004) must remain
+  // binary factor 0/1 and therefore falls through to its normal factor rules.
+  if (
+    normPayer === THIQA_RECEIVER_ID &&
+    normFacility === 'MF5020' &&
+    KHABISI_FACTOR_13_CODES.has(normCode)
+  ) {
     return {
       factor: 1.3,
       rule: {
@@ -2421,13 +2442,17 @@ function findFactorFromRules(rules, facilityId, code, payerId, priorAuthorizatio
         serviceType: 'Khabisi factor 1.3 override',
         matchType: 'Exact List',
         matchValues: Array.from(KHABISI_FACTOR_13_CODES),
-        factors: { [normPayer || 'DEFAULT']: 1.3 },
+        factors: { D001: 1.3 },
         isOverride: true
       }
     };
   }
 
-  if (normFacility === 'MF5020' && KHABISI_AUTH_FACTOR_13_CODES.has(normCode)) {
+  if (
+    normPayer === THIQA_RECEIVER_ID &&
+    normFacility === 'MF5020' &&
+    KHABISI_AUTH_FACTOR_13_CODES.has(normCode)
+  ) {
     if (priorAuthorization) {
       return {
         factor: 1.3,
@@ -2437,28 +2462,25 @@ function findFactorFromRules(rules, facilityId, code, payerId, priorAuthorizatio
           serviceType: 'Khabisi authorized nutrition factor 1.3 override',
           matchType: 'Exact List + PriorAuthorizationID',
           matchValues: Array.from(KHABISI_AUTH_FACTOR_13_CODES),
-          factors: { [normPayer || 'DEFAULT']: 1.3 },
+          factors: { D001: 1.3 },
           isOverride: true
         }
       };
     }
-    // For 97802/97803 in Khabisi, absence of an activity-level authorization
-    // explicitly means factor 1; do not let a broader Factors.xlsx row raise it.
+
     return { factor: 1, rule: {
       facility: 'Khabisi',
       facilityId: 'MF5020',
       serviceType: 'Khabisi nutrition without authorization',
       matchType: 'Exact List + PriorAuthorizationID',
       matchValues: Array.from(KHABISI_AUTH_FACTOR_13_CODES),
-      factors: { [normPayer || 'DEFAULT']: 1 },
+      factors: { D001: 1 },
       isOverride: true
     } };
   }
 
   // Explicit medical pricing override:
   // True Life (MF7003), Thiqa (D001), CPT 90792 uses factor 1.3.
-  // This takes priority over Factors.xlsx, where this combination may
-  // otherwise resolve to the default factor of 1.
   if (normFacility === 'MF7003' && normPayer === 'D001' && normCode === '90792') {
     return {
       factor: 1.3,
@@ -2478,7 +2500,7 @@ function findFactorFromRules(rules, facilityId, code, payerId, priorAuthorizatio
 
   const facilityRules = rules.filter(r => r.facilityId.trim().toUpperCase() === normFacility);
   if (!facilityRules.length) return { factor: 1, rule: null };
-  // Exact List has priority over Starts With
+
   let matchedRule = null;
   for (const rule of facilityRules) {
     if (rule.matchType === 'Exact List' && rule.matchValues.includes(normCode)) {
@@ -2487,7 +2509,6 @@ function findFactorFromRules(rules, facilityId, code, payerId, priorAuthorizatio
     }
   }
 
-  // Fallback: Starts With
   if (!matchedRule) {
     for (const rule of facilityRules) {
       if (rule.matchType === 'Starts With' && rule.matchValues.some(prefix => normCode.startsWith(prefix))) {
@@ -2496,6 +2517,7 @@ function findFactorFromRules(rules, facilityId, code, payerId, priorAuthorizatio
       }
     }
   }
+
   if (!matchedRule) return { factor: 1, rule: null };
 
   const factorVal = matchedRule.factors[normPayer];
@@ -2504,7 +2526,10 @@ function findFactorFromRules(rules, facilityId, code, payerId, priorAuthorizatio
     return { factor: 1, rule: matchedRule };
   }
 
-  return { factor: factorVal, rule: matchedRule };
+  return {
+    factor: normalizeMedicalFactorForPayer(factorVal, normPayer),
+    rule: matchedRule
+  };
 }
 function getSelectedClaimTypeMode() {
   const claimTypeDental = document.getElementById('claimTypeDental');
@@ -3775,6 +3800,7 @@ window._pricingTestApi = {
   buildPricingMatcher,
   normalizeClaimTypeMode,
   buildFactorRulesFromWorkbook,
+  normalizeMedicalFactorForPayer,
   findFactorFromRules,
   extractCptModifiersFromActivity,
   getCptModifierPriceFactor,
