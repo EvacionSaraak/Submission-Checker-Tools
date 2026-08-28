@@ -1319,11 +1319,14 @@
                     const quantityValue = Number.parseFloat(quantity);
                     if (code === '92015' && !isThiqaClaim) requiresOpticalEligibilityCheck = true;
                     ['Start', 'Type', 'Code', 'Quantity', 'Net', 'Clinician'].forEach(field => invalidIfEmpty(field, activity, `Activity[${index}].`));
+
                     if (quantity === '0') invalidQuantityCodes.push(code || '(unknown)');
 
                     // High activity quantities require manual confirmation rather
-                    // than making the claim invalid. Trigger for anything > 4.
-                    if (Number.isFinite(quantityValue) && quantityValue > 4) {
+                    // than making the claim invalid. Default threshold is > 4.
+                    // Code 86003 commonly uses higher quantities, so only flag it > 50.
+                    const quantityReviewThreshold = code === '86003' ? 50 : 4;
+                    if (Number.isFinite(quantityValue) && quantityValue > quantityReviewThreshold) {
                         remarks.push(
                             `the quantity for ${code || '(unknown)'} is ${quantity}, kindly double check if this is corrext`
                         );
