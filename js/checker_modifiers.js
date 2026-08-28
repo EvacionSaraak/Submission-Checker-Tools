@@ -83,9 +83,16 @@
   }
 
   function isConsultationCode(code) {
-    return /^(92|992)/.test(
-      String(code || '').trim()
-    );
+    const normalized = String(code || '').trim();
+
+    // E/M consultation codes:
+    // - Standard E/M family: 992xx
+    // - Ophthalmology examination/visit codes: 92002, 92004, 92012, 92014
+    //
+    // Do not use a broad /^92/ prefix: procedure codes such as 92504,
+    // 92511, 92132, 92250, and 92285 are not E/M consultations.
+    return /^992\d{2}$/.test(normalized)
+      || /^(92002|92004|92012|92014)$/.test(normalized);
   }
 
   function moneyEqual(a, b) {
