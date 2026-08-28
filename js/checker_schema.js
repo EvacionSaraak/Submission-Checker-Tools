@@ -41,14 +41,6 @@
         // but does not identify the exceptions. Keep the rule active and the
         // exception list explicitly editable rather than silently disabling it.
         const CHECKPOINT_Z68_O_CODE_EXCEPTIONS = new Set([]);
-        const CHECKPOINT_CBC_REPEAT_EXEMPT_CODES = new Set(['85025', '85027', '85004', '85007', '85009']);
-        const CHECKPOINT_CRP_REPEAT_EXEMPT_CODES = new Set(['86140', '86141']);
-        const CHECKPOINT_BHCG_REPEAT_EXEMPT_CODES = new Set(['84702', '84703']);
-        const CHECKPOINT_LAB_REPEAT_EXEMPT_CODES = new Set([
-            ...CHECKPOINT_CBC_REPEAT_EXEMPT_CODES,
-            ...CHECKPOINT_CRP_REPEAT_EXEMPT_CODES,
-            ...CHECKPOINT_BHCG_REPEAT_EXEMPT_CODES
-        ]);
         const CHECKPOINT_MUTUALLY_EXCLUSIVE_ACTIVITY_PAIRS = [
             ['31231', '31575'],
             ['30901', '31231'],
@@ -965,7 +957,6 @@
                 const rows = remarksByClaim.get(claimID);
                 if (!rows.includes(message)) rows.push(message);
             };
-            const dayMs = 24 * 60 * 60 * 1000;
             const toDayTimestamp = value => {
                 const parsed = parseEncounterDateTime(value);
                 if (!parsed?.dateKey) return null;
@@ -973,14 +964,6 @@
                 const date = new Date(Date.UTC(y, m - 1, d));
                 return Number.isNaN(date.getTime()) ? null : date.getTime();
             };
-            const calendarDayDiff = (left, right) => Math.round((left - right) / dayMs);
-            const sixMonthsAfter = timestamp => {
-                const date = new Date(timestamp);
-                const copy = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
-                copy.setUTCMonth(copy.getUTCMonth() + 6);
-                return copy.getTime();
-            };
-
             Array.from(claims || []).forEach(claim => {
                 const claimID = getDirectChildText(claim, 'ID') || 'Unknown';
                 const memberID = String(getDirectChildText(claim, 'MemberID') || '').trim();
@@ -997,37 +980,13 @@
 
             eventsByMember.forEach(events => {
                 events.sort((a, b) => a.timestamp - b.timestamp || a.claimID.localeCompare(b.claimID));
-                const seenByCode = new Map();
                 const dietHistory = [];
 
                 events.forEach(event => {
-                    const previousSameCode = seenByCode.get(event.code) || [];
-
-                    if (event.code === '83036' && previousSameCode.length) {
-                        const previous = previousSameCode[previousSameCode.length - 1];
-                        const days = calendarDayDiff(event.timestamp, previous.timestamp);
-                        if (days >= 0 && days < 90) {
-                            addRemark(event.claimID, `83036 can only be repeated after 90 days; previous occurrence was ${days} day${days === 1 ? '' : 's'} earlier.`);
-                        }
-                    } else if (event.code.startsWith('800') && previousSameCode.length) {
-                        const previous = previousSameCode[previousSameCode.length - 1];
-                        if (event.timestamp < sixMonthsAfter(previous.timestamp)) {
-                            addRemark(event.claimID, `${event.code} can only be repeated after 6 months.`);
-                        }
-                    } else if (
-                        /^8/.test(event.code) &&
-                        !event.code.startsWith('800') &&
-                        event.code !== '83036' &&
-                        !CHECKPOINT_LAB_REPEAT_EXEMPT_CODES.has(event.code) &&
-                        previousSameCode.length
-                    ) {
-                        const previous = previousSameCode[previousSameCode.length - 1];
-                        const days = calendarDayDiff(event.timestamp, previous.timestamp);
-                        if (days >= 0 && days < 3) {
-                            addRemark(event.claimID, `${event.code} should only be repeated after 3 days; previous occurrence was ${days} day${days === 1 ? '' : 's'} earlier.`);
-                        }
-                    }
-
+                    // Do not enforce lab/test repeat intervals from Claim.Submission
+                    // alone. The XML is not a complete patient visit history, so it
+                    // cannot establish whether a prior occurrence was truly the most
+                    // recent visit/test for interval validation.
                     if (event.code === '97802' || event.code === '97803') {
                         const previousDiet = dietHistory[dietHistory.length - 1] || null;
                         if (event.code === '97802' && previousDiet) {
@@ -1035,9 +994,6 @@
                         }
                         dietHistory.push(event);
                     }
-
-                    if (!seenByCode.has(event.code)) seenByCode.set(event.code, []);
-                    seenByCode.get(event.code).push(event);
                 });
             });
 
