@@ -1811,8 +1811,6 @@ async function handleRun(options = {}) {
         const encounterDate = parseEncounterDate(rec.EncounterDate);
         const isAfterCutoff = encounterDate !== null && encounterDate >= ENDO_PRICING_CUTOFF;
         const isEndo = clinicianSpec === 'Endodontics';
-        const isThiqaEndoGdOverrideFacility =
-          facility === 'MF5357' || facility === 'MF7231' || facility === 'MF232';
 
         if (isAfterCutoff) {
           const pricingEntry = endoPricingMap.get(normalizeCode(rec.CPT)) || null;
@@ -1822,17 +1820,13 @@ async function handleRun(options = {}) {
             const xmlUnit = xmlQty > 0 ? xmlNet / xmlQty : NaN;
 
             if (isEndo) {
-              // Endodontists use the Endodontist rate for applicable D001
-              // Endo codes after the cutoff, regardless of dental facility.
               endoEntry = pricingEntry;
               refPrice = pricingEntry.endo_price;
               pricingContext = 'Endodontist Pricing';
               endoPricingRate = 'ENDO';
-            } else if (isThiqaEndoGdOverrideFacility) {
-              // Al Yahar / Al Wagan / Emirates are the only D001 dental
-              // facilities where a General Dentist should use the dedicated
-              // GD rate from endo_pricing.json. Everywhere else, leave the
-              // previously selected dental_pricing.json Thiqa price untouched.
+            } else {
+              // For D001, applicable Endo codes use the dedicated GP/GD
+              // rate after the cutoff regardless of facility, including Khabisi.
               nonEndoClinicianSpec = clinicianSpec || 'General Dentist';
               nonEndoUsedEndoPrice =
                 Number.isFinite(endoRef) &&
