@@ -105,11 +105,15 @@ function getConcisePricingContextLabel(pricingContext) {
   return context.replace(/\s+Pricing$/i, '').trim() || 'reference pricing';
 }
 
-function buildConcisePriceMismatchRemark({ claimedNet, code, pricingContext }) {
+function buildConcisePriceMismatchRemark({ claimedNet, code, pricingContext, expectedNet }) {
+  const expectedText = Number.isFinite(Number(expectedNet))
+    ? ` (should be ${formatMoney(expectedNet)})`
+    : '';
+
   return (
     `Claimed Net ${formatMoney(claimedNet)} ` +
     `(for ${code}) is invalid under ` +
-    `${getConcisePricingContextLabel(pricingContext)}.`
+    `${getConcisePricingContextLabel(pricingContext)}${expectedText}.`
   );
 }
 
@@ -1961,7 +1965,12 @@ async function handleRun(options = {}) {
           const copayPct = Math.round((effectiveRef * xmlQty - xmlNet) / (effectiveRef * xmlQty) * 10000) / 100;
           remarks.push(`Copay: ${copayPct}%.`);
         } else {
-          remarks.push(buildConcisePriceMismatchRemark({ claimedNet: xmlNet, code: rec.CPT, pricingContext }));
+          remarks.push(buildConcisePriceMismatchRemark({
+            claimedNet: xmlNet,
+            code: rec.CPT,
+            pricingContext,
+            expectedNet: effectiveRef
+          }));
         }
       }
       const normalizedCode = normalizeCode(rec.CPT);
