@@ -530,6 +530,10 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId, claimType = ''
     ? getEligibilityState(options.eligibilityIndex, memberId, start)
     : null;
 
+  const netRaw = String(netTotal == null ? '' : netTotal).trim();
+  const netValue = Number(netRaw);
+  const isExplicitZeroPriced = netRaw !== '' && Number.isFinite(netValue) && netValue === 0;
+
   if (is76815EligibilityOnly) {
     const eligibilityRemarks = [];
     let eligibilityUnknown = false;
@@ -545,6 +549,30 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId, claimType = ''
       claimId, memberId, id, code, description: rule.description || "", netTotal, qty,
       ordering, authID, start, xlsRow: {}, xlsAllAuthRows: [], denialCode: "",
       denialReason: "", remarks: eligibilityRemarks, unknown: eligibilityUnknown
+    };
+  }
+
+  // Zero-priced activities do not require authorization validation.
+  // Keep 76815's Eligibility-only rule above intact because that is not an
+  // authorization requirement.
+  if (isExplicitZeroPriced) {
+    return {
+      claimId,
+      memberId,
+      id,
+      code,
+      description: rule.description || "",
+      netTotal,
+      qty,
+      ordering,
+      authID,
+      start,
+      xlsRow: {},
+      xlsAllAuthRows: [],
+      denialCode: "",
+      denialReason: "",
+      remarks: [],
+      unknown: false
     };
   }
 
@@ -576,27 +604,6 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId, claimType = ''
       : codeRequiresAuthorization(code, rule));
 
   if (!needsAuth && !authID) {
-    return {
-      claimId,
-      memberId,
-      id,
-      code,
-      description: rule.description || "",
-      netTotal,
-      qty,
-      ordering,
-      authID,
-      start,
-      xlsRow: {},
-      xlsAllAuthRows: [],
-      denialCode: "",
-      denialReason: "",
-      remarks: [],
-      unknown: false
-    };
-  }
-
-  if (parseFloat(netTotal || "0") === 0 && !needsAuth) {
     return {
       claimId,
       memberId,
