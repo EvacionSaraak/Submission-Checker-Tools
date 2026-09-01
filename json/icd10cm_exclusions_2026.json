@@ -50,6 +50,17 @@
           "display": "B00.0"
         }
       ]
+    },
+    {
+      "code": "J00",
+      "display": "J00",
+      "note": "J00 and J02.9 cannot coexist when both are submitted as Principal/Secondary diagnoses. ReasonForVisit diagnoses are excluded from Excludes1 evaluation.",
+      "excludes1": [
+        {
+          "code": "J02.9",
+          "display": "J02.9"
+        }
+      ]
     }
   ]
 }
