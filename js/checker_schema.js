@@ -29,6 +29,7 @@
         const DAMAN_RECEIVER_IDS = new Set(['D004', 'A001']);
         const DAMAN_BASIC_RECEIVER_ID = 'D004';
         const THIQA_RECEIVER_ID = 'D001';
+        const VITAMIN_D_82306_PRICED_RECEIVER_IDS = new Set(['D001', 'A001']);
         const CHECKPOINT_EXPECTED_CLAIM_PAYER_IDS = Object.freeze({
             D001: new Set(['E001']),
             A001: new Set(['A001']),
@@ -945,6 +946,26 @@
             if (activityCodes.has('94760') && Array.from(activityCodes).some(isConsultationCode)) invalidFields.push('Activity 94760 cannot be coded together with an E/M consultation code.');
             if (isDamanBasic && activityCodes.has('86703')) invalidFields.push('Activity 86703 is not covered for Daman Basic.');
             if (isDaman && activityCodes.has('82785')) invalidFields.push(`Activity 82785 is not covered for Daman receiver ${receiverID}.`);
+
+            // 82306 (Vitamin D; 25 hydroxy) may be submitted with a priced Net
+            // only for Thiqa (D001) and Daman Enhanced (A001). For other
+            // insurance receivers, the code may still be present but must be
+            // billed at Net 0. HAAD/self-pay is outside this insurance rule.
+            if (
+                receiverID &&
+                receiverID !== 'HAAD' &&
+                !VITAMIN_D_82306_PRICED_RECEIVER_IDS.has(receiverID)
+            ) {
+                activityRows
+                    .filter(row => row.code === '82306' && Number.isFinite(row.net) && row.net !== 0)
+                    .forEach(row => {
+                        invalidFields.push(
+                            `Activity 82306 must have Net 0 for ReceiverID ${receiverID}; ` +
+                            'priced 82306 is only allowed for Thiqa (D001) and Daman Enhanced (A001).'
+                        );
+                    });
+            }
+
             if (receiverID && receiverID !== 'HAAD' && activityCodes.has('87635')) invalidFields.push('Activity 87635 cannot be coded for insurance claims.');
         }
 
