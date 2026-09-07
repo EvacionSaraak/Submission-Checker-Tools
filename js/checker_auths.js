@@ -56,6 +56,8 @@ const CHECKPOINT_PHYSIOTHERAPY_CODES = new Set([
 const CHECKPOINT_DIETICIAN_CODES = new Set(['97802', '97803']);
 const CHECKPOINT_THIQA_RECEIVER_ID = 'D001';
 const CHECKPOINT_NEXTCARE_RECEIVER_ID = 'C002';
+const ADNIC_ENHANCED_PAYER_ID = 'A002';
+const ADNIC_CLAIM_AUTH_THRESHOLD_AED = 500;
 // === END CHECKPOINT AUTH ADDITIONS 2026-08-14 ===
 
 const AUTH_PRESENCE_CLASSIFIED_CODES = new Set(['86301', '73521']);
@@ -279,6 +281,16 @@ function codeRequiresAuthorization(code, rule = {}) {
 function getText(parent, tag) {
   const el = parent.querySelector(tag);
   return el && el.textContent ? el.textContent.trim() : "";
+}
+
+function getDirectText(parent, tag) {
+  if (!parent || !parent.children) return "";
+  const expected = String(tag || "").trim().toUpperCase();
+  const child = Array.from(parent.children).find(node => {
+    const name = String(node.localName || node.nodeName || "").toUpperCase();
+    return (name.includes(":") ? name.split(":").pop() : name) === expected;
+  });
+  return child && child.textContent ? child.textContent.trim() : "";
 }
 
 function updateStatus() {
@@ -533,6 +545,10 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId, claimType = ''
   const netRaw = String(netTotal == null ? '' : netTotal).trim();
   const netValue = Number(netRaw);
   const isExplicitZeroPriced = netRaw !== '' && Number.isFinite(netValue) && netValue === 0;
+  const isPositivePriced = netRaw !== '' && Number.isFinite(netValue) && netValue > 0;
+  const adnicClaimWideAuthRequired =
+    options.adnicClaimWideAuthRequired === true &&
+    isPositivePriced;
 
   if (is76815EligibilityOnly) {
     const eligibilityRemarks = [];
@@ -576,6 +592,30 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId, claimType = ''
     };
   }
 
+  // ADNIC Enhanced (A002): when the claim-level Net is above AED 500,
+  // every positively priced activity requires authorization regardless of code.
+  // The explicit Net-0 exemption above still applies.
+  if (adnicClaimWideAuthRequired && !authID) {
+    return {
+      claimId,
+      memberId,
+      id,
+      code,
+      description: rule.description || "",
+      netTotal,
+      qty,
+      ordering,
+      authID,
+      start,
+      xlsRow: {},
+      xlsAllAuthRows: [],
+      denialCode: "",
+      denialReason: "",
+      remarks: [`Authorization required for ${code}.`],
+      unknown: false
+    };
+  }
+
   if (isMaternityEligibilityOrApproval && !authID) {
     const maternityRemarks = [];
     let maternityUnknown = false;
@@ -597,11 +637,13 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId, claimType = ''
   // For medical claims, explicit CT/MRI/therapy/76816 codes plus all 97-series
   // codes require authorization. The source checkpoint's 97 exception set is
   // intentionally editable above and currently empty.
-  const needsAuth = isAuthPresenceClassifiedCode
-    ? Boolean(authID)
-    : (isMedicalClaim
-      ? (MEDICAL_CODES_REQUIRING_AUTH.has(normalizedCode) || is97AuthorizationCode || isMaternity768)
-      : codeRequiresAuthorization(code, rule));
+  const needsAuth = adnicClaimWideAuthRequired
+    ? true
+    : (isAuthPresenceClassifiedCode
+      ? Boolean(authID)
+      : (isMedicalClaim
+        ? (MEDICAL_CODES_REQUIRING_AUTH.has(normalizedCode) || is97AuthorizationCode || isMaternity768)
+        : codeRequiresAuthorization(code, rule)));
 
   if (!needsAuth && !authID) {
     return {
@@ -792,6 +834,14 @@ function validateClaims(xmlDoc, xlsxData, receiverID = '', options = {}) {
   claims.forEach(claimEl => {
     const cid = getText(claimEl, "ID");
     const mid = getText(claimEl, "MemberID");
+    const payerID = getDirectText(claimEl, "PayerID").trim().toUpperCase();
+    const claimNetRaw = getDirectText(claimEl, "Net").trim();
+    const claimNet = Number(claimNetRaw);
+    const adnicClaimWideAuthRequired =
+      payerID === ADNIC_ENHANCED_PAYER_ID &&
+      claimNetRaw !== '' &&
+      Number.isFinite(claimNet) &&
+      claimNet > ADNIC_CLAIM_AUTH_THRESHOLD_AED;
     const acts = Array.from(claimEl.getElementsByTagName("Activity"));
     const encounter = claimEl.getElementsByTagName("Encounter")[0];
     const claimType = getText(encounter || claimEl, "Type");
@@ -807,6 +857,9 @@ function validateClaims(xmlDoc, xlsxData, receiverID = '', options = {}) {
 
     acts.forEach(a => results.push(validateActivity(a, xlsxMap, cid, mid, claimType, {
       receiverID,
+      payerID,
+      claimNet,
+      adnicClaimWideAuthRequired,
       isMaternity,
       eligibilityIndex: options.eligibilityIndex || null
     })));
