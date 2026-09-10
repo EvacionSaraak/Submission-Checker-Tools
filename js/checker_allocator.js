@@ -256,7 +256,7 @@
       let score = 0;
       for (const candidate of HEADER_DETECTION_CANDIDATES) {
         const candidateNorm = normalizeKey(candidate);
-        if (normalizedRow.some(cell => cell && (cell === candidateNorm || cell.includes(candidateNorm) || candidateNorm.includes(cell)))) {
+        if (normalizedRow.some(cell => cell && (cell === candidateNorm || cell.includes(candidateNorm)))) {
           score++;
         }
       }
@@ -675,12 +675,8 @@
     const allocationSummary = buildAllocationSummary(allocationRows);
     const matrix = buildFacilityMatrix(allocationRows, allocationSummary.coderRows);
     const facilityFiltered = new Map();
-    const facilityClosed = new Map();
     const departmentFiltered = new Map();
 
-    for (const claim of state.duplicateGroups) {
-      facilityClosed.set(claim.facilityKey, (facilityClosed.get(claim.facilityKey) || 0) + (claim.autoExcludedStatus ? 1 : 0));
-    }
     for (const claim of state.duplicateGroups) {
       if (!facilityFiltered.has(claim.facilityKey)) {
         facilityFiltered.set(claim.facilityKey, { Facility: getFacilityOutputName(claim, state.facilityConfigs), 'Claims Loaded': 0, 'Closed/Submitted Excluded': 0, Eligible: 0, Allocated: 0, Unassigned: 0 });
@@ -820,10 +816,6 @@
     XLSX.utils.book_append_sheet(wb, wsAllocation, 'Allocation');
 
     return wb;
-  }
-
-  function setInnerHtml(element, html) {
-    if (element) element.innerHTML = html;
   }
 
   function renderSummaryCards(importStats) {
