@@ -573,27 +573,262 @@
     });
   }
 
-  function allocateClaims(claims, facilityConfigs, allocationDateText) {
-    const workload = {};
-    const tieBreakers = {};
-    const allocationRows = [];
+  function compareClaimsForAllocation(a, b) {
+    if (a.claimDate && b.claimDate && a.claimDate.getTime() !== b.claimDate.getTime()) return a.claimDate - b.claimDate;
+    if (a.claimDate) return -1;
+    if (b.claimDate) return 1;
+    return [
+      String(a.facilityKey || '').localeCompare(String(b.facilityKey || '')),
+      String(a.outputClaimId || '').localeCompare(String(b.outputClaimId || '')),
+      String(a.sourceFile || '').localeCompare(String(b.sourceFile || '')),
+      (a.sourceRowNumber || 0) - (b.sourceRowNumber || 0)
+    ].find(result => result !== 0) || 0;
+  }
 
-    for (const claim of claims) {
-      const facilityName = getFacilityOutputName(claim, facilityConfigs);
-      const eligibleCoders = getEligibleCoders(claim, facilityConfigs);
-      let coder = UNASSIGNED_CODER;
+  function collectConfiguredCoders(facilityConfigs) {
+    return Array.from(new Set(
+      Object.values(facilityConfigs || {}).flatMap(config => parseCodersText(config.codersText))
+    )).sort((a, b) => a.localeCompare(b));
+  }
 
-      if (eligibleCoders.length) {
-        const minLoad = Math.min(...eligibleCoders.map(name => workload[name] || 0));
-        const tied = eligibleCoders.filter(name => (workload[name] || 0) === minLoad);
-        const tieKey = tied.join('|');
-        const tieIndex = tieBreakers[tieKey] || 0;
-        coder = tied[tieIndex % tied.length];
-        tieBreakers[tieKey] = tieIndex + 1;
-        workload[coder] = (workload[coder] || 0) + 1;
+  function buildClaimEligibilityContext(claims, facilityConfigs) {
+    const sortedClaims = claims.slice().sort(compareClaimsForAllocation);
+    const allConfiguredCoders = collectConfiguredCoders(facilityConfigs);
+    const groupsBySignature = new Map();
+
+    for (const claim of sortedClaims) {
+      const eligibleCoders = getEligibleCoders(claim, facilityConfigs).slice().sort((a, b) => a.localeCompare(b));
+      claim._eligibleCoders = eligibleCoders;
+      claim._eligibilitySignature = eligibleCoders.join('|');
+      if (!eligibleCoders.length) continue;
+      if (!groupsBySignature.has(claim._eligibilitySignature)) {
+        groupsBySignature.set(claim._eligibilitySignature, {
+          signature: claim._eligibilitySignature,
+          eligibleCoders,
+          claims: []
+        });
+      }
+      groupsBySignature.get(claim._eligibilitySignature).claims.push(claim);
+    }
+
+    return {
+      sortedClaims,
+      groups: Array.from(groupsBySignature.values()).sort((a, b) =>
+        a.eligibleCoders.length - b.eligibleCoders.length
+        || compareClaimsForAllocation(a.claims[0], b.claims[0])
+        || a.signature.localeCompare(b.signature)
+      ),
+      allConfiguredCoders
+    };
+  }
+
+  function createMinHeap() {
+    const items = [];
+    function compare(a, b) {
+      return a.priority - b.priority || a.tieBreaker - b.tieBreaker;
+    }
+    return {
+      push(item) {
+        items.push(item);
+        let index = items.length - 1;
+        while (index > 0) {
+          const parent = Math.floor((index - 1) / 2);
+          if (compare(items[parent], items[index]) <= 0) break;
+          [items[parent], items[index]] = [items[index], items[parent]];
+          index = parent;
+        }
+      },
+      pop() {
+        if (!items.length) return null;
+        const first = items[0];
+        const last = items.pop();
+        if (items.length && last) {
+          items[0] = last;
+          let index = 0;
+          while (true) {
+            const left = index * 2 + 1;
+            const right = left + 1;
+            let smallest = index;
+            if (left < items.length && compare(items[left], items[smallest]) < 0) smallest = left;
+            if (right < items.length && compare(items[right], items[smallest]) < 0) smallest = right;
+            if (smallest === index) break;
+            [items[index], items[smallest]] = [items[smallest], items[index]];
+            index = smallest;
+          }
+        }
+        return first;
+      },
+      get size() {
+        return items.length;
+      }
+    };
+  }
+
+  function solveBalancedCoderLoads(groups, coderNames) {
+    const totalClaims = groups.reduce((sum, group) => sum + group.claims.length, 0);
+    if (!totalClaims || !coderNames.length) {
+      return { assignmentCounts: new Map(), coderLoads: {} };
+    }
+
+    const source = 0;
+    const groupOffset = 1;
+    const coderOffset = groupOffset + groups.length;
+    const sink = coderOffset + coderNames.length;
+    const graph = Array.from({ length: sink + 1 }, () => []);
+    const groupCoderEdges = new Map();
+
+    function addEdge(from, to, capacity, cost) {
+      const forward = { to, rev: graph[to].length, capacity, cost, originalCapacity: capacity, flow: 0 };
+      const reverse = { to: from, rev: graph[from].length, capacity: 0, cost: -cost, originalCapacity: 0, flow: 0 };
+      graph[from].push(forward);
+      graph[to].push(reverse);
+      return forward;
+    }
+
+    groups.forEach((group, groupIndex) => {
+      addEdge(source, groupOffset + groupIndex, group.claims.length, 0);
+      group.eligibleCoders.forEach(coder => {
+        const coderIndex = coderNames.indexOf(coder);
+        const edge = addEdge(groupOffset + groupIndex, coderOffset + coderIndex, group.claims.length, 0);
+        groupCoderEdges.set(`${group.signature}::${coder}`, edge);
+      });
+    });
+
+    coderNames.forEach((coder, coderIndex) => {
+      for (let slot = 0; slot < totalClaims; slot++) {
+        addEdge(coderOffset + coderIndex, sink, 1, slot);
+      }
+    });
+
+    const potentials = new Array(graph.length).fill(0);
+    const distances = new Array(graph.length).fill(Infinity);
+    const previousNode = new Array(graph.length).fill(-1);
+    const previousEdge = new Array(graph.length).fill(-1);
+    let flow = 0;
+
+    while (flow < totalClaims) {
+      distances.fill(Infinity);
+      previousNode.fill(-1);
+      previousEdge.fill(-1);
+      distances[source] = 0;
+      const heap = createMinHeap();
+      heap.push({ node: source, priority: 0, tieBreaker: 0 });
+
+      while (heap.size) {
+        const current = heap.pop();
+        if (!current || current.priority !== distances[current.node]) continue;
+        graph[current.node].forEach((edge, edgeIndex) => {
+          if (edge.capacity <= 0) return;
+          const nextDistance = current.priority + edge.cost + potentials[current.node] - potentials[edge.to];
+          if (nextDistance < distances[edge.to]) {
+            distances[edge.to] = nextDistance;
+            previousNode[edge.to] = current.node;
+            previousEdge[edge.to] = edgeIndex;
+            heap.push({ node: edge.to, priority: nextDistance, tieBreaker: edge.to });
+          }
+        });
       }
 
-      allocationRows.push({
+      if (distances[sink] === Infinity) break;
+      for (let node = 0; node < graph.length; node++) {
+        if (distances[node] < Infinity) potentials[node] += distances[node];
+      }
+
+      let augment = totalClaims - flow;
+      for (let node = sink; node !== source; node = previousNode[node]) {
+        const edge = graph[previousNode[node]][previousEdge[node]];
+        augment = Math.min(augment, edge.capacity);
+      }
+
+      for (let node = sink; node !== source; node = previousNode[node]) {
+        const edge = graph[previousNode[node]][previousEdge[node]];
+        edge.capacity -= augment;
+        edge.flow += augment;
+        const reverse = graph[node][edge.rev];
+        reverse.capacity += augment;
+        reverse.flow -= augment;
+      }
+      flow += augment;
+    }
+
+    const assignmentCounts = new Map();
+    const coderLoads = Object.fromEntries(coderNames.map(coder => [coder, 0]));
+    groups.forEach(group => {
+      const counts = {};
+      group.eligibleCoders.forEach(coder => {
+        const edge = groupCoderEdges.get(`${group.signature}::${coder}`);
+        const assigned = edge ? edge.flow : 0;
+        if (assigned > 0) {
+          counts[coder] = assigned;
+          coderLoads[coder] += assigned;
+        }
+      });
+      assignmentCounts.set(group.signature, counts);
+    });
+
+    return { assignmentCounts, coderLoads };
+  }
+
+  function verifyAllocationFairness(allocationRows, sortedClaims, allConfiguredCoders) {
+    const eligibleByCoder = Object.fromEntries(allConfiguredCoders.map(coder => [coder, 0]));
+    sortedClaims.forEach(claim => {
+      (claim._eligibleCoders || []).forEach(coder => {
+        eligibleByCoder[coder] = (eligibleByCoder[coder] || 0) + 1;
+      });
+    });
+
+    const counts = Object.fromEntries(allConfiguredCoders.map(coder => [coder, 0]));
+    allocationRows.forEach(row => {
+      if (row.Coder !== UNASSIGNED_CODER) counts[row.Coder] = (counts[row.Coder] || 0) + 1;
+    });
+
+    const comparableCoders = allConfiguredCoders.filter(coder => eligibleByCoder[coder] > 0);
+    const comparableLoads = comparableCoders.map(coder => counts[coder] || 0);
+    const maxAssigned = comparableLoads.length ? Math.max(...comparableLoads) : 0;
+    const minAssigned = comparableLoads.length ? Math.min(...comparableLoads) : 0;
+    const hasSharedPool = sortedClaims.filter(claim => (claim._eligibleCoders || []).length > 0)
+      .every(claim => (claim._eligibilitySignature || '') === (sortedClaims.find(item => (item._eligibleCoders || []).length > 0)?._eligibilitySignature || ''));
+
+    return {
+      coderCounts: counts,
+      eligibleByCoder,
+      comparableCoders,
+      maxAssigned,
+      minAssigned,
+      difference: maxAssigned - minAssigned,
+      even: comparableLoads.length <= 1 || maxAssigned - minAssigned <= 1,
+      sharedPoolVerified: !hasSharedPool || (maxAssigned - minAssigned <= 1),
+      statusText: comparableLoads.length <= 1 || maxAssigned - minAssigned <= 1 ? 'EVEN' : 'CONSTRAINED BY ELIGIBILITY'
+    };
+  }
+
+  function allocateClaims(claims, facilityConfigs, allocationDateText) {
+    const { sortedClaims, groups, allConfiguredCoders } = buildClaimEligibilityContext(claims, facilityConfigs);
+    const solved = solveBalancedCoderLoads(groups, allConfiguredCoders);
+    const remainingByGroup = new Map();
+    groups.forEach(group => {
+      remainingByGroup.set(group.signature, { ...(solved.assignmentCounts.get(group.signature) || {}) });
+    });
+
+    const realizedLoads = Object.fromEntries(allConfiguredCoders.map(coder => [coder, 0]));
+    const allocationRows = sortedClaims.map(claim => {
+      const facilityName = getFacilityOutputName(claim, facilityConfigs);
+      let coder = UNASSIGNED_CODER;
+      if ((claim._eligibleCoders || []).length) {
+        const remaining = remainingByGroup.get(claim._eligibilitySignature) || {};
+        const availableCoders = claim._eligibleCoders.filter(name => (remaining[name] || 0) > 0);
+        if (availableCoders.length) {
+          coder = availableCoders.sort((a, b) =>
+            (realizedLoads[a] || 0) - (realizedLoads[b] || 0)
+            || (solved.coderLoads[a] || 0) - (solved.coderLoads[b] || 0)
+            || a.localeCompare(b)
+          )[0];
+          remaining[coder]--;
+          realizedLoads[coder] = (realizedLoads[coder] || 0) + 1;
+        }
+      }
+
+      return {
         Facility: facilityName,
         'Claim ID': claim.outputClaimId,
         'Claim Date': claim.claimDate,
@@ -603,10 +838,11 @@
         'Date Assigned': allocationDateText,
         Query: '',
         Status: ''
-      });
-    }
+      };
+    });
 
-    return { allocationRows, workload };
+    const fairness = verifyAllocationFairness(allocationRows, sortedClaims, allConfiguredCoders);
+    return { allocationRows, workload: solved.coderLoads, fairness, sortedClaims, allConfiguredCoders };
   }
 
   function getAllocationSheetRow(row, allocationDateText) {
@@ -622,19 +858,28 @@
     };
   }
 
-  function buildAllocationSummary(allocationRows) {
+  function formatPercent(value) {
+    return `${value.toFixed(2)}%`;
+  }
+
+  function buildAllocationSummary(allocationRows, allConfiguredCoders = []) {
     const coderSummary = new Map();
     const facilitySummary = new Map();
     const departmentSummary = new Map();
+    const totalAssigned = allocationRows.filter(row => row.Coder !== UNASSIGNED_CODER).length;
+
+    allConfiguredCoders.forEach(coder => {
+      coderSummary.set(coder, { Coder: coder, 'Assigned Claims': 0, 'Share %': formatPercent(0), 'Oldest Claim Date': '', 'Newest Claim Date': '' });
+    });
 
     for (const row of allocationRows) {
       const isAssigned = row.Coder !== UNASSIGNED_CODER;
-      if (!coderSummary.has(row.Coder)) {
-        coderSummary.set(row.Coder, { Coder: row.Coder, 'Total Assigned': 0, 'Oldest Claim Date': '', 'Newest Claim Date': '' });
+      if (isAssigned && !coderSummary.has(row.Coder)) {
+        coderSummary.set(row.Coder, { Coder: row.Coder, 'Assigned Claims': 0, 'Share %': formatPercent(0), 'Oldest Claim Date': '', 'Newest Claim Date': '' });
       }
       if (isAssigned) {
         const coder = coderSummary.get(row.Coder);
-        coder['Total Assigned']++;
+        coder['Assigned Claims']++;
         if (row['Claim Date']) {
           const formatted = formatDate(row['Claim Date']);
           if (!coder._oldest || row['Claim Date'] < coder._oldest) coder._oldest = row['Claim Date'];
@@ -659,27 +904,26 @@
     const coderRows = Array.from(coderSummary.values())
       .map(row => ({
         Coder: row.Coder,
-        'Total Assigned': row['Total Assigned'],
+        'Assigned Claims': row['Assigned Claims'],
+        'Share %': formatPercent(totalAssigned ? (row['Assigned Claims'] / totalAssigned) * 100 : 0),
         'Oldest Claim Date': row['Oldest Claim Date'],
         'Newest Claim Date': row['Newest Claim Date']
       }))
       .sort((a, b) => {
-        if (a.Coder === UNASSIGNED_CODER) return 1;
-        if (b.Coder === UNASSIGNED_CODER) return -1;
         return a.Coder.localeCompare(b.Coder);
       });
 
     return {
       coderRows,
       facilityAssignedRows: Array.from(facilitySummary.values()).sort((a, b) => a.Facility.localeCompare(b.Facility)),
-      departmentAssignedRows: Array.from(departmentSummary.values()).sort((a, b) => a.Department.localeCompare(b.Department))
+      departmentAssignedRows: Array.from(departmentSummary.values()).sort((a, b) => a.Department.localeCompare(b.Department)),
+      totalAssigned
     };
   }
 
   function buildFacilityMatrix(allocationRows, coderRows) {
     const facilities = Array.from(new Set(allocationRows.map(row => row.Facility))).sort((a, b) => a.localeCompare(b));
     const matrixRows = coderRows
-      .filter(row => row.Coder !== UNASSIGNED_CODER)
       .map(coderRow => {
         const row = { Coder: coderRow.Coder };
         let total = 0;
@@ -694,15 +938,15 @@
     return { facilities, matrixRows };
   }
 
-  function buildSummarySheetData(importStats, filteredClaims, allocationRows) {
-    const allocationSummary = buildAllocationSummary(allocationRows);
+  function buildSummarySheetData({ importStats, filteredClaims, allocationRows, fairness, facilityConfigs, duplicateGroups }) {
+    const allocationSummary = buildAllocationSummary(allocationRows, fairness.comparableCoders);
     const matrix = buildFacilityMatrix(allocationRows, allocationSummary.coderRows);
     const facilityFiltered = new Map();
     const departmentFiltered = new Map();
 
-    for (const claim of state.duplicateGroups) {
+    for (const claim of duplicateGroups) {
       if (!facilityFiltered.has(claim.facilityKey)) {
-        facilityFiltered.set(claim.facilityKey, { Facility: getFacilityOutputName(claim, state.facilityConfigs), 'Claims Loaded': 0, 'Terminal Status Excluded': 0, Eligible: 0, Allocated: 0, Unassigned: 0 });
+        facilityFiltered.set(claim.facilityKey, { Facility: getFacilityOutputName(claim, facilityConfigs), 'Claims Loaded': 0, 'Terminal Status Excluded': 0, Eligible: 0, Allocated: 0, Unassigned: 0 });
       }
       facilityFiltered.get(claim.facilityKey)['Claims Loaded']++;
       if (claim.autoExcludedStatus) {
@@ -711,7 +955,7 @@
     }
     for (const claim of filteredClaims) {
       if (!facilityFiltered.has(claim.facilityKey)) {
-        facilityFiltered.set(claim.facilityKey, { Facility: getFacilityOutputName(claim, state.facilityConfigs), 'Claims Loaded': 0, 'Terminal Status Excluded': 0, Eligible: 0, Allocated: 0, Unassigned: 0 });
+        facilityFiltered.set(claim.facilityKey, { Facility: getFacilityOutputName(claim, facilityConfigs), 'Claims Loaded': 0, 'Terminal Status Excluded': 0, Eligible: 0, Allocated: 0, Unassigned: 0 });
       }
       facilityFiltered.get(claim.facilityKey).Eligible++;
       const deptKey = claim.department || '(Blank)';
@@ -734,9 +978,9 @@
       overviewRows: [
         ['Reports Loaded', importStats.reportsLoaded],
         ['Facilities Found', importStats.facilitiesFound],
-        ['Total Claims Read', state.importSummary.totalClaimsRead],
-        ['Duplicate Claims Resolved', state.importSummary.duplicateClaimsResolved],
-        ['Terminal Status Excluded', state.importSummary.terminalStatusExcluded],
+        ['Total Claims Read', importStats.totalClaimsRead],
+        ['Duplicate Claims Resolved', importStats.duplicateClaimsResolved],
+        ['Terminal Status Excluded', importStats.terminalStatusExcluded],
         ['No-Bill Excluded', importStats.noBillExcluded],
         ['Eligible Claims', filteredClaims.length],
         ['Allocated Claims', allocationRows.filter(row => row.Coder !== UNASSIGNED_CODER).length],
@@ -746,7 +990,16 @@
       matrixHeaders: ['Coder', ...matrix.facilities, 'Total'],
       matrixRows: matrix.matrixRows,
       facilityRows: Array.from(facilityFiltered.values()).sort((a, b) => a.Facility.localeCompare(b.Facility)),
-      departmentRows: Array.from(departmentFiltered.values()).sort((a, b) => a.Department.localeCompare(b.Department))
+      departmentRows: Array.from(departmentFiltered.values()).sort((a, b) => a.Department.localeCompare(b.Department)),
+      topCards: [
+        ['Eligible Claims', filteredClaims.length],
+        ['Allocated Claims', allocationRows.filter(row => row.Coder !== UNASSIGNED_CODER).length],
+        ['Unassigned Claims', allocationRows.filter(row => row.Coder === UNASSIGNED_CODER).length],
+        ['Facilities', Array.from(facilityFiltered.values()).length],
+        ['Terminal Status Excluded', importStats.terminalStatusExcluded],
+        ['No-Bill Excluded', importStats.noBillExcluded]
+      ],
+      fairness
     };
   }
 
@@ -795,7 +1048,7 @@
 
   function buildWorkbook(lastAllocationResult) {
     const wb = root.XLSX.utils.book_new();
-    const summaryData = buildSummarySheetData(lastAllocationResult.importStats, lastAllocationResult.filteredClaims, lastAllocationResult.allocationRows);
+    const summaryData = lastAllocationResult.summaryData;
 
     const summaryAoA = [];
     summaryAoA.push(['Allocation Run Summary']);
@@ -803,8 +1056,8 @@
     summaryAoA.push(['Metric', 'Value']);
     summaryAoA.push(...summaryData.overviewRows);
     summaryAoA.push([]);
-    summaryAoA.push(['Coder', 'Total Assigned', 'Oldest Claim Date', 'Newest Claim Date']);
-    summaryAoA.push(...summaryData.coderRows.map(row => [row.Coder, row['Total Assigned'], row['Oldest Claim Date'], row['Newest Claim Date']]));
+    summaryAoA.push(['Coder', 'Assigned Claims', 'Share %', 'Oldest Claim Date', 'Newest Claim Date']);
+    summaryAoA.push(...summaryData.coderRows.map(row => [row.Coder, row['Assigned Claims'], row['Share %'], row['Oldest Claim Date'], row['Newest Claim Date']]));
     summaryAoA.push([]);
     summaryAoA.push(summaryData.matrixHeaders);
     summaryAoA.push(...summaryData.matrixRows.map(row => summaryData.matrixHeaders.map(header => row[header] ?? '')));
@@ -987,7 +1240,8 @@
     const rows = allocationSummary.coderRows.map(row => `
       <tr>
         <td>${escapeHtml(row.Coder)}</td>
-        <td>${escapeHtml(row['Total Assigned'])}</td>
+        <td>${escapeHtml(row['Assigned Claims'])}</td>
+        <td>${escapeHtml(row['Share %'])}</td>
         <td>${escapeHtml(row['Oldest Claim Date'])}</td>
         <td>${escapeHtml(row['Newest Claim Date'])}</td>
       </tr>
@@ -996,11 +1250,11 @@
     container.innerHTML = `
       <div class="summary-block p-3">
         <div class="fw-semibold mb-1">Allocation complete</div>
-        <div class="summary-muted mb-3">Allocated: ${allocationSummary.allocatedCount} · Unassigned: ${allocationSummary.unassignedCount}</div>
+        <div class="summary-muted mb-3">Allocated: ${allocationSummary.allocatedCount} · Unassigned: ${allocationSummary.unassignedCount} · Coder Balance: ${allocationSummary.balanceStatus}</div>
         <div class="preview-table-wrap" style="max-height:260px;">
           <table class="preview-table">
             <thead>
-              <tr><th>Coder</th><th>Total Assigned</th><th>Oldest Claim Date</th><th>Newest Claim Date</th></tr>
+              <tr><th>Coder</th><th>Assigned Claims</th><th>Share %</th><th>Oldest Claim Date</th><th>Newest Claim Date</th></tr>
             </thead>
             <tbody>${rows}</tbody>
           </table>
@@ -1009,65 +1263,89 @@
     `;
   }
 
-  function renderPreviewTable(allocationRows, importStats) {
+  function renderPreviewTable(allocationResult) {
     const container = getEl('allocation-preview');
     if (!container) return;
-    if (!allocationRows.length) {
+    if (!allocationResult || !allocationResult.allocationRows.length) {
       container.classList.add('preview-empty');
       container.textContent = 'No claims matched the current filters.';
       return;
     }
 
     container.classList.remove('preview-empty');
-    const summary = buildAllocationSummary(allocationRows);
-    const rows = allocationRows.map(row => `
-      <tr>
-        <td>${escapeHtml(row.Facility)}</td>
-        <td>${escapeHtml(row['Claim ID'])}</td>
-        <td>${escapeHtml(row.ClaimDateText)}</td>
-        <td>${escapeHtml(row.Department)}</td>
-        <td>${escapeHtml(row.Coder)}</td>
-        <td>${escapeHtml(row['Date Assigned'])}</td>
-        <td>${escapeHtml(row.Query)}</td>
-        <td>${escapeHtml(row.Status)}</td>
-      </tr>
+    const { summaryData } = allocationResult;
+    const topCards = summaryData.topCards.map(([label, value]) => `
+      <div class="summary-card"><span class="label">${escapeHtml(label)}</span><span class="value">${escapeHtml(value)}</span></div>
+    `).join('');
+    const coderRows = summaryData.coderRows.map(row => `
+      <tr><td>${escapeHtml(row.Coder)}</td><td>${escapeHtml(row['Assigned Claims'])}</td><td>${escapeHtml(row['Share %'])}</td><td>${escapeHtml(row['Oldest Claim Date'])}</td><td>${escapeHtml(row['Newest Claim Date'])}</td></tr>
+    `).join('');
+    const facilityRows = summaryData.facilityRows.map(row => `
+      <tr><td>${escapeHtml(row.Facility)}</td><td>${escapeHtml(row.Eligible)}</td><td>${escapeHtml(row.Allocated)}</td><td>${escapeHtml(row.Unassigned)}</td></tr>
+    `).join('');
+    const matrixRows = summaryData.matrixRows.map(row => `
+      <tr>${summaryData.matrixHeaders.map(header => `<td>${escapeHtml(row[header] ?? '')}</td>`).join('')}</tr>
+    `).join('');
+    const deptRows = summaryData.departmentRows.map(row => `
+      <tr><td>${escapeHtml(row.Department)}</td><td>${escapeHtml(row.Eligible)}</td><td>${escapeHtml(row.Allocated)}</td><td>${escapeHtml(row.Unassigned)}</td></tr>
     `).join('');
 
     container.innerHTML = `
       <section class="preview-section">
-        <h2 class="section-title">Allocation Preview</h2>
+        <h2 class="section-title">Allocation Summary Preview</h2>
         <div class="summary-grid mb-3">
-          <div class="summary-card"><span class="label">Eligible Claims</span><span class="value">${importStats.eligibleClaims}</span></div>
-          <div class="summary-card"><span class="label">Allocated Claims</span><span class="value">${allocationRows.filter(row => row.Coder !== UNASSIGNED_CODER).length}</span></div>
-          <div class="summary-card"><span class="label">Unassigned Claims</span><span class="value">${allocationRows.filter(row => row.Coder === UNASSIGNED_CODER).length}</span></div>
-          <div class="summary-card"><span class="label">Facilities</span><span class="value">${new Set(allocationRows.map(row => row.Facility)).size}</span></div>
+          ${topCards}
+        </div>
+        <div class="summary-block p-3">
+          <div class="fw-semibold">Coder Balance: ${escapeHtml(summaryData.fairness.statusText)}</div>
+          <div class="summary-muted">Comparable coder range: ${escapeHtml(summaryData.fairness.minAssigned)} to ${escapeHtml(summaryData.fairness.maxAssigned)} assigned claims.</div>
         </div>
       </section>
       <section class="preview-section">
+        <h2 class="section-title">Coder Allocation Summary</h2>
         <div class="preview-table-wrap">
           <table class="preview-table">
             <thead>
-              <tr>
-                <th>Facility</th>
-                <th>Claim ID</th>
-                <th>Claim Date</th>
-                <th>Department</th>
-                <th>Coder</th>
-                <th>Date Assigned</th>
-                <th>Query</th>
-                <th>Status</th>
-              </tr>
+              <tr><th>Coder</th><th>Assigned Claims</th><th>Share %</th><th>Oldest Claim Date</th><th>Newest Claim Date</th></tr>
             </thead>
-            <tbody>${rows}</tbody>
+            <tbody>${coderRows}</tbody>
+          </table>
+        </div>
+      </section>
+      <section class="preview-section">
+        <h2 class="section-title">Facility Summary</h2>
+        <div class="preview-table-wrap">
+          <table class="preview-table">
+            <thead><tr><th>Facility</th><th>Eligible</th><th>Allocated</th><th>Unassigned</th></tr></thead>
+            <tbody>${facilityRows}</tbody>
+          </table>
+        </div>
+      </section>
+      <section class="preview-section">
+        <h2 class="section-title">Coder × Facility Matrix</h2>
+        <div class="preview-table-wrap">
+          <table class="preview-table matrix-table">
+            <thead><tr>${summaryData.matrixHeaders.map(header => `<th>${escapeHtml(header)}</th>`).join('')}</tr></thead>
+            <tbody>${matrixRows}</tbody>
+          </table>
+        </div>
+      </section>
+      <section class="preview-section">
+        <h2 class="section-title">Department Summary</h2>
+        <div class="preview-table-wrap">
+          <table class="preview-table">
+            <thead><tr><th>Department</th><th>Eligible</th><th>Allocated</th><th>Unassigned</th></tr></thead>
+            <tbody>${deptRows}</tbody>
           </table>
         </div>
       </section>
     `;
 
-    renderSummaryPanel(importStats, {
-      coderRows: summary.coderRows,
-      allocatedCount: allocationRows.filter(row => row.Coder !== UNASSIGNED_CODER).length,
-      unassignedCount: allocationRows.filter(row => row.Coder === UNASSIGNED_CODER).length
+    renderSummaryPanel(allocationResult.importStats, {
+      coderRows: summaryData.coderRows,
+      allocatedCount: summaryData.topCards.find(([label]) => label === 'Allocated Claims')?.[1] || 0,
+      unassignedCount: summaryData.topCards.find(([label]) => label === 'Unassigned Claims')?.[1] || 0,
+      balanceStatus: summaryData.fairness.statusText
     });
   }
 
@@ -1231,7 +1509,7 @@
       syncFilterStateFromDom();
       const filtered = applyClaimFilters(state.dedupedClaims, state.filterState);
       if (!filtered.eligibleClaims.length) {
-        renderPreviewTable([], buildImportSummary());
+        renderPreviewTable(null);
         return;
       }
 
@@ -1245,13 +1523,20 @@
       const allocationDate = formatToday();
       const allocation = allocateClaims(filtered.eligibleClaims, state.facilityConfigs, allocationDate);
       const importStats = buildImportSummary();
-      state.lastAllocationResult = {
+      const allocationResult = {
         allocationRows: allocation.allocationRows,
         filteredClaims: filtered.eligibleClaims,
         importStats,
-        allocationDate
+        allocationDate,
+        fairness: allocation.fairness,
+        facilityConfigs: state.facilityConfigs,
+        duplicateGroups: state.duplicateGroups
       };
-      renderPreviewTable(allocation.allocationRows, importStats);
+      allocationResult.summaryData = buildSummarySheetData(allocationResult);
+      state.lastAllocationResult = {
+        ...allocationResult
+      };
+      renderPreviewTable(state.lastAllocationResult);
       if (downloadBtn) downloadBtn.disabled = !allocation.allocationRows.length;
     });
 
