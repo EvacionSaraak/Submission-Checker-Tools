@@ -1713,70 +1713,86 @@ await run('Allocator maps facility per claim and falls back to filename', () => 
   assert(claims[1].facilityKey === 'Nazek Medical Center', 'Expected filename fallback when row facility is missing');
 });
 
-await run('Allocator excludes duplicated claim when any version is submitted or closed', () => {
+function makeAllocatorClaim(overrides = {}) {
+  const status = overrides.codificationStatus !== undefined ? overrides.codificationStatus : 'In Progress';
+  const claimDateText = overrides.claimDateText !== undefined ? overrides.claimDateText : '16/03/2026';
+  const claimDate = overrides.claimDate !== undefined ? overrides.claimDate : allocatorApi.parseDateValue('16-03-2026');
+  return {
+    dedupeKey: 'f1::C1',
+    facilityKey: 'F1',
+    facilityDisplay: 'F1',
+    detectedPresetName: '',
+    facilityMatched: true,
+    claimDate,
+    claimDateText,
+    outputClaimId: 'C1',
+    department: 'ENT',
+    codificationStatus: status,
+    codifiedBy: '',
+    codifiedByValues: overrides.codifiedByValues || [],
+    noBill: false,
+    autoExcludedStatus: allocatorApi.isAutoExcludedStatus(status),
+    rawFieldCount: 5,
+    sourceRowNumber: 1,
+    paymentMode: 'Insurance',
+    ...overrides
+  };
+}
+
+for (const [label, status] of [
+  ['Closed', 'Closed'],
+  ['Submitted', 'Submitted'],
+  ['Audited', 'Audited'],
+  ['Verified and Closed', 'Verified and Closed'],
+  ['Merged', 'Merged']
+]) {
+  await run(`Allocator auto-excludes terminal status ${label}`, () => {
+    assert(allocatorApi.isAutoExcludedStatus(status) === true, `Expected ${label} to be terminal`);
+    const result = allocatorApi.deduplicateClaims([
+      makeAllocatorClaim({ codificationStatus: status, autoExcludedStatus: allocatorApi.isAutoExcludedStatus(status) })
+    ]);
+    assert(result.dedupedClaims.length === 0, `Expected ${label} claim to be excluded from allocation`);
+    assert(result.stats.terminalStatusExcluded === 1, `Expected ${label} claim to increment terminal exclusion count`);
+  });
+}
+
+await run('Allocator terminal status matching is case-insensitive and whitespace-tolerant', () => {
+  [' CLOSED ', 'submitted', 'AUDITED', ' verified and closed ', 'MERGED '].forEach(status => {
+    assert(allocatorApi.isAutoExcludedStatus(status) === true, `Expected ${status} to be terminal`);
+  });
+  assert(allocatorApi.isAutoExcludedStatus('Submitted for Review') === false, 'Expected non-terminal status not to be excluded by substring matching');
+});
+
+await run('Allocator excludes duplicated claim when only one version is terminal', () => {
   const rawClaims = [
-    {
-      dedupeKey: 'f1::C1',
-      facilityKey: 'F1',
-      facilityDisplay: 'F1',
-      detectedPresetName: '',
-      facilityMatched: true,
-      claimDate: allocatorApi.parseDateValue('16-03-2026'),
-      claimDateText: '16/03/2026',
-      outputClaimId: 'C1',
-      department: 'ENT',
-      codificationStatus: 'In Progress',
-      codifiedBy: '',
-      noBill: false,
-      autoExcludedStatus: false,
-      rawFieldCount: 5,
-      sourceRowNumber: 1
-    },
-    {
-      dedupeKey: 'f1::C1',
-      facilityKey: 'F1',
-      facilityDisplay: 'F1',
-      detectedPresetName: '',
-      facilityMatched: true,
-      claimDate: allocatorApi.parseDateValue('16-03-2026'),
-      claimDateText: '16/03/2026',
-      outputClaimId: 'C1',
-      department: 'ENT',
-      codificationStatus: 'Submitted ',
-      codifiedBy: '',
-      noBill: false,
-      autoExcludedStatus: allocatorApi.isAutoExcludedStatus('Submitted '),
-      rawFieldCount: 5,
-      sourceRowNumber: 2
-    }
+    makeAllocatorClaim({ sourceRowNumber: 1, codificationStatus: 'Under Process', autoExcludedStatus: allocatorApi.isAutoExcludedStatus('Under Process') }),
+    makeAllocatorClaim({ sourceRowNumber: 2, codificationStatus: ' Audited ', autoExcludedStatus: allocatorApi.isAutoExcludedStatus(' Audited ') })
   ];
   const result = allocatorApi.deduplicateClaims(rawClaims);
-  assert(result.dedupedClaims.length === 0, 'Expected submitted duplicate group to be excluded');
-  assert(result.stats.closedSubmittedExcluded === 1, 'Expected one claim to be excluded by terminal status');
+  assert(result.dedupedClaims.length === 0, 'Expected duplicate group with one terminal version to be excluded');
+  assert(result.stats.terminalStatusExcluded === 1, 'Expected one claim group to be excluded by terminal status');
   assert(result.stats.duplicateClaimsResolved === 1, 'Expected duplicate resolution to count stale version');
 });
 
-await run('Allocator keeps no-bill exclusion optional and respects codified-by filters', () => {
+await run('Allocator keeps Under Process claims with Codified By eligible by default', () => {
   const claims = [
-    {
-      paymentMode: 'Insurance',
-      department: 'ENT',
-      codificationStatus: 'In Progress',
-      codifiedByValues: ['Alice'],
-      noBill: true
-    },
-    {
-      paymentMode: 'Insurance',
-      department: 'ENT',
-      codificationStatus: 'In Progress',
-      codifiedByValues: [],
-      noBill: false
-    }
+    makeAllocatorClaim({ codifiedByValues: ['James'], noBill: false }),
+    makeAllocatorClaim({ outputClaimId: 'C2', dedupeKey: 'f1::C2', codifiedByValues: [], noBill: false })
+  ];
+  const defaults = allocatorApi.buildInitialFilterState(claims);
+  const filtered = allocatorApi.applyClaimFilters(claims, defaults);
+  assert(filtered.eligibleClaims.length === 2, 'Expected non-terminal claim with Codified By to remain eligible by default');
+});
+
+await run('Allocator keeps no-bill exclusion optional and respects user-selected codified-by filters', () => {
+  const claims = [
+    makeAllocatorClaim({ codifiedByValues: ['Alice'], noBill: true }),
+    makeAllocatorClaim({ outputClaimId: 'C2', dedupeKey: 'f1::C2', codifiedByValues: [], noBill: false })
   ];
   const filtered = allocatorApi.applyClaimFilters(claims, {
     paymentModes: new Set(['Insurance']),
     departments: new Set(['ENT']),
-    codifStatuses: new Set(['In Progress']),
+    codifStatuses: new Set(['In Progress', 'Under Process']),
     codifiedBy: new Set(['Alice']),
     includeNoBills: false
   });
@@ -1791,6 +1807,31 @@ await run('Allocator keeps no-bill exclusion optional and respects codified-by f
     includeNoBills: true
   });
   assert(included.eligibleClaims.length === 2, 'Expected include-no-bills toggle to restore no-bill claims');
+});
+
+await run('Allocator selects Dental and Orthodontic by default', () => {
+  const defaults = allocatorApi.buildInitialFilterState([
+    makeAllocatorClaim({ department: 'Dental' }),
+    makeAllocatorClaim({ outputClaimId: 'C2', dedupeKey: 'f1::C2', department: 'Orthodontic' }),
+    makeAllocatorClaim({ outputClaimId: 'C3', dedupeKey: 'f1::C3', department: 'ENT' })
+  ]);
+  assert(defaults.departments.has('Dental'), 'Expected Dental to be selected by default');
+  assert(defaults.departments.has('Orthodontic'), 'Expected Orthodontic to be selected by default');
+  assert(defaults.departments.has('ENT'), 'Expected all departments to be selected by default');
+});
+
+await run('Allocator preserves raw claim date text for workbook output when parsing fails', () => {
+  const row = allocatorApi.getAllocationSheetRow({
+    Facility: 'F1',
+    'Claim ID': 'C1',
+    'Claim Date': null,
+    ClaimDateText: '16 March 2026 (legacy export)',
+    Department: 'ENT',
+    Coder: 'Alice',
+    Query: '',
+    Status: ''
+  }, '10/09/2026');
+  assert(row['Claim Date'] === '16 March 2026 (legacy export)', 'Expected raw claim date text to survive workbook preparation when parsing fails');
 });
 
 await run('Allocator balances globally across facilities while honoring department restrictions', () => {

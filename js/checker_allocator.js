@@ -11,6 +11,13 @@
   const PAYMENT_MODE_CANDIDATES = ['Pri. Payment Mode', 'Payment Mode', 'PaymentMode', 'Pri Payment Mode'];
   const CODIFIED_BY_CANDIDATES = ['Codified By', 'CodifiedBy', 'Codified_By', 'Coded By', 'CodedBy', 'Opened by', 'Opened By', 'Username'];
   const CODIF_REMARKS_CANDIDATES = ['Codification Remarks', 'CodificationRemarks', 'Codification_Remarks', 'Codif Remarks'];
+  const TERMINAL_STATUS_SET = new Set([
+    'closed',
+    'submitted',
+    'audited',
+    'verified and closed',
+    'merged'
+  ]);
   const HEADER_DETECTION_CANDIDATES = [
     ...CLAIM_ID_CANDIDATES,
     ...VISIT_ID_CANDIDATES,
@@ -23,8 +30,6 @@
     ...CODIF_REMARKS_CANDIDATES
   ];
   const NO_BILLING_PATTERN = /no\s*bil|not\s+for\s+(billing|submission)|no\s+submission/i;
-  const AUTO_EXCLUDED_STATUS_PATTERNS = [/^closed$/i, /^submitted$/i];
-  const DEFAULT_DEPARTMENT_EXCLUSIONS = new Set(['Dental', 'Orthodontic']);
   const UNASSIGNED_CODER = '(Unassigned)';
   const UNKNOWN_FACILITY = 'Unknown Facility';
   const FACILITY_ALIASES = Object.freeze({
@@ -98,8 +103,7 @@
   }
 
   function isAutoExcludedStatus(value) {
-    const normalized = normalizeStatus(value);
-    return AUTO_EXCLUDED_STATUS_PATTERNS.some(pattern => pattern.test(normalized));
+    return TERMINAL_STATUS_SET.has(normalizeStatus(value));
   }
 
   function getPaymentModeCategory(mode) {
@@ -422,7 +426,7 @@
     const dedupedClaims = [];
     const duplicateGroups = [];
     let duplicateClaimsResolved = 0;
-    let closedSubmittedExcluded = 0;
+    let terminalStatusExcluded = 0;
 
     for (const claims of grouped.values()) {
       const representative = chooseRepresentativeClaim(claims);
@@ -445,7 +449,7 @@
       aggregatedClaim.claimDateText = aggregatedClaim.claimDate ? formatDate(aggregatedClaim.claimDate) : representative.claimDateText;
       duplicateGroups.push(aggregatedClaim);
       if (terminal) {
-        closedSubmittedExcluded++;
+        terminalStatusExcluded++;
         continue;
       }
       dedupedClaims.push(aggregatedClaim);
@@ -464,7 +468,7 @@
       stats: {
         totalClaimsRead: rawClaims.length,
         duplicateClaimsResolved,
-        closedSubmittedExcluded
+        terminalStatusExcluded
       }
     };
   }
@@ -488,13 +492,19 @@
     };
   }
 
-  function initializeFilterState(claims) {
+  function buildInitialFilterState(claims) {
     const options = collectFilterOptions(claims);
-    state.filterState.paymentModes = new Set(options.paymentModes.map(([value]) => value));
-    state.filterState.departments = new Set(options.departments.map(([value]) => value).filter(value => !DEFAULT_DEPARTMENT_EXCLUSIONS.has(value)));
-    state.filterState.codifStatuses = new Set(options.codifStatuses.map(([value]) => value));
-    state.filterState.codifiedBy = new Set(options.codifiedBy.map(([value]) => value));
-    state.filterState.includeNoBills = false;
+    return {
+      paymentModes: new Set(options.paymentModes.map(([value]) => value)),
+      departments: new Set(options.departments.map(([value]) => value)),
+      codifStatuses: new Set(options.codifStatuses.map(([value]) => value)),
+      codifiedBy: new Set(),
+      includeNoBills: false
+    };
+  }
+
+  function initializeFilterState(claims) {
+    state.filterState = buildInitialFilterState(claims);
   }
 
   function applyClaimFilters(claims, filterState) {
@@ -538,10 +548,10 @@
       totalClaimsRead: state.importSummary ? state.importSummary.totalClaimsRead : 0,
       facilitiesFound,
       duplicateClaimsResolved: state.importSummary ? state.importSummary.duplicateClaimsResolved : 0,
-      closedSubmittedExcluded: state.importSummary ? state.importSummary.closedSubmittedExcluded : 0,
+      terminalStatusExcluded: state.importSummary ? state.importSummary.terminalStatusExcluded : 0,
       noBillExcluded: filtered.noBillExcluded,
       eligibleClaims: filtered.eligibleClaims.length,
-      automaticallyExcluded: (state.importSummary ? state.importSummary.closedSubmittedExcluded : 0) + filtered.noBillExcluded
+      automaticallyExcluded: (state.importSummary ? state.importSummary.terminalStatusExcluded : 0) + filtered.noBillExcluded
     };
   }
 
@@ -597,6 +607,19 @@
     }
 
     return { allocationRows, workload };
+  }
+
+  function getAllocationSheetRow(row, allocationDateText) {
+    return {
+      Facility: row.Facility,
+      'Claim ID': row['Claim ID'],
+      'Claim Date': row['Claim Date'] || row.ClaimDateText || '',
+      Department: row.Department,
+      Coder: row.Coder,
+      'Date Assigned': allocationDateText,
+      Query: row.Query,
+      Status: row.Status
+    };
   }
 
   function buildAllocationSummary(allocationRows) {
@@ -679,16 +702,16 @@
 
     for (const claim of state.duplicateGroups) {
       if (!facilityFiltered.has(claim.facilityKey)) {
-        facilityFiltered.set(claim.facilityKey, { Facility: getFacilityOutputName(claim, state.facilityConfigs), 'Claims Loaded': 0, 'Closed/Submitted Excluded': 0, Eligible: 0, Allocated: 0, Unassigned: 0 });
+        facilityFiltered.set(claim.facilityKey, { Facility: getFacilityOutputName(claim, state.facilityConfigs), 'Claims Loaded': 0, 'Terminal Status Excluded': 0, Eligible: 0, Allocated: 0, Unassigned: 0 });
       }
       facilityFiltered.get(claim.facilityKey)['Claims Loaded']++;
       if (claim.autoExcludedStatus) {
-        facilityFiltered.get(claim.facilityKey)['Closed/Submitted Excluded']++;
+        facilityFiltered.get(claim.facilityKey)['Terminal Status Excluded']++;
       }
     }
     for (const claim of filteredClaims) {
       if (!facilityFiltered.has(claim.facilityKey)) {
-        facilityFiltered.set(claim.facilityKey, { Facility: getFacilityOutputName(claim, state.facilityConfigs), 'Claims Loaded': 0, 'Closed/Submitted Excluded': 0, Eligible: 0, Allocated: 0, Unassigned: 0 });
+        facilityFiltered.set(claim.facilityKey, { Facility: getFacilityOutputName(claim, state.facilityConfigs), 'Claims Loaded': 0, 'Terminal Status Excluded': 0, Eligible: 0, Allocated: 0, Unassigned: 0 });
       }
       facilityFiltered.get(claim.facilityKey).Eligible++;
       const deptKey = claim.department || '(Blank)';
@@ -713,7 +736,7 @@
         ['Facilities Found', importStats.facilitiesFound],
         ['Total Claims Read', state.importSummary.totalClaimsRead],
         ['Duplicate Claims Resolved', state.importSummary.duplicateClaimsResolved],
-        ['Closed/Submitted Excluded', state.importSummary.closedSubmittedExcluded],
+        ['Terminal Status Excluded', state.importSummary.terminalStatusExcluded],
         ['No-Bill Excluded', importStats.noBillExcluded],
         ['Eligible Claims', filteredClaims.length],
         ['Allocated Claims', allocationRows.filter(row => row.Coder !== UNASSIGNED_CODER).length],
@@ -786,8 +809,8 @@
     summaryAoA.push(summaryData.matrixHeaders);
     summaryAoA.push(...summaryData.matrixRows.map(row => summaryData.matrixHeaders.map(header => row[header] ?? '')));
     summaryAoA.push([]);
-    summaryAoA.push(['Facility', 'Claims Loaded', 'Closed/Submitted Excluded', 'Eligible', 'Allocated', 'Unassigned']);
-    summaryAoA.push(...summaryData.facilityRows.map(row => [row.Facility, row['Claims Loaded'], row['Closed/Submitted Excluded'], row.Eligible, row.Allocated, row.Unassigned]));
+    summaryAoA.push(['Facility', 'Claims Loaded', 'Terminal Status Excluded', 'Eligible', 'Allocated', 'Unassigned']);
+    summaryAoA.push(...summaryData.facilityRows.map(row => [row.Facility, row['Claims Loaded'], row['Terminal Status Excluded'], row.Eligible, row.Allocated, row.Unassigned]));
     summaryAoA.push([]);
     summaryAoA.push(['Department', 'Eligible', 'Allocated', 'Unassigned']);
     summaryAoA.push(...summaryData.departmentRows.map(row => [row.Department, row.Eligible, row.Allocated, row.Unassigned]));
@@ -801,16 +824,7 @@
     const allocationHeaders = ['Facility', 'Claim ID', 'Claim Date', 'Department', 'Coder', 'Date Assigned', 'Query', 'Status'];
     const wsAllocation = jsonRowsToWorksheet(
       allocationHeaders,
-      lastAllocationResult.allocationRows.map(row => ({
-        Facility: row.Facility,
-        'Claim ID': row['Claim ID'],
-        'Claim Date': row['Claim Date'],
-        Department: row.Department,
-        Coder: row.Coder,
-        'Date Assigned': lastAllocationResult.allocationDate,
-        Query: row.Query,
-        Status: row.Status
-      })),
+      lastAllocationResult.allocationRows.map(row => getAllocationSheetRow(row, lastAllocationResult.allocationDate)),
       new Set(['Claim Date'])
     );
     XLSX.utils.book_append_sheet(wb, wsAllocation, 'Allocation');
@@ -926,9 +940,9 @@
     const codifiedByCounts = countEntries(statusFiltered.flatMap(claim => claim.codifiedByValues || []).filter(Boolean));
 
     createCheckItems(paymentContainer, paymentCounts, state.filterState.paymentModes, true);
-    createCheckItems(deptContainer, departmentCounts, state.filterState.departments, false);
+    createCheckItems(deptContainer, departmentCounts, state.filterState.departments, true);
     createCheckItems(statusContainer, statusCounts, state.filterState.codifStatuses, true);
-    createCheckItems(codifiedByContainer, codifiedByCounts, state.filterState.codifiedBy, true);
+    createCheckItems(codifiedByContainer, codifiedByCounts, state.filterState.codifiedBy, false);
 
     if (noBillLabel) {
       noBillLabel.textContent = `No Bills: ${statusFiltered.filter(claim => claim.noBill).length}`;
@@ -1272,6 +1286,8 @@
     deduplicateClaims,
     applyClaimFilters,
     allocateClaims,
+    buildInitialFilterState,
+    getAllocationSheetRow,
     parseDateValue,
     formatDate,
     sheetToObjects,
