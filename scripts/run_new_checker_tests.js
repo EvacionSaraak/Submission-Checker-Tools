@@ -158,6 +158,28 @@ function loadPricingTestApi() {
   return { api, drugShared };
 }
 
+function loadAllocatorTestApi() {
+  const allocatorPath = path.join(__dirname, '..', 'js', 'checker_allocator.js');
+  const allocatorCode = fs.readFileSync(allocatorPath, 'utf8');
+  const context = {
+    window: {},
+    document: {
+      getElementById() { return null; }
+    },
+    console,
+    FileReader: function FileReader() {},
+    fetch: async () => ({ ok: false, status: 404, json: async () => ({}) }),
+    XLSX: { utils: {} }
+  };
+
+  vm.createContext(context);
+  vm.runInContext(allocatorCode, context, { filename: 'checker_allocator.js' });
+
+  const api = context.window._allocatorTestApi;
+  assert(api, 'Allocator test API was not exposed');
+  return api;
+}
+
 function createElement(name, text = '', children = []) {
   return {
     localName: name,
@@ -291,6 +313,7 @@ const pricingTest = loadPricingTestApi();
 const pricingApi = pricingTest.api;
 const drugShared = pricingTest.drugShared;
 const timingsApi = loadTimingsTestApi();
+const allocatorApi = loadAllocatorTestApi();
 
 function makeEl(tag, textContent) {
   return { _tag: tag, textContent: textContent || '', querySelector(sel) { return null; } };
@@ -1659,6 +1682,134 @@ await run('Schema: no ReferenceError for validateMedicalOrderingConsistency duri
   // It's already proven by the existence of schemaApi.validateMedicalOrderingConsistency,
   // but we additionally confirm the schema loads without error.
   assert(typeof schemaApi.validateXmlSchema === 'function', 'Expected validateXmlSchema to load without ReferenceError');
+});
+
+await run('Allocator detects header row beyond first two rows', () => {
+  const rows = allocatorApi.sheetToObjects([
+    ['', '', 'Bill Charge Report'],
+    ['', '', '16-03-2026 to 16-03-2026'],
+    ['Facility ID', 'Pri. Claim No', 'Encounter Date', 'Department'],
+    ['MF7003', 'TMCCL1', '16-03-2026', 'ENT']
+  ]);
+  assert(rows.length === 1, 'Expected one parsed row from allocator sheet');
+  assert(rows[0]['Pri. Claim No'] === 'TMCCL1', 'Expected allocator to use detected header row');
+});
+
+await run('Allocator maps facility per claim and falls back to filename', () => {
+  const presets = {
+    'True Life Primary Care Center': { license: 'MF7003', coders: [] },
+    'Nazek Medical Center': { license: 'MF5009', coders: [] }
+  };
+  const claims = allocatorApi.normalizeRawClaims([
+    {
+      fileName: 'Nazek September.xlsx',
+      rows: [
+        { 'Center Name': 'True Life', 'Pri. Claim No': 'C1', 'Encounter Date': '16-03-2026', Department: 'ENT', 'Codification Status': 'In Progress' },
+        { 'Pri. Claim No': 'C2', 'Encounter Date': '17-03-2026', Department: 'ENT', 'Codification Status': 'In Progress' }
+      ]
+    }
+  ], presets);
+  assert(claims[0].facilityKey === 'True Life Primary Care Center', 'Expected row-level facility alias match');
+  assert(claims[1].facilityKey === 'Nazek Medical Center', 'Expected filename fallback when row facility is missing');
+});
+
+await run('Allocator excludes duplicated claim when any version is submitted or closed', () => {
+  const rawClaims = [
+    {
+      dedupeKey: 'f1::C1',
+      facilityKey: 'F1',
+      facilityDisplay: 'F1',
+      detectedPresetName: '',
+      facilityMatched: true,
+      claimDate: allocatorApi.parseDateValue('16-03-2026'),
+      claimDateText: '16/03/2026',
+      outputClaimId: 'C1',
+      department: 'ENT',
+      codificationStatus: 'In Progress',
+      codifiedBy: '',
+      noBill: false,
+      autoExcludedStatus: false,
+      rawFieldCount: 5,
+      sourceRowNumber: 1
+    },
+    {
+      dedupeKey: 'f1::C1',
+      facilityKey: 'F1',
+      facilityDisplay: 'F1',
+      detectedPresetName: '',
+      facilityMatched: true,
+      claimDate: allocatorApi.parseDateValue('16-03-2026'),
+      claimDateText: '16/03/2026',
+      outputClaimId: 'C1',
+      department: 'ENT',
+      codificationStatus: 'Submitted ',
+      codifiedBy: '',
+      noBill: false,
+      autoExcludedStatus: allocatorApi.isAutoExcludedStatus('Submitted '),
+      rawFieldCount: 5,
+      sourceRowNumber: 2
+    }
+  ];
+  const result = allocatorApi.deduplicateClaims(rawClaims);
+  assert(result.dedupedClaims.length === 0, 'Expected submitted duplicate group to be excluded');
+  assert(result.stats.closedSubmittedExcluded === 1, 'Expected one claim to be excluded by terminal status');
+  assert(result.stats.duplicateClaimsResolved === 1, 'Expected duplicate resolution to count stale version');
+});
+
+await run('Allocator keeps no-bill exclusion optional and respects codified-by filters', () => {
+  const claims = [
+    {
+      paymentMode: 'Insurance',
+      department: 'ENT',
+      codificationStatus: 'In Progress',
+      codifiedByValues: ['Alice'],
+      noBill: true
+    },
+    {
+      paymentMode: 'Insurance',
+      department: 'ENT',
+      codificationStatus: 'In Progress',
+      codifiedByValues: [],
+      noBill: false
+    }
+  ];
+  const filtered = allocatorApi.applyClaimFilters(claims, {
+    paymentModes: new Set(['Insurance']),
+    departments: new Set(['ENT']),
+    codifStatuses: new Set(['In Progress']),
+    codifiedBy: new Set(['Alice']),
+    includeNoBills: false
+  });
+  assert(filtered.eligibleClaims.length === 1, 'Expected checked codified-by names and no-bills to be excluded');
+  assert(filtered.noBillExcluded === 0, 'Expected no-bill count after codified-by exclusion to be zero');
+
+  const included = allocatorApi.applyClaimFilters(claims, {
+    paymentModes: new Set(['Insurance']),
+    departments: new Set(['ENT']),
+    codifStatuses: new Set(['In Progress']),
+    codifiedBy: new Set(),
+    includeNoBills: true
+  });
+  assert(included.eligibleClaims.length === 2, 'Expected include-no-bills toggle to restore no-bill claims');
+});
+
+await run('Allocator balances globally across facilities while honoring department restrictions', () => {
+  const claims = [
+    { facilityKey: 'F1', facilityDisplay: 'F1', detectedPresetName: '', outputClaimId: 'C1', claimDate: allocatorApi.parseDateValue('01-03-2026'), claimDateText: '01/03/2026', department: 'ENT' },
+    { facilityKey: 'F2', facilityDisplay: 'F2', detectedPresetName: '', outputClaimId: 'C2', claimDate: allocatorApi.parseDateValue('02-03-2026'), claimDateText: '02/03/2026', department: 'ENT' },
+    { facilityKey: 'F1', facilityDisplay: 'F1', detectedPresetName: '', outputClaimId: 'C3', claimDate: allocatorApi.parseDateValue('03-03-2026'), claimDateText: '03/03/2026', department: 'Cardiology' },
+    { facilityKey: 'F2', facilityDisplay: 'F2', detectedPresetName: '', outputClaimId: 'C4', claimDate: allocatorApi.parseDateValue('04-03-2026'), claimDateText: '04/03/2026', department: 'ENT' }
+  ];
+  const facilityConfigs = {
+    F1: { presetName: '', codersText: 'Alice\nBob', restrictions: { Bob: new Set(['ENT']) } },
+    F2: { presetName: '', codersText: 'Alice\nBob', restrictions: { Bob: new Set(['ENT']) } }
+  };
+  const result = allocatorApi.allocateClaims(claims, facilityConfigs, '10/09/2026');
+  const coders = result.allocationRows.map(row => row.Coder);
+  assert(coders[0] === 'Alice', 'Expected first tied claim to go to first coder');
+  assert(coders[1] === 'Bob', 'Expected second tied claim from another facility to use global balancing');
+  assert(coders[2] === 'Alice', 'Expected restricted coder to be skipped for unsupported department');
+  assert(coders[3] === 'Bob', 'Expected tie-breaker rotation to continue balancing globally');
 });
 
 if (process.exitCode) {

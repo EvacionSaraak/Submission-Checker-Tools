@@ -1,212 +1,239 @@
-/* checker_allocator.css */
-
 html, body {
   height: 100%;
   margin: 0;
   padding: 0;
-  overflow: hidden;
 }
 
-/* Utility: hidden elements */
+body {
+  background: #f8f9fa;
+  color: #212529;
+}
+
 .hidden {
   display: none !important;
 }
 
-/* File input at half the column width */
-.file-input-half {
-  width: 50%;
-}
-
 #page-layout {
   display: flex;
-  flex-direction: row;
-  height: 100vh;
-  overflow: hidden;
+  min-height: 100vh;
 }
 
-/* Sidebar: 40% of screen width, scrollable so all controls are accessible */
 #sidebar {
   flex: 0 0 40%;
-  width: 40%;
-  overflow-y: auto;
+  max-width: 40%;
+  min-width: 360px;
   padding: 16px;
+  overflow-y: auto;
   border-right: 1px solid #dee2e6;
-  box-sizing: border-box;
+  background: #fff;
 }
 
-/* 2-column layout inside the sidebar for all controls */
-#sidebar-grid {
-  display: flex;
-  gap: 12px;
-}
-
-.sidebar-col {
-  flex: 1 1 0;
-  min-width: 0;
-}
-
-/* Right panel: remaining 60%, only the preview table scrolls */
 #right-panel {
   flex: 1;
-  overflow: hidden;
+  min-width: 0;
   padding: 16px;
-  box-sizing: border-box;
+  overflow: hidden;
   display: flex;
-  flex-direction: column;
 }
 
 #allocation-preview {
   flex: 1;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+  background: #fff;
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+  padding: 16px;
 }
 
-/* Checklist boxes — no individual scroll; sidebar scrolls as a whole */
-.filter-scroll-box {
+.preview-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: #6c757d;
+  font-weight: 600;
+}
+
+.dropzone {
+  border: 2px dashed #adb5bd;
+  border-radius: 8px;
+  padding: 16px;
+  background: #f8f9fa;
+  text-align: center;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.dropzone.dragover {
+  border-color: #0d6efd;
+  background: #eef5ff;
+}
+
+.section-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin: 0 0 8px 0;
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.summary-card,
+.summary-panel,
+.facility-summary-item,
+.facility-config-card,
+.summary-block {
   border: 1px solid #dee2e6;
-  border-radius: 4px;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.summary-card {
+  padding: 10px 12px;
+}
+
+.summary-card .label {
+  display: block;
+  font-size: 0.78rem;
+  color: #6c757d;
+  margin-bottom: 4px;
+}
+
+.summary-card .value {
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.facility-summary-list,
+.facility-configs,
+.summary-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.facility-summary-item {
+  padding: 10px 12px;
+}
+
+.facility-summary-item .meta,
+.facility-config-meta,
+.summary-muted {
+  font-size: 0.82rem;
+  color: #6c757d;
+}
+
+.facility-config-card {
+  overflow: hidden;
+}
+
+.facility-config-card summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 12px;
+  font-weight: 600;
+  background: #f8f9fa;
+}
+
+.facility-config-card summary::-webkit-details-marker {
+  display: none;
+}
+
+.facility-config-body {
+  padding: 12px;
+  border-top: 1px solid #dee2e6;
+}
+
+.filter-scroll-box {
+  max-height: 180px;
+  overflow-y: auto;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
   padding: 8px 10px;
   background: #fafafa;
 }
 
 .filter-scroll-box .form-check {
-  margin-bottom: 2px;
-  padding-top: 2px;
-  padding-bottom: 2px;
+  margin-bottom: 4px;
 }
 
-.filter-scroll-box .form-check:hover {
-  background: #f0f0f0;
-  border-radius: 3px;
+.advanced-body {
+  border-top: 1px solid #dee2e6;
+  padding-top: 12px;
 }
 
-.filter-scroll-box .form-check-label {
-  cursor: pointer;
-  font-size: 13px;
+.preview-section + .preview-section {
+  margin-top: 18px;
 }
 
-/* Scrollable preview table fills the right panel */
-#preview-scroll {
-  flex: 1;
-  overflow-y: auto;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-}
-
-.preview-marker {
-  text-align: center;
-  font-size: 12px;
-  color: #888;
-  font-style: italic;
-  margin: 0;
-  padding: 6px 0;
-  background: #f5f5f5;
-  border-bottom: 1px solid #e0e0e0;
-}
-
-.preview-marker:last-child {
-  border-bottom: none;
-  border-top: 1px solid #e0e0e0;
-}
-
-#allocation-preview table {
-  border-collapse: collapse;
+.preview-table {
   width: 100%;
+  border-collapse: collapse;
   font-size: 13px;
 }
 
-#allocation-preview th,
-#allocation-preview td {
-  border: 1px solid #ddd;
-  padding: 4px 8px;
-  text-align: left;
-}
-
-#allocation-preview th {
-  background: #f0f0f0;
-  font-weight: bold;
-}
-
-#allocation-preview tr:nth-child(even) td {
-  background: #f9f9f9;
-}
-
-
-#allocation-preview {
-  flex: 1;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-
-/* Checklist boxes — no individual scroll; sidebar scrolls as a whole */
-.filter-scroll-box {
+.preview-table th,
+.preview-table td {
   border: 1px solid #dee2e6;
-  border-radius: 4px;
-  padding: 8px 10px;
-  background: #fafafa;
-}
-
-.filter-scroll-box .form-check {
-  margin-bottom: 2px;
-  padding-top: 2px;
-  padding-bottom: 2px;
-}
-
-.filter-scroll-box .form-check:hover {
-  background: #f0f0f0;
-  border-radius: 3px;
-}
-
-.filter-scroll-box .form-check-label {
-  cursor: pointer;
-  font-size: 13px;
-}
-
-/* Scrollable preview table fills the right panel */
-#preview-scroll {
-  flex: 1;
-  overflow-y: auto;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-}
-
-.preview-marker {
-  text-align: center;
-  font-size: 12px;
-  color: #888;
-  font-style: italic;
-  margin: 0;
-  padding: 6px 0;
-  background: #f5f5f5;
-  border-bottom: 1px solid #e0e0e0;
-}
-
-.preview-marker:last-child {
-  border-bottom: none;
-  border-top: 1px solid #e0e0e0;
-}
-
-#allocation-preview table {
-  border-collapse: collapse;
-  width: 100%;
-  font-size: 13px;
-}
-
-#allocation-preview th,
-#allocation-preview td {
-  border: 1px solid #ddd;
-  padding: 4px 8px;
+  padding: 6px 8px;
   text-align: left;
+  vertical-align: top;
 }
 
-#allocation-preview th {
-  background: #f0f0f0;
-  font-weight: bold;
+.preview-table th {
+  background: #f1f3f5;
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
 
-#allocation-preview tr:nth-child(even) td {
-  background: #f9f9f9;
+.preview-table tbody tr:nth-child(even) td {
+  background: #fbfbfb;
 }
 
+.preview-table-wrap {
+  max-height: 70vh;
+  overflow: auto;
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+}
+
+.matrix-table td:first-child,
+.matrix-table th:first-child {
+  position: sticky;
+  left: 0;
+  background: inherit;
+}
+
+.status-ok {
+  color: #198754;
+}
+
+.status-warn {
+  color: #b26a00;
+}
+
+.status-bad {
+  color: #c0392b;
+}
+
+@media (max-width: 1200px) {
+  #page-layout {
+    flex-direction: column;
+  }
+
+  #sidebar {
+    flex: none;
+    max-width: none;
+    min-width: 0;
+    border-right: none;
+    border-bottom: 1px solid #dee2e6;
+  }
+
+  #right-panel {
+    min-height: 50vh;
+  }
+}
