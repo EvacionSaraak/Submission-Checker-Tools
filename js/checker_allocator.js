@@ -2456,7 +2456,7 @@
 
   function formatFacilityExclusionBreakdown(exclusions) {
     const entries = [
-      ['Terminal Status', exclusions.terminalStatus || 0],
+      ['Terminal Status (Closed / Submitted / Audited / Verified and Closed / Merged)', exclusions.terminalStatus || 0],
       ['Payment Mode Filter', exclusions.paymentMode || 0],
       ['Department Filter', exclusions.department || 0],
       ['Codification Status Filter', exclusions.codificationStatus || 0],
