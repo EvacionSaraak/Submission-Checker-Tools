@@ -97,7 +97,7 @@
       includeNoBills: false
     },
     lastAllocationResult: null,
-    persistedUserState: loadPersistedUserState()
+    persistedUserState: {}
   };
 
   let presetsReady = Promise.resolve();
@@ -713,15 +713,8 @@
   }
 
   function loadPersistedUserState() {
-    try {
-      if (!root.localStorage) return {};
-      const raw = root.localStorage.getItem(STORAGE_KEY);
-      if (!raw) return {};
-      const parsed = JSON.parse(raw);
-      return parsed && typeof parsed === 'object' ? parsed : {};
-    } catch (_) {
-      return {};
-    }
+    // Local-storage persistence is intentionally disabled.
+    return {};
   }
 
   function serializeFacilityConfig(config) {
@@ -735,97 +728,15 @@
   }
 
   function persistUserState() {
-    try {
-      if (!root.localStorage) return;
-
-      const previous = state.persistedUserState &&
-        typeof state.persistedUserState === 'object'
-          ? state.persistedUserState
-          : {};
-
-      const savedFacilities = {
-        ...(previous.facilityConfigs || {})
-      };
-
-      Object.entries(state.facilityConfigs || {})
-        .forEach(([facilityKey, config]) => {
-          savedFacilities[facilityKey] = serializeFacilityConfig(config);
-        });
-
-      const payload = {
-        version: 6,
-        facilityConfigs: savedFacilities,
-        activeFacilityTab: state.activeFacilityTab || '',
-        filterState: {
-          paymentModes: Array.from(state.filterState.paymentModes || []),
-          departments: Array.from(state.filterState.departments || []),
-          codifStatuses: Array.from(state.filterState.codifStatuses || []),
-          codifiedBy: Array.from(state.filterState.codifiedBy || []),
-          claimDates: Array.from(state.filterState.claimDates || []),
-          includeNoBills: Boolean(state.filterState.includeNoBills)
-        },
-        advancedFiltersOpen:
-          Boolean(getEl('advanced-filters-panel')?.open),
-        coderAssignmentOpen:
-          getEl('coder-assignment-panel')?.open !== false
-      };
-
-      root.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
-      state.persistedUserState = payload;
-    } catch (_) {
-      // localStorage may be unavailable in private/restricted browser contexts.
-    }
+    // Local-storage persistence is intentionally disabled.
   }
 
   function restorePersistedFacilityConfigs(defaultConfigs) {
-    const saved = state.persistedUserState?.facilityConfigs || {};
-    const restored = {};
-
-    Object.entries(defaultConfigs || {}).forEach(([facilityKey, fallback]) => {
-      const savedConfig = saved[facilityKey];
-      if (!savedConfig || typeof savedConfig !== 'object') {
-        restored[facilityKey] = fallback;
-        return;
-      }
-
-      const presetName = String(savedConfig.presetName || fallback.presetName || '');
-      const base = createFacilityConfig(facilityKey, presetName);
-
-      if (Array.isArray(savedConfig.coderRows)) {
-        base.coderRows = cloneCoderRows(savedConfig.coderRows);
-        base.coderListEdited = Boolean(savedConfig.coderListEdited);
-      }
-
-      restored[facilityKey] = syncConfigDerivedFields(base);
-    });
-
-    return restored;
+    return defaultConfigs || {};
   }
 
-  function restorePersistedFilterState(claims) {
-    const saved = state.persistedUserState?.filterState;
-    if (!saved || typeof saved !== 'object') return;
-
-    const options = collectFilterOptions(claims);
-    const available = {
-      paymentModes: new Set(options.paymentModes.map(([value]) => value)),
-      departments: new Set(options.departments.map(([value]) => value)),
-      codifStatuses: new Set(options.codifStatuses.map(([value]) => value)),
-      codifiedBy: new Set(options.codifiedBy.map(([value]) => value)),
-      claimDates: new Set(options.claimDates.map(([value]) => value))
-    };
-
-    ['paymentModes', 'departments', 'codifStatuses', 'codifiedBy', 'claimDates']
-      .forEach(key => {
-        if (!Array.isArray(saved[key])) return;
-        state.filterState[key] = new Set(
-          saved[key].filter(value => available[key].has(value))
-        );
-      });
-
-    if (typeof saved.includeNoBills === 'boolean') {
-      state.filterState.includeNoBills = saved.includeNoBills;
-    }
+  function restorePersistedFilterState() {
+    // Filters always start from the current upload's defaults.
   }
 
   function collectColumnKeys(rows) {
@@ -2019,18 +1930,37 @@
       return '';
     }
 
+    const paymentParts = [];
+
+    if (detail.selfPay > 0) {
+      paymentParts.push(
+        `${detail.selfPay} Self-Pay`
+      );
+    }
+
+    if (detail.insurance > 0) {
+      paymentParts.push(
+        `${detail.insurance} Insurance`
+      );
+    }
+
     const paymentText =
-      `${detail.selfPay} Self-Pay, ` +
-      `${detail.insurance} Insurance`;
+      paymentParts.join(', ');
 
     const departmentText =
       formatDepartmentCounts(
         detail.departmentCounts
       );
 
-    return departmentText
-      ? `${paymentText}; ${departmentText}`
-      : paymentText;
+    if (paymentText && departmentText) {
+      return `${paymentText}; ${departmentText}`;
+    }
+
+    return (
+      paymentText ||
+      departmentText ||
+      ''
+    );
   }
 
   function getSummaryClaimDateInfo(row) {
