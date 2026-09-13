@@ -75,6 +75,7 @@
     duplicateGroups: [],
     importSummary: null,
     facilityConfigs: {},
+    activeFacilityTab: '',
     filterState: {
       paymentModes: new Set(),
       departments: new Set(),
@@ -93,6 +94,23 @@
 
   function normalizeKey(value) {
     return String(value || '').toLowerCase().replace(/[\s.\-_]/g, '');
+  }
+
+  function formatDepartmentDisplay(value) {
+    const text = String(value || '').trim();
+    if (!text) return '';
+
+    const keepUpper = new Set([
+      'ENT', 'GP', 'OBGYN', 'ICU', 'NICU', 'ER', 'OPD', 'IPD', 'IVF', 'MRI', 'CT'
+    ]);
+
+    return text
+      .toLowerCase()
+      .replace(/\b[a-z][a-z0-9]*\b/g, word => {
+        const upper = word.toUpperCase();
+        if (keepUpper.has(upper)) return upper;
+        return word.charAt(0).toUpperCase() + word.slice(1);
+      });
   }
 
   function normalizeLoose(value) {
@@ -1577,12 +1595,15 @@
 
     for (const claim of filteredClaims) {
       const department = claim.department || '(Blank)';
+      const departmentDisplay = department === '(Blank)'
+        ? department
+        : formatDepartmentDisplay(department);
       const status =
         String(claim.codificationStatus || '').trim() || '(Blank)';
 
       if (!byDepartment.has(department)) {
         const initial = {
-          Department: department,
+          Department: departmentDisplay,
           Total: 0
         };
         statuses.forEach(value => {
@@ -2112,6 +2133,25 @@
     aoa.push([]);
   }
 
+  function forceSummaryNumericCells(ws, sections, aoa) {
+    for (const section of sections) {
+      for (let rowOffset = 0; rowOffset < section.rowCount; rowOffset++) {
+        for (let col = 0; col < section.columnCount; col++) {
+          const rowIndex = section.dataStartRow + rowOffset;
+          const value = aoa[rowIndex]?.[col];
+          if (typeof value !== 'number' || !Number.isFinite(value)) continue;
+
+          const ref = root.XLSX.utils.encode_cell({ r: rowIndex, c: col });
+          if (!ws[ref]) continue;
+          ws[ref].t = 'n';
+          ws[ref].v = value;
+          ws[ref].z = '0';
+          delete ws[ref].w;
+        }
+      }
+    }
+  }
+
   function buildStyledSummaryWorksheet(summaryData) {
     const aoa = [
       ['Facility Allocation Summary'],
@@ -2188,6 +2228,8 @@
         section.columnCount
       );
     }
+
+    forceSummaryNumericCells(ws, sections, aoa);
 
     const widths = [];
     for (let col = 0; col < maximumColumns; col++) {
@@ -2390,172 +2432,120 @@
         `;
       }).join('');
 
-    configsContainer.innerHTML =
-      facilityStats.map(item => {
-        const config =
-          state.facilityConfigs[
-            item.facilityKey
-          ] ||
-          createFacilityConfig(
-            item.facilityKey,
-            item.presetName
-          );
-
-        const presetName =
-          config.presetName || '';
-
-        const displayName =
-          presetName ||
-          item.displayName;
-
-        const restrictedCount =
-          Object.keys(
-            config.restrictions || {}
-          ).length;
-
-        const coderSourceText =
-          config.coderListEdited
-            ? 'Custom coder list — manual edits are active and will be used for allocation.'
-            : presetName
-              ? 'Coder defaults loaded from preset. Edit freely; your changes will take precedence.'
-              : 'No preset coder defaults. Enter the coder list manually.';
-
-        return `
-          <details
-            class="facility-config-card"
-            data-facility-key="${escapeHtml(item.facilityKey)}"
-            open
-          >
-            <summary>
-              ${escapeHtml(displayName)} — ${item.count} claims
-            </summary>
-
-            <div class="facility-config-body">
-              <div class="facility-config-meta mb-2">
-                Presets only provide defaults. The editable coder list below is the source of truth for this allocation run.
-              </div>
-
-              <div class="mb-3">
-                <label class="form-label fw-bold small mb-1">
-                  Preset
-                </label>
-
-                <select
-                  class="form-select form-select-sm facility-preset-select"
-                  data-facility-key="${escapeHtml(item.facilityKey)}"
-                >
-                  <option value="">-- None --</option>
-
-                  ${state.presetOptions.map(
-                    name => `
-                      <option
-                        value="${escapeHtml(name)}"
-                        ${name === presetName ? 'selected' : ''}
-                      >
-                        ${escapeHtml(name)}
-                      </option>
-                    `
-                  ).join('')}
-                </select>
-              </div>
-
-              <div class="mb-2">
-                <div class="d-flex justify-content-between align-items-center gap-2 mb-1">
-                  <label class="form-label fw-bold small mb-0">
-                    Coders
-                    <span class="fw-normal text-muted">
-                      (one per line)
-                    </span>
-                  </label>
-
-                  <button
-                    type="button"
-                    class="btn btn-outline-secondary btn-sm facility-reset-coders-btn"
-                    data-facility-key="${escapeHtml(item.facilityKey)}"
-                    ${presetName ? '' : 'disabled'}
-                    title="Replace the current coder list with the selected preset defaults"
-                  >
-                    Use Preset Coders
-                  </button>
-                </div>
-
-                <textarea
-                  class="form-control form-control-sm facility-coders-textarea"
-                  rows="5"
-                  data-facility-key="${escapeHtml(item.facilityKey)}"
-                  placeholder="Enter coder names, one per line"
-                >${escapeHtml(config.codersText || '')}</textarea>
-              </div>
-
-              <div class="facility-config-meta mb-1">
-                ${escapeHtml(coderSourceText)}
-              </div>
-
-              <div class="facility-config-meta">
-                ${
-                  restrictedCount
-                    ? `${restrictedCount} coder restriction set(s) active from the selected preset. Manually added coders without a matching preset restriction are unrestricted.`
-                    : 'No preset department restrictions active. Manually entered coders are unrestricted.'
-                }
-              </div>
-            </div>
-          </details>
-        `;
-      }).join('');
-  }
-
-  function countEntries(entries) {
-    const counts = {};
-
-    for (const entry of entries) {
-      counts[entry] =
-        (counts[entry] || 0) + 1;
-    }
-
-    return Object.entries(counts)
-      .sort(
-        (a, b) =>
-          a[0].localeCompare(b[0])
-      );
-  }
-
-  function createCheckItems(
-    container,
-    items,
-    selectedValues,
-    defaultChecked = true
-  ) {
-    if (!container) return;
-
-    if (!items.length) {
-      container.textContent =
-        'No values found.';
+    if (!facilityStats.length) {
+      configsContainer.innerHTML = '';
+      state.activeFacilityTab = '';
       return;
     }
 
-    container.innerHTML =
-      items.map(
-        ([value, count]) => {
-          const checked =
-            selectedValues instanceof Set
-              ? selectedValues.has(value)
-              : defaultChecked;
+    const validFacilityKeys = new Set(
+      facilityStats.map(item => item.facilityKey)
+    );
 
-          return `
-            <div class="form-check">
-              <input
-                class="form-check-input"
-                type="checkbox"
-                value="${escapeHtml(value)}"
-                ${checked ? 'checked' : ''}
-              >
-              <label class="form-check-label">
-                (${count}) ${escapeHtml(value)}
-              </label>
+    if (!validFacilityKeys.has(state.activeFacilityTab)) {
+      state.activeFacilityTab = facilityStats[0].facilityKey;
+    }
+
+    const tabButtons = facilityStats.map(item => {
+      const config = state.facilityConfigs[item.facilityKey] ||
+        createFacilityConfig(item.facilityKey, item.presetName);
+      const presetName = config.presetName || item.presetName || '';
+      const displayName = presetName || item.displayName;
+      const active = item.facilityKey === state.activeFacilityTab;
+      const statusClass = presetName ? 'tab-status-ok' : 'tab-status-bad';
+
+      return `
+        <button
+          type="button"
+          class="facility-tab-btn ${active ? 'active' : ''}"
+          data-facility-tab-key="${escapeHtml(item.facilityKey)}"
+          role="tab"
+          aria-selected="${active ? 'true' : 'false'}"
+        >
+          <span class="facility-tab-name">${escapeHtml(displayName)}</span>
+          <span class="facility-tab-meta">${item.count} claims</span>
+          <span class="facility-tab-dot ${statusClass}" aria-hidden="true"></span>
+        </button>
+      `;
+    }).join('');
+
+    const tabPanels = facilityStats.map(item => {
+      const config = state.facilityConfigs[item.facilityKey] ||
+        createFacilityConfig(item.facilityKey, item.presetName);
+      const presetName = config.presetName || '';
+      const displayName = presetName || item.displayName;
+      const restrictedCount = Object.keys(config.restrictions || {}).length;
+      const active = item.facilityKey === state.activeFacilityTab;
+      const coderSourceText = config.coderListEdited
+        ? 'Custom coder list — manual edits are active and will be used for allocation.'
+        : presetName
+          ? 'Coder defaults loaded from preset. Edit freely; your changes will take precedence.'
+          : 'No preset coder defaults. Enter the coder list manually.';
+
+      return `
+        <div
+          class="facility-tab-panel ${active ? 'active' : ''}"
+          data-facility-panel-key="${escapeHtml(item.facilityKey)}"
+          role="tabpanel"
+          ${active ? '' : 'hidden'}
+        >
+          <div class="facility-tab-panel-header">
+            <div>
+              <div class="fw-bold">${escapeHtml(displayName)}</div>
+              <div class="facility-config-meta">${item.count} eligible claim${item.count === 1 ? '' : 's'} detected for this facility.</div>
             </div>
-          `;
-        }
-      ).join('');
+          </div>
+
+          <div class="facility-config-body">
+            <div class="facility-config-meta mb-2">
+              Presets only provide defaults. The editable coder list below is the source of truth for this allocation run.
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label fw-bold small mb-1">Preset</label>
+              <select class="form-select form-select-sm facility-preset-select" data-facility-key="${escapeHtml(item.facilityKey)}">
+                <option value="">-- None --</option>
+                ${state.presetOptions.map(name => `
+                  <option value="${escapeHtml(name)}" ${name === presetName ? 'selected' : ''}>${escapeHtml(name)}</option>
+                `).join('')}
+              </select>
+            </div>
+
+            <div class="mb-2">
+              <div class="d-flex justify-content-between align-items-center gap-2 mb-1">
+                <label class="form-label fw-bold small mb-0">Coders <span class="fw-normal text-muted">(one per line)</span></label>
+                <button
+                  type="button"
+                  class="btn btn-outline-secondary btn-sm facility-reset-coders-btn"
+                  data-facility-key="${escapeHtml(item.facilityKey)}"
+                  ${presetName ? '' : 'disabled'}
+                  title="Replace the current coder list with the selected preset defaults"
+                >Use Preset Coders</button>
+              </div>
+
+              <textarea
+                class="form-control form-control-sm facility-coders-textarea"
+                rows="6"
+                data-facility-key="${escapeHtml(item.facilityKey)}"
+                placeholder="Enter coder names, one per line"
+              >${escapeHtml(config.codersText || '')}</textarea>
+            </div>
+
+            <div class="facility-config-meta mb-1">${escapeHtml(coderSourceText)}</div>
+            <div class="facility-config-meta">
+              ${restrictedCount
+                ? `${restrictedCount} coder restriction set(s) active from the selected preset. Manually added coders without a matching preset restriction are unrestricted.`
+                : 'No preset department restrictions active. Manually entered coders are unrestricted.'}
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    configsContainer.innerHTML = `
+      <div class="facility-tabs" role="tablist" aria-label="Facility coder assignments">${tabButtons}</div>
+      <div class="facility-tab-panels">${tabPanels}</div>
+    `;
   }
 
   function refreshFilterOptions() {
@@ -3362,8 +3352,34 @@
       }
     );
 
+    getEl(
+      'facility-configs'
+    )?.addEventListener(
+      'click',
+      event => {
+        const tab = event.target.closest?.('.facility-tab-btn');
+        if (!tab) return;
+
+        const facilityKey = tab.dataset.facilityTabKey;
+        if (!facilityKey) return;
+        state.activeFacilityTab = facilityKey;
+
+        const container = getEl('facility-configs');
+        container?.querySelectorAll('.facility-tab-btn').forEach(button => {
+          const isActive = button.dataset.facilityTabKey === facilityKey;
+          button.classList.toggle('active', isActive);
+          button.setAttribute('aria-selected', isActive ? 'true' : 'false');
+        });
+        container?.querySelectorAll('.facility-tab-panel').forEach(panel => {
+          const isActive = panel.dataset.facilityPanelKey === facilityKey;
+          panel.classList.toggle('active', isActive);
+          panel.hidden = !isActive;
+        });
+      }
+    );
+
     /*
-     * Delegated reset handler because facility cards are regenerated when
+     * Delegated reset handler because facility panels are regenerated when
      * filters/presets change.
      */
     getEl(
