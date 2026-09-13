@@ -45,6 +45,7 @@
   const NO_BILLING_PATTERN = /no\s*bil|not\s+for\s+(billing|submission)|no\s+submission/i;
   const UNASSIGNED_CODER = '(Unassigned)';
   const UNKNOWN_FACILITY = 'Unknown Facility';
+  const DEFAULT_EXCLUDED_DEPARTMENT_PATTERN = /\b(?:dental|orthodontic|orthodontics|slimming|cupping)\b/i;
 
   const FACILITY_ALIASES = Object.freeze({
     IVORY: 'MF4456',
@@ -123,6 +124,10 @@
 
   function isAutoExcludedStatus(value) {
     return TERMINAL_STATUS_SET.has(normalizeStatus(value));
+  }
+
+  function isDefaultExcludedDepartment(value) {
+    return DEFAULT_EXCLUDED_DEPARTMENT_PATTERN.test(String(value || '').trim());
   }
 
   function getPaymentModeCategory(mode) {
@@ -720,7 +725,11 @@
 
     return {
       paymentModes: new Set(options.paymentModes.map(([value]) => value)),
-      departments: new Set(options.departments.map(([value]) => value)),
+      departments: new Set(
+        options.departments
+          .map(([value]) => value)
+          .filter(value => !isDefaultExcludedDepartment(value))
+      ),
       codifStatuses: new Set(options.codifStatuses.map(([value]) => value)),
       codifiedBy: new Set(),
       includeNoBills: false
@@ -2251,6 +2260,7 @@
           <details
             class="facility-config-card"
             data-facility-key="${escapeHtml(item.facilityKey)}"
+            open
           >
             <summary>
               ${escapeHtml(displayName)} — ${item.count} claims
@@ -2363,7 +2373,7 @@
       items.map(
         ([value, count]) => {
           const checked =
-            selectedValues.size
+            selectedValues instanceof Set
               ? selectedValues.has(value)
               : defaultChecked;
 
@@ -3619,6 +3629,7 @@
     findColumnKey,
     isNoBillingRemark,
     isAutoExcludedStatus,
+    isDefaultExcludedDepartment,
     matchFacilityValue:
       (value, presetsData) =>
         matchFacilityValue(
