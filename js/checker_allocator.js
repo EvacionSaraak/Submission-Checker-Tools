@@ -3606,9 +3606,11 @@
     }
   }
 
-  function buildStyledSummaryWorksheet(summaryData) {
+  function buildStyledCoderAllocationDetailsWorksheet(
+    summaryData
+  ) {
     const aoa = [
-      ['Facility Allocation Summary'],
+      ['Coder Allocation Details'],
       []
     ];
     const sections = [];
@@ -3617,90 +3619,23 @@
     const topStartRow = 2;
 
     /*
-     * The Coder Allocation Summary can become very wide because it expands as:
-     * Facility > Claim Date > Assigned Total / Detailed.
-     * It therefore occupies its own horizontal band. All other tables begin
-     * below it.
+     * This sheet is intentionally dedicated to the wide coder allocation
+     * hierarchy:
+     *
+     * Coder
+     * Total Assigned Claims
+     * Facility > Claim Date > Assigned Total / Detailed
+     *
+     * No other summary tables share this sheet.
      */
-    const coderEndRow =
-      placeCoderSummarySection(
-        aoa,
-        sections,
-        merges,
-        summaryData.coderRows,
-        summaryData.coderFacilityDateHierarchy || [],
-        topStartRow,
-        0
-      );
-
-    const secondaryStartRow =
-      coderEndRow + 2;
-
-    const facilityEndRow =
-      placeSummarySection(
-        aoa,
-        sections,
-        merges,
-        {
-          title: 'Facility Summary',
-          headers: [
-            'Facility',
-            'Claims Loaded',
-            'Excluded / Why',
-            'Eligible',
-            'Allocated',
-            'Unassigned'
-          ],
-          rows:
-            summaryData.facilityRows,
-          startRow:
-            secondaryStartRow,
-          startColumn:
-            0
-        }
-      );
-
-    const departmentEndRow =
-      placeSummarySection(
-        aoa,
-        sections,
-        merges,
-        {
-          title:
-            'Department Status Summary',
-          headers:
-            summaryData.departmentHeaders,
-          rows:
-            summaryData.departmentRows,
-          startRow:
-            secondaryStartRow,
-          startColumn:
-            8
-        }
-      );
-
-    const matrixStartRow =
-      Math.max(
-        facilityEndRow,
-        departmentEndRow
-      ) + 2;
-
-    placeSummarySection(
+    placeCoderSummarySection(
       aoa,
       sections,
       merges,
-      {
-        title:
-          'Coder Claims per Facility',
-        headers:
-          summaryData.matrixHeaders,
-        rows:
-          summaryData.matrixRows,
-        startRow:
-          matrixStartRow,
-        startColumn:
-          0
-      }
+      summaryData.coderRows,
+      summaryData.coderFacilityDateHierarchy || [],
+      topStartRow,
+      0
     );
 
     const coderColumnCount =
@@ -3720,14 +3655,7 @@
     const maximumColumns =
       Math.max(
         coderColumnCount,
-        summaryData
-          .matrixHeaders
-          .length,
-        8 +
-          summaryData
-            .departmentHeaders
-            .length,
-        7
+        2
       );
 
     merges.unshift({
@@ -3964,11 +3892,6 @@
           );
       }
 
-      /*
-       * Coder summary hierarchy starts at column C:
-       * Facility > Claim Date > Assigned Total / Detailed.
-       * Assigned Total stays compact; Detailed is wide and wrapped.
-       */
       if (
         coderSection &&
         col >= 2 &&
@@ -3980,6 +3903,258 @@
           (col - 2) % 2 === 0
             ? 13
             : 38;
+      }
+
+      widths.push({
+        wch: width
+      });
+    }
+
+    ws['!cols'] = widths;
+
+    /*
+     * Keep Coder + Total Assigned Claims visible while scrolling through the
+     * potentially very wide Facility > Claim Date hierarchy.
+     */
+    ws['!freeze'] = {
+      xSplit: 2,
+      ySplit: 0
+    };
+
+    ws['!panes'] = [{
+      xSplit: 2,
+      ySplit: 0,
+      topLeftCell: 'C1',
+      activePane: 'topRight',
+      state: 'frozen'
+    }];
+
+    return ws;
+  }
+
+
+  function buildStyledDetailedSummariesWorksheet(
+    summaryData
+  ) {
+    const aoa = [
+      ['Detailed Summaries'],
+      []
+    ];
+    const sections = [];
+    const merges = [];
+
+    const topStartRow = 2;
+
+    const facilityEndRow =
+      placeSummarySection(
+        aoa,
+        sections,
+        merges,
+        {
+          title:
+            'Facility Summary',
+          headers: [
+            'Facility',
+            'Claims Loaded',
+            'Excluded / Why',
+            'Eligible',
+            'Allocated',
+            'Unassigned'
+          ],
+          rows:
+            summaryData.facilityRows,
+          startRow:
+            topStartRow,
+          startColumn:
+            0
+        }
+      );
+
+    const departmentEndRow =
+      placeSummarySection(
+        aoa,
+        sections,
+        merges,
+        {
+          title:
+            'Department Status Summary',
+          headers:
+            summaryData.departmentHeaders,
+          rows:
+            summaryData.departmentRows,
+          startRow:
+            topStartRow,
+          startColumn:
+            8
+        }
+      );
+
+    const matrixStartRow =
+      Math.max(
+        facilityEndRow,
+        departmentEndRow
+      ) + 2;
+
+    placeSummarySection(
+      aoa,
+      sections,
+      merges,
+      {
+        title:
+          'Coder Claims per Facility',
+        headers:
+          summaryData.matrixHeaders,
+        rows:
+          summaryData.matrixRows,
+        startRow:
+          matrixStartRow,
+        startColumn:
+          0
+      }
+    );
+
+    const maximumColumns =
+      Math.max(
+        summaryData
+          .matrixHeaders
+          .length,
+        8 +
+          summaryData
+            .departmentHeaders
+            .length,
+        7
+      );
+
+    merges.unshift({
+      s: { r: 0, c: 0 },
+      e: {
+        r: 0,
+        c:
+          maximumColumns -
+          1
+      }
+    });
+
+    const ws =
+      root.XLSX.utils.aoa_to_sheet(
+        aoa
+      );
+
+    ws['!merges'] = merges;
+
+    applyCellStyle(
+      ws,
+      0,
+      0,
+      EXCEL_STYLES.title
+    );
+
+    ws['!rows'] = [];
+    ws['!rows'][0] = {
+      hpt: 24
+    };
+    ws['!rows'][1] = {
+      hpt: 6
+    };
+
+    for (const section of sections) {
+      applyCellStyle(
+        ws,
+        section.sectionRow,
+        section.startColumn,
+        EXCEL_STYLES.section
+      );
+
+      styleTableRange(
+        ws,
+        section.headerRow,
+        section.dataStartRow,
+        section.rowCount,
+        section.columnCount,
+        {
+          startColumn:
+            section.startColumn
+        }
+      );
+
+      ws['!rows'][
+        section.headerRow
+      ] = {
+        hpt: 30
+      };
+    }
+
+    applySummaryEmphasis(
+      ws,
+      sections
+    );
+
+    forceSummaryNumericCells(
+      ws,
+      sections,
+      aoa
+    );
+
+    const widths = [];
+
+    for (
+      let col = 0;
+      col <
+      maximumColumns;
+      col++
+    ) {
+      let maxLength = 10;
+
+      for (
+        let row = 0;
+        row <
+        aoa.length;
+        row++
+      ) {
+        const value =
+          aoa[row]?.[col];
+
+        if (
+          value != null
+        ) {
+          maxLength =
+            Math.max(
+              maxLength,
+              String(value)
+                .length + 2
+            );
+        }
+      }
+
+      let width =
+        Math.min(
+          Math.max(
+            maxLength,
+            10
+          ),
+          24
+        );
+
+      if (col === 0) {
+        width =
+          Math.min(
+            Math.max(
+              maxLength,
+              24
+            ),
+            32
+          );
+      }
+
+      if (col === 2) {
+        width =
+          Math.min(
+            Math.max(
+              maxLength,
+              28
+            ),
+            60
+          );
       }
 
       if (col === 7) {
@@ -4012,13 +4187,26 @@
       CreatedDate: new Date()
     };
 
-    const wsSummary =
-      buildStyledSummaryWorksheet(summaryData);
+    const wsCoderAllocationDetails =
+      buildStyledCoderAllocationDetailsWorksheet(
+        summaryData
+      );
 
     root.XLSX.utils.book_append_sheet(
       wb,
-      wsSummary,
-      'Summary'
+      wsCoderAllocationDetails,
+      'Coder Allocation Details'
+    );
+
+    const wsDetailedSummaries =
+      buildStyledDetailedSummariesWorksheet(
+        summaryData
+      );
+
+    root.XLSX.utils.book_append_sheet(
+      wb,
+      wsDetailedSummaries,
+      'Detailed Summaries'
     );
 
     const allocationHeaders = [
@@ -4049,7 +4237,10 @@
       );
     }
 
-    const usedSheetNames = new Set(['summary']);
+    const usedSheetNames = new Set([
+      'coder allocation details',
+      'detailed summaries'
+    ]);
 
     Array.from(rowsByFacility.entries())
       .sort((a, b) => a[0].localeCompare(b[0]))
