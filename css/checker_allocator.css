@@ -433,71 +433,65 @@ body {
 
 
 
-/* Facility coder editor: one facility per tab instead of stacked cards. */
+/* Facility coder editor: compact facility tabs with one editor visible at a time. */
 .facility-configs {
   display: block;
 }
 
 .facility-tabs {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
-  overflow-x: auto;
-  padding: 2px 2px 0;
-  border-bottom: 1px solid #cfd8e3;
-  scrollbar-width: thin;
+  margin-bottom: 8px;
 }
 
 .facility-tab-btn {
   position: relative;
-  flex: 0 0 auto;
-  min-width: 120px;
-  max-width: 190px;
-  padding: 9px 28px 8px 10px;
+  min-width: 0;
+  width: 100%;
+  padding: 8px 26px 8px 10px;
   border: 1px solid #cfd8e3;
-  border-bottom: 0;
-  border-radius: 7px 7px 0 0;
-  background: #eef2f6;
-  color: #334e68;
+  border-radius: 6px;
+  background: #f3f6f9;
+  color: inherit;
   text-align: left;
   cursor: pointer;
+  transition: border-color .15s ease, background .15s ease, box-shadow .15s ease;
 }
 
 .facility-tab-btn:hover {
-  background: #e4edf5;
+  border-color: #9fb3c8;
+  background: #eef4f8;
 }
 
 .facility-tab-btn.active {
-  background: #fff;
-  color: #102a43;
-  font-weight: 700;
-  margin-bottom: -1px;
-  border-color: #9fb3c8;
-  box-shadow: 0 -2px 0 #5b9bd5 inset;
+  border-color: #5b9bd5;
+  background: #eef6ff;
+  box-shadow: inset 3px 0 0 #5b9bd5;
 }
 
-.facility-tab-name,
-.facility-tab-meta {
+.facility-tab-name {
   display: block;
+  min-width: 0;
+  font-size: .82rem;
+  font-weight: 700;
+  line-height: 1.2;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.facility-tab-name {
-  font-size: .84rem;
-  font-weight: 700;
-}
-
 .facility-tab-meta {
-  margin-top: 2px;
+  display: block;
+  margin-top: 3px;
   font-size: .7rem;
+  line-height: 1.1;
   color: #6c757d;
-  font-weight: 500;
 }
 
 .facility-tab-dot {
   position: absolute;
-  top: 11px;
+  top: 10px;
   right: 10px;
   width: 8px;
   height: 8px;
@@ -509,8 +503,8 @@ body {
 
 .facility-tab-panels {
   border: 1px solid #cfd8e3;
-  border-top: 0;
-  border-radius: 0 0 8px 8px;
+  border-radius: 8px;
+  overflow: hidden;
   background: #fff;
 }
 
@@ -521,19 +515,58 @@ body {
 .facility-tab-panel-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  gap: 10px;
-  padding: 11px 12px;
-  background: #f8fafc;
+  align-items: baseline;
+  gap: 12px;
+  padding: 10px 12px;
+  background: #f3f6f9;
   border-bottom: 1px solid #dee2e6;
+}
+
+.facility-tab-panel-title {
+  min-width: 0;
+  font-size: .9rem;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.facility-tab-panel-count {
+  flex: 0 0 auto;
+  font-size: .75rem;
+  color: #6c757d;
+  white-space: nowrap;
 }
 
 .facility-tab-panel .facility-config-body {
   border-top: 0;
+  padding: 12px;
 }
 
-@media (max-width: 700px) {
-  .facility-tab-btn {
-    min-width: 108px;
+.coder-editor-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.facility-coders-textarea {
+  min-height: 105px;
+  resize: vertical;
+}
+
+@media (max-width: 520px) {
+  .facility-tabs {
+    grid-template-columns: 1fr;
+  }
+
+  .facility-tab-panel-header,
+  .coder-editor-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .facility-tab-panel-count {
+    white-space: normal;
   }
 }
