@@ -5,11 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Facility Allocator</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" />
-<link rel="stylesheet" href="../css/checker_allocator.css?v=20260913-tabs2" />
+<link rel="stylesheet" href="../css/checker_allocator.css?v=20260913-coder-rows-modal" />
 </head>
 <body>
 <div id="page-layout">
-  <aside id="sidebar">
+  <main id="allocator-panel">
     <div class="mb-3">
       <label for="allocator-file" class="form-label fw-bold mb-2">Upload All Claims Reports</label>
       <div id="allocator-dropzone" class="dropzone">
@@ -29,7 +29,7 @@
           <span class="editable-badge">Editable</span>
         </div>
         <div class="text-muted small mb-2">
-          Preset coders are loaded as defaults only. Add, remove, or replace coder names here; the visible coder list is what the allocator will use.
+          Edit coders per facility. Preferred departments are soft assignment hints; Assigned Departments are optional manual overrides and are blank by default.
         </div>
         <div id="facility-configs" class="facility-configs"></div>
       </section>
@@ -89,7 +89,8 @@
 
       <section class="mb-3 allocator-actions-section">
         <div class="d-flex gap-2" id="allocator-actions">
-          <button id="allocate-btn" class="btn btn-primary" type="button">Generate Preview</button>
+          <button id="allocate-btn" class="btn btn-primary" type="button">Generate / Update Preview</button>
+          <button id="preview-btn" class="btn btn-outline-primary" type="button" disabled>View Preview</button>
           <button id="download-btn" class="btn btn-success" type="button" disabled>Download Facility Allocation</button>
         </div>
       </section>
@@ -104,14 +105,24 @@
         <div id="facility-summary-list"></div>
       </section>
     </div>
-  </aside>
-
-  <main id="right-panel">
-    <div id="allocation-preview" class="preview-empty">Upload one or more All Claims Reports to generate a Facility Allocation preview.</div>
   </main>
 </div>
 
+<div id="preview-modal" class="preview-modal" hidden aria-hidden="true">
+  <div class="preview-modal-backdrop" data-preview-close></div>
+  <section class="preview-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="preview-modal-title">
+    <header class="preview-modal-header">
+      <div>
+        <h2 id="preview-modal-title" class="h5 mb-0">Facility Allocation Preview</h2>
+        <div class="text-muted small">Review the generated allocation before downloading.</div>
+      </div>
+      <button id="preview-modal-close" type="button" class="btn-close" data-preview-close aria-label="Close preview"></button>
+    </header>
+    <div id="allocation-preview" class="preview-empty">Generate a preview to review the allocation.</div>
+  </section>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.min.js"></script>
-<script src="../js/checker_allocator.js?v=20260913-balanced-detailed-compact"></script>
+<script src="../js/checker_allocator.js?v=20260913-coder-rows-modal"></script>
 </body>
 </html>
