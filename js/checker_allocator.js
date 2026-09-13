@@ -2589,7 +2589,6 @@
      */
     renderFacilitySummary();
     refreshFilterOptions();
-    renderSummaryPanel(importStats);
 
     state.lastAllocationResult = null;
 
@@ -2599,81 +2598,6 @@
     if (downloadBtn) {
       downloadBtn.disabled = true;
     }
-  }
-
-  function renderSummaryPanel(
-    importStats,
-    allocationSummary
-  ) {
-    const container =
-      getEl('coder-summary');
-
-    if (!container) return;
-
-    if (!allocationSummary) {
-      container.innerHTML = `
-        <div class="summary-block p-3">
-          <div class="fw-semibold mb-1">
-            Ready to allocate
-          </div>
-          <div class="summary-muted">
-            ${importStats.reportsLoaded} reports loaded ·
-            ${importStats.eligibleClaims} eligible claims ·
-            ${importStats.automaticallyExcluded} automatically excluded.
-          </div>
-        </div>
-      `;
-      return;
-    }
-
-    const rows =
-      allocationSummary.coderRows
-        .map(
-          row => `
-            <tr>
-              <td>${escapeHtml(row.Coder)}</td>
-              <td>${escapeHtml(row['Assigned Claims'])}</td>
-              <td>${escapeHtml(row['Share %'])}</td>
-              <td>${escapeHtml(row['Oldest Claim Date'])}</td>
-              <td>${escapeHtml(row['Newest Claim Date'])}</td>
-            </tr>
-          `
-        ).join('');
-
-    container.innerHTML = `
-      <div class="summary-block p-3">
-        <div class="fw-semibold mb-1">
-          Allocation complete
-        </div>
-
-        <div class="summary-muted mb-3">
-          Allocated: ${allocationSummary.allocatedCount} ·
-          Unassigned: ${allocationSummary.unassignedCount} ·
-          Coder Balance: ${allocationSummary.balanceStatus}
-        </div>
-
-        <div
-          class="preview-table-wrap"
-          style="max-height:260px;"
-        >
-          <table class="preview-table">
-            <thead>
-              <tr>
-                <th>Coder</th>
-                <th>Assigned Claims</th>
-                <th>Share %</th>
-                <th>Oldest Claim Date</th>
-                <th>Newest Claim Date</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              ${rows}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    `;
   }
 
   function renderPreviewTable(
@@ -2892,34 +2816,6 @@
         </div>
       </section>
     `;
-
-    renderSummaryPanel(
-      allocationResult.importStats,
-      {
-        coderRows:
-          summaryData.coderRows,
-
-        allocatedCount:
-          summaryData.topCards
-            .find(
-              ([label]) =>
-                label ===
-                'Allocated Claims'
-            )?.[1] || 0,
-
-        unassignedCount:
-          summaryData.topCards
-            .find(
-              ([label]) =>
-                label ===
-                'Unassigned Claims'
-            )?.[1] || 0,
-
-        balanceStatus:
-          summaryData.fairness
-            .statusText
-      }
-    );
   }
 
   async function readWorkbookFile(file) {
