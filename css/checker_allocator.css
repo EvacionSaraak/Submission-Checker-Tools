@@ -75,6 +75,28 @@ body {
   margin: 0 0 8px 0;
 }
 
+.setup-section {
+  border: 1px solid #d9e2ec;
+  border-radius: 8px;
+  padding: 12px;
+  background: #fbfcfe;
+}
+
+.passive-section {
+  padding-top: 4px;
+}
+
+.editable-badge {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #fff3cd;
+  border: 1px solid #e6c75e;
+  color: #735c0f;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
 .summary-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -128,14 +150,15 @@ body {
 
 .facility-config-card {
   overflow: hidden;
+  border-color: #cfd8e3;
 }
 
 .facility-config-card summary {
   list-style: none;
   cursor: pointer;
   padding: 12px;
-  font-weight: 600;
-  background: #f8f9fa;
+  font-weight: 700;
+  background: #f3f6f9;
 }
 
 .facility-config-card summary::-webkit-details-marker {
@@ -145,6 +168,37 @@ body {
 .facility-config-body {
   padding: 12px;
   border-top: 1px solid #dee2e6;
+}
+
+/*
+ * Intentionally distinct from passive/read-only content so a layman user can
+ * immediately tell this field is meant to be edited.
+ */
+.facility-coders-textarea {
+  background: #fff8d8 !important;
+  border-color: #d9b84f !important;
+  color: #212529;
+  font-weight: 600;
+}
+
+.facility-coders-textarea:hover {
+  background: #fff4c2 !important;
+}
+
+.facility-coders-textarea:focus {
+  background: #fff2b3 !important;
+  border-color: #b88b00 !important;
+  box-shadow: 0 0 0 0.2rem rgba(184, 139, 0, 0.16);
+}
+
+.facility-preset-select {
+  background-color: #eef6ff;
+  border-color: #9fc4ed;
+}
+
+.facility-preset-select:focus {
+  border-color: #6ea8df;
+  box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.12);
 }
 
 .filter-scroll-box {
@@ -160,9 +214,27 @@ body {
   margin-bottom: 4px;
 }
 
+#advanced-filters-panel > summary {
+  cursor: pointer;
+  user-select: none;
+}
+
 .advanced-body {
   border-top: 1px solid #dee2e6;
   padding-top: 12px;
+}
+
+.allocator-actions-section {
+  position: sticky;
+  top: -1px;
+  z-index: 5;
+  padding: 8px 0;
+  background: #fff;
+  border-bottom: 1px solid #eef0f2;
+}
+
+#allocator-actions .btn {
+  flex: 1 1 0;
 }
 
 .preview-section + .preview-section {
@@ -235,5 +307,9 @@ body {
 
   #right-panel {
     min-height: 50vh;
+  }
+
+  .allocator-actions-section {
+    position: static;
   }
 }
