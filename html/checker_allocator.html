@@ -30,10 +30,20 @@
       <section class="mb-3">
         <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
           <h2 class="section-title mb-0">Detected Facilities</h2>
-          <span class="text-muted small">Presets auto-load when matched</span>
+          <span class="text-muted small">Facilities and presets are detected automatically</span>
         </div>
         <div id="facility-summary-list" class="facility-summary-list"></div>
-        <div id="facility-configs" class="facility-configs mt-3"></div>
+      </section>
+
+      <section class="mb-3">
+        <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
+          <h2 class="section-title mb-0">Coder Assignment &amp; Presets</h2>
+          <span class="text-muted small">Editable before allocation</span>
+        </div>
+        <div class="text-muted small mb-2">
+          Preset coders are loaded as defaults only. You can add, remove, or replace coder names here; the current editable list is what the allocator will use.
+        </div>
+        <div id="facility-configs" class="facility-configs"></div>
       </section>
 
       <section class="mb-3">
@@ -43,17 +53,20 @@
             <div class="mb-3">
               <label class="form-label fw-bold small mb-1">Payment Mode</label>
               <div class="d-flex gap-2 mb-1">
-                <button id="select-all-payment-btn" class="btn btn-outline-secondary btn-sm">All</button>
-                <button id="deselect-all-payment-btn" class="btn btn-outline-secondary btn-sm">None</button>
+                <button id="select-all-payment-btn" class="btn btn-outline-secondary btn-sm" type="button">All</button>
+                <button id="deselect-all-payment-btn" class="btn btn-outline-secondary btn-sm" type="button">None</button>
               </div>
               <div id="payment-mode-section" class="filter-scroll-box"></div>
             </div>
 
             <div class="mb-3">
               <label class="form-label fw-bold small mb-1">Departments</label>
+              <div class="text-muted small mb-1">
+                Dental, Orthodontic, Slimming, and Cupping are deselected by default. Re-select them here if they should be included in the run.
+              </div>
               <div class="d-flex gap-2 mb-1">
-                <button id="select-all-btn" class="btn btn-outline-secondary btn-sm">All</button>
-                <button id="deselect-all-btn" class="btn btn-outline-secondary btn-sm">None</button>
+                <button id="select-all-btn" class="btn btn-outline-secondary btn-sm" type="button">All</button>
+                <button id="deselect-all-btn" class="btn btn-outline-secondary btn-sm" type="button">None</button>
               </div>
               <div id="dept-section" class="filter-scroll-box"></div>
             </div>
@@ -62,8 +75,8 @@
               <label class="form-label fw-bold small mb-1">Additional Codification Status Filter</label>
               <div class="text-muted small mb-1">Terminal statuses are always excluded automatically: Closed, Submitted, Audited, Verified and Closed, Merged.</div>
               <div class="d-flex gap-2 mb-1">
-                <button id="select-all-codif-btn" class="btn btn-outline-secondary btn-sm">All</button>
-                <button id="deselect-all-codif-btn" class="btn btn-outline-secondary btn-sm">None</button>
+                <button id="select-all-codif-btn" class="btn btn-outline-secondary btn-sm" type="button">All</button>
+                <button id="deselect-all-codif-btn" class="btn btn-outline-secondary btn-sm" type="button">None</button>
               </div>
               <div id="codif-status-section" class="filter-scroll-box"></div>
             </div>
@@ -72,8 +85,8 @@
               <label class="form-label fw-bold small mb-1">Optional: Exclude Codified By</label>
               <div class="text-muted small mb-1">Select names only if claims associated with those codifiers should be excluded from this allocation run.</div>
               <div class="d-flex gap-2 mb-1">
-                <button id="select-all-codified-by-btn" class="btn btn-outline-secondary btn-sm">All</button>
-                <button id="deselect-all-codified-by-btn" class="btn btn-outline-secondary btn-sm">None</button>
+                <button id="select-all-codified-by-btn" class="btn btn-outline-secondary btn-sm" type="button">All</button>
+                <button id="deselect-all-codified-by-btn" class="btn btn-outline-secondary btn-sm" type="button">None</button>
               </div>
               <div id="codified-by-section" class="filter-scroll-box"></div>
             </div>
@@ -91,8 +104,8 @@
 
       <section class="mb-3">
         <div class="d-flex gap-2" id="allocator-actions">
-          <button id="allocate-btn" class="btn btn-primary">Allocate</button>
-          <button id="download-btn" class="btn btn-success" disabled>Download Workbook</button>
+          <button id="allocate-btn" class="btn btn-primary" type="button">Allocate</button>
+          <button id="download-btn" class="btn btn-success" type="button" disabled>Download Workbook</button>
         </div>
       </section>
 
