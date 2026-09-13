@@ -1,358 +1,358 @@
 {
-  "_comment": "Department preferences are soft assignment preferences, not eligibility restrictions. Every coder listed for a facility remains eligible for any department at that facility. preferredDepartments only gives a small assignment bias while workload balancing remains active. Claims that already contain Codified By are excluded by checker_allocator.js. Dental-only coders, IT/non-coders, auditors, and James are intentionally excluded.",
-  "Emirates Medical Center": {
-    "license": "MF232",
-    "coders": [
-      {
-        "name": "Muhammed Basith",
-        "preferredDepartments": [
-          "Dermatology"
-        ]
-      },
-      {
-        "name": "ROSHNA KALATHIL HARIDASAN HARIDASAN KALATHIL BALAN",
-        "preferredDepartments": [
-          "Dermatology"
-        ]
-      },
-      {
-        "name": "MUHAMMED JASIM VENGADAN KUNHABDULLA",
-        "preferredDepartments": [
-          "Dermatology"
-        ]
-      },
-      {
-        "name": "RAJI REGHUNANDAN NATH REGHUNANDAN PILLAI",
-        "preferredDepartments": [
-          "Dermatology"
-        ]
-      }
-    ]
-  },
-  "Ivory Medical Center": {
-    "license": "MF4456",
-    "coders": [
-      {
-        "name": "MUHAMMED JASIM VENGADAN KUNHABDULLA",
-        "preferredDepartments": [
-          "Dermatology",
-          "Laser"
-        ]
-      },
-      {
-        "name": "ROSHNA KALATHIL HARIDASAN HARIDASAN KALATHIL BALAN",
-        "preferredDepartments": [
-          "Dermatology"
-        ]
-      },
-      {
-        "name": "Muhammed Basith",
-        "preferredDepartments": [
-          "Dermatology"
-        ]
-      }
-    ]
-  },
-  "Lauretta Medical Center": {
-    "license": "MF4706",
-    "coders": [
-      {
-        "name": "Muhammed Basith",
-        "preferredDepartments": [
-          "Laser"
-        ]
-      },
-      {
-        "name": "MUHAMMED JASIM VENGADAN KUNHABDULLA",
-        "preferredDepartments": [
-          "Laser"
-        ]
-      },
-      {
-        "name": "ROSHNA KALATHIL HARIDASAN HARIDASAN KALATHIL BALAN",
-        "preferredDepartments": [
-          "Laser"
-        ]
-      },
-    ]
-  },
-  "Majestic Dental Center": {
-    "license": "MF1901",
-    "coders": [
-      {
-        "name": "MUHAMMED JASIM VENGADAN KUNHABDULLA",
-        "preferredDepartments": [
-          "Dermatology",
-          "Laser"
-        ]
-      },
-      {
-        "name": "ROSHNA KALATHIL HARIDASAN HARIDASAN KALATHIL BALAN",
-        "preferredDepartments": [
-          "Dermatology",
-          "Laser"
-        ]
-      },
-      {
-        "name": "Muhammed Basith",
-        "preferredDepartments": [
-          "Dermatology",
-          "Facial"
-        ]
-      }
-    ]
-  },
-  "Nazek Medical Center": {
-    "license": "MF5009",
-    "coders": [
-      {
-        "name": "ASHIK CHAKKUNGAL HAMSA CHAKKUNGAL",
-        "preferredDepartments": [
-          "Gynecology",
-          "General Medicine"
-        ]
-      }
-    ]
-  },
-  "New Look Medical Center BR1 (Extramall)": {
-    "license": "MF5090",
-    "coders": []
-  },
-  "New Look Medical Center BR2 (Khabisi)": {
-    "license": "MF5020",
-    "coders": [
-      {
-        "name": "JOICE DEVASIA DEVASIA",
-        "preferredDepartments": [
-          "General",
-          "Family Medicine",
-          "ENT",
-          "Dietician"
-        ]
-      },
-      {
-        "name": "HASNA ELAYODAN",
-        "preferredDepartments": [
-          "Family Medicine",
-          "Gynecology",
-          "ENT"
-        ]
-      },
-      {
-        "name": "RAJI REGHUNANDAN NATH REGHUNANDAN PILLAI",
-        "preferredDepartments": [
-          "Family Medicine",
-          "Gynecology",
-          "Dietician",
-          "ENT",
-          "General"
-        ]
-      },
-      {
-        "name": "MONISHA ANOOPKUMAR",
-        "preferredDepartments": [
-          "Family Medicine",
-          "General",
-          "Laser",
-          "Gynecology"
-        ]
-      }
-    ]
-  },
-  "New Look Medical Center BR3 (Al Yahar)": {
-    "license": "MF5357",
-    "coders": [
-      {
-        "name": "MONISHA ANOOPKUMAR",
-        "preferredDepartments": [
-          "Physiotherapy",
-          "Family Medicine",
-          "Ophthalmology",
-          "Dermatology",
-          "ENT"
-        ]
-      },
-      {
-        "name": "RAJI REGHUNANDAN NATH REGHUNANDAN PILLAI",
-        "preferredDepartments": [
-          "Physiotherapy",
-          "ENT",
-          "Internal Medicine",
-          "Dermatology",
-          "General"
-        ]
-      },
-      {
-        "name": "JOICE DEVASIA DEVASIA",
-        "preferredDepartments": [
-          "Physiotherapy",
-          "Dermatology",
-          "Internal Medicine",
-          "ENT",
-          "Pulmonologist"
-        ]
-      },
-      {
-        "name": "HASNA ELAYODAN",
-        "preferredDepartments": [
-          "Pediatrics",
-          "Orthopedic",
-          "Gynecology",
-          "General"
-        ]
-      }
-    ]
-  },
-  "Scandcare": {
-    "license": "MF456",
-    "coders": [
-      {
-        "name": "Muhammed Basith",
-        "preferredDepartments": [
-          "Dermatology"
-        ]
-      },
-      {
-        "name": "ROSHNA KALATHIL HARIDASAN HARIDASAN KALATHIL BALAN",
-        "preferredDepartments": [
-          "Dermatology"
-        ]
-      },
-      {
-        "name": "MUHAMMED JASIM VENGADAN KUNHABDULLA",
-        "preferredDepartments": [
-          "Dermatology"
-        ]
-      }
-    ]
-  },
-  "Talat Medical Center": {
-    "license": "MF494",
-    "coders": [
-      {
-        "name": "JOICE DEVASIA DEVASIA",
-        "preferredDepartments": [
-          "Laser",
-          "Pediatrics"
-        ]
-      }
-    ]
-  },
-  "True Life Primary Care Center": {
-    "license": "MF7003",
-    "coders": [
-      {
-        "name": "ARJUN MUNDAYIL ARAVINDAKSHAN MUNDAYIL",
-        "preferredDepartments": [
-          "Ophthalmology",
-          "Family Medicine",
-          "General",
-          "Internal Medicine",
-          "Pediatrics"
-        ]
-      },
-      {
-        "name": "SUHAIL GAFOOR ABDUL GAFOOR",
-        "preferredDepartments": [
-          "General",
-          "Dermatology",
-          "Orthopedic",
-          "ENT",
-          "Pediatrics"
-        ]
-      },
-      {
-        "name": "AMINA KUNHABDULLA HASSAINAR THEKKE PATILLATH",
-        "preferredDepartments": [
-          "Physiotherapy"
-        ]
-      },
-      {
-        "name": "MUHAMMED SWALIH VADAKKETHIL",
-        "preferredDepartments": [
-          "Orthopedic",
-          "General",
-          "Physiotherapy",
-          "Pediatrics",
-          "ENT"
-        ]
-      },
-      {
-        "name": "Sweetlin Shali",
-        "preferredDepartments": [
-          "Orthopedic",
-          "General",
-          "Family Medicine",
-          "Internal Medicine",
-          "Neurology"
-        ]
-      },
-      {
-        "name": "VIJAYALAKSHMI MAHAVISHNU MAHAVISHNU",
-        "preferredDepartments": [
-          "General",
-          "Pediatrics",
-          "ENT",
-          "Orthopedic",
-          "Family Medicine"
-        ]
-      },
-      {
-        "name": "HASNATH PARAPPUKADAVATH  MAJEED PARAPPUKADAVATH",
-        "preferredDepartments": [
-          "General"
-        ]
-      },
-      {
-        "name": "ALEENA ANTONY",
-        "preferredDepartments": [
-          "General"
-        ]
-      },
-      {
-        "name": "ASHIK CHAKKUNGAL HAMSA CHAKKUNGAL",
-        "preferredDepartments": [
-          "General",
-          "Gynecology"
-        ]
-      },
-      {
-        "name": "MUHAMMED JASIM VENGADAN KUNHABDULLA",
-        "preferredDepartments": [
-          "Pediatrics"
-        ]
-      },
-      {
-        "name": "ROSHNA KALATHIL HARIDASAN HARIDASAN KALATHIL BALAN",
-        "preferredDepartments": [
-          "Pediatrics"
-        ]
-      },
-      {
-        "name": "Muhammed Basith",
-        "preferredDepartments": [
-          "General"
-        ]
-      }
-    ]
-  },
-  "Wldy Medical Center": {
-    "license": "MF5339",
-    "coders": [
-      {
-        "name": "MOHAMMED ANAS MENATTIL SULAIMAN MENATTIL",
-        "preferredDepartments": [
-          "Occupational Therapy",
-          "Speech Therapy"
-        ]
-      },
-      {
-        "name": "VIJAYALAKSHMI MAHAVISHNU MAHAVISHNU",
-        "preferredDepartments": [
-          "Occupational Therapy",
-          "Speech Therapy"
-        ]
-      }
-    ]
-  }
+"_comment": "Department preferences are soft assignment preferences, not eligibility restrictions. Every coder listed for a facility remains eligible for any department at that facility. preferredDepartments only gives a small assignment bias while workload balancing remains active. Claims that already contain Codified By are excluded by checker_allocator.js. Dental-only coders, IT/non-coders, auditors, and James are intentionally excluded.",
+"Emirates Medical Center": {
+"license": "MF232",
+"coders": [
+{
+"name": "Muhammed Basith",
+"preferredDepartments": [
+"Dermatology"
+]
+},
+{
+"name": "ROSHNA KALATHIL HARIDASAN HARIDASAN KALATHIL BALAN",
+"preferredDepartments": [
+"Dermatology"
+]
+},
+{
+"name": "MUHAMMED JASIM VENGADAN KUNHABDULLA",
+"preferredDepartments": [
+"Dermatology"
+]
+},
+{
+"name": "RAJI REGHUNANDAN NATH REGHUNANDAN PILLAI",
+"preferredDepartments": [
+"Dermatology"
+]
+}
+]
+},
+"Ivory Medical Center": {
+"license": "MF4456",
+"coders": [
+{
+"name": "MUHAMMED JASIM VENGADAN KUNHABDULLA",
+"preferredDepartments": [
+"Dermatology",
+"Laser"
+]
+},
+{
+"name": "ROSHNA KALATHIL HARIDASAN HARIDASAN KALATHIL BALAN",
+"preferredDepartments": [
+"Dermatology"
+]
+},
+{
+"name": "Muhammed Basith",
+"preferredDepartments": [
+"Dermatology"
+]
+}
+]
+},
+"Lauretta Medical Center": {
+"license": "MF4706",
+"coders": [
+{
+"name": "Muhammed Basith",
+"preferredDepartments": [
+"Laser"
+]
+},
+{
+"name": "MUHAMMED JASIM VENGADAN KUNHABDULLA",
+"preferredDepartments": [
+"Laser"
+]
+},
+{
+"name": "ROSHNA KALATHIL HARIDASAN HARIDASAN KALATHIL BALAN",
+"preferredDepartments": [
+"Laser"
+]
+}
+]
+},
+"Majestic Dental Center": {
+"license": "MF1901",
+"coders": [
+{
+"name": "MUHAMMED JASIM VENGADAN KUNHABDULLA",
+"preferredDepartments": [
+"Dermatology",
+"Laser"
+]
+},
+{
+"name": "ROSHNA KALATHIL HARIDASAN HARIDASAN KALATHIL BALAN",
+"preferredDepartments": [
+"Dermatology",
+"Laser"
+]
+},
+{
+"name": "Muhammed Basith",
+"preferredDepartments": [
+"Dermatology",
+"Facial"
+]
+}
+]
+},
+"Nazek Medical Center": {
+"license": "MF5009",
+"coders": [
+{
+"name": "ASHIK CHAKKUNGAL HAMSA CHAKKUNGAL",
+"preferredDepartments": [
+"Gynecology",
+"General Medicine"
+]
+}
+]
+},
+"New Look Medical Center BR1 (Extramall)": {
+"license": "MF5090",
+"coders": []
+},
+"New Look Medical Center BR2 (Khabisi)": {
+"license": "MF5020",
+"coders": [
+{
+"name": "JOICE DEVASIA DEVASIA",
+"preferredDepartments": [
+"General",
+"Family Medicine",
+"ENT",
+"Dietician"
+]
+},
+{
+"name": "HASNA ELAYODAN",
+"preferredDepartments": [
+"Family Medicine",
+"Gynecology",
+"ENT"
+]
+},
+{
+"name": "RAJI REGHUNANDAN NATH REGHUNANDAN PILLAI",
+"preferredDepartments": [
+"Family Medicine",
+"Gynecology",
+"Dietician",
+"ENT",
+"General"
+]
+},
+{
+"name": "MONISHA ANOOPKUMAR",
+"preferredDepartments": [
+"Family Medicine",
+"General",
+"Laser",
+"Gynecology"
+]
+}
+]
+},
+"New Look Medical Center BR3 (Al Yahar)": {
+"license": "MF5357",
+"coders": [
+{
+"name": "MONISHA ANOOPKUMAR",
+"preferredDepartments": [
+"Physiotherapy",
+"Family Medicine",
+"Ophthalmology",
+"Dermatology",
+"ENT"
+]
+},
+{
+"name": "RAJI REGHUNANDAN NATH REGHUNANDAN PILLAI",
+"preferredDepartments": [
+"Physiotherapy",
+"ENT",
+"Internal Medicine",
+"Dermatology",
+"General"
+]
+},
+{
+"name": "JOICE DEVASIA DEVASIA",
+"preferredDepartments": [
+"Physiotherapy",
+"Dermatology",
+"Internal Medicine",
+"ENT",
+"Pulmonologist"
+]
+},
+{
+"name": "HASNA ELAYODAN",
+"preferredDepartments": [
+"Pediatrics",
+"Orthopedic",
+"Gynecology",
+"General"
+]
+}
+]
+},
+"Scandcare": {
+"license": "MF456",
+"coders": [
+{
+"name": "Muhammed Basith",
+"preferredDepartments": [
+"Dermatology"
+]
+},
+{
+"name": "ROSHNA KALATHIL HARIDASAN HARIDASAN KALATHIL BALAN",
+"preferredDepartments": [
+"Dermatology"
+]
+},
+{
+"name": "MUHAMMED JASIM VENGADAN KUNHABDULLA",
+"preferredDepartments": [
+"Dermatology"
+]
+}
+]
+},
+"Talat Medical Center": {
+"license": "MF494",
+"coders": [
+{
+"name": "JOICE DEVASIA DEVASIA",
+"preferredDepartments": [
+"Laser",
+"Pediatrics"
+]
+}
+]
+},
+"True Life Primary Care Center": {
+"license": "MF7003",
+"coders": [
+{
+"name": "ARJUN MUNDAYIL ARAVINDAKSHAN MUNDAYIL",
+"preferredDepartments": [
+"Ophthalmology",
+"Family Medicine",
+"General",
+"Internal Medicine",
+"Pediatrics"
+]
+},
+{
+"name": "SUHAIL GAFOOR ABDUL GAFOOR",
+"preferredDepartments": [
+"General",
+"Dermatology",
+"Orthopedic",
+"ENT",
+"Pediatrics"
+]
+},
+{
+"name": "AMINA KUNHABDULLA HASSAINAR THEKKE PATILLATH",
+"preferredDepartments": [
+"Physiotherapy"
+]
+},
+{
+"name": "MUHAMMED SWALIH VADAKKETHIL",
+"preferredDepartments": [
+"Orthopedic",
+"General",
+"Physiotherapy",
+"Pediatrics",
+"ENT"
+]
+},
+{
+"name": "Sweetlin Shali",
+"preferredDepartments": [
+"Orthopedic",
+"General",
+"Family Medicine",
+"Internal Medicine",
+"Neurology"
+]
+},
+{
+"name": "VIJAYALAKSHMI MAHAVISHNU MAHAVISHNU",
+"preferredDepartments": [
+"General",
+"Pediatrics",
+"ENT",
+"Orthopedic",
+"Family Medicine"
+]
+},
+{
+"name": "HASNATH PARAPPUKADAVATH  MAJEED PARAPPUKADAVATH",
+"preferredDepartments": [
+"General"
+]
+},
+{
+"name": "ALEENA ANTONY",
+"preferredDepartments": [
+"General"
+]
+},
+{
+"name": "ASHIK CHAKKUNGAL HAMSA CHAKKUNGAL",
+"preferredDepartments": [
+"General",
+"Gynecology"
+]
+},
+{
+"name": "MUHAMMED JASIM VENGADAN KUNHABDULLA",
+"preferredDepartments": [
+"Pediatrics"
+]
+},
+{
+"name": "ROSHNA KALATHIL HARIDASAN HARIDASAN KALATHIL BALAN",
+"preferredDepartments": [
+"Pediatrics"
+]
+},
+{
+"name": "Muhammed Basith",
+"preferredDepartments": [
+"General"
+]
+}
+]
+},
+"Wldy Medical Center": {
+"license": "MF5339",
+"coders": [
+{
+"name": "MOHAMMED ANAS MENATTIL SULAIMAN MENATTIL",
+"preferredDepartments": [
+"Occupational Therapy",
+"Speech Therapy"
+]
+},
+{
+"name": "VIJAYALAKSHMI MAHAVISHNU MAHAVISHNU",
+"preferredDepartments": [
+"Occupational Therapy",
+"Speech Therapy"
+]
+}
+]
+}
 }
