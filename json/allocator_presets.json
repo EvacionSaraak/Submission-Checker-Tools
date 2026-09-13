@@ -22,12 +22,6 @@
         ]
       },
       {
-        "name": "FARSANA NECHITHADATHIL YAHKOOB NECHITHADATHIL",
-        "preferredDepartments": [
-          "Dermatology"
-        ]
-      },
-      {
         "name": "RAJI REGHUNANDAN NATH REGHUNANDAN PILLAI",
         "preferredDepartments": [
           "Dermatology"
@@ -52,13 +46,6 @@
         ]
       },
       {
-        "name": "FARSANA NECHITHADATHIL YAHKOOB NECHITHADATHIL",
-        "preferredDepartments": [
-          "Laser",
-          "Dermatology"
-        ]
-      },
-      {
         "name": "Muhammed Basith",
         "preferredDepartments": [
           "Dermatology"
@@ -69,13 +56,6 @@
   "Lauretta Medical Center": {
     "license": "MF4706",
     "coders": [
-      {
-        "name": "FARSANA NECHITHADATHIL YAHKOOB NECHITHADATHIL",
-        "preferredDepartments": [
-          "Laser",
-          "Dermatology"
-        ]
-      },
       {
         "name": "Muhammed Basith",
         "preferredDepartments": [
@@ -94,25 +74,11 @@
           "Laser"
         ]
       },
-      {
-        "name": "ABHILASH BABU BABU ELAMPURAYIDATHIL MADHAVAN",
-        "preferredDepartments": [
-          "Laser",
-          "Physiotherapy"
-        ]
-      }
     ]
   },
   "Majestic Dental Center": {
     "license": "MF1901",
     "coders": [
-      {
-        "name": "FARSANA NECHITHADATHIL YAHKOOB NECHITHADATHIL",
-        "preferredDepartments": [
-          "Dermatology",
-          "Laser"
-        ]
-      },
       {
         "name": "MUHAMMED JASIM VENGADAN KUNHABDULLA",
         "preferredDepartments": [
@@ -190,13 +156,6 @@
           "Laser",
           "Gynecology"
         ]
-      },
-      {
-        "name": "REDNIE CARRILLO SANTOS",
-        "preferredDepartments": [
-          "Family Medicine",
-          "Gynecology"
-        ]
       }
     ]
   },
@@ -241,16 +200,6 @@
           "Gynecology",
           "General"
         ]
-      },
-      {
-        "name": "REDNIE CARRILLO SANTOS",
-        "preferredDepartments": [
-          "General",
-          "Orthopedic",
-          "Urology",
-          "Family Medicine",
-          "Gynecology"
-        ]
       }
     ]
   },
@@ -265,12 +214,6 @@
       },
       {
         "name": "ROSHNA KALATHIL HARIDASAN HARIDASAN KALATHIL BALAN",
-        "preferredDepartments": [
-          "Dermatology"
-        ]
-      },
-      {
-        "name": "FARSANA NECHITHADATHIL YAHKOOB NECHITHADATHIL",
         "preferredDepartments": [
           "Dermatology"
         ]
@@ -371,24 +314,6 @@
         "preferredDepartments": [
           "General",
           "Gynecology"
-        ]
-      },
-      {
-        "name": "FARSANA NECHITHADATHIL YAHKOOB NECHITHADATHIL",
-        "preferredDepartments": [
-          "Family Medicine",
-          "Pediatrics",
-          "Gynecology",
-          "Laboratory",
-          "Endocrinology"
-        ]
-      },
-      {
-        "name": "ABHILASH BABU BABU ELAMPURAYIDATHIL MADHAVAN",
-        "preferredDepartments": [
-          "Family Medicine",
-          "Pediatrics",
-          "General"
         ]
       },
       {
