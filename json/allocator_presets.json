@@ -1,5 +1,5 @@
 {
-  "_comment": "Each coder entry can be a plain string (unrestricted) or an object: { \"name\": \"...\", \"departments\": [\"Dept A\", \"Dept B\"] }. Restricted coders are only assigned to the listed departments. Optional field 'payment_mode' (\"insurance\" or \"self_pay\") filters when the preset appears in the dropdown: presets with 'insurance' only show when an insurance-type payment mode is checked; 'self_pay' only when a non-insurance mode is checked; omitting the field makes the preset always visible.",
+  "_comment": "Each coder entry can be a plain string (unrestricted) or an object: { \"name\": \"...\", \"departments\": [\"Dept A\", \"Dept B\"] }. Presets provide DEFAULT coder lists only. The allocator loads these defaults into an editable coder list; user edits take precedence for the active allocation session. Restricted coders are only assigned to their listed departments. Manually added coders without a matching preset restriction are unrestricted.",
   "Emirates Medical Center": {
     "license": "MF232",
     "coders": []
