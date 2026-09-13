@@ -2143,6 +2143,7 @@
 
           const ref = root.XLSX.utils.encode_cell({ r: rowIndex, c: col });
           if (!ws[ref]) continue;
+
           ws[ref].t = 'n';
           ws[ref].v = value;
           ws[ref].z = '0';
@@ -2371,66 +2372,44 @@
       ).join('');
   }
 
-  function renderFacilitySummary() {
-    const container =
-      getEl('facility-summary-list');
+  function getFacilityTabLabel(displayName) {
+    const text = String(displayName || '').trim();
+    if (!text) return 'Facility';
 
-    const configsContainer =
-      getEl('facility-configs');
-
-    if (
-      !container ||
-      !configsContainer
-    ) {
-      return;
+    const parenthetical = text.match(/\(([^)]+)\)\s*$/);
+    if (parenthetical && parenthetical[1].trim()) {
+      return parenthetical[1].trim();
     }
 
-    const facilityStats =
-      getFacilityClaimStats(
-        state.dedupedClaims
-      );
+    return getFriendlyFacilityName(text) || text;
+  }
 
-    container.innerHTML =
-      facilityStats.map(item => {
-        const config =
-          state.facilityConfigs[
-            item.facilityKey
-          ] ||
-          createFacilityConfig(
-            item.facilityKey,
-            item.presetName
-          );
+  function renderFacilitySummary() {
+    const container = getEl('facility-summary-list');
+    const configsContainer = getEl('facility-configs');
 
-        const presetName =
-          config.presetName ||
-          item.presetName;
+    if (!container || !configsContainer) return;
 
-        const statusClass =
-          presetName
-            ? 'status-ok'
-            : 'status-bad';
+    const facilityStats = getFacilityClaimStats(state.dedupedClaims);
 
-        const statusText =
-          presetName
-            ? 'preset found'
-            : 'needs attention';
+    container.innerHTML = facilityStats.map(item => {
+      const config = state.facilityConfigs[item.facilityKey] ||
+        createFacilityConfig(item.facilityKey, item.presetName);
+      const presetName = config.presetName || item.presetName;
+      const statusClass = presetName ? 'status-ok' : 'status-bad';
+      const statusText = presetName ? 'preset found' : 'needs attention';
+      const displayName = presetName || item.displayName;
 
-        const displayName =
-          presetName ||
-          item.displayName;
-
-        return `
-          <div class="facility-summary-item">
-            <div class="fw-semibold">
-              ${escapeHtml(displayName)} — ${item.count} claims —
-              <span class="${statusClass}">${statusText}</span>
-            </div>
-            <div class="meta">
-              Detected from ${escapeHtml(item.displayName)}
-            </div>
+      return `
+        <div class="facility-summary-item">
+          <div class="fw-semibold">
+            ${escapeHtml(displayName)} — ${item.count} claims —
+            <span class="${statusClass}">${statusText}</span>
           </div>
-        `;
-      }).join('');
+          <div class="meta">Detected from ${escapeHtml(item.displayName)}</div>
+        </div>
+      `;
+    }).join('');
 
     if (!facilityStats.length) {
       configsContainer.innerHTML = '';
@@ -2438,10 +2417,7 @@
       return;
     }
 
-    const validFacilityKeys = new Set(
-      facilityStats.map(item => item.facilityKey)
-    );
-
+    const validFacilityKeys = new Set(facilityStats.map(item => item.facilityKey));
     if (!validFacilityKeys.has(state.activeFacilityTab)) {
       state.activeFacilityTab = facilityStats[0].facilityKey;
     }
@@ -2451,6 +2427,7 @@
         createFacilityConfig(item.facilityKey, item.presetName);
       const presetName = config.presetName || item.presetName || '';
       const displayName = presetName || item.displayName;
+      const tabLabel = getFacilityTabLabel(displayName);
       const active = item.facilityKey === state.activeFacilityTab;
       const statusClass = presetName ? 'tab-status-ok' : 'tab-status-bad';
 
@@ -2461,9 +2438,10 @@
           data-facility-tab-key="${escapeHtml(item.facilityKey)}"
           role="tab"
           aria-selected="${active ? 'true' : 'false'}"
+          title="${escapeHtml(displayName)}"
         >
-          <span class="facility-tab-name">${escapeHtml(displayName)}</span>
-          <span class="facility-tab-meta">${item.count} claims</span>
+          <span class="facility-tab-name">${escapeHtml(tabLabel)}</span>
+          <span class="facility-tab-meta">${item.count} claim${item.count === 1 ? '' : 's'}</span>
           <span class="facility-tab-dot ${statusClass}" aria-hidden="true"></span>
         </button>
       `;
@@ -2483,37 +2461,42 @@
           : 'No preset coder defaults. Enter the coder list manually.';
 
       return `
-        <div
-          class="facility-tab-panel ${active ? 'active' : ''}"
+        <section
+          class="facility-tab-panel"
           data-facility-panel-key="${escapeHtml(item.facilityKey)}"
           role="tabpanel"
           ${active ? '' : 'hidden'}
         >
           <div class="facility-tab-panel-header">
-            <div>
-              <div class="fw-bold">${escapeHtml(displayName)}</div>
-              <div class="facility-config-meta">${item.count} eligible claim${item.count === 1 ? '' : 's'} detected for this facility.</div>
-            </div>
+            <div class="facility-tab-panel-title">${escapeHtml(displayName)}</div>
+            <div class="facility-tab-panel-count">${item.count} eligible claim${item.count === 1 ? '' : 's'}</div>
           </div>
 
           <div class="facility-config-body">
-            <div class="facility-config-meta mb-2">
+            <div class="facility-config-meta mb-3">
               Presets only provide defaults. The editable coder list below is the source of truth for this allocation run.
             </div>
 
             <div class="mb-3">
               <label class="form-label fw-bold small mb-1">Preset</label>
-              <select class="form-select form-select-sm facility-preset-select" data-facility-key="${escapeHtml(item.facilityKey)}">
+              <select
+                class="form-select form-select-sm facility-preset-select"
+                data-facility-key="${escapeHtml(item.facilityKey)}"
+              >
                 <option value="">-- None --</option>
                 ${state.presetOptions.map(name => `
-                  <option value="${escapeHtml(name)}" ${name === presetName ? 'selected' : ''}>${escapeHtml(name)}</option>
+                  <option value="${escapeHtml(name)}" ${name === presetName ? 'selected' : ''}>
+                    ${escapeHtml(name)}
+                  </option>
                 `).join('')}
               </select>
             </div>
 
             <div class="mb-2">
-              <div class="d-flex justify-content-between align-items-center gap-2 mb-1">
-                <label class="form-label fw-bold small mb-0">Coders <span class="fw-normal text-muted">(one per line)</span></label>
+              <div class="coder-editor-heading mb-1">
+                <label class="form-label fw-bold small mb-0">
+                  Coders <span class="fw-normal text-muted">(one per line)</span>
+                </label>
                 <button
                   type="button"
                   class="btn btn-outline-secondary btn-sm facility-reset-coders-btn"
@@ -2525,7 +2508,7 @@
 
               <textarea
                 class="form-control form-control-sm facility-coders-textarea"
-                rows="6"
+                rows="5"
                 data-facility-key="${escapeHtml(item.facilityKey)}"
                 placeholder="Enter coder names, one per line"
               >${escapeHtml(config.codersText || '')}</textarea>
@@ -2538,14 +2521,70 @@
                 : 'No preset department restrictions active. Manually entered coders are unrestricted.'}
             </div>
           </div>
-        </div>
+        </section>
       `;
     }).join('');
 
     configsContainer.innerHTML = `
-      <div class="facility-tabs" role="tablist" aria-label="Facility coder assignments">${tabButtons}</div>
+      <div class="facility-tabs" role="tablist" aria-label="Facility coder assignments">
+        ${tabButtons}
+      </div>
       <div class="facility-tab-panels">${tabPanels}</div>
     `;
+  }
+
+  function countEntries(entries) {
+    const counts = {};
+
+    for (const entry of entries) {
+      counts[entry] =
+        (counts[entry] || 0) + 1;
+    }
+
+    return Object.entries(counts)
+      .sort(
+        (a, b) =>
+          a[0].localeCompare(b[0])
+      );
+  }
+
+  function createCheckItems(
+    container,
+    items,
+    selectedValues,
+    defaultChecked = true
+  ) {
+    if (!container) return;
+
+    if (!items.length) {
+      container.textContent =
+        'No values found.';
+      return;
+    }
+
+    container.innerHTML =
+      items.map(
+        ([value, count]) => {
+          const checked =
+            selectedValues instanceof Set
+              ? selectedValues.has(value)
+              : defaultChecked;
+
+          return `
+            <div class="form-check">
+              <input
+                class="form-check-input"
+                type="checkbox"
+                value="${escapeHtml(value)}"
+                ${checked ? 'checked' : ''}
+              >
+              <label class="form-check-label">
+                (${count}) ${escapeHtml(value)}
+              </label>
+            </div>
+          `;
+        }
+      ).join('');
   }
 
   function refreshFilterOptions() {
@@ -3362,18 +3401,18 @@
 
         const facilityKey = tab.dataset.facilityTabKey;
         if (!facilityKey) return;
-        state.activeFacilityTab = facilityKey;
 
+        state.activeFacilityTab = facilityKey;
         const container = getEl('facility-configs');
+
         container?.querySelectorAll('.facility-tab-btn').forEach(button => {
           const isActive = button.dataset.facilityTabKey === facilityKey;
           button.classList.toggle('active', isActive);
           button.setAttribute('aria-selected', isActive ? 'true' : 'false');
         });
+
         container?.querySelectorAll('.facility-tab-panel').forEach(panel => {
-          const isActive = panel.dataset.facilityPanelKey === facilityKey;
-          panel.classList.toggle('active', isActive);
-          panel.hidden = !isActive;
+          panel.hidden = panel.dataset.facilityPanelKey !== facilityKey;
         });
       }
     );
