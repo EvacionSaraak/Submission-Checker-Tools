@@ -653,7 +653,7 @@
         });
 
       const payload = {
-        version: 4,
+        version: 5,
         facilityConfigs: savedFacilities,
         activeFacilityTab: state.activeFacilityTab || '',
         filterState: {
@@ -664,7 +664,9 @@
           includeNoBills: Boolean(state.filterState.includeNoBills)
         },
         advancedFiltersOpen:
-          getEl('advanced-filters-panel')?.open !== false
+          Boolean(getEl('advanced-filters-panel')?.open),
+        coderAssignmentOpen:
+          getEl('coder-assignment-panel')?.open !== false
       };
 
       root.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
@@ -3101,10 +3103,48 @@
     return getFriendlyFacilityName(text) || text;
   }
 
-  function renderDepartmentChips(facilityKey, coderIndex, type, departments) {
-    return normalizeDepartmentList(departments || [])
-      .map(department => `
-        <span class="department-chip">
+  function renderDepartmentChips(facilityKey, coderIndex, row) {
+    const entries = [];
+    const seen = new Set();
+
+    normalizeDepartmentList(row?.assignedDepartments || [])
+      .forEach(department => {
+        const key = normalizeDepartmentKey(department);
+        if (!key || seen.has(key)) return;
+        seen.add(key);
+        entries.push({ department, type: 'assigned' });
+      });
+
+    normalizeDepartmentList(row?.preferredDepartments || [])
+      .forEach(department => {
+        const key = normalizeDepartmentKey(department);
+        if (!key || seen.has(key)) return;
+        seen.add(key);
+        entries.push({ department, type: 'preferred' });
+      });
+
+    entries.sort((a, b) => a.department.localeCompare(b.department));
+
+    return entries.map(({ department, type }) => {
+      const assigned = type === 'assigned';
+      const roleLabel = assigned ? 'A' : 'P';
+      const roleTitle = assigned
+        ? 'Assigned department — hard override. Click to change to Preferred.'
+        : 'Preferred department — soft preference. Click to change to Assigned.';
+
+      return `
+        <span class="department-chip ${assigned ? 'department-chip-assigned' : 'department-chip-preferred'}">
+          <button
+            type="button"
+            class="department-chip-role"
+            data-action="toggle-department-chip"
+            data-facility-key="${escapeHtml(facilityKey)}"
+            data-coder-index="${coderIndex}"
+            data-department-type="${escapeHtml(type)}"
+            data-department="${escapeHtml(department)}"
+            aria-label="${escapeHtml(roleTitle)}"
+            title="${escapeHtml(roleTitle)}"
+          >${roleLabel}</button>
           <span>${escapeHtml(department)}</span>
           <button
             type="button"
@@ -3118,7 +3158,8 @@
             title="Remove ${escapeHtml(department)}"
           >&times;</button>
         </span>
-      `).join('');
+      `;
+    }).join('');
   }
 
   function renderCoderEditorRows(facilityKey, config, departmentListId) {
@@ -3147,14 +3188,13 @@
         </div>
 
         <div class="coder-config-field">
-          <label class="coder-field-label">Preferred Departments</label>
-          <div class="department-tag-editor" data-department-editor="preferred">
+          <label class="coder-field-label">Departments</label>
+          <div class="department-tag-editor combined-department-editor">
             <div class="department-chip-list">
               ${renderDepartmentChips(
                 facilityKey,
                 coderIndex,
-                'preferred',
-                row.preferredDepartments
+                row
               )}
             </div>
             <input
@@ -3162,34 +3202,10 @@
               class="department-tag-input"
               data-facility-key="${escapeHtml(facilityKey)}"
               data-coder-index="${coderIndex}"
-              data-department-type="preferred"
               list="${escapeHtml(departmentListId)}"
-              placeholder="Add preferred department…"
+              placeholder="Add / assign department…"
               autocomplete="off"
-            />
-          </div>
-        </div>
-
-        <div class="coder-config-field">
-          <label class="coder-field-label">Assigned Departments</label>
-          <div class="department-tag-editor assigned-editor" data-department-editor="assigned">
-            <div class="department-chip-list">
-              ${renderDepartmentChips(
-                facilityKey,
-                coderIndex,
-                'assigned',
-                row.assignedDepartments
-              )}
-            </div>
-            <input
-              type="text"
-              class="department-tag-input"
-              data-facility-key="${escapeHtml(facilityKey)}"
-              data-coder-index="${coderIndex}"
-              data-department-type="assigned"
-              list="${escapeHtml(departmentListId)}"
-              placeholder="Assign department…"
-              autocomplete="off"
+              title="Newly added departments are Assigned by default"
             />
           </div>
         </div>
@@ -3287,8 +3303,9 @@
 
           <div class="facility-config-body">
             <div class="facility-rules-note mb-3">
-              <strong>Preferred</strong> departments are soft hints and workload balance remains primary.
-              <strong>Assigned</strong> departments are manual hard overrides and start blank by default.
+              Department chips share one field. <span class="department-legend-chip preferred">P</span> means <strong>Preferred</strong> (soft hint) and
+              <span class="department-legend-chip assigned">A</span> means <strong>Assigned</strong> (manual hard override).
+              New departments you add are Assigned by default. Click the P/A badge on a chip to switch its mode.
             </div>
 
             <div class="facility-toolbar mb-3">
@@ -3331,8 +3348,7 @@
 
             <div class="coder-config-grid-header" aria-hidden="true">
               <span>Coder</span>
-              <span>Preferred Departments</span>
-              <span>Assigned Departments</span>
+              <span>Departments</span>
               <span></span>
             </div>
             <div class="coder-config-rows">
@@ -3977,12 +3993,26 @@
 
       const advancedFiltersPanel =
         getEl('advanced-filters-panel');
-      if (
-        advancedFiltersPanel &&
-        typeof state.persistedUserState?.advancedFiltersOpen === 'boolean'
-      ) {
+      const coderAssignmentPanel =
+        getEl('coder-assignment-panel');
+      const savedUiVersion = Number(
+        state.persistedUserState?.version || 0
+      );
+
+      if (advancedFiltersPanel) {
         advancedFiltersPanel.open =
-          state.persistedUserState.advancedFiltersOpen;
+          savedUiVersion >= 5 &&
+          typeof state.persistedUserState?.advancedFiltersOpen === 'boolean'
+            ? state.persistedUserState.advancedFiltersOpen
+            : false;
+      }
+
+      if (coderAssignmentPanel) {
+        coderAssignmentPanel.open =
+          savedUiVersion >= 5 &&
+          typeof state.persistedUserState?.coderAssignmentOpen === 'boolean'
+            ? state.persistedUserState.coderAssignmentOpen
+            : true;
       }
 
       getEl(
@@ -4068,21 +4098,26 @@
     invalidateAllocationResult();
   }
 
-  function addDepartmentToCoder(facilityKey, coderIndex, type, typedValue) {
+  function addDepartmentToCoder(facilityKey, coderIndex, typedValue) {
     const department =
       getFacilityDepartmentDisplayValue(facilityKey, typedValue);
     if (!department) return false;
+
+    const departmentKey = normalizeDepartmentKey(department);
 
     updateFacilityCoderRows(
       facilityKey,
       rows => {
         const row = rows[coderIndex];
         if (!row) return;
-        const key = type === 'assigned'
-          ? 'assignedDepartments'
-          : 'preferredDepartments';
-        row[key] = normalizeDepartmentList([
-          ...(row[key] || []),
+
+        // Manual additions are explicit assignments by default. If the same
+        // department was previously only Preferred, promote it to Assigned.
+        row.preferredDepartments = (row.preferredDepartments || []).filter(
+          item => normalizeDepartmentKey(item) !== departmentKey
+        );
+        row.assignedDepartments = normalizeDepartmentList([
+          ...(row.assignedDepartments || []),
           department
         ]);
       },
@@ -4114,6 +4149,79 @@
       },
       true
     );
+  }
+
+  function toggleDepartmentMode(
+    facilityKey,
+    coderIndex,
+    type,
+    department
+  ) {
+    const departmentKey = normalizeDepartmentKey(department);
+    if (!departmentKey) return;
+
+    updateFacilityCoderRows(
+      facilityKey,
+      rows => {
+        const row = rows[coderIndex];
+        if (!row) return;
+
+        const fromKey = type === 'assigned'
+          ? 'assignedDepartments'
+          : 'preferredDepartments';
+        const toKey = type === 'assigned'
+          ? 'preferredDepartments'
+          : 'assignedDepartments';
+
+        const existing = (row[fromKey] || []).find(
+          item => normalizeDepartmentKey(item) === departmentKey
+        ) || department;
+
+        row[fromKey] = (row[fromKey] || []).filter(
+          item => normalizeDepartmentKey(item) !== departmentKey
+        );
+        row[toKey] = normalizeDepartmentList([
+          ...(row[toKey] || []),
+          existing
+        ]);
+      },
+      true
+    );
+  }
+
+  function focusNewestCoderRow(facilityKey) {
+    if (!configsRootForFocus()) return;
+
+    root.setTimeout(() => {
+      const rootEl = configsRootForFocus();
+      if (!rootEl) return;
+
+      const panel = Array.from(
+        rootEl.querySelectorAll('.facility-tab-panel')
+      ).find(item => item.dataset.facilityPanelKey === facilityKey);
+
+      const input = panel?.querySelector(
+        '.coder-name-input[data-coder-index="0"]'
+      );
+
+      if (!(input instanceof HTMLInputElement)) return;
+
+      input.classList.remove('coder-name-attention');
+      // Force a reflow so repeated Add Coder clicks restart the animation.
+      void input.offsetWidth;
+      input.classList.add('coder-name-attention');
+      input.focus();
+      input.select();
+
+      root.setTimeout(
+        () => input.classList.remove('coder-name-attention'),
+        2200
+      );
+    }, 0);
+  }
+
+  function configsRootForFocus() {
+    return getEl('facility-configs');
   }
 
   function usePresetCoders(facilityKey) {
@@ -4200,8 +4308,6 @@
       ) {
         const facilityKey = target.dataset.facilityKey;
         const coderIndex = Number(target.dataset.coderIndex);
-        const type = target.dataset.departmentType || 'preferred';
-
         if (
           facilityKey &&
           Number.isInteger(coderIndex) &&
@@ -4210,7 +4316,6 @@
           if (addDepartmentToCoder(
             facilityKey,
             coderIndex,
-            type,
             target.value
           )) {
             target.value = '';
@@ -4264,13 +4369,11 @@
 
       const facilityKey = target.dataset.facilityKey;
       const coderIndex = Number(target.dataset.coderIndex);
-      const type = target.dataset.departmentType || 'preferred';
       if (!facilityKey || !Number.isInteger(coderIndex)) return;
 
       if (addDepartmentToCoder(
         facilityKey,
         coderIndex,
-        type,
         target.value
       )) {
         target.value = '';
@@ -4318,13 +4421,14 @@
 
         updateFacilityCoderRows(
           facilityKey,
-          rows => rows.push({
+          rows => rows.unshift({
             name: '',
             preferredDepartments: [],
             assignedDepartments: []
           }),
           true
         );
+        focusNewestCoderRow(facilityKey);
         return;
       }
 
@@ -4338,6 +4442,23 @@
           facilityKey,
           rows => rows.splice(coderIndex, 1),
           true
+        );
+        return;
+      }
+
+      const chipToggleButton = event.target.closest?.('[data-action="toggle-department-chip"]');
+      if (chipToggleButton) {
+        const facilityKey = chipToggleButton.dataset.facilityKey;
+        const coderIndex = Number(chipToggleButton.dataset.coderIndex);
+        const type = chipToggleButton.dataset.departmentType || 'preferred';
+        const department = chipToggleButton.dataset.department || '';
+        if (!facilityKey || !Number.isInteger(coderIndex)) return;
+
+        toggleDepartmentMode(
+          facilityKey,
+          coderIndex,
+          type,
+          department
         );
         return;
       }
@@ -4422,6 +4543,10 @@
     });
 
     getEl('advanced-filters-panel')?.addEventListener('toggle', () => {
+      persistUserState();
+    });
+
+    getEl('coder-assignment-panel')?.addEventListener('toggle', () => {
       persistUserState();
     });
 
