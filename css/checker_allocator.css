@@ -849,3 +849,152 @@ body.preview-modal-open {
     height: 96vh;
   }
 }
+
+/* =========================================================
+   2026-09-13: unified department chips + collapsible controls
+   ========================================================= */
+.collapsible-setup-section {
+  padding: 0;
+  overflow: visible;
+}
+
+.collapsible-section-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px;
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+}
+
+.collapsible-section-summary::-webkit-details-marker {
+  display: none;
+}
+
+.collapsible-section-summary::before {
+  content: '▸';
+  flex: 0 0 auto;
+  font-size: .82rem;
+  line-height: 1;
+  transition: transform .15s ease;
+}
+
+.collapsible-setup-section[open] > .collapsible-section-summary::before {
+  transform: rotate(90deg);
+}
+
+.collapsible-setup-section > .advanced-body,
+.collapsible-setup-section > .mt-3 {
+  margin-top: 0 !important;
+  padding: 12px;
+  border-top: 1px solid #dee2e6;
+}
+
+.collapsible-setup-section > .advanced-body {
+  padding-top: 12px;
+}
+
+/* Coder + one unified Departments field + action button. */
+.coder-config-grid-header,
+.coder-config-row {
+  grid-template-columns: minmax(210px, .8fr) minmax(420px, 2.2fr) auto;
+}
+
+.combined-department-editor {
+  border-color: #9fc4ed;
+  background: #f7fbff;
+}
+
+.department-chip-preferred {
+  border-color: #b6d4fe;
+  background: #e7f1ff;
+  color: #084298;
+}
+
+.department-chip-assigned {
+  border-color: #f0d58c;
+  background: #fff3cd;
+  color: #664d03;
+}
+
+.department-chip-role {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font-size: .62rem;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+  opacity: .8;
+}
+
+.department-chip-role:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, .45);
+}
+
+.department-legend-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  margin: 0 2px;
+  padding: 0 5px;
+  border: 1px solid;
+  border-radius: 999px;
+  font-size: .65rem;
+  font-weight: 800;
+  vertical-align: text-bottom;
+}
+
+.department-legend-chip.preferred {
+  border-color: #b6d4fe;
+  background: #e7f1ff;
+  color: #084298;
+}
+
+.department-legend-chip.assigned {
+  border-color: #f0d58c;
+  background: #fff3cd;
+  color: #664d03;
+}
+
+@keyframes coder-name-attention-pulse {
+  0%, 100% {
+    border-color: #dc3545;
+    box-shadow: 0 0 0 0 rgba(220, 53, 69, .40);
+    background-color: #fff;
+  }
+  30% {
+    border-color: #dc3545;
+    box-shadow: 0 0 0 .24rem rgba(220, 53, 69, .22);
+    background-color: #fff0f1;
+  }
+  60% {
+    border-color: #dc3545;
+    box-shadow: 0 0 0 .08rem rgba(220, 53, 69, .16);
+    background-color: #fff7f7;
+  }
+}
+
+.coder-name-input.coder-name-attention {
+  border-color: #dc3545 !important;
+  animation: coder-name-attention-pulse .72s ease-in-out 3;
+}
+
+@media (max-width: 900px) {
+  .coder-config-row {
+    grid-template-columns: 1fr;
+  }
+}
