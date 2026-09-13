@@ -1513,6 +1513,7 @@
         row.ClaimDateText ||
         '',
       Department: row.Department,
+      'Codification Status': row.CodificationStatus || '',
       Coder: row.Coder,
       'Date Assigned': allocationDateText,
       Query: row.Query,
@@ -2742,6 +2743,7 @@
       'Claim ID',
       'Claim Date',
       'Department',
+      'Codification Status',
       'Coder',
       'Date Assigned',
       'Query',
