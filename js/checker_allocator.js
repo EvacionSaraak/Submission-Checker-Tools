@@ -48,6 +48,17 @@
   const STORAGE_KEY = 'checkerAllocatorUserStateV4';
   const DEFAULT_EXCLUDED_DEPARTMENT_PATTERN = /\b(?:dental|orthodontic|orthodontics|slimming|cupping)\b/i;
 
+  /*
+   * Claims currently carrying one of these coders in Codified By are allowed
+   * back into the allocator for reassignment. They are not sent back to the
+   * same source coder on that claim.
+   */
+  const REASSIGNABLE_CODIFIED_BY_TOKENS = new Set([
+    'rednie',
+    'farsana',
+    'abhilash'
+  ]);
+
   const FACILITY_ALIASES = Object.freeze({
     IVORY: 'MF4456',
     KOREAN: 'MF5708',
@@ -82,6 +93,7 @@
       departments: new Set(),
       codifStatuses: new Set(),
       codifiedBy: new Set(),
+      claimDates: new Set(),
       includeNoBills: false
     },
     lastAllocationResult: null,
@@ -152,6 +164,94 @@
 
   function getPaymentModeCategory(mode) {
     return /insur/i.test(String(mode || '')) ? 'insurance' : 'self_pay';
+  }
+
+  function getNameTokens(value) {
+    return normalizeStatus(value)
+      .split(/\s+/)
+      .filter(Boolean);
+  }
+
+  function isReassignableCodifiedByValue(value) {
+    return getNameTokens(value).some(
+      token =>
+        REASSIGNABLE_CODIFIED_BY_TOKENS.has(token)
+    );
+  }
+
+  function getReassignmentSourceTokens(claim) {
+    return Array.from(
+      new Set(
+        (claim?.codifiedByValues || [])
+          .flatMap(value =>
+            getNameTokens(value).filter(
+              token =>
+                REASSIGNABLE_CODIFIED_BY_TOKENS.has(token)
+            )
+          )
+      )
+    );
+  }
+
+  function claimRequiresReassignment(claim) {
+    const values =
+      (claim?.codifiedByValues || [])
+        .map(value => String(value || '').trim())
+        .filter(Boolean);
+
+    return Boolean(
+      values.length &&
+      values.every(isReassignableCodifiedByValue)
+    );
+  }
+
+  function claimHasBlockingCodifiedBy(claim) {
+    const values =
+      (claim?.codifiedByValues || [])
+        .map(value => String(value || '').trim())
+        .filter(Boolean);
+
+    if (!values.length) return false;
+
+    return !values.every(
+      isReassignableCodifiedByValue
+    );
+  }
+
+  function getClaimDateFilterValue(claim) {
+    if (
+      claim?.claimDate instanceof Date &&
+      !Number.isNaN(claim.claimDate.getTime())
+    ) {
+      return formatDate(claim.claimDate);
+    }
+
+    return (
+      String(claim?.claimDateText || '').trim() ||
+      '(Blank)'
+    );
+  }
+
+  function sortClaimDateEntries(entries) {
+    return entries.slice().sort((a, b) => {
+      const dateA = parseDateValue(a[0]);
+      const dateB = parseDateValue(b[0]);
+
+      if (dateA && dateB) {
+        return (
+          dateA - dateB ||
+          String(a[0]).localeCompare(String(b[0]))
+        );
+      }
+
+      if (dateA) return -1;
+      if (dateB) return 1;
+
+      if (a[0] === '(Blank)') return 1;
+      if (b[0] === '(Blank)') return -1;
+
+      return String(a[0]).localeCompare(String(b[0]));
+    });
   }
 
   function toUtcDate(year, monthIndex, day) {
@@ -653,7 +753,7 @@
         });
 
       const payload = {
-        version: 5,
+        version: 6,
         facilityConfigs: savedFacilities,
         activeFacilityTab: state.activeFacilityTab || '',
         filterState: {
@@ -661,6 +761,7 @@
           departments: Array.from(state.filterState.departments || []),
           codifStatuses: Array.from(state.filterState.codifStatuses || []),
           codifiedBy: Array.from(state.filterState.codifiedBy || []),
+          claimDates: Array.from(state.filterState.claimDates || []),
           includeNoBills: Boolean(state.filterState.includeNoBills)
         },
         advancedFiltersOpen:
@@ -710,10 +811,11 @@
       paymentModes: new Set(options.paymentModes.map(([value]) => value)),
       departments: new Set(options.departments.map(([value]) => value)),
       codifStatuses: new Set(options.codifStatuses.map(([value]) => value)),
-      codifiedBy: new Set(options.codifiedBy.map(([value]) => value))
+      codifiedBy: new Set(options.codifiedBy.map(([value]) => value)),
+      claimDates: new Set(options.claimDates.map(([value]) => value))
     };
 
-    ['paymentModes', 'departments', 'codifStatuses', 'codifiedBy']
+    ['paymentModes', 'departments', 'codifStatuses', 'codifiedBy', 'claimDates']
       .forEach(key => {
         if (!Array.isArray(saved[key])) return;
         state.filterState[key] = new Set(
@@ -994,7 +1096,16 @@
           claims.flatMap(claim => claim.codifiedByValues || []),
           value => value
         ).entries()
-      ).sort((a, b) => a[0].localeCompare(b[0]))
+      ).sort((a, b) => a[0].localeCompare(b[0])),
+
+      claimDates: sortClaimDateEntries(
+        Array.from(
+          countBy(
+            claims,
+            claim => getClaimDateFilterValue(claim)
+          ).entries()
+        )
+      )
     };
   }
 
@@ -1010,6 +1121,7 @@
       ),
       codifStatuses: new Set(options.codifStatuses.map(([value]) => value)),
       codifiedBy: new Set(),
+      claimDates: new Set(options.claimDates.map(([value]) => value)),
       includeNoBills: false
     };
   }
@@ -1020,63 +1132,101 @@
 
   function applyClaimFilters(claims, filterState) {
     const paymentFiltered = claims.filter(
-      claim => !claim.paymentMode || filterState.paymentModes.has(claim.paymentMode)
-    );
-
-    const departmentFiltered = paymentFiltered.filter(
-      claim => !claim.department || filterState.departments.has(claim.department)
-    );
-
-    const statusFiltered = departmentFiltered.filter(
       claim =>
-        !claim.codificationStatus ||
-        filterState.codifStatuses.has(claim.codificationStatus)
+        !claim.paymentMode ||
+        filterState.paymentModes.has(
+          claim.paymentMode
+        )
     );
+
+    const departmentFiltered =
+      paymentFiltered.filter(
+        claim =>
+          !claim.department ||
+          filterState.departments.has(
+            claim.department
+          )
+      );
+
+    const statusFiltered =
+      departmentFiltered.filter(
+        claim =>
+          !claim.codificationStatus ||
+          filterState.codifStatuses.has(
+            claim.codificationStatus
+          )
+      );
 
     /*
-     * A claim that already has any Codified By value is never eligible for a
-     * new assignment. This is automatic and cannot be overridden by filters.
+     * Ordinarily, a populated Codified By excludes a claim from new
+     * assignment. Rednie, Farsana and Abhilash are deliberate exceptions:
+     * claims carrying only one/more of those names remain eligible so their
+     * work can be redistributed.
      */
-    const alreadyCodifiedExcluded = statusFiltered.filter(
-      claim =>
-        (claim.codifiedByValues || []).some(
-          value => String(value || '').trim()
-        )
-    ).length;
+    const alreadyCodifiedExcluded =
+      statusFiltered.filter(
+        claim =>
+          claimHasBlockingCodifiedBy(claim)
+      ).length;
 
-    const codifiedFiltered = statusFiltered.filter(
-      claim =>
-        !(claim.codifiedByValues || []).some(
-          value => String(value || '').trim()
-        )
-    );
+    const codifiedFiltered =
+      statusFiltered.filter(
+        claim =>
+          !claimHasBlockingCodifiedBy(claim)
+      );
 
     const noBillDetected =
-      codifiedFiltered.filter(claim => claim.noBill).length;
+      codifiedFiltered.filter(
+        claim => claim.noBill
+      ).length;
 
-    const noBillExcluded = filterState.includeNoBills
-      ? 0
-      : noBillDetected;
+    const noBillExcluded =
+      filterState.includeNoBills
+        ? 0
+        : noBillDetected;
 
-    const eligibleClaims = filterState.includeNoBills
-      ? codifiedFiltered
-      : codifiedFiltered.filter(claim => !claim.noBill);
+    const noBillFiltered =
+      filterState.includeNoBills
+        ? codifiedFiltered
+        : codifiedFiltered.filter(
+            claim => !claim.noBill
+          );
+
+    /*
+     * Claim Date is intentionally the final user filter in the hierarchy.
+     */
+    const dateFiltered =
+      noBillFiltered.filter(
+        claim =>
+          filterState.claimDates.has(
+            getClaimDateFilterValue(claim)
+          )
+      );
+
+    const claimDateFilteredOut =
+      noBillFiltered.length -
+      dateFiltered.length;
 
     return {
       paymentFiltered,
       departmentFiltered,
       statusFiltered,
       codifiedFiltered,
-      eligibleClaims,
+      noBillFiltered,
+      dateFiltered,
+      eligibleClaims: dateFiltered,
       alreadyCodifiedExcluded,
       noBillDetected,
       noBillExcluded,
+      claimDateFilteredOut,
       paymentModeFilteredOut:
         claims.length - paymentFiltered.length,
       departmentFilteredOut:
-        paymentFiltered.length - departmentFiltered.length,
+        paymentFiltered.length -
+        departmentFiltered.length,
       codificationStatusFilteredOut:
-        departmentFiltered.length - statusFiltered.length
+        departmentFiltered.length -
+        statusFiltered.length
     };
   }
 
@@ -1139,6 +1289,8 @@
       departmentFilteredOut: filtered.departmentFilteredOut,
       codificationStatusFilteredOut:
         filtered.codificationStatusFilteredOut,
+      claimDateFilteredOut:
+        filtered.claimDateFilteredOut,
       eligibleClaims: filtered.eligibleClaims.length,
       automaticallyExcluded:
         (state.importSummary ? state.importSummary.terminalStatusExcluded : 0) +
@@ -1146,7 +1298,8 @@
         filtered.departmentFilteredOut +
         filtered.codificationStatusFilteredOut +
         filtered.alreadyCodifiedExcluded +
-        filtered.noBillExcluded
+        filtered.noBillExcluded +
+        filtered.claimDateFilteredOut
     };
   }
 
@@ -1164,25 +1317,68 @@
   function getEligibleCoders(claim, facilityConfigs) {
     const config =
       facilityConfigs[claim.facilityKey] ||
-      createFacilityConfig(claim.facilityKey, claim.detectedPresetName);
+      createFacilityConfig(
+        claim.facilityKey,
+        claim.detectedPresetName
+      );
 
-    const profiles = getConfigCoderProfiles(config);
-    const allCoders = Array.from(profiles.keys());
-    const departmentKey = normalizeDepartmentKey(claim.department);
+    const profiles =
+      getConfigCoderProfiles(config);
 
-    if (!departmentKey) return allCoders;
-
-    const explicitlyAssigned = allCoders.filter(coder =>
-      profiles.get(coder)?.assignedDepartments.has(departmentKey)
-    );
+    const reassignmentSourceTokens =
+      claimRequiresReassignment(claim)
+        ? new Set(
+            getReassignmentSourceTokens(claim)
+          )
+        : new Set();
 
     /*
-     * Manual Assigned Departments are hard auditor overrides.
-     * If at least one coder is explicitly assigned to this department,
-     * only that coder/pool is eligible. Otherwise the normal facility pool is
-     * used and preferred departments remain soft tie-breakers.
+     * For reassignment-source claims, remove the source coder(s) from the
+     * destination pool so Rednie/Farsana/Abhilash cannot receive their own
+     * claim back.
      */
-    return explicitlyAssigned.length ? explicitlyAssigned : allCoders;
+    const allCoders =
+      Array.from(profiles.keys())
+        .filter(coder => {
+          if (!reassignmentSourceTokens.size) {
+            return true;
+          }
+
+          const coderTokens =
+            getNameTokens(coder);
+
+          return !coderTokens.some(
+            token =>
+              reassignmentSourceTokens.has(token)
+          );
+        });
+
+    const departmentKey =
+      normalizeDepartmentKey(
+        claim.department
+      );
+
+    if (!departmentKey) {
+      return allCoders;
+    }
+
+    const explicitlyAssigned =
+      allCoders.filter(coder =>
+        profiles
+          .get(coder)
+          ?.assignedDepartments
+          .has(departmentKey)
+      );
+
+    /*
+     * Manual Assigned Departments are hard auditor overrides. If at least one
+     * remaining coder is explicitly assigned to this department, only that
+     * coder/pool is eligible. Otherwise the normal facility pool is used and
+     * preferred departments remain soft tie-breakers.
+     */
+    return explicitlyAssigned.length
+      ? explicitlyAssigned
+      : allCoders;
   }
 
   function getCoderPreferenceCost(claim, coder, facilityConfigs) {
@@ -1745,6 +1941,10 @@
           ClaimDateText: claim.claimDateText,
           Department: claim.department,
           CodificationStatus: claim.codificationStatus || '',
+          PaymentMode: claim.paymentMode || '',
+          PaymentModeCategory:
+            claim.paymentModeCategory ||
+            getPaymentModeCategory(claim.paymentMode),
           Coder: coder,
           'Date Assigned': allocationDateText,
           Query: '',
@@ -1782,6 +1982,7 @@
         '',
       Department: row.Department,
       'Codification Status': row.CodificationStatus || '',
+      'Payment Mode': row.PaymentMode || '',
       Coder: row.Coder,
       'Date Assigned': allocationDateText,
       Query: row.Query,
@@ -1790,19 +1991,46 @@
     };
   }
 
-  function formatDetailedAllocation(facilityCounts) {
-    const parts = Array.from(facilityCounts.entries())
-      .filter(([, count]) => count > 0)
-      .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([facility, count]) => `${count} ${facility}`);
+  function formatDepartmentCounts(
+    departmentCounts
+  ) {
+    const parts =
+      Array.from(
+        departmentCounts.entries()
+      )
+        .filter(([, count]) => count > 0)
+        .sort(
+          (a, b) =>
+            b[1] - a[1] ||
+            a[0].localeCompare(b[0])
+        )
+        .map(
+          ([department, count]) =>
+            `${count} ${department}`
+        );
 
-    if (!parts.length) return '';
-    if (parts.length === 1) return parts[0];
-    if (parts.length === 2) {
-      return `${parts[0]} and ${parts[1]}`;
+    return parts.length
+      ? parts.join(', ')
+      : '';
+  }
+
+  function formatFacilityCoderDetail(detail) {
+    if (!detail || !detail.total) {
+      return '';
     }
 
-    return `${parts.slice(0, -1).join(', ')}, and ${parts[parts.length - 1]}`;
+    const paymentText =
+      `${detail.selfPay} Self-Pay, ` +
+      `${detail.insurance} Insurance`;
+
+    const departmentText =
+      formatDepartmentCounts(
+        detail.departmentCounts
+      );
+
+    return departmentText
+      ? `${paymentText}; ${departmentText}`
+      : paymentText;
   }
 
   function buildAllocationSummary(
@@ -1812,13 +2040,59 @@
     const coderSummary = new Map();
     const facilitySummary = new Map();
 
+    const facilities =
+      Array.from(
+        new Set(
+          (allocationRows || []).map(
+            row =>
+              getFriendlyFacilityName(
+                row.Facility
+              )
+          )
+        )
+      )
+        .filter(Boolean)
+        .sort(
+          (a, b) =>
+            a.localeCompare(b)
+        );
+
     function createCoderSummaryRow(coder) {
       return {
         Coder: coder,
-        'Assigned Claims': 0,
-        Detailed: '',
-        _facilityCounts: new Map()
+        'Assigned Self-Pay': 0,
+        'Assigned Insurance': 0,
+        'Total Assigned Claims': 0,
+        _facilityDetails: new Map()
       };
+    }
+
+    function ensureFacilityDetail(
+      coderRow,
+      facility
+    ) {
+      if (
+        !coderRow
+          ._facilityDetails
+          .has(facility)
+      ) {
+        coderRow
+          ._facilityDetails
+          .set(
+            facility,
+            {
+              total: 0,
+              selfPay: 0,
+              insurance: 0,
+              departmentCounts:
+                new Map()
+            }
+          );
+      }
+
+      return coderRow
+        ._facilityDetails
+        .get(facility);
     }
 
     allConfiguredCoders.forEach(coder => {
@@ -1838,7 +2112,9 @@
       ) {
         coderSummary.set(
           row.Coder,
-          createCoderSummaryRow(row.Coder)
+          createCoderSummaryRow(
+            row.Coder
+          )
         );
       }
 
@@ -1846,56 +2122,168 @@
         const coderRow =
           coderSummary.get(row.Coder);
 
-        coderRow['Assigned Claims']++;
+        coderRow[
+          'Total Assigned Claims'
+        ]++;
+
+        const paymentCategory =
+          row.PaymentModeCategory ||
+          getPaymentModeCategory(
+            row.PaymentMode
+          );
+
+        if (
+          paymentCategory ===
+          'insurance'
+        ) {
+          coderRow[
+            'Assigned Insurance'
+          ]++;
+        } else {
+          coderRow[
+            'Assigned Self-Pay'
+          ]++;
+        }
 
         const facilityLabel =
-          getFriendlyFacilityName(row.Facility);
+          getFriendlyFacilityName(
+            row.Facility
+          );
 
-        coderRow._facilityCounts.set(
-          facilityLabel,
-          (coderRow._facilityCounts.get(
+        const detail =
+          ensureFacilityDetail(
+            coderRow,
             facilityLabel
-          ) || 0) + 1
+          );
+
+        detail.total++;
+
+        if (
+          paymentCategory ===
+          'insurance'
+        ) {
+          detail.insurance++;
+        } else {
+          detail.selfPay++;
+        }
+
+        const department =
+          String(
+            row.Department || ''
+          ).trim();
+
+        const departmentLabel =
+          department
+            ? formatDepartmentDisplay(
+                department
+              )
+            : '(Blank)';
+
+        detail.departmentCounts.set(
+          departmentLabel,
+          (
+            detail
+              .departmentCounts
+              .get(departmentLabel) ||
+            0
+          ) + 1
         );
       }
 
-      if (!facilitySummary.has(row.Facility)) {
-        facilitySummary.set(row.Facility, {
-          Facility: row.Facility,
-          Allocated: 0,
-          Unassigned: 0
-        });
+      if (
+        !facilitySummary.has(
+          row.Facility
+        )
+      ) {
+        facilitySummary.set(
+          row.Facility,
+          {
+            Facility: row.Facility,
+            Allocated: 0,
+            Unassigned: 0
+          }
+        );
       }
 
       facilitySummary
         .get(row.Facility)[
-          isAssigned ? 'Allocated' : 'Unassigned'
+          isAssigned
+            ? 'Allocated'
+            : 'Unassigned'
         ]++;
     }
 
     const coderRows =
-      Array.from(coderSummary.values())
-        .map(row => ({
-          Coder: row.Coder,
-          'Assigned Claims':
-            row['Assigned Claims'],
-          Detailed:
-            formatDetailedAllocation(
-              row._facilityCounts
-            )
-        }))
+      Array.from(
+        coderSummary.values()
+      )
+        .map(row => {
+          const output = {
+            Coder: row.Coder,
+            'Assigned Self-Pay':
+              row[
+                'Assigned Self-Pay'
+              ],
+            'Assigned Insurance':
+              row[
+                'Assigned Insurance'
+              ],
+            'Total Assigned Claims':
+              row[
+                'Total Assigned Claims'
+              ],
+            _facilityDetails:
+              row._facilityDetails
+          };
+
+          for (
+            const facility of
+            facilities
+          ) {
+            const detail =
+              row._facilityDetails.get(
+                facility
+              ) || {
+                total: 0,
+                selfPay: 0,
+                insurance: 0,
+                departmentCounts:
+                  new Map()
+              };
+
+            output[
+              `${facility}|||Assigned`
+            ] = detail.total;
+
+            output[
+              `${facility}|||Detailed`
+            ] =
+              formatFacilityCoderDetail(
+                detail
+              );
+          }
+
+          return output;
+        })
         .sort(
           (a, b) =>
-            a.Coder.localeCompare(b.Coder)
+            a.Coder.localeCompare(
+              b.Coder
+            )
         );
 
     return {
       coderRows,
+      facilities,
       facilityAssignedRows:
-        Array.from(facilitySummary.values())
+        Array.from(
+          facilitySummary.values()
+        )
           .sort(
             (a, b) =>
-              a.Facility.localeCompare(b.Facility)
+              a.Facility.localeCompare(
+                b.Facility
+              )
           )
     };
   }
@@ -2021,7 +2409,8 @@
       ['Department Filter', exclusions.department || 0],
       ['Codification Status Filter', exclusions.codificationStatus || 0],
       ['Already Codified', exclusions.alreadyCodified || 0],
-      ['No Bill', exclusions.noBill || 0]
+      ['No Bill', exclusions.noBill || 0],
+      ['Claim Date Filter', exclusions.claimDate || 0]
     ].filter(([, count]) => count > 0);
 
     const total = entries.reduce(
@@ -2088,6 +2477,9 @@
     const codifiedSet = new Set(
       filterBreakdown?.codifiedFiltered || []
     );
+    const noBillSet = new Set(
+      filterBreakdown?.noBillFiltered || []
+    );
     const eligibleSet = new Set(
       filterBreakdown?.eligibleClaims || filteredClaims
     );
@@ -2112,7 +2504,8 @@
               department: 0,
               codificationStatus: 0,
               alreadyCodified: 0,
-              noBill: 0
+              noBill: 0,
+              claimDate: 0
             }
           }
         );
@@ -2143,8 +2536,10 @@
         facilityRow._exclusions.codificationStatus++;
       } else if (!codifiedSet.has(claim)) {
         facilityRow._exclusions.alreadyCodified++;
-      } else if (!eligibleSet.has(claim)) {
+      } else if (!noBillSet.has(claim)) {
         facilityRow._exclusions.noBill++;
+      } else if (!eligibleSet.has(claim)) {
+        facilityRow._exclusions.claimDate++;
       } else {
         facilityRow.Eligible++;
       }
@@ -2189,6 +2584,9 @@
     return {
       coderRows:
         allocationSummary.coderRows,
+
+      coderFacilities:
+        allocationSummary.facilities,
 
       matrixHeaders: [
         'Coder',
@@ -2237,7 +2635,8 @@
           'Filter Excluded',
           (importStats.paymentModeFilteredOut || 0) +
             (importStats.departmentFilteredOut || 0) +
-            (importStats.codificationStatusFilteredOut || 0)
+            (importStats.codificationStatusFilteredOut || 0) +
+            (importStats.claimDateFilteredOut || 0)
         ],
         [
           'No-Bill Excluded',
@@ -2675,73 +3074,179 @@
     sections,
     merges,
     rows,
+    facilities,
     startRow,
     startColumn
   ) {
-    /*
-     * "Detailed" is one logical column, but it spans three normal-width Excel
-     * columns.  This gives the sentence enough room without making one matrix
-     * column excessively wide farther down the same worksheet.
-     */
-    const physicalHeaders = [
+    const sectionRow =
+      startRow;
+    const facilityHeaderRow =
+      startRow + 1;
+    const subHeaderRow =
+      startRow + 2;
+    const dataStartRow =
+      startRow + 3;
+
+    const fixedHeaders = [
       'Coder',
-      'Assigned Claims',
-      'Detailed',
-      '',
-      ''
+      'Assigned Self-Pay',
+      'Assigned Insurance',
+      'Total Assigned Claims'
     ];
 
-    const physicalRows =
-      rows.map(row => ({
-        Coder: row.Coder,
-        'Assigned Claims':
-          row['Assigned Claims'],
-        Detailed: row.Detailed || '',
-        '': ''
-      }));
+    const columnCount =
+      fixedHeaders.length +
+      facilities.length * 2;
 
-    const sectionEnd =
-      placeSummarySection(
+    setSummaryCell(
+      aoa,
+      sectionRow,
+      startColumn,
+      'Coder Allocation Summary'
+    );
+
+    fixedHeaders.forEach(
+      (header, index) => {
+        setSummaryCell(
+          aoa,
+          facilityHeaderRow,
+          startColumn + index,
+          header
+        );
+
+        merges.push({
+          s: {
+            r: facilityHeaderRow,
+            c: startColumn + index
+          },
+          e: {
+            r: subHeaderRow,
+            c: startColumn + index
+          }
+        });
+      }
+    );
+
+    let column =
+      startColumn +
+      fixedHeaders.length;
+
+    for (const facility of facilities) {
+      setSummaryCell(
         aoa,
-        sections,
-        merges,
-        {
-          title: 'Coder Allocation Summary',
-          headers: physicalHeaders,
-          rows: physicalRows,
-          startRow,
-          startColumn
-        }
+        facilityHeaderRow,
+        column,
+        facility
       );
 
-    const headerRow = startRow + 1;
-    const dataStartRow = startRow + 2;
+      merges.push({
+        s: {
+          r: facilityHeaderRow,
+          c: column
+        },
+        e: {
+          r: facilityHeaderRow,
+          c: column + 1
+        }
+      });
+
+      setSummaryCell(
+        aoa,
+        subHeaderRow,
+        column,
+        'Assigned'
+      );
+
+      setSummaryCell(
+        aoa,
+        subHeaderRow,
+        column + 1,
+        'Detailed'
+      );
+
+      column += 2;
+    }
+
+    rows.forEach(
+      (row, rowOffset) => {
+        const targetRow =
+          dataStartRow + rowOffset;
+
+        fixedHeaders.forEach(
+          (header, index) => {
+            setSummaryCell(
+              aoa,
+              targetRow,
+              startColumn + index,
+              row[header] ?? ''
+            );
+          }
+        );
+
+        let targetColumn =
+          startColumn +
+          fixedHeaders.length;
+
+        for (
+          const facility of
+          facilities
+        ) {
+          setSummaryCell(
+            aoa,
+            targetRow,
+            targetColumn,
+            row[
+              `${facility}|||Assigned`
+            ] ?? 0
+          );
+
+          setSummaryCell(
+            aoa,
+            targetRow,
+            targetColumn + 1,
+            row[
+              `${facility}|||Detailed`
+            ] || ''
+          );
+
+          targetColumn += 2;
+        }
+      }
+    );
 
     merges.push({
       s: {
-        r: headerRow,
-        c: startColumn + 2
+        r: sectionRow,
+        c: startColumn
       },
       e: {
-        r: headerRow,
-        c: startColumn + 4
+        r: sectionRow,
+        c:
+          startColumn +
+          columnCount -
+          1
       }
     });
 
-    rows.forEach((row, rowOffset) => {
-      merges.push({
-        s: {
-          r: dataStartRow + rowOffset,
-          c: startColumn + 2
-        },
-        e: {
-          r: dataStartRow + rowOffset,
-          c: startColumn + 4
-        }
-      });
+    sections.push({
+      sectionRow,
+      headerRow: subHeaderRow,
+      extraHeaderRows: [
+        facilityHeaderRow
+      ],
+      dataStartRow,
+      rowCount: rows.length,
+      columnCount,
+      startColumn,
+      kind: 'coderSummary',
+      facilities
     });
 
-    return sectionEnd;
+    return rows.length
+      ? dataStartRow +
+          rows.length -
+          1
+      : subHeaderRow;
   }
 
   function forceSummaryNumericCells(ws, sections, aoa) {
@@ -2789,15 +3294,9 @@
     const topStartRow = 2;
 
     /*
-     * Compact dashboard-style layout:
-     *
-     * A:E  Coder Allocation Summary
-     * G:.. Department Status Summary
-     * A:F  Facility Summary (directly below coder summary)
-     * A:.. Coder × Facility Matrix (full width below the top blocks)
-     *
-     * This uses the previously-empty area instead of stacking every narrow
-     * table vertically with a large blank region to its right.
+     * The Coder Allocation Summary can become very wide because every facility
+     * receives an Assigned + Detailed pair. It therefore occupies its own
+     * horizontal band. All other tables begin below it.
      */
     const coderEndRow =
       placeCoderSummarySection(
@@ -2805,29 +3304,12 @@
         sections,
         merges,
         summaryData.coderRows,
+        summaryData.coderFacilities || [],
         topStartRow,
         0
       );
 
-    const departmentEndRow =
-      placeSummarySection(
-        aoa,
-        sections,
-        merges,
-        {
-          title: 'Department Status Summary',
-          headers:
-            summaryData.departmentHeaders,
-          rows:
-            summaryData.departmentRows,
-          startRow:
-            topStartRow,
-          startColumn:
-            6
-        }
-      );
-
-    const facilityStartRow =
+    const secondaryStartRow =
       coderEndRow + 2;
 
     const facilityEndRow =
@@ -2848,9 +3330,28 @@
           rows:
             summaryData.facilityRows,
           startRow:
-            facilityStartRow,
+            secondaryStartRow,
           startColumn:
             0
+        }
+      );
+
+    const departmentEndRow =
+      placeSummarySection(
+        aoa,
+        sections,
+        merges,
+        {
+          title:
+            'Department Status Summary',
+          headers:
+            summaryData.departmentHeaders,
+          rows:
+            summaryData.departmentRows,
+          startRow:
+            secondaryStartRow,
+          startColumn:
+            8
         }
       );
 
@@ -2865,7 +3366,8 @@
       sections,
       merges,
       {
-        title: 'Coder × Facility Matrix',
+        title:
+          'Coder × Facility Matrix',
         headers:
           summaryData.matrixHeaders,
         rows:
@@ -2877,22 +3379,41 @@
       }
     );
 
-    const maximumColumns = Math.max(
-      summaryData.matrixHeaders.length,
-      6 + summaryData.departmentHeaders.length,
-      6
-    );
+    const coderColumnCount =
+      4 +
+      (
+        summaryData
+          .coderFacilities
+          ?.length || 0
+      ) * 2;
+
+    const maximumColumns =
+      Math.max(
+        coderColumnCount,
+        summaryData
+          .matrixHeaders
+          .length,
+        8 +
+          summaryData
+            .departmentHeaders
+            .length,
+        7
+      );
 
     merges.unshift({
       s: { r: 0, c: 0 },
       e: {
         r: 0,
-        c: maximumColumns - 1
+        c:
+          maximumColumns -
+          1
       }
     });
 
     const ws =
-      root.XLSX.utils.aoa_to_sheet(aoa);
+      root.XLSX.utils.aoa_to_sheet(
+        aoa
+      );
 
     ws['!merges'] = merges;
 
@@ -2904,8 +3425,12 @@
     );
 
     ws['!rows'] = [];
-    ws['!rows'][0] = { hpt: 24 };
-    ws['!rows'][1] = { hpt: 6 };
+    ws['!rows'][0] = {
+      hpt: 24
+    };
+    ws['!rows'][1] = {
+      hpt: 6
+    };
 
     for (const section of sections) {
       applyCellStyle(
@@ -2913,6 +3438,35 @@
         section.sectionRow,
         section.startColumn,
         EXCEL_STYLES.section
+      );
+
+      (
+        section
+          .extraHeaderRows ||
+        []
+      ).forEach(
+        headerRowIndex => {
+          for (
+            let col = 0;
+            col <
+            section.columnCount;
+            col++
+          ) {
+            applyCellStyle(
+              ws,
+              headerRowIndex,
+              section.startColumn +
+                col,
+              EXCEL_STYLES.header
+            );
+          }
+
+          ws['!rows'][
+            headerRowIndex
+          ] = {
+            hpt: 30
+          };
+        }
       );
 
       styleTableRange(
@@ -2927,55 +3481,79 @@
         }
       );
 
-      ws['!rows'][section.headerRow] = {
+      ws['!rows'][
+        section.headerRow
+      ] = {
         hpt: 30
       };
     }
 
-    /*
-     * Give the coder detail sentences a little more vertical room and wrap
-     * them while preserving the alternating table fills.
-     */
     const coderSection =
       sections.find(
         section =>
-          section.sectionRow === topStartRow &&
-          section.startColumn === 0
+          section.kind ===
+          'coderSummary'
       );
 
     if (coderSection) {
       for (
         let rowOffset = 0;
-        rowOffset < coderSection.rowCount;
+        rowOffset <
+        coderSection.rowCount;
         rowOffset++
       ) {
         const rowIndex =
-          coderSection.dataStartRow +
+          coderSection
+            .dataStartRow +
           rowOffset;
 
-        ws['!rows'][rowIndex] = {
-          hpt: 27
+        ws['!rows'][
+          rowIndex
+        ] = {
+          hpt: 34
         };
 
-        for (let col = 2; col <= 4; col++) {
+        /*
+         * In each facility pair, the second column is Detailed. Wrap that
+         * department/payment split text.
+         */
+        for (
+          let colOffset = 5;
+          colOffset <
+          coderSection
+            .columnCount;
+          colOffset += 2
+        ) {
           const ref =
-            root.XLSX.utils.encode_cell({
-              r: rowIndex,
-              c: col
-            });
+            root.XLSX.utils
+              .encode_cell({
+                r: rowIndex,
+                c:
+                  coderSection
+                    .startColumn +
+                  colOffset
+              });
 
           if (ws[ref]) {
             const baseStyle =
               rowOffset % 2
-                ? EXCEL_STYLES.altBody
-                : EXCEL_STYLES.body;
+                ? EXCEL_STYLES
+                    .altBody
+                : EXCEL_STYLES
+                    .body;
 
             ws[ref].s = {
               ...baseStyle,
               alignment: {
-                ...(baseStyle.alignment || {}),
-                vertical: 'top',
-                wrapText: true
+                ...(
+                  baseStyle
+                    .alignment ||
+                  {}
+                ),
+                vertical:
+                  'top',
+                wrapText:
+                  true
               }
             };
           }
@@ -2989,67 +3567,100 @@
       aoa
     );
 
-    /*
-     * Keep the worksheet compact.  Detailed spans C:E, so those columns can
-     * stay at normal matrix widths rather than creating one huge column.
-     */
     const widths = [];
 
     for (
       let col = 0;
-      col < maximumColumns;
+      col <
+      maximumColumns;
       col++
     ) {
       let maxLength = 10;
 
       for (
         let row = 0;
-        row < aoa.length;
+        row <
+        aoa.length;
         row++
       ) {
         const value =
           aoa[row]?.[col];
 
-        if (value != null) {
-          maxLength = Math.max(
-            maxLength,
-            String(value).length + 2
-          );
+        if (
+          value != null
+        ) {
+          maxLength =
+            Math.max(
+              maxLength,
+              String(value)
+                .length + 2
+            );
         }
       }
 
       let width =
         Math.min(
-          Math.max(maxLength, 10),
-          20
+          Math.max(
+            maxLength,
+            10
+          ),
+          22
         );
 
       if (col === 0) {
-        width = Math.min(
-          Math.max(maxLength, 24),
-          30
-        );
+        width =
+          Math.min(
+            Math.max(
+              maxLength,
+              24
+            ),
+            30
+          );
       }
 
       if (
-        col >= 2 &&
-        col <= 4
+        col >= 1 &&
+        col <= 3
       ) {
-        width = 17;
+        width =
+          Math.min(
+            Math.max(
+              maxLength,
+              16
+            ),
+            22
+          );
       }
 
-      if (col === 5) {
-        width = 4;
+      /*
+       * Coder summary facility columns start at E:
+       * Assigned gets a compact numeric width; Detailed gets a wide wrapped
+       * text column. These widths also keep the long horizontal table readable.
+       */
+      if (
+        coderSection &&
+        col >= 4 &&
+        col <
+          coderSection
+            .columnCount
+      ) {
+        width =
+          (col - 4) % 2 === 0
+            ? 12
+            : 38;
       }
 
-      if (col === 6) {
-        width = Math.min(
-          Math.max(maxLength, 24),
-          30
-        );
+      if (col === 7) {
+        width =
+          Math.max(
+            width,
+            4
+          );
       }
 
-      widths.push({ wch: width });
+      widths.push({
+        wch: width
+      });
     }
 
     ws['!cols'] = widths;
@@ -3084,6 +3695,7 @@
       'Claim Date',
       'Department',
       'Codification Status',
+      'Payment Mode',
       'Coder',
       'Date Assigned',
       'Query',
@@ -3524,6 +4136,9 @@
     const codifiedByContainer =
       getEl('codified-by-section');
 
+    const claimDateContainer =
+      getEl('claim-date-section');
+
     const noBillLabel =
       getEl('no-bill-count-label');
 
@@ -3587,6 +4202,34 @@
           .filter(Boolean)
       );
 
+    const codifiedFiltered =
+      statusFiltered.filter(
+        claim =>
+          !claimHasBlockingCodifiedBy(
+            claim
+          )
+      );
+
+    const noBillFiltered =
+      state.filterState
+        .includeNoBills
+        ? codifiedFiltered
+        : codifiedFiltered.filter(
+            claim => !claim.noBill
+          );
+
+    const claimDateCounts =
+      sortClaimDateEntries(
+        countEntries(
+          noBillFiltered.map(
+            claim =>
+              getClaimDateFilterValue(
+                claim
+              )
+          )
+        )
+      );
+
     createCheckItems(
       paymentContainer,
       paymentCounts,
@@ -3613,6 +4256,13 @@
       codifiedByCounts,
       state.filterState.codifiedBy,
       false
+    );
+
+    createCheckItems(
+      claimDateContainer,
+      claimDateCounts,
+      state.filterState.claimDates,
+      true
     );
 
     if (noBillLabel) {
@@ -3677,6 +4327,20 @@
             'input:checked'
           ) || []
         ).map(input => input.value)
+      );
+
+    state.filterState.claimDates =
+      new Set(
+        Array.from(
+          getEl(
+            'claim-date-section'
+          )?.querySelectorAll(
+            'input:checked'
+          ) || []
+        ).map(
+          input =>
+            input.value
+        )
       );
 
     state.filterState.includeNoBills =
@@ -3766,8 +4430,17 @@
         row => `
           <tr>
             <td>${escapeHtml(row.Coder)}</td>
-            <td class="numeric-cell">${escapeHtml(row['Assigned Claims'])}</td>
-            <td>${escapeHtml(row.Detailed || '')}</td>
+            <td class="numeric-cell">${escapeHtml(row['Assigned Self-Pay'])}</td>
+            <td class="numeric-cell">${escapeHtml(row['Assigned Insurance'])}</td>
+            <td class="numeric-cell">${escapeHtml(row['Total Assigned Claims'])}</td>
+            ${
+              (summaryData.coderFacilities || []).map(
+                facility => `
+                  <td class="numeric-cell">${escapeHtml(row[`${facility}|||Assigned`] ?? 0)}</td>
+                  <td>${escapeHtml(row[`${facility}|||Detailed`] || '')}</td>
+                `
+              ).join('')
+            }
           </tr>
         `
       ).join('');
@@ -3845,9 +4518,24 @@
           <table class="preview-table">
             <thead>
               <tr>
-                <th>Coder</th>
-                <th>Assigned Claims</th>
-                <th>Detailed</th>
+                <th rowspan="2">Coder</th>
+                <th rowspan="2">Assigned Self-Pay</th>
+                <th rowspan="2">Assigned Insurance</th>
+                <th rowspan="2">Total Assigned Claims</th>
+                ${
+                  (summaryData.coderFacilities || []).map(
+                    facility =>
+                      `<th colspan="2">${escapeHtml(facility)}</th>`
+                  ).join('')
+                }
+              </tr>
+              <tr>
+                ${
+                  (summaryData.coderFacilities || []).map(
+                    () =>
+                      '<th>Assigned</th><th>Detailed</th>'
+                  ).join('')
+                }
               </tr>
             </thead>
             <tbody>${coderRows}</tbody>
@@ -4618,12 +5306,21 @@
       'click',
       () => setAllChecked('codified-by-section', false)
     );
+    getEl('select-all-date-btn')?.addEventListener(
+      'click',
+      () => setAllChecked('claim-date-section', true)
+    );
+    getEl('deselect-all-date-btn')?.addEventListener(
+      'click',
+      () => setAllChecked('claim-date-section', false)
+    );
 
     [
       'payment-mode-section',
       'dept-section',
       'codif-status-section',
-      'codified-by-section'
+      'codified-by-section',
+      'claim-date-section'
     ].forEach(sectionId => {
       getEl(sectionId)?.addEventListener('change', () => {
         syncFilterStateFromDom();
@@ -4776,6 +5473,10 @@
     isNoBillingRemark,
     isAutoExcludedStatus,
     isDefaultExcludedDepartment,
+    isReassignableCodifiedByValue,
+    claimRequiresReassignment,
+    claimHasBlockingCodifiedBy,
+    getClaimDateFilterValue,
     matchFacilityValue:
       (value, presetsData) =>
         matchFacilityValue(
