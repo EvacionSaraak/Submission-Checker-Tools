@@ -3113,7 +3113,9 @@
       dataStartRow,
       rowCount: rows.length,
       columnCount: headers.length,
-      startColumn
+      startColumn,
+      title,
+      headers
     });
 
     return rows.length
@@ -3365,6 +3367,211 @@
       : subHeaderRow;
   }
 
+  function emphasizeSummaryCell(ws, row, col, mode) {
+    const ref =
+      root.XLSX.utils.encode_cell({
+        r: row,
+        c: col
+      });
+
+    if (!ws[ref]) return;
+
+    const currentStyle =
+      ws[ref].s || {};
+
+    const currentFont =
+      currentStyle.font || {};
+
+    ws[ref].s = {
+      ...currentStyle,
+      font: {
+        ...currentFont,
+        bold:
+          mode === 'important'
+            ? true
+            : Boolean(
+                currentFont.bold
+              ),
+        italic:
+          mode === 'secondary'
+            ? true
+            : Boolean(
+                currentFont.italic
+              )
+      }
+    };
+  }
+
+  function applySummaryEmphasis(
+    ws,
+    sections
+  ) {
+    for (const section of sections) {
+      for (
+        let rowOffset = 0;
+        rowOffset < section.rowCount;
+        rowOffset++
+      ) {
+        const row =
+          section.dataStartRow +
+          rowOffset;
+
+        if (
+          section.kind ===
+          'coderSummary'
+        ) {
+          /*
+           * Coder stays neutral.
+           * Total Assigned Claims and each date's Assigned Total are important.
+           * Detailed is supporting information.
+           */
+          emphasizeSummaryCell(
+            ws,
+            row,
+            section.startColumn + 1,
+            'important'
+          );
+
+          for (
+            let colOffset = 2;
+            colOffset <
+            section.columnCount;
+            colOffset += 2
+          ) {
+            emphasizeSummaryCell(
+              ws,
+              row,
+              section.startColumn +
+                colOffset,
+              'important'
+            );
+
+            emphasizeSummaryCell(
+              ws,
+              row,
+              section.startColumn +
+                colOffset + 1,
+              'secondary'
+            );
+          }
+
+          continue;
+        }
+
+        if (
+          section.title ===
+          'Facility Summary'
+        ) {
+          /*
+           * Facility name stays neutral.
+           * Eligible + Allocated are the important operational numbers.
+           * Loaded / exclusion explanation / unassigned are supporting.
+           */
+          [1, 2, 5].forEach(
+            colOffset =>
+              emphasizeSummaryCell(
+                ws,
+                row,
+                section.startColumn +
+                  colOffset,
+                'secondary'
+              )
+          );
+
+          [3, 4].forEach(
+            colOffset =>
+              emphasizeSummaryCell(
+                ws,
+                row,
+                section.startColumn +
+                  colOffset,
+                'important'
+              )
+          );
+
+          continue;
+        }
+
+        if (
+          section.title ===
+          'Coder Claims per Facility'
+        ) {
+          /*
+           * Coder stays neutral. Facility counts are supporting;
+           * the final Total is important.
+           */
+          for (
+            let colOffset = 1;
+            colOffset <
+            section.columnCount - 1;
+            colOffset++
+          ) {
+            emphasizeSummaryCell(
+              ws,
+              row,
+              section.startColumn +
+                colOffset,
+              'secondary'
+            );
+          }
+
+          if (
+            section.columnCount > 1
+          ) {
+            emphasizeSummaryCell(
+              ws,
+              row,
+              section.startColumn +
+                section.columnCount -
+                1,
+              'important'
+            );
+          }
+
+          continue;
+        }
+
+        if (
+          section.title ===
+          'Department Status Summary'
+        ) {
+          /*
+           * Department stays neutral. Status splits are supporting;
+           * Total is important.
+           */
+          for (
+            let colOffset = 1;
+            colOffset <
+            section.columnCount - 1;
+            colOffset++
+          ) {
+            emphasizeSummaryCell(
+              ws,
+              row,
+              section.startColumn +
+                colOffset,
+              'secondary'
+            );
+          }
+
+          if (
+            section.columnCount > 1
+          ) {
+            emphasizeSummaryCell(
+              ws,
+              row,
+              section.startColumn +
+                section.columnCount -
+                1,
+              'important'
+            );
+          }
+        }
+      }
+    }
+  }
+
+
   function forceSummaryNumericCells(ws, sections, aoa) {
     for (const section of sections) {
       for (let rowOffset = 0; rowOffset < section.rowCount; rowOffset++) {
@@ -3484,7 +3691,7 @@
       merges,
       {
         title:
-          'Coder × Facility Matrix',
+          'Coder Claims per Facility',
         headers:
           summaryData.matrixHeaders,
         rows:
@@ -3683,6 +3890,11 @@
         }
       }
     }
+
+    applySummaryEmphasis(
+      ws,
+      sections
+    );
 
     forceSummaryNumericCells(
       ws,
@@ -4550,7 +4762,7 @@
         row => `
           <tr>
             <td>${escapeHtml(row.Coder)}</td>
-            <td class="numeric-cell">${escapeHtml(row['Total Assigned Claims'])}</td>
+            <td class="numeric-cell"><strong>${escapeHtml(row['Total Assigned Claims'])}</strong></td>
             ${
               (summaryData.coderFacilityDateHierarchy || []).map(
                 facilityGroup =>
@@ -4560,8 +4772,8 @@
                         `${facilityGroup.facility}|||${date.key}`;
 
                       return `
-                        <td class="numeric-cell">${escapeHtml(row[`${detailKey}|||Assigned Total`] ?? 0)}</td>
-                        <td>${escapeHtml(row[`${detailKey}|||Detailed`] || '')}</td>
+                        <td class="numeric-cell"><strong>${escapeHtml(row[`${detailKey}|||Assigned Total`] ?? 0)}</strong></td>
+                        <td><em>${escapeHtml(row[`${detailKey}|||Detailed`] || '')}</em></td>
                       `;
                     }
                   ).join('')
@@ -4576,11 +4788,11 @@
         row => `
           <tr>
             <td>${escapeHtml(row.Facility)}</td>
-            <td class="numeric-cell">${escapeHtml(row['Claims Loaded'])}</td>
-            <td>${escapeHtml(row['Excluded / Why'] || '0')}</td>
-            <td class="numeric-cell">${escapeHtml(row.Eligible)}</td>
-            <td class="numeric-cell">${escapeHtml(row.Allocated)}</td>
-            <td class="numeric-cell">${escapeHtml(row.Unassigned)}</td>
+            <td class="numeric-cell"><em>${escapeHtml(row['Claims Loaded'])}</em></td>
+            <td><em>${escapeHtml(row['Excluded / Why'] || '0')}</em></td>
+            <td class="numeric-cell"><strong>${escapeHtml(row.Eligible)}</strong></td>
+            <td class="numeric-cell"><strong>${escapeHtml(row.Allocated)}</strong></td>
+            <td class="numeric-cell"><em>${escapeHtml(row.Unassigned)}</em></td>
           </tr>
         `
       ).join('');
@@ -4591,8 +4803,22 @@
           <tr>
             ${
               summaryData.matrixHeaders.map(
-                header =>
-                  `<td class="${header === 'Coder' ? '' : 'numeric-cell'}">${escapeHtml(row[header] ?? '')}</td>`
+                header => {
+                  const value =
+                    escapeHtml(
+                      row[header] ?? ''
+                    );
+
+                  if (header === 'Coder') {
+                    return `<td>${value}</td>`;
+                  }
+
+                  if (header === 'Total') {
+                    return `<td class="numeric-cell"><strong>${value}</strong></td>`;
+                  }
+
+                  return `<td class="numeric-cell"><em>${value}</em></td>`;
+                }
               ).join('')
             }
           </tr>
@@ -4605,8 +4831,28 @@
           <tr>
             ${
               summaryData.departmentHeaders.map(
-                header =>
-                  `<td class="${header === 'Department' ? '' : 'numeric-cell'} ${header === 'Total' ? 'total-cell' : ''}">${escapeHtml(row[header] ?? 0)}</td>`
+                header => {
+                  const value =
+                    escapeHtml(
+                      row[header] ?? 0
+                    );
+
+                  if (
+                    header ===
+                    'Department'
+                  ) {
+                    return `<td>${value}</td>`;
+                  }
+
+                  if (
+                    header ===
+                    'Total'
+                  ) {
+                    return `<td class="numeric-cell total-cell"><strong>${value}</strong></td>`;
+                  }
+
+                  return `<td class="numeric-cell"><em>${value}</em></td>`;
+                }
               ).join('')
             }
           </tr>
@@ -4707,7 +4953,7 @@
       <section class="preview-section">
         <div class="preview-section-heading">
           <h2 class="section-title mb-0">
-            Coder × Facility Matrix
+            Coder Claims per Facility
           </h2>
         </div>
         <div class="preview-table-wrap">
