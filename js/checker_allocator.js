@@ -931,11 +931,14 @@
       profile.preferredDepartments.has(departmentKey);
 
     /*
-     * Department is a soft preference only. A preferred department gets a
-     * small advantage, while load balancing can still assign any facility
-     * coder to any department.
+     * Department is a SOFT preference only.
+     *
+     * Load balancing is deliberately weighted much more heavily in
+     * solveBalancedCoderLoads().  This value only breaks ties between
+     * otherwise similarly-balanced choices; it must never justify
+     * overloading one coder just to satisfy a department preference.
      */
-    return preferred ? 0 : 2;
+    return preferred ? 0 : 1;
   }
 
   function compareClaimsForAllocation(a, b) {
@@ -1163,16 +1166,22 @@
 
     /*
      * Increasing slot costs minimize the sum of triangular coder loads.
-     * Group-to-coder costs add a SOFT department preference. Every
-     * facility coder remains eligible; preference never becomes a hard lock.
+     *
+     * IMPORTANT: workload balance is the primary objective.  Department
+     * preference is only a tie-breaker.  A large multiplier makes a one-claim
+     * worsening of coder balance far more expensive than any preference gain,
+     * so the allocator keeps eligible coder workloads as even as practical
+     * before considering preferred departments.
      */
+    const LOAD_BALANCE_WEIGHT = 1000;
+
     coderNames.forEach((coder, coderIndex) => {
       for (let slot = 0; slot < totalClaims; slot++) {
         addEdge(
           coderOffset + coderIndex,
           sink,
           1,
-          slot
+          slot * LOAD_BALANCE_WEIGHT
         );
       }
     });
@@ -1512,6 +1521,21 @@
     };
   }
 
+  function formatDetailedAllocation(facilityCounts) {
+    const parts = Array.from(facilityCounts.entries())
+      .filter(([, count]) => count > 0)
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([facility, count]) => `${count} ${facility}`);
+
+    if (!parts.length) return '';
+    if (parts.length === 1) return parts[0];
+    if (parts.length === 2) {
+      return `${parts[0]} and ${parts[1]}`;
+    }
+
+    return `${parts.slice(0, -1).join(', ')}, and ${parts[parts.length - 1]}`;
+  }
+
   function buildAllocationSummary(
     allocationRows,
     allConfiguredCoders = []
@@ -1519,11 +1543,20 @@
     const coderSummary = new Map();
     const facilitySummary = new Map();
 
-    allConfiguredCoders.forEach(coder => {
-      coderSummary.set(coder, {
+    function createCoderSummaryRow(coder) {
+      return {
         Coder: coder,
-        'Assigned Claims': 0
-      });
+        'Assigned Claims': 0,
+        Detailed: '',
+        _facilityCounts: new Map()
+      };
+    }
+
+    allConfiguredCoders.forEach(coder => {
+      coderSummary.set(
+        coder,
+        createCoderSummaryRow(coder)
+      );
     });
 
     for (const row of allocationRows) {
@@ -1534,16 +1567,27 @@
         isAssigned &&
         !coderSummary.has(row.Coder)
       ) {
-        coderSummary.set(row.Coder, {
-          Coder: row.Coder,
-          'Assigned Claims': 0
-        });
+        coderSummary.set(
+          row.Coder,
+          createCoderSummaryRow(row.Coder)
+        );
       }
 
       if (isAssigned) {
-        coderSummary.get(row.Coder)[
-          'Assigned Claims'
-        ]++;
+        const coderRow =
+          coderSummary.get(row.Coder);
+
+        coderRow['Assigned Claims']++;
+
+        const facilityLabel =
+          getFriendlyFacilityName(row.Facility);
+
+        coderRow._facilityCounts.set(
+          facilityLabel,
+          (coderRow._facilityCounts.get(
+            facilityLabel
+          ) || 0) + 1
+        );
       }
 
       if (!facilitySummary.has(row.Facility)) {
@@ -1560,13 +1604,24 @@
         ]++;
     }
 
+    const coderRows =
+      Array.from(coderSummary.values())
+        .map(row => ({
+          Coder: row.Coder,
+          'Assigned Claims':
+            row['Assigned Claims'],
+          Detailed:
+            formatDetailedAllocation(
+              row._facilityCounts
+            )
+        }))
+        .sort(
+          (a, b) =>
+            a.Coder.localeCompare(b.Coder)
+        );
+
     return {
-      coderRows:
-        Array.from(coderSummary.values())
-          .sort(
-            (a, b) =>
-              a.Coder.localeCompare(b.Coder)
-          ),
+      coderRows,
       facilityAssignedRows:
         Array.from(facilitySummary.values())
           .sort(
@@ -2011,9 +2066,26 @@
     ws[ref].s = style;
   }
 
-  function styleTableRange(ws, headerRowIndex, dataStartRowIndex, rowCount, columnCount, options = {}) {
+  function styleTableRange(
+    ws,
+    headerRowIndex,
+    dataStartRowIndex,
+    rowCount,
+    columnCount,
+    options = {}
+  ) {
+    const startColumn =
+      Number.isInteger(options.startColumn)
+        ? options.startColumn
+        : 0;
+
     for (let col = 0; col < columnCount; col++) {
-      applyCellStyle(ws, headerRowIndex, col, EXCEL_STYLES.header);
+      applyCellStyle(
+        ws,
+        headerRowIndex,
+        startColumn + col,
+        EXCEL_STYLES.header
+      );
     }
 
     for (let rowOffset = 0; rowOffset < rowCount; rowOffset++) {
@@ -2026,15 +2098,17 @@
           options.notesColumnIndex === col
             ? EXCEL_STYLES.notes
             : style;
+
         applyCellStyle(
           ws,
           dataStartRowIndex + rowOffset,
-          col,
+          startColumn + col,
           cellStyle
         );
       }
     }
   }
+
 
   function buildStyledFacilityWorksheet(title, headers, rows, dateHeaders = new Set()) {
     const aoa = [
@@ -2174,15 +2248,71 @@
     return candidate;
   }
 
-  function appendSummarySection(aoa, sections, title, headers, rows) {
-    const sectionRow = aoa.length;
-    aoa.push([title]);
-    const headerRow = aoa.length;
-    aoa.push(headers);
-    const dataStartRow = aoa.length;
+  function setSummaryCell(aoa, rowIndex, colIndex, value) {
+    while (aoa.length <= rowIndex) {
+      aoa.push([]);
+    }
 
-    rows.forEach(row => {
-      aoa.push(headers.map(header => row[header] ?? ''));
+    while (aoa[rowIndex].length <= colIndex) {
+      aoa[rowIndex].push('');
+    }
+
+    aoa[rowIndex][colIndex] =
+      value == null ? '' : value;
+  }
+
+  function placeSummarySection(
+    aoa,
+    sections,
+    merges,
+    {
+      title,
+      headers,
+      rows,
+      startRow,
+      startColumn
+    }
+  ) {
+    const sectionRow = startRow;
+    const headerRow = startRow + 1;
+    const dataStartRow = startRow + 2;
+
+    setSummaryCell(
+      aoa,
+      sectionRow,
+      startColumn,
+      title
+    );
+
+    headers.forEach((header, index) => {
+      setSummaryCell(
+        aoa,
+        headerRow,
+        startColumn + index,
+        header
+      );
+    });
+
+    rows.forEach((row, rowOffset) => {
+      headers.forEach((header, colOffset) => {
+        setSummaryCell(
+          aoa,
+          dataStartRow + rowOffset,
+          startColumn + colOffset,
+          row[header] ?? ''
+        );
+      });
+    });
+
+    merges.push({
+      s: {
+        r: sectionRow,
+        c: startColumn
+      },
+      e: {
+        r: sectionRow,
+        c: startColumn + headers.length - 1
+      }
     });
 
     sections.push({
@@ -2190,21 +2320,112 @@
       headerRow,
       dataStartRow,
       rowCount: rows.length,
-      columnCount: headers.length
+      columnCount: headers.length,
+      startColumn
     });
 
-    aoa.push([]);
+    return rows.length
+      ? dataStartRow + rows.length - 1
+      : headerRow;
+  }
+
+  function placeCoderSummarySection(
+    aoa,
+    sections,
+    merges,
+    rows,
+    startRow,
+    startColumn
+  ) {
+    /*
+     * "Detailed" is one logical column, but it spans three normal-width Excel
+     * columns.  This gives the sentence enough room without making one matrix
+     * column excessively wide farther down the same worksheet.
+     */
+    const physicalHeaders = [
+      'Coder',
+      'Assigned Claims',
+      'Detailed',
+      '',
+      ''
+    ];
+
+    const physicalRows =
+      rows.map(row => ({
+        Coder: row.Coder,
+        'Assigned Claims':
+          row['Assigned Claims'],
+        Detailed: row.Detailed || '',
+        '': ''
+      }));
+
+    const sectionEnd =
+      placeSummarySection(
+        aoa,
+        sections,
+        merges,
+        {
+          title: 'Coder Allocation Summary',
+          headers: physicalHeaders,
+          rows: physicalRows,
+          startRow,
+          startColumn
+        }
+      );
+
+    const headerRow = startRow + 1;
+    const dataStartRow = startRow + 2;
+
+    merges.push({
+      s: {
+        r: headerRow,
+        c: startColumn + 2
+      },
+      e: {
+        r: headerRow,
+        c: startColumn + 4
+      }
+    });
+
+    rows.forEach((row, rowOffset) => {
+      merges.push({
+        s: {
+          r: dataStartRow + rowOffset,
+          c: startColumn + 2
+        },
+        e: {
+          r: dataStartRow + rowOffset,
+          c: startColumn + 4
+        }
+      });
+    });
+
+    return sectionEnd;
   }
 
   function forceSummaryNumericCells(ws, sections, aoa) {
     for (const section of sections) {
       for (let rowOffset = 0; rowOffset < section.rowCount; rowOffset++) {
         for (let col = 0; col < section.columnCount; col++) {
-          const rowIndex = section.dataStartRow + rowOffset;
-          const value = aoa[rowIndex]?.[col];
-          if (typeof value !== 'number' || !Number.isFinite(value)) continue;
+          const rowIndex =
+            section.dataStartRow + rowOffset;
+          const columnIndex =
+            section.startColumn + col;
+          const value =
+            aoa[rowIndex]?.[columnIndex];
 
-          const ref = root.XLSX.utils.encode_cell({ r: rowIndex, c: col });
+          if (
+            typeof value !== 'number' ||
+            !Number.isFinite(value)
+          ) {
+            continue;
+          }
+
+          const ref = root.XLSX.utils.encode_cell({
+            r: rowIndex,
+            c: columnIndex
+          });
+
           if (!ws[ref]) continue;
 
           ws[ref].t = 'n';
@@ -2222,96 +2443,279 @@
       []
     ];
     const sections = [];
+    const merges = [];
 
-    appendSummarySection(
+    const topStartRow = 2;
+
+    /*
+     * Compact dashboard-style layout:
+     *
+     * A:E  Coder Allocation Summary
+     * G:.. Department Status Summary
+     * A:F  Facility Summary (directly below coder summary)
+     * A:.. Coder × Facility Matrix (full width below the top blocks)
+     *
+     * This uses the previously-empty area instead of stacking every narrow
+     * table vertically with a large blank region to its right.
+     */
+    const coderEndRow =
+      placeCoderSummarySection(
+        aoa,
+        sections,
+        merges,
+        summaryData.coderRows,
+        topStartRow,
+        0
+      );
+
+    const departmentEndRow =
+      placeSummarySection(
+        aoa,
+        sections,
+        merges,
+        {
+          title: 'Department Status Summary',
+          headers:
+            summaryData.departmentHeaders,
+          rows:
+            summaryData.departmentRows,
+          startRow:
+            topStartRow,
+          startColumn:
+            6
+        }
+      );
+
+    const facilityStartRow =
+      coderEndRow + 2;
+
+    const facilityEndRow =
+      placeSummarySection(
+        aoa,
+        sections,
+        merges,
+        {
+          title: 'Facility Summary',
+          headers: [
+            'Facility',
+            'Claims Loaded',
+            'Terminal Status Excluded',
+            'Eligible',
+            'Allocated',
+            'Unassigned'
+          ],
+          rows:
+            summaryData.facilityRows,
+          startRow:
+            facilityStartRow,
+          startColumn:
+            0
+        }
+      );
+
+    const matrixStartRow =
+      Math.max(
+        facilityEndRow,
+        departmentEndRow
+      ) + 2;
+
+    placeSummarySection(
       aoa,
       sections,
-      'Coder Allocation Summary',
-      ['Coder', 'Assigned Claims'],
-      summaryData.coderRows
+      merges,
+      {
+        title: 'Coder × Facility Matrix',
+        headers:
+          summaryData.matrixHeaders,
+        rows:
+          summaryData.matrixRows,
+        startRow:
+          matrixStartRow,
+        startColumn:
+          0
+      }
     );
 
-    appendSummarySection(
-      aoa,
-      sections,
-      'Coder × Facility Matrix',
-      summaryData.matrixHeaders,
-      summaryData.matrixRows
-    );
-
-    appendSummarySection(
-      aoa,
-      sections,
-      'Facility Summary',
-      [
-        'Facility',
-        'Claims Loaded',
-        'Terminal Status Excluded',
-        'Eligible',
-        'Allocated',
-        'Unassigned'
-      ],
-      summaryData.facilityRows
-    );
-
-    appendSummarySection(
-      aoa,
-      sections,
-      'Department Status Summary',
-      summaryData.departmentHeaders,
-      summaryData.departmentRows
-    );
-
-    const ws = root.XLSX.utils.aoa_to_sheet(aoa);
     const maximumColumns = Math.max(
-      2,
       summaryData.matrixHeaders.length,
-      6,
-      summaryData.departmentHeaders.length
+      6 + summaryData.departmentHeaders.length,
+      6
     );
 
-    ws['!merges'] = [{
+    merges.unshift({
       s: { r: 0, c: 0 },
-      e: { r: 0, c: maximumColumns - 1 }
-    }];
-    applyCellStyle(ws, 0, 0, EXCEL_STYLES.title);
-    ws['!rows'] = [{ hpt: 24 }, { hpt: 6 }];
+      e: {
+        r: 0,
+        c: maximumColumns - 1
+      }
+    });
+
+    const ws =
+      root.XLSX.utils.aoa_to_sheet(aoa);
+
+    ws['!merges'] = merges;
+
+    applyCellStyle(
+      ws,
+      0,
+      0,
+      EXCEL_STYLES.title
+    );
+
+    ws['!rows'] = [];
+    ws['!rows'][0] = { hpt: 24 };
+    ws['!rows'][1] = { hpt: 6 };
 
     for (const section of sections) {
-      ws['!merges'] = ws['!merges'] || [];
-      ws['!merges'].push({
-        s: { r: section.sectionRow, c: 0 },
-        e: { r: section.sectionRow, c: section.columnCount - 1 }
-      });
-      applyCellStyle(ws, section.sectionRow, 0, EXCEL_STYLES.section);
+      applyCellStyle(
+        ws,
+        section.sectionRow,
+        section.startColumn,
+        EXCEL_STYLES.section
+      );
+
       styleTableRange(
         ws,
         section.headerRow,
         section.dataStartRow,
         section.rowCount,
-        section.columnCount
+        section.columnCount,
+        {
+          startColumn:
+            section.startColumn
+        }
       );
+
+      ws['!rows'][section.headerRow] = {
+        hpt: 30
+      };
     }
 
-    forceSummaryNumericCells(ws, sections, aoa);
+    /*
+     * Give the coder detail sentences a little more vertical room and wrap
+     * them while preserving the alternating table fills.
+     */
+    const coderSection =
+      sections.find(
+        section =>
+          section.sectionRow === topStartRow &&
+          section.startColumn === 0
+      );
 
-    const widths = [];
-    for (let col = 0; col < maximumColumns; col++) {
-      let maxLength = 12;
-      for (let row = 0; row < aoa.length; row++) {
-        const value = aoa[row]?.[col];
-        if (value != null) {
-          maxLength = Math.max(maxLength, String(value).length + 2);
+    if (coderSection) {
+      for (
+        let rowOffset = 0;
+        rowOffset < coderSection.rowCount;
+        rowOffset++
+      ) {
+        const rowIndex =
+          coderSection.dataStartRow +
+          rowOffset;
+
+        ws['!rows'][rowIndex] = {
+          hpt: 27
+        };
+
+        for (let col = 2; col <= 4; col++) {
+          const ref =
+            root.XLSX.utils.encode_cell({
+              r: rowIndex,
+              c: col
+            });
+
+          if (ws[ref]) {
+            const baseStyle =
+              rowOffset % 2
+                ? EXCEL_STYLES.altBody
+                : EXCEL_STYLES.body;
+
+            ws[ref].s = {
+              ...baseStyle,
+              alignment: {
+                ...(baseStyle.alignment || {}),
+                vertical: 'top',
+                wrapText: true
+              }
+            };
+          }
         }
       }
-      widths.push({
-        wch: Math.min(Math.max(maxLength, 12), col === 0 ? 30 : 24)
-      });
     }
+
+    forceSummaryNumericCells(
+      ws,
+      sections,
+      aoa
+    );
+
+    /*
+     * Keep the worksheet compact.  Detailed spans C:E, so those columns can
+     * stay at normal matrix widths rather than creating one huge column.
+     */
+    const widths = [];
+
+    for (
+      let col = 0;
+      col < maximumColumns;
+      col++
+    ) {
+      let maxLength = 10;
+
+      for (
+        let row = 0;
+        row < aoa.length;
+        row++
+      ) {
+        const value =
+          aoa[row]?.[col];
+
+        if (value != null) {
+          maxLength = Math.max(
+            maxLength,
+            String(value).length + 2
+          );
+        }
+      }
+
+      let width =
+        Math.min(
+          Math.max(maxLength, 10),
+          20
+        );
+
+      if (col === 0) {
+        width = Math.min(
+          Math.max(maxLength, 24),
+          30
+        );
+      }
+
+      if (
+        col >= 2 &&
+        col <= 4
+      ) {
+        width = 17;
+      }
+
+      if (col === 5) {
+        width = 4;
+      }
+
+      if (col === 6) {
+        width = Math.min(
+          Math.max(maxLength, 24),
+          30
+        );
+      }
+
+      widths.push({ wch: width });
+    }
+
     ws['!cols'] = widths;
 
     return ws;
   }
+
 
   function buildWorkbook(lastAllocationResult) {
     const wb = root.XLSX.utils.book_new();
@@ -2887,6 +3291,7 @@
           <tr>
             <td>${escapeHtml(row.Coder)}</td>
             <td class="numeric-cell">${escapeHtml(row['Assigned Claims'])}</td>
+            <td>${escapeHtml(row.Detailed || '')}</td>
           </tr>
         `
       ).join('');
@@ -2964,6 +3369,7 @@
               <tr>
                 <th>Coder</th>
                 <th>Assigned Claims</th>
+                <th>Detailed</th>
               </tr>
             </thead>
             <tbody>${coderRows}</tbody>
