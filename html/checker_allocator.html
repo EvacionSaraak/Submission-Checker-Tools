@@ -22,33 +22,21 @@
     <div id="messageBox" class="text-danger fw-bold mb-3"></div>
 
     <div id="allocator-workflow" class="hidden">
-      <section class="mb-3">
-        <h2 class="section-title">Import Summary</h2>
-        <div id="import-summary" class="summary-grid"></div>
-      </section>
-
-      <section class="mb-3">
-        <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
-          <h2 class="section-title mb-0">Detected Facilities</h2>
-          <span class="text-muted small">Facilities and presets are detected automatically</span>
-        </div>
-        <div id="facility-summary-list" class="facility-summary-list"></div>
-      </section>
-
-      <section class="mb-3">
+      <!-- User-editable controls intentionally come first. -->
+      <section class="mb-3 setup-section">
         <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
           <h2 class="section-title mb-0">Coder Assignment &amp; Presets</h2>
-          <span class="text-muted small">Editable before allocation</span>
+          <span class="editable-badge">Editable</span>
         </div>
         <div class="text-muted small mb-2">
-          Preset coders are loaded as defaults only. You can add, remove, or replace coder names here; the current editable list is what the allocator will use.
+          Preset coders are loaded as defaults only. Add, remove, or replace coder names here; the visible coder list is what the allocator will use.
         </div>
         <div id="facility-configs" class="facility-configs"></div>
       </section>
 
-      <section class="mb-3">
-        <details id="advanced-filters-panel">
-          <summary class="section-title">Advanced Filters</summary>
+      <section class="mb-3 setup-section">
+        <details id="advanced-filters-panel" open>
+          <summary class="section-title">Filters &amp; Exclusions</summary>
           <div class="advanced-body mt-3">
             <div class="mb-3">
               <label class="form-label fw-bold small mb-1">Payment Mode</label>
@@ -62,7 +50,7 @@
             <div class="mb-3">
               <label class="form-label fw-bold small mb-1">Departments</label>
               <div class="text-muted small mb-1">
-                Dental, Orthodontic, Slimming, and Cupping are deselected by default. Re-select them here if they should be included in the run.
+                Dental, Orthodontic, Slimming, and Cupping are deselected by default. Re-select them here if they should be included.
               </div>
               <div class="d-flex gap-2 mb-1">
                 <button id="select-all-btn" class="btn btn-outline-secondary btn-sm" type="button">All</button>
@@ -102,16 +90,25 @@
         </details>
       </section>
 
-      <section class="mb-3">
+      <section class="mb-3 allocator-actions-section">
         <div class="d-flex gap-2" id="allocator-actions">
           <button id="allocate-btn" class="btn btn-primary" type="button">Allocate</button>
           <button id="download-btn" class="btn btn-success" type="button" disabled>Download Workbook</button>
         </div>
       </section>
 
-      <section>
-        <h2 class="section-title">Allocation Summary</h2>
-        <div id="coder-summary" class="summary-stack"></div>
+      <!-- Passive/report information stays below all user-editable controls. -->
+      <section class="mb-3 passive-section">
+        <h2 class="section-title">Import Summary</h2>
+        <div id="import-summary" class="summary-grid"></div>
+      </section>
+
+      <section class="mb-3 passive-section">
+        <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
+          <h2 class="section-title mb-0">Detected Facilities</h2>
+          <span class="text-muted small">Detected automatically</span>
+        </div>
+        <div id="facility-summary-list" class="facility-summary-list"></div>
       </section>
     </div>
   </aside>
