@@ -45,6 +45,7 @@
   const NO_BILLING_PATTERN = /no\s*bil|not\s+for\s+(billing|submission)|no\s+submission/i;
   const UNASSIGNED_CODER = '(Unassigned)';
   const UNKNOWN_FACILITY = 'Unknown Facility';
+  const STORAGE_KEY = 'checkerAllocatorUserStateV4';
   const DEFAULT_EXCLUDED_DEPARTMENT_PATTERN = /\b(?:dental|orthodontic|orthodontics|slimming|cupping)\b/i;
 
   const FACILITY_ALIASES = Object.freeze({
@@ -83,7 +84,8 @@
       codifiedBy: new Set(),
       includeNoBills: false
     },
-    lastAllocationResult: null
+    lastAllocationResult: null,
+    persistedUserState: loadPersistedUserState()
   };
 
   let presetsReady = Promise.resolve();
@@ -386,104 +388,340 @@
       .replace(/[^a-z0-9]+/g, '');
   }
 
-  function buildPreferenceMap(coderEntries) {
-    const preferences = {};
+  function normalizeDepartmentList(values) {
+    const byKey = new Map();
 
-    for (const coder of coderEntries || []) {
-      if (!coder || typeof coder !== 'object' || !coder.name) {
-        continue;
+    for (const value of values || []) {
+      const display = formatDepartmentDisplay(value);
+      const key = normalizeDepartmentKey(display);
+      if (key && !byKey.has(key)) {
+        byKey.set(key, display);
+      }
+    }
+
+    return Array.from(byKey.values())
+      .sort((a, b) => a.localeCompare(b));
+  }
+
+  function buildCoderRowsFromEntries(coderEntries) {
+    return (coderEntries || [])
+      .map(coder => {
+        if (typeof coder === 'string') {
+          return {
+            name: String(coder || '').trim(),
+            preferredDepartments: [],
+            assignedDepartments: []
+          };
+        }
+
+        if (!coder || typeof coder !== 'object') return null;
+
+        return {
+          name: String(coder.name || '').trim(),
+          preferredDepartments: normalizeDepartmentList(
+            Array.isArray(coder.preferredDepartments)
+              ? coder.preferredDepartments
+              : Array.isArray(coder.departments)
+                ? coder.departments
+                : []
+          ),
+          // Assigned departments are intentionally never loaded from JSON.
+          // They are manual auditor overrides only.
+          assignedDepartments: []
+        };
+      })
+      .filter(row => row && row.name);
+  }
+
+  function cloneCoderRows(rows) {
+    return (rows || []).map(row => ({
+      name: String(row?.name || '').trim(),
+      preferredDepartments: normalizeDepartmentList(
+        row?.preferredDepartments || []
+      ),
+      assignedDepartments: normalizeDepartmentList(
+        row?.assignedDepartments || []
+      )
+    }));
+  }
+
+  function getConfigCoderRows(config) {
+    if (Array.isArray(config?.coderRows)) {
+      return config.coderRows;
+    }
+
+    return parseCodersText(config?.codersText || '')
+      .map(name => ({
+        name,
+        preferredDepartments: [],
+        assignedDepartments: []
+      }));
+  }
+
+  function getConfigCoderProfiles(config) {
+    const profiles = new Map();
+
+    for (const row of getConfigCoderRows(config)) {
+      const name = String(row?.name || '').trim();
+      if (!name) continue;
+
+      if (!profiles.has(name)) {
+        profiles.set(name, {
+          name,
+          preferredDepartments: new Set(),
+          assignedDepartments: new Set()
+        });
       }
 
-      const preferredDepartments = new Set(
-        (
-          Array.isArray(coder.preferredDepartments)
-            ? coder.preferredDepartments
-            : Array.isArray(coder.departments)
-              ? coder.departments
-              : []
-        )
-          .map(normalizeDepartmentKey)
-          .filter(Boolean)
-      );
+      const profile = profiles.get(name);
 
-      preferences[coder.name] = {
-        preferredDepartments
+      normalizeDepartmentList(row.preferredDepartments || [])
+        .forEach(dept => profile.preferredDepartments.add(
+          normalizeDepartmentKey(dept)
+        ));
+
+      normalizeDepartmentList(row.assignedDepartments || [])
+        .forEach(dept => profile.assignedDepartments.add(
+          normalizeDepartmentKey(dept)
+        ));
+    }
+
+    return profiles;
+  }
+
+  function getConfigCoderNames(config) {
+    return Array.from(getConfigCoderProfiles(config).keys());
+  }
+
+  function syncConfigDerivedFields(config) {
+    const next = config || {};
+    next.coderRows = cloneCoderRows(next.coderRows || []);
+    next.codersText = next.coderRows
+      .map(row => String(row.name || '').trim())
+      .filter(Boolean)
+      .join('\n');
+
+    next.preferences = {};
+    for (const [name, profile] of getConfigCoderProfiles(next).entries()) {
+      next.preferences[name] = {
+        preferredDepartments: new Set(profile.preferredDepartments),
+        assignedDepartments: new Set(profile.assignedDepartments)
       };
     }
 
-    return preferences;
+    return next;
+  }
+
+  function buildPreferenceMap(coderEntries) {
+    const config = syncConfigDerivedFields({
+      coderRows: buildCoderRowsFromEntries(coderEntries)
+    });
+    return config.preferences;
   }
 
   /*
    * Preset behavior:
-   * - A preset supplies the INITIAL coder list and department preferences.
-   * - codersText is the actual source of truth used by allocation.
-   * - Once coderListEdited becomes true, normal re-renders and even a preset
-   *   dropdown change preserve the user's coder text.
-   * - The user must explicitly click "Use Preset Coders" to replace an edited
-   *   list with the selected preset defaults.
+   * - Presets supply coder names and SOFT preferred departments.
+   * - Assigned departments always start blank and can only be added manually.
+   * - coderRows is the editable source of truth used by allocation.
    */
   function createFacilityConfig(facilityName, presetName) {
     const coderEntries = getCoderEntriesForPreset(presetName);
     const presetCodersText = coderEntriesToText(coderEntries);
 
-    return {
+    return syncConfigDerivedFields({
       facilityName: facilityName || '',
       presetName: presetName || '',
       presetCodersText,
-      codersText: presetCodersText,
-      preferences: buildPreferenceMap(coderEntries),
+      coderRows: buildCoderRowsFromEntries(coderEntries),
       coderListEdited: false
-    };
+    });
   }
 
   function cloneFacilityConfig(config) {
-    return {
-      facilityName: config.facilityName || '',
-      presetName: config.presetName || '',
-      presetCodersText: config.presetCodersText || '',
-      codersText: config.codersText || '',
-      preferences: config.preferences || {},
-      coderListEdited: Boolean(config.coderListEdited)
-    };
+    return syncConfigDerivedFields({
+      facilityName: config?.facilityName || '',
+      presetName: config?.presetName || '',
+      presetCodersText: config?.presetCodersText || '',
+      coderRows: cloneCoderRows(getConfigCoderRows(config)),
+      coderListEdited: Boolean(config?.coderListEdited)
+    });
+  }
+
+  function applyUserCoderRows(config, coderRows) {
+    const next = cloneFacilityConfig(config || {});
+    next.coderRows = cloneCoderRows(coderRows || []);
+    next.coderListEdited = true;
+    return syncConfigDerivedFields(next);
   }
 
   function applyUserCoderText(config, codersText) {
-    const next = cloneFacilityConfig(config);
-    next.codersText = String(codersText == null ? '' : codersText);
+    const next = cloneFacilityConfig(config || {});
+    const existingByName = new Map(
+      getConfigCoderRows(next).map(row => [String(row.name || '').trim(), row])
+    );
+
+    next.coderRows = parseCodersText(codersText).map(name => {
+      const existing = existingByName.get(name);
+      return existing
+        ? cloneCoderRows([existing])[0]
+        : {
+            name,
+            preferredDepartments: [],
+            assignedDepartments: []
+          };
+    });
     next.coderListEdited = true;
-    return next;
+    return syncConfigDerivedFields(next);
   }
 
   function applyPresetSelection(config, facilityKey, presetName) {
     const presetConfig = createFacilityConfig(facilityKey, presetName);
     const existing = config || createFacilityConfig(facilityKey, '');
 
-    return {
-      facilityName: facilityKey,
-      presetName: presetConfig.presetName,
-      presetCodersText: presetConfig.presetCodersText,
-      // User-entered coder text wins. Only untouched lists auto-follow presets.
-      codersText: existing.coderListEdited
-        ? existing.codersText
-        : presetConfig.codersText,
-      preferences: presetConfig.preferences,
-      coderListEdited: Boolean(existing.coderListEdited)
-    };
+    if (existing.coderListEdited) {
+      const next = cloneFacilityConfig(existing);
+      next.facilityName = facilityKey;
+      next.presetName = presetConfig.presetName;
+      next.presetCodersText = presetConfig.presetCodersText;
+      return syncConfigDerivedFields(next);
+    }
+
+    return presetConfig;
   }
 
   function resetConfigToPreset(config, facilityKey) {
     const existing = config || createFacilityConfig(facilityKey, '');
-    const presetConfig = createFacilityConfig(facilityKey, existing.presetName);
+    return createFacilityConfig(facilityKey, existing.presetName);
+  }
 
+  function getFacilityDepartmentOptions(facilityKey) {
+    const departments = state.dedupedClaims
+      .filter(claim => claim.facilityKey === facilityKey)
+      .map(claim => claim.department)
+      .filter(Boolean);
+
+    return normalizeDepartmentList(departments);
+  }
+
+  function getFacilityDepartmentDisplayValue(facilityKey, typedValue) {
+    const wanted = normalizeDepartmentKey(typedValue);
+    if (!wanted) return '';
+
+    return getFacilityDepartmentOptions(facilityKey)
+      .find(value => normalizeDepartmentKey(value) === wanted) || '';
+  }
+
+  function loadPersistedUserState() {
+    try {
+      if (!root.localStorage) return {};
+      const raw = root.localStorage.getItem(STORAGE_KEY);
+      if (!raw) return {};
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function serializeFacilityConfig(config) {
     return {
-      facilityName: facilityKey,
-      presetName: presetConfig.presetName,
-      presetCodersText: presetConfig.presetCodersText,
-      codersText: presetConfig.codersText,
-      preferences: presetConfig.preferences,
-      coderListEdited: false
+      facilityName: config?.facilityName || '',
+      presetName: config?.presetName || '',
+      presetCodersText: config?.presetCodersText || '',
+      coderListEdited: Boolean(config?.coderListEdited),
+      coderRows: cloneCoderRows(getConfigCoderRows(config))
     };
+  }
+
+  function persistUserState() {
+    try {
+      if (!root.localStorage) return;
+
+      const previous = state.persistedUserState &&
+        typeof state.persistedUserState === 'object'
+          ? state.persistedUserState
+          : {};
+
+      const savedFacilities = {
+        ...(previous.facilityConfigs || {})
+      };
+
+      Object.entries(state.facilityConfigs || {})
+        .forEach(([facilityKey, config]) => {
+          savedFacilities[facilityKey] = serializeFacilityConfig(config);
+        });
+
+      const payload = {
+        version: 4,
+        facilityConfigs: savedFacilities,
+        activeFacilityTab: state.activeFacilityTab || '',
+        filterState: {
+          paymentModes: Array.from(state.filterState.paymentModes || []),
+          departments: Array.from(state.filterState.departments || []),
+          codifStatuses: Array.from(state.filterState.codifStatuses || []),
+          codifiedBy: Array.from(state.filterState.codifiedBy || []),
+          includeNoBills: Boolean(state.filterState.includeNoBills)
+        },
+        advancedFiltersOpen:
+          getEl('advanced-filters-panel')?.open !== false
+      };
+
+      root.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+      state.persistedUserState = payload;
+    } catch (_) {
+      // localStorage may be unavailable in private/restricted browser contexts.
+    }
+  }
+
+  function restorePersistedFacilityConfigs(defaultConfigs) {
+    const saved = state.persistedUserState?.facilityConfigs || {};
+    const restored = {};
+
+    Object.entries(defaultConfigs || {}).forEach(([facilityKey, fallback]) => {
+      const savedConfig = saved[facilityKey];
+      if (!savedConfig || typeof savedConfig !== 'object') {
+        restored[facilityKey] = fallback;
+        return;
+      }
+
+      const presetName = String(savedConfig.presetName || fallback.presetName || '');
+      const base = createFacilityConfig(facilityKey, presetName);
+
+      if (Array.isArray(savedConfig.coderRows)) {
+        base.coderRows = cloneCoderRows(savedConfig.coderRows);
+        base.coderListEdited = Boolean(savedConfig.coderListEdited);
+      }
+
+      restored[facilityKey] = syncConfigDerivedFields(base);
+    });
+
+    return restored;
+  }
+
+  function restorePersistedFilterState(claims) {
+    const saved = state.persistedUserState?.filterState;
+    if (!saved || typeof saved !== 'object') return;
+
+    const options = collectFilterOptions(claims);
+    const available = {
+      paymentModes: new Set(options.paymentModes.map(([value]) => value)),
+      departments: new Set(options.departments.map(([value]) => value)),
+      codifStatuses: new Set(options.codifStatuses.map(([value]) => value)),
+      codifiedBy: new Set(options.codifiedBy.map(([value]) => value))
+    };
+
+    ['paymentModes', 'departments', 'codifStatuses', 'codifiedBy']
+      .forEach(key => {
+        if (!Array.isArray(saved[key])) return;
+        state.filterState[key] = new Set(
+          saved[key].filter(value => available[key].has(value))
+        );
+      });
+
+    if (typeof saved.includeNoBills === 'boolean') {
+      state.filterState.includeNoBills = saved.includeNoBills;
+    }
   }
 
   function collectColumnKeys(rows) {
@@ -908,11 +1146,23 @@
       facilityConfigs[claim.facilityKey] ||
       createFacilityConfig(claim.facilityKey, claim.detectedPresetName);
 
+    const profiles = getConfigCoderProfiles(config);
+    const allCoders = Array.from(profiles.keys());
+    const departmentKey = normalizeDepartmentKey(claim.department);
+
+    if (!departmentKey) return allCoders;
+
+    const explicitlyAssigned = allCoders.filter(coder =>
+      profiles.get(coder)?.assignedDepartments.has(departmentKey)
+    );
+
     /*
-     * Department preference is SOFT only. Every coder currently listed
-     * for the facility remains eligible for every department.
+     * Manual Assigned Departments are hard auditor overrides.
+     * If at least one coder is explicitly assigned to this department,
+     * only that coder/pool is eligible. Otherwise the normal facility pool is
+     * used and preferred departments remain soft tie-breakers.
      */
-    return parseCodersText(config.codersText);
+    return explicitlyAssigned.length ? explicitlyAssigned : allCoders;
   }
 
   function getCoderPreferenceCost(claim, coder, facilityConfigs) {
@@ -923,20 +1173,18 @@
     const departmentKey = normalizeDepartmentKey(claim.department);
     if (!departmentKey) return 0;
 
-    const profile = (config.preferences || {})[coder];
+    const profile = getConfigCoderProfiles(config).get(coder);
     if (!profile) return 1;
 
-    const preferred =
-      profile.preferredDepartments instanceof Set &&
-      profile.preferredDepartments.has(departmentKey);
+    // Explicit assignments are already enforced through eligibility.
+    if (profile.assignedDepartments.has(departmentKey)) return 0;
+
+    const preferred = profile.preferredDepartments.has(departmentKey);
 
     /*
-     * Department is a SOFT preference only.
-     *
-     * Load balancing is deliberately weighted much more heavily in
-     * solveBalancedCoderLoads().  This value only breaks ties between
-     * otherwise similarly-balanced choices; it must never justify
-     * overloading one coder just to satisfy a department preference.
+     * Preferred Departments are SOFT only. The min-cost solver gives workload
+     * balance a much larger weight; preference only decides among comparably
+     * balanced choices.
      */
     return preferred ? 0 : 1;
   }
@@ -965,7 +1213,7 @@
     return Array.from(
       new Set(
         Object.values(facilityConfigs || {}).flatMap(
-          config => parseCodersText(config.codersText)
+          config => getConfigCoderNames(config)
         )
       )
     ).sort((a, b) => a.localeCompare(b));
@@ -2853,6 +3101,112 @@
     return getFriendlyFacilityName(text) || text;
   }
 
+  function renderDepartmentChips(facilityKey, coderIndex, type, departments) {
+    return normalizeDepartmentList(departments || [])
+      .map(department => `
+        <span class="department-chip">
+          <span>${escapeHtml(department)}</span>
+          <button
+            type="button"
+            class="department-chip-remove"
+            data-action="remove-department-chip"
+            data-facility-key="${escapeHtml(facilityKey)}"
+            data-coder-index="${coderIndex}"
+            data-department-type="${escapeHtml(type)}"
+            data-department="${escapeHtml(department)}"
+            aria-label="Remove ${escapeHtml(department)}"
+            title="Remove ${escapeHtml(department)}"
+          >&times;</button>
+        </span>
+      `).join('');
+  }
+
+  function renderCoderEditorRows(facilityKey, config, departmentListId) {
+    const rows = getConfigCoderRows(config);
+
+    if (!rows.length) {
+      return `
+        <div class="coder-editor-empty">
+          No coders configured. Use <strong>Add Coder</strong> or reload the preset defaults.
+        </div>
+      `;
+    }
+
+    return rows.map((row, coderIndex) => `
+      <div class="coder-config-row" data-coder-index="${coderIndex}">
+        <div class="coder-config-field coder-name-field">
+          <label class="coder-field-label">Coder</label>
+          <input
+            type="text"
+            class="form-control form-control-sm coder-name-input"
+            data-facility-key="${escapeHtml(facilityKey)}"
+            data-coder-index="${coderIndex}"
+            value="${escapeHtml(row.name || '')}"
+            placeholder="Coder name"
+          />
+        </div>
+
+        <div class="coder-config-field">
+          <label class="coder-field-label">Preferred Departments</label>
+          <div class="department-tag-editor" data-department-editor="preferred">
+            <div class="department-chip-list">
+              ${renderDepartmentChips(
+                facilityKey,
+                coderIndex,
+                'preferred',
+                row.preferredDepartments
+              )}
+            </div>
+            <input
+              type="text"
+              class="department-tag-input"
+              data-facility-key="${escapeHtml(facilityKey)}"
+              data-coder-index="${coderIndex}"
+              data-department-type="preferred"
+              list="${escapeHtml(departmentListId)}"
+              placeholder="Add preferred department…"
+              autocomplete="off"
+            />
+          </div>
+        </div>
+
+        <div class="coder-config-field">
+          <label class="coder-field-label">Assigned Departments</label>
+          <div class="department-tag-editor assigned-editor" data-department-editor="assigned">
+            <div class="department-chip-list">
+              ${renderDepartmentChips(
+                facilityKey,
+                coderIndex,
+                'assigned',
+                row.assignedDepartments
+              )}
+            </div>
+            <input
+              type="text"
+              class="department-tag-input"
+              data-facility-key="${escapeHtml(facilityKey)}"
+              data-coder-index="${coderIndex}"
+              data-department-type="assigned"
+              list="${escapeHtml(departmentListId)}"
+              placeholder="Assign department…"
+              autocomplete="off"
+            />
+          </div>
+        </div>
+
+        <div class="coder-config-actions">
+          <button
+            type="button"
+            class="btn btn-outline-danger btn-sm remove-coder-row-btn"
+            data-facility-key="${escapeHtml(facilityKey)}"
+            data-coder-index="${coderIndex}"
+            title="Remove coder"
+          >Remove</button>
+        </div>
+      </div>
+    `).join('');
+  }
+
   function renderFacilitySummary() {
     const container = getEl('facility-summary-list');
     const configsContainer = getEl('facility-configs');
@@ -2876,7 +3230,10 @@
 
     const validFacilityKeys = new Set(facilityStats.map(item => item.facilityKey));
     if (!validFacilityKeys.has(state.activeFacilityTab)) {
-      state.activeFacilityTab = facilityStats[0].facilityKey;
+      const savedTab = String(state.persistedUserState?.activeFacilityTab || '');
+      state.activeFacilityTab = validFacilityKeys.has(savedTab)
+        ? savedTab
+        : facilityStats[0].facilityKey;
     }
 
     const tabButtons = facilityStats.map(item => {
@@ -2904,18 +3261,14 @@
       `;
     }).join('');
 
-    const tabPanels = facilityStats.map(item => {
+    const tabPanels = facilityStats.map((item, facilityIndex) => {
       const config = state.facilityConfigs[item.facilityKey] ||
         createFacilityConfig(item.facilityKey, item.presetName);
       const presetName = config.presetName || '';
       const displayName = presetName || item.displayName;
-      const preferenceProfileCount = Object.keys(config.preferences || {}).length;
       const active = item.facilityKey === state.activeFacilityTab;
-      const coderSourceText = config.coderListEdited
-        ? 'Custom coder list — manual edits are active and will be used for allocation.'
-        : presetName
-          ? 'Coder defaults loaded from preset. Edit freely; your changes will take precedence.'
-          : 'No preset coder defaults. Enter the coder list manually.';
+      const departments = getFacilityDepartmentOptions(item.facilityKey);
+      const departmentListId = `facility-departments-${facilityIndex}`;
 
       return `
         <section
@@ -2925,57 +3278,65 @@
           ${active ? '' : 'hidden'}
         >
           <div class="facility-tab-panel-header">
-            <div class="facility-tab-panel-title">${escapeHtml(displayName)}</div>
+            <div>
+              <div class="facility-tab-panel-title">${escapeHtml(displayName)}</div>
+              <div class="facility-config-meta">${departments.length} department${departments.length === 1 ? '' : 's'} available for preference/assignment.</div>
+            </div>
             <div class="facility-tab-panel-count">${item.count} eligible claim${item.count === 1 ? '' : 's'}</div>
           </div>
 
           <div class="facility-config-body">
-            <div class="facility-config-meta mb-3">
-              Presets only provide defaults. The editable coder list below is the source of truth for this allocation run.
+            <div class="facility-rules-note mb-3">
+              <strong>Preferred</strong> departments are soft hints and workload balance remains primary.
+              <strong>Assigned</strong> departments are manual hard overrides and start blank by default.
             </div>
 
-            <div class="mb-3">
-              <label class="form-label fw-bold small mb-1">Preset</label>
-              <select
-                class="form-select form-select-sm facility-preset-select"
-                data-facility-key="${escapeHtml(item.facilityKey)}"
-              >
-                <option value="">-- None --</option>
-                ${state.presetOptions.map(name => `
-                  <option value="${escapeHtml(name)}" ${name === presetName ? 'selected' : ''}>
-                    ${escapeHtml(name)}
-                  </option>
-                `).join('')}
-              </select>
-            </div>
+            <div class="facility-toolbar mb-3">
+              <div class="facility-preset-control">
+                <label class="form-label fw-bold small mb-1">Preset</label>
+                <select
+                  class="form-select form-select-sm facility-preset-select"
+                  data-facility-key="${escapeHtml(item.facilityKey)}"
+                >
+                  <option value="">-- None --</option>
+                  ${state.presetOptions.map(name => `
+                    <option value="${escapeHtml(name)}" ${name === presetName ? 'selected' : ''}>
+                      ${escapeHtml(name)}
+                    </option>
+                  `).join('')}
+                </select>
+              </div>
 
-            <div class="mb-2">
-              <div class="coder-editor-heading mb-1">
-                <label class="form-label fw-bold small mb-0">
-                  Coders <span class="fw-normal text-muted">(one per line)</span>
-                </label>
+              <div class="facility-toolbar-actions">
                 <button
                   type="button"
                   class="btn btn-outline-secondary btn-sm facility-reset-coders-btn"
                   data-facility-key="${escapeHtml(item.facilityKey)}"
                   ${presetName ? '' : 'disabled'}
-                  title="Replace the current coder list with the selected preset defaults"
-                >Use Preset Coders</button>
+                  title="Reload coder names and preferred departments from the selected preset; assigned departments will be cleared"
+                >Use Preset Defaults</button>
+                <button
+                  type="button"
+                  class="btn btn-outline-primary btn-sm add-coder-row-btn"
+                  data-facility-key="${escapeHtml(item.facilityKey)}"
+                >Add Coder</button>
               </div>
-
-              <textarea
-                class="form-control form-control-sm facility-coders-textarea"
-                rows="5"
-                data-facility-key="${escapeHtml(item.facilityKey)}"
-                placeholder="Enter coder names, one per line"
-              >${escapeHtml(config.codersText || '')}</textarea>
             </div>
 
-            <div class="facility-config-meta mb-1">${escapeHtml(coderSourceText)}</div>
-            <div class="facility-config-meta">
-              ${preferenceProfileCount
-                ? `${preferenceProfileCount} coder preference profile(s) loaded. Every listed coder can receive any department; preferred departments only provide a small assignment bias.`
-                : 'No department preferences are configured for this preset. All listed facility coders are balanced normally.'}
+            <datalist id="${escapeHtml(departmentListId)}">
+              ${departments.map(department =>
+                `<option value="${escapeHtml(department)}"></option>`
+              ).join('')}
+            </datalist>
+
+            <div class="coder-config-grid-header" aria-hidden="true">
+              <span>Coder</span>
+              <span>Preferred Departments</span>
+              <span>Assigned Departments</span>
+              <span></span>
+            </div>
+            <div class="coder-config-rows">
+              ${renderCoderEditorRows(item.facilityKey, config, departmentListId)}
             </div>
           </div>
         </section>
@@ -3218,6 +3579,8 @@
           'include-no-bill-cb'
         )?.checked
       );
+
+    persistUserState();
   }
 
   function renderPreAllocationState() {
@@ -3247,6 +3610,11 @@
 
     if (downloadBtn) {
       downloadBtn.disabled = true;
+    }
+
+    const previewBtn = getEl('preview-btn');
+    if (previewBtn) {
+      previewBtn.disabled = true;
     }
   }
 
@@ -3594,13 +3962,28 @@
        * the detected preset coder defaults once here.
        */
       state.facilityConfigs =
-        buildFacilityConfigsFromClaims(
-          state.duplicateGroups
+        restorePersistedFacilityConfigs(
+          buildFacilityConfigsFromClaims(
+            state.duplicateGroups
+          )
         );
 
       initializeFilterState(
         state.dedupedClaims
       );
+      restorePersistedFilterState(
+        state.dedupedClaims
+      );
+
+      const advancedFiltersPanel =
+        getEl('advanced-filters-panel');
+      if (
+        advancedFiltersPanel &&
+        typeof state.persistedUserState?.advancedFiltersOpen === 'boolean'
+      ) {
+        advancedFiltersPanel.open =
+          state.persistedUserState.advancedFiltersOpen;
+      }
 
       getEl(
         'allocator-workflow'
@@ -3627,6 +4010,11 @@
     if (downloadBtn) {
       downloadBtn.disabled = true;
     }
+
+    const previewBtn = getEl('preview-btn');
+    if (previewBtn) {
+      previewBtn.disabled = true;
+    }
   }
 
   function updateFacilityPreset(
@@ -3634,381 +4022,386 @@
     presetName
   ) {
     const existing =
-      state.facilityConfigs[
-        facilityKey
-      ] ||
-      createFacilityConfig(
-        facilityKey,
-        ''
-      );
+      state.facilityConfigs[facilityKey] ||
+      createFacilityConfig(facilityKey, '');
 
-    state.facilityConfigs[
-      facilityKey
-    ] =
+    state.facilityConfigs[facilityKey] =
       applyPresetSelection(
         existing,
         facilityKey,
         presetName
       );
 
-    /*
-     * If the user already edited the coder list, selecting/changing a preset
-     * updates the preset + department preferences but DOES NOT replace their coder text.
-     * They can explicitly choose "Use Preset Coders" if they want replacement.
-     */
-    renderPreAllocationState();
+    persistUserState();
+    invalidateAllocationResult();
+    renderFacilitySummary();
   }
 
-  function updateFacilityCoders(
-    facilityKey,
-    codersText
-  ) {
+  function updateFacilityCoderRows(facilityKey, mutator, rerender = false) {
     const existing =
-      state.facilityConfigs[
-        facilityKey
-      ] ||
-      createFacilityConfig(
-        facilityKey,
-        ''
-      );
+      state.facilityConfigs[facilityKey] ||
+      createFacilityConfig(facilityKey, '');
+    const rows = cloneCoderRows(getConfigCoderRows(existing));
 
-    state.facilityConfigs[
-      facilityKey
-    ] =
-      applyUserCoderText(
-        existing,
-        codersText
-      );
+    mutator(rows);
 
-    /*
-     * Do not call renderPreAllocationState() here.
-     * Re-rendering on every keystroke would replace the textarea DOM node and
-     * disrupt typing. State is already updated immediately.
-     */
+    state.facilityConfigs[facilityKey] =
+      applyUserCoderRows(existing, rows);
+
+    persistUserState();
+    invalidateAllocationResult();
+
+    if (rerender) {
+      renderFacilitySummary();
+    }
+  }
+
+  function updateFacilityCoders(facilityKey, codersText) {
+    const existing =
+      state.facilityConfigs[facilityKey] ||
+      createFacilityConfig(facilityKey, '');
+
+    state.facilityConfigs[facilityKey] =
+      applyUserCoderText(existing, codersText);
+
+    persistUserState();
     invalidateAllocationResult();
   }
 
-  function usePresetCoders(
-    facilityKey
+  function addDepartmentToCoder(facilityKey, coderIndex, type, typedValue) {
+    const department =
+      getFacilityDepartmentDisplayValue(facilityKey, typedValue);
+    if (!department) return false;
+
+    updateFacilityCoderRows(
+      facilityKey,
+      rows => {
+        const row = rows[coderIndex];
+        if (!row) return;
+        const key = type === 'assigned'
+          ? 'assignedDepartments'
+          : 'preferredDepartments';
+        row[key] = normalizeDepartmentList([
+          ...(row[key] || []),
+          department
+        ]);
+      },
+      true
+    );
+
+    return true;
+  }
+
+  function removeDepartmentFromCoder(
+    facilityKey,
+    coderIndex,
+    type,
+    department
   ) {
+    const removeKey = normalizeDepartmentKey(department);
+
+    updateFacilityCoderRows(
+      facilityKey,
+      rows => {
+        const row = rows[coderIndex];
+        if (!row) return;
+        const key = type === 'assigned'
+          ? 'assignedDepartments'
+          : 'preferredDepartments';
+        row[key] = (row[key] || []).filter(
+          item => normalizeDepartmentKey(item) !== removeKey
+        );
+      },
+      true
+    );
+  }
+
+  function usePresetCoders(facilityKey) {
     const existing =
-      state.facilityConfigs[
-        facilityKey
-      ] ||
-      createFacilityConfig(
-        facilityKey,
-        ''
-      );
+      state.facilityConfigs[facilityKey] ||
+      createFacilityConfig(facilityKey, '');
 
-    if (!existing.presetName) {
-      return;
-    }
+    if (!existing.presetName) return;
 
-    state.facilityConfigs[
-      facilityKey
-    ] =
-      resetConfigToPreset(
-        existing,
-        facilityKey
-      );
+    state.facilityConfigs[facilityKey] =
+      resetConfigToPreset(existing, facilityKey);
 
-    renderPreAllocationState();
+    persistUserState();
+    invalidateAllocationResult();
+    renderFacilitySummary();
+  }
+
+  function openPreviewModal() {
+    const modal = getEl('preview-modal');
+    if (!modal) return;
+    modal.hidden = false;
+    modal.setAttribute('aria-hidden', 'false');
+    doc?.body?.classList.add('preview-modal-open');
+    getEl('preview-modal-close')?.focus();
+  }
+
+  function closePreviewModal() {
+    const modal = getEl('preview-modal');
+    if (!modal) return;
+    modal.hidden = true;
+    modal.setAttribute('aria-hidden', 'true');
+    doc?.body?.classList.remove('preview-modal-open');
   }
 
   function attachUiHandlers() {
-    const fileInput =
-      getEl('allocator-file');
-
-    const dropzone =
-      getEl('allocator-dropzone');
-
-    const downloadBtn =
-      getEl('download-btn');
-
-    const allocateBtn =
-      getEl('allocate-btn');
+    const fileInput = getEl('allocator-file');
+    const dropzone = getEl('allocator-dropzone');
+    const downloadBtn = getEl('download-btn');
+    const allocateBtn = getEl('allocate-btn');
+    const previewBtn = getEl('preview-btn');
+    const configsRoot = getEl('facility-configs');
 
     fileInput?.addEventListener(
       'change',
-      event =>
-        handleFiles(
-          event.target.files || []
-        )
+      event => handleFiles(event.target.files || [])
     );
 
-    ['dragenter', 'dragover']
-      .forEach(eventName => {
-        dropzone?.addEventListener(
-          eventName,
-          event => {
-            event.preventDefault();
+    ['dragenter', 'dragover'].forEach(eventName => {
+      dropzone?.addEventListener(eventName, event => {
+        event.preventDefault();
+        dropzone.classList.add('dragover');
+      });
+    });
 
-            dropzone.classList.add(
-              'dragover'
+    ['dragleave', 'drop'].forEach(eventName => {
+      dropzone?.addEventListener(eventName, event => {
+        event.preventDefault();
+
+        if (eventName === 'drop') {
+          handleFiles(event.dataTransfer?.files || []);
+        }
+
+        dropzone.classList.remove('dragover');
+      });
+    });
+
+    configsRoot?.addEventListener('change', event => {
+      const target = event.target;
+
+      if (
+        target instanceof HTMLSelectElement &&
+        target.classList.contains('facility-preset-select')
+      ) {
+        const facilityKey = target.dataset.facilityKey;
+        if (facilityKey) {
+          updateFacilityPreset(facilityKey, target.value);
+        }
+        return;
+      }
+
+      if (
+        target instanceof HTMLInputElement &&
+        target.classList.contains('department-tag-input')
+      ) {
+        const facilityKey = target.dataset.facilityKey;
+        const coderIndex = Number(target.dataset.coderIndex);
+        const type = target.dataset.departmentType || 'preferred';
+
+        if (
+          facilityKey &&
+          Number.isInteger(coderIndex) &&
+          target.value.trim()
+        ) {
+          if (addDepartmentToCoder(
+            facilityKey,
+            coderIndex,
+            type,
+            target.value
+          )) {
+            target.value = '';
+          } else {
+            target.classList.add('tag-input-invalid');
+            setTimeout(
+              () => target.classList.remove('tag-input-invalid'),
+              900
             );
           }
-        );
-      });
+        }
+      }
+    });
 
-    ['dragleave', 'drop']
-      .forEach(eventName => {
-        dropzone?.addEventListener(
-          eventName,
-          event => {
-            event.preventDefault();
+    configsRoot?.addEventListener('input', event => {
+      const target = event.target;
 
-            if (eventName === 'drop') {
-              const files =
-                event.dataTransfer
-                  ?.files || [];
+      if (
+        !(target instanceof HTMLInputElement) ||
+        !target.classList.contains('coder-name-input')
+      ) {
+        return;
+      }
 
-              handleFiles(files);
-            }
+      const facilityKey = target.dataset.facilityKey;
+      const coderIndex = Number(target.dataset.coderIndex);
+      if (!facilityKey || !Number.isInteger(coderIndex)) return;
 
-            dropzone.classList.remove(
-              'dragover'
-            );
+      updateFacilityCoderRows(
+        facilityKey,
+        rows => {
+          if (rows[coderIndex]) {
+            rows[coderIndex].name = target.value;
           }
-        );
-      });
+        },
+        false
+      );
+    });
 
-    getEl(
-      'facility-configs'
-    )?.addEventListener(
-      'change',
-      event => {
-        const target =
-          event.target;
-
-        if (
-          !(
-            target instanceof
-              HTMLSelectElement ||
-            target instanceof
-              HTMLTextAreaElement
-          )
-        ) {
-          return;
-        }
-
-        const facilityKey =
-          target.dataset.facilityKey;
-
-        if (!facilityKey) return;
-
-        if (
-          target.classList.contains(
-            'facility-preset-select'
-          )
-        ) {
-          updateFacilityPreset(
-            facilityKey,
-            target.value
-          );
-        } else if (
-          target.classList.contains(
-            'facility-coders-textarea'
-          )
-        ) {
-          updateFacilityCoders(
-            facilityKey,
-            target.value
-          );
-        }
+    configsRoot?.addEventListener('keydown', event => {
+      const target = event.target;
+      if (
+        !(target instanceof HTMLInputElement) ||
+        !target.classList.contains('department-tag-input')
+      ) {
+        return;
       }
-    );
 
-    getEl(
-      'facility-configs'
-    )?.addEventListener(
-      'input',
-      event => {
-        const target =
-          event.target;
+      if (event.key !== 'Enter' && event.key !== ',') return;
+      event.preventDefault();
 
-        if (
-          !(
-            target instanceof
-              HTMLTextAreaElement
-          ) ||
-          !target.classList.contains(
-            'facility-coders-textarea'
-          )
-        ) {
-          return;
-        }
+      const facilityKey = target.dataset.facilityKey;
+      const coderIndex = Number(target.dataset.coderIndex);
+      const type = target.dataset.departmentType || 'preferred';
+      if (!facilityKey || !Number.isInteger(coderIndex)) return;
 
-        const facilityKey =
-          target.dataset.facilityKey;
-
-        if (!facilityKey) return;
-
-        updateFacilityCoders(
-          facilityKey,
-          target.value
+      if (addDepartmentToCoder(
+        facilityKey,
+        coderIndex,
+        type,
+        target.value
+      )) {
+        target.value = '';
+      } else if (target.value.trim()) {
+        target.classList.add('tag-input-invalid');
+        setTimeout(
+          () => target.classList.remove('tag-input-invalid'),
+          900
         );
       }
-    );
+    });
 
-    getEl(
-      'facility-configs'
-    )?.addEventListener(
-      'click',
-      event => {
-        const tab = event.target.closest?.('.facility-tab-btn');
-        if (!tab) return;
-
+    configsRoot?.addEventListener('click', event => {
+      const tab = event.target.closest?.('.facility-tab-btn');
+      if (tab) {
         const facilityKey = tab.dataset.facilityTabKey;
         if (!facilityKey) return;
 
         state.activeFacilityTab = facilityKey;
-        const container = getEl('facility-configs');
+        persistUserState();
 
-        container?.querySelectorAll('.facility-tab-btn').forEach(button => {
+        configsRoot.querySelectorAll('.facility-tab-btn').forEach(button => {
           const isActive = button.dataset.facilityTabKey === facilityKey;
           button.classList.toggle('active', isActive);
           button.setAttribute('aria-selected', isActive ? 'true' : 'false');
         });
 
-        container?.querySelectorAll('.facility-tab-panel').forEach(panel => {
+        configsRoot.querySelectorAll('.facility-tab-panel').forEach(panel => {
           panel.hidden = panel.dataset.facilityPanelKey !== facilityKey;
         });
+        return;
       }
-    );
 
-    /*
-     * Delegated reset handler because facility panels are regenerated when
-     * filters/presets change.
-     */
-    getEl(
-      'facility-configs'
-    )?.addEventListener(
-      'click',
-      event => {
-        const button =
-          event.target.closest?.(
-            '.facility-reset-coders-btn'
-          );
+      const resetButton = event.target.closest?.('.facility-reset-coders-btn');
+      if (resetButton) {
+        const facilityKey = resetButton.dataset.facilityKey;
+        if (facilityKey) usePresetCoders(facilityKey);
+        return;
+      }
 
-        if (!button) return;
-
-        const facilityKey =
-          button.dataset.facilityKey;
-
+      const addButton = event.target.closest?.('.add-coder-row-btn');
+      if (addButton) {
+        const facilityKey = addButton.dataset.facilityKey;
         if (!facilityKey) return;
 
-        usePresetCoders(
-          facilityKey
+        updateFacilityCoderRows(
+          facilityKey,
+          rows => rows.push({
+            name: '',
+            preferredDepartments: [],
+            assignedDepartments: []
+          }),
+          true
+        );
+        return;
+      }
+
+      const removeCoderButton = event.target.closest?.('.remove-coder-row-btn');
+      if (removeCoderButton) {
+        const facilityKey = removeCoderButton.dataset.facilityKey;
+        const coderIndex = Number(removeCoderButton.dataset.coderIndex);
+        if (!facilityKey || !Number.isInteger(coderIndex)) return;
+
+        updateFacilityCoderRows(
+          facilityKey,
+          rows => rows.splice(coderIndex, 1),
+          true
+        );
+        return;
+      }
+
+      const chipRemoveButton = event.target.closest?.('[data-action="remove-department-chip"]');
+      if (chipRemoveButton) {
+        const facilityKey = chipRemoveButton.dataset.facilityKey;
+        const coderIndex = Number(chipRemoveButton.dataset.coderIndex);
+        const type = chipRemoveButton.dataset.departmentType || 'preferred';
+        const department = chipRemoveButton.dataset.department || '';
+        if (!facilityKey || !Number.isInteger(coderIndex)) return;
+
+        removeDepartmentFromCoder(
+          facilityKey,
+          coderIndex,
+          type,
+          department
         );
       }
-    );
+    });
 
-    const setAllChecked =
-      (sectionId, checked) => {
-        const section =
-          getEl(sectionId);
+    const setAllChecked = (sectionId, checked) => {
+      const section = getEl(sectionId);
 
-        section
-          ?.querySelectorAll(
-            'input[type="checkbox"]'
-          )
-          .forEach(
-            input => {
-              input.checked =
-                checked;
-            }
-          );
+      section?.querySelectorAll('input[type="checkbox"]')
+        .forEach(input => {
+          input.checked = checked;
+        });
 
-        syncFilterStateFromDom();
-        renderPreAllocationState();
-      };
+      syncFilterStateFromDom();
+      renderPreAllocationState();
+    };
 
-    getEl(
-      'select-all-payment-btn'
-    )?.addEventListener(
+    getEl('select-all-payment-btn')?.addEventListener(
       'click',
-      () =>
-        setAllChecked(
-          'payment-mode-section',
-          true
-        )
+      () => setAllChecked('payment-mode-section', true)
     );
-
-    getEl(
-      'deselect-all-payment-btn'
-    )?.addEventListener(
+    getEl('deselect-all-payment-btn')?.addEventListener(
       'click',
-      () =>
-        setAllChecked(
-          'payment-mode-section',
-          false
-        )
+      () => setAllChecked('payment-mode-section', false)
     );
-
-    getEl(
-      'select-all-btn'
-    )?.addEventListener(
+    getEl('select-all-btn')?.addEventListener(
       'click',
-      () =>
-        setAllChecked(
-          'dept-section',
-          true
-        )
+      () => setAllChecked('dept-section', true)
     );
-
-    getEl(
-      'deselect-all-btn'
-    )?.addEventListener(
+    getEl('deselect-all-btn')?.addEventListener(
       'click',
-      () =>
-        setAllChecked(
-          'dept-section',
-          false
-        )
+      () => setAllChecked('dept-section', false)
     );
-
-    getEl(
-      'select-all-codif-btn'
-    )?.addEventListener(
+    getEl('select-all-codif-btn')?.addEventListener(
       'click',
-      () =>
-        setAllChecked(
-          'codif-status-section',
-          true
-        )
+      () => setAllChecked('codif-status-section', true)
     );
-
-    getEl(
-      'deselect-all-codif-btn'
-    )?.addEventListener(
+    getEl('deselect-all-codif-btn')?.addEventListener(
       'click',
-      () =>
-        setAllChecked(
-          'codif-status-section',
-          false
-        )
+      () => setAllChecked('codif-status-section', false)
     );
-
-    getEl(
-      'select-all-codified-by-btn'
-    )?.addEventListener(
+    getEl('select-all-codified-by-btn')?.addEventListener(
       'click',
-      () =>
-        setAllChecked(
-          'codified-by-section',
-          true
-        )
+      () => setAllChecked('codified-by-section', true)
     );
-
-    getEl(
-      'deselect-all-codified-by-btn'
-    )?.addEventListener(
+    getEl('deselect-all-codified-by-btn')?.addEventListener(
       'click',
-      () =>
-        setAllChecked(
-          'codified-by-section',
-          false
-        )
+      () => setAllChecked('codified-by-section', false)
     );
 
     [
@@ -4017,128 +4410,102 @@
       'codif-status-section',
       'codified-by-section'
     ].forEach(sectionId => {
-      getEl(
-        sectionId
-      )?.addEventListener(
-        'change',
-        () => {
-          syncFilterStateFromDom();
-          renderPreAllocationState();
-        }
-      );
-    });
-
-    getEl(
-      'include-no-bill-cb'
-    )?.addEventListener(
-      'change',
-      () => {
+      getEl(sectionId)?.addEventListener('change', () => {
         syncFilterStateFromDom();
         renderPreAllocationState();
+      });
+    });
+
+    getEl('include-no-bill-cb')?.addEventListener('change', () => {
+      syncFilterStateFromDom();
+      renderPreAllocationState();
+    });
+
+    getEl('advanced-filters-panel')?.addEventListener('toggle', () => {
+      persistUserState();
+    });
+
+    allocateBtn?.addEventListener('click', () => {
+      const messageBox = getEl('messageBox');
+      if (messageBox) messageBox.textContent = '';
+
+      syncFilterStateFromDom();
+
+      const filtered = applyClaimFilters(
+        state.dedupedClaims,
+        state.filterState
+      );
+
+      if (!filtered.eligibleClaims.length) {
+        renderPreviewTable(null);
+        invalidateAllocationResult();
+        return;
       }
-    );
 
-    allocateBtn?.addEventListener(
-      'click',
-      () => {
-        const messageBox =
-          getEl('messageBox');
+      const allocationDate = formatToday();
+      const allocation = allocateClaims(
+        filtered.eligibleClaims,
+        state.facilityConfigs,
+        allocationDate
+      );
 
-        if (messageBox) {
-          messageBox.textContent = '';
-        }
+      const importStats = buildImportSummary();
+      const allocationResult = {
+        allocationRows: allocation.allocationRows,
+        filteredClaims: filtered.eligibleClaims,
+        importStats,
+        allocationDate,
+        fairness: allocation.fairness,
+        facilityConfigs: state.facilityConfigs,
+        duplicateGroups: state.duplicateGroups
+      };
 
-        syncFilterStateFromDom();
+      allocationResult.summaryData =
+        buildSummarySheetData(allocationResult);
 
-        const filtered =
-          applyClaimFilters(
-            state.dedupedClaims,
-            state.filterState
-          );
+      state.lastAllocationResult = {
+        ...allocationResult
+      };
 
-        if (
-          !filtered
-            .eligibleClaims.length
-        ) {
-          renderPreviewTable(null);
-          return;
-        }
+      renderPreviewTable(state.lastAllocationResult);
 
-        const allocationDate =
-          formatToday();
+      const hasRows = Boolean(allocation.allocationRows.length);
+      if (downloadBtn) downloadBtn.disabled = !hasRows;
+      if (previewBtn) previewBtn.disabled = !hasRows;
+    });
 
-        const allocation =
-          allocateClaims(
-            filtered.eligibleClaims,
-            state.facilityConfigs,
-            allocationDate
-          );
-
-        const importStats =
-          buildImportSummary();
-
-        const allocationResult = {
-          allocationRows:
-            allocation.allocationRows,
-          filteredClaims:
-            filtered.eligibleClaims,
-          importStats,
-          allocationDate,
-          fairness:
-            allocation.fairness,
-          facilityConfigs:
-            state.facilityConfigs,
-          duplicateGroups:
-            state.duplicateGroups
-        };
-
-        allocationResult.summaryData =
-          buildSummarySheetData(
-            allocationResult
-          );
-
-        state.lastAllocationResult = {
-          ...allocationResult
-        };
-
-        renderPreviewTable(
-          state.lastAllocationResult
-        );
-
-        if (downloadBtn) {
-          downloadBtn.disabled =
-            !allocation
-              .allocationRows.length;
-        }
+    previewBtn?.addEventListener('click', () => {
+      if (state.lastAllocationResult) {
+        openPreviewModal();
       }
-    );
+    });
 
-    downloadBtn?.addEventListener(
-      'click',
-      () => {
-        if (
-          !state.lastAllocationResult
-        ) {
-          return;
-        }
-
-        const workbook =
-          buildWorkbook(
-            state.lastAllocationResult
-          );
-
-        const timestamp =
-          new Date()
-            .toISOString()
-            .slice(0, 19)
-            .replace(/:/g, '-');
-
-        root.XLSX.writeFile(
-          workbook,
-          `facility_allocation_${timestamp}.xlsx`
-        );
+    getEl('preview-modal')?.addEventListener('click', event => {
+      if (event.target.closest?.('[data-preview-close]')) {
+        closePreviewModal();
       }
-    );
+    });
+
+    doc?.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && !getEl('preview-modal')?.hidden) {
+        closePreviewModal();
+      }
+    });
+
+    downloadBtn?.addEventListener('click', () => {
+      if (!state.lastAllocationResult) return;
+
+      const workbook = buildWorkbook(state.lastAllocationResult);
+      const timestamp = new Date()
+        .toISOString()
+        .slice(0, 19)
+        .replace(/:/g, '-');
+
+      root.XLSX.writeFile(
+        workbook,
+        `facility_allocation_${timestamp}.xlsx`
+      );
+    });
   }
 
   function loadPresets() {
@@ -4221,7 +4588,11 @@
     applyPresetSelection,
     resetConfigToPreset,
     parseCodersText,
-    normalizeDepartmentKey
+    normalizeDepartmentKey,
+    normalizeDepartmentList,
+    getConfigCoderRows,
+    getConfigCoderNames,
+    applyUserCoderRows
   };
 
   if (
