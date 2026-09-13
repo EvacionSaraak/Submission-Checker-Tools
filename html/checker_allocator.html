@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Allocator</title>
+<title>Facility Allocator</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" />
 <link rel="stylesheet" href="../css/checker_allocator.css" />
 </head>
@@ -92,8 +92,8 @@
 
       <section class="mb-3 allocator-actions-section">
         <div class="d-flex gap-2" id="allocator-actions">
-          <button id="allocate-btn" class="btn btn-primary" type="button">Allocate</button>
-          <button id="download-btn" class="btn btn-success" type="button" disabled>Download Workbook</button>
+          <button id="allocate-btn" class="btn btn-primary" type="button">Generate Preview</button>
+          <button id="download-btn" class="btn btn-success" type="button" disabled>Download Facility Allocation</button>
         </div>
       </section>
 
@@ -114,11 +114,11 @@
   </aside>
 
   <main id="right-panel">
-    <div id="allocation-preview" class="preview-empty">Upload one or more All Claims Reports to begin.</div>
+    <div id="allocation-preview" class="preview-empty">Upload one or more All Claims Reports to generate a Facility Allocation preview.</div>
   </main>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.min.js"></script>
 <script src="../js/checker_allocator.js"></script>
 </body>
 </html>
