@@ -133,12 +133,6 @@
           "Dermatology",
           "Facial"
         ]
-      },
-      {
-        "name": "SAJIN MON CHARLES",
-        "preferredDepartments": [
-          "Dermatology"
-        ]
       }
     ]
   },
@@ -203,13 +197,6 @@
           "Family Medicine",
           "Gynecology"
         ]
-      },
-      {
-        "name": "SAJIN MON CHARLES",
-        "preferredDepartments": [
-          "General",
-          "ENT"
-        ]
       }
     ]
   },
@@ -263,15 +250,6 @@
           "Urology",
           "Family Medicine",
           "Gynecology"
-        ]
-      },
-      {
-        "name": "SAJIN MON CHARLES",
-        "preferredDepartments": [
-          "General",
-          "Gynecology",
-          "Family Medicine",
-          "ENT"
         ]
       }
     ]
@@ -429,12 +407,6 @@
         "name": "Muhammed Basith",
         "preferredDepartments": [
           "General"
-        ]
-      },
-      {
-        "name": "SAJIN MON CHARLES",
-        "preferredDepartments": [
-          "Urology"
         ]
       }
     ]
