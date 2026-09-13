@@ -1051,8 +1051,12 @@
         )
     );
 
-    const noBillExcluded =
+    const noBillDetected =
       codifiedFiltered.filter(claim => claim.noBill).length;
+
+    const noBillExcluded = filterState.includeNoBills
+      ? 0
+      : noBillDetected;
 
     const eligibleClaims = filterState.includeNoBills
       ? codifiedFiltered
@@ -1065,7 +1069,14 @@
       codifiedFiltered,
       eligibleClaims,
       alreadyCodifiedExcluded,
-      noBillExcluded
+      noBillDetected,
+      noBillExcluded,
+      paymentModeFilteredOut:
+        claims.length - paymentFiltered.length,
+      departmentFilteredOut:
+        paymentFiltered.length - departmentFiltered.length,
+      codificationStatusFilteredOut:
+        departmentFiltered.length - statusFiltered.length
     };
   }
 
@@ -1124,9 +1135,16 @@
         : 0,
       noBillExcluded: filtered.noBillExcluded,
       alreadyCodifiedExcluded: filtered.alreadyCodifiedExcluded,
+      paymentModeFilteredOut: filtered.paymentModeFilteredOut,
+      departmentFilteredOut: filtered.departmentFilteredOut,
+      codificationStatusFilteredOut:
+        filtered.codificationStatusFilteredOut,
       eligibleClaims: filtered.eligibleClaims.length,
       automaticallyExcluded:
         (state.importSummary ? state.importSummary.terminalStatusExcluded : 0) +
+        filtered.paymentModeFilteredOut +
+        filtered.departmentFilteredOut +
+        filtered.codificationStatusFilteredOut +
         filtered.alreadyCodifiedExcluded +
         filtered.noBillExcluded
     };
@@ -1996,13 +2014,48 @@
     };
   }
 
+  function formatFacilityExclusionBreakdown(exclusions) {
+    const entries = [
+      ['Terminal Status', exclusions.terminalStatus || 0],
+      ['Payment Mode Filter', exclusions.paymentMode || 0],
+      ['Department Filter', exclusions.department || 0],
+      ['Codification Status Filter', exclusions.codificationStatus || 0],
+      ['Already Codified', exclusions.alreadyCodified || 0],
+      ['No Bill', exclusions.noBill || 0]
+    ].filter(([, count]) => count > 0);
+
+    const total = entries.reduce(
+      (sum, [, count]) => sum + count,
+      0
+    );
+
+    if (!total) return '0';
+
+    const parts = entries.map(
+      ([label, count]) => `${count} ${label}`
+    );
+
+    let detail = '';
+    if (parts.length === 1) {
+      detail = parts[0];
+    } else if (parts.length === 2) {
+      detail = `${parts[0]} and ${parts[1]}`;
+    } else {
+      detail = `${parts.slice(0, -1).join(', ')}, and ${parts[parts.length - 1]}`;
+    }
+
+    return `${total} — ${detail}`;
+  }
+
+
   function buildSummarySheetData({
     importStats,
     filteredClaims,
     allocationRows,
     fairness,
     facilityConfigs,
-    duplicateGroups
+    duplicateGroups,
+    filterBreakdown
   }) {
     const allocationSummary =
       buildAllocationSummary(
@@ -2023,7 +2076,23 @@
 
     const facilityFiltered = new Map();
 
-    for (const claim of duplicateGroups) {
+    const paymentSet = new Set(
+      filterBreakdown?.paymentFiltered || []
+    );
+    const departmentSet = new Set(
+      filterBreakdown?.departmentFiltered || []
+    );
+    const statusSet = new Set(
+      filterBreakdown?.statusFiltered || []
+    );
+    const codifiedSet = new Set(
+      filterBreakdown?.codifiedFiltered || []
+    );
+    const eligibleSet = new Set(
+      filterBreakdown?.eligibleClaims || filteredClaims
+    );
+
+    function ensureFacilityRow(claim) {
       if (!facilityFiltered.has(claim.facilityKey)) {
         facilityFiltered.set(
           claim.facilityKey,
@@ -2033,49 +2102,60 @@
               facilityConfigs
             ),
             'Claims Loaded': 0,
-            'Terminal Status Excluded': 0,
+            'Excluded / Why': '0',
             Eligible: 0,
             Allocated: 0,
-            Unassigned: 0
+            Unassigned: 0,
+            _exclusions: {
+              terminalStatus: 0,
+              paymentMode: 0,
+              department: 0,
+              codificationStatus: 0,
+              alreadyCodified: 0,
+              noBill: 0
+            }
           }
         );
       }
 
-      const facilityRow =
-        facilityFiltered.get(
-          claim.facilityKey
-        );
+      return facilityFiltered.get(claim.facilityKey);
+    }
 
+    /*
+     * Reconcile every loaded unique claim to exactly one outcome.  This keeps
+     * Claims Loaded = Excluded + Eligible and makes the reason for any gap
+     * visible instead of only reporting terminal-status exclusions.
+     */
+    for (const claim of duplicateGroups) {
+      const facilityRow = ensureFacilityRow(claim);
       facilityRow['Claims Loaded']++;
 
       if (claim.autoExcludedStatus) {
-        facilityRow[
-          'Terminal Status Excluded'
-        ]++;
+        facilityRow._exclusions.terminalStatus++;
+        continue;
+      }
+
+      if (!paymentSet.has(claim)) {
+        facilityRow._exclusions.paymentMode++;
+      } else if (!departmentSet.has(claim)) {
+        facilityRow._exclusions.department++;
+      } else if (!statusSet.has(claim)) {
+        facilityRow._exclusions.codificationStatus++;
+      } else if (!codifiedSet.has(claim)) {
+        facilityRow._exclusions.alreadyCodified++;
+      } else if (!eligibleSet.has(claim)) {
+        facilityRow._exclusions.noBill++;
+      } else {
+        facilityRow.Eligible++;
       }
     }
 
-    for (const claim of filteredClaims) {
-      if (!facilityFiltered.has(claim.facilityKey)) {
-        facilityFiltered.set(
-          claim.facilityKey,
-          {
-            Facility: getFacilityOutputName(
-              claim,
-              facilityConfigs
-            ),
-            'Claims Loaded': 0,
-            'Terminal Status Excluded': 0,
-            Eligible: 0,
-            Allocated: 0,
-            Unassigned: 0
-          }
+    for (const facilityRow of facilityFiltered.values()) {
+      facilityRow['Excluded / Why'] =
+        formatFacilityExclusionBreakdown(
+          facilityRow._exclusions
         );
-      }
-
-      facilityFiltered
-        .get(claim.facilityKey)
-        .Eligible++;
+      delete facilityRow._exclusions;
     }
 
     for (const row of allocationRows) {
@@ -2148,6 +2228,16 @@
         [
           'Terminal Status Excluded',
           importStats.terminalStatusExcluded
+        ],
+        [
+          'Already Codified Excluded',
+          importStats.alreadyCodifiedExcluded
+        ],
+        [
+          'Filter Excluded',
+          (importStats.paymentModeFilteredOut || 0) +
+            (importStats.departmentFilteredOut || 0) +
+            (importStats.codificationStatusFilteredOut || 0)
         ],
         [
           'No-Bill Excluded',
@@ -2750,7 +2840,7 @@
           headers: [
             'Facility',
             'Claims Loaded',
-            'Terminal Status Excluded',
+            'Excluded / Why',
             'Eligible',
             'Allocated',
             'Unassigned'
@@ -3687,6 +3777,8 @@
         row => `
           <tr>
             <td>${escapeHtml(row.Facility)}</td>
+            <td class="numeric-cell">${escapeHtml(row['Claims Loaded'])}</td>
+            <td>${escapeHtml(row['Excluded / Why'] || '0')}</td>
             <td class="numeric-cell">${escapeHtml(row.Eligible)}</td>
             <td class="numeric-cell">${escapeHtml(row.Allocated)}</td>
             <td class="numeric-cell">${escapeHtml(row.Unassigned)}</td>
@@ -3774,6 +3866,8 @@
             <thead>
               <tr>
                 <th>Facility</th>
+                <th>Claims Loaded</th>
+                <th>Excluded / Why</th>
                 <th>Eligible</th>
                 <th>Allocated</th>
                 <th>Unassigned</th>
@@ -4582,7 +4676,8 @@
         allocationDate,
         fairness: allocation.fairness,
         facilityConfigs: state.facilityConfigs,
-        duplicateGroups: state.duplicateGroups
+        duplicateGroups: state.duplicateGroups,
+        filterBreakdown: filtered
       };
 
       allocationResult.summaryData =
@@ -4705,6 +4800,7 @@
     buildPreferenceMap,
     buildPresetIndex,
     buildDepartmentStatusSummary,
+    formatFacilityExclusionBreakdown,
     buildSummarySheetData,
     getFriendlyFacilityName,
     makeUniqueSheetName,
