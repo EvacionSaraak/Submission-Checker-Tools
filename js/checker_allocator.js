@@ -641,6 +641,13 @@
         claimDateText: '',
         codificationStatus: representative.codificationStatus,
         paymentMode: representative.paymentMode,
+        codifRemarks: Array.from(
+          new Set(
+            claims
+              .map(claim => String(claim.codifRemarks || '').trim())
+              .filter(Boolean)
+          )
+        ).join(' | '),
         codifiedByValues: Array.from(
           new Set(claims.map(claim => claim.codifiedBy).filter(Boolean))
         ),
@@ -1379,10 +1386,12 @@
           'Claim Date': claim.claimDate,
           ClaimDateText: claim.claimDateText,
           Department: claim.department,
+          CodificationStatus: claim.codificationStatus || '',
           Coder: coder,
           'Date Assigned': allocationDateText,
           Query: '',
-          Status: ''
+          Status: '',
+          Notes: claim.codifRemarks || ''
         };
       });
 
@@ -1417,12 +1426,9 @@
       Coder: row.Coder,
       'Date Assigned': allocationDateText,
       Query: row.Query,
-      Status: row.Status
+      Status: row.Status,
+      Notes: row.Notes || ''
     };
-  }
-
-  function formatPercent(value) {
-    return `${value.toFixed(2)}%`;
   }
 
   function buildAllocationSummary(
@@ -1431,20 +1437,11 @@
   ) {
     const coderSummary = new Map();
     const facilitySummary = new Map();
-    const departmentSummary = new Map();
-
-    const totalAssigned =
-      allocationRows.filter(
-        row => row.Coder !== UNASSIGNED_CODER
-      ).length;
 
     allConfiguredCoders.forEach(coder => {
       coderSummary.set(coder, {
         Coder: coder,
-        'Assigned Claims': 0,
-        'Share %': formatPercent(0),
-        'Oldest Claim Date': '',
-        'Newest Claim Date': ''
+        'Assigned Claims': 0
       });
     });
 
@@ -1458,38 +1455,14 @@
       ) {
         coderSummary.set(row.Coder, {
           Coder: row.Coder,
-          'Assigned Claims': 0,
-          'Share %': formatPercent(0),
-          'Oldest Claim Date': '',
-          'Newest Claim Date': ''
+          'Assigned Claims': 0
         });
       }
 
       if (isAssigned) {
-        const coder = coderSummary.get(row.Coder);
-        coder['Assigned Claims']++;
-
-        if (row['Claim Date']) {
-          if (
-            !coder._oldest ||
-            row['Claim Date'] < coder._oldest
-          ) {
-            coder._oldest = row['Claim Date'];
-          }
-
-          if (
-            !coder._newest ||
-            row['Claim Date'] > coder._newest
-          ) {
-            coder._newest = row['Claim Date'];
-          }
-
-          coder['Oldest Claim Date'] =
-            formatDate(coder._oldest);
-
-          coder['Newest Claim Date'] =
-            formatDate(coder._newest);
-        }
+        coderSummary.get(row.Coder)[
+          'Assigned Claims'
+        ]++;
       }
 
       if (!facilitySummary.has(row.Facility)) {
@@ -1504,69 +1477,24 @@
         .get(row.Facility)[
           isAssigned ? 'Allocated' : 'Unassigned'
         ]++;
-
-      const deptKey =
-        row.Department || '(Blank)';
-
-      if (!departmentSummary.has(deptKey)) {
-        departmentSummary.set(deptKey, {
-          Department: deptKey,
-          Allocated: 0,
-          Unassigned: 0
-        });
-      }
-
-      departmentSummary
-        .get(deptKey)[
-          isAssigned ? 'Allocated' : 'Unassigned'
-        ]++;
     }
 
-    const coderRows =
-      Array.from(coderSummary.values())
-        .map(row => ({
-          Coder: row.Coder,
-          'Assigned Claims':
-            row['Assigned Claims'],
-          'Share %': formatPercent(
-            totalAssigned
-              ? (
-                  row['Assigned Claims'] /
-                  totalAssigned
-                ) * 100
-              : 0
-          ),
-          'Oldest Claim Date':
-            row['Oldest Claim Date'],
-          'Newest Claim Date':
-            row['Newest Claim Date']
-        }))
-        .sort(
-          (a, b) =>
-            a.Coder.localeCompare(b.Coder)
-        );
-
     return {
-      coderRows,
+      coderRows:
+        Array.from(coderSummary.values())
+          .sort(
+            (a, b) =>
+              a.Coder.localeCompare(b.Coder)
+          ),
       facilityAssignedRows:
-        Array.from(
-          facilitySummary.values()
-        ).sort(
-          (a, b) =>
-            a.Facility.localeCompare(b.Facility)
-        ),
-      departmentAssignedRows:
-        Array.from(
-          departmentSummary.values()
-        ).sort(
-          (a, b) =>
-            a.Department.localeCompare(
-              b.Department
-            )
-        ),
-      totalAssigned
+        Array.from(facilitySummary.values())
+          .sort(
+            (a, b) =>
+              a.Facility.localeCompare(b.Facility)
+          )
     };
   }
+
 
   function buildFacilityMatrix(
     allocationRows,
@@ -1608,6 +1536,76 @@
     };
   }
 
+  function sortCodificationStatuses(statuses) {
+    const priority = [
+      'new',
+      'not seen',
+      'under process',
+      'completed needs verification',
+      'completed-needs verification'
+    ];
+
+    return statuses.slice().sort((a, b) => {
+      const normA = normalizeStatus(a);
+      const normB = normalizeStatus(b);
+      const indexA = priority.indexOf(normA);
+      const indexB = priority.indexOf(normB);
+
+      if (indexA !== -1 || indexB !== -1) {
+        if (indexA === -1) return 1;
+        if (indexB === -1) return -1;
+        if (indexA !== indexB) return indexA - indexB;
+      }
+
+      return String(a).localeCompare(String(b));
+    });
+  }
+
+  function buildDepartmentStatusSummary(filteredClaims) {
+    const statuses = sortCodificationStatuses(
+      Array.from(
+        new Set(
+          filteredClaims.map(
+            claim =>
+              String(claim.codificationStatus || '').trim() || '(Blank)'
+          )
+        )
+      )
+    );
+
+    const byDepartment = new Map();
+
+    for (const claim of filteredClaims) {
+      const department = claim.department || '(Blank)';
+      const status =
+        String(claim.codificationStatus || '').trim() || '(Blank)';
+
+      if (!byDepartment.has(department)) {
+        const initial = {
+          Department: department,
+          Total: 0
+        };
+        statuses.forEach(value => {
+          initial[value] = 0;
+        });
+        byDepartment.set(department, initial);
+      }
+
+      const row = byDepartment.get(department);
+      row[status] = (row[status] || 0) + 1;
+      row.Total++;
+    }
+
+    return {
+      headers: ['Department', ...statuses, 'Total'],
+      rows: Array.from(byDepartment.values())
+        .sort(
+          (a, b) =>
+            a.Department.localeCompare(b.Department)
+        )
+    };
+  }
+
   function buildSummarySheetData({
     importStats,
     filteredClaims,
@@ -1628,8 +1626,12 @@
         allocationSummary.coderRows
       );
 
+    const departmentStatus =
+      buildDepartmentStatusSummary(
+        filteredClaims
+      );
+
     const facilityFiltered = new Map();
-    const departmentFiltered = new Map();
 
     for (const claim of duplicateGroups) {
       if (!facilityFiltered.has(claim.facilityKey)) {
@@ -1684,22 +1686,6 @@
       facilityFiltered
         .get(claim.facilityKey)
         .Eligible++;
-
-      const deptKey =
-        claim.department || '(Blank)';
-
-      if (!departmentFiltered.has(deptKey)) {
-        departmentFiltered.set(deptKey, {
-          Department: deptKey,
-          Eligible: 0,
-          Allocated: 0,
-          Unassigned: 0
-        });
-      }
-
-      departmentFiltered
-        .get(deptKey)
-        .Eligible++;
     }
 
     for (const row of allocationRows) {
@@ -1718,25 +1704,6 @@
             : 'Allocated'
         ]++;
       }
-
-      const deptKey =
-        row.Department || '(Blank)';
-
-      if (!departmentFiltered.has(deptKey)) {
-        departmentFiltered.set(deptKey, {
-          Department: deptKey,
-          Eligible: 0,
-          Allocated: 0,
-          Unassigned: 0
-        });
-      }
-
-      departmentFiltered
-        .get(deptKey)[
-          row.Coder === UNASSIGNED_CODER
-            ? 'Unassigned'
-            : 'Allocated'
-        ]++;
     }
 
     const allocatedCount =
@@ -1750,18 +1717,6 @@
       ).length;
 
     return {
-      overviewRows: [
-        ['Reports Loaded', importStats.reportsLoaded],
-        ['Facilities Found', importStats.facilitiesFound],
-        ['Total Claims Read', importStats.totalClaimsRead],
-        ['Duplicate Claims Resolved', importStats.duplicateClaimsResolved],
-        ['Terminal Status Excluded', importStats.terminalStatusExcluded],
-        ['No-Bill Excluded', importStats.noBillExcluded],
-        ['Eligible Claims', filteredClaims.length],
-        ['Allocated Claims', allocatedCount],
-        ['Unassigned Claims', unassignedCount]
-      ],
-
       coderRows:
         allocationSummary.coderRows,
 
@@ -1784,15 +1739,11 @@
             )
         ),
 
+      departmentHeaders:
+        departmentStatus.headers,
+
       departmentRows:
-        Array.from(
-          departmentFiltered.values()
-        ).sort(
-          (a, b) =>
-            a.Department.localeCompare(
-              b.Department
-            )
-        ),
+        departmentStatus.rows,
 
       topCards: [
         ['Eligible Claims', filteredClaims.length],
@@ -1818,6 +1769,129 @@
     };
   }
 
+
+  const EXCEL_COLORS = Object.freeze({
+    navy: '1F4E78',
+    blue: '5B9BD5',
+    lightBlue: 'D9EAF7',
+    paleBlue: 'EDF4FB',
+    lightGray: 'F3F6F9',
+    border: 'B8C6D1',
+    darkText: '1F2933',
+    white: 'FFFFFF',
+    total: 'E2F0D9',
+    notes: 'FFF8D8'
+  });
+
+  const EXCEL_STYLES = Object.freeze({
+    title: {
+      font: {
+        bold: true,
+        color: { rgb: EXCEL_COLORS.white },
+        sz: 15
+      },
+      fill: {
+        patternType: 'solid',
+        fgColor: { rgb: EXCEL_COLORS.navy }
+      },
+      alignment: {
+        horizontal: 'left',
+        vertical: 'center'
+      }
+    },
+    section: {
+      font: {
+        bold: true,
+        color: { rgb: EXCEL_COLORS.white },
+        sz: 11
+      },
+      fill: {
+        patternType: 'solid',
+        fgColor: { rgb: EXCEL_COLORS.blue }
+      },
+      alignment: {
+        horizontal: 'left',
+        vertical: 'center'
+      }
+    },
+    header: {
+      font: {
+        bold: true,
+        color: { rgb: EXCEL_COLORS.darkText }
+      },
+      fill: {
+        patternType: 'solid',
+        fgColor: { rgb: EXCEL_COLORS.lightBlue }
+      },
+      border: {
+        top: { style: 'thin', color: { rgb: EXCEL_COLORS.border } },
+        bottom: { style: 'thin', color: { rgb: EXCEL_COLORS.border } },
+        left: { style: 'thin', color: { rgb: EXCEL_COLORS.border } },
+        right: { style: 'thin', color: { rgb: EXCEL_COLORS.border } }
+      },
+      alignment: {
+        horizontal: 'center',
+        vertical: 'center',
+        wrapText: true
+      }
+    },
+    body: {
+      border: {
+        top: { style: 'thin', color: { rgb: 'D9E1E8' } },
+        bottom: { style: 'thin', color: { rgb: 'D9E1E8' } },
+        left: { style: 'thin', color: { rgb: 'D9E1E8' } },
+        right: { style: 'thin', color: { rgb: 'D9E1E8' } }
+      },
+      alignment: {
+        vertical: 'top'
+      }
+    },
+    altBody: {
+      fill: {
+        patternType: 'solid',
+        fgColor: { rgb: EXCEL_COLORS.paleBlue }
+      },
+      border: {
+        top: { style: 'thin', color: { rgb: 'D9E1E8' } },
+        bottom: { style: 'thin', color: { rgb: 'D9E1E8' } },
+        left: { style: 'thin', color: { rgb: 'D9E1E8' } },
+        right: { style: 'thin', color: { rgb: 'D9E1E8' } }
+      },
+      alignment: {
+        vertical: 'top'
+      }
+    },
+    total: {
+      font: { bold: true },
+      fill: {
+        patternType: 'solid',
+        fgColor: { rgb: EXCEL_COLORS.total }
+      },
+      border: {
+        top: { style: 'thin', color: { rgb: EXCEL_COLORS.border } },
+        bottom: { style: 'thin', color: { rgb: EXCEL_COLORS.border } },
+        left: { style: 'thin', color: { rgb: EXCEL_COLORS.border } },
+        right: { style: 'thin', color: { rgb: EXCEL_COLORS.border } }
+      }
+    },
+    notes: {
+      fill: {
+        patternType: 'solid',
+        fgColor: { rgb: EXCEL_COLORS.notes }
+      },
+      border: {
+        top: { style: 'thin', color: { rgb: 'D9E1E8' } },
+        bottom: { style: 'thin', color: { rgb: 'D9E1E8' } },
+        left: { style: 'thin', color: { rgb: 'D9E1E8' } },
+        right: { style: 'thin', color: { rgb: 'D9E1E8' } }
+      },
+      alignment: {
+        vertical: 'top',
+        wrapText: true
+      }
+    }
+  });
+
   function autoSizeColumns(headers, rows) {
     return headers.map(header => {
       const width = Math.max(
@@ -1832,42 +1906,56 @@
         )
       );
 
+      const maximum =
+        header === 'Notes' ? 48 :
+        header === 'Department' ? 28 :
+        header === 'Facility' ? 32 :
+        24;
+
       return {
         wch: Math.min(
           Math.max(width + 2, 12),
-          30
+          maximum
         )
       };
     });
   }
 
-  function applyWorksheetChrome(
-    ws,
-    rangeRef
-  ) {
-    ws['!freeze'] = {
-      xSplit: 0,
-      ySplit: 1
-    };
-
-    ws['!panes'] = [{
-      ySplit: 1,
-      topLeftCell: 'A2',
-      activePane: 'bottomLeft',
-      state: 'frozen'
-    }];
-
-    ws['!autofilter'] = {
-      ref: rangeRef
-    };
+  function applyCellStyle(ws, row, col, style) {
+    const ref = root.XLSX.utils.encode_cell({ r: row, c: col });
+    if (!ws[ref]) return;
+    ws[ref].s = style;
   }
 
-  function jsonRowsToWorksheet(
-    headers,
-    rows,
-    dateHeaders = new Set()
-  ) {
+  function styleTableRange(ws, headerRowIndex, dataStartRowIndex, rowCount, columnCount, options = {}) {
+    for (let col = 0; col < columnCount; col++) {
+      applyCellStyle(ws, headerRowIndex, col, EXCEL_STYLES.header);
+    }
+
+    for (let rowOffset = 0; rowOffset < rowCount; rowOffset++) {
+      const style = rowOffset % 2
+        ? EXCEL_STYLES.altBody
+        : EXCEL_STYLES.body;
+
+      for (let col = 0; col < columnCount; col++) {
+        const cellStyle =
+          options.notesColumnIndex === col
+            ? EXCEL_STYLES.notes
+            : style;
+        applyCellStyle(
+          ws,
+          dataStartRowIndex + rowOffset,
+          col,
+          cellStyle
+        );
+      }
+    }
+  }
+
+  function buildStyledFacilityWorksheet(title, headers, rows, dateHeaders = new Set()) {
     const aoa = [
+      [title],
+      [],
       headers,
       ...rows.map(row =>
         headers.map(header => {
@@ -1877,205 +1965,261 @@
           ) {
             return row[header];
           }
-
-          return row[header] == null
-            ? ''
-            : row[header];
+          return row[header] == null ? '' : row[header];
         })
       )
     ];
 
-    const ws =
-      root.XLSX.utils.aoa_to_sheet(aoa);
+    const ws = root.XLSX.utils.aoa_to_sheet(aoa);
+    const lastCol = headers.length - 1;
+    const lastDataRow = Math.max(2, rows.length + 2);
 
-    const rangeRef =
-      root.XLSX.utils.encode_range({
-        s: {
-          c: 0,
-          r: 0
-        },
-        e: {
-          c: headers.length - 1,
-          r: Math.max(rows.length, 1)
+    ws['!merges'] = [{
+      s: { r: 0, c: 0 },
+      e: { r: 0, c: lastCol }
+    }];
+
+    ws['!rows'] = [
+      { hpt: 24 },
+      { hpt: 6 },
+      { hpt: 22 }
+    ];
+
+    ws['!freeze'] = {
+      xSplit: 0,
+      ySplit: 3
+    };
+
+    ws['!panes'] = [{
+      ySplit: 3,
+      topLeftCell: 'A4',
+      activePane: 'bottomLeft',
+      state: 'frozen'
+    }];
+
+    ws['!autofilter'] = {
+      ref: root.XLSX.utils.encode_range({
+        s: { r: 2, c: 0 },
+        e: { r: lastDataRow, c: lastCol }
+      })
+    };
+
+    ws['!cols'] = autoSizeColumns(headers, rows);
+
+    applyCellStyle(ws, 0, 0, EXCEL_STYLES.title);
+    styleTableRange(
+      ws,
+      2,
+      3,
+      rows.length,
+      headers.length,
+      { notesColumnIndex: headers.indexOf('Notes') }
+    );
+
+    rows.forEach((row, rowIndex) => {
+      headers.forEach((header, colIndex) => {
+        const cellRef = root.XLSX.utils.encode_cell({
+          r: rowIndex + 3,
+          c: colIndex
+        });
+
+        if (
+          dateHeaders.has(header) &&
+          row[header] instanceof Date &&
+          ws[cellRef]
+        ) {
+          ws[cellRef].z = 'dd/mm/yyyy';
         }
       });
-
-    applyWorksheetChrome(
-      ws,
-      rangeRef
-    );
-
-    ws['!cols'] =
-      autoSizeColumns(
-        headers,
-        rows.map(row => {
-          const printable = {};
-
-          headers.forEach(header => {
-            printable[header] =
-              dateHeaders.has(header) &&
-              row[header] instanceof Date
-                ? formatDate(row[header])
-                : row[header];
-          });
-
-          return printable;
-        })
-      );
-
-    rows.forEach(
-      (row, rowIndex) => {
-        headers.forEach(
-          (header, colIndex) => {
-            if (!dateHeaders.has(header)) {
-              return;
-            }
-
-            const cellRef =
-              root.XLSX.utils.encode_cell({
-                r: rowIndex + 1,
-                c: colIndex
-              });
-
-            if (ws[cellRef]) {
-              ws[cellRef].z =
-                'dd/mm/yyyy';
-            }
-          }
-        );
-      }
-    );
+    });
 
     return ws;
   }
 
-  function buildWorkbook(
-    lastAllocationResult
-  ) {
-    const wb =
-      root.XLSX.utils.book_new();
+  function getFriendlyFacilityName(facility) {
+    const text = String(facility || '').trim();
+    const normalized = normalizeLoose(text);
 
-    const summaryData =
-      lastAllocationResult.summaryData;
+    const rules = [
+      ['truelife', 'Truelife'],
+      ['khabisi', 'Khabisi'],
+      ['alyahar', 'Al Yahar'],
+      ['extramall', 'Extramall'],
+      ['emirates', 'Emirates'],
+      ['ivory', 'Ivory'],
+      ['lauretta', 'Lauretta'],
+      ['majestic', 'Majestic'],
+      ['nazek', 'Nazek'],
+      ['scandcare', 'Scandcare'],
+      ['talat', 'Talat'],
+      ['wldy', 'WLDY'],
+      ['alwagan', 'Al Wagan'],
+      ['korean', 'Korean']
+    ];
 
-    const summaryAoA = [];
+    for (const [needle, label] of rules) {
+      if (normalized.includes(needle)) return label;
+    }
 
-    summaryAoA.push([
-      'Allocation Run Summary'
-    ]);
+    return text
+      .replace(/\bmedical\b/ig, '')
+      .replace(/\bcenter\b/ig, '')
+      .replace(/\bcentre\b/ig, '')
+      .replace(/\bprimary care\b/ig, '')
+      .replace(/\s+/g, ' ')
+      .trim() || 'Facility';
+  }
 
-    summaryAoA.push([]);
+  function makeUniqueSheetName(facility, usedNames) {
+    const base = `${getFriendlyFacilityName(facility)} Allocation`
+      .replace(/[\\/?*\[\]:]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 31) || 'Facility Allocation';
 
-    summaryAoA.push([
-      'Metric',
-      'Value'
-    ]);
+    let candidate = base;
+    let suffix = 2;
 
-    summaryAoA.push(
-      ...summaryData.overviewRows
+    while (usedNames.has(candidate.toLowerCase())) {
+      const suffixText = ` ${suffix}`;
+      candidate = `${base.slice(0, 31 - suffixText.length)}${suffixText}`;
+      suffix++;
+    }
+
+    usedNames.add(candidate.toLowerCase());
+    return candidate;
+  }
+
+  function appendSummarySection(aoa, sections, title, headers, rows) {
+    const sectionRow = aoa.length;
+    aoa.push([title]);
+    const headerRow = aoa.length;
+    aoa.push(headers);
+    const dataStartRow = aoa.length;
+
+    rows.forEach(row => {
+      aoa.push(headers.map(header => row[header] ?? ''));
+    });
+
+    sections.push({
+      sectionRow,
+      headerRow,
+      dataStartRow,
+      rowCount: rows.length,
+      columnCount: headers.length
+    });
+
+    aoa.push([]);
+  }
+
+  function buildStyledSummaryWorksheet(summaryData) {
+    const aoa = [
+      ['Facility Allocation Summary'],
+      []
+    ];
+    const sections = [];
+
+    appendSummarySection(
+      aoa,
+      sections,
+      'Coder Allocation Summary',
+      ['Coder', 'Assigned Claims'],
+      summaryData.coderRows
     );
 
-    summaryAoA.push([]);
-
-    summaryAoA.push([
-      'Coder',
-      'Assigned Claims',
-      'Share %',
-      'Oldest Claim Date',
-      'Newest Claim Date'
-    ]);
-
-    summaryAoA.push(
-      ...summaryData.coderRows.map(
-        row => [
-          row.Coder,
-          row['Assigned Claims'],
-          row['Share %'],
-          row['Oldest Claim Date'],
-          row['Newest Claim Date']
-        ]
-      )
+    appendSummarySection(
+      aoa,
+      sections,
+      'Coder × Facility Matrix',
+      summaryData.matrixHeaders,
+      summaryData.matrixRows
     );
 
-    summaryAoA.push([]);
-
-    summaryAoA.push(
-      summaryData.matrixHeaders
+    appendSummarySection(
+      aoa,
+      sections,
+      'Facility Summary',
+      [
+        'Facility',
+        'Claims Loaded',
+        'Terminal Status Excluded',
+        'Eligible',
+        'Allocated',
+        'Unassigned'
+      ],
+      summaryData.facilityRows
     );
 
-    summaryAoA.push(
-      ...summaryData.matrixRows.map(
-        row =>
-          summaryData.matrixHeaders.map(
-            header =>
-              row[header] ?? ''
-          )
-      )
+    appendSummarySection(
+      aoa,
+      sections,
+      'Department Status Summary',
+      summaryData.departmentHeaders,
+      summaryData.departmentRows
     );
 
-    summaryAoA.push([]);
-
-    summaryAoA.push([
-      'Facility',
-      'Claims Loaded',
-      'Terminal Status Excluded',
-      'Eligible',
-      'Allocated',
-      'Unassigned'
-    ]);
-
-    summaryAoA.push(
-      ...summaryData.facilityRows.map(
-        row => [
-          row.Facility,
-          row['Claims Loaded'],
-          row[
-            'Terminal Status Excluded'
-          ],
-          row.Eligible,
-          row.Allocated,
-          row.Unassigned
-        ]
-      )
+    const ws = root.XLSX.utils.aoa_to_sheet(aoa);
+    const maximumColumns = Math.max(
+      2,
+      summaryData.matrixHeaders.length,
+      6,
+      summaryData.departmentHeaders.length
     );
 
-    summaryAoA.push([]);
+    ws['!merges'] = [{
+      s: { r: 0, c: 0 },
+      e: { r: 0, c: maximumColumns - 1 }
+    }];
+    applyCellStyle(ws, 0, 0, EXCEL_STYLES.title);
+    ws['!rows'] = [{ hpt: 24 }, { hpt: 6 }];
 
-    summaryAoA.push([
-      'Department',
-      'Eligible',
-      'Allocated',
-      'Unassigned'
-    ]);
+    for (const section of sections) {
+      ws['!merges'] = ws['!merges'] || [];
+      ws['!merges'].push({
+        s: { r: section.sectionRow, c: 0 },
+        e: { r: section.sectionRow, c: section.columnCount - 1 }
+      });
+      applyCellStyle(ws, section.sectionRow, 0, EXCEL_STYLES.section);
+      styleTableRange(
+        ws,
+        section.headerRow,
+        section.dataStartRow,
+        section.rowCount,
+        section.columnCount
+      );
+    }
 
-    summaryAoA.push(
-      ...summaryData.departmentRows.map(
-        row => [
-          row.Department,
-          row.Eligible,
-          row.Allocated,
-          row.Unassigned
-        ]
-      )
-    );
+    const widths = [];
+    for (let col = 0; col < maximumColumns; col++) {
+      let maxLength = 12;
+      for (let row = 0; row < aoa.length; row++) {
+        const value = aoa[row]?.[col];
+        if (value != null) {
+          maxLength = Math.max(maxLength, String(value).length + 2);
+        }
+      }
+      widths.push({
+        wch: Math.min(Math.max(maxLength, 12), col === 0 ? 30 : 24)
+      });
+    }
+    ws['!cols'] = widths;
+
+    return ws;
+  }
+
+  function buildWorkbook(lastAllocationResult) {
+    const wb = root.XLSX.utils.book_new();
+    const summaryData = lastAllocationResult.summaryData;
+
+    wb.Props = {
+      Title: 'Facility Allocation',
+      Subject: 'Claims allocation by facility and coder',
+      Author: 'Allocator',
+      CreatedDate: new Date()
+    };
 
     const wsSummary =
-      root.XLSX.utils.aoa_to_sheet(
-        summaryAoA
-      );
-
-    wsSummary['!cols'] = [
-      { wch: 28 },
-      { wch: 16 },
-      { wch: 18 },
-      { wch: 18 },
-      { wch: 14 },
-      { wch: 14 },
-      { wch: 14 },
-      { wch: 14 },
-      { wch: 14 },
-      { wch: 14 }
-    ];
+      buildStyledSummaryWorksheet(summaryData);
 
     root.XLSX.utils.book_append_sheet(
       wb,
@@ -2091,33 +2235,53 @@
       'Coder',
       'Date Assigned',
       'Query',
-      'Status'
+      'Status',
+      'Notes'
     ];
 
-    const wsAllocation =
-      jsonRowsToWorksheet(
-        allocationHeaders,
-        lastAllocationResult
-          .allocationRows
-          .map(
-            row =>
-              getAllocationSheetRow(
-                row,
-                lastAllocationResult
-                  .allocationDate
-              )
-          ),
-        new Set(['Claim Date'])
-      );
+    const rowsByFacility = new Map();
 
-    root.XLSX.utils.book_append_sheet(
-      wb,
-      wsAllocation,
-      'Allocation'
-    );
+    for (const row of lastAllocationResult.allocationRows) {
+      if (!rowsByFacility.has(row.Facility)) {
+        rowsByFacility.set(row.Facility, []);
+      }
+      rowsByFacility.get(row.Facility).push(
+        getAllocationSheetRow(
+          row,
+          lastAllocationResult.allocationDate
+        )
+      );
+    }
+
+    const usedSheetNames = new Set(['summary']);
+
+    Array.from(rowsByFacility.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .forEach(([facility, rows]) => {
+        const sheetName =
+          makeUniqueSheetName(
+            facility,
+            usedSheetNames
+          );
+
+        const worksheet =
+          buildStyledFacilityWorksheet(
+            `${getFriendlyFacilityName(facility)} Facility Allocation`,
+            allocationHeaders,
+            rows,
+            new Set(['Claim Date'])
+          );
+
+        root.XLSX.utils.book_append_sheet(
+          wb,
+          worksheet,
+          sheetName
+        );
+      });
 
     return wb;
   }
+
 
   function renderSummaryCards(
     importStats
@@ -2610,16 +2774,13 @@
 
     if (
       !allocationResult ||
-      !allocationResult
-        .allocationRows.length
+      !allocationResult.allocationRows.length
     ) {
       container.classList.add(
         'preview-empty'
       );
-
       container.textContent =
         'No claims matched the current filters.';
-
       return;
     }
 
@@ -2633,7 +2794,7 @@
     const topCards =
       summaryData.topCards.map(
         ([label, value]) => `
-          <div class="summary-card">
+          <div class="summary-card preview-metric-card">
             <span class="label">${escapeHtml(label)}</span>
             <span class="value">${escapeHtml(value)}</span>
           </div>
@@ -2645,10 +2806,7 @@
         row => `
           <tr>
             <td>${escapeHtml(row.Coder)}</td>
-            <td>${escapeHtml(row['Assigned Claims'])}</td>
-            <td>${escapeHtml(row['Share %'])}</td>
-            <td>${escapeHtml(row['Oldest Claim Date'])}</td>
-            <td>${escapeHtml(row['Newest Claim Date'])}</td>
+            <td class="numeric-cell">${escapeHtml(row['Assigned Claims'])}</td>
           </tr>
         `
       ).join('');
@@ -2658,9 +2816,9 @@
         row => `
           <tr>
             <td>${escapeHtml(row.Facility)}</td>
-            <td>${escapeHtml(row.Eligible)}</td>
-            <td>${escapeHtml(row.Allocated)}</td>
-            <td>${escapeHtml(row.Unassigned)}</td>
+            <td class="numeric-cell">${escapeHtml(row.Eligible)}</td>
+            <td class="numeric-cell">${escapeHtml(row.Allocated)}</td>
+            <td class="numeric-cell">${escapeHtml(row.Unassigned)}</td>
           </tr>
         `
       ).join('');
@@ -2670,12 +2828,10 @@
         row => `
           <tr>
             ${
-              summaryData.matrixHeaders
-                .map(
-                  header =>
-                    `<td>${escapeHtml(row[header] ?? '')}</td>`
-                )
-                .join('')
+              summaryData.matrixHeaders.map(
+                header =>
+                  `<td class="${header === 'Coder' ? '' : 'numeric-cell'}">${escapeHtml(row[header] ?? '')}</td>`
+              ).join('')
             }
           </tr>
         `
@@ -2685,69 +2841,62 @@
       summaryData.departmentRows.map(
         row => `
           <tr>
-            <td>${escapeHtml(row.Department)}</td>
-            <td>${escapeHtml(row.Eligible)}</td>
-            <td>${escapeHtml(row.Allocated)}</td>
-            <td>${escapeHtml(row.Unassigned)}</td>
+            ${
+              summaryData.departmentHeaders.map(
+                header =>
+                  `<td class="${header === 'Department' ? '' : 'numeric-cell'} ${header === 'Total' ? 'total-cell' : ''}">${escapeHtml(row[header] ?? 0)}</td>`
+              ).join('')
+            }
           </tr>
         `
       ).join('');
 
     container.innerHTML = `
-      <section class="preview-section">
-        <h2 class="section-title">
-          Allocation Summary Preview
-        </h2>
-
-        <div class="summary-grid mb-3">
-          ${topCards}
-        </div>
-
-        <div class="summary-block p-3">
-          <div class="fw-semibold">
-            Coder Balance:
+      <section class="preview-section preview-hero-section">
+        <div class="preview-section-heading">
+          <div>
+            <h2 class="section-title mb-1">
+              Facility Allocation Preview
+            </h2>
+            <div class="summary-muted">
+              Review the allocation totals below before downloading the facility sheets.
+            </div>
+          </div>
+          <div class="balance-pill ${summaryData.fairness.statusText === 'EVEN' ? 'balance-even' : 'balance-constrained'}">
             ${escapeHtml(summaryData.fairness.statusText)}
           </div>
+        </div>
 
-          <div class="summary-muted">
-            Comparable coder range:
-            ${escapeHtml(summaryData.fairness.minAssigned)}
-            to
-            ${escapeHtml(summaryData.fairness.maxAssigned)}
-            assigned claims.
-          </div>
+        <div class="summary-grid preview-metric-grid mt-3">
+          ${topCards}
         </div>
       </section>
 
       <section class="preview-section">
-        <h2 class="section-title">
-          Coder Allocation Summary
-        </h2>
-
+        <div class="preview-section-heading">
+          <h2 class="section-title mb-0">
+            Coder Allocation Summary
+          </h2>
+        </div>
         <div class="preview-table-wrap">
           <table class="preview-table">
             <thead>
               <tr>
                 <th>Coder</th>
                 <th>Assigned Claims</th>
-                <th>Share %</th>
-                <th>Oldest Claim Date</th>
-                <th>Newest Claim Date</th>
               </tr>
             </thead>
-
-            <tbody>
-              ${coderRows}
-            </tbody>
+            <tbody>${coderRows}</tbody>
           </table>
         </div>
       </section>
 
       <section class="preview-section">
-        <h2 class="section-title">
-          Facility Summary
-        </h2>
-
+        <div class="preview-section-heading">
+          <h2 class="section-title mb-0">
+            Facility Summary
+          </h2>
+        </div>
         <div class="preview-table-wrap">
           <table class="preview-table">
             <thead>
@@ -2758,65 +2907,64 @@
                 <th>Unassigned</th>
               </tr>
             </thead>
-
-            <tbody>
-              ${facilityRows}
-            </tbody>
+            <tbody>${facilityRows}</tbody>
           </table>
         </div>
       </section>
 
       <section class="preview-section">
-        <h2 class="section-title">
-          Coder × Facility Matrix
-        </h2>
-
+        <div class="preview-section-heading">
+          <h2 class="section-title mb-0">
+            Coder × Facility Matrix
+          </h2>
+        </div>
         <div class="preview-table-wrap">
           <table class="preview-table matrix-table">
             <thead>
               <tr>
                 ${
-                  summaryData.matrixHeaders
-                    .map(
-                      header =>
-                        `<th>${escapeHtml(header)}</th>`
-                    )
-                    .join('')
+                  summaryData.matrixHeaders.map(
+                    header =>
+                      `<th>${escapeHtml(header)}</th>`
+                  ).join('')
                 }
               </tr>
             </thead>
-
-            <tbody>
-              ${matrixRows}
-            </tbody>
+            <tbody>${matrixRows}</tbody>
           </table>
         </div>
       </section>
 
       <section class="preview-section">
-        <h2 class="section-title">
-          Department Summary
-        </h2>
-
+        <div class="preview-section-heading">
+          <div>
+            <h2 class="section-title mb-1">
+              Department Status Summary
+            </h2>
+            <div class="summary-muted">
+              Counts are grouped by the current Codification Status. Terminal statuses are already excluded.
+            </div>
+          </div>
+        </div>
         <div class="preview-table-wrap">
-          <table class="preview-table">
+          <table class="preview-table department-status-table">
             <thead>
               <tr>
-                <th>Department</th>
-                <th>Eligible</th>
-                <th>Allocated</th>
-                <th>Unassigned</th>
+                ${
+                  summaryData.departmentHeaders.map(
+                    header =>
+                      `<th>${escapeHtml(header)}</th>`
+                  ).join('')
+                }
               </tr>
             </thead>
-
-            <tbody>
-              ${deptRows}
-            </tbody>
+            <tbody>${deptRows}</tbody>
           </table>
         </div>
       </section>
     `;
   }
+
 
   async function readWorkbookFile(file) {
     const buffer =
@@ -3473,7 +3621,7 @@
 
         root.XLSX.writeFile(
           workbook,
-          `allocation_${timestamp}.xlsx`
+          `facility_allocation_${timestamp}.xlsx`
         );
       }
     );
@@ -3547,6 +3695,10 @@
     createFacilityConfig,
     getEligibleCoders,
     buildPresetIndex,
+    buildDepartmentStatusSummary,
+    buildSummarySheetData,
+    getFriendlyFacilityName,
+    makeUniqueSheetName,
     coderEntriesToText,
     applyUserCoderText,
     applyPresetSelection,
