@@ -2014,7 +2014,7 @@
       : '';
   }
 
-  function formatFacilityCoderDetail(detail) {
+  function formatCoderDateDetail(detail) {
     if (!detail || !detail.total) {
       return '';
     }
@@ -2033,53 +2033,167 @@
       : paymentText;
   }
 
+  function getSummaryClaimDateInfo(row) {
+    const rawDate =
+      row['Claim Date'] ||
+      row.ClaimDateText ||
+      '';
+
+    const parsed =
+      rawDate instanceof Date &&
+      !Number.isNaN(rawDate.getTime())
+        ? rawDate
+        : parseDateValue(rawDate);
+
+    if (parsed) {
+      return {
+        key: formatDate(parsed),
+        label: formatDate(parsed),
+        sortValue: parsed.getTime()
+      };
+    }
+
+    const fallback =
+      String(
+        row.ClaimDateText ||
+        rawDate ||
+        ''
+      ).trim() ||
+      '(No Date)';
+
+    return {
+      key: fallback,
+      label: fallback,
+      sortValue:
+        Number.POSITIVE_INFINITY
+    };
+  }
+
   function buildAllocationSummary(
     allocationRows,
     allConfiguredCoders = []
   ) {
-    const coderSummary = new Map();
-    const facilitySummary = new Map();
+    const coderSummary =
+      new Map();
+    const facilitySummary =
+      new Map();
 
-    const facilities =
-      Array.from(
-        new Set(
-          (allocationRows || []).map(
-            row =>
-              getFriendlyFacilityName(
-                row.Facility
-              )
-          )
-        )
-      )
-        .filter(Boolean)
-        .sort(
-          (a, b) =>
-            a.localeCompare(b)
+    /*
+     * The hierarchy is built only from claims that were actually assigned.
+     * This keeps the Coder Allocation Summary focused on assigned work:
+     *
+     * Facility
+     *   -> Claim Date
+     *      -> Assigned Total / Detailed
+     */
+    const hierarchyMap =
+      new Map();
+
+    for (
+      const row of
+      allocationRows || []
+    ) {
+      if (
+        row.Coder ===
+        UNASSIGNED_CODER
+      ) {
+        continue;
+      }
+
+      const facility =
+        getFriendlyFacilityName(
+          row.Facility
         );
 
-    function createCoderSummaryRow(coder) {
+      const dateInfo =
+        getSummaryClaimDateInfo(
+          row
+        );
+
+      if (
+        !hierarchyMap.has(
+          facility
+        )
+      ) {
+        hierarchyMap.set(
+          facility,
+          new Map()
+        );
+      }
+
+      const dateMap =
+        hierarchyMap.get(
+          facility
+        );
+
+      if (
+        !dateMap.has(
+          dateInfo.key
+        )
+      ) {
+        dateMap.set(
+          dateInfo.key,
+          dateInfo
+        );
+      }
+    }
+
+    const facilityDateHierarchy =
+      Array.from(
+        hierarchyMap.entries()
+      )
+        .map(
+          ([facility, dateMap]) => ({
+            facility,
+            dates:
+              Array.from(
+                dateMap.values()
+              )
+                .sort(
+                  (a, b) =>
+                    a.sortValue -
+                      b.sortValue ||
+                    a.label.localeCompare(
+                      b.label
+                    )
+                )
+          })
+        )
+        .sort(
+          (a, b) =>
+            a.facility.localeCompare(
+              b.facility
+            )
+        );
+
+    function createCoderSummaryRow(
+      coder
+    ) {
       return {
         Coder: coder,
-        'Assigned Self-Pay': 0,
-        'Assigned Insurance': 0,
         'Total Assigned Claims': 0,
-        _facilityDetails: new Map()
+        _dateDetails:
+          new Map()
       };
     }
 
-    function ensureFacilityDetail(
+    function ensureDateDetail(
       coderRow,
-      facility
+      facility,
+      dateKey
     ) {
+      const key =
+        `${facility}|||${dateKey}`;
+
       if (
         !coderRow
-          ._facilityDetails
-          .has(facility)
+          ._dateDetails
+          .has(key)
       ) {
         coderRow
-          ._facilityDetails
+          ._dateDetails
           .set(
-            facility,
+            key,
             {
               total: 0,
               selfPay: 0,
@@ -2091,24 +2205,34 @@
       }
 
       return coderRow
-        ._facilityDetails
-        .get(facility);
+        ._dateDetails
+        .get(key);
     }
 
-    allConfiguredCoders.forEach(coder => {
-      coderSummary.set(
-        coder,
-        createCoderSummaryRow(coder)
-      );
-    });
+    allConfiguredCoders.forEach(
+      coder => {
+        coderSummary.set(
+          coder,
+          createCoderSummaryRow(
+            coder
+          )
+        );
+      }
+    );
 
-    for (const row of allocationRows) {
+    for (
+      const row of
+      allocationRows || []
+    ) {
       const isAssigned =
-        row.Coder !== UNASSIGNED_CODER;
+        row.Coder !==
+        UNASSIGNED_CODER;
 
       if (
         isAssigned &&
-        !coderSummary.has(row.Coder)
+        !coderSummary.has(
+          row.Coder
+        )
       ) {
         coderSummary.set(
           row.Coder,
@@ -2120,43 +2244,38 @@
 
       if (isAssigned) {
         const coderRow =
-          coderSummary.get(row.Coder);
+          coderSummary.get(
+            row.Coder
+          );
 
         coderRow[
           'Total Assigned Claims'
         ]++;
+
+        const facility =
+          getFriendlyFacilityName(
+            row.Facility
+          );
+
+        const dateInfo =
+          getSummaryClaimDateInfo(
+            row
+          );
+
+        const detail =
+          ensureDateDetail(
+            coderRow,
+            facility,
+            dateInfo.key
+          );
+
+        detail.total++;
 
         const paymentCategory =
           row.PaymentModeCategory ||
           getPaymentModeCategory(
             row.PaymentMode
           );
-
-        if (
-          paymentCategory ===
-          'insurance'
-        ) {
-          coderRow[
-            'Assigned Insurance'
-          ]++;
-        } else {
-          coderRow[
-            'Assigned Self-Pay'
-          ]++;
-        }
-
-        const facilityLabel =
-          getFriendlyFacilityName(
-            row.Facility
-          );
-
-        const detail =
-          ensureFacilityDetail(
-            coderRow,
-            facilityLabel
-          );
-
-        detail.total++;
 
         if (
           paymentCategory ===
@@ -2184,7 +2303,9 @@
           (
             detail
               .departmentCounts
-              .get(departmentLabel) ||
+              .get(
+                departmentLabel
+              ) ||
             0
           ) + 1
         );
@@ -2198,7 +2319,8 @@
         facilitySummary.set(
           row.Facility,
           {
-            Facility: row.Facility,
+            Facility:
+              row.Facility,
             Allocated: 0,
             Unassigned: 0
           }
@@ -2220,47 +2342,47 @@
         .map(row => {
           const output = {
             Coder: row.Coder,
-            'Assigned Self-Pay':
-              row[
-                'Assigned Self-Pay'
-              ],
-            'Assigned Insurance':
-              row[
-                'Assigned Insurance'
-              ],
             'Total Assigned Claims':
               row[
                 'Total Assigned Claims'
               ],
-            _facilityDetails:
-              row._facilityDetails
+            _dateDetails:
+              row._dateDetails
           };
 
           for (
-            const facility of
-            facilities
+            const facilityGroup of
+            facilityDateHierarchy
           ) {
-            const detail =
-              row._facilityDetails.get(
-                facility
-              ) || {
-                total: 0,
-                selfPay: 0,
-                insurance: 0,
-                departmentCounts:
-                  new Map()
-              };
+            for (
+              const date of
+              facilityGroup.dates
+            ) {
+              const detailKey =
+                `${facilityGroup.facility}|||${date.key}`;
 
-            output[
-              `${facility}|||Assigned`
-            ] = detail.total;
+              const detail =
+                row._dateDetails.get(
+                  detailKey
+                ) || {
+                  total: 0,
+                  selfPay: 0,
+                  insurance: 0,
+                  departmentCounts:
+                    new Map()
+                };
 
-            output[
-              `${facility}|||Detailed`
-            ] =
-              formatFacilityCoderDetail(
-                detail
-              );
+              output[
+                `${detailKey}|||Assigned Total`
+              ] = detail.total;
+
+              output[
+                `${detailKey}|||Detailed`
+              ] =
+                formatCoderDateDetail(
+                  detail
+                );
+            }
           }
 
           return output;
@@ -2274,7 +2396,7 @@
 
     return {
       coderRows,
-      facilities,
+      facilityDateHierarchy,
       facilityAssignedRows:
         Array.from(
           facilitySummary.values()
@@ -2585,8 +2707,8 @@
       coderRows:
         allocationSummary.coderRows,
 
-      coderFacilities:
-        allocationSummary.facilities,
+      coderFacilityDateHierarchy:
+        allocationSummary.facilityDateHierarchy,
 
       matrixHeaders: [
         'Coder',
@@ -3074,7 +3196,7 @@
     sections,
     merges,
     rows,
-    facilities,
+    facilityDateHierarchy,
     startRow,
     startColumn
   ) {
@@ -3082,21 +3204,30 @@
       startRow;
     const facilityHeaderRow =
       startRow + 1;
-    const subHeaderRow =
+    const dateHeaderRow =
       startRow + 2;
-    const dataStartRow =
+    const subHeaderRow =
       startRow + 3;
+    const dataStartRow =
+      startRow + 4;
 
     const fixedHeaders = [
       'Coder',
-      'Assigned Self-Pay',
-      'Assigned Insurance',
       'Total Assigned Claims'
     ];
 
+    const hierarchyColumnCount =
+      facilityDateHierarchy.reduce(
+        (sum, facilityGroup) =>
+          sum +
+          facilityGroup.dates.length *
+            2,
+        0
+      );
+
     const columnCount =
       fixedHeaders.length +
-      facilities.length * 2;
+      hierarchyColumnCount;
 
     setSummaryCell(
       aoa,
@@ -3107,21 +3238,24 @@
 
     fixedHeaders.forEach(
       (header, index) => {
+        const column =
+          startColumn + index;
+
         setSummaryCell(
           aoa,
           facilityHeaderRow,
-          startColumn + index,
+          column,
           header
         );
 
         merges.push({
           s: {
             r: facilityHeaderRow,
-            c: startColumn + index
+            c: column
           },
           e: {
             r: subHeaderRow,
-            c: startColumn + index
+            c: column
           }
         });
       }
@@ -3131,46 +3265,86 @@
       startColumn +
       fixedHeaders.length;
 
-    for (const facility of facilities) {
+    for (
+      const facilityGroup of
+      facilityDateHierarchy
+    ) {
+      const facilityStartColumn =
+        column;
+
+      for (
+        const date of
+        facilityGroup.dates
+      ) {
+        setSummaryCell(
+          aoa,
+          dateHeaderRow,
+          column,
+          date.label
+        );
+
+        merges.push({
+          s: {
+            r: dateHeaderRow,
+            c: column
+          },
+          e: {
+            r: dateHeaderRow,
+            c: column + 1
+          }
+        });
+
+        setSummaryCell(
+          aoa,
+          subHeaderRow,
+          column,
+          'Assigned Total'
+        );
+
+        setSummaryCell(
+          aoa,
+          subHeaderRow,
+          column + 1,
+          'Detailed'
+        );
+
+        column += 2;
+      }
+
+      const facilityEndColumn =
+        column - 1;
+
       setSummaryCell(
         aoa,
         facilityHeaderRow,
-        column,
-        facility
+        facilityStartColumn,
+        facilityGroup.facility
       );
 
-      merges.push({
-        s: {
-          r: facilityHeaderRow,
-          c: column
-        },
-        e: {
-          r: facilityHeaderRow,
-          c: column + 1
-        }
-      });
-
-      setSummaryCell(
-        aoa,
-        subHeaderRow,
-        column,
-        'Assigned'
-      );
-
-      setSummaryCell(
-        aoa,
-        subHeaderRow,
-        column + 1,
-        'Detailed'
-      );
-
-      column += 2;
+      if (
+        facilityEndColumn >
+        facilityStartColumn
+      ) {
+        merges.push({
+          s: {
+            r: facilityHeaderRow,
+            c:
+              facilityStartColumn
+          },
+          e: {
+            r: facilityHeaderRow,
+            c:
+              facilityEndColumn
+          }
+        });
+      }
     }
 
     rows.forEach(
       (row, rowOffset) => {
         const targetRow =
-          dataStartRow + rowOffset;
+          dataStartRow +
+          rowOffset;
 
         fixedHeaders.forEach(
           (header, index) => {
@@ -3188,28 +3362,36 @@
           fixedHeaders.length;
 
         for (
-          const facility of
-          facilities
+          const facilityGroup of
+          facilityDateHierarchy
         ) {
-          setSummaryCell(
-            aoa,
-            targetRow,
-            targetColumn,
-            row[
-              `${facility}|||Assigned`
-            ] ?? 0
-          );
+          for (
+            const date of
+            facilityGroup.dates
+          ) {
+            const detailKey =
+              `${facilityGroup.facility}|||${date.key}`;
 
-          setSummaryCell(
-            aoa,
-            targetRow,
-            targetColumn + 1,
-            row[
-              `${facility}|||Detailed`
-            ] || ''
-          );
+            setSummaryCell(
+              aoa,
+              targetRow,
+              targetColumn,
+              row[
+                `${detailKey}|||Assigned Total`
+              ] ?? 0
+            );
 
-          targetColumn += 2;
+            setSummaryCell(
+              aoa,
+              targetRow,
+              targetColumn + 1,
+              row[
+                `${detailKey}|||Detailed`
+              ] || ''
+            );
+
+            targetColumn += 2;
+          }
         }
       }
     );
@@ -3230,16 +3412,20 @@
 
     sections.push({
       sectionRow,
-      headerRow: subHeaderRow,
+      headerRow:
+        subHeaderRow,
       extraHeaderRows: [
-        facilityHeaderRow
+        facilityHeaderRow,
+        dateHeaderRow
       ],
       dataStartRow,
-      rowCount: rows.length,
+      rowCount:
+        rows.length,
       columnCount,
       startColumn,
-      kind: 'coderSummary',
-      facilities
+      kind:
+        'coderSummary',
+      facilityDateHierarchy
     });
 
     return rows.length
@@ -3294,9 +3480,10 @@
     const topStartRow = 2;
 
     /*
-     * The Coder Allocation Summary can become very wide because every facility
-     * receives an Assigned + Detailed pair. It therefore occupies its own
-     * horizontal band. All other tables begin below it.
+     * The Coder Allocation Summary can become very wide because it expands as:
+     * Facility > Claim Date > Assigned Total / Detailed.
+     * It therefore occupies its own horizontal band. All other tables begin
+     * below it.
      */
     const coderEndRow =
       placeCoderSummarySection(
@@ -3304,7 +3491,7 @@
         sections,
         merges,
         summaryData.coderRows,
-        summaryData.coderFacilities || [],
+        summaryData.coderFacilityDateHierarchy || [],
         topStartRow,
         0
       );
@@ -3380,12 +3567,18 @@
     );
 
     const coderColumnCount =
-      4 +
+      2 +
       (
         summaryData
-          .coderFacilities
-          ?.length || 0
-      ) * 2;
+          .coderFacilityDateHierarchy ||
+        []
+      ).reduce(
+        (sum, facilityGroup) =>
+          sum +
+          facilityGroup.dates.length *
+            2,
+        0
+      );
 
     const maximumColumns =
       Math.max(
@@ -3514,11 +3707,11 @@
         };
 
         /*
-         * In each facility pair, the second column is Detailed. Wrap that
-         * department/payment split text.
+         * Under each Facility > Claim Date pair, the second leaf column is
+         * Detailed. Wrap the payment/department split text.
          */
         for (
-          let colOffset = 5;
+          let colOffset = 3;
           colOffset <
           coderSection
             .columnCount;
@@ -3618,35 +3811,32 @@
           );
       }
 
-      if (
-        col >= 1 &&
-        col <= 3
-      ) {
+      if (col === 1) {
         width =
           Math.min(
             Math.max(
               maxLength,
-              16
+              18
             ),
             22
           );
       }
 
       /*
-       * Coder summary facility columns start at E:
-       * Assigned gets a compact numeric width; Detailed gets a wide wrapped
-       * text column. These widths also keep the long horizontal table readable.
+       * Coder summary hierarchy starts at column C:
+       * Facility > Claim Date > Assigned Total / Detailed.
+       * Assigned Total stays compact; Detailed is wide and wrapped.
        */
       if (
         coderSection &&
-        col >= 4 &&
+        col >= 2 &&
         col <
           coderSection
             .columnCount
       ) {
         width =
-          (col - 4) % 2 === 0
-            ? 12
+          (col - 2) % 2 === 0
+            ? 13
             : 38;
       }
 
@@ -4430,15 +4620,21 @@
         row => `
           <tr>
             <td>${escapeHtml(row.Coder)}</td>
-            <td class="numeric-cell">${escapeHtml(row['Assigned Self-Pay'])}</td>
-            <td class="numeric-cell">${escapeHtml(row['Assigned Insurance'])}</td>
             <td class="numeric-cell">${escapeHtml(row['Total Assigned Claims'])}</td>
             ${
-              (summaryData.coderFacilities || []).map(
-                facility => `
-                  <td class="numeric-cell">${escapeHtml(row[`${facility}|||Assigned`] ?? 0)}</td>
-                  <td>${escapeHtml(row[`${facility}|||Detailed`] || '')}</td>
-                `
+              (summaryData.coderFacilityDateHierarchy || []).map(
+                facilityGroup =>
+                  facilityGroup.dates.map(
+                    date => {
+                      const detailKey =
+                        `${facilityGroup.facility}|||${date.key}`;
+
+                      return `
+                        <td class="numeric-cell">${escapeHtml(row[`${detailKey}|||Assigned Total`] ?? 0)}</td>
+                        <td>${escapeHtml(row[`${detailKey}|||Detailed`] || '')}</td>
+                      `;
+                    }
+                  ).join('')
               ).join('')
             }
           </tr>
@@ -4518,22 +4714,34 @@
           <table class="preview-table">
             <thead>
               <tr>
-                <th rowspan="2">Coder</th>
-                <th rowspan="2">Assigned Self-Pay</th>
-                <th rowspan="2">Assigned Insurance</th>
-                <th rowspan="2">Total Assigned Claims</th>
+                <th rowspan="3">Coder</th>
+                <th rowspan="3">Total Assigned Claims</th>
                 ${
-                  (summaryData.coderFacilities || []).map(
-                    facility =>
-                      `<th colspan="2">${escapeHtml(facility)}</th>`
+                  (summaryData.coderFacilityDateHierarchy || []).map(
+                    facilityGroup =>
+                      `<th colspan="${facilityGroup.dates.length * 2}">${escapeHtml(facilityGroup.facility)}</th>`
                   ).join('')
                 }
               </tr>
               <tr>
                 ${
-                  (summaryData.coderFacilities || []).map(
-                    () =>
-                      '<th>Assigned</th><th>Detailed</th>'
+                  (summaryData.coderFacilityDateHierarchy || []).map(
+                    facilityGroup =>
+                      facilityGroup.dates.map(
+                        date =>
+                          `<th colspan="2">${escapeHtml(date.label)}</th>`
+                      ).join('')
+                  ).join('')
+                }
+              </tr>
+              <tr>
+                ${
+                  (summaryData.coderFacilityDateHierarchy || []).map(
+                    facilityGroup =>
+                      facilityGroup.dates.map(
+                        () =>
+                          '<th>Assigned Total</th><th>Detailed</th>'
+                      ).join('')
                   ).join('')
                 }
               </tr>
