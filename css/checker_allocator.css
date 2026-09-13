@@ -313,3 +313,121 @@ body {
     position: static;
   }
 }
+
+/* Facility Allocation preview styling */
+.preview-section {
+  border: 1px solid #d8e1ea;
+  border-radius: 10px;
+  background: #fff;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(31, 78, 121, 0.05);
+}
+
+.preview-section + .preview-section {
+  margin-top: 18px;
+}
+
+.preview-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 14px;
+  background: #f4f8fc;
+  border-bottom: 1px solid #d8e1ea;
+}
+
+.preview-hero-section .preview-section-heading {
+  background: #eaf2f9;
+}
+
+.preview-hero-section .preview-metric-grid {
+  padding: 0 14px 14px;
+}
+
+.preview-metric-card {
+  border-color: #c9d9e7;
+  background: #fbfdff;
+}
+
+.balance-pill {
+  flex: 0 0 auto;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+}
+
+.balance-even {
+  color: #146c43;
+  background: #d1e7dd;
+  border: 1px solid #a3cfbb;
+}
+
+.balance-constrained {
+  color: #997404;
+  background: #fff3cd;
+  border: 1px solid #ffe69c;
+}
+
+.preview-section .preview-table-wrap {
+  border: 0;
+  border-radius: 0;
+  max-height: 420px;
+}
+
+.preview-table th {
+  background: #d9eaf7;
+  color: #20384d;
+  font-weight: 700;
+  border-color: #b8c6d1;
+}
+
+.preview-table td {
+  border-color: #d9e1e8;
+}
+
+.preview-table tbody tr:nth-child(even) td {
+  background: #f7fafc;
+}
+
+.preview-table tbody tr:hover td {
+  background: #eef5fb;
+}
+
+.preview-table .numeric-cell {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.preview-table .total-cell {
+  font-weight: 800;
+  background: #edf6e8 !important;
+}
+
+.department-status-table th:first-child,
+.department-status-table td:first-child,
+.matrix-table th:first-child,
+.matrix-table td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+}
+
+.department-status-table th:first-child,
+.matrix-table th:first-child {
+  background: #d9eaf7;
+}
+
+.department-status-table td:first-child,
+.matrix-table td:first-child {
+  background: #fff;
+  font-weight: 600;
+}
+
+.department-status-table tbody tr:nth-child(even) td:first-child,
+.matrix-table tbody tr:nth-child(even) td:first-child {
+  background: #f7fafc;
+}
+
