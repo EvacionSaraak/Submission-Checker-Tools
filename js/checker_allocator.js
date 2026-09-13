@@ -394,15 +394,6 @@
         continue;
       }
 
-      const departmentCounts = {};
-      for (const [department, rawCount] of Object.entries(coder.departmentCounts || {})) {
-        const key = normalizeDepartmentKey(department);
-        const count = Number(rawCount || 0);
-        if (key && Number.isFinite(count) && count > 0) {
-          departmentCounts[key] = count;
-        }
-      }
-
       const preferredDepartments = new Set(
         (
           Array.isArray(coder.preferredDepartments)
@@ -415,18 +406,8 @@
           .filter(Boolean)
       );
 
-      const countedTotal = Object.values(departmentCounts)
-        .reduce((sum, count) => sum + count, 0);
-
-      const historicalClaims = Number(coder.historicalClaims || countedTotal || 0);
-
       preferences[coder.name] = {
-        preferredDepartments,
-        departmentCounts,
-        historicalClaims:
-          Number.isFinite(historicalClaims) && historicalClaims > 0
-            ? historicalClaims
-            : countedTotal
+        preferredDepartments
       };
     }
 
@@ -435,7 +416,7 @@
 
   /*
    * Preset behavior:
-   * - A preset supplies the INITIAL coder list and department preference history.
+   * - A preset supplies the INITIAL coder list and department preferences.
    * - codersText is the actual source of truth used by allocation.
    * - Once coderListEdited becomes true, normal re-renders and even a preset
    *   dropdown change preserve the user's coder text.
@@ -928,7 +909,7 @@
       createFacilityConfig(claim.facilityKey, claim.detectedPresetName);
 
     /*
-     * Department history is a PREFERENCE only. Every coder currently listed
+     * Department preference is SOFT only. Every coder currently listed
      * for the facility remains eligible for every department.
      */
     return parseCodersText(config.codersText);
@@ -943,37 +924,18 @@
     if (!departmentKey) return 0;
 
     const profile = (config.preferences || {})[coder];
+    if (!profile) return 1;
 
-    // Manually-added / unprofiled coders remain fully eligible, but known
-    // historical matches should be tried first when loads are reasonably close.
-    if (!profile) return 16;
-
-    const departmentCounts = profile.departmentCounts || {};
-    const count = Number(departmentCounts[departmentKey] || 0);
-    const total = Number(profile.historicalClaims || 0) ||
-      Object.values(departmentCounts)
-        .reduce((sum, value) => sum + Number(value || 0), 0);
-
-    if (count <= 0 || total <= 0) {
-      return 20;
-    }
-
-    const share = count / total;
     const preferred =
       profile.preferredDepartments instanceof Set &&
       profile.preferredDepartments.has(departmentKey);
 
     /*
-     * These are soft min-cost-flow penalties, not restrictions. The allocator
-     * can always spill work to any other facility coder when balancing requires
-     * it. Higher historical share means a stronger preference.
+     * Department is a soft preference only. A preferred department gets a
+     * small advantage, while load balancing can still assign any facility
+     * coder to any department.
      */
-    if (preferred && share >= 0.50) return 0;
-    if (preferred && share >= 0.25) return 4;
-    if (preferred) return 8;
-    if (share >= 0.10) return 10;
-    if (share >= 0.05) return 12;
-    return 14;
+    return preferred ? 0 : 2;
   }
 
   function compareClaimsForAllocation(a, b) {
@@ -1201,7 +1163,7 @@
 
     /*
      * Increasing slot costs minimize the sum of triangular coder loads.
-     * Group-to-coder costs add a SOFT department-history preference. Every
+     * Group-to-coder costs add a SOFT department preference. Every
      * facility coder remains eligible; preference never becomes a hard lock.
      */
     coderNames.forEach((coder, coderIndex) => {
@@ -2606,8 +2568,8 @@
             <div class="facility-config-meta mb-1">${escapeHtml(coderSourceText)}</div>
             <div class="facility-config-meta">
               ${preferenceProfileCount
-                ? `${preferenceProfileCount} coder preference profile(s) loaded. Every listed coder can receive any department; historical department patterns only influence preference.`
-                : 'No department preference history is available for this preset. All listed facility coders are balanced normally.'}
+                ? `${preferenceProfileCount} coder preference profile(s) loaded. Every listed coder can receive any department; preferred departments only provide a small assignment bias.`
+                : 'No department preferences are configured for this preset. All listed facility coders are balanced normally.'}
             </div>
           </div>
         </section>
@@ -3283,7 +3245,7 @@
 
     /*
      * If the user already edited the coder list, selecting/changing a preset
-     * updates the preset + preference history but DOES NOT replace their coder text.
+     * updates the preset + department preferences but DOES NOT replace their coder text.
      * They can explicitly choose "Use Preset Coders" if they want replacement.
      */
     renderPreAllocationState();
