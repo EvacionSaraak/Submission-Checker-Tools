@@ -386,31 +386,56 @@
       .replace(/[^a-z0-9]+/g, '');
   }
 
-  function buildRestrictionsMap(coderEntries) {
-    const restrictions = {};
+  function buildPreferenceMap(coderEntries) {
+    const preferences = {};
 
     for (const coder of coderEntries || []) {
-      if (
-        coder &&
-        typeof coder === 'object' &&
-        coder.name &&
-        Array.isArray(coder.departments) &&
-        coder.departments.length
-      ) {
-        restrictions[coder.name] = new Set(
-          coder.departments
-            .map(normalizeDepartmentKey)
-            .filter(Boolean)
-        );
+      if (!coder || typeof coder !== 'object' || !coder.name) {
+        continue;
       }
+
+      const departmentCounts = {};
+      for (const [department, rawCount] of Object.entries(coder.departmentCounts || {})) {
+        const key = normalizeDepartmentKey(department);
+        const count = Number(rawCount || 0);
+        if (key && Number.isFinite(count) && count > 0) {
+          departmentCounts[key] = count;
+        }
+      }
+
+      const preferredDepartments = new Set(
+        (
+          Array.isArray(coder.preferredDepartments)
+            ? coder.preferredDepartments
+            : Array.isArray(coder.departments)
+              ? coder.departments
+              : []
+        )
+          .map(normalizeDepartmentKey)
+          .filter(Boolean)
+      );
+
+      const countedTotal = Object.values(departmentCounts)
+        .reduce((sum, count) => sum + count, 0);
+
+      const historicalClaims = Number(coder.historicalClaims || countedTotal || 0);
+
+      preferences[coder.name] = {
+        preferredDepartments,
+        departmentCounts,
+        historicalClaims:
+          Number.isFinite(historicalClaims) && historicalClaims > 0
+            ? historicalClaims
+            : countedTotal
+      };
     }
 
-    return restrictions;
+    return preferences;
   }
 
   /*
    * Preset behavior:
-   * - A preset supplies the INITIAL coder list and restrictions.
+   * - A preset supplies the INITIAL coder list and department preference history.
    * - codersText is the actual source of truth used by allocation.
    * - Once coderListEdited becomes true, normal re-renders and even a preset
    *   dropdown change preserve the user's coder text.
@@ -426,7 +451,7 @@
       presetName: presetName || '',
       presetCodersText,
       codersText: presetCodersText,
-      restrictions: buildRestrictionsMap(coderEntries),
+      preferences: buildPreferenceMap(coderEntries),
       coderListEdited: false
     };
   }
@@ -437,7 +462,7 @@
       presetName: config.presetName || '',
       presetCodersText: config.presetCodersText || '',
       codersText: config.codersText || '',
-      restrictions: config.restrictions || {},
+      preferences: config.preferences || {},
       coderListEdited: Boolean(config.coderListEdited)
     };
   }
@@ -461,7 +486,7 @@
       codersText: existing.coderListEdited
         ? existing.codersText
         : presetConfig.codersText,
-      restrictions: presetConfig.restrictions,
+      preferences: presetConfig.preferences,
       coderListEdited: Boolean(existing.coderListEdited)
     };
   }
@@ -475,7 +500,7 @@
       presetName: presetConfig.presetName,
       presetCodersText: presetConfig.presetCodersText,
       codersText: presetConfig.codersText,
-      restrictions: presetConfig.restrictions,
+      preferences: presetConfig.preferences,
       coderListEdited: false
     };
   }
@@ -902,71 +927,53 @@
       facilityConfigs[claim.facilityKey] ||
       createFacilityConfig(claim.facilityKey, claim.detectedPresetName);
 
-    // IMPORTANT: allocation uses the CURRENT editable codersText.
-    // It does not re-read the preset coder array here.
-    const coders = parseCodersText(config.codersText);
+    /*
+     * Department history is a PREFERENCE only. Every coder currently listed
+     * for the facility remains eligible for every department.
+     */
+    return parseCodersText(config.codersText);
+  }
 
-    if (!coders.length) return [];
+  function getCoderPreferenceCost(claim, coder, facilityConfigs) {
+    const config =
+      facilityConfigs[claim.facilityKey] ||
+      createFacilityConfig(claim.facilityKey, claim.detectedPresetName);
 
-    const departmentKey =
-      normalizeDepartmentKey(claim.department);
+    const departmentKey = normalizeDepartmentKey(claim.department);
+    if (!departmentKey) return 0;
 
-    const presetCoderNames =
-      new Set(
-        parseCodersText(
-          config.presetCodersText || ''
-        )
-      );
+    const profile = (config.preferences || {})[coder];
 
-    const manuallyAddedCoders =
-      coders.filter(
-        coder => !presetCoderNames.has(coder)
-      );
+    // Manually-added / unprofiled coders remain fully eligible, but known
+    // historical matches should be tried first when loads are reasonably close.
+    if (!profile) return 16;
 
-    const matchingProfileCoders =
-      departmentKey
-        ? coders.filter(coder => {
-            const profile =
-              config.restrictions[coder];
+    const departmentCounts = profile.departmentCounts || {};
+    const count = Number(departmentCounts[departmentKey] || 0);
+    const total = Number(profile.historicalClaims || 0) ||
+      Object.values(departmentCounts)
+        .reduce((sum, value) => sum + Number(value || 0), 0);
 
-            return Boolean(
-              profile &&
-              profile.size &&
-              profile.has(departmentKey)
-            );
-          })
-        : [];
+    if (count <= 0 || total <= 0) {
+      return 20;
+    }
+
+    const share = count / total;
+    const preferred =
+      profile.preferredDepartments instanceof Set &&
+      profile.preferredDepartments.has(departmentKey);
 
     /*
-     * Department history from allocator_presets.json is treated as a strong
-     * preference rather than a hard lock:
-     * 1. matching profiled coders are preferred;
-     * 2. manually-added coders remain eligible because user edits win;
-     * 3. if there is no department match, use unprofiled preset coders;
-     * 4. if every preset coder is profiled, fall back to the full facility pool.
+     * These are soft min-cost-flow penalties, not restrictions. The allocator
+     * can always spill work to any other facility coder when balancing requires
+     * it. Higher historical share means a stronger preference.
      */
-    if (matchingProfileCoders.length) {
-      return Array.from(
-        new Set([
-          ...matchingProfileCoders,
-          ...manuallyAddedCoders
-        ])
-      );
-    }
-
-    const unprofiledCoders =
-      coders.filter(coder => {
-        const profile =
-          config.restrictions[coder];
-
-        return !profile || !profile.size;
-      });
-
-    if (unprofiledCoders.length) {
-      return unprofiledCoders;
-    }
-
-    return coders;
+    if (preferred && share >= 0.50) return 0;
+    if (preferred && share >= 0.25) return 4;
+    if (preferred) return 8;
+    if (share >= 0.10) return 10;
+    if (share >= 0.05) return 12;
+    return 14;
   }
 
   function compareClaimsForAllocation(a, b) {
@@ -1009,8 +1016,21 @@
         .slice()
         .sort((a, b) => a.localeCompare(b));
 
+      const preferenceCosts = Object.fromEntries(
+        eligibleCoders.map(coder => [
+          coder,
+          getCoderPreferenceCost(claim, coder, facilityConfigs)
+        ])
+      );
+
       claim._eligibleCoders = eligibleCoders;
-      claim._eligibilitySignature = eligibleCoders.join('|');
+      claim._coderPreferenceCosts = preferenceCosts;
+      claim._eligibilitySignature = [
+        eligibleCoders.join('|'),
+        eligibleCoders
+          .map(coder => `${coder}:${preferenceCosts[coder] || 0}`)
+          .join('|')
+      ].join('::prefs::');
 
       if (!eligibleCoders.length) continue;
 
@@ -1018,6 +1038,7 @@
         groupsBySignature.set(claim._eligibilitySignature, {
           signature: claim._eligibilitySignature,
           eligibleCoders,
+          preferenceCosts,
           claims: []
         });
       }
@@ -1168,7 +1189,7 @@
           groupOffset + groupIndex,
           coderOffset + coderIndex,
           group.claims.length,
-          0
+          Number((group.preferenceCosts || {})[coder] || 0)
         );
 
         groupCoderEdges.set(
@@ -1179,9 +1200,9 @@
     });
 
     /*
-     * Increasing slot costs minimize the sum of triangular coder loads,
-     * producing the most even achievable global distribution under the
-     * facility/department eligibility constraints.
+     * Increasing slot costs minimize the sum of triangular coder loads.
+     * Group-to-coder costs add a SOFT department-history preference. Every
+     * facility coder remains eligible; preference never becomes a hard lock.
      */
     coderNames.forEach((coder, coderIndex) => {
       for (let slot = 0; slot < totalClaims; slot++) {
@@ -2520,7 +2541,7 @@
         createFacilityConfig(item.facilityKey, item.presetName);
       const presetName = config.presetName || '';
       const displayName = presetName || item.displayName;
-      const restrictedCount = Object.keys(config.restrictions || {}).length;
+      const preferenceProfileCount = Object.keys(config.preferences || {}).length;
       const active = item.facilityKey === state.activeFacilityTab;
       const coderSourceText = config.coderListEdited
         ? 'Custom coder list — manual edits are active and will be used for allocation.'
@@ -2584,9 +2605,9 @@
 
             <div class="facility-config-meta mb-1">${escapeHtml(coderSourceText)}</div>
             <div class="facility-config-meta">
-              ${restrictedCount
-                ? `${restrictedCount} coder department profile(s) loaded. Matching departments are preferred; fallback coders are used when no profile matches.`
-                : 'No department profiles are available for this preset. The facility coder list is used as the fallback pool.'}
+              ${preferenceProfileCount
+                ? `${preferenceProfileCount} coder preference profile(s) loaded. Every listed coder can receive any department; historical department patterns only influence preference.`
+                : 'No department preference history is available for this preset. All listed facility coders are balanced normally.'}
             </div>
           </div>
         </section>
@@ -3262,7 +3283,7 @@
 
     /*
      * If the user already edited the coder list, selecting/changing a preset
-     * updates the preset + restrictions but DOES NOT replace their coder text.
+     * updates the preset + preference history but DOES NOT replace their coder text.
      * They can explicitly choose "Use Preset Coders" if they want replacement.
      */
     renderPreAllocationState();
@@ -3759,7 +3780,8 @@
 
     presetsReady =
       fetch(
-        '../json/allocator_presets.json'
+        '../json/allocator_presets.json',
+        { cache: 'no-store' }
       )
         .then(response => {
           if (!response.ok) {
@@ -3817,6 +3839,8 @@
     collectColumnKeys,
     createFacilityConfig,
     getEligibleCoders,
+    getCoderPreferenceCost,
+    buildPreferenceMap,
     buildPresetIndex,
     buildDepartmentStatusSummary,
     buildSummarySheetData,
