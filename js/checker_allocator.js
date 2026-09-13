@@ -379,6 +379,13 @@
       .join('\n');
   }
 
+  function normalizeDepartmentKey(value) {
+    return String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '');
+  }
+
   function buildRestrictionsMap(coderEntries) {
     const restrictions = {};
 
@@ -392,7 +399,7 @@
       ) {
         restrictions[coder.name] = new Set(
           coder.departments
-            .map(item => String(item || '').trim())
+            .map(normalizeDepartmentKey)
             .filter(Boolean)
         );
       }
@@ -780,9 +787,22 @@
         filterState.codifStatuses.has(claim.codificationStatus)
     );
 
+    /*
+     * A claim that already has any Codified By value is never eligible for a
+     * new assignment. This is automatic and cannot be overridden by filters.
+     */
+    const alreadyCodifiedExcluded = statusFiltered.filter(
+      claim =>
+        (claim.codifiedByValues || []).some(
+          value => String(value || '').trim()
+        )
+    ).length;
+
     const codifiedFiltered = statusFiltered.filter(
       claim =>
-        !claim.codifiedByValues.some(value => filterState.codifiedBy.has(value))
+        !(claim.codifiedByValues || []).some(
+          value => String(value || '').trim()
+        )
     );
 
     const noBillExcluded =
@@ -798,6 +818,7 @@
       statusFiltered,
       codifiedFiltered,
       eligibleClaims,
+      alreadyCodifiedExcluded,
       noBillExcluded
     };
   }
@@ -856,9 +877,11 @@
         ? state.importSummary.terminalStatusExcluded
         : 0,
       noBillExcluded: filtered.noBillExcluded,
+      alreadyCodifiedExcluded: filtered.alreadyCodifiedExcluded,
       eligibleClaims: filtered.eligibleClaims.length,
       automaticallyExcluded:
         (state.importSummary ? state.importSummary.terminalStatusExcluded : 0) +
+        filtered.alreadyCodifiedExcluded +
         filtered.noBillExcluded
     };
   }
@@ -883,10 +906,67 @@
     // It does not re-read the preset coder array here.
     const coders = parseCodersText(config.codersText);
 
-    return coders.filter(coder => {
-      const restrictions = config.restrictions[coder];
-      return !restrictions || restrictions.has(claim.department);
-    });
+    if (!coders.length) return [];
+
+    const departmentKey =
+      normalizeDepartmentKey(claim.department);
+
+    const presetCoderNames =
+      new Set(
+        parseCodersText(
+          config.presetCodersText || ''
+        )
+      );
+
+    const manuallyAddedCoders =
+      coders.filter(
+        coder => !presetCoderNames.has(coder)
+      );
+
+    const matchingProfileCoders =
+      departmentKey
+        ? coders.filter(coder => {
+            const profile =
+              config.restrictions[coder];
+
+            return Boolean(
+              profile &&
+              profile.size &&
+              profile.has(departmentKey)
+            );
+          })
+        : [];
+
+    /*
+     * Department history from allocator_presets.json is treated as a strong
+     * preference rather than a hard lock:
+     * 1. matching profiled coders are preferred;
+     * 2. manually-added coders remain eligible because user edits win;
+     * 3. if there is no department match, use unprofiled preset coders;
+     * 4. if every preset coder is profiled, fall back to the full facility pool.
+     */
+    if (matchingProfileCoders.length) {
+      return Array.from(
+        new Set([
+          ...matchingProfileCoders,
+          ...manuallyAddedCoders
+        ])
+      );
+    }
+
+    const unprofiledCoders =
+      coders.filter(coder => {
+        const profile =
+          config.restrictions[coder];
+
+        return !profile || !profile.size;
+      });
+
+    if (unprofiledCoders.length) {
+      return unprofiledCoders;
+    }
+
+    return coders;
   }
 
   function compareClaimsForAllocation(a, b) {
@@ -2392,24 +2472,12 @@
 
     const facilityStats = getFacilityClaimStats(state.dedupedClaims);
 
-    container.innerHTML = facilityStats.map(item => {
-      const config = state.facilityConfigs[item.facilityKey] ||
-        createFacilityConfig(item.facilityKey, item.presetName);
-      const presetName = config.presetName || item.presetName;
-      const statusClass = presetName ? 'status-ok' : 'status-bad';
-      const statusText = presetName ? 'preset found' : 'needs attention';
-      const displayName = presetName || item.displayName;
-
-      return `
-        <div class="facility-summary-item">
-          <div class="fw-semibold">
-            ${escapeHtml(displayName)} — ${item.count} claims —
-            <span class="${statusClass}">${statusText}</span>
-          </div>
-          <div class="meta">Detected from ${escapeHtml(item.displayName)}</div>
-        </div>
-      `;
-    }).join('');
+    container.innerHTML = `
+      <div class="summary-muted">
+        <strong>${facilityStats.length}</strong>
+        ${facilityStats.length === 1 ? 'facility' : 'facilities'} detected
+      </div>
+    `;
 
     if (!facilityStats.length) {
       configsContainer.innerHTML = '';
@@ -2517,8 +2585,8 @@
             <div class="facility-config-meta mb-1">${escapeHtml(coderSourceText)}</div>
             <div class="facility-config-meta">
               ${restrictedCount
-                ? `${restrictedCount} coder restriction set(s) active from the selected preset. Manually added coders without a matching preset restriction are unrestricted.`
-                : 'No preset department restrictions active. Manually entered coders are unrestricted.'}
+                ? `${restrictedCount} coder department profile(s) loaded. Matching departments are preferred; fallback coders are used when no profile matches.`
+                : 'No department profiles are available for this preset. The facility coder list is used as the fallback pool.'}
             </div>
           </div>
         </section>
@@ -3758,7 +3826,8 @@
     applyUserCoderText,
     applyPresetSelection,
     resetConfigToPreset,
-    parseCodersText
+    parseCodersText,
+    normalizeDepartmentKey
   };
 
   if (
