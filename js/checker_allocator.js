@@ -1986,13 +1986,13 @@
 
     if (paymentText) {
       lines.push(
-        `Payment Mode: ${paymentText}.`
+        `${paymentText}.`
       );
     }
 
     if (departmentText) {
       lines.push(
-        `Departments: ${departmentText}.`
+        `${departmentText}.`
       );
     }
 
