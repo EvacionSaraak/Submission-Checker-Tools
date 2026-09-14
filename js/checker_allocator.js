@@ -1902,6 +1902,32 @@
     };
   }
 
+  function formatNaturalList(parts) {
+    const values =
+      (parts || [])
+        .map(value =>
+          String(value || '').trim()
+        )
+        .filter(Boolean);
+
+    if (!values.length) {
+      return '';
+    }
+
+    if (values.length === 1) {
+      return values[0];
+    }
+
+    if (values.length === 2) {
+      return `${values[0]} and ${values[1]}`;
+    }
+
+    return (
+      `${values.slice(0, -1).join(', ')}, ` +
+      `and ${values[values.length - 1]}`
+    );
+  }
+
   function formatDepartmentCounts(
     departmentCounts
   ) {
@@ -1920,9 +1946,7 @@
             `${count} ${department}`
         );
 
-    return parts.length
-      ? parts.join(', ')
-      : '';
+    return formatNaturalList(parts);
   }
 
   function formatCoderDateDetail(detail) {
@@ -1930,13 +1954,11 @@
       return '';
     }
 
+    /*
+     * Show only payment modes that are actually present. Insurance is listed
+     * first, followed by Self-Pay, matching the operational summary wording.
+     */
     const paymentParts = [];
-
-    if (detail.selfPay > 0) {
-      paymentParts.push(
-        `${detail.selfPay} Self-Pay`
-      );
-    }
 
     if (detail.insurance > 0) {
       paymentParts.push(
@@ -1944,23 +1966,37 @@
       );
     }
 
+    if (detail.selfPay > 0) {
+      paymentParts.push(
+        `${detail.selfPay} Self-Pay`
+      );
+    }
+
     const paymentText =
-      paymentParts.join(', ');
+      formatNaturalList(
+        paymentParts
+      );
 
     const departmentText =
       formatDepartmentCounts(
         detail.departmentCounts
       );
 
-    if (paymentText && departmentText) {
-      return `${paymentText}; ${departmentText}`;
+    const lines = [];
+
+    if (paymentText) {
+      lines.push(
+        `Payment Mode: ${paymentText}.`
+      );
     }
 
-    return (
-      paymentText ||
-      departmentText ||
-      ''
-    );
+    if (departmentText) {
+      lines.push(
+        `Departments: ${departmentText}.`
+      );
+    }
+
+    return lines.join('\n');
   }
 
   function getSummaryClaimDateInfo(row) {
@@ -3606,17 +3642,203 @@
     }
   }
 
+  function autoFitCoderAllocationDetails(
+    ws,
+    aoa,
+    maximumColumns,
+    coderSection
+  ) {
+    const widths = [];
+
+    for (
+      let col = 0;
+      col < maximumColumns;
+      col++
+    ) {
+      let maxLineLength = 1;
+
+      for (
+        let row = 0;
+        row < aoa.length;
+        row++
+      ) {
+        const value =
+          aoa[row]?.[col];
+
+        if (
+          value == null ||
+          value === ''
+        ) {
+          continue;
+        }
+
+        const lines =
+          String(value).split(
+            /\r?\n/
+          );
+
+        for (const line of lines) {
+          maxLineLength =
+            Math.max(
+              maxLineLength,
+              line.length
+            );
+        }
+      }
+
+      let minWidth = 8;
+      let maxWidth = 24;
+
+      if (col === 0) {
+        minWidth = 16;
+        maxWidth = 28;
+      } else if (col === 1) {
+        minWidth = 14;
+        maxWidth = 20;
+      } else if (
+        coderSection &&
+        col >= 2 &&
+        col <
+          coderSection.columnCount
+      ) {
+        const isDetailed =
+          (col - 2) % 2 === 1;
+
+        if (isDetailed) {
+          minWidth = 24;
+          maxWidth = 42;
+        } else {
+          minWidth = 11;
+          maxWidth = 16;
+        }
+      }
+
+      widths.push({
+        wch:
+          Math.min(
+            Math.max(
+              maxLineLength + 2,
+              minWidth
+            ),
+            maxWidth
+          )
+      });
+    }
+
+    ws['!cols'] = widths;
+
+    /*
+     * Estimate wrapped row height from the fitted column widths. This keeps
+     * short rows tight while expanding Detailed rows only when their content
+     * actually wraps.
+     */
+    ws['!rows'] =
+      ws['!rows'] || [];
+
+    for (
+      let row = 0;
+      row < aoa.length;
+      row++
+    ) {
+      let requiredLines = 1;
+
+      for (
+        let col = 0;
+        col < maximumColumns;
+        col++
+      ) {
+        const value =
+          aoa[row]?.[col];
+
+        if (
+          value == null ||
+          value === ''
+        ) {
+          continue;
+        }
+
+        const width =
+          widths[col]?.wch || 10;
+
+        const explicitLines =
+          String(value).split(
+            /\r?\n/
+          );
+
+        let cellLines = 0;
+
+        for (
+          const line of
+          explicitLines
+        ) {
+          cellLines +=
+            Math.max(
+              1,
+              Math.ceil(
+                line.length /
+                Math.max(
+                  width - 1,
+                  1
+                )
+              )
+            );
+        }
+
+        requiredLines =
+          Math.max(
+            requiredLines,
+            cellLines
+          );
+      }
+
+      /*
+       * Title/header rows remain compact; data rows scale with wrapped text.
+       */
+      const isTitleRow =
+        row === 0;
+
+      const isHeaderRow =
+        coderSection &&
+        row >=
+          coderSection.sectionRow &&
+        row <
+          coderSection.dataStartRow;
+
+      if (isTitleRow) {
+        ws['!rows'][row] = {
+          hpt: 20
+        };
+      } else if (isHeaderRow) {
+        ws['!rows'][row] = {
+          hpt:
+            Math.max(
+              18,
+              requiredLines * 15
+            )
+        };
+      } else {
+        ws['!rows'][row] = {
+          hpt:
+            Math.max(
+              16,
+              requiredLines * 15
+            )
+        };
+      }
+    }
+  }
+
+
   function buildStyledCoderAllocationDetailsWorksheet(
     summaryData
   ) {
     const aoa = [
-      ['Coder Allocation Details'],
-      []
+      ['Coder Allocation Details']
     ];
     const sections = [];
     const merges = [];
 
-    const topStartRow = 2;
+    const topStartRow = 1;
 
     /*
      * This sheet is intentionally dedicated to the wide coder allocation
@@ -3683,12 +3905,6 @@
     );
 
     ws['!rows'] = [];
-    ws['!rows'][0] = {
-      hpt: 20
-    };
-    ws['!rows'][1] = {
-      hpt: 2
-    };
 
     for (const section of sections) {
       applyCellStyle(
@@ -3719,11 +3935,6 @@
             );
           }
 
-          ws['!rows'][
-            headerRowIndex
-          ] = {
-            hpt: 22
-          };
         }
       );
 
@@ -3739,11 +3950,6 @@
         }
       );
 
-      ws['!rows'][
-        section.headerRow
-      ] = {
-        hpt: 22
-      };
     }
 
     const coderSection =
@@ -3765,11 +3971,6 @@
             .dataStartRow +
           rowOffset;
 
-        ws['!rows'][
-          rowIndex
-        ] = {
-          hpt: 24
-        };
 
         /*
          * Under each Facility > Claim Date pair, the second leaf column is
@@ -3830,102 +4031,30 @@
       aoa
     );
 
-    const widths = [];
-
-    for (
-      let col = 0;
-      col <
-      maximumColumns;
-      col++
-    ) {
-      let maxLength = 10;
-
-      for (
-        let row = 0;
-        row <
-        aoa.length;
-        row++
-      ) {
-        const value =
-          aoa[row]?.[col];
-
-        if (
-          value != null
-        ) {
-          maxLength =
-            Math.max(
-              maxLength,
-              String(value)
-                .length + 2
-            );
-        }
-      }
-
-      let width =
-        Math.min(
-          Math.max(
-            maxLength,
-            10
-          ),
-          22
-        );
-
-      if (col === 0) {
-        width =
-          Math.min(
-            Math.max(
-              maxLength,
-              20
-            ),
-            24
-          );
-      }
-
-      if (col === 1) {
-        width =
-          Math.min(
-            Math.max(
-              maxLength,
-              14
-            ),
-            18
-          );
-      }
-
-      if (
-        coderSection &&
-        col >= 2 &&
-        col <
-          coderSection
-            .columnCount
-      ) {
-        width =
-          (col - 2) % 2 === 0
-            ? 11
-            : 30;
-      }
-
-      widths.push({
-        wch: width
-      });
-    }
-
-    ws['!cols'] = widths;
+    autoFitCoderAllocationDetails(
+      ws,
+      aoa,
+      maximumColumns,
+      coderSection
+    );
 
     /*
-     * Keep the first two columns and all six heading rows visible:
-     * 1 title, 2 spacer, 3 section title, 4 facility, 5 claim date,
-     * 6 Assigned Total / Detailed.
+     * The blank spacer row is gone, leaving five heading rows:
+     * 1 title, 2 section title, 3 facility, 4 claim date,
+     * 5 Assigned Total / Detailed.
+     *
+     * Freeze those five heading rows plus the first two columns. Freezing six
+     * rows now would unnecessarily freeze the first coder-data row.
      */
     ws['!freeze'] = {
       xSplit: 2,
-      ySplit: 6
+      ySplit: 5
     };
 
     ws['!panes'] = [{
       xSplit: 2,
-      ySplit: 6,
-      topLeftCell: 'C7',
+      ySplit: 5,
+      topLeftCell: 'C6',
       activePane: 'bottomRight',
       state: 'frozen'
     }];
@@ -4965,7 +5094,7 @@
 
                       return `
                         <td class="numeric-cell"><strong>${escapeHtml(row[`${detailKey}|||Assigned Total`] ?? 0)}</strong></td>
-                        <td><em>${escapeHtml(row[`${detailKey}|||Detailed`] || '')}</em></td>
+                        <td><em>${escapeHtml(row[`${detailKey}|||Detailed`] || '').replace(/\n/g, '<br>')}</em></td>
                       `;
                     }
                   ).join('')
