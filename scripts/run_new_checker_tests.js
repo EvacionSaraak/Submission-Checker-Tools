@@ -158,6 +158,28 @@ function loadPricingTestApi() {
   return { api, drugShared };
 }
 
+function loadAllocatorTestApi() {
+  const allocatorPath = path.join(__dirname, '..', 'js', 'checker_allocator.js');
+  const allocatorCode = fs.readFileSync(allocatorPath, 'utf8');
+  const context = {
+    window: {},
+    document: {
+      getElementById() { return null; }
+    },
+    console,
+    FileReader: function FileReader() {},
+    fetch: async () => ({ ok: false, status: 404, json: async () => ({}) }),
+    XLSX: { utils: {} }
+  };
+
+  vm.createContext(context);
+  vm.runInContext(allocatorCode, context, { filename: 'checker_allocator.js' });
+
+  const api = context.window._allocatorTestApi;
+  assert(api, 'Allocator test API was not exposed');
+  return api;
+}
+
 function createElement(name, text = '', children = []) {
   return {
     localName: name,
@@ -291,6 +313,7 @@ const pricingTest = loadPricingTestApi();
 const pricingApi = pricingTest.api;
 const drugShared = pricingTest.drugShared;
 const timingsApi = loadTimingsTestApi();
+const allocatorApi = loadAllocatorTestApi();
 
 function makeEl(tag, textContent) {
   return { _tag: tag, textContent: textContent || '', querySelector(sel) { return null; } };
@@ -1659,6 +1682,318 @@ await run('Schema: no ReferenceError for validateMedicalOrderingConsistency duri
   // It's already proven by the existence of schemaApi.validateMedicalOrderingConsistency,
   // but we additionally confirm the schema loads without error.
   assert(typeof schemaApi.validateXmlSchema === 'function', 'Expected validateXmlSchema to load without ReferenceError');
+});
+
+await run('Allocator detects header row beyond first two rows', () => {
+  const rows = allocatorApi.sheetToObjects([
+    ['', '', 'Bill Charge Report'],
+    ['', '', '16-03-2026 to 16-03-2026'],
+    ['Facility ID', 'Pri. Claim No', 'Encounter Date', 'Department'],
+    ['MF7003', 'TMCCL1', '16-03-2026', 'ENT']
+  ]);
+  assert(rows.length === 1, 'Expected one parsed row from allocator sheet');
+  assert(rows[0]['Pri. Claim No'] === 'TMCCL1', 'Expected allocator to use detected header row');
+});
+
+await run('Allocator maps facility per claim and falls back to filename', () => {
+  const presets = {
+    'True Life Primary Care Center': { license: 'MF7003', coders: [] },
+    'Nazek Medical Center': { license: 'MF5009', coders: [] }
+  };
+  const claims = allocatorApi.normalizeRawClaims([
+    {
+      fileName: 'Nazek September.xlsx',
+      rows: [
+        { 'Center Name': 'True Life', 'Pri. Claim No': 'C1', 'Encounter Date': '16-03-2026', Department: 'ENT', 'Codification Status': 'In Progress' },
+        { 'Pri. Claim No': 'C2', 'Encounter Date': '17-03-2026', Department: 'ENT', 'Codification Status': 'In Progress' }
+      ]
+    }
+  ], presets);
+  assert(claims[0].facilityKey === 'True Life Primary Care Center', 'Expected row-level facility alias match');
+  assert(claims[1].facilityKey === 'Nazek Medical Center', 'Expected filename fallback when row facility is missing');
+});
+
+function makeAllocatorClaim(overrides = {}) {
+  const status = overrides.codificationStatus !== undefined ? overrides.codificationStatus : 'In Progress';
+  const claimDateText = overrides.claimDateText !== undefined ? overrides.claimDateText : '16/03/2026';
+  const claimDate = overrides.claimDate !== undefined ? overrides.claimDate : allocatorApi.parseDateValue('16-03-2026');
+  return {
+    dedupeKey: 'f1::C1',
+    facilityKey: 'F1',
+    facilityDisplay: 'F1',
+    detectedPresetName: '',
+    facilityMatched: true,
+    claimDate,
+    claimDateText,
+    outputClaimId: 'C1',
+    department: 'ENT',
+    codificationStatus: status,
+    codifiedBy: '',
+    codifiedByValues: overrides.codifiedByValues || [],
+    noBill: false,
+    autoExcludedStatus: allocatorApi.isAutoExcludedStatus(status),
+    rawFieldCount: 5,
+    sourceRowNumber: 1,
+    paymentMode: 'Insurance',
+    ...overrides
+  };
+}
+
+function makeFacilityConfigs(facilityKeys, codersText, restrictions = {}) {
+  return Object.fromEntries(facilityKeys.map(key => [key, { presetName: '', codersText, restrictions }]));
+}
+
+function getCoderCounts(allocationRows) {
+  const counts = {};
+  allocationRows.forEach(row => {
+    counts[row.Coder] = (counts[row.Coder] || 0) + 1;
+  });
+  return counts;
+}
+
+function getRangeForCoders(counts, coderNames) {
+  const values = coderNames.map(coder => counts[coder] || 0);
+  return { min: Math.min(...values), max: Math.max(...values) };
+}
+
+for (const [label, status] of [
+  ['Closed', 'Closed'],
+  ['Submitted', 'Submitted'],
+  ['Audited', 'Audited'],
+  ['Verified and Closed', 'Verified and Closed'],
+  ['Merged', 'Merged']
+]) {
+  await run(`Allocator auto-excludes terminal status ${label}`, () => {
+    assert(allocatorApi.isAutoExcludedStatus(status) === true, `Expected ${label} to be terminal`);
+    const result = allocatorApi.deduplicateClaims([
+      makeAllocatorClaim({ codificationStatus: status, autoExcludedStatus: allocatorApi.isAutoExcludedStatus(status) })
+    ]);
+    assert(result.dedupedClaims.length === 0, `Expected ${label} claim to be excluded from allocation`);
+    assert(result.stats.terminalStatusExcluded === 1, `Expected ${label} claim to increment terminal exclusion count`);
+  });
+}
+
+await run('Allocator terminal status matching is case-insensitive and whitespace-tolerant', () => {
+  [' CLOSED ', 'submitted', 'AUDITED', ' verified and closed ', 'MERGED '].forEach(status => {
+    assert(allocatorApi.isAutoExcludedStatus(status) === true, `Expected ${status} to be terminal`);
+  });
+  assert(allocatorApi.isAutoExcludedStatus('Submitted for Review') === false, 'Expected non-terminal status not to be excluded by substring matching');
+});
+
+await run('Allocator excludes duplicated claim when only one version is terminal', () => {
+  const rawClaims = [
+    makeAllocatorClaim({ sourceRowNumber: 1, codificationStatus: 'Under Process', autoExcludedStatus: allocatorApi.isAutoExcludedStatus('Under Process') }),
+    makeAllocatorClaim({ sourceRowNumber: 2, codificationStatus: ' Audited ', autoExcludedStatus: allocatorApi.isAutoExcludedStatus(' Audited ') })
+  ];
+  const result = allocatorApi.deduplicateClaims(rawClaims);
+  assert(result.dedupedClaims.length === 0, 'Expected duplicate group with one terminal version to be excluded');
+  assert(result.stats.terminalStatusExcluded === 1, 'Expected one claim group to be excluded by terminal status');
+  assert(result.stats.duplicateClaimsResolved === 1, 'Expected duplicate resolution to count stale version');
+});
+
+await run('Allocator keeps Under Process claims with Codified By eligible by default', () => {
+  const claims = [
+    makeAllocatorClaim({ codifiedByValues: ['James'], noBill: false }),
+    makeAllocatorClaim({ outputClaimId: 'C2', dedupeKey: 'f1::C2', codifiedByValues: [], noBill: false })
+  ];
+  const defaults = allocatorApi.buildInitialFilterState(claims);
+  const filtered = allocatorApi.applyClaimFilters(claims, defaults);
+  assert(filtered.eligibleClaims.length === 2, 'Expected non-terminal claim with Codified By to remain eligible by default');
+});
+
+await run('Allocator keeps no-bill exclusion optional and respects user-selected codified-by filters', () => {
+  const claims = [
+    makeAllocatorClaim({ codifiedByValues: ['Alice'], noBill: true }),
+    makeAllocatorClaim({ outputClaimId: 'C2', dedupeKey: 'f1::C2', codifiedByValues: [], noBill: false })
+  ];
+  const filtered = allocatorApi.applyClaimFilters(claims, {
+    paymentModes: new Set(['Insurance']),
+    departments: new Set(['ENT']),
+    codifStatuses: new Set(['In Progress', 'Under Process']),
+    codifiedBy: new Set(['Alice']),
+    includeNoBills: false
+  });
+  assert(filtered.eligibleClaims.length === 1, 'Expected checked codified-by names and no-bills to be excluded');
+  assert(filtered.noBillExcluded === 0, 'Expected no-bill count after codified-by exclusion to be zero');
+
+  const included = allocatorApi.applyClaimFilters(claims, {
+    paymentModes: new Set(['Insurance']),
+    departments: new Set(['ENT']),
+    codifStatuses: new Set(['In Progress']),
+    codifiedBy: new Set(),
+    includeNoBills: true
+  });
+  assert(included.eligibleClaims.length === 2, 'Expected include-no-bills toggle to restore no-bill claims');
+});
+
+await run('Allocator selects Dental and Orthodontic by default', () => {
+  const defaults = allocatorApi.buildInitialFilterState([
+    makeAllocatorClaim({ department: 'Dental' }),
+    makeAllocatorClaim({ outputClaimId: 'C2', dedupeKey: 'f1::C2', department: 'Orthodontic' }),
+    makeAllocatorClaim({ outputClaimId: 'C3', dedupeKey: 'f1::C3', department: 'ENT' })
+  ]);
+  assert(defaults.departments.has('Dental'), 'Expected Dental to be selected by default');
+  assert(defaults.departments.has('Orthodontic'), 'Expected Orthodontic to be selected by default');
+  assert(defaults.departments.has('ENT'), 'Expected all departments to be selected by default');
+});
+
+await run('Allocator preserves raw claim date text for workbook output when parsing fails', () => {
+  const row = allocatorApi.getAllocationSheetRow({
+    Facility: 'F1',
+    'Claim ID': 'C1',
+    'Claim Date': null,
+    ClaimDateText: '16 March 2026 (legacy export)',
+    Department: 'ENT',
+    Coder: 'Alice',
+    Query: '',
+    Status: ''
+  }, '10/09/2026');
+  assert(row['Claim Date'] === '16 March 2026 (legacy export)', 'Expected raw claim date text to survive workbook preparation when parsing fails');
+});
+
+await run('Allocator balances 100 claims across 4 coders exactly 25 each', () => {
+  const coderNames = ['Alice', 'Bob', 'Carol', 'Dina'];
+  const claims = Array.from({ length: 100 }, (_, index) => makeAllocatorClaim({
+    outputClaimId: `C${index + 1}`,
+    dedupeKey: `f1::C${index + 1}`,
+    claimDate: allocatorApi.parseDateValue(`01-03-2026`),
+    claimDateText: '01/03/2026',
+    department: 'ENT'
+  }));
+  const result = allocatorApi.allocateClaims(claims, makeFacilityConfigs(['F1'], coderNames.join('\n')), '10/09/2026');
+  const counts = getCoderCounts(result.allocationRows);
+  coderNames.forEach(coder => assert(counts[coder] === 25, `Expected ${coder} to receive exactly 25 claims`));
+});
+
+await run('Allocator balances 101 claims across 4 coders within one claim difference', () => {
+  const coderNames = ['Alice', 'Bob', 'Carol', 'Dina'];
+  const claims = Array.from({ length: 101 }, (_, index) => makeAllocatorClaim({
+    outputClaimId: `C${index + 1}`,
+    dedupeKey: `f1::C${index + 1}`
+  }));
+  const result = allocatorApi.allocateClaims(claims, makeFacilityConfigs(['F1'], coderNames.join('\n')), '10/09/2026');
+  const counts = getCoderCounts(result.allocationRows);
+  const range = getRangeForCoders(counts, coderNames);
+  assert(range.max - range.min <= 1, 'Expected 101/4 loads to differ by no more than 1');
+});
+
+await run('Allocator balances 10 claims across 3 coders as 4 3 3 deterministically', () => {
+  const coderNames = ['Alice', 'Bob', 'Carol'];
+  const claims = Array.from({ length: 10 }, (_, index) => makeAllocatorClaim({
+    outputClaimId: `C${index + 1}`,
+    dedupeKey: `f1::C${index + 1}`
+  }));
+  const result = allocatorApi.allocateClaims(claims, makeFacilityConfigs(['F1'], coderNames.join('\n')), '10/09/2026');
+  const counts = getCoderCounts(result.allocationRows);
+  const sortedCounts = coderNames.map(coder => counts[coder] || 0).sort((a, b) => b - a);
+  assert(sortedCounts.join(',') === '4,3,3', `Expected 10/3 split to be 4,3,3 but got ${sortedCounts.join(',')}`);
+});
+
+await run('Allocator balances 1000 claims across 7 coders within one claim difference', () => {
+  const coderNames = ['A', 'B', 'C', 'D', 'E', 'F', 'G'];
+  const claims = Array.from({ length: 1000 }, (_, index) => makeAllocatorClaim({
+    outputClaimId: `C${index + 1}`,
+    dedupeKey: `f1::C${index + 1}`
+  }));
+  const result = allocatorApi.allocateClaims(claims, makeFacilityConfigs(['F1'], coderNames.join('\n')), '10/09/2026');
+  const counts = getCoderCounts(result.allocationRows);
+  const range = getRangeForCoders(counts, coderNames);
+  assert(range.max - range.min <= 1, 'Expected 1000/7 loads to differ by no more than 1');
+});
+
+await run('Allocator balances globally across multiple facilities with the same coder pool', () => {
+  const coderNames = ['Alice', 'Bob', 'Carol'];
+  const claims = Array.from({ length: 150 }, (_, index) => makeAllocatorClaim({
+    facilityKey: index < 60 ? 'F1' : 'F2',
+    facilityDisplay: index < 60 ? 'F1' : 'F2',
+    outputClaimId: `C${index + 1}`,
+    dedupeKey: `${index < 60 ? 'f1' : 'f2'}::C${index + 1}`
+  }));
+  const result = allocatorApi.allocateClaims(claims, makeFacilityConfigs(['F1', 'F2'], coderNames.join('\n')), '10/09/2026');
+  const counts = getCoderCounts(result.allocationRows);
+  coderNames.forEach(coder => assert(counts[coder] === 50, `Expected ${coder} to receive exactly 50 claims across facilities`));
+});
+
+await run('Allocator totals are order-invariant for otherwise identical claims', () => {
+  const coderNames = ['Alice', 'Bob', 'Carol'];
+  const claims = Array.from({ length: 60 }, (_, index) => makeAllocatorClaim({
+    outputClaimId: `C${index + 1}`,
+    dedupeKey: `f1::C${index + 1}`,
+    claimDate: allocatorApi.parseDateValue(`${String((index % 28) + 1).padStart(2, '0')}-03-2026`),
+    claimDateText: `${String((index % 28) + 1).padStart(2, '0')}/03/2026`
+  }));
+  const reversed = claims.slice().reverse();
+  const first = allocatorApi.allocateClaims(claims, makeFacilityConfigs(['F1'], coderNames.join('\n')), '10/09/2026');
+  const second = allocatorApi.allocateClaims(reversed, makeFacilityConfigs(['F1'], coderNames.join('\n')), '10/09/2026');
+  assert(JSON.stringify(getCoderCounts(first.allocationRows)) === JSON.stringify(getCoderCounts(second.allocationRows)), 'Expected coder totals to remain unchanged when input order changes');
+});
+
+await run('Allocator defeats overlapping-pool imbalance that the old greedy pass allowed', () => {
+  const claims = [
+    ...Array.from({ length: 100 }, (_, index) => makeAllocatorClaim({
+      outputClaimId: `AB${index + 1}`,
+      dedupeKey: `f1::AB${index + 1}`,
+      department: 'ENT',
+      facilityKey: 'F1',
+      facilityDisplay: 'F1'
+    })),
+    ...Array.from({ length: 100 }, (_, index) => makeAllocatorClaim({
+      outputClaimId: `AC${index + 1}`,
+      dedupeKey: `f2::AC${index + 1}`,
+      department: 'Cardiology',
+      facilityKey: 'F2',
+      facilityDisplay: 'F2'
+    }))
+  ];
+  const facilityConfigs = {
+    F1: { presetName: '', codersText: 'Alice\nBob', restrictions: {} },
+    F2: { presetName: '', codersText: 'Alice\nCarol', restrictions: {} }
+  };
+  const result = allocatorApi.allocateClaims(claims, facilityConfigs, '10/09/2026');
+  const counts = getCoderCounts(result.allocationRows);
+  const range = getRangeForCoders(counts, ['Alice', 'Bob', 'Carol']);
+  assert(range.max - range.min <= 1, `Expected overlapping pools to balance within 1, got ${JSON.stringify(counts)}`);
+});
+
+await run('Allocator keeps restricted coders out of unsupported departments and balances globally where possible', () => {
+  const claims = [
+    { facilityKey: 'F1', facilityDisplay: 'F1', detectedPresetName: '', outputClaimId: 'C1', claimDate: allocatorApi.parseDateValue('01-03-2026'), claimDateText: '01/03/2026', department: 'ENT' },
+    { facilityKey: 'F2', facilityDisplay: 'F2', detectedPresetName: '', outputClaimId: 'C2', claimDate: allocatorApi.parseDateValue('02-03-2026'), claimDateText: '02/03/2026', department: 'ENT' },
+    { facilityKey: 'F1', facilityDisplay: 'F1', detectedPresetName: '', outputClaimId: 'C3', claimDate: allocatorApi.parseDateValue('03-03-2026'), claimDateText: '03/03/2026', department: 'Cardiology' },
+    { facilityKey: 'F2', facilityDisplay: 'F2', detectedPresetName: '', outputClaimId: 'C4', claimDate: allocatorApi.parseDateValue('04-03-2026'), claimDateText: '04/03/2026', department: 'ENT' }
+  ];
+  const facilityConfigs = {
+    F1: { presetName: '', codersText: 'Alice\nBob', restrictions: { Bob: new Set(['ENT']) } },
+    F2: { presetName: '', codersText: 'Alice\nBob', restrictions: { Bob: new Set(['ENT']) } }
+  };
+  const result = allocatorApi.allocateClaims(claims, facilityConfigs, '10/09/2026');
+  const cardiologyRows = result.allocationRows.filter(row => row.Department === 'Cardiology');
+  assert(cardiologyRows.every(row => row.Coder === 'Alice'), 'Expected restricted coder to never receive unsupported department');
+});
+
+await run('Allocator allows unavoidable restriction-caused imbalance', () => {
+  const claims = [
+    ...Array.from({ length: 2 }, (_, index) => makeAllocatorClaim({ outputClaimId: `E${index + 1}`, dedupeKey: `f1::E${index + 1}`, department: 'ENT' })),
+    ...Array.from({ length: 4 }, (_, index) => makeAllocatorClaim({ outputClaimId: `C${index + 1}`, dedupeKey: `f1::C${index + 1}`, department: 'Cardiology' }))
+  ];
+  const facilityConfigs = {
+    F1: { presetName: '', codersText: 'Alice\nBob', restrictions: { Bob: new Set(['ENT']) } }
+  };
+  const result = allocatorApi.allocateClaims(claims, facilityConfigs, '10/09/2026');
+  const counts = getCoderCounts(result.allocationRows);
+  assert((counts.Alice || 0) === 4 && (counts.Bob || 0) === 2, `Expected unavoidable 4/2 imbalance, got ${JSON.stringify(counts)}`);
+});
+
+await run('Allocator leaves unassignable claims marked as unassigned', () => {
+  const claims = [
+    makeAllocatorClaim({ outputClaimId: 'C1', dedupeKey: 'f1::C1', department: 'ENT' }),
+    makeAllocatorClaim({ outputClaimId: 'C2', dedupeKey: 'f1::C2', department: 'Cardiology' })
+  ];
+  const facilityConfigs = {
+    F1: { presetName: '', codersText: 'Alice', restrictions: { Alice: new Set(['ENT']) } }
+  };
+  const result = allocatorApi.allocateClaims(claims, facilityConfigs, '10/09/2026');
+  assert(result.allocationRows.some(row => row['Claim ID'] === 'C2' && row.Coder === '(Unassigned)'), 'Expected unsupported claim to remain unassigned');
 });
 
 if (process.exitCode) {
