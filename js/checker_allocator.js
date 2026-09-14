@@ -3684,10 +3684,10 @@
 
     ws['!rows'] = [];
     ws['!rows'][0] = {
-      hpt: 24
+      hpt: 20
     };
     ws['!rows'][1] = {
-      hpt: 6
+      hpt: 2
     };
 
     for (const section of sections) {
@@ -3722,7 +3722,7 @@
           ws['!rows'][
             headerRowIndex
           ] = {
-            hpt: 30
+            hpt: 22
           };
         }
       );
@@ -3742,7 +3742,7 @@
       ws['!rows'][
         section.headerRow
       ] = {
-        hpt: 30
+        hpt: 22
       };
     }
 
@@ -3768,7 +3768,7 @@
         ws['!rows'][
           rowIndex
         ] = {
-          hpt: 34
+          hpt: 24
         };
 
         /*
@@ -3875,9 +3875,9 @@
           Math.min(
             Math.max(
               maxLength,
-              24
+              20
             ),
-            30
+            24
           );
       }
 
@@ -3886,9 +3886,9 @@
           Math.min(
             Math.max(
               maxLength,
-              18
+              14
             ),
-            22
+            18
           );
       }
 
@@ -3901,8 +3901,8 @@
       ) {
         width =
           (col - 2) % 2 === 0
-            ? 13
-            : 38;
+            ? 11
+            : 30;
       }
 
       widths.push({
@@ -3913,19 +3913,20 @@
     ws['!cols'] = widths;
 
     /*
-     * Keep Coder + Total Assigned Claims visible while scrolling through the
-     * potentially very wide Facility > Claim Date hierarchy.
+     * Keep the first two columns and all six heading rows visible:
+     * 1 title, 2 spacer, 3 section title, 4 facility, 5 claim date,
+     * 6 Assigned Total / Detailed.
      */
     ws['!freeze'] = {
       xSplit: 2,
-      ySplit: 0
+      ySplit: 6
     };
 
     ws['!panes'] = [{
       xSplit: 2,
-      ySplit: 0,
-      topLeftCell: 'C1',
-      activePane: 'topRight',
+      ySplit: 6,
+      topLeftCell: 'C7',
+      activePane: 'bottomRight',
       state: 'frozen'
     }];
 
