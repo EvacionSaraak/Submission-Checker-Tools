@@ -49,19 +49,28 @@
   const DEFAULT_EXCLUDED_DEPARTMENT_PATTERN = /\b(?:dental|orthodontic|orthodontics|slimming|cupping)\b/i;
 
   /*
-   * Claims currently carrying one of these names in Codified By are allowed
-   * back into the allocator for reassignment. This includes coders whose work
-   * needs redistribution and auditors whose names should not block allocation.
-   * A reassigned claim is never sent back to the same source name.
+   * Codified By exclusions are loaded from
+   * ../json/allocator_codified_by_exclusions.json. The fallback exists only
+   * so the allocator does not lose reassignment behavior if that resource
+   * cannot be fetched (for example, during an offline/local-file test).
    */
-  const REASSIGNABLE_CODIFIED_BY_TOKENS = new Set([
-    'rednie',
-    'farsana',
-    'abhilash',
-    'sajin',
-    'elizabeth',
-    'ferdinand'
-  ]);
+  const DEFAULT_CODIFIED_BY_EXCLUSIONS = [
+    { name: 'Rednie', reason: 'Reassignment source' },
+    { name: 'Farsana', reason: 'Reassignment source' },
+    { name: 'Abhilash', reason: 'Reassignment source' },
+    { name: 'Sajin', reason: 'Auditor' },
+    { name: 'Elizabeth', reason: 'Auditor' },
+    { name: 'Ferdinand', reason: 'Auditor' },
+    { name: 'Jolina', reason: 'Submission' },
+    { name: 'James', reason: 'Submission' }
+  ];
+
+  let codifiedByExclusions =
+    DEFAULT_CODIFIED_BY_EXCLUSIONS.map(
+      entry => ({ ...entry })
+    );
+
+  let REASSIGNABLE_CODIFIED_BY_TOKENS = new Set();
 
   const FACILITY_ALIASES = Object.freeze({
     IVORY: 'MF4456',
@@ -85,6 +94,7 @@
   const state = {
     presetsData: {},
     presetOptions: [],
+    codifiedByExclusionsLoaded: false,
     importedReports: [],
     rawClaims: [],
     dedupedClaims: [],
@@ -169,6 +179,100 @@
   function getPaymentModeCategory(mode) {
     return /insur/i.test(String(mode || '')) ? 'insurance' : 'self_pay';
   }
+
+  function normalizeCodifiedByExclusions(data) {
+    const rawEntries = Array.isArray(data)
+      ? data
+      : Array.isArray(data?.entries)
+        ? data.entries
+        : [];
+
+    return rawEntries
+      .map(entry => {
+        if (typeof entry === 'string') {
+          return {
+            name: entry.trim(),
+            reason: 'Reassignment exception'
+          };
+        }
+
+        return {
+          name: String(entry?.name || '').trim(),
+          reason: String(
+            entry?.reason ||
+            'Reassignment exception'
+          ).trim()
+        };
+      })
+      .filter(entry => entry.name);
+  }
+
+  function applyCodifiedByExclusions(data) {
+    const normalized =
+      normalizeCodifiedByExclusions(data);
+
+    codifiedByExclusions =
+      normalized.length
+        ? normalized
+        : DEFAULT_CODIFIED_BY_EXCLUSIONS.map(
+            entry => ({ ...entry })
+          );
+
+    REASSIGNABLE_CODIFIED_BY_TOKENS =
+      new Set(
+        codifiedByExclusions.flatMap(
+          entry =>
+            normalizeStatus(entry.name)
+              .split(/\s+/)
+              .filter(Boolean)
+        )
+      );
+
+    renderCodifiedByExclusionHelp();
+  }
+
+  function getCodifiedByExclusionTooltip() {
+    const lines = [
+      'Codified By reassignment exclusions:'
+    ];
+
+    for (const entry of codifiedByExclusions) {
+      lines.push(
+        `${entry.name} — ${entry.reason}`
+      );
+    }
+
+    lines.push(
+      '',
+      'Claims carrying only these names remain eligible for reassignment.'
+    );
+
+    return lines.join('\n');
+  }
+
+  function renderCodifiedByExclusionHelp() {
+    const help =
+      getEl('codified-by-exclusions-help');
+
+    if (!help) return;
+
+    const tooltip =
+      getCodifiedByExclusionTooltip();
+
+    help.setAttribute(
+      'title',
+      tooltip
+    );
+
+    help.setAttribute(
+      'aria-label',
+      tooltip.replace(/\n+/g, '. ')
+    );
+  }
+
+  applyCodifiedByExclusions(
+    DEFAULT_CODIFIED_BY_EXCLUSIONS
+  );
 
   function getNameTokens(value) {
     return normalizeStatus(value)
@@ -6252,10 +6356,11 @@
     if (
       typeof fetch !== 'function'
     ) {
+      renderCodifiedByExclusionHelp();
       return;
     }
 
-    presetsReady =
+    const presetPromise =
       fetch(
         '../json/allocator_presets.json',
         { cache: 'no-store' }
@@ -6268,9 +6373,44 @@
           }
           return response.json();
         })
+        .catch(() => ({}));
+
+    const exclusionPromise =
+      fetch(
+        '../json/allocator_codified_by_exclusions.json',
+        { cache: 'no-store' }
+      )
+        .then(response => {
+          if (!response.ok) {
+            throw new Error(
+              `Failed to load Codified By exclusions (${response.status}).`
+            );
+          }
+          return response.json();
+        })
         .then(data => {
+          state.codifiedByExclusionsLoaded = true;
+          return data;
+        })
+        .catch(() => {
+          state.codifiedByExclusionsLoaded = false;
+          return {
+            entries:
+              DEFAULT_CODIFIED_BY_EXCLUSIONS
+          };
+        });
+
+    presetsReady =
+      Promise.all([
+        presetPromise,
+        exclusionPromise
+      ])
+        .then(([
+          presetData,
+          exclusionData
+        ]) => {
           state.presetsData =
-            data || {};
+            presetData || {};
 
           state.presetOptions =
             Object.keys(
@@ -6284,10 +6424,10 @@
                 (a, b) =>
                   a.localeCompare(b)
               );
-        })
-        .catch(() => {
-          state.presetsData = {};
-          state.presetOptions = [];
+
+          applyCodifiedByExclusions(
+            exclusionData
+          );
         });
   }
 
@@ -6297,6 +6437,9 @@
     isAutoExcludedStatus,
     isDefaultExcludedDepartment,
     isReassignableCodifiedByValue,
+    normalizeCodifiedByExclusions,
+    applyCodifiedByExclusions,
+    getCodifiedByExclusionTooltip,
     claimRequiresReassignment,
     claimHasBlockingCodifiedBy,
     getExistingAssignedCoderDisplay,
