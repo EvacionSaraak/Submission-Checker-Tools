@@ -1,0 +1,37 @@
+{
+  "_comment": "Names listed here are excluded from the normal Codified By blocking rule. Claims carrying only these names remain eligible for reassignment to a coder. The reason is displayed in the Allocator hover help.",
+  "entries": [
+    {
+      "name": "Rednie",
+      "reason": "Reassignment source"
+    },
+    {
+      "name": "Farsana",
+      "reason": "Reassignment source"
+    },
+    {
+      "name": "Abhilash",
+      "reason": "Reassignment source"
+    },
+    {
+      "name": "Sajin",
+      "reason": "Auditor"
+    },
+    {
+      "name": "Elizabeth",
+      "reason": "Auditor"
+    },
+    {
+      "name": "Ferdinand",
+      "reason": "Auditor"
+    },
+    {
+      "name": "Jolina",
+      "reason": "Submission"
+    },
+    {
+      "name": "James",
+      "reason": "Submission"
+    }
+  ]
+}
