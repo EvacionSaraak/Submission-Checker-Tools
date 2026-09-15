@@ -49,14 +49,18 @@
   const DEFAULT_EXCLUDED_DEPARTMENT_PATTERN = /\b(?:dental|orthodontic|orthodontics|slimming|cupping)\b/i;
 
   /*
-   * Claims currently carrying one of these coders in Codified By are allowed
-   * back into the allocator for reassignment. They are not sent back to the
-   * same source coder on that claim.
+   * Claims currently carrying one of these names in Codified By are allowed
+   * back into the allocator for reassignment. This includes coders whose work
+   * needs redistribution and auditors whose names should not block allocation.
+   * A reassigned claim is never sent back to the same source name.
    */
   const REASSIGNABLE_CODIFIED_BY_TOKENS = new Set([
     'rednie',
     'farsana',
-    'abhilash'
+    'abhilash',
+    'sajin',
+    'elizabeth',
+    'ferdinand'
   ]);
 
   const FACILITY_ALIASES = Object.freeze({
@@ -203,6 +207,18 @@
       values.length &&
       values.every(isReassignableCodifiedByValue)
     );
+  }
+
+  function getExistingAssignedCoderDisplay(claim) {
+    return Array.from(
+      new Set(
+        (claim?.codifiedByValues || [])
+          .map(value =>
+            String(value || '').trim()
+          )
+          .filter(Boolean)
+      )
+    ).join(', ');
   }
 
   function claimHasBlockingCodifiedBy(claim) {
@@ -1069,16 +1085,22 @@
       );
 
     /*
-     * Ordinarily, a populated Codified By excludes a claim from new
-     * assignment. Rednie, Farsana and Abhilash are deliberate exceptions:
-     * claims carrying only one/more of those names remain eligible so their
-     * work can be redistributed.
+     * Ordinarily, a populated Codified By excludes a claim from NEW
+     * assignment. The configured reassignment-source names are deliberate
+     * exceptions and remain eligible for redistribution.
+     *
+     * Blocking already-assigned claims are retained separately so they can
+     * still be displayed in the exported facility sheet with their existing
+     * coder and an explanatory note.
      */
-    const alreadyCodifiedExcluded =
+    const alreadyCodifiedClaims =
       statusFiltered.filter(
         claim =>
           claimHasBlockingCodifiedBy(claim)
-      ).length;
+      );
+
+    const alreadyCodifiedExcluded =
+      alreadyCodifiedClaims.length;
 
     const codifiedFiltered =
       statusFiltered.filter(
@@ -1104,6 +1126,25 @@
           );
 
     /*
+     * Apply the same No Bill and Claim Date controls to already-assigned
+     * display rows. They remain excluded from allocation/fairness totals.
+     */
+    const alreadyAssignedNoBillFiltered =
+      filterState.includeNoBills
+        ? alreadyCodifiedClaims
+        : alreadyCodifiedClaims.filter(
+            claim => !claim.noBill
+          );
+
+    const alreadyAssignedDisplayClaims =
+      alreadyAssignedNoBillFiltered.filter(
+        claim =>
+          filterState.claimDates.has(
+            getClaimDateFilterValue(claim)
+          )
+      );
+
+    /*
      * Claim Date is intentionally the final user filter in the hierarchy.
      */
     const dateFiltered =
@@ -1126,6 +1167,7 @@
       noBillFiltered,
       dateFiltered,
       eligibleClaims: dateFiltered,
+      alreadyAssignedDisplayClaims,
       alreadyCodifiedExcluded,
       noBillDetected,
       noBillExcluded,
@@ -1880,6 +1922,58 @@
     };
   }
 
+  function buildAlreadyAssignedDisplayRows(
+    claims,
+    facilityConfigs
+  ) {
+    return (claims || []).map(claim => {
+      const existingCoder =
+        getExistingAssignedCoderDisplay(
+          claim
+        );
+
+      const notes = [
+        'Already assigned a coder.',
+        String(
+          claim.codifRemarks || ''
+        ).trim()
+      ].filter(Boolean);
+
+      return {
+        Facility:
+          getFacilityOutputName(
+            claim,
+            facilityConfigs
+          ),
+        'Claim ID':
+          claim.outputClaimId,
+        'Claim Date':
+          claim.claimDate,
+        ClaimDateText:
+          claim.claimDateText,
+        Department:
+          claim.department,
+        CodificationStatus:
+          claim.codificationStatus || '',
+        PaymentMode:
+          claim.paymentMode || '',
+        PaymentModeCategory:
+          claim.paymentModeCategory ||
+          getPaymentModeCategory(
+            claim.paymentMode
+          ),
+        Coder:
+          existingCoder ||
+          '(Already Assigned)',
+        'Date Assigned': '',
+        Query: '',
+        Status: '',
+        Notes:
+          notes.join(' ')
+      };
+    });
+  }
+
   function getAllocationSheetRow(
     row,
     allocationDateText
@@ -1895,7 +1989,10 @@
       'Codification Status': row.CodificationStatus || '',
       'Payment Mode': row.PaymentMode || '',
       Coder: row.Coder,
-      'Date Assigned': allocationDateText,
+      'Date Assigned':
+        row['Date Assigned'] != null
+          ? row['Date Assigned']
+          : allocationDateText,
       Query: row.Query,
       Status: row.Status,
       Notes: row.Notes || ''
@@ -4354,7 +4451,16 @@
 
     const rowsByFacility = new Map();
 
-    for (const row of lastAllocationResult.allocationRows) {
+    const facilityOutputRows = [
+      ...lastAllocationResult.allocationRows,
+      ...(
+        lastAllocationResult
+          .alreadyAssignedRows ||
+        []
+      )
+    ];
+
+    for (const row of facilityOutputRows) {
       if (!rowsByFacility.has(row.Facility)) {
         rowsByFacility.set(row.Facility, []);
       }
@@ -6056,7 +6162,10 @@
         state.filterState
       );
 
-      if (!filtered.eligibleClaims.length) {
+      if (
+        !filtered.eligibleClaims.length &&
+        !filtered.alreadyAssignedDisplayClaims.length
+      ) {
         renderPreviewTable(null);
         invalidateAllocationResult();
         return;
@@ -6069,9 +6178,16 @@
         allocationDate
       );
 
+      const alreadyAssignedRows =
+        buildAlreadyAssignedDisplayRows(
+          filtered.alreadyAssignedDisplayClaims,
+          state.facilityConfigs
+        );
+
       const importStats = buildImportSummary();
       const allocationResult = {
         allocationRows: allocation.allocationRows,
+        alreadyAssignedRows,
         filteredClaims: filtered.eligibleClaims,
         importStats,
         allocationDate,
@@ -6090,7 +6206,10 @@
 
       renderPreviewTable(state.lastAllocationResult);
 
-      const hasRows = Boolean(allocation.allocationRows.length);
+      const hasRows = Boolean(
+        allocation.allocationRows.length ||
+        alreadyAssignedRows.length
+      );
       if (downloadBtn) downloadBtn.disabled = !hasRows;
       if (previewBtn) previewBtn.disabled = !hasRows;
     });
@@ -6180,6 +6299,8 @@
     isReassignableCodifiedByValue,
     claimRequiresReassignment,
     claimHasBlockingCodifiedBy,
+    getExistingAssignedCoderDisplay,
+    buildAlreadyAssignedDisplayRows,
     getClaimDateFilterValue,
     matchFacilityValue:
       (value, presetsData) =>
