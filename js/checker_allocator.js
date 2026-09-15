@@ -2725,6 +2725,304 @@
   }
 
 
+  function buildBalanceGroupSummary(
+    filteredClaims,
+    allocationRows,
+    facilityConfigs
+  ) {
+    const claims =
+      (filteredClaims || [])
+        .filter(
+          claim =>
+            Array.isArray(
+              claim?._eligibleCoders
+            ) &&
+            claim._eligibleCoders.length
+        );
+
+    if (!claims.length) {
+      return [];
+    }
+
+    const parent = new Map();
+
+    function ensureCoder(coder) {
+      if (!parent.has(coder)) {
+        parent.set(coder, coder);
+      }
+    }
+
+    function find(coder) {
+      ensureCoder(coder);
+
+      let rootCoder = coder;
+
+      while (
+        parent.get(rootCoder) !==
+        rootCoder
+      ) {
+        rootCoder =
+          parent.get(rootCoder);
+      }
+
+      let current = coder;
+
+      while (
+        parent.get(current) !==
+        current
+      ) {
+        const next =
+          parent.get(current);
+
+        parent.set(
+          current,
+          rootCoder
+        );
+
+        current = next;
+      }
+
+      return rootCoder;
+    }
+
+    function union(first, second) {
+      const firstRoot =
+        find(first);
+
+      const secondRoot =
+        find(second);
+
+      if (
+        firstRoot === secondRoot
+      ) {
+        return;
+      }
+
+      /*
+       * Stable alphabetical root keeps output deterministic.
+       */
+      if (
+        firstRoot.localeCompare(
+          secondRoot
+        ) <= 0
+      ) {
+        parent.set(
+          secondRoot,
+          firstRoot
+        );
+      } else {
+        parent.set(
+          firstRoot,
+          secondRoot
+        );
+      }
+    }
+
+    for (const claim of claims) {
+      const coders =
+        Array.from(
+          new Set(
+            claim._eligibleCoders
+          )
+        )
+          .filter(Boolean)
+          .sort(
+            (a, b) =>
+              a.localeCompare(b)
+          );
+
+      if (!coders.length) {
+        continue;
+      }
+
+      coders.forEach(
+        ensureCoder
+      );
+
+      for (
+        let index = 1;
+        index < coders.length;
+        index++
+      ) {
+        union(
+          coders[0],
+          coders[index]
+        );
+      }
+    }
+
+    /*
+     * A later union can change a previous root, so resolve every coder again
+     * before building the final components.
+     */
+    const componentByRoot =
+      new Map();
+
+    for (const coder of parent.keys()) {
+      const rootCoder =
+        find(coder);
+
+      if (
+        !componentByRoot.has(
+          rootCoder
+        )
+      ) {
+        componentByRoot.set(
+          rootCoder,
+          {
+            coders: new Set(),
+            claims: [],
+            facilities: new Set()
+          }
+        );
+      }
+
+      componentByRoot
+        .get(rootCoder)
+        .coders
+        .add(coder);
+    }
+
+    for (const claim of claims) {
+      const firstCoder =
+        claim._eligibleCoders[0];
+
+      if (!firstCoder) {
+        continue;
+      }
+
+      const rootCoder =
+        find(firstCoder);
+
+      const component =
+        componentByRoot.get(
+          rootCoder
+        );
+
+      if (!component) {
+        continue;
+      }
+
+      component.claims.push(
+        claim
+      );
+
+      component.facilities.add(
+        getFriendlyFacilityName(
+          getFacilityOutputName(
+            claim,
+            facilityConfigs
+          )
+        )
+      );
+    }
+
+    const assignedByCoder =
+      new Map();
+
+    for (
+      const row of
+      allocationRows || []
+    ) {
+      if (
+        !row?.Coder ||
+        row.Coder ===
+          UNASSIGNED_CODER
+      ) {
+        continue;
+      }
+
+      assignedByCoder.set(
+        row.Coder,
+        (
+          assignedByCoder.get(
+            row.Coder
+          ) || 0
+        ) + 1
+      );
+    }
+
+    return Array.from(
+      componentByRoot.values()
+    )
+      .filter(
+        component =>
+          component.claims.length &&
+          component.coders.size
+      )
+      .map(component => {
+        const coders =
+          Array.from(
+            component.coders
+          )
+            .sort(
+              (a, b) =>
+                a.localeCompare(b)
+            );
+
+        const facilities =
+          Array.from(
+            component.facilities
+          )
+            .sort(
+              (a, b) =>
+                a.localeCompare(b)
+            );
+
+        const actualLoads =
+          coders.map(
+            coder =>
+              assignedByCoder.get(
+                coder
+              ) || 0
+          );
+
+        const minimum =
+          actualLoads.length
+            ? Math.min(
+                ...actualLoads
+              )
+            : 0;
+
+        const maximum =
+          actualLoads.length
+            ? Math.max(
+                ...actualLoads
+              )
+            : 0;
+
+        const target =
+          component.claims.length /
+          coders.length;
+
+        return {
+          'Balance Group':
+            facilities.length
+              ? facilities.join(' / ')
+              : 'Unknown Facility',
+          Claims:
+            component.claims.length,
+          Coders:
+            coders.length,
+          'Target per Coder':
+            target.toFixed(2),
+          'Actual Range':
+            minimum === maximum
+              ? String(minimum)
+              : `${minimum}–${maximum}`
+        };
+      })
+      .sort(
+        (a, b) =>
+          b.Claims - a.Claims ||
+          a['Balance Group']
+            .localeCompare(
+              b['Balance Group']
+            )
+      );
+  }
+
+
   function buildSummarySheetData({
     importStats,
     filteredClaims,
@@ -2749,6 +3047,13 @@
     const departmentStatus =
       buildDepartmentStatusSummary(
         filteredClaims
+      );
+
+    const balanceGroupRows =
+      buildBalanceGroupSummary(
+        filteredClaims,
+        allocationRows,
+        facilityConfigs
       );
 
     const facilityFiltered = new Map();
@@ -2900,6 +3205,16 @@
 
       departmentRows:
         departmentStatus.rows,
+
+      balanceGroupHeaders: [
+        'Balance Group',
+        'Claims',
+        'Coders',
+        'Target per Coder',
+        'Actual Range'
+      ],
+
+      balanceGroupRows,
 
       topCards: [
         ['Eligible Claims', filteredClaims.length],
@@ -4325,19 +4640,49 @@
         departmentEndRow
       ) + 2;
 
+    const matrixEndRow =
+      placeSummarySection(
+        aoa,
+        sections,
+        merges,
+        {
+          title:
+            'Coder Claims per Facility',
+          headers:
+            summaryData.matrixHeaders,
+          rows:
+            summaryData.matrixRows,
+          startRow:
+            matrixStartRow,
+          startColumn:
+            0
+        }
+      );
+
+    const balanceGroupStartRow =
+      matrixEndRow + 2;
+
     placeSummarySection(
       aoa,
       sections,
       merges,
       {
         title:
-          'Coder Claims per Facility',
+          'Balance / Constraint Groups',
         headers:
-          summaryData.matrixHeaders,
+          summaryData.balanceGroupHeaders ||
+          [
+            'Balance Group',
+            'Claims',
+            'Coders',
+            'Target per Coder',
+            'Actual Range'
+          ],
         rows:
-          summaryData.matrixRows,
+          summaryData.balanceGroupRows ||
+          [],
         startRow:
-          matrixStartRow,
+          balanceGroupStartRow,
         startColumn:
           0
       }
@@ -4352,6 +4697,11 @@
           summaryData
             .departmentHeaders
             .length,
+        (
+          summaryData
+            .balanceGroupHeaders ||
+          []
+        ).length,
         7
       );
 
@@ -4419,6 +4769,52 @@
       sections
     );
 
+    const balanceSection =
+      sections.find(
+        section =>
+          section.title ===
+          'Balance / Constraint Groups'
+      );
+
+    if (balanceSection) {
+      for (
+        let rowOffset = 0;
+        rowOffset <
+        balanceSection.rowCount;
+        rowOffset++
+      ) {
+        const row =
+          balanceSection.dataStartRow +
+          rowOffset;
+
+        const ref =
+          root.XLSX.utils.encode_cell({
+            r: row,
+            c:
+              balanceSection.startColumn
+          });
+
+        if (ws[ref]) {
+          const baseStyle =
+            rowOffset % 2
+              ? EXCEL_STYLES.altBody
+              : EXCEL_STYLES.body;
+
+          ws[ref].s = {
+            ...baseStyle,
+            alignment: {
+              ...(
+                baseStyle.alignment ||
+                {}
+              ),
+              vertical: 'top',
+              wrapText: true
+            }
+          };
+        }
+      }
+    }
+
     forceSummaryNumericCells(
       ws,
       sections,
@@ -4472,7 +4868,7 @@
               maxLength,
               24
             ),
-            32
+            42
           );
       }
 
@@ -6469,6 +6865,7 @@
     buildPreferenceMap,
     buildPresetIndex,
     buildDepartmentStatusSummary,
+    buildBalanceGroupSummary,
     formatFacilityExclusionBreakdown,
     buildSummarySheetData,
     getFriendlyFacilityName,
