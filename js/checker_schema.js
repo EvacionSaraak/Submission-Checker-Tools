@@ -23,6 +23,74 @@
             { clinicianLicense: 'GD11027', codes: ['99203', '99213'] }
         ];
         const GP_992_REQUIRED_CODES = new Set(['99202', '99212']);
+        const THERAPY_SPECIALTY_RULES = new Map([
+            ['92507', {
+                label: 'Speech Therapist',
+                specialties: ['Speech Therapist']
+            }],
+            ['92523', {
+                label: 'Speech Therapist',
+                specialties: ['Speech Therapist']
+            }],
+            ['92526', {
+                label: 'Speech Therapist',
+                specialties: ['Speech Therapist']
+            }],
+            ['97032', {
+                label: 'Physiotherapist',
+                specialties: ['Physiotherapist']
+            }],
+            ['97110', {
+                label: 'Physiotherapist',
+                specialties: ['Physiotherapist']
+            }],
+            ['97116', {
+                label: 'Physiotherapist',
+                specialties: ['Physiotherapist']
+            }],
+            ['97127', {
+                label: 'Occupational Therapist',
+                specialties: ['Occupational Therapist']
+            }],
+            ['97129', {
+                label: 'Occupational Therapist',
+                specialties: ['Occupational Therapist']
+            }],
+            ['97140', {
+                label: 'Physiotherapist',
+                specialties: ['Physiotherapist']
+            }],
+            ['97161', {
+                label: 'Physiotherapist',
+                specialties: ['Physiotherapist']
+            }],
+            ['97166', {
+                label: 'Occupational Therapist',
+                specialties: ['Occupational Therapist']
+            }],
+            ['97168', {
+                label: 'Occupational Therapist',
+                specialties: ['Occupational Therapist']
+            }],
+            ['97530', {
+                label: 'Physiotherapist or Occupational Therapist',
+                specialties: [
+                    'Physiotherapist',
+                    'Occupational Therapist'
+                ]
+            }],
+            ['97533', {
+                label: 'Occupational Therapist',
+                specialties: ['Occupational Therapist']
+            }],
+            ['97535', {
+                label: 'Physiotherapist or Occupational Therapist',
+                specialties: [
+                    'Physiotherapist',
+                    'Occupational Therapist'
+                ]
+            }]
+        ]);
         const MUTUALLY_EXCLUSIVE_INFUSION_CODES = new Set(['96360', '96365', '96374']);
         const INVALID_ACTIVITY_CODES = new Set(['36591']);
         const FIXED_QUANTITY_TWO_CODES = new Set(['87400', '87804']);
@@ -389,6 +457,24 @@
 
         function specialtyContains(specialty, searchText) {
             return normalizeSpecialty(specialty).includes(normalizeSpecialty(searchText));
+        }
+
+        function specialtyMatchesAny(specialty, allowedSpecialties) {
+            return Array.from(allowedSpecialties || []).some(
+                allowedSpecialty => specialtyContains(specialty, allowedSpecialty)
+            );
+        }
+
+        function validateTherapyCodeSpecialty(code, clinicianSpecialty, invalidFields) {
+            const rule = THERAPY_SPECIALTY_RULES.get(String(code || '').trim());
+            if (!rule) return;
+
+            if (!specialtyMatchesAny(clinicianSpecialty, rule.specialties)) {
+                invalidFields.push(
+                    `Activity ${code} requires Performing Clinician specialty as ${rule.label} ` +
+                    `(Currently \`${clinicianSpecialty || 'Unknown'}\`).`
+                );
+            }
         }
 
         function validateDiagnosisCodeValue(value, invalidFields) {
@@ -1066,6 +1152,7 @@
                 if (MUTUALLY_EXCLUSIVE_INFUSION_CODES.has(code)) infusionCodes.add(code);
                 if (GP_992_CODES.has(code)) consultationCodes.add(code);
                 if (INVALID_ACTIVITY_CODES.has(code)) invalidFields.push(`Activity ${code} is invalid and cannot be used.`);
+                validateTherapyCodeSpecialty(code, clinicianSpecialty, invalidFields);
                 if (/^8/.test(code) && code !== '82948' && !specialtyContains(clinicianSpecialty, 'Pathology')) {
                     invalidFields.push(`Activity ${code} requires Clinician specialty containing Pathology (Currently \`${clinicianSpecialty || 'Unknown'}\`).`);
                 }
