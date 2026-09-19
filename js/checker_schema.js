@@ -97,6 +97,8 @@
         const DAMAN_RECEIVER_IDS = new Set(['D004', 'A001']);
         const DAMAN_BASIC_RECEIVER_ID = 'D004';
         const THIQA_RECEIVER_ID = 'D001';
+        const POSSIBLE_MINOR_BIRTH_YEAR_MIN = 2008;
+        const ADULT_BMI_Z68_39_NORMALIZED = 'Z6839';
         const VITAMIN_D_82306_PRICED_RECEIVER_IDS = new Set(['D001', 'A001']);
         const CHECKPOINT_EXPECTED_CLAIM_PAYER_IDS = Object.freeze({
             D001: new Set(['E001']),
@@ -427,6 +429,124 @@
 
         function normalizeDiagnosisCode(value) {
             return String(value == null ? '' : value).trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+        }
+
+        function getPossibleBirthYearFromEmiratesID(value) {
+            const emiratesID = String(value || '').trim();
+
+            // This is only a tentative age signal. A UAE Emirates ID normally
+            // carries a four-digit year in the second segment, but the checker
+            // must not treat that as an exact date of birth.
+            if (!/^784-\d{4}-\d{7}-\d$/.test(emiratesID)) return null;
+
+            const digits = emiratesID.replace(/-/g, '');
+            if (
+                /^0+$/.test(digits) ||
+                /^1+$/.test(digits) ||
+                /^2+$/.test(digits) ||
+                /^9+$/.test(digits)
+            ) {
+                return null;
+            }
+
+            const year = Number.parseInt(emiratesID.split('-')[1], 10);
+            const currentYear = new Date().getFullYear();
+
+            if (!Number.isInteger(year) || year < 1900 || year > currentYear) {
+                return null;
+            }
+
+            return year;
+        }
+
+        function getPossibleAgeRangeFromBirthYear(birthYear, encounter = null) {
+            if (!Number.isInteger(birthYear)) return '';
+
+            const encounterDate =
+                parseEncounterDateTime(safeTextByTag(encounter, 'Start')) ||
+                parseEncounterDateTime(safeTextByTag(encounter, 'End'));
+
+            let referenceYear = new Date().getFullYear();
+
+            if (encounterDate?.dateKey) {
+                const parsedYear = Number.parseInt(
+                    String(encounterDate.dateKey).slice(0, 4),
+                    10
+                );
+
+                if (Number.isInteger(parsedYear)) {
+                    referenceYear = parsedYear;
+                }
+            }
+
+            const maximumAge = referenceYear - birthYear;
+            const minimumAge = maximumAge - 1;
+
+            if (maximumAge < 0) return '';
+
+            return minimumAge === maximumAge
+                ? String(maximumAge)
+                : `${Math.max(0, minimumAge)}-${maximumAge}`;
+        }
+
+        function checkPotentialAgeDiagnosisRules(
+            diagnoses,
+            getText,
+            emiratesID,
+            encounter,
+            remarks,
+            pregnancyData
+        ) {
+            const birthYear = getPossibleBirthYearFromEmiratesID(emiratesID);
+
+            if (
+                birthYear == null ||
+                birthYear < POSSIBLE_MINOR_BIRTH_YEAR_MIN
+            ) {
+                return false;
+            }
+
+            const diagnosisCodes = Array.from(diagnoses || [])
+                .map(diagnosis =>
+                    normalizeDiagnosisCode(getText('Code', diagnosis))
+                )
+                .filter(Boolean);
+
+            const possibleAge =
+                getPossibleAgeRangeFromBirthYear(birthYear, encounter);
+
+            const ageText = possibleAge
+                ? `age ${possibleAge}`
+                : `birth year ${birthYear}`;
+
+            let hasUnknownFinding = false;
+
+            const pregnancyCodes = Array.from(
+                new Set(
+                    diagnosisCodes.filter(code =>
+                        pregnancyData?.zCodes?.has(code) ||
+                        pregnancyData?.oCodes?.has(code)
+                    )
+                )
+            );
+
+            if (pregnancyCodes.length) {
+                remarks.push(
+                    `Patient may be too young for Diagnosis ${formatNaturalList(pregnancyCodes)}; ` +
+                    `Emirates ID suggests ${ageText}.`
+                );
+                hasUnknownFinding = true;
+            }
+
+            if (diagnosisCodes.includes(ADULT_BMI_Z68_39_NORMALIZED)) {
+                remarks.push(
+                    `Z68.39 may conflict with the patient's possible ${ageText}; ` +
+                    `verify whether Z68.54 should be used.`
+                );
+                hasUnknownFinding = true;
+            }
+
+            return hasUnknownFinding;
         }
 
         function normalizeSpecialty(value) {
@@ -1370,6 +1490,20 @@
                     if (!principalCode) invalidFields.push('Principal Diagnosis (none found)');
                 }
                 checkPregnancyDiagnosisTrimesterConsistency(diagnoses, text, invalidFields, pregnancyData);
+
+                if (
+                    checkPotentialAgeDiagnosisRules(
+                        diagnoses,
+                        text,
+                        emiratesID,
+                        encounter,
+                        remarks,
+                        pregnancyData
+                    )
+                ) {
+                    isUnknown = true;
+                }
+
                 const activities = claim.getElementsByTagName('Activity');
                 const invalidQuantityCodes = [];
                 const excessiveDecimalQuantityCodes = new Set();
@@ -1639,7 +1773,9 @@
         window.NOT_MERGED_RECEIVER_IDS = Array.from(NOT_MERGED_RECEIVER_IDS);
         window._schemaNotMergedUtils = { CLAIM_NOT_MERGED, parseEncounterDateTime, buildNotMergedRemarksFromContexts };
         window._schemaTestApi = { validateXmlSchema, validateClaimSchema, validatePersonSchema, renderResults, validateMedicalOrderingConsistency, validateConsultationAndSpecialtyRules,
-            applyTariffOccurrenceLimits, loadPregnancyDiagnosisData, checkPregnancyDiagnosisTrimesterConsistency, normalizeDiagnosisCode, validateDiagnosisCodeValue
+            applyTariffOccurrenceLimits, loadPregnancyDiagnosisData, checkPregnancyDiagnosisTrimesterConsistency,
+            getPossibleBirthYearFromEmiratesID, getPossibleAgeRangeFromBirthYear, checkPotentialAgeDiagnosisRules,
+            normalizeDiagnosisCode, validateDiagnosisCodeValue
         };
         console.log('[SCHEMA] checker_schema.js loaded successfully.');
     } catch (error) {
