@@ -56,6 +56,9 @@ const CHECKPOINT_PHYSIOTHERAPY_CODES = new Set([
 const CHECKPOINT_DIETICIAN_CODES = new Set(['97802', '97803']);
 const CHECKPOINT_THIQA_RECEIVER_ID = 'D001';
 const CHECKPOINT_NEXTCARE_RECEIVER_ID = 'C002';
+const NAS_RECEIVER_ID = 'C001';
+const NEURON_RECEIVER_ID = 'C005';
+const NAS_NEURON_AUTH_RECEIVER_IDS = new Set([NAS_RECEIVER_ID, NEURON_RECEIVER_ID]);
 const ADNIC_ENHANCED_PAYER_ID = 'A002';
 const ADNIC_CLAIM_AUTH_THRESHOLD_AED = 500;
 // === END CHECKPOINT AUTH ADDITIONS 2026-08-14 ===
@@ -549,6 +552,9 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId, claimType = ''
   const adnicClaimWideAuthRequired =
     options.adnicClaimWideAuthRequired === true &&
     isPositivePriced;
+  const nasNeuronActivityAuthRequired =
+    NAS_NEURON_AUTH_RECEIVER_IDS.has(normalizedReceiverID) &&
+    isPositivePriced;
 
   if (is76815EligibilityOnly) {
     const eligibilityRemarks = [];
@@ -594,8 +600,10 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId, claimType = ''
 
   // ADNIC Enhanced (A002): when the claim-level Net is above AED 500,
   // every positively priced activity requires authorization regardless of code.
+  // NAS (C001) and Neuron (C005): every positively priced activity requires
+  // authorization regardless of code.
   // The explicit Net-0 exemption above still applies.
-  if (adnicClaimWideAuthRequired && !authID) {
+  if ((adnicClaimWideAuthRequired || nasNeuronActivityAuthRequired) && !authID) {
     return {
       claimId,
       memberId,
@@ -637,7 +645,7 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId, claimType = ''
   // For medical claims, explicit CT/MRI/therapy/76816 codes plus all 97-series
   // codes require authorization. The source checkpoint's 97 exception set is
   // intentionally editable above and currently empty.
-  const needsAuth = adnicClaimWideAuthRequired
+  const needsAuth = (adnicClaimWideAuthRequired || nasNeuronActivityAuthRequired)
     ? true
     : (isAuthPresenceClassifiedCode
       ? Boolean(authID)
