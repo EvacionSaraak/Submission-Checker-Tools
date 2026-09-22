@@ -961,9 +961,12 @@ function getDrugUnitPackageQuantity(drug) {
 function getDrugPricingProfile(drug, receiverID) {
   const receiver = String(receiverID || '').trim().toUpperCase();
   const isDaman = DAMAN_RECEIVER_IDS.has(receiver);
+  const usesPublicPrice = receiver === 'A001';
 
-  const packageColumn = isDaman ? 'Package Price to Public' : 'Package Markup';
-  const unitColumn = isDaman ? 'Unit Price to Public' : 'Unit Markup';
+  // Daman Basic (D004) follows the same drug price columns as Thiqa (D001).
+  // Only Daman Enhanced (A001) uses the public-price columns.
+  const packageColumn = usesPublicPrice ? 'Package Price to Public' : 'Package Markup';
+  const unitColumn = usesPublicPrice ? 'Unit Price to Public' : 'Unit Markup';
   const packagePrice = parseOptionalMoney(drug && drug[packageColumn]);
   const unitPrice = parseOptionalMoney(drug && drug[unitColumn]);
 
@@ -995,8 +998,9 @@ function resolveDrugUnitPackageQuantity(drug, sharedFallback = null, receiverID 
 
   // If Unit QTY is absent, infer the package fraction represented by one
   // physical unit from the price columns used by this payer:
-  //   Daman (A001/D004): Unit Price to Public / Package Price to Public
-  //   Thiqa (D001):     Unit Markup / Package Markup
+  //   Daman Enhanced (A001): Unit Price to Public / Package Price to Public
+  //   Daman Basic (D004):    Unit Markup / Package Markup
+  //   Thiqa (D001):          Unit Markup / Package Markup
   const profile = getDrugPricingProfile(drug, receiverID);
 
   if (
@@ -2870,8 +2874,9 @@ function roundFactor(value) {
 function getComparisonPreFactorUnit(row) {
   if (row && row._drugPricingMeta) {
     // Drug rows display the actual package source used for the payer:
-    // Daman (A001/D004) => Package Price to Public
-    // Thiqa (D001)      => Package Markup
+    // Daman Enhanced (A001) => Package Price to Public
+    // Daman Basic (D004)    => Package Markup
+    // Thiqa (D001)          => Package Markup
     const packagePrice = Number(
       row._drugPricingMeta?.breakdown?.packagePrice
     );
