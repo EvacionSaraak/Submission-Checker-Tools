@@ -1,23 +1,4 @@
-(function() {
-  try {
-    const repoJsonUrl = '../json/checker_tooths.json';
-    // Tooth region maps and sets
-    const SEXTANT_MAP = {
-  // Permanent Dentition
-  'Upper Right Sextant': new Set(['1', '2', '3', '4', '5']),
-  'Upper Anterior Sextant': new Set(['6', '7', '8', '9', '10', '11']),
-  'Upper Left Sextant': new Set(['12', '13', '14', '15', '16']),
-  'Lower Left Sextant': new Set(['17', '18', '19', '20', '21']),
-  'Lower Anterior Sextant': new Set(['22', '23', '24', '25', '26', '27']),
-  'Lower Right Sextant': new Set(['28', '29', '30', '31', '32']),
-  // Primary Dentition
-  'Upper Right Sextant (Primary)': new Set(['A', 'B', 'C']),
-  'Upper Anterior Sextant (Primary)': new Set(['D', 'E', 'F', 'G']),
-  'Upper Left Sextant (Primary)': new Set(['H', 'I', 'J']),
-  'Lower Left Sextant (Primary)': new Set(['K', 'L', 'M']),
-  'Lower Anterior Sextant (Primary)': new Set(['N', 'O', 'P', 'Q']),
-  'Lower Right Sextant (Primary)': new Set(['R', 'S', 'T'])
-};
+
 const QUADRANT_MAP = {
   'Upper Right': new Set(['1','2','3','4','5','6','7','8','9','10','11','A','B','C','D','E']),
   'Upper Left': new Set(['12','13','14','15','16','17','18','19','20','21','22','F','G','H','I','J']),
@@ -288,7 +269,7 @@ function validateObservationValueTypes(obsList) {
     const valueType = (obs.querySelector('ValueType')?.textContent || '').trim();
     if (!VALUETYPE_EXEMPT_OBS_TYPES.has(obsType.toLowerCase()) && !valueType) {
       const obsCode = (obs.querySelector('Code')?.textContent || '').trim() || `#${idx + 1}`;
-      remarks.push(`Observation ValueType may not be empty for observation "${obsCode}" (Type: "${obsType || '(missing)'}")`);
+      remarks.push(`Observation ValueType may not be empty for observation "${obsCode}" (Type: "${obsType || '(missing)'})"`);
     }
   });
   return remarks;
@@ -397,11 +378,19 @@ function buildCodeMeta(data) {
 }
 function parseObservationCodes(obsList) {
   return Array.from(obsList).filter(obs => {
-    // Skip "Flags" type observations (e.g. MedicalTourismUnplanned) — they are
-    // informational flags, not tooth/region indicators, and should not be validated
-    // as tooth numbers.
+    // Skip informational observations that are not tooth/region indicators.
     const obsType = (obs.querySelector('Type')?.textContent || '').trim().toLowerCase();
-    return obsType !== 'flags';
+    const obsCode = (obs.querySelector('Code')?.textContent || '').trim().toLowerCase();
+    const valueType = (obs.querySelector('ValueType')?.textContent || '').trim().toLowerCase();
+
+    // Flags (e.g. MedicalTourismUnplanned) are not tooth/region observations.
+    if (obsType === 'flags') return false;
+
+    // CPT side indicators for 7(R1/R2) / 8(L1/L2) series codes are valid
+    // informational observations and must not be validated as tooth numbers.
+    if (obsCode === 'indicator' && valueType === 'cpt indicator') return false;
+
+    return true;
   }).map(obs => {
     const obsCodeRaw = obs.querySelector('Code')?.textContent.trim() || '';
     if (obsCodeRaw === 'Drug Patient Share') return 'Drug Patient Share';
