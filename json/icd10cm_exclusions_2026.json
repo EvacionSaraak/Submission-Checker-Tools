@@ -3,7 +3,7 @@
     "system": "ICD-10-CM",
     "release": "FY2027",
     "rule_type": "Excludes1",
-    "effective_date": "2026-10-01",
+    "effective_date": "2026-09-01",
     "end_date": "2027-09-30",
     "coverage": "full_machine_resolvable_rules",
     "source": "CDC/NCHS FY2027 ICD-10-CM Tabular List",
