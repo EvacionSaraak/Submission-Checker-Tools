@@ -698,7 +698,7 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId, claimType = ''
   }
 
   if (matchedRow.AuthorizationID && (matchedRow.Status || matchedRow.status || "").toLowerCase().includes("rejected")) {
-    remarks.push("Has authID but status is rejected");
+    remarks.push(`Authorization (${authID}) has rejected status.`);
   }
 
   let unknown = false;
@@ -735,11 +735,7 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId, claimType = ''
       unknown = true;
     }
 
-    if (
-      isMedicalClaim &&
-      normalizedReceiverID === CHECKPOINT_NEXTCARE_RECEIVER_ID &&
-      CHECKPOINT_PHYSIOTHERAPY_CODES.has(normalizedCode)
-    ) {
+    if (isMedicalClaim && normalizedReceiverID === CHECKPOINT_NEXTCARE_RECEIVER_ID && CHECKPOINT_PHYSIOTHERAPY_CODES.has(normalizedCode)) {
       const attachment = inspectAttachmentField(matchedRow);
       if (!attachment.known) {
         unknown = true;
