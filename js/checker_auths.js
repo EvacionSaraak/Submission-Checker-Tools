@@ -460,7 +460,7 @@ function validateXLSXMatch(row, { memberId, code, netTotal, ordering, authID }) 
   let xmlClinician = ordering || "";
   let xlsClinician = (row["Ordering Clinician"] || "");
   if (normalizeMemberId(row["Card Number / DHA Member ID"]) !== normalizeMemberId(memberId))
-    remarks.push(`MemberID mismatch: XLSX=${row["Card Number / DHA Member ID"]}`);
+    remarks.push(`Authorization (${authID || (row.AuthorizationID || "").trim() || "UNKNOWN"}) does not belong to this Member (${row["Card Number / DHA Member ID"]}).`);
   if (normalizeProcedureCode(row["Item Code"]) !== normalizeProcedureCode(code))
     remarks.push(`Item Code mismatch: XLSX=${row["Item Code"]}`);
   const xOrdering = xlsClinician.trim().toUpperCase();
