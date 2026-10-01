@@ -281,14 +281,14 @@ function isSpecialMedicalCode(code) {
 const VALUETYPE_EXEMPT_OBS_TYPES = new Set(['universal dental', 'episode', 'flags']);
 // Returns remarks for any observation where ValueType is blank but the observation type requires it.
 // "Universal Dental" and "Episode" observations carry a tooth number and don't need a ValueType.
-function validateObservationValueTypes(obsList) {
+function validateObservationValueTypes(obsList, activityCode) {
   const remarks = [];
   Array.from(obsList).forEach((obs, idx) => {
     const obsType = (obs.querySelector('Type')?.textContent || '').trim();
     const valueType = (obs.querySelector('ValueType')?.textContent || '').trim();
     if (!VALUETYPE_EXEMPT_OBS_TYPES.has(obsType.toLowerCase()) && !valueType) {
       const obsCode = (obs.querySelector('Code')?.textContent || '').trim() || `#${idx + 1}`;
-      remarks.push(`Observation ValueType may not be empty for observation "${obsCode}" (Type: "${obsType || '(missing)'})"`);
+      remarks.push(`Observation ValueType for ${activityCode} may not be empty for observation "${obsCode}" (Type: "${obsType || '(missing)'}").`);
     }
   });
   return remarks;
@@ -782,7 +782,7 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
         row.remarks.push(`Code ${code} requires at least one tooth-number observation.`);
       }
       // Validate observation ValueTypes: non-dental/episode observations must have a ValueType
-      const valueTypeRemarks = validateObservationValueTypes(obsList);
+      const valueTypeRemarks = validateObservationValueTypes(obsList, code);
       if (valueTypeRemarks.length > 0) {
         row.remarks.push(...valueTypeRemarks);
       }
