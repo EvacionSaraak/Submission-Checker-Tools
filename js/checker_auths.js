@@ -284,7 +284,6 @@ function isRemarkFreePartiallyApproved(row) {
 
 function codeRequiresAuthorization(code, rule = {}) {
   const normalizedCode = String(code || '').trim();
-  const isConsultationNoAuth = isMedicalClaim && CONSULTATION_CODES_NO_AUTH.has(normalizedCode);
   const checkpoint97Required = normalizedCode.startsWith('97') && !CHECKPOINT_97_AUTH_EXCEPTIONS.has(normalizedCode);
   return MEDICAL_CODES_REQUIRING_AUTH.has(normalizedCode) ||
     checkpoint97Required ||
@@ -539,6 +538,8 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId, claimType = ''
 
   const isMedicalClaim = String(claimType || '').trim() === '3';
   const normalizedCode = String(code || '').trim();
+  const isConsultationNoAuth =
+    isMedicalClaim && CONSULTATION_CODES_NO_AUTH.has(normalizedCode);
   const normalizedReceiverID = String(options.receiverID || '').trim().toUpperCase();
   const rule     = authRules[code] || {};
   const isAuthPresenceClassifiedCode = AUTH_PRESENCE_CLASSIFIED_CODES.has(normalizedCode);
