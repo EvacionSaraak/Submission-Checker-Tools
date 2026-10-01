@@ -65,6 +65,15 @@ const ADNIC_CLAIM_AUTH_THRESHOLD_AED = 500;
 
 const AUTH_PRESENCE_CLASSIFIED_CODES = new Set(['86301', '73521']);
 
+// Consultation / office E&M codes do not require authorization for medical claims,
+// regardless of insurance or claim-wide authorization rules.
+const CONSULTATION_CODES_NO_AUTH = new Set([
+  '99202', '99203', '99204', '99205',
+  '99211', '99212', '99213', '99214', '99215',
+  '99241', '99242', '99243', '99244', '99245',
+  '99251', '99252', '99253', '99254', '99255'
+]);
+
 function normalizeProcedureCode(value) {
   return String(value || '').trim().replace(/^0+/, '');
 }
@@ -275,6 +284,7 @@ function isRemarkFreePartiallyApproved(row) {
 
 function codeRequiresAuthorization(code, rule = {}) {
   const normalizedCode = String(code || '').trim();
+  const isConsultationNoAuth = isMedicalClaim && CONSULTATION_CODES_NO_AUTH.has(normalizedCode);
   const checkpoint97Required = normalizedCode.startsWith('97') && !CHECKPOINT_97_AUTH_EXCEPTIONS.has(normalizedCode);
   return MEDICAL_CODES_REQUIRING_AUTH.has(normalizedCode) ||
     checkpoint97Required ||
@@ -578,6 +588,29 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId, claimType = ''
   // Keep 76815's Eligibility-only rule above intact because that is not an
   // authorization requirement.
   if (isExplicitZeroPriced) {
+    return {
+      claimId,
+      memberId,
+      id,
+      code,
+      description: rule.description || "",
+      netTotal,
+      qty,
+      ordering,
+      authID,
+      start,
+      xlsRow: {},
+      xlsAllAuthRows: [],
+      denialCode: "",
+      denialReason: "",
+      remarks: [],
+      unknown: false
+    };
+  }
+
+  // Consultation / office E&M services do not require authorization for medical claims,
+  // regardless of payer, receiver, or claim-wide authorization rules.
+  if (isConsultationNoAuth) {
     return {
       claimId,
       memberId,
