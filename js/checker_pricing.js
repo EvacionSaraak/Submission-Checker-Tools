@@ -256,7 +256,18 @@ const D004_CONSULTATION_PATIENT_SHARE_CAPS = Object.freeze({
   '99203': 10,
   '99213': 10
 });
-const D004_LAB_RAD_PATIENT_SHARE_CAP = 50;
+
+// Consultation Patient Share is allocated before Laboratory/Radiology Patient
+// Share so consultation is excluded from the cumulative Lab/Radiology cap.
+const DAMAN_CONSULTATION_CODES = new Set([
+  '99202', '99203', '99204', '99205',
+  '99211', '99212', '99213', '99214', '99215',
+  '99241', '99242', '99243', '99244', '99245',
+  '99251', '99252', '99253', '99254', '99255'
+]);
+
+const DAMAN_LAB_RAD_PATIENT_SHARE_CAP = 50;
+const DAMAN_LAB_RAD_COPAY_PERCENT_CAP = 20;
 
 function getInferredPatientShareForPricingRow(row) {
   const claimedNet = getPricingRowNet(row);
@@ -351,9 +362,9 @@ function addPricingFindingToRow(row, finding, options = {}) {
   }
 }
 
-function applyD004PatientShareCapValidation(actRows, options = {}) {
+function applyDamanPatientShareCapValidation(actRows, options = {}) {
   const receiverID = String(options.receiverID || '').trim().toUpperCase();
-  if (receiverID !== 'D004' || options.isMedicalMode !== true) return null;
+  if (!DAMAN_RECEIVER_IDS.has(receiverID) || options.isMedicalMode !== true) return null;
 
   const rows = Array.isArray(actRows) ? actRows : [];
   const actualClaimPatientShareRaw = Number(
@@ -370,7 +381,9 @@ function applyD004PatientShareCapValidation(actRows, options = {}) {
     const code = getPricingRowCode(row);
     const inference = getInferredPatientShareForPricingRow(row);
 
-    if (Object.prototype.hasOwnProperty.call(D004_CONSULTATION_PATIENT_SHARE_CAPS, code)) {
+    // Consultation is excluded from the cumulative Laboratory/Radiology cap.
+    // D004 keeps its existing consultation caps; A001 does not inherit them.
+    if (DAMAN_CONSULTATION_CODES.has(code)) {
       consultationDetails.push({
         rowIndex,
         activityID: String(row.ActivityID || ''),
@@ -379,7 +392,9 @@ function applyD004PatientShareCapValidation(actRows, options = {}) {
         expectedNet: inference.expectedNet,
         rawPatientShare: inference.rawPatientShare,
         patientShare: 0,
-        maximum: D004_CONSULTATION_PATIENT_SHARE_CAPS[code],
+        maximum: receiverID === 'D004'
+          ? (D004_CONSULTATION_PATIENT_SHARE_CAPS[code] ?? null)
+          : null,
         negativeNet: inference.negativeNet,
         zeroPriced: inference.zeroPriced,
         evaluable: inference.evaluable,
@@ -392,6 +407,24 @@ function applyD004PatientShareCapValidation(actRows, options = {}) {
       /^[78]/.test(code)
       && !isDrugActivityType(getPricingRowActivityType(row))
     ) {
+      const expectedNet = Number(inference.expectedNet);
+      const rawPatientShare = Number(inference.rawPatientShare);
+      const copayAmountMaximum =
+        Number.isFinite(expectedNet) && expectedNet > 0
+          ? roundMoney(expectedNet * (DAMAN_LAB_RAD_COPAY_PERCENT_CAP / 100))
+          : null;
+      const impliedCopayPercent =
+        Number.isFinite(expectedNet) &&
+        expectedNet > 0 &&
+        Number.isFinite(rawPatientShare)
+          ? roundMoney((rawPatientShare / expectedNet) * 100)
+          : null;
+      const withinCopayPercent =
+        Number.isFinite(copayAmountMaximum) &&
+        Number.isFinite(rawPatientShare)
+          ? compareMoney(rawPatientShare, copayAmountMaximum) <= 0
+          : null;
+
       labRadiologyDetails.push({
         rowIndex,
         activityID: String(row.ActivityID || ''),
@@ -400,7 +433,11 @@ function applyD004PatientShareCapValidation(actRows, options = {}) {
         expectedNet: inference.expectedNet,
         rawPatientShare: inference.rawPatientShare,
         patientShare: 0,
-        maximum: D004_LAB_RAD_PATIENT_SHARE_CAP,
+        maximum: DAMAN_LAB_RAD_PATIENT_SHARE_CAP,
+        copayPercentMaximum: DAMAN_LAB_RAD_COPAY_PERCENT_CAP,
+        copayAmountMaximum,
+        impliedCopayPercent,
+        withinCopayPercent,
         negativeNet: inference.negativeNet,
         zeroPriced: inference.zeroPriced,
         evaluable: inference.evaluable,
@@ -409,10 +446,8 @@ function applyD004PatientShareCapValidation(actRows, options = {}) {
     }
   });
 
-  // Patient Share exists only at claim level in the XML. Allocate no more than
-  // that actual claim amount. Consultation differences are assigned first,
-  // then any remaining supported amount is assigned to 7/8-series activities.
-  // This prevents a Net 0 line from inventing a tariff-sized Patient Share.
+  // Patient Share exists only at claim level in the XML. Allocate consultation
+  // first so it is excluded from the AED 50 Laboratory/Radiology cumulative cap.
   let remainingPatientShare = actualClaimPatientShare;
 
   const allocateSupportedShare = detail => {
@@ -436,13 +471,15 @@ function applyD004PatientShareCapValidation(actRows, options = {}) {
   labRadiologyDetails.forEach(allocateSupportedShare);
 
   consultationDetails.forEach(detail => {
-    detail.withinCap = detail.evaluable && !detail.negativeNet
-      ? compareMoney(detail.patientShare, detail.maximum) <= 0
-      : null;
+    const hasConfiguredCap = Number.isFinite(Number(detail.maximum));
+    detail.withinCap =
+      hasConfiguredCap && detail.evaluable && !detail.negativeNet
+        ? compareMoney(detail.patientShare, detail.maximum) <= 0
+        : null;
 
     const row = rows[detail.rowIndex];
     if (row) {
-      row._d004PatientShareLine = {
+      row._damanPatientShareLine = {
         type: 'consultation',
         ...detail
       };
@@ -469,9 +506,10 @@ function applyD004PatientShareCapValidation(actRows, options = {}) {
       0
     )
   ) || 0;
+
   const labRadiologyWithinCap = compareMoney(
     labRadiologyPatientShare,
-    D004_LAB_RAD_PATIENT_SHARE_CAP
+    DAMAN_LAB_RAD_PATIENT_SHARE_CAP
   ) <= 0;
 
   labRadiologyDetails.forEach(detail => {
@@ -482,41 +520,59 @@ function applyD004PatientShareCapValidation(actRows, options = {}) {
 
     const row = rows[detail.rowIndex];
     if (row) {
-      row._d004PatientShareLine = {
+      row._damanPatientShareLine = {
         type: 'lab-radiology',
         ...detail
       };
+    }
+
+    // Validate the line's own tariff/reference shortfall against the 20% cap.
+    if (detail.withinCopayPercent === false && row) {
+      const currentPercent = Number.isFinite(detail.impliedCopayPercent)
+        ? formatMoney(detail.impliedCopayPercent)
+        : 'unknown';
+      addPricingFindingToRow(row, {
+        ruleId: 'MED_DAMAN_LAB_RAD_COPAY_PERCENT_CAP',
+        status: 'Invalid',
+        remark:
+          `Copay for ${detail.code} exceeds the ${DAMAN_LAB_RAD_COPAY_PERCENT_CAP}% maximum ` +
+          `(currently ${currentPercent}%).`
+      }, options);
     }
   });
 
   if (!labRadiologyWithinCap && labRadiologyDetails.length) {
     const firstLabRow = rows[labRadiologyDetails[0].rowIndex] || rows[0];
     addPricingFindingToRow(firstLabRow, {
-      ruleId: 'MED_D004_LAB_RAD_PT_SHARE_CAP',
+      ruleId: 'MED_DAMAN_LAB_RAD_PT_SHARE_CAP',
       status: 'Invalid',
       remark:
         'Cumulative Patient Share for laboratory/radiology codes ' +
-        `exceeds the maximum of ${formatMoney(D004_LAB_RAD_PATIENT_SHARE_CAP)}.`
+        `exceeds the maximum of ${formatMoney(DAMAN_LAB_RAD_PATIENT_SHARE_CAP)}.`
     }, options);
   }
 
   const details = {
-    receiverID: 'D004',
+    receiverID,
     actualClaimPatientShare,
     allocatedPatientShare: roundMoney(
       actualClaimPatientShare - remainingPatientShare
     ) || 0,
     unallocatedPatientShare: remainingPatientShare,
-    consultationMaximums: { ...D004_CONSULTATION_PATIENT_SHARE_CAPS },
+    consultationMaximums:
+      receiverID === 'D004'
+        ? { ...D004_CONSULTATION_PATIENT_SHARE_CAPS }
+        : {},
     consultations: consultationDetails.map(detail => ({ ...detail })),
     laboratoryRadiology: labRadiologyDetails.map(detail => ({ ...detail })),
     laboratoryRadiologyPatientShare: labRadiologyPatientShare,
-    laboratoryRadiologyMaximum: D004_LAB_RAD_PATIENT_SHARE_CAP,
+    laboratoryRadiologyMaximum: DAMAN_LAB_RAD_PATIENT_SHARE_CAP,
+    laboratoryRadiologyCopayPercentMaximum: DAMAN_LAB_RAD_COPAY_PERCENT_CAP,
     laboratoryRadiologyWithinCap: labRadiologyWithinCap
   };
 
   rows.forEach(row => {
-    row._d004PatientShareCaps = details;
+    row._damanPatientShareCaps = details;
   });
 
   return details;
@@ -2153,9 +2209,11 @@ async function handleRun(options = {}) {
         row._patientShareRequirementSuppressed = suppressUnconfiguredCumulativePatientShareError;
       });
 
-      // D004 applies code-specific Patient Share maximums. This runs before
-      // the general claim-level arithmetic so cap failures remain distinct.
-      applyD004PatientShareCapValidation(actRows, patientShareOptions);
+      // Daman Basic/Enhanced apply Laboratory/Radiology Patient Share rules:
+      // cumulative Lab/Radiology share <= AED 50 (consultation excluded) and
+      // each Lab/Radiology line <= 20% copay. D004 consultation caps remain.
+      // This runs before general claim-level arithmetic so failures stay distinct.
+      applyDamanPatientShareCapValidation(actRows, patientShareOptions);
 
       const hasMedicalHighPtShare =
         isMedicalMode &&
@@ -2915,9 +2973,9 @@ function getComparisonAllocatedPatientShare(row) {
     return Math.max(0, Number(generic.allocatedPatientShare));
   }
 
-  const d004 = row && row._d004PatientShareLine;
-  if (d004 && Number.isFinite(Number(d004.patientShare))) {
-    return Math.max(0, Number(d004.patientShare));
+  const daman = row && row._damanPatientShareLine;
+  if (daman && Number.isFinite(Number(daman.patientShare))) {
+    return Math.max(0, Number(daman.patientShare));
   }
 
   return 0;
@@ -3141,37 +3199,37 @@ function getComparisonPriceResult(row, claimRows) {
     }
   }
 
-  const d004PatientShareLine = row && row._d004PatientShareLine;
+  const damanPatientShareLine = row && row._damanPatientShareLine;
   if (
-    d004PatientShareLine &&
-    d004PatientShareLine.evaluable &&
-    Number.isFinite(d004PatientShareLine.patientShare) &&
-    d004PatientShareLine.patientShare > 0
+    damanPatientShareLine &&
+    damanPatientShareLine.evaluable &&
+    Number.isFinite(damanPatientShareLine.patientShare) &&
+    damanPatientShareLine.patientShare > 0
   ) {
-    if (d004PatientShareLine.withinCap === false) {
-      if (d004PatientShareLine.type === 'lab-radiology') {
+    if (damanPatientShareLine.withinCap === false) {
+      if (damanPatientShareLine.type === 'lab-radiology') {
         return {
           correct: false,
           reason:
-            `Patient Share contribution ${formatMoney(d004PatientShareLine.patientShare)}; ` +
+            `Patient Share contribution ${formatMoney(damanPatientShareLine.patientShare)}; ` +
             `cumulative Laboratory/Radiology Patient Share ` +
-            `${formatMoney(d004PatientShareLine.cumulativePatientShare)} exceeds ` +
-            `${formatMoney(d004PatientShareLine.maximum)}.`
+            `${formatMoney(damanPatientShareLine.cumulativePatientShare)} exceeds ` +
+            `${formatMoney(damanPatientShareLine.maximum)}.`
         };
       }
       return {
         correct: false,
         reason:
-          `Patient Share ${formatMoney(d004PatientShareLine.patientShare)} exceeds ` +
-          `the maximum of ${formatMoney(d004PatientShareLine.maximum)}.`
+          `Patient Share ${formatMoney(damanPatientShareLine.patientShare)} exceeds ` +
+          `the maximum of ${formatMoney(damanPatientShareLine.maximum)}.`
       };
     }
 
     return {
       correct: true,
       reason:
-        `Correct with Patient Share ${formatMoney(d004PatientShareLine.patientShare)} ` +
-        `(maximum ${formatMoney(d004PatientShareLine.maximum)}).`
+        `Correct with Patient Share ${formatMoney(damanPatientShareLine.patientShare)} ` +
+        `(maximum ${formatMoney(damanPatientShareLine.maximum)}).`
     };
   }
 
@@ -3220,8 +3278,8 @@ function showComparisonModal(index) {
   const patientShareDetails = rows
     .map(row => row && row._patientShareComparison)
     .find(details => details && typeof details === 'object') || null;
-  const d004PatientShareCaps = rows
-    .map(row => row && row._d004PatientShareCaps)
+  const damanPatientShareCaps = rows
+    .map(row => row && row._damanPatientShareCaps)
     .find(details => details && typeof details === 'object') || null;
   const referenceRows = rows.filter(row => Number.isFinite(getComparisonExpectedTotal(row)));
   const hasConfiguredReference = !!patientShareDetails || referenceRows.length > 0;
@@ -3277,14 +3335,14 @@ function showComparisonModal(index) {
     ? patientShareDetails.codes.join(', ')
     : '';
 
-  const d004PatientShareCapsHtml = (() => {
-    if (!d004PatientShareCaps) return '';
+  const damanPatientShareCapsHtml = (() => {
+    if (!damanPatientShareCaps) return '';
 
-    const consultationRows = Array.isArray(d004PatientShareCaps.consultations)
-      ? d004PatientShareCaps.consultations
+    const consultationRows = Array.isArray(damanPatientShareCaps.consultations)
+      ? damanPatientShareCaps.consultations
       : [];
-    const labRows = Array.isArray(d004PatientShareCaps.laboratoryRadiology)
-      ? d004PatientShareCaps.laboratoryRadiology
+    const labRows = Array.isArray(damanPatientShareCaps.laboratoryRadiology)
+      ? damanPatientShareCaps.laboratoryRadiology
       : [];
     if (!consultationRows.length && !labRows.length) return '';
 
@@ -3335,7 +3393,7 @@ function showComparisonModal(index) {
           <td>${escapeHtml(Number.isFinite(detail.claimedNet) ? formatMoney(detail.claimedNet) : 'N/A')}</td>
           <td>${escapeHtml(Number.isFinite(detail.expectedNet) ? formatMoney(detail.expectedNet) : 'N/A')}</td>
           <td>${escapeHtml(Number.isFinite(detail.patientShare) ? formatMoney(detail.patientShare) : 'N/A')}</td>
-          <td>Cumulative ${escapeHtml(formatMoney(d004PatientShareCaps.laboratoryRadiologyMaximum))}</td>
+          <td>Cumulative ${escapeHtml(formatMoney(damanPatientShareCaps.laboratoryRadiologyMaximum))}</td>
           <td class="${result.className}">${escapeHtml(result.text)}</td>
         </tr>`;
     }).join('');
@@ -3344,19 +3402,19 @@ function showComparisonModal(index) {
       ? `
         <tr>
           <th colspan="4">Laboratory/Radiology cumulative Patient Share</th>
-          <th>${escapeHtml(formatMoney(d004PatientShareCaps.laboratoryRadiologyPatientShare))}</th>
-          <th>${escapeHtml(formatMoney(d004PatientShareCaps.laboratoryRadiologyMaximum))}</th>
-          <th class="${d004PatientShareCaps.laboratoryRadiologyWithinCap ? 'pricing-compare-good' : 'pricing-compare-bad'}">
-            ${d004PatientShareCaps.laboratoryRadiologyWithinCap ? 'Within maximum' : 'Exceeds maximum'}
+          <th>${escapeHtml(formatMoney(damanPatientShareCaps.laboratoryRadiologyPatientShare))}</th>
+          <th>${escapeHtml(formatMoney(damanPatientShareCaps.laboratoryRadiologyMaximum))}</th>
+          <th class="${damanPatientShareCaps.laboratoryRadiologyWithinCap ? 'pricing-compare-good' : 'pricing-compare-bad'}">
+            ${damanPatientShareCaps.laboratoryRadiologyWithinCap ? 'Within maximum' : 'Exceeds maximum'}
           </th>
         </tr>`
       : '';
 
     return `
-      <h4>D004 Patient Share Maximums</h4>
+      <h4>Daman Patient Share Maximums</h4>
       <div class="pricing-compare-explanation">
         <strong>Actual claim Patient Share:</strong>
-        ${escapeHtml(formatMoney(d004PatientShareCaps.actualClaimPatientShare || 0))}.
+        ${escapeHtml(formatMoney(damanPatientShareCaps.actualClaimPatientShare || 0))}.
         Zero-priced activities do not generate inferred Patient Share.
       </div>
       <table class="pricing-compare-table">
@@ -3530,7 +3588,7 @@ function showComparisonModal(index) {
         <strong>Claim comparison:</strong> ${escapeHtml(claimExplanation)}
         ${patientShareCodeText ? `<small>Patient Share comparison codes: ${escapeHtml(patientShareCodeText)}</small>` : ''}
       </div>
-      ${d004PatientShareCapsHtml}
+      ${damanPatientShareCapsHtml}
       <div class="pricing-factor-controls">
         <label>
           <input type="checkbox" id="pricingIncludePatientShareFactor" checked>
@@ -3804,7 +3862,7 @@ window._pricingTestApi = {
   shouldSuppressUnconfiguredCumulativePatientShareError,
   isPatientShareComparableForPricingRow,
   getInferredPatientShareForPricingRow,
-  applyD004PatientShareCapValidation,
+  applyDamanPatientShareCapValidation,
   shouldDeferA001PricingToClaimLevel,
   getPatientShareReferenceRows,
   getPatientShareCodeLabel,
