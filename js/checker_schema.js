@@ -1153,22 +1153,13 @@
             if (isDamanBasic && activityCodes.has('86703')) invalidFields.push('Activity 86703 is not covered for Daman Basic.');
             if (isDaman && activityCodes.has('82785')) invalidFields.push(`Activity 82785 is not covered for Daman receiver ${receiverID}.`);
 
-            // 82306 (Vitamin D; 25 hydroxy) may be submitted with a priced Net
-            // only for Thiqa (D001) and Daman Enhanced (A001). For other
-            // insurance receivers, the code may still be present but must be
-            // billed at Net 0. HAAD/self-pay is outside this insurance rule.
-            if (
-                receiverID &&
-                receiverID !== 'HAAD' &&
-                !VITAMIN_D_82306_PRICED_RECEIVER_IDS.has(receiverID)
-            ) {
+            // 82306 (Vitamin D; 25 hydroxy) must have Net 0 only for
+            // Daman Basic (D004). Other receivers may submit it priced.
+            if (isDamanBasic) {
                 activityRows
                     .filter(row => row.code === '82306' && Number.isFinite(row.net) && row.net !== 0)
                     .forEach(row => {
-                        invalidFields.push(
-                            `Activity 82306 must have Net 0 for ReceiverID ${receiverID}; ` +
-                            'priced 82306 is only allowed for Thiqa (D001) and Daman Enhanced (A001).'
-                        );
+                        invalidFields.push('Activity 82306 must have Net 0 for Daman Basic (D004).');
                     });
             }
 
