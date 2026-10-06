@@ -3,6 +3,8 @@
     // === GLOBAL STATE ===
     let authRules = {};
     let authRulesPromise = null;
+    let insuranceApprovalLimits = null;
+    let insuranceApprovalLimitsPromise = null;
     let xmlClaimCount = 0;
     let xlsxAuthCount = 0;
 
@@ -58,9 +60,6 @@ const CHECKPOINT_THIQA_RECEIVER_ID = 'D001';
 const CHECKPOINT_NEXTCARE_RECEIVER_ID = 'C002';
 const NAS_RECEIVER_ID = 'C001';
 const NEURON_RECEIVER_ID = 'C005';
-const NAS_NEURON_AUTH_RECEIVER_IDS = new Set([NAS_RECEIVER_ID, NEURON_RECEIVER_ID]);
-const ADNIC_ENHANCED_PAYER_ID = 'A002';
-const ADNIC_CLAIM_AUTH_THRESHOLD_AED = 500;
 // === END CHECKPOINT AUTH ADDITIONS 2026-08-14 ===
 
 const AUTH_PRESENCE_CLASSIFIED_CODES = new Set(['86301', '73521']);
@@ -343,6 +342,29 @@ function loadAuthRules(url = "../json/checker_auths.json") {
   return authRulesPromise;
 }
 
+function loadInsuranceApprovalLimits(url = "../json/insurance_approval_limits.json") {
+  if (!insuranceApprovalLimitsPromise) {
+    insuranceApprovalLimitsPromise = fetch(url)
+      .then(res => {
+        if (!res.ok) throw new Error(`Failed to load ${url}`);
+        return res.json();
+      })
+      .then(data => {
+        insuranceApprovalLimits =
+          data && Array.isArray(data.insurers)
+            ? data
+            : null;
+        return insuranceApprovalLimits;
+      })
+      .catch(error => {
+        console.warn('[AUTHS] Insurance approval-limit rules could not be loaded:', error);
+        insuranceApprovalLimits = null;
+        return null;
+      });
+  }
+  return insuranceApprovalLimitsPromise;
+}
+
 function parseXMLFile(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -523,6 +545,230 @@ function logInvalidRow(xlsRow, context, remarks) {
   }
 }
 
+
+function normalizeApprovalLookupValue(value) {
+  return String(value == null ? '' : value).trim().toUpperCase();
+}
+
+function formatApprovalAmount(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return String(value == null ? '' : value);
+  return number.toLocaleString('en-US', {
+    minimumFractionDigits: Number.isInteger(number) ? 0 : 2,
+    maximumFractionDigits: 2
+  });
+}
+
+function getApprovalScope(rule, insurer) {
+  const ruleIncludes = Array.isArray(rule?.includes) ? rule.includes : [];
+  const ruleExcludes = Array.isArray(rule?.excludes) ? rule.excludes : [];
+  const insurerIncludes = Array.isArray(insurer?.includes) ? insurer.includes : [];
+  const insurerExcludes = Array.isArray(insurer?.excludes) ? insurer.excludes : [];
+
+  const includes = [...ruleIncludes, ...insurerIncludes]
+    .map(value => String(value || '').trim().toLowerCase());
+  const excludes = [...ruleExcludes, ...insurerExcludes]
+    .map(value => String(value || '').trim().toLowerCase());
+
+  if (excludes.includes('consultation')) {
+    return {
+      includesConsultation: false,
+      excludesConsultation: true,
+      label: ' (excludes consultation)'
+    };
+  }
+
+  if (includes.includes('consultation')) {
+    return {
+      includesConsultation: true,
+      excludesConsultation: false,
+      label: ' (includes consultation)'
+    };
+  }
+
+  return {
+    includesConsultation: false,
+    excludesConsultation: false,
+    label: ''
+  };
+}
+
+function findInsuranceApprovalConfig(receiverID) {
+  if (!insuranceApprovalLimits || !Array.isArray(insuranceApprovalLimits.insurers)) return null;
+  const normalizedReceiverID = normalizeApprovalLookupValue(receiverID);
+  if (!normalizedReceiverID) return null;
+
+  return insuranceApprovalLimits.insurers.find(insurer =>
+    normalizeApprovalLookupValue(insurer?.receiver_id) === normalizedReceiverID
+  ) || null;
+}
+
+function findPayerApprovalRule(insurer, payerID) {
+  const normalizedPayerID = normalizeApprovalLookupValue(payerID);
+  if (!normalizedPayerID || !Array.isArray(insurer?.payer_rules)) return null;
+
+  return insurer.payer_rules.find(rule => {
+    const payerIDs = rule?.payer_ids && typeof rule.payer_ids === 'object'
+      ? Object.values(rule.payer_ids)
+      : [];
+    return payerIDs.some(value =>
+      normalizeApprovalLookupValue(value) === normalizedPayerID
+    );
+  }) || null;
+}
+
+function isApprovalConsultationActivity(activityEl) {
+  const code = String(getText(activityEl, 'Code') || '').trim();
+  return CONSULTATION_CODES_NO_AUTH.has(code);
+}
+
+function getApplicableApprovalActivities(claimEl, scope) {
+  const activities = Array.from(claimEl.getElementsByTagName('Activity'));
+
+  if (scope?.excludesConsultation) {
+    return activities.filter(activity => !isApprovalConsultationActivity(activity));
+  }
+
+  return activities;
+}
+
+function getApplicableApprovalNet(claimEl, scope) {
+  if (!scope?.excludesConsultation) {
+    const claimNetRaw = getDirectText(claimEl, 'Net').trim();
+    const claimNet = Number(claimNetRaw);
+    if (claimNetRaw !== '' && Number.isFinite(claimNet)) return claimNet;
+  }
+
+  return getApplicableApprovalActivities(claimEl, scope).reduce((sum, activity) => {
+    const raw = getText(activity, 'Net') || getText(activity, 'NetTotal');
+    const value = Number(raw);
+    return sum + (Number.isFinite(value) ? value : 0);
+  }, 0);
+}
+
+function hasApplicableApprovalAuthorization(claimEl, scope) {
+  return getApplicableApprovalActivities(claimEl, scope).some(activity => {
+    const authEl =
+      activity.querySelector('PriorAuthorizationID') ||
+      activity.querySelector('PriorAuthorization');
+    return !!String(authEl?.textContent || '').trim();
+  });
+}
+
+function getInsuranceDisplayName(insurer) {
+  const raw = String(insurer?.insurance_company || '').trim();
+  if (raw.toUpperCase() === 'NEURON') return 'Neuron';
+  if (raw.toLowerCase() === 'adnic') return 'ADNIC';
+  return raw || 'Insurance';
+}
+
+function evaluateInsuranceApprovalLimit(claimEl, receiverID, payerID) {
+  const insurer = findInsuranceApprovalConfig(receiverID);
+  if (!insurer) return null;
+
+  const insurerName = getInsuranceDisplayName(insurer);
+  const matchingBasis = String(insurer.matching_basis || '').trim().toLowerCase();
+
+  // Network-based limits cannot currently be resolved from the XML/HCPRequests
+  // because the member's GN/RN/SR/etc. network is not available to this checker.
+  if (matchingBasis === 'network') {
+    return {
+      unknown: true,
+      exceeded: false,
+      hasApplicableAuthorization: false,
+      remark: `${insurerName} approval limit is unknown. Manual review is required.`
+    };
+  }
+
+  if (matchingBasis !== 'payer_id') return null;
+
+  const payerRule = findPayerApprovalRule(insurer, payerID);
+
+  // Some payer rules (for example EMARAT) require category/service information
+  // that is not available here, so they remain manual-review items.
+  if (payerRule && Array.isArray(payerRule.conditional_limits) && payerRule.conditional_limits.length) {
+    const payerName = String(payerRule.payer_name || insurerName).trim();
+    return {
+      unknown: true,
+      exceeded: false,
+      hasApplicableAuthorization: false,
+      remark: `${payerName} approval limit is unknown. Manual review is required.`
+    };
+  }
+
+  let rule = payerRule;
+  let limit = Number(rule?.limit_aed);
+  let label = rule
+    ? `${String(rule.payer_name || insurerName).trim()} (${normalizeApprovalLookupValue(payerID)})`
+    : insurerName;
+
+  if (!rule || rule.approval_basis !== 'amount_threshold' || !Number.isFinite(limit) || limit <= 0) {
+    limit = Number(insurer.default_limit_aed);
+    if (
+      insurer.default_approval_basis !== 'amount_threshold' ||
+      !Number.isFinite(limit) ||
+      limit <= 0
+    ) {
+      return {
+        unknown: true,
+        exceeded: false,
+        hasApplicableAuthorization: false,
+        remark: `${insurerName} approval limit is unknown. Manual review is required.`
+      };
+    }
+    rule = insurer;
+    label = insurerName;
+  }
+
+  const operator = String(rule.operator || insurer.default_operator || '>=').trim();
+  if (operator !== '>=') {
+    return {
+      unknown: true,
+      exceeded: false,
+      hasApplicableAuthorization: false,
+      remark: `${insurerName} approval limit is unknown. Manual review is required.`
+    };
+  }
+
+  const scope = getApprovalScope(rule, insurer);
+  const currentNet = getApplicableApprovalNet(claimEl, scope);
+  const exceeded = Number.isFinite(currentNet) && currentNet >= limit;
+  const hasApplicableAuthorization = hasApplicableApprovalAuthorization(claimEl, scope);
+
+  return {
+    unknown: false,
+    exceeded,
+    hasApplicableAuthorization,
+    currentNet,
+    limit,
+    label,
+    scope,
+    remark: exceeded
+      ? `Limit of ${formatApprovalAmount(limit)}${scope.label} for ${label} was exceeded (currently ${formatApprovalAmount(currentNet)}).`
+      : ''
+  };
+}
+
+function addClaimLevelApprovalLimitRemark(claimRows, evaluation) {
+  if (!evaluation || !Array.isArray(claimRows) || claimRows.length === 0) return;
+
+  const target =
+    claimRows.find(row => !row.remarks || row.remarks.length === 0) ||
+    claimRows[0];
+
+  if (evaluation.unknown) {
+    target.remarks = Array.isArray(target.remarks) ? target.remarks : [];
+    target.remarks.push(evaluation.remark);
+    target.unknown = true;
+    return;
+  }
+
+  if (evaluation.exceeded && !evaluation.hasApplicableAuthorization) {
+    target.remarks = Array.isArray(target.remarks) ? target.remarks : [];
+    target.remarks.push(evaluation.remark);
+  }
+}
+
 function validateActivity(activityEl, xlsxMap, claimId, memberId, claimType = '', options = {}) {
   const id       = getText(activityEl, "ID");
   const code     = getText(activityEl, "Code");
@@ -560,12 +806,6 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId, claimType = ''
   const netValue = Number(netRaw);
   const isExplicitZeroPriced = netRaw !== '' && Number.isFinite(netValue) && netValue === 0;
   const isPositivePriced = netRaw !== '' && Number.isFinite(netValue) && netValue > 0;
-  const adnicClaimWideAuthRequired =
-    options.adnicClaimWideAuthRequired === true &&
-    isPositivePriced;
-  const nasNeuronActivityAuthRequired =
-    NAS_NEURON_AUTH_RECEIVER_IDS.has(normalizedReceiverID) &&
-    isPositivePriced;
 
   if (is76815EligibilityOnly) {
     const eligibilityRemarks = [];
@@ -632,32 +872,6 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId, claimType = ''
     };
   }
 
-  // ADNIC Enhanced (A002): when the claim-level Net is above AED 500,
-  // every positively priced activity requires authorization regardless of code.
-  // NAS (C001) and Neuron (C005): every positively priced activity requires
-  // authorization regardless of code.
-  // The explicit Net-0 exemption above still applies.
-  if ((adnicClaimWideAuthRequired || nasNeuronActivityAuthRequired) && !authID) {
-    return {
-      claimId,
-      memberId,
-      id,
-      code,
-      description: rule.description || "",
-      netTotal,
-      qty,
-      ordering,
-      authID,
-      start,
-      xlsRow: {},
-      xlsAllAuthRows: [],
-      denialCode: "",
-      denialReason: "",
-      remarks: [`Authorization required for ${code}.`],
-      unknown: false
-    };
-  }
-
   if (isMaternityEligibilityOrApproval && !authID) {
     const maternityRemarks = [];
     let maternityUnknown = false;
@@ -679,13 +893,11 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId, claimType = ''
   // For medical claims, explicit CT/MRI/therapy/76816 codes plus all 97-series
   // codes require authorization. The source checkpoint's 97 exception set is
   // intentionally editable above and currently empty.
-  const needsAuth = (adnicClaimWideAuthRequired || nasNeuronActivityAuthRequired)
-    ? true
-    : (isAuthPresenceClassifiedCode
-      ? Boolean(authID)
-      : (isMedicalClaim
-        ? (MEDICAL_CODES_REQUIRING_AUTH.has(normalizedCode) || is97AuthorizationCode || isMaternity768)
-        : codeRequiresAuthorization(code, rule)));
+  const needsAuth = isAuthPresenceClassifiedCode
+    ? Boolean(authID)
+    : (isMedicalClaim
+      ? (MEDICAL_CODES_REQUIRING_AUTH.has(normalizedCode) || is97AuthorizationCode || isMaternity768)
+      : codeRequiresAuthorization(code, rule));
 
   if (!needsAuth && !authID) {
     return {
@@ -875,11 +1087,8 @@ function validateClaims(xmlDoc, xlsxData, receiverID = '', options = {}) {
     const payerID = getDirectText(claimEl, "PayerID").trim().toUpperCase();
     const claimNetRaw = getDirectText(claimEl, "Net").trim();
     const claimNet = Number(claimNetRaw);
-    const adnicClaimWideAuthRequired =
-      payerID === ADNIC_ENHANCED_PAYER_ID &&
-      claimNetRaw !== '' &&
-      Number.isFinite(claimNet) &&
-      claimNet > ADNIC_CLAIM_AUTH_THRESHOLD_AED;
+    const approvalLimitEvaluation =
+      evaluateInsuranceApprovalLimit(claimEl, receiverID, payerID);
     const acts = Array.from(claimEl.getElementsByTagName("Activity"));
     const encounter = claimEl.getElementsByTagName("Encounter")[0];
     const claimType = getText(encounter || claimEl, "Type");
@@ -893,17 +1102,20 @@ function validateClaims(xmlDoc, xlsxData, receiverID = '', options = {}) {
       .filter(Boolean);
     const uniqueOrderingClinicians = new Set(orderingClinicians);
 
+    const claimResultStart = results.length;
+
     acts.forEach(a => results.push(validateActivity(a, xlsxMap, cid, mid, claimType, {
       receiverID,
       payerID,
       claimNet,
-      adnicClaimWideAuthRequired,
       isMaternity,
       eligibilityIndex: options.eligibilityIndex || null
     })));
 
+    const claimRows = results.slice(claimResultStart);
+    addClaimLevelApprovalLimitRemark(claimRows, approvalLimitEvaluation);
+
     if (isMedicalClaim && uniqueOrderingClinicians.size > 1) {
-      const claimRows = results.filter(r => r.claimId === cid);
       if (claimRows.length > 0) {
         claimRows[0].remarks.push(`Claim ${cid} has multiple Ordering Clinicians: ${Array.from(uniqueOrderingClinicians).join(', ')}.`);
       }
@@ -1434,8 +1646,11 @@ async function runAuthsCheck() {
   try {
     if (statusDiv) statusDiv.textContent = 'Processing...';
     
-    // Load authorization rules
-    await loadAuthRules();
+    // Load authorization rules and insurance approval-limit configuration.
+    await Promise.all([
+      loadAuthRules(),
+      loadInsuranceApprovalLimits()
+    ]);
     
     // Parse XML file (returns { doc, receiverID })
     const xmlResult = await parseXMLFile(xmlFile);
@@ -1486,7 +1701,10 @@ async function runAuthsCheck() {
 // Finally, modify your handleRun() to call postProcessResults after renderResults:
 async function handleRun() {
   try {
-    await loadAuthRules();
+    await Promise.all([
+      loadAuthRules(),
+      loadInsuranceApprovalLimits()
+    ]);
     const results = validateClaims(parsedXmlDoc, parsedXlsxData, parsedReceiverID);
     renderResults(results);
     postProcessResults(results);
