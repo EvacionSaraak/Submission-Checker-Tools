@@ -1,0 +1,661 @@
+{
+  "metadata": {
+    "source": "Insurance_approval_limits(1).csv",
+    "based_on": "insurance_approval_limits_v4.json",
+    "excluded": [
+      "Referrals column",
+      "Daman/Thiqa"
+    ],
+    "notes": [
+      "This JSON reflects the user's edits in Insurance_approval_limits(1).csv.",
+      "Rows removed from the edited CSV are not included.",
+      "Multiline text is flattened to spaces.",
+      "Neuron remains payer-ID based; its structured payer IDs and EMARAT conditional limits are preserved from the prior JSON where the corresponding payer row remains."
+    ],
+    "threshold_semantics": {
+      "approval_required": ">=",
+      "approval_not_required": "<"
+    },
+    "receiver_id_note": "receiver_id is stored at insurer level for direct matching. Confirmed mappings include Nextcare C002, Neuron C005, NAS C001, ADNIC A002, Healthnet/NGI A025, Mednet C004, and Globmed C018."
+  },
+  "insurers": [
+    {
+      "insurance_company": "Nextcare",
+      "receiver_id": "C002",
+      "matching_basis": "network",
+      "includes": [
+        "consultation"
+      ],
+      "excludes": [],
+      "general_note": "All Approval limit are including consultation",
+      "networks": [
+        {
+          "network": "GN+",
+          "limit_aed": 1000,
+          "approval_rule": null,
+          "includes": [
+            "consultation"
+          ],
+          "excludes": [],
+          "approval_basis": "amount_threshold",
+          "operator": ">="
+        },
+        {
+          "network": "Comprehensive",
+          "limit_aed": 1000,
+          "approval_rule": null,
+          "includes": [
+            "consultation"
+          ],
+          "excludes": [],
+          "approval_basis": "amount_threshold",
+          "operator": ">="
+        },
+        {
+          "network": "Standard",
+          "limit_aed": 1000,
+          "approval_rule": null,
+          "includes": [
+            "consultation"
+          ],
+          "excludes": [],
+          "approval_basis": "amount_threshold",
+          "operator": ">="
+        },
+        {
+          "network": "GN",
+          "limit_aed": 1000,
+          "approval_rule": null,
+          "includes": [
+            "consultation"
+          ],
+          "excludes": [],
+          "approval_basis": "amount_threshold",
+          "operator": ">="
+        },
+        {
+          "network": "RN",
+          "limit_aed": 500,
+          "approval_rule": null,
+          "includes": [
+            "consultation"
+          ],
+          "excludes": [],
+          "approval_basis": "amount_threshold",
+          "operator": ">="
+        },
+        {
+          "network": "RN2",
+          "limit_aed": 500,
+          "approval_rule": null,
+          "includes": [
+            "consultation"
+          ],
+          "excludes": [],
+          "approval_basis": "amount_threshold",
+          "operator": ">="
+        },
+        {
+          "network": "RN3",
+          "limit_aed": 500,
+          "approval_rule": null,
+          "includes": [
+            "consultation"
+          ],
+          "excludes": [],
+          "approval_basis": "amount_threshold",
+          "operator": ">="
+        },
+        {
+          "network": "PCP",
+          "limit_aed": 100,
+          "approval_rule": null,
+          "includes": [
+            "consultation"
+          ],
+          "excludes": [],
+          "approval_basis": "amount_threshold",
+          "operator": ">="
+        }
+      ]
+    },
+    {
+      "insurance_company": "NEURON",
+      "receiver_id": "C005",
+      "matching_basis": "payer_id",
+      "includes": [],
+      "excludes": [
+        "consultation"
+      ],
+      "default_limit_aed": 1000,
+      "general_note": "All approval limits exclude consultation. The default Neuron approval limit is AED 1000. The payer-specific rules below override that default where applicable.",
+      "payer_rules": [
+        {
+          "payer_name": "CIGNA",
+          "payer_ids": {
+            "abu_dhabi": "A017",
+            "dubai": "INS137",
+            "northern_emirates_riayati": "INS137"
+          },
+          "limit_aed": 2000,
+          "approval_rule": null,
+          "includes": [],
+          "excludes": [
+            "consultation"
+          ],
+          "approval_basis": "amount_threshold",
+          "operator": ">="
+        },
+        {
+          "payer_name": "Al Ain Ahlia Insurance Co. (PSC)",
+          "payer_ids": {
+            "abu_dhabi": "A010",
+            "dubai": "INS028",
+            "northern_emirates_riayati": "INS028"
+          },
+          "limit_aed": 2000,
+          "approval_rule": null,
+          "includes": [],
+          "excludes": [
+            "consultation"
+          ],
+          "approval_basis": "amount_threshold",
+          "operator": ">="
+        },
+        {
+          "payer_name": "Rak Insurance",
+          "payer_ids": {
+            "abu_dhabi": "A009",
+            "dubai": "INS014",
+            "northern_emirates_riayati": "INS014"
+          },
+          "limit_aed": 2000,
+          "approval_rule": null,
+          "includes": [],
+          "excludes": [
+            "consultation"
+          ],
+          "approval_basis": "amount_threshold",
+          "operator": ">="
+        },
+        {
+          "payer_name": "EMARAT",
+          "payer_ids": {
+            "abu_dhabi": "@EMARAT",
+            "dubai": "SF0050",
+            "northern_emirates_riayati": "SP111"
+          },
+          "limit_aed": null,
+          "approval_rule": "Limit depends on EMARAT category and service type.",
+          "includes": [],
+          "excludes": [
+            "consultation"
+          ],
+          "conditional_limits": [
+            {
+              "category": "A",
+              "service_type": "medical",
+              "limit_aed": 3000,
+              "includes": [],
+              "excludes": [
+                "consultation"
+              ],
+              "approval_basis": "amount_threshold",
+              "operator": ">="
+            },
+            {
+              "category": [
+                "B",
+                "C"
+              ],
+              "service_type": "medical",
+              "limit_aed": 2000,
+              "includes": [],
+              "excludes": [
+                "consultation"
+              ],
+              "approval_basis": "amount_threshold",
+              "operator": ">="
+            },
+            {
+              "category": "A",
+              "service_type": "dental",
+              "limit_aed": 3000,
+              "includes": [],
+              "excludes": [
+                "consultation"
+              ],
+              "approval_basis": "amount_threshold",
+              "operator": ">="
+            },
+            {
+              "category": [
+                "B",
+                "C"
+              ],
+              "service_type": "dental",
+              "covered": false,
+              "includes": [],
+              "excludes": [
+                "consultation"
+              ]
+            }
+          ],
+          "approval_basis": "custom_rule"
+        }
+      ],
+      "default_approval_basis": "amount_threshold",
+      "default_operator": ">="
+    },
+    {
+      "insurance_company": "NAS",
+      "receiver_id": "C001",
+      "matching_basis": "network",
+      "includes": [
+        "consultation"
+      ],
+      "excludes": [],
+      "general_note": "All Approval limit are including consultation",
+      "networks": [
+        {
+          "network": "EN (Executive Network)",
+          "limit_aed": 1500,
+          "approval_rule": null,
+          "includes": [
+            "consultation"
+          ],
+          "excludes": [],
+          "approval_basis": "amount_threshold",
+          "operator": ">="
+        },
+        {
+          "network": "CN (Comprehensive)",
+          "limit_aed": 1500,
+          "approval_rule": null,
+          "includes": [
+            "consultation"
+          ],
+          "excludes": [],
+          "approval_basis": "amount_threshold",
+          "operator": ">="
+        },
+        {
+          "network": "GN+",
+          "limit_aed": 1500,
+          "approval_rule": null,
+          "includes": [
+            "consultation"
+          ],
+          "excludes": [],
+          "approval_basis": "amount_threshold",
+          "operator": ">="
+        },
+        {
+          "network": "GN",
+          "limit_aed": 1500,
+          "approval_rule": null,
+          "includes": [
+            "consultation"
+          ],
+          "excludes": [],
+          "approval_basis": "amount_threshold",
+          "operator": ">="
+        },
+        {
+          "network": "RN (if eligible in portal)",
+          "limit_aed": 700,
+          "approval_rule": null,
+          "includes": [
+            "consultation"
+          ],
+          "excludes": [],
+          "approval_basis": "amount_threshold",
+          "operator": ">="
+        },
+        {
+          "network": "SR (if eligible in portal)",
+          "limit_aed": 700,
+          "approval_rule": null,
+          "includes": [
+            "consultation"
+          ],
+          "excludes": [],
+          "approval_basis": "amount_threshold",
+          "operator": ">="
+        },
+        {
+          "network": "WN (Workers Network)",
+          "limit_aed": 700,
+          "approval_rule": null,
+          "includes": [
+            "consultation"
+          ],
+          "excludes": [],
+          "approval_basis": "amount_threshold",
+          "operator": ">="
+        },
+        {
+          "network": "VN (Value Network)",
+          "limit_aed": 100,
+          "approval_rule": null,
+          "includes": [
+            "consultation"
+          ],
+          "excludes": [],
+          "approval_basis": "amount_threshold",
+          "operator": ">="
+        }
+      ]
+    },
+    {
+      "insurance_company": "Adnic",
+      "receiver_id": "A002",
+      "matching_basis": "network",
+      "includes": [],
+      "excludes": [],
+      "general_note": null,
+      "networks": [
+        {
+          "network": "Platinum",
+          "limit_aed": null,
+          "approval_rule": "Kindly refer to the service approval list. Dental above 500.",
+          "includes": [],
+          "excludes": [],
+          "approval_basis": "service_list"
+        },
+        {
+          "network": "Gold",
+          "limit_aed": null,
+          "approval_rule": "Kindly refer to the service approval list. Dental above 500.",
+          "includes": [],
+          "excludes": [],
+          "approval_basis": "service_list"
+        },
+        {
+          "network": "Silver",
+          "limit_aed": null,
+          "approval_rule": "Kindly refer to the service approval list. Dental above 500.",
+          "includes": [],
+          "excludes": [],
+          "approval_basis": "service_list"
+        },
+        {
+          "network": "Bronze",
+          "limit_aed": null,
+          "approval_rule": "Kindly refer to the service approval list. Dental above 500.",
+          "includes": [],
+          "excludes": [],
+          "approval_basis": "service_list"
+        },
+        {
+          "network": "Blue",
+          "limit_aed": null,
+          "approval_rule": "Kindly refer to the service approval list. Dental above 500.",
+          "includes": [],
+          "excludes": [],
+          "approval_basis": "service_list"
+        }
+      ]
+    },
+    {
+      "insurance_company": "Healthnet/ NGI",
+      "receiver_id": "A025",
+      "matching_basis": "network",
+      "includes": [
+        "consultation"
+      ],
+      "excludes": [
+        "GP consultation"
+      ],
+      "general_note": "All Approval limit are including consultation",
+      "networks": [
+        {
+          "network": "Premier",
+          "limit_aed": 500,
+          "approval_rule": null,
+          "includes": [
+            "consultation"
+          ],
+          "excludes": [],
+          "approval_basis": "amount_threshold",
+          "operator": ">="
+        },
+        {
+          "network": "Exclusive",
+          "limit_aed": 500,
+          "approval_rule": null,
+          "includes": [
+            "consultation"
+          ],
+          "excludes": [],
+          "approval_basis": "amount_threshold",
+          "operator": ">="
+        },
+        {
+          "network": "Standard Plus",
+          "limit_aed": 200,
+          "approval_rule": null,
+          "includes": [
+            "consultation"
+          ],
+          "excludes": [],
+          "approval_basis": "amount_threshold",
+          "operator": ">="
+        },
+        {
+          "network": "Basic Plus",
+          "limit_aed": null,
+          "approval_rule": "All service need approval except GP consultation",
+          "includes": [
+            "consultation"
+          ],
+          "excludes": [
+            "GP consultation"
+          ],
+          "approval_basis": "all_services"
+        },
+        {
+          "network": "Basic",
+          "limit_aed": null,
+          "approval_rule": "All service need approval except GP consultation",
+          "includes": [
+            "consultation"
+          ],
+          "excludes": [],
+          "approval_basis": "all_services"
+        }
+      ]
+    },
+    {
+      "insurance_company": "Mednet",
+      "receiver_id": "C004",
+      "matching_basis": "network",
+      "includes": [
+        "consultation"
+      ],
+      "excludes": [],
+      "general_note": "All Approval limit are including consultation",
+      "networks": [
+        {
+          "network": "Gold",
+          "limit_aed": null,
+          "approval_rule": "Kindly refer to the service approval list.",
+          "includes": [],
+          "excludes": [],
+          "approval_basis": "service_list"
+        },
+        {
+          "network": "Silver Premium",
+          "limit_aed": null,
+          "approval_rule": "Kindly refer to the service approval list.",
+          "includes": [],
+          "excludes": [],
+          "approval_basis": "service_list"
+        },
+        {
+          "network": "Silver Classic",
+          "limit_aed": null,
+          "approval_rule": "Kindly refer to the service approval list.",
+          "includes": [],
+          "excludes": [],
+          "approval_basis": "service_list"
+        },
+        {
+          "network": "City",
+          "limit_aed": null,
+          "approval_rule": "Kindly refer to the service approval list.",
+          "includes": [],
+          "excludes": [],
+          "approval_basis": "service_list"
+        },
+        {
+          "network": "Green",
+          "limit_aed": null,
+          "approval_rule": "Kindly refer to the service approval list.",
+          "includes": [],
+          "excludes": [],
+          "approval_basis": "service_list"
+        },
+        {
+          "network": "Basic",
+          "limit_aed": 150,
+          "approval_rule": null,
+          "includes": [
+            "consultation"
+          ],
+          "excludes": [],
+          "approval_basis": "amount_threshold",
+          "operator": ">="
+        },
+        {
+          "network": "Silk Road",
+          "limit_aed": 150,
+          "approval_rule": null,
+          "includes": [
+            "consultation"
+          ],
+          "excludes": [],
+          "approval_basis": "amount_threshold",
+          "operator": ">="
+        },
+        {
+          "network": "EBP",
+          "limit_aed": 150,
+          "approval_rule": null,
+          "includes": [
+            "consultation"
+          ],
+          "excludes": [],
+          "approval_basis": "amount_threshold",
+          "operator": ">="
+        },
+        {
+          "network": "Oasis care",
+          "limit_aed": 150,
+          "approval_rule": null,
+          "includes": [
+            "consultation"
+          ],
+          "excludes": [],
+          "approval_basis": "amount_threshold",
+          "operator": ">="
+        },
+        {
+          "network": "Restricted Oasis",
+          "limit_aed": 150,
+          "approval_rule": null,
+          "includes": [
+            "consultation"
+          ],
+          "excludes": [],
+          "approval_basis": "amount_threshold",
+          "operator": ">="
+        },
+        {
+          "network": "Watania Basic",
+          "limit_aed": 150,
+          "approval_rule": null,
+          "includes": [
+            "consultation"
+          ],
+          "excludes": [],
+          "approval_basis": "amount_threshold",
+          "operator": ">="
+        }
+      ]
+    },
+    {
+      "insurance_company": "Globmed",
+      "receiver_id": "C018",
+      "matching_basis": "network",
+      "includes": [],
+      "excludes": [],
+      "general_note": null,
+      "networks": [
+        {
+          "network": "Platinum/Comprehensive",
+          "limit_aed": 2500,
+          "approval_rule": null,
+          "includes": [],
+          "excludes": [],
+          "approval_basis": "amount_threshold",
+          "operator": ">="
+        },
+        {
+          "network": "Diamond/General",
+          "limit_aed": 1500,
+          "approval_rule": null,
+          "includes": [],
+          "excludes": [],
+          "approval_basis": "amount_threshold",
+          "operator": ">="
+        },
+        {
+          "network": "Gold/Restricted",
+          "limit_aed": 750,
+          "approval_rule": null,
+          "includes": [],
+          "excludes": [],
+          "approval_basis": "amount_threshold",
+          "operator": ">="
+        },
+        {
+          "network": "Silver/Ultra-Restricted",
+          "limit_aed": 500,
+          "approval_rule": null,
+          "includes": [],
+          "excludes": [],
+          "approval_basis": "amount_threshold",
+          "operator": ">="
+        },
+        {
+          "network": "Bronze/Workers",
+          "limit_aed": 300,
+          "approval_rule": null,
+          "includes": [],
+          "excludes": [],
+          "approval_basis": "amount_threshold",
+          "operator": ">="
+        },
+        {
+          "network": "Easy Care Plus",
+          "limit_aed": 300,
+          "approval_rule": null,
+          "includes": [],
+          "excludes": [],
+          "approval_basis": "amount_threshold",
+          "operator": ">="
+        },
+        {
+          "network": "Easy Care (IP Only)",
+          "limit_aed": 300,
+          "approval_rule": null,
+          "includes": [],
+          "excludes": [],
+          "approval_basis": "amount_threshold",
+          "operator": ">="
+        }
+      ]
+    }
+  ]
+}
