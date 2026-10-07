@@ -676,6 +676,10 @@ function evaluateInsuranceApprovalLimit(claimEl, receiverID, payerID) {
       unknown: true,
       exceeded: false,
       hasApplicableAuthorization: false,
+      receiverID: normalizeApprovalLookupValue(receiverID),
+      insurerName,
+      networks: Array.isArray(insurer.networks) ? insurer.networks : [],
+      generalNote: insurer.general_note || '',
       remark: `${insurerName} approval limit is unknown. Manual review is required.`
     };
   }
@@ -760,6 +764,7 @@ function addClaimLevelApprovalLimitRemark(claimRows, evaluation) {
     target.remarks = Array.isArray(target.remarks) ? target.remarks : [];
     target.remarks.push(evaluation.remark);
     target.unknown = true;
+    target.approvalLimitDetails = evaluation;
     return;
   }
 
@@ -1477,6 +1482,26 @@ function setupDetailsModal(results, claimCodeSums) {
           <tr><th>Denial Reason</th><td>${r.denialReason || ""}</td></tr>
           <tr><th>All Remarks</th><td>${(r.remarks || []).map(m => `<div>${m}</div>`).join("") || ""}</td></tr>
         </table>
+        ${r.unknown && Array.isArray(r.approvalLimitDetails?.networks) && r.approvalLimitDetails.networks.length > 0 ? `
+          <h4 style="margin-top:1.5em;">${r.approvalLimitDetails.insurerName || "Insurance"} Networks — Receiver ID ${r.approvalLimitDetails.receiverID || ""}</h4>
+          ${r.approvalLimitDetails.generalNote ? `<div style="margin-bottom:0.75em;"><b>Note:</b> ${r.approvalLimitDetails.generalNote}</div>` : ""}
+          <table class="modal-license-table">
+            <tr>
+              <th>Network</th>
+              <th>Approval Limit</th>
+              <th>Approval Rule</th>
+              <th>Basis</th>
+            </tr>
+            ${r.approvalLimitDetails.networks.map(network => `
+              <tr>
+                <td>${network.network || ""}</td>
+                <td>${Number.isFinite(Number(network.limit_aed)) && Number(network.limit_aed) > 0 ? "AED " + formatApprovalAmount(network.limit_aed) : "N/A"}</td>
+                <td>${network.approval_rule || (Number.isFinite(Number(network.limit_aed)) && Number(network.limit_aed) > 0 ? "Approval required at or above limit" : "")}</td>
+                <td>${network.approval_basis || ""}</td>
+              </tr>
+            `).join("")}
+          </table>
+        ` : ""}
         ${r.xlsAllAuthRows && r.xlsAllAuthRows.length > 0 ? `
           <h4 style="margin-top:1.5em;">All Codes Listed in Approval${r.authID ? " — " + r.authID : ""}</h4>
           <table class="modal-license-table">
