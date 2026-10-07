@@ -163,111 +163,127 @@
 
   // Lazy load clinician data - only load when needed
   function loadClinicianData() {
-    // Return cached promise if already loading
     if (loadingPromise) {
-      console.log('[INFO] Data already loading, returning cached promise...');
+      console.log('[INFO] Clinician data already loading...');
       return loadingPromise;
     }
-    
+  
     if (clinicianDataLoaded && statusDataLoaded) {
-      console.log('[INFO] Data already loaded');
+      console.log('[INFO] Clinician and licensing history data already loaded.');
       return Promise.resolve();
     }
-    
-    console.log('[INFO] Starting lazy load of clinician data...');
-    
-    // Show loading message
-    if (uploadDiv) {
-      uploadDiv.textContent = 'Loading clinician data... Please wait.';
-    }
-    
-    const promises = [];
-    
-    // Load clinician licenses from JSON (faster than Excel)
-    if (!clinicianDataLoaded) {
-      console.log('[INFO] Loading clinician licenses from JSON...');
-      promises.push(
-        fetch(RESOURCE_PATHS.CLINICIAN_LICENSES_JSON)
+  
+    console.log('[INFO] Starting clinician data load...');
+  
+    if (uploadDiv) uploadDiv.textContent = 'Loading clinician data... Please wait.';
+  
+    const clinicianPromise = clinicianDataLoaded
+      ? Promise.resolve()
+      : fetch(RESOURCE_PATHS.CLINICIAN_LICENSES_JSON)
           .then(response => {
-            if (!response.ok) {
-              throw new Error(`HTTP error ${response.status} - ${response.statusText}`);
-            }
+            if (!response.ok) throw new Error(`Clinician JSON HTTP error ${response.status} - ${response.statusText}`);
             return response.json();
           })
           .then(data => {
-            clinicianMap = {};
+            if (!Array.isArray(data)) throw new Error('clinician_licenses.json is malformed: expected a JSON array.');
+  
+            const newClinicianMap = {};
+  
             data.forEach(row => {
-              // JSON structure uses "Phy Lic" instead of "Clinician License"
-              const id = (row['Phy Lic'] || row['Clinician License'] || '').toString().trim();
+              const id = (row['Phy Lic'] || row['Clinician License'] || '').toString().trim().toUpperCase();
               if (!id) return;
-              clinicianMap[id] = {
+  
+              newClinicianMap[id] = {
                 name: row['Clinician Name'] || row['Name'] || '',
                 category: row['Clinician Category'] || row['Category'] || row['Specialty'] || '',
-                facility: row['Facility'] || row['Facility License Number'] || row['Facility License'] || '',
+                facility: (row['Facility'] || row['Facility License Number'] || row['Facility License'] || '').toString().trim().toUpperCase(),
                 facilityName: row['Facility Name'] || '',
                 status: row['Status'] || '',
                 from: row['From'] || '',
                 to: row['To'] || ''
               };
             });
-            clinicianCount = Object.keys(clinicianMap).length;
+  
+            const count = Object.keys(newClinicianMap).length;
+            if (count === 0) throw new Error('clinician_licenses.json loaded, but no usable clinician records were found.');
+  
+            clinicianMap = newClinicianMap;
+            clinicianCount = count;
             clinicianDataLoaded = true;
             console.log(`[INFO] Loaded ${clinicianCount} clinicians from JSON`);
           })
           .catch(err => {
+            clinicianMap = {};
+            clinicianCount = 0;
             clinicianDataLoaded = false;
-            console.warn('[CLINICIAN] Failed to load clinician licenses JSON:', err);
+            console.error('[CLINICIAN] Failed to load clinician licenses JSON:', err);
             throw err;
-          })
-      );
-    }
-    
-    // Load licensing history from Excel (no JSON alternative yet)
-    if (!statusDataLoaded) {
-      console.log('[INFO] Loading licensing history from Excel...');
-      promises.push(
-        fetchExcelFromUrl(RESOURCE_PATHS.LICENSING_HISTORY_XLSX, 'Clinician Licensing Status')
+          });
+  
+    const historyPromise = statusDataLoaded
+      ? Promise.resolve()
+      : fetchExcelFromUrl(RESOURCE_PATHS.LICENSING_HISTORY_XLSX, 'Clinician Licensing Status')
           .then(data => {
-            clinicianStatusMap = {};
+            if (!Array.isArray(data)) throw new Error('Licensing history workbook did not return a valid row array.');
+            if (data.length === 0) throw new Error('Licensing history workbook contains no rows.');
+  
+            const expectedColumns = ['License Number', 'Facility License Number', 'Effective Date', 'Status'];
+            const detectedColumns = new Set();
+  
+            data.slice(0, Math.min(data.length, 25)).forEach(row => {
+              Object.keys(row || {}).forEach(key => detectedColumns.add(key));
+            });
+  
+            const missingColumns = expectedColumns.filter(column => !detectedColumns.has(column));
+            if (missingColumns.length > 0) throw new Error(`Licensing history is missing required column(s): ${missingColumns.join(', ')}`);
+  
+            const newStatusMap = {};
+  
             data.forEach(row => {
-              const id = (row['License Number'] || '').toString().trim();
+              const id = (row['License Number'] || '').toString().trim().toUpperCase();
               if (!id) return;
-              clinicianStatusMap[id] = clinicianStatusMap[id] || [];
-              clinicianStatusMap[id].push({
-                facility: row['Facility License Number'] || '',
+  
+              newStatusMap[id] = newStatusMap[id] || [];
+              newStatusMap[id].push({
+                facility: (row['Facility License Number'] || '').toString().trim().toUpperCase(),
                 effective: row['Effective Date'] || '',
                 status: row['Status'] || ''
               });
             });
-            historyCount = Object.keys(clinicianStatusMap).length;
+  
+            const count = Object.keys(newStatusMap).length;
+            if (count === 0) throw new Error('Licensing history loaded, but no usable clinician history records were found.');
+  
+            clinicianStatusMap = newStatusMap;
+            historyCount = count;
             statusDataLoaded = true;
-            console.log(`[INFO] Loaded ${historyCount} license histories from Excel`);
+            console.log(`[INFO] Loaded ${historyCount} clinician license histories from Excel`);
           })
           .catch(err => {
+            clinicianStatusMap = {};
+            historyCount = 0;
             statusDataLoaded = false;
-            console.warn('[CLINICIAN] Failed to load licensing history Excel:', err);
-            throw err;
-          })
-      );
-    }
-    
-    // Cache the promise to prevent race conditions
-    loadingPromise = Promise.all(promises)
+            console.warn('[CLINICIAN] Licensing history could not be loaded. Continuing with clinician_licenses.json only.', err);
+          });
+  
+    loadingPromise = Promise.all([clinicianPromise, historyPromise])
       .then(() => {
-        loadingPromise = null; // Clear the cache after successful load
+        if (!clinicianDataLoaded || clinicianCount === 0) throw new Error('Clinician data could not be loaded.');
+  
+        loadingPromise = null;
         updateUploadStatus();
-        console.log('[INFO] ✓ All clinician data loaded successfully');
+  
+        if (statusDataLoaded) console.log('[INFO] Clinician JSON and licensing history loaded successfully.');
+        else console.warn('[INFO] Clinician JSON loaded successfully. Licensing history is unavailable; current clinician Status/Facility/From/To data will be used.');
       })
       .catch(err => {
-        loadingPromise = null; // Clear the cache on error too
+        loadingPromise = null;
         updateUploadStatus();
-        console.error('[CLINICIAN] Failed to load data:', err);
-        if (uploadDiv) {
-          uploadDiv.textContent = 'Error loading clinician data. Please try again or upload manually.';
-        }
+        console.error('[CLINICIAN] Required clinician data failed to load:', err);
+        if (uploadDiv) uploadDiv.textContent = 'Error loading clinician data: ' + err.message;
         throw err;
       });
-    
+  
     return loadingPromise;
   }
 
