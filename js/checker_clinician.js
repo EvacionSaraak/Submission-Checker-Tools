@@ -59,6 +59,7 @@
   const RESOURCE_PATHS = {
     FACILITIES_JSON: '../json/facilities.json',
     CLINICIAN_LICENSES_JSON: '../json/clinician_licenses.json', // Use JSON instead of Excel
+    CLINICIAN_LICENSES_XLSX: '../resources/ClinicianLicenses.xlsx',
     LICENSING_HISTORY_XLSX: '../resources/Clinician%20Licensing%20History.xlsx'
   };
 
@@ -105,6 +106,8 @@
   let clinicianDataLoaded = false;
   let statusDataLoaded = false;
   let loadingPromise = null; // Cache the loading promise to prevent race conditions
+  let clinicianExcelFallbackMap = null;
+  let clinicianExcelFallbackPromise = null;
 
   // Load affiliated facilities (small file, load immediately)
   console.log('[INFO] Loading facilities.json...');
@@ -167,16 +170,16 @@
       console.log('[INFO] Clinician data already loading...');
       return loadingPromise;
     }
-  
+
     if (clinicianDataLoaded && statusDataLoaded) {
       console.log('[INFO] Clinician and licensing history data already loaded.');
       return Promise.resolve();
     }
-  
+
     console.log('[INFO] Starting clinician data load...');
-  
+
     if (uploadDiv) uploadDiv.textContent = 'Loading clinician data... Please wait.';
-  
+
     const clinicianPromise = clinicianDataLoaded
       ? Promise.resolve()
       : fetch(RESOURCE_PATHS.CLINICIAN_LICENSES_JSON)
@@ -186,13 +189,13 @@
           })
           .then(data => {
             if (!Array.isArray(data)) throw new Error('clinician_licenses.json is malformed: expected a JSON array.');
-  
+
             const newClinicianMap = {};
-  
+
             data.forEach(row => {
               const id = (row['Phy Lic'] || row['Clinician License'] || '').toString().trim().toUpperCase();
               if (!id) return;
-  
+
               newClinicianMap[id] = {
                 name: row['Clinician Name'] || row['Name'] || '',
                 category: row['Clinician Category'] || row['Category'] || row['Specialty'] || '',
@@ -203,10 +206,10 @@
                 to: row['To'] || ''
               };
             });
-  
+
             const count = Object.keys(newClinicianMap).length;
             if (count === 0) throw new Error('clinician_licenses.json loaded, but no usable clinician records were found.');
-  
+
             clinicianMap = newClinicianMap;
             clinicianCount = count;
             clinicianDataLoaded = true;
@@ -219,30 +222,30 @@
             console.error('[CLINICIAN] Failed to load clinician licenses JSON:', err);
             throw err;
           });
-  
+
     const historyPromise = statusDataLoaded
       ? Promise.resolve()
       : fetchExcelFromUrl(RESOURCE_PATHS.LICENSING_HISTORY_XLSX, 'Clinician Licensing Status')
           .then(data => {
             if (!Array.isArray(data)) throw new Error('Licensing history workbook did not return a valid row array.');
             if (data.length === 0) throw new Error('Licensing history workbook contains no rows.');
-  
+
             const expectedColumns = ['License Number', 'Facility License Number', 'Effective Date', 'Status'];
             const detectedColumns = new Set();
-  
+
             data.slice(0, Math.min(data.length, 25)).forEach(row => {
               Object.keys(row || {}).forEach(key => detectedColumns.add(key));
             });
-  
+
             const missingColumns = expectedColumns.filter(column => !detectedColumns.has(column));
             if (missingColumns.length > 0) throw new Error(`Licensing history is missing required column(s): ${missingColumns.join(', ')}`);
-  
+
             const newStatusMap = {};
-  
+
             data.forEach(row => {
               const id = (row['License Number'] || '').toString().trim().toUpperCase();
               if (!id) return;
-  
+
               newStatusMap[id] = newStatusMap[id] || [];
               newStatusMap[id].push({
                 facility: (row['Facility License Number'] || '').toString().trim().toUpperCase(),
@@ -250,10 +253,10 @@
                 status: row['Status'] || ''
               });
             });
-  
+
             const count = Object.keys(newStatusMap).length;
             if (count === 0) throw new Error('Licensing history loaded, but no usable clinician history records were found.');
-  
+
             clinicianStatusMap = newStatusMap;
             historyCount = count;
             statusDataLoaded = true;
@@ -265,14 +268,14 @@
             statusDataLoaded = false;
             console.warn('[CLINICIAN] Licensing history could not be loaded. Continuing with clinician_licenses.json only.', err);
           });
-  
+
     loadingPromise = Promise.all([clinicianPromise, historyPromise])
       .then(() => {
         if (!clinicianDataLoaded || clinicianCount === 0) throw new Error('Clinician data could not be loaded.');
-  
+
         loadingPromise = null;
         updateUploadStatus();
-  
+
         if (statusDataLoaded) console.log('[INFO] Clinician JSON and licensing history loaded successfully.');
         else console.warn('[INFO] Clinician JSON loaded successfully. Licensing history is unavailable; current clinician Status/Facility/From/To data will be used.');
       })
@@ -283,8 +286,87 @@
         if (uploadDiv) uploadDiv.textContent = 'Error loading clinician data: ' + err.message;
         throw err;
       });
-  
+
     return loadingPromise;
+  }
+
+  async function loadMissingCliniciansFromExcel(clinicianIds) {
+    const requestedIds = Array.from(clinicianIds || []).map(id => String(id || '').trim().toUpperCase()).filter(id => id && !clinicianMap[id]);
+    if (requestedIds.length === 0) return;
+
+    if (!clinicianExcelFallbackPromise) {
+      console.log(`[INFO] ${requestedIds.length} clinician(s) missing from JSON. Loading ClinicianLicenses.xlsx fallback...`);
+      clinicianExcelFallbackPromise = fetch(RESOURCE_PATHS.CLINICIAN_LICENSES_XLSX)
+        .then(response => {
+          if (!response.ok) throw new Error(`Clinician Excel HTTP error ${response.status} - ${response.statusText}`);
+          return response.arrayBuffer();
+        })
+        .then(buffer => {
+          const workbook = XLSX.read(new Uint8Array(buffer), { type: 'array' });
+          const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+          if (!worksheet) throw new Error('ClinicianLicenses.xlsx contains no worksheets.');
+
+          const rawData = XLSX.utils.sheet_to_json(worksheet, { range: 2, defval: '' });
+          if (rawData.length < 2) throw new Error('ClinicianLicenses.xlsx contains no usable clinician rows.');
+
+          const headerRow = rawData[0];
+          const headers = {};
+          Object.keys(headerRow).forEach(key => headers[key] = String(headerRow[key] || '').trim());
+
+          const findKey = name => Object.keys(headers).find(key => headers[key] === name);
+          const licenseKey = findKey('Clinician License');
+          const nameKey = findKey('Clinician Name');
+          const categoryKey = findKey('Category');
+          const professionKey = findKey('Profession');
+          const facilityKey = findKey('Facility License');
+          const facilityNameKey = findKey('Facility Name');
+          const statusKey = findKey('Status');
+          const fromKey = findKey('From');
+          const toKey = findKey('To');
+          if (!licenseKey) throw new Error('ClinicianLicenses.xlsx is missing the Clinician License column.');
+
+          const fallbackMap = {};
+          rawData.slice(1).forEach(row => {
+            const id = String(row[licenseKey] || '').trim().toUpperCase();
+            if (!id) return;
+            fallbackMap[id] = {
+              name: String(row[nameKey] || '').trim(),
+              category: String(row[categoryKey] || row[professionKey] || '').trim(),
+              facility: String(row[facilityKey] || '').trim().toUpperCase(),
+              facilityName: String(row[facilityNameKey] || '').trim(),
+              status: String(row[statusKey] || '').trim(),
+              from: row[fromKey] || '',
+              to: row[toKey] || ''
+            };
+          });
+
+          clinicianExcelFallbackMap = fallbackMap;
+          console.log(`[INFO] Clinician Excel fallback loaded: ${Object.keys(fallbackMap).length} clinicians`);
+        })
+        .catch(err => {
+          clinicianExcelFallbackMap = {};
+          clinicianExcelFallbackPromise = null;
+          console.warn('[CLINICIAN] Failed to load ClinicianLicenses.xlsx fallback:', err);
+        });
+    }
+
+    await clinicianExcelFallbackPromise;
+
+    let addedCount = 0;
+    requestedIds.forEach(id => {
+      if (clinicianMap[id] || !clinicianExcelFallbackMap?.[id]) return;
+      clinicianMap[id] = clinicianExcelFallbackMap[id];
+      addedCount++;
+    });
+
+    if (addedCount > 0) {
+      clinicianCount = Object.keys(clinicianMap).length;
+      console.log(`[INFO] Added ${addedCount} missing clinician(s) from ClinicianLicenses.xlsx`);
+      updateUploadStatus();
+    }
+
+    const unresolved = requestedIds.filter(id => !clinicianMap[id]);
+    if (unresolved.length > 0) console.warn('[CLINICIAN] Clinicians not found in JSON or Excel:', unresolved);
   }
 
   // Remove auto-loading - data will be loaded lazily when clinician checker is opened
@@ -697,6 +779,19 @@
     await loadClinicianData();
     
     const claims = xmlDoc.getElementsByTagName('Claim');
+    const missingClinicianIds = new Set();
+
+    for (const claim of claims) {
+      for (const act of claim.getElementsByTagName('Activity')) {
+        const oid = getText(act, 'OrderingClinician').toUpperCase();
+        const pid = getText(act, 'Clinician').toUpperCase();
+        if (oid && !clinicianMap[oid]) missingClinicianIds.add(oid);
+        if (pid && !clinicianMap[pid]) missingClinicianIds.add(pid);
+      }
+    }
+
+    if (missingClinicianIds.size > 0) await loadMissingCliniciansFromExcel(missingClinicianIds);
+
     const results = [];
 
     // Console grouping per unique clinician+affiliated+license
