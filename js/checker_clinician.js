@@ -2,17 +2,46 @@
   try {
     'use strict';
 
-    // --- Helper: Parse DD/MM/YYYY or DD/MM/YYYY HH:MM ---
-    function parseDMY(dateStr) {
-    if (typeof dateStr !== 'string') return new Date(dateStr);
-    const match = dateStr.match(/^(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}):(\d{2}))?/);
-    if (!match) return new Date(dateStr); // fallback
-    const [ , dd, mm, yyyy, HH, MM ] = match;
-    if (HH && MM) {
-      return new Date(`${yyyy}-${mm}-${dd}T${HH}:${MM}:00`);
+    // --- Helper: Parse claim dates, Excel serial dates, or normal date strings ---
+    function parseDMY(dateValue) {
+      if (dateValue instanceof Date) {
+        return new Date(dateValue.getTime());
+      }
+
+      if (dateValue === null || dateValue === undefined || dateValue === '') {
+        return new Date(NaN);
+      }
+
+      // XLSX.sheet_to_json returns Excel date cells as serial numbers by default.
+      if (typeof dateValue === 'number' && Number.isFinite(dateValue)) {
+        if (dateValue > 1000) {
+          return excelSerialToDate(dateValue);
+        }
+        return new Date(dateValue);
+      }
+
+      const dateStr = String(dateValue).trim();
+      if (!dateStr) return new Date(NaN);
+
+      // Numeric strings may also be Excel serial dates.
+      if (/^\d+(?:\.\d+)?$/.test(dateStr)) {
+        const numericValue = Number(dateStr);
+        if (Number.isFinite(numericValue) && numericValue > 1000) {
+          return excelSerialToDate(numericValue);
+        }
+      }
+
+      const match = dateStr.match(/^(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}):(\d{2}))?/);
+      if (match) {
+        const [ , dd, mm, yyyy, HH, MM ] = match;
+        if (HH && MM) {
+          return new Date(`${yyyy}-${mm}-${dd}T${HH}:${MM}:00`);
+        }
+        return new Date(`${yyyy}-${mm}-${dd}T00:00:00`);
+      }
+
+      return new Date(dateStr);
     }
-    return new Date(`${yyyy}-${mm}-${dd}`);
-  }
 
   // Inject scrollable modal CSS
   (function () {
@@ -515,6 +544,74 @@
     return table;
   }
 
+
+  // Return the latest history state for each facility as of the encounter.
+  // Clinician Licensing History is an effective-dated event log, so a newer
+  // status for the same facility supersedes an older one.
+  function getHistoryStatesAtEncounter(entries, encounterDate) {
+    if (!(encounterDate instanceof Date) || isNaN(encounterDate.getTime())) return [];
+
+    const latestByFacility = new Map();
+
+    (Array.isArray(entries) ? entries : []).forEach((entry, index) => {
+      const effectiveDate = parseDMY(entry?.effective);
+      if (isNaN(effectiveDate.getTime()) || effectiveDate > encounterDate) return;
+
+      const facility = String(entry?.facility || '').trim().toUpperCase();
+      const key = facility || '__NO_FACILITY__';
+      const previous = latestByFacility.get(key);
+
+      if (
+        !previous ||
+        effectiveDate > previous._effectiveDate ||
+        (effectiveDate.getTime() === previous._effectiveDate.getTime() && index > previous._index)
+      ) {
+        latestByFacility.set(key, {
+          ...entry,
+          facility,
+          _effectiveDate: effectiveDate,
+          _index: index
+        });
+      }
+    });
+
+    return Array.from(latestByFacility.values());
+  }
+
+  // Validate the current ClinicianLicenses record for the encounter date.
+  // This lets the current file cover newer affiliations that may not yet exist
+  // in the older licensing-history workbook.
+  function getCurrentClinicianStateAtEncounter(clinicianId, encounterDate, isPathology, isSecondment) {
+    const clinician = clinicianMap[clinicianId];
+    if (!clinician || !(encounterDate instanceof Date) || isNaN(encounterDate.getTime())) {
+      return null;
+    }
+
+    const facility = String(clinician.facility || '').trim().toUpperCase();
+    const status = String(clinician.status || '').trim();
+    const normalizedStatus = status.toLowerCase();
+
+    const fromDate = clinician.from ? parseDMY(clinician.from) : null;
+    const toDate = clinician.to ? parseDMY(clinician.to) : null;
+
+    const fromOk = !fromDate || isNaN(fromDate.getTime()) || fromDate <= encounterDate;
+    const toOk = !toDate || isNaN(toDate.getTime()) || encounterDate <= toDate;
+
+    // If Status exists, it must be ACTIVE. Missing Status is retained for
+    // compatibility with manually uploaded legacy clinician lists.
+    const statusOk = !status || normalizedStatus === 'active';
+    const affiliationOk = isPathology || isSecondment || affiliatedLicenses.has(facility);
+
+    if (!(statusOk && fromOk && toOk && affiliationOk)) return null;
+
+    return {
+      facility,
+      effective: clinician.from || '',
+      status: status || 'Active',
+      _source: 'clinician-current'
+    };
+  }
+
   // --- Grouping logic: Group by Claim ID ---
   function groupResultsByClaim(results) {
     const claimGroups = {};
@@ -644,43 +741,67 @@
         const clinicianFacility = (clinicianMap[pid]?.facility || '').toString().trim().toUpperCase();
         const isSecondment = isSecondedToFacility(pid, normalizedProviderId);
 
-        // If the clinician exists in ClinicianLicenses but has no entries in the
-        // Licensing History sheet, their presence in the license file is sufficient
-        // — treat as VALID without requiring a history record.
         let mostRecent = null;
-        if (entries.length === 0 && clinicianMap[pid]) {
+
+        // Evaluate the licensing-history workbook by its own effective dates,
+        // statuses, and facility values.
+        const historyStates = getHistoryStatesAtEncounter(entries, encounterD);
+        const eligibleHistory = historyStates.filter(e => {
+          const isActive = String(e.status || '').trim().toLowerCase() === 'active';
+
+          if (isPathology || isSecondment) {
+            return isActive;
+          }
+
+          return isActive && affiliatedLicenses.has(
+            String(e.facility || '').trim().toUpperCase()
+          );
+        });
+
+        // The current clinician file is authoritative inside its explicit
+        // Status + From/To window. Prefer it when valid so stale history cannot
+        // reject a newer ACTIVE facility assignment.
+        const currentState = getCurrentClinicianStateAtEncounter(
+          pid,
+          encounterD,
+          isPathology,
+          isSecondment
+        );
+
+        if (currentState) {
+          mostRecent = currentState;
           valid = true;
-        } else {
-          // Use facility from ClinicianLicenses instead of License History.
-          // Pathology and approved secondments waive only the affiliation requirement.
-          const eligible = entries.filter(e => {
-            const effDate = parseDMY(e.effective);
-            const effOk = !!e.effective && !isNaN(effDate) && effDate <= encounterD;
-            const isActive = (e.status || '').toLowerCase() === 'active';
+        } else if (eligibleHistory.length > 0) {
+          eligibleHistory.sort((a, b) => b._effectiveDate - a._effectiveDate);
+          mostRecent = eligibleHistory[0];
+          valid = true;
+        } else if (entries.length === 0 && clinicianMap[pid]) {
+          // Preserve the existing no-history behavior for legacy/manual lists
+          // that do not provide Status/From/To metadata.
+          const hasCurrentMetadata =
+            !!String(clinicianMap[pid]?.status || '').trim() ||
+            !!clinicianMap[pid]?.from ||
+            !!clinicianMap[pid]?.to;
 
-            // Pathology professions and approved secondments only need an active,
-            // effective license; standard clinicians must also be affiliated.
-            if (isPathology || isSecondment) {
-              return effOk && isActive;
+          if (!hasCurrentMetadata) {
+            const legacyFacility = String(
+              clinicianMap[pid]?.facility || ''
+            ).trim().toUpperCase();
+
+            if (isPathology || isSecondment || affiliatedLicenses.has(legacyFacility)) {
+              valid = true;
             }
+          }
+        }
 
-            const isAffiliated = affiliatedLicenses.has(clinicianFacility);
-            return isAffiliated && effOk && isActive;
-          });
-
-          if (eligible.length > 0) {
-            eligible.sort((a, b) => parseDMY(b.effective) - parseDMY(a.effective));
-            mostRecent = eligible[0];
-            valid = true;
+        if (!valid) {
+          if (isPathology) {
+            remarks.push('No ACTIVE license for encounter date (pathology profession - affiliation not required)');
+          } else if (isSecondment) {
+            remarks.push(`No ACTIVE license for encounter date (approved secondment to ${normalizedProviderId})`);
           } else {
-            if (isPathology) {
-              remarks.push('No ACTIVE license for encounter date (pathology profession - affiliation not required)');
-            } else if (isSecondment) {
-              remarks.push(`No ACTIVE license for encounter date (approved secondment to ${normalizedProviderId})`);
-            } else {
-              const facilityDetails = formatFacilityDetails(pid);
-              remarks.push('No ACTIVE affiliated facility license for encounter date' + (facilityDetails ? '.' + facilityDetails : ''));
-            }
+            const facilityDetails = formatFacilityDetails(pid);
+            remarks.push('No ACTIVE affiliated facility license for encounter date' + (facilityDetails ? '.' + facilityDetails : ''));
           }
         }
 
