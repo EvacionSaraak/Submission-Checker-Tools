@@ -622,20 +622,22 @@
     const rows = fullHistory.split(';').map(e => e.trim()).filter(Boolean);
     if (rows.length === 0) return "<em>No history</em>";
     let table = `<table class="modal-license-table"><tr>
-      <th>Effective Date</th><th>Status</th></tr>`;
+      <th>Effective Date</th><th>Facility ID</th><th>Status</th></tr>`;
     for (const row of rows) {
-      // New format: DATE (STATUS)
-      const match = row.match(/^([^\(]+)\s*\(([^)]+)\)$/);
+      // Current format: DATE [FACILITY] (STATUS). Older DATE (STATUS) values remain supported.
+      const match = row.match(/^([^\[]+?)\s*(?:\[([^\]]*)\])?\s*\(([^)]+)\)$/);
       if (match) {
         const effectiveDate = formatEffectiveDate(match[1].trim());
-        const status = match[2].trim();
+        const facility = (match[2] || '').trim();
+        const status = match[3].trim();
         
         table += `<tr>
           <td>${effectiveDate}</td>
+          <td>${facility}</td>
           <td>${status}</td>
         </tr>`;
       } else {
-        table += `<tr><td colspan="2">${row}</td></tr>`;
+        table += `<tr><td colspan="3">${row}</td></tr>`;
       }
     }
     table += `</table>`;
@@ -917,7 +919,7 @@
         }
 
         const fullHistory = entries.map(e =>
-          `${e.effective || '[No Date]'} (${e.status || '[No Status]'})`
+          `${e.effective || '[No Date]'} [${e.facility || '[No Facility]'}] (${e.status || '[No Status]'})`
         ).join('; ');
 
         if (mostRecent) {
@@ -947,6 +949,7 @@
             claimIds: [],
             licenses: entries.map(e => ({
               effective: e.effective,
+              facility: e.facility,
               status: e.status
             }))
           };
