@@ -657,7 +657,7 @@
                     const response = await fetch('../resources/ClinicianLicenses.xlsx', { cache: 'no-store' });
                     if (!response.ok) throw new Error(`HTTP ${response.status}`);
                     const workbook = XLSX.read(new Uint8Array(await response.arrayBuffer()), { type: 'array' });
-                    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+                    const sheet = workbook.Sheets['Clinician Data'] || workbook.Sheets[workbook.SheetNames[0]];
                     if (!sheet) throw new Error('No worksheet found.');
 
                     const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: true, blankrows: false });
