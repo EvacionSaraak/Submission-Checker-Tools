@@ -303,7 +303,7 @@
         })
         .then(buffer => {
           const workbook = XLSX.read(new Uint8Array(buffer), { type: 'array' });
-          const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+          const worksheet = workbook.Sheets['Clinician Data'] || workbook.Sheets[workbook.SheetNames[0]];
           if (!worksheet) throw new Error('ClinicianLicenses.xlsx contains no worksheets.');
 
           const rawData = XLSX.utils.sheet_to_json(worksheet, { range: 2, defval: '' });
