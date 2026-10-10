@@ -529,7 +529,12 @@ function validateDateAndStatus(row, start) {
   // If status is "Partially Approved", treat it as unknown (not invalid).
   // This is a special case where the row is uncertain rather than definitively invalid.
   if (!isValidStatus && !isPartiallyApproved) {
-    remarks.push("Invalid status (must be Approved, Totally Approved, or Rejected)");
+    if (status === "cancelled") {
+      const authorizationID = String(row.AuthorizationID || "").trim() || "Authorization";
+      remarks.push(`${authorizationID} is invalid (Cancelled status).`);
+    } else {
+      remarks.push("Invalid status (must be Approved, Totally Approved, or Rejected)");
+    }
   }
   
   return { remarks, isPartiallyApproved };
