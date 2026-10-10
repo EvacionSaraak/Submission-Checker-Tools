@@ -635,62 +635,89 @@
             throw new Error('Pregnancy diagnosis code data could not be loaded. ' + failures.join(' | '));
         }
 
-        function loadClinicianSpecialtyMap(requiredLicenses = []) {
-            if (clinicianSpecialtyMapPromise) return clinicianSpecialtyMapPromise;
-            const required = new Set(Array.from(requiredLicenses || []).map(value => String(value || '').trim().toUpperCase()).filter(Boolean));
-            clinicianSpecialtyMapPromise = fetch('../json/clinician_licenses.json', { cache: 'no-store' }).then(response => {
-                if (!response.ok) throw new Error(`Failed to load clinician specialties (HTTP ${response.status}).`);
-                return response.json();
-            }).then(async rows => {
-                const map = new Map();
-                (Array.isArray(rows) ? rows : []).forEach(row => {
-                    const license = String(row?.['Phy Lic'] || '').trim().toUpperCase();
-                    if (!license) return;
-                    const specialty = String(row?.Specialty || '').trim();
-                    if (!map.has(license) || specialty) map.set(license, specialty);
-                });
+        async function resolveMissingClinicianSpecialtiesFromExcel(map, requiredLicenses) {
+            const missing = Array.from(requiredLicenses || []).filter(license =>
+                !map.has(license) || !String(map.get(license) || '').trim()
+            );
+            if (missing.length === 0) return map;
 
-                const missing = Array.from(required).filter(license => !map.has(license) || !String(map.get(license) || '').trim());
-                if (missing.length === 0) return map;
+            try {
+                const response = await fetch('../resources/ClinicianLicenses.xlsx', { cache: 'no-store' });
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const workbook = XLSX.read(new Uint8Array(await response.arrayBuffer()), { type: 'array' });
+                const sheet = workbook.Sheets['Clinician Data'] || workbook.Sheets[workbook.SheetNames[0]];
+                if (!sheet) throw new Error('No worksheet found.');
 
-                try {
-                    const response = await fetch('../resources/ClinicianLicenses.xlsx', { cache: 'no-store' });
-                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-                    const workbook = XLSX.read(new Uint8Array(await response.arrayBuffer()), { type: 'array' });
-                    const sheet = workbook.Sheets['Clinician Data'] || workbook.Sheets[workbook.SheetNames[0]];
-                    if (!sheet) throw new Error('No worksheet found.');
+                const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: true, blankrows: false });
+                const headerRowIndex = matrix.findIndex(row =>
+                    Array.isArray(row) &&
+                    row.some(value => String(value || '').trim() === 'Clinician License')
+                );
+                if (headerRowIndex < 0) throw new Error('Clinician License header not found.');
 
-                    const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: true, blankrows: false });
-                    const headerRowIndex = matrix.findIndex(row => Array.isArray(row) && row.some(value => String(value || '').trim() === 'Clinician License'));
-                    if (headerRowIndex < 0) throw new Error('Clinician License header not found.');
+                const headers = matrix[headerRowIndex].map(value => String(value || '').trim());
+                const licenseIndex = headers.indexOf('Clinician License');
+                const categoryIndex = headers.indexOf('Category');
+                const professionIndex = headers.indexOf('Profession');
+                const needed = new Set(missing);
 
-                    const headers = matrix[headerRowIndex].map(value => String(value || '').trim());
-                    const licenseIndex = headers.indexOf('Clinician License');
-                    const categoryIndex = headers.indexOf('Category');
-                    const professionIndex = headers.indexOf('Profession');
-                    const needed = new Set(missing);
-
-                    for (let index = headerRowIndex + 1; index < matrix.length && needed.size > 0; index += 1) {
-                        const row = matrix[index] || [];
-                        const license = String(row[licenseIndex] || '').trim().toUpperCase();
-                        if (!needed.has(license)) continue;
-                        const specialty = String((categoryIndex >= 0 ? row[categoryIndex] : '') || (professionIndex >= 0 ? row[professionIndex] : '') || '').trim();
-                        if (specialty) map.set(license, specialty);
-                        needed.delete(license);
-                    }
-
-                    if (needed.size > 0) console.warn('[SCHEMA] Clinician specialties not found in JSON or ClinicianLicenses.xlsx:', Array.from(needed));
-                    else console.log(`[SCHEMA] Resolved ${missing.length} missing clinician specialty record(s) from ClinicianLicenses.xlsx.`);
-                } catch (error) {
-                    console.warn('[SCHEMA] ClinicianLicenses.xlsx fallback failed:', error.message);
+                for (let index = headerRowIndex + 1; index < matrix.length && needed.size > 0; index += 1) {
+                    const row = matrix[index] || [];
+                    const license = String(row[licenseIndex] || '').trim().toUpperCase();
+                    if (!needed.has(license)) continue;
+                    const specialty = String(
+                        (categoryIndex >= 0 ? row[categoryIndex] : '') ||
+                        (professionIndex >= 0 ? row[professionIndex] : '') ||
+                        ''
+                    ).trim();
+                    if (specialty) map.set(license, specialty);
+                    needed.delete(license);
                 }
 
-                return map;
-            }).catch(error => {
-                console.warn('[SCHEMA] Failed to load clinician specialties:', error.message);
-                return new Map();
-            });
-            return clinicianSpecialtyMapPromise;
+                if (needed.size > 0) {
+                    console.warn('[SCHEMA] Clinician specialties not found in JSON or ClinicianLicenses.xlsx:', Array.from(needed));
+                } else {
+                    console.log(`[SCHEMA] Resolved ${missing.length} missing clinician specialty record(s) from ClinicianLicenses.xlsx.`);
+                }
+            } catch (error) {
+                console.warn('[SCHEMA] ClinicianLicenses.xlsx fallback failed:', error.message);
+            }
+
+            return map;
+        }
+
+        async function loadClinicianSpecialtyMap(requiredLicenses = []) {
+            const required = new Set(
+                Array.from(requiredLicenses || [])
+                    .map(value => String(value || '').trim().toUpperCase())
+                    .filter(Boolean)
+            );
+
+            if (!clinicianSpecialtyMapPromise) {
+                clinicianSpecialtyMapPromise = fetch('../json/clinician_licenses.json', { cache: 'no-store' })
+                    .then(response => {
+                        if (!response.ok) throw new Error(`Failed to load clinician specialties (HTTP ${response.status}).`);
+                        return response.json();
+                    })
+                    .then(rows => {
+                        const map = new Map();
+                        (Array.isArray(rows) ? rows : []).forEach(row => {
+                            const license = String(row?.['Phy Lic'] || '').trim().toUpperCase();
+                            if (!license) return;
+                            const specialty = String(row?.Specialty || '').trim();
+                            if (!map.has(license) || specialty) map.set(license, specialty);
+                        });
+                        return map;
+                    })
+                    .catch(error => {
+                        console.warn('[SCHEMA] Failed to load clinician specialties:', error.message);
+                        return new Map();
+                    });
+            }
+
+            const map = await clinicianSpecialtyMapPromise;
+            await resolveMissingClinicianSpecialtiesFromExcel(map, required);
+            return map;
         }
 
         function loadPregnancyDiagnosisData() {
