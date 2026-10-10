@@ -471,10 +471,14 @@ function applyDamanPatientShareCapValidation(actRows, options = {}) {
   labRadiologyDetails.forEach(allocateSupportedShare);
 
   consultationDetails.forEach(detail => {
-    const hasConfiguredCap = Number.isFinite(Number(detail.maximum));
+    const hasConfiguredCap =
+      detail.maximum !== null &&
+      detail.maximum !== undefined &&
+      String(detail.maximum).trim() !== '' &&
+      Number.isFinite(Number(detail.maximum));
     detail.withinCap =
       hasConfiguredCap && detail.evaluable && !detail.negativeNet
-        ? compareMoney(detail.patientShare, detail.maximum) <= 0
+        ? compareMoney(detail.patientShare, Number(detail.maximum)) <= 0
         : null;
 
     const row = rows[detail.rowIndex];
@@ -3379,7 +3383,14 @@ function showComparisonModal(index) {
           <td>${escapeHtml(Number.isFinite(detail.claimedNet) ? formatMoney(detail.claimedNet) : 'N/A')}</td>
           <td>${escapeHtml(Number.isFinite(detail.expectedNet) ? formatMoney(detail.expectedNet) : 'N/A')}</td>
           <td>${escapeHtml(Number.isFinite(detail.patientShare) ? formatMoney(detail.patientShare) : 'N/A')}</td>
-          <td>${escapeHtml(formatMoney(detail.maximum))}</td>
+          <td>${escapeHtml(
+            detail.maximum !== null &&
+            detail.maximum !== undefined &&
+            String(detail.maximum).trim() !== '' &&
+            Number.isFinite(Number(detail.maximum))
+              ? formatMoney(detail.maximum)
+              : 'N/A'
+          )}</td>
           <td class="${result.className}">${escapeHtml(result.text)}</td>
         </tr>`;
     }).join('');
