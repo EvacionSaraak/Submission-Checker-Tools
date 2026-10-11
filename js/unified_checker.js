@@ -2094,6 +2094,35 @@
    * @param {string} checkerName
    * @param {'Invalid'|'Unknown'} requestedStatus
    */
+  function mergeRepeatedObservationMissingRemarks(remarks) {
+    const source = Array.from(remarks || []);
+    const pattern = /^([^\s]+) requires at least one observation but none were provided\.?$/i;
+    const codes = [];
+    const remaining = [];
+
+    source.forEach(remark => {
+      const text = String(remark || '').trim();
+      const match = text.match(pattern);
+      if (match) {
+        const code = match[1].trim();
+        if (code && !codes.includes(code)) codes.push(code);
+      } else if (text) {
+        remaining.push(text);
+      }
+    });
+
+    if (codes.length > 0) {
+      const codeText = codes.length === 1
+        ? codes[0]
+        : codes.length === 2
+          ? `${codes[0]} and ${codes[1]}`
+          : `${codes.slice(0, -1).join(', ')}, and ${codes[codes.length - 1]}`;
+      remaining.unshift(`${codeText} requires at least one observation but none were provided.`);
+    }
+
+    return remaining;
+  }
+
   function copyCheckerResultsByStatus(checkerName, requestedStatus) {
     const normalizedStatus = requestedStatus === 'Unknown' ? 'Unknown' : 'Invalid';
     const isUnknown = normalizedStatus === 'Unknown';
@@ -2206,7 +2235,10 @@
 
     const results = Array.from(claimRemarks.entries())
       .filter(([, remarks]) => remarks.size > 0)
-      .map(([claimID, remarks]) => `${claimID}\t\t${Array.from(remarks).join(' ')}`);
+      .map(([claimID, remarks]) => {
+        const mergedRemarks = mergeRepeatedObservationMissingRemarks(remarks);
+        return `${claimID}\t\t${mergedRemarks.join(' ')}`;
+      });
 
     if (results.length === 0) {
       console.log(`[CLIPBOARD] No ${normalizedStatus.toLowerCase()} findings found in ${checkerName}`);
