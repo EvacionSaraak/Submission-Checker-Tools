@@ -626,33 +626,59 @@
             const percentLoincCodes = new Set(['4548-4', '17855-8', '17856-6', '4549-2']);
             const acceptedLoincCodes = new Set([...percentLoincCodes, '41995-2']);
             const observations = Array.from(activity.getElementsByTagName('Observation'));
-            const hasValidObservation = observations.some(observation => {
+
+            const acceptedObservation = observations.find(observation => {
                 const type = String(getText('Type', observation) || '').trim().toUpperCase();
                 const observationCode = String(getText('Code', observation) || '').trim();
-                const valueRaw = String(getText('Value', observation) || '').trim();
-                const valueType = String(getText('ValueType', observation) || '').trim();
-                const value = Number(valueRaw);
-
-                if (type !== 'LOINC' || !acceptedLoincCodes.has(observationCode)) return false;
-                if (!valueRaw || !Number.isFinite(value) || !valueType) return false;
-
-                if (percentLoincCodes.has(observationCode)) {
-                    if (valueType !== '%') return false;
-                    if (value <= 0 || value > 20) return false;
-                    return true;
-                }
-
-                if (observationCode === '41995-2') {
-                    return valueType.toLowerCase() === 'g/dl' && value > 0;
-                }
-
-                return false;
+                return type === 'LOINC' && acceptedLoincCodes.has(observationCode);
             });
 
-            if (!hasValidObservation) {
+            if (!acceptedObservation) {
                 invalidFields.push(
-                    "Activity requires observation data to be presented: CPT Code 83036 must have observation with LOINC code '4548-4' or one of the alternative code(s) 17855-8, 17856-6, 41995-2, 4549-2 with proper value and value type."
+                    '83036 is missing a valid HbA1c LOINC observation. Use 4548-4, 17855-8, 17856-6, 41995-2, or 4549-2.'
                 );
+                return;
+            }
+
+            const observationCode = String(getText('Code', acceptedObservation) || '').trim();
+            const valueRaw = String(getText('Value', acceptedObservation) || '').trim();
+            const valueType = String(getText('ValueType', acceptedObservation) || '').trim();
+            const value = Number(valueRaw);
+
+            if (!valueRaw || !Number.isFinite(value)) {
+                invalidFields.push(
+                    `83036 LOINC ${observationCode} is missing a valid numeric HbA1c value. Correct the Observation Value.`
+                );
+                return;
+            }
+
+            if (percentLoincCodes.has(observationCode)) {
+                if (valueType !== '%') {
+                    invalidFields.push(
+                        `83036 LOINC ${observationCode} must use ValueType %. Change the Observation ValueType to %.`
+                    );
+                    return;
+                }
+                if (value <= 0 || value > 20) {
+                    invalidFields.push(
+                        `83036 LOINC ${observationCode} has invalid HbA1c value ${valueRaw}%. Correct the Observation Value to the actual HbA1c percentage.`
+                    );
+                }
+                return;
+            }
+
+            if (observationCode === '41995-2') {
+                if (valueType.toLowerCase() !== 'g/dl') {
+                    invalidFields.push(
+                        '83036 LOINC 41995-2 must use ValueType g/dL. Change the Observation ValueType to g/dL.'
+                    );
+                    return;
+                }
+                if (value <= 0) {
+                    invalidFields.push(
+                        `83036 LOINC 41995-2 has invalid HbA1c value ${valueRaw}. Correct the Observation Value.`
+                    );
+                }
             }
         }
 
