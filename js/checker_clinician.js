@@ -678,6 +678,11 @@
     return Array.from(latestByFacility.values());
   }
 
+  function isActiveEquivalentClinicianStatus(status) {
+    const normalizedStatus = String(status || '').trim().toLowerCase();
+    return !normalizedStatus || normalizedStatus === 'active' || normalizedStatus === 'about to expire';
+  }
+
   // Validate the current ClinicianLicenses record for the encounter date.
   // This lets the current file cover newer affiliations that may not yet exist
   // in the older licensing-history workbook.
@@ -689,17 +694,15 @@
 
     const facility = String(clinician.facility || '').trim().toUpperCase();
     const status = String(clinician.status || '').trim();
-    const normalizedStatus = status.toLowerCase();
-
     const fromDate = clinician.from ? parseDMY(clinician.from) : null;
     const toDate = clinician.to ? parseDMY(clinician.to) : null;
 
     const fromOk = !fromDate || isNaN(fromDate.getTime()) || fromDate <= encounterDate;
     const toOk = !toDate || isNaN(toDate.getTime()) || encounterDate <= toDate;
 
-    // If Status exists, it must be ACTIVE. Missing Status is retained for
-    // compatibility with manually uploaded legacy clinician lists.
-    const statusOk = !status || normalizedStatus === 'active';
+    // "About to Expire" is still active until the affiliation's To date.
+    // Missing Status is retained for compatibility with legacy clinician lists.
+    const statusOk = isActiveEquivalentClinicianStatus(status);
     const affiliationOk = isPathology || isSecondment || affiliatedLicenses.has(facility);
 
     if (!(statusOk && fromOk && toOk && affiliationOk)) return null;
@@ -860,13 +863,13 @@
         // statuses, and facility values.
         const historyStates = getHistoryStatesAtEncounter(entries, encounterD);
         const eligibleHistory = historyStates.filter(e => {
-          const isActive = String(e.status || '').trim().toLowerCase() === 'active';
+          const isActiveEquivalent = isActiveEquivalentClinicianStatus(e.status);
 
           if (isPathology || isSecondment) {
-            return isActive;
+            return isActiveEquivalent;
           }
 
-          return isActive && affiliatedLicenses.has(
+          return isActiveEquivalent && affiliatedLicenses.has(
             String(e.facility || '').trim().toUpperCase()
           );
         });
