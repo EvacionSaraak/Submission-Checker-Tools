@@ -527,13 +527,11 @@ function validateKnownCode({
 
       return `${obsCode} - ${getRegionName(obsCode)}`;
     }).join('<br>');
-  // Emit one consolidated remark per tooth type
-  const codeCategory = meta.description.match(/anterior|posterior|bicuspid|all/i)?.[0] || 'see code description';
-  for (const [toothType, teeth] of Object.entries(invalidTeethByType)) {
-    const teethStr = teeth.length > 1
-      ? teeth.slice(0, -1).join(' ') + ' and ' + teeth[teeth.length - 1]
-      : teeth[0];
-    remarks.push(`${toothType} ${teethStr} not allowed for ${codeCategory} code ${code}.`);
+  // Emit direct, actionable invalid-tooth remarks.
+  for (const teeth of Object.values(invalidTeethByType)) {
+    teeth.forEach(tooth => {
+      remarks.push(`Tooth '${tooth}' is not valid for ${code}`);
+    });
   }
   // Region duplication check
   if (regionType && regionKey && regionKey !== 'Unknown') {
@@ -779,7 +777,12 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
       }
 
       if (!isMedical && recordedEndodonticCodes.has(code) && !hasToothNumberObservation(obsList)) {
-        row.remarks.push(`Code ${code} requires at least one tooth-number observation.`);
+        const nonExemptObservationCodes = obsCodes.filter(obsCode =>
+          obsCode !== 'SUBCODE' && !isDrugPatientShareOrPDF(obsCode)
+        );
+        if (nonExemptObservationCodes.length === 0) {
+          row.remarks.push(`Code ${code} requires at least one tooth-number observation.`);
+        }
       }
       // Validate observation ValueTypes: non-dental/episode observations must have a ValueType
       const valueTypeRemarks = validateObservationValueTypes(obsList, code);
