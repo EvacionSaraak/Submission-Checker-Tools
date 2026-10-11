@@ -623,14 +623,30 @@
             const code = String(getText('Code', activity) || '').trim().toUpperCase();
             if (code !== '83036') return;
 
-            const acceptedLoincCodes = new Set(['4548-4', '17855-8', '17856-6', '41995-2', '4549-2']);
+            const percentLoincCodes = new Set(['4548-4', '17855-8', '17856-6', '4549-2']);
+            const acceptedLoincCodes = new Set([...percentLoincCodes, '41995-2']);
             const observations = Array.from(activity.getElementsByTagName('Observation'));
             const hasValidObservation = observations.some(observation => {
                 const type = String(getText('Type', observation) || '').trim().toUpperCase();
                 const observationCode = String(getText('Code', observation) || '').trim();
-                const value = String(getText('Value', observation) || '').trim();
+                const valueRaw = String(getText('Value', observation) || '').trim();
                 const valueType = String(getText('ValueType', observation) || '').trim();
-                return type === 'LOINC' && acceptedLoincCodes.has(observationCode) && value !== '' && valueType !== '';
+                const value = Number(valueRaw);
+
+                if (type !== 'LOINC' || !acceptedLoincCodes.has(observationCode)) return false;
+                if (!valueRaw || !Number.isFinite(value) || !valueType) return false;
+
+                if (percentLoincCodes.has(observationCode)) {
+                    if (valueType !== '%') return false;
+                    if (value <= 0 || value > 20) return false;
+                    return true;
+                }
+
+                if (observationCode === '41995-2') {
+                    return valueType.toLowerCase() === 'g/dl' && value > 0;
+                }
+
+                return false;
             });
 
             if (!hasValidObservation) {
