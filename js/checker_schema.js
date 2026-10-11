@@ -619,6 +619,27 @@
         }
 
 
+        function validateRequired83036Observation(activity, getText, invalidFields) {
+            const code = String(getText('Code', activity) || '').trim().toUpperCase();
+            if (code !== '83036') return;
+
+            const acceptedLoincCodes = new Set(['4548-4', '17855-8', '17856-6', '41995-2', '4549-2']);
+            const observations = Array.from(activity.getElementsByTagName('Observation'));
+            const hasValidObservation = observations.some(observation => {
+                const type = String(getText('Type', observation) || '').trim().toUpperCase();
+                const observationCode = String(getText('Code', observation) || '').trim();
+                const value = String(getText('Value', observation) || '').trim();
+                const valueType = String(getText('ValueType', observation) || '').trim();
+                return type === 'LOINC' && acceptedLoincCodes.has(observationCode) && value !== '' && valueType !== '';
+            });
+
+            if (!hasValidObservation) {
+                invalidFields.push(
+                    "Activity requires observation data to be presented: CPT Code 83036 must have observation with LOINC code '4548-4' or one of the alternative code(s) 17855-8, 17856-6, 41995-2, 4549-2 with proper value and value type."
+                );
+            }
+        }
+
         // =====================================================================
         // RESOURCE LOADING AND LOOKUPS
         // =====================================================================
@@ -1594,6 +1615,7 @@
                     Array.from(activity.getElementsByTagName('Observation')).forEach((observation, observationIndex) => {
                         ['Type', 'Code'].forEach(field => invalidIfEmpty(field, observation, `Activity[${index}].` + `Observation[${observationIndex}].`));
                     });
+                    validateRequired83036Observation(activity, text, invalidFields);
                     if (code && specialMedicalCodes.has(code)) {
                         Array.from(activity.getElementsByTagName('Observation')).forEach(observation => {
                             const type = text('Type', observation);
