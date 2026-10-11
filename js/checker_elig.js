@@ -36,7 +36,7 @@
   const ELIGIBLE_STATUS_PATTERN = /^eligible$/i;
   const DENTAL_CATEGORY_PATTERN = /dental/i;
   const PLACEHOLDER_EID_PATTERN = /^(0+|1+|2+|9+)$/;
-  const UNKNOWN_EID_PATTERN = /^0+$/;
+  const BLANK_ELIGIBILITY_ALLOWED_EID_PATTERN = /^(0+|1+)$/;
 
   const CHECKPOINT_PAYER_RULES = Object.freeze({
     D001: Object.freeze({ name: 'Thiqa', expectedClaimPayerIDs: ['E001'], payerNamePattern: /THIQA/i }),
@@ -140,13 +140,13 @@
     return eid.length >= 12 && !PLACEHOLDER_EID_PATTERN.test(eid);
   }
 
-  function isUnknownEid(value) {
+  function isBlankEligibilityAllowedPlaceholderEid(value) {
     const eid = normalizeEid(value);
-    return eid.length >= 12 && UNKNOWN_EID_PATTERN.test(eid);
+    return eid.length >= 12 && BLANK_ELIGIBILITY_ALLOWED_EID_PATTERN.test(eid);
   }
 
   function hasAcceptableClaimEid(value) {
-    return isUsableEid(value) || isUnknownEid(value);
+    return isUsableEid(value);
   }
 
   function normalizeClinician(value) {
@@ -1039,7 +1039,11 @@
       invalidRemarks.push('Encounter Start is missing or has an invalid date.');
     }
 
-    if (!hasAcceptableClaimEid(claim.eid)) {
+    const blankEligibilityPlaceholderAccepted = Boolean(
+      match?.selectedComparison?.eidBlankAccepted
+    );
+
+    if (!hasAcceptableClaimEid(claim.eid) && !blankEligibilityPlaceholderAccepted) {
       invalidRemarks.push('Emirates ID is missing or invalid.');
     }
 
@@ -1174,6 +1178,11 @@
       ? claim.requiredClinicians
       : new Set();
     const eligibilityEidBlank = isEligibilityEidBlank(row);
+    const memberIdMatch = Boolean(
+      claim?.memberID &&
+      row?.memberID &&
+      claim.memberID === row.memberID
+    );
     const actualEidMatch = Boolean(
       isUsableEid(claim?.eid) &&
       isUsableEid(row?.eid) &&
@@ -1181,7 +1190,8 @@
     );
     const blankEligibilityEidAccepted = Boolean(
       eligibilityEidBlank &&
-      hasAcceptableClaimEid(claim?.eid)
+      memberIdMatch &&
+      isBlankEligibilityAllowedPlaceholderEid(claim?.eid)
     );
     const serviceCategoryComparison = getServiceCategoryComparison(claim, row);
 
@@ -1191,11 +1201,7 @@
         row?.orderedDate &&
         claim.encounterDate === row.orderedDate
       ),
-      memberId: Boolean(
-        claim?.memberID &&
-        row?.memberID &&
-        claim.memberID === row.memberID
-      ),
+      memberId: memberIdMatch,
       eid: Boolean(
         blankEligibilityEidAccepted || actualEidMatch
       ),
@@ -1211,10 +1217,7 @@
       serviceCategoryValue: serviceCategoryComparison.serviceCategory,
       serviceCategoryExpected: serviceCategoryComparison.expected,
       eidBlankAccepted: blankEligibilityEidAccepted,
-      unknownClaimEidAccepted: Boolean(
-        blankEligibilityEidAccepted &&
-        isUnknownEid(claim?.eid)
-      )
+      unknownClaimEidAccepted: blankEligibilityEidAccepted
     };
   }
 
