@@ -608,6 +608,10 @@
                 invalidFields.push(`Diagnosis Code ${code} has an invalid ICD-10-CM format.`);
                 return;
             }
+            if (code === 'R51') {
+                invalidFields.push('Diagnosis Code R51 is invalid. Use R51.9 instead.');
+                return;
+            }
             const reportableAlternatives = NON_REPORTABLE_ICD10_CODES.get(code);
             if (reportableAlternatives) {
                 invalidFields.push(`Diagnosis Code ${code} is an incomplete ICD-10-CM category. ` + `Use a specific reportable code: ${formatNaturalList(reportableAlternatives)}, ` + `according to the documented scar type.`);
