@@ -168,14 +168,20 @@ function validateActivityType(code, type, isDentalCode = false, tariffCodeTypeMa
 function normalizeToothCode(code) {
   return code?.toString().trim().toUpperCase() || '';
 }
-// Supernumerary teeth are represented as a regular tooth number + 50 (e.g., tooth 79 = supernumerary of tooth 29).
-// Resolve to the base tooth for comparisons; display always uses the original supernumerary number.
+// Supernumerary teeth:
+// - Permanent: regular tooth number + 50 (e.g., 79 resolves to 29).
+// - Primary: base primary tooth letter + "S" (e.g., GS resolves to G).
+// Resolve to the base tooth for validation; display always uses the original code.
 function resolveSupernumeraryTooth(tooth) {
-  const num = parseInt(tooth, 10);
-  if (!isNaN(num) && num >= 51) {
+  const normalized = normalizeToothCode(tooth);
+  const num = parseInt(normalized, 10);
+  if (!isNaN(num) && /^\d+$/.test(normalized) && num >= 51) {
     return (num - 50).toString();
   }
-  return tooth;
+  if (/^[A-T]S$/.test(normalized)) {
+    return normalized[0];
+  }
+  return normalized;
 }
 function buildAuthMap(authData) {
   const map = {};
