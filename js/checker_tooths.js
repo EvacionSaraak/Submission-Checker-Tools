@@ -556,10 +556,15 @@ function validateKnownCode({
       return `${obsCode} - ${getRegionName(obsCode)}`;
     }).join('<br>');
 
-  // Emit direct, actionable invalid-tooth remarks.
-  for (const teeth of Object.values(invalidTeethByType)) {
+  // Emit direct, actionable invalid-tooth remarks with tooth and code categories.
+  const codeCategory = meta.description.match(/anterior|posterior|bicuspid|all/i)?.[0] || '';
+  for (const [toothType, teeth] of Object.entries(invalidTeethByType)) {
     teeth.forEach(tooth => {
-      remarks.push(`Tooth '${tooth}' is not valid for ${code}`);
+      if (codeCategory && codeCategory.toLowerCase() !== 'all') {
+        remarks.push(`Tooth '${tooth}' is ${toothType} and is not valid for ${codeCategory} code ${code}.`);
+      } else {
+        remarks.push(`Tooth '${tooth}' is not valid for code ${code}.`);
+      }
     });
   }
 
