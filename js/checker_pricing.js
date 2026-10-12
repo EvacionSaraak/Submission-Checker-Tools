@@ -257,6 +257,12 @@ const D004_CONSULTATION_PATIENT_SHARE_CAPS = Object.freeze({
   '99213': 10
 });
 
+function getD004ConsultationPatientShareMinimum(row) {
+  const specialty = String(row?._clinicianSpecialty || '').trim();
+  if (!specialty) return null;
+  return /general\s+practitioner/i.test(specialty) ? 20 : 10;
+}
+
 // Consultation Patient Share is allocated before Laboratory/Radiology Patient
 // Share so consultation is excluded from the cumulative Lab/Radiology cap.
 const DAMAN_CONSULTATION_CODES = new Set([
@@ -395,6 +401,10 @@ function applyDamanPatientShareCapValidation(actRows, options = {}) {
         maximum: receiverID === 'D004'
           ? (D004_CONSULTATION_PATIENT_SHARE_CAPS[code] ?? null)
           : null,
+        minimum: receiverID === 'D004'
+          ? getD004ConsultationPatientShareMinimum(row)
+          : null,
+        clinicianSpecialty: String(row._clinicianSpecialty || '').trim(),
         negativeNet: inference.negativeNet,
         zeroPriced: inference.zeroPriced,
         evaluable: inference.evaluable,
@@ -476,9 +486,19 @@ function applyDamanPatientShareCapValidation(actRows, options = {}) {
       detail.maximum !== undefined &&
       String(detail.maximum).trim() !== '' &&
       Number.isFinite(Number(detail.maximum));
+    const hasConfiguredMinimum =
+      detail.minimum !== null &&
+      detail.minimum !== undefined &&
+      String(detail.minimum).trim() !== '' &&
+      Number.isFinite(Number(detail.minimum));
+
     detail.withinCap =
       hasConfiguredCap && detail.evaluable && !detail.negativeNet
         ? compareMoney(detail.patientShare, Number(detail.maximum)) <= 0
+        : null;
+    detail.meetsMinimum =
+      hasConfiguredMinimum && detail.evaluable && !detail.negativeNet
+        ? compareMoney(detail.patientShare, Number(detail.minimum)) >= 0
         : null;
 
     const row = rows[detail.rowIndex];
@@ -487,6 +507,19 @@ function applyDamanPatientShareCapValidation(actRows, options = {}) {
         type: 'consultation',
         ...detail
       };
+    }
+
+    if (detail.meetsMinimum === false && row) {
+      const clinicianType = /general\s+practitioner/i.test(detail.clinicianSpecialty)
+        ? 'General Practitioner'
+        : 'Specialist';
+      addPricingFindingToRow(row, {
+        ruleId: 'MED_D004_CONSULTATION_PT_SHARE_MINIMUM',
+        status: 'Invalid',
+        remark:
+          `Daman Basic consultation ${detail.code} under ${clinicianType} requires at least ` +
+          `${formatMoney(detail.minimum)} AED Patient Share (currently ${formatMoney(detail.patientShare)}).`
+      }, options);
     }
 
     if (detail.withinCap === false && row) {
