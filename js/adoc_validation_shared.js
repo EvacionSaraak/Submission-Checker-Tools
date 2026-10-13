@@ -34,6 +34,24 @@
   const EFFECTIVE_DATE_KEY = '2027-01-01';
   const ADOC_ACTIVITY_TYPE = '11';
   const ADOC_CODE_PATTERN = /^[PCSD]\d{2}$/i;
+
+  // ADOC v1.4 class registry from the Definitions Manual table of contents.
+  // P12 (Renal dialysis) and C52 (Breast) were removed in v1.3 and are
+  // intentionally absent. This validates class existence only; it does not
+  // infer class assignment from CPT, diagnosis, specialty or free text.
+  const VALID_CLASS_CODES = new Set([
+    'P01','P02','P03','P04','P05','P06','P07','P08','P09','P10','P11','P13','P14','P15',
+    'C01','C02','C03','C04','C05','C06','C07','C08','C09','C10','C11','C12','C13','C14',
+    'C15','C16','C17','C18','C19','C20','C21','C22','C23','C24','C25','C26','C27','C28',
+    'C29','C30','C31','C32','C33','C34','C35','C36','C37','C38','C39','C40','C41','C42',
+    'C43','C44','C45','C46','C47','C48','C49','C50','C51','C53','C54','C55',
+    'S01','S02','S03','S04','S05','S06','S07','S08','S09','S10','S11','S12','S13','S14',
+    'S15','S16','S17','S18','S19','S20','S21','S22','S23','S24','S25','S26','S27','S28',
+    'S29','S30','S31','S32','S33','S34','S35','S36','S37','S38','S39','S40','S41','S42',
+    'S43','S44','S45','S46','S47','S48','S49','S50','S51','S52','S53','S54','S55',
+    'D01','D02','D03','D04','D05','D06','D07','D08'
+  ]);
+
   const IN_SCOPE_ENCOUNTER_TYPES = new Set(['1', '10', '103']);
   const SELF_PAY_MARKERS = new Set(['CASH', 'SELF', 'SELFPAY', 'SELF PAY', 'SELF-PAY']);
 
@@ -243,6 +261,14 @@
         ));
       }
 
+      if (isAdocCode(activity.code) && !VALID_CLASS_CODES.has(activity.code)) {
+        findings.push(finding(
+          'ADOC_UNKNOWN_CLASS',
+          `ADOC class ${activity.code} is not defined in Definitions Manual v1.4.`,
+          activity
+        ));
+      }
+
       if (isAdocCode(activity.code) && activity.type !== ADOC_ACTIVITY_TYPE) {
         findings.push(finding(
           'ADOC_ACTIVITY_TYPE',
@@ -302,6 +328,7 @@
     EFFECTIVE_DATE_KEY,
     ADOC_ACTIVITY_TYPE,
     ADOC_CODE_PATTERN,
+    VALID_CLASS_CODES,
     IN_SCOPE_ENCOUNTER_TYPES,
     DOH_PENDING,
     parseDateKey,
