@@ -1720,6 +1720,39 @@
                     claimPayerID: payerID,
                     packageName
                 });
+
+                // -----------------------------------------------------------------
+                // ADOC 2027 FRAMEWORK
+                // Activates by encounter date on/after 01-Jan-2027.
+                // The shared module currently enforces only objective v1.4 rules:
+                //   * ADOC class codes use Activity Type 11.
+                //   * ADOC code shape is Pxx/Cxx/Sxx/Dxx.
+                //   * ADOC is limited to Encounter Types 1, 10 and 103.
+                //   * Dental and self-pay activities are outside ADOC scope.
+                //
+                // DOH INPUT STILL REQUIRED TO FINISH SCHEMA ADOC VALIDATION:
+                //   1. Final 2027 Claims & Adjudication Rules / production XML spec.
+                //   2. Rule defining when an in-scope outpatient claim MUST contain
+                //      an ADOC service event (absence cannot yet be safely invalidated).
+                //   3. Final primary-care, diagnostic-origin and exclusion handling.
+                //   4. Official ADOC class/code crosswalk if DoH publishes one.
+                //
+                // Until those are received, do not infer an ADOC class from CPT,
+                // diagnosis or specialty and do not require ADOC on every 2027 claim.
+                // -----------------------------------------------------------------
+                if (window.AdocValidationShared) {
+                    const adocFindings = window.AdocValidationShared.validateSchemaClaim(claim, {
+                        claimTypeMode,
+                        payerID
+                    });
+                    adocFindings.forEach(finding => {
+                        const remark = String(finding?.remark || '').trim();
+                        if (remark) invalidFields.push(remark);
+                    });
+                    if (adocFindings.length) {
+                        console.log('[SCHEMA][ADOC]', claimID || 'Unknown', adocFindings);
+                    }
+                }
                 if (contract && !packageName) invalidFields.push('Contract.PackageName (null/empty)');
                 checkForFalseValues(claim, invalidFields, 'Claim.');
                 if (claimHadAmpersand) invalidFields.push(AMPERSAND_REPLACEMENT_ERROR);
