@@ -1550,6 +1550,49 @@ async function handleRun(options = {}) {
 
     console.log(`[PRICING] ReceiverID: ${pricingReceiverID || '(MISSING)'}`);
 
+    // -------------------------------------------------------------------------
+    // ADOC 2027 PRICING FRAMEWORK
+    // This detects post-01-Jan-2027 ADOC activities and records their scope, but
+    // DOES NOT invent a price or override the current tariff engine.
+    //
+    // DOH INPUT STILL REQUIRED TO FINISH ADOC PRICING:
+    //   1. Final ADOC Price List with base price for every class.
+    //   2. All adjusters, factors, payer rules, rounding and patient-share rules.
+    //   3. Final ADOC Counting Rules, especially same-patient / same-clinician /
+    //      same-day same-series highest-price and zero-value secondary handling.
+    //   4. Final Claims & Adjudication Rules describing how ADOC replaces or
+    //      coexists with CPT/service-level billing in production.
+    //
+    // The hook is intentionally non-blocking until those sources are supplied.
+    // Dental and self-pay remain outside ADOC under Definitions Manual v1.4.
+    // -------------------------------------------------------------------------
+    if (window.AdocValidationShared) {
+      const adocPricingClaims = Array.from(xmlDoc.getElementsByTagName('Claim'))
+        .map(claim => ({
+          claim,
+          framework: window.AdocValidationShared.getPricingFramework(claim, {
+            claimTypeMode: selectedMode
+          })
+        }))
+        .filter(entry => entry.framework.active && entry.framework.activities.length > 0);
+
+      window._lastAdocPricingFramework = adocPricingClaims.map(entry => ({
+        claimID: textValue(entry.claim, 'ID') || '',
+        applicable: entry.framework.applicable,
+        activities: entry.framework.activities.map(activity => ({
+          id: activity.id,
+          code: activity.code,
+          type: activity.type,
+          net: activity.net
+        })),
+        pendingDoH: entry.framework.pending
+      }));
+
+      if (adocPricingClaims.length) {
+        console.info('[PRICING][ADOC] 2027 framework active; price validation pending final DoH price/counting rules.', window._lastAdocPricingFramework);
+      }
+    }
+
     if (isPricingExcludedReceiver(pricingReceiverID)) {
       console.log(`[PRICING] ReceiverID "${pricingReceiverID}" is excluded from checker_pricing.`);
       lastResults = [];
