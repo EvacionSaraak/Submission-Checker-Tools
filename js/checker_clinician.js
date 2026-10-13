@@ -784,6 +784,56 @@
     await loadClinicianData();
     
     const claims = xmlDoc.getElementsByTagName('Claim');
+
+    // -------------------------------------------------------------------------
+    // ADOC 2027 CLINICIAN / PRIVILEGING FRAMEWORK
+    // Date/scope activation is centralized in AdocValidationShared.
+    //
+    // DOH INPUT STILL REQUIRED TO FINISH CLINICIAN ADOC VALIDATION:
+    //   1. Authoritative ADOC class -> "Usual provider" machine-readable map.
+    //   2. Final specialty normalization / equivalence rules.
+    //   3. Source of truth for provider-granted and DoH clinician privileges.
+    //   4. Official ClinicianPrivileging observation specification.
+    //   5. Rules for specialties legitimately spanning multiple ADOC classes.
+    //
+    // Do not invalidate an ADOC class merely because our current clinician
+    // Category text differs from prose in the Definitions Manual. That mapping
+    // must be supplied/confirmed by DoH before it becomes a hard rule.
+    // -------------------------------------------------------------------------
+    if (window.AdocValidationShared) {
+      const medicalRadio = document.getElementById('claimTypeMedical');
+      const dentalRadio = document.getElementById('claimTypeDental');
+      const claimTypeMode = medicalRadio?.checked
+        ? 'MEDICAL'
+        : dentalRadio?.checked
+          ? 'DENTAL'
+          : '';
+
+      const adocClinicianClaims = Array.from(claims)
+        .map(claim => ({
+          claim,
+          framework: window.AdocValidationShared.getClinicianFramework(claim, {
+            claimTypeMode
+          })
+        }))
+        .filter(entry => entry.framework.active && entry.framework.activities.length > 0);
+
+      window._lastAdocClinicianFramework = adocClinicianClaims.map(entry => ({
+        claimID: getText(entry.claim, 'ID'),
+        applicable: entry.framework.applicable,
+        activities: entry.framework.activities.map(activity => ({
+          id: activity.id,
+          code: activity.code,
+          clinician: activity.clinician
+        })),
+        pendingDoH: entry.framework.pending
+      }));
+
+      if (adocClinicianClaims.length) {
+        console.info('[CLINICIAN][ADOC] 2027 framework active; specialty/privileging enforcement pending DoH mappings.', window._lastAdocClinicianFramework);
+      }
+    }
+
     const missingClinicianIds = new Set();
 
     for (const claim of claims) {
