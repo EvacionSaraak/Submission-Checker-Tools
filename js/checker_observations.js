@@ -1069,6 +1069,44 @@ async function parseXML(suppliedFile = null) {
   const isMedical = !!(medicalRadio && medicalRadio.checked);
   console.log('[TEETH] XML parsed, validating activities... isMedical:', isMedical);
 
+  // ---------------------------------------------------------------------------
+  // ADOC 2027 OBSERVATION FRAMEWORK
+  // This hook activates by encounter date from 01-Jan-2027 but is deliberately
+  // non-blocking until DoH publishes the production observation specification.
+  //
+  // DOH INPUT STILL REQUIRED TO FINISH OBSERVATION VALIDATION:
+  //   1. Official ClinicianPrivileging observation Type/Code/Value.
+  //   2. Any mandatory ADOC activity observations and their cardinality.
+  //   3. Observation requirements for secondary / zero-value ADOC classes.
+  //   4. Production examples showing where observations attach in the XML.
+  //
+  // Once received, add findings at activity level here rather than duplicating
+  // the date/scope logic; AdocValidationShared is the single source of truth.
+  // ---------------------------------------------------------------------------
+  if (window.AdocValidationShared) {
+    const claimTypeMode = isMedical ? 'MEDICAL' : 'DENTAL';
+    const adocObservationClaims = Array.from(xmlDoc.getElementsByTagName('Claim'))
+      .map(claim => ({
+        claim,
+        framework: window.AdocValidationShared.getObservationFramework(claim, {
+          claimTypeMode
+        })
+      }))
+      .filter(entry => entry.framework.active && entry.framework.activities.length > 0);
+
+    window._lastAdocObservationFramework = adocObservationClaims.map(entry => ({
+      claimID: entry.claim.querySelector('ID')?.textContent?.trim() || '',
+      applicable: entry.framework.applicable,
+      activityIDs: entry.framework.activities.map(activity => activity.id),
+      codes: entry.framework.activities.map(activity => activity.code),
+      pendingDoH: entry.framework.pending
+    }));
+
+    if (adocObservationClaims.length) {
+      console.info('[OBSERVATIONS][ADOC] 2027 framework active; production observation rules pending DoH specification.', window._lastAdocObservationFramework);
+    }
+  }
+
   const rows = validateActivities(xmlDoc, toothMap, authMap, endodontistSet, receiverID, isMedical, tariffCodeTypeMap);
   console.log('[TEETH] Validation complete, building table... (rows:', rows.length, ')');
   const tableElement = buildResultsTable(rows);
