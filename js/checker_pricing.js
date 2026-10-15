@@ -2108,7 +2108,18 @@ async function handleRun(options = {}) {
         }
       }
       const normalizedCode = normalizeCode(rec.CPT);
-      if ((normalizedCode === '87400' || normalizedCode === '87804') && xmlQty !== 2) {
+      const normalizedClaimPayerID = String(rec.PayerID || '')
+        .trim()
+        .toUpperCase()
+        .replace(/[^A-Z0-9]/g, '');
+      const isCashClaim =
+        pricingReceiverID === 'HAAD' ||
+        ['CASH', 'SELF', 'SELFPAY'].includes(normalizedClaimPayerID);
+      if (
+        (normalizedCode === '87400' || normalizedCode === '87804') &&
+        xmlQty !== 2 &&
+        !(normalizedCode === '87400' && isCashClaim)
+      ) {
         status = 'Invalid';
         remarks.push(`Code ${rec.CPT} must always have quantity 2.`);
       }
