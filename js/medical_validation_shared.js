@@ -588,12 +588,18 @@
   function validateFixedQuantityRules(context, rules) {
     const findings = [];
     const fixed = (rules && rules.fixedQuantityRules) || {};
+    const normalizedPayerID = normalizeLoose(context.claimPayerID);
+    const isCashClaim =
+      normalizeLoose(context.receiverID) === 'HAAD' ||
+      ['CASH', 'SELF', 'SELFPAY'].includes(normalizedPayerID);
+
     (context.activities || []).forEach(activity => {
       const code = activity.normalizedCode;
       const qty = Number(activity.quantity);
       if (Object.prototype.hasOwnProperty.call(fixed, code)) {
         const expectedQty = Number(fixed[code]);
-        if (Number.isFinite(expectedQty) && qty !== expectedQty) {
+        const skipInsuranceOnly87400 = code === '87400' && isCashClaim;
+        if (!skipInsuranceOnly87400 && Number.isFinite(expectedQty) && qty !== expectedQty) {
           findings.push(makeFinding({
             ruleId: 'MED_FIXED_QTY',
             code: activity.code,
