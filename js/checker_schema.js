@@ -1365,7 +1365,11 @@
             // The exemption is determined solely by the Header ReceiverID; PayerID
             // does not affect this rule. Ordering Clinician validation is unchanged.
             const receiverID = String(options.receiverID || '').trim().toUpperCase();
+            const claimPayerID = String(options.claimPayerID || '').trim().toUpperCase();
             const isHaadReceiver = receiverID === 'HAAD';
+            const isCashClaim =
+                isHaadReceiver ||
+                ['CASH', 'SELF', 'SELFPAY'].includes(claimPayerID.replace(/[^A-Z0-9]/g, ''));
 
             // This validation applies only to the Performing Clinician (<Clinician>),
             // never to the Ordering Clinician. All HAAD ReceiverID claims are exempt.
@@ -1420,7 +1424,14 @@
                 if (isForbidden992Specialty(clinicianSpecialty, code)) invalidFields.push(`${clinicianSpecialty || 'Performing Clinician Specialty'} cannot be used as Performing Clinician specialty for ${code}.`);
                 if (code === '82607' && DAMAN_RECEIVER_IDS.has(receiverID) && (specialtyContains(orderingSpecialty, 'General Practitioner') || specialtyContains(clinicianSpecialty, 'General Practitioner'))) invalidFields.push(`Activity 82607 cannot use a General Practitioner as Ordering or Performing Clinician for Daman receiver ${receiverID}.`);
                 if (MUTUALLY_EXCLUSIVE_INFUSION_CODES.has(code) && quantityRaw && quantity !== 1) invalidFields.push(`Activity ${code} must have Quantity of 1.`);
-                if (FIXED_QUANTITY_TWO_CODES.has(code) && quantityRaw && quantity !== 2) invalidFields.push(`Activity ${code} must have Quantity of 2.`);
+                if (
+                    FIXED_QUANTITY_TWO_CODES.has(code) &&
+                    quantityRaw &&
+                    quantity !== 2 &&
+                    !(code === '87400' && isCashClaim)
+                ) {
+                    invalidFields.push(`Activity ${code} must have Quantity of 2.`);
+                }
             });
             const hasNewPatientCode = consultationCodes.has('99202') || consultationCodes.has('99203');
             const hasEstablishedPatientCode = consultationCodes.has('99212') || consultationCodes.has('99213');
@@ -1709,7 +1720,8 @@
                 const isMedicalClaim = claimTypeMode ? claimTypeMode === 'MEDICAL' : String(encounterType).trim() === '3';
                 validateConsultationAndSpecialtyRules(activities, text, invalidFields, clinicianSpecialtyMap, {
                     isMedicalClaim,
-                    receiverID
+                    receiverID,
+                    claimPayerID: payerID
                 });
                 validateMedicalOrderingConsistency(activities, text, invalidFields, { isMedicalClaim });
                 const contract = claim.getElementsByTagName('Contract')[0];
