@@ -2491,7 +2491,10 @@ async function loadDrugsMap(file) {
 }
 async function loadBundledDrugsMap() {
   try {
-    const response = await fetch('../resources/Drugs.xlsx');
+    // Drugs.xlsx is replaced periodically in GitHub. Never allow the browser
+    // or an intermediary cache to keep an older drug price list after a repo update.
+    const drugResourceUrl = `../resources/Drugs.xlsx?v=${Date.now()}`;
+    const response = await fetch(drugResourceUrl, { cache: 'no-store' });
     if (!response.ok) {
       throw new Error(`Unable to load bundled resources/Drugs.xlsx (HTTP ${response.status}).`);
     }
