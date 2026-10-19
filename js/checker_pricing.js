@@ -1056,12 +1056,39 @@ function getDrugPricingProfile(drug, receiverID) {
   const isDaman = DAMAN_RECEIVER_IDS.has(receiver);
   const usesPublicPrice = receiver === 'A001';
 
-  // Daman Basic (D004) follows the same drug price columns as Thiqa (D001).
-  // Only Daman Enhanced (A001) uses the public-price columns.
-  const packageColumn = usesPublicPrice ? 'Package Price to Public' : 'Package Markup';
-  const unitColumn = usesPublicPrice ? 'Unit Price to Public' : 'Unit Markup';
-  const packagePrice = parseOptionalMoney(drug && drug[packageColumn]);
-  const unitPrice = parseOptionalMoney(drug && drug[unitColumn]);
+  // Normal pricing behavior is unchanged:
+  //   Daman Enhanced (A001): public-price columns.
+  //   Daman Basic (D004):    markup columns.
+  //   Thiqa (D001):          markup columns.
+  //
+  // Edge case for Thiqa only:
+  // If the drug is included in the Thiqa formulary but its Thiqa markup price
+  // is blank, fall back to the corresponding public-price ("Daman side")
+  // column from the same Drugs.xlsx row. Formulary eligibility remains a
+  // separate rule, so this fallback does NOT make a Daman Basic formulary "No"
+  // drug chargeable under D004.
+  let packageColumn = usesPublicPrice ? 'Package Price to Public' : 'Package Markup';
+  let unitColumn = usesPublicPrice ? 'Unit Price to Public' : 'Unit Markup';
+  let packagePrice = parseOptionalMoney(drug && drug[packageColumn]);
+  let unitPrice = parseOptionalMoney(drug && drug[unitColumn]);
+
+  if (receiver === THIQA_RECEIVER_ID) {
+    if (packagePrice === null) {
+      const publicPackagePrice = parseOptionalMoney(drug && drug['Package Price to Public']);
+      if (publicPackagePrice !== null) {
+        packagePrice = publicPackagePrice;
+        packageColumn = 'Package Price to Public (Thiqa fallback)';
+      }
+    }
+
+    if (unitPrice === null) {
+      const publicUnitPrice = parseOptionalMoney(drug && drug['Unit Price to Public']);
+      if (publicUnitPrice !== null) {
+        unitPrice = publicUnitPrice;
+        unitColumn = 'Unit Price to Public (Thiqa fallback)';
+      }
+    }
+  }
 
   return {
     receiverID: receiver,
