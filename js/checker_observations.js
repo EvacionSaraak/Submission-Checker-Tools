@@ -262,13 +262,29 @@ function hasRequiredLoincObservation(obsList, allowedCodes) {
   });
 }
 
-// Check if an activity has a valid Subcode observation (Observation Code = "Subcode", Value = "01")
+// Check if an activity has a Subcode observation whose semantic value is "01".
+// Whitespace formatting is validated separately so a value such as "01 " does
+// not also trigger a misleading "missing Subcode" remark.
 function hasSubcodeObservation(obsList) {
   return Array.from(obsList).some(obs => {
     const code = (obs.querySelector('Code')?.textContent || '').trim().toUpperCase();
-    const value = (obs.querySelector('Value')?.textContent || '').trim();
-    return code === 'SUBCODE' && value === '01';
+    const rawValue = obs.querySelector('Value')?.textContent || '';
+    return code === 'SUBCODE' && rawValue.trim() === '01';
   });
+}
+
+function getSubcodeValueWhitespaceErrors(obsList) {
+  const errors = [];
+  Array.from(obsList).forEach(obs => {
+    const code = (obs.querySelector('Code')?.textContent || '').trim().toUpperCase();
+    if (code !== 'SUBCODE') return;
+
+    const rawValue = obs.querySelector('Value')?.textContent || '';
+    if (rawValue !== rawValue.trim()) {
+      errors.push('Subcode observation Value must not contain leading or trailing whitespace; expected exactly "01".');
+    }
+  });
+  return errors;
 }
 // Returns the count of Subcode observations (Code = "SUBCODE") in an observation list
 function countSubcodeObservations(obsList) {
@@ -775,10 +791,17 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
         } else {
           const isEndodontist = endodontistSet.has(clinicianId);
           const hasSubcode = hasSubcodeObservation(obsList);
+          const subcodeWhitespaceErrors = getSubcodeValueWhitespaceErrors(obsList);
+
           if (isEndodontist && !hasSubcode) {
             // ERROR: Endodontist but missing required Subcode observation
             row.remarks.push(`Code ${code} requires a Subcode observation (Type: Text, Code: Subcode, Value: "01") when performed by an Endodontist.`);
           }
+
+          // Preserve presence semantics while rejecting values such as "01 " or " 01".
+          // This prevents a whitespace error from also being reported as a missing Subcode.
+          row.remarks.push(...subcodeWhitespaceErrors);
+
           // ERROR: More than one Subcode observation is not allowed
           if (countSubcodeObservations(obsList) > 1) {
             row.remarks.push(`Code ${code} must have only one Subcode observation.`);
