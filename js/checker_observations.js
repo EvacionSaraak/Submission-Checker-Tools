@@ -777,9 +777,13 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
         row.remarks.push('Code 83718 must have observation with appropriate LOINC codes.');
       }
 
-      // Daman Enhanced (A001) must never contain a Subcode observation.
-      if (!isMedical && receiverID === 'A001' && countSubcodeObservations(obsList) > 0) {
-        row.remarks.push('Subcode observations are not allowed for Daman Enhanced (A001).');
+      // Subcode observations are only permitted for Thiqa (D001) and HAAD.
+      if (
+        !isMedical &&
+        !['D001', 'HAAD'].includes(String(receiverID || '').trim().toUpperCase()) &&
+        countSubcodeObservations(obsList) > 0
+      ) {
+        row.remarks.push('Subcode observations are not allowed for this receiver; only Thiqa (D001) and HAAD may use Subcode.');
       }
 
       // Check Subcode observation requirement for root canal codes from 20-Feb-2026 onward
