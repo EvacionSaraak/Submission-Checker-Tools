@@ -1653,7 +1653,12 @@
                 const activities = claim.getElementsByTagName('Activity');
                 const invalidQuantityCodes = [];
                 const excessiveDecimalQuantityCodes = new Set();
-                const isThiqaClaim = String(receiverID || '').trim().toUpperCase() === 'D001' || String(payerID || '').trim().toUpperCase() === 'E001';
+                const normalizedReceiverID = String(receiverID || '').trim().toUpperCase();
+                const normalizedPayerID = String(payerID || '').trim().toUpperCase();
+                const isThiqaClaim = normalizedReceiverID === 'D001' || normalizedPayerID === 'E001';
+                const isHaadCashClaim =
+                    normalizedReceiverID === 'HAAD' ||
+                    ['CASH', 'SELF', 'SELFPAY'].includes(normalizedPayerID.replace(/[^A-Z0-9]/g, ''));
                 let requiresOpticalEligibilityCheck = false;
                 const specialMedicalCodes = new Set(['17999', '96999', '0232T', 'J3490', '81479', '41899']);
                 if (!activities.length) invalidFields.push('Kindly verify activities as there are no codes ' + 'showing in the XML for this claim.');
@@ -1661,7 +1666,9 @@
                     const code = text('Code', activity);
                     const quantity = text('Quantity', activity);
                     const quantityValue = Number.parseFloat(quantity);
-                    if (code === '92015' && !isThiqaClaim) requiresOpticalEligibilityCheck = true;
+                    if (code === '92015' && !isThiqaClaim && !isHaadCashClaim) {
+                        requiresOpticalEligibilityCheck = true;
+                    }
                     ['Start', 'Type', 'Code', 'Quantity', 'Net', 'Clinician'].forEach(field => invalidIfEmpty(field, activity, `Activity[${index}].`));
 
                     if (quantity === '0') invalidQuantityCodes.push(code || '(unknown)');
