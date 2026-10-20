@@ -3,6 +3,8 @@
     // === GLOBAL STATE ===
     let authRules = {};
     let authRulesPromise = null;
+    let endoAuthCodes = new Set();
+    let endoAuthCodesPromise = null;
     let insuranceApprovalLimits = null;
     let insuranceApprovalLimitsPromise = null;
     let xmlClaimCount = 0;
@@ -340,6 +342,27 @@ function loadAuthRules(url = "../json/checker_auths.json") {
       });
   }
   return authRulesPromise;
+}
+
+function loadEndoAuthCodes(url = "../json/endo_pricing.json") {
+  if (!endoAuthCodesPromise) {
+    const cacheBustedUrl = `${url}?v=${Date.now()}`;
+    endoAuthCodesPromise = fetch(cacheBustedUrl, { cache: 'no-store' })
+      .then(res => {
+        if (!res.ok) throw new Error(`Failed to load ${url}`);
+        return res.json();
+      })
+      .then(data => {
+        const rows = Array.isArray(data) ? data : [];
+        endoAuthCodes = new Set(
+          rows
+            .map(entry => normalizeProcedureCode(entry?.code))
+            .filter(Boolean)
+        );
+        return endoAuthCodes;
+      });
+  }
+  return endoAuthCodesPromise;
 }
 
 function loadInsuranceApprovalLimits(url = "../json/insurance_approval_limits.json") {
@@ -903,11 +926,12 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId, claimType = ''
   // For medical claims, explicit CT/MRI/therapy/76816 codes plus all 97-series
   // codes require authorization. The source checkpoint's 97 exception set is
   // intentionally editable above and currently empty.
+  const isEndoAuthCode = !isMedicalClaim && endoAuthCodes.has(normalizedCode);
   const needsAuth = isAuthPresenceClassifiedCode
     ? Boolean(authID)
     : (isMedicalClaim
       ? (MEDICAL_CODES_REQUIRING_AUTH.has(normalizedCode) || is97AuthorizationCode || isMaternity768)
-      : codeRequiresAuthorization(code, rule));
+      : (isEndoAuthCode || codeRequiresAuthorization(code, rule)));
 
   if (!needsAuth && !authID) {
     return {
@@ -1679,6 +1703,7 @@ async function runAuthsCheck() {
     // Load authorization rules and insurance approval-limit configuration.
     await Promise.all([
       loadAuthRules(),
+      loadEndoAuthCodes(),
       loadInsuranceApprovalLimits()
     ]);
     
@@ -1733,6 +1758,7 @@ async function handleRun() {
   try {
     await Promise.all([
       loadAuthRules(),
+      loadEndoAuthCodes(),
       loadInsuranceApprovalLimits()
     ]);
     const results = validateClaims(parsedXmlDoc, parsedXlsxData, parsedReceiverID);
