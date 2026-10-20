@@ -926,7 +926,10 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId, claimType = ''
   // For medical claims, explicit CT/MRI/therapy/76816 codes plus all 97-series
   // codes require authorization. The source checkpoint's 97 exception set is
   // intentionally editable above and currently empty.
-  const isEndoAuthCode = !isMedicalClaim && endoAuthCodes.has(normalizedCode);
+  const isEndoAuthCode =
+    !isMedicalClaim &&
+    normalizedReceiverID !== CHECKPOINT_THIQA_RECEIVER_ID &&
+    endoAuthCodes.has(normalizedCode);
   const needsAuth = isAuthPresenceClassifiedCode
     ? Boolean(authID)
     : (isMedicalClaim
