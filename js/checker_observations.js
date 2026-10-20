@@ -281,7 +281,7 @@ function getSubcodeValueWhitespaceErrors(obsList) {
 
     const rawValue = obs.querySelector('Value')?.textContent || '';
     if (rawValue !== rawValue.trim()) {
-      errors.push('Subcode observation Value must not contain leading or trailing whitespace; expected exactly "01".');
+      errors.push('Subcode shows as "01 ", should be exactly "01" with no white spaces.');
     }
   });
   return errors;
