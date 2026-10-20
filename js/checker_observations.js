@@ -676,17 +676,16 @@ function getCombinedRemarks(row) {
   return [...(row.remarks || []), ...(row.warnings || [])];
 }
 // Main activity validation and results rendering
-function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontistSet, receiverID = '', isMedical = false, tariffCodeTypeMap = new Map()) {
+function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontistSet, receiverID = '', isMedical = false, tariffCodeTypeMap = new Map(), endoPricingCodes = new Set()) {
   const rows = [];
   const claimSummaries = {};
   const claimRegionTrack = {};
-  const recordedEndodonticCodes = new Set();
-  Object.entries(codeToMeta || {}).forEach(([code, meta]) => {
-    if (isEndodonticDescription(meta?.description)) recordedEndodonticCodes.add(code);
-  });
-  Object.entries(fallbackDescriptions || {}).forEach(([code, item]) => {
-    if (isEndodonticDescription(item?.description)) recordedEndodonticCodes.add(code);
-  });
+
+  // endo_pricing.json is the authoritative endodontic code list.
+  // Every code listed there must carry a tooth-number observation in Dental mode.
+  const recordedEndodonticCodes = new Set(
+    Array.from(endoPricingCodes || []).map(code => String(code || '').trim()).filter(Boolean)
+  );
   Array.from(xmlDoc.getElementsByTagName('Claim')).forEach(claim => {
     const claimId = claim.querySelector('ID')?.textContent || '(no claim ID)';
     claimRegionTrack[claimId] = { sextant: {}, quadrant: {} };
@@ -792,6 +791,17 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
           obsCode !== 'SUBCODE' && !isDrugPatientShareOrPDF(obsCode)
         );
         if (nonExemptObservationCodes.length === 0) {
+          // Endo codes get one canonical missing-observation remark. Remove the
+          // generic dental missing-observation variants added earlier so the user
+          // does not see duplicate messages for the same underlying problem.
+          row.remarks = (row.remarks || []).filter(remark => {
+            const text = String(remark || '');
+            return !(
+              /requires at least one observation but none were provided/i.test(text) ||
+              /No tooth \(Observation\) specified/i.test(text) ||
+              /requires at least one tooth-number observation/i.test(text)
+            );
+          });
           row.remarks.push(`Code ${code} requires at least one tooth-number observation.`);
         }
       }
@@ -995,6 +1005,14 @@ function loadAuthJson() {
     return r.ok ? r.json() : Promise.reject(new Error(`Failed to load checker_auths.json (HTTP ${r.status})`));
   });
 }
+
+function loadEndoPricingJson() {
+  const url = `../json/endo_pricing.json?v=${Date.now()}`;
+  return fetch(url, { cache: 'no-store' }).then(r => {
+    console.log('[TEETH] Fetched endo pricing JSON:', r.ok);
+    return r.ok ? r.json() : Promise.reject(new Error(`Failed to load endo_pricing.json (HTTP ${r.status})`));
+  });
+}
 function loadClinicianLicenses() {
   return fetch('../json/clinician_licenses.json').then(r => {
     console.log('[TEETH] Fetched clinician licenses JSON:', r.ok);
@@ -1043,13 +1061,14 @@ async function parseXML(suppliedFile = null) {
     (typeof window.getUnifiedXmlText === 'function' && (suppliedFile || window.unifiedCheckerFiles?.xml))
       ? window.getUnifiedXmlText()
       : readXmlWithRetry(file);
-  const [xmlText, toothJson, authJson, clinicianLicenses, mandatoryTariffBuffer] =
+  const [xmlText, toothJson, authJson, clinicianLicenses, mandatoryTariffBuffer, endoPricingJson] =
     await Promise.all([
       xmlTextPromise,
       loadToothJson(),
       loadAuthJson(),
       loadClinicianLicenses(),
-      loadMandatoryTariff()
+      loadMandatoryTariff(),
+      loadEndoPricingJson()
     ]);
   console.log('[TEETH] All resources loaded, processing...');
   const toothMap = buildCodeMeta(toothJson);
@@ -1057,6 +1076,11 @@ async function parseXML(suppliedFile = null) {
   const endodontistSet = buildEndodontistSet(clinicianLicenses);
   const mandatoryTariffWorkbook = XLSX.read(mandatoryTariffBuffer, { type: 'array' });
   const tariffCodeTypeMap = buildTariffCodeTypeMap(mandatoryTariffWorkbook);
+  const endoPricingCodes = new Set(
+    (Array.isArray(endoPricingJson) ? endoPricingJson : [])
+      .map(entry => String(entry?.code || '').trim())
+      .filter(Boolean)
+  );
   // Preprocess XML to replace unescaped & with "and" for parseability
   const xmlContent = xmlText.replace(/&(?!(amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;))/g, 'and');
   const xmlDoc = new DOMParser().parseFromString(xmlContent, 'application/xml');
@@ -1107,7 +1131,16 @@ async function parseXML(suppliedFile = null) {
     }
   }
 
-  const rows = validateActivities(xmlDoc, toothMap, authMap, endodontistSet, receiverID, isMedical, tariffCodeTypeMap);
+  const rows = validateActivities(
+    xmlDoc,
+    toothMap,
+    authMap,
+    endodontistSet,
+    receiverID,
+    isMedical,
+    tariffCodeTypeMap,
+    endoPricingCodes
+  );
   console.log('[TEETH] Validation complete, building table... (rows:', rows.length, ')');
   const tableElement = buildResultsTable(rows);
   console.log('[TEETH] Table build complete');
