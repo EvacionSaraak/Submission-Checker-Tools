@@ -1065,10 +1065,16 @@
             const foundCodes = Array.from(activities || []).map(activity => String(getText('Code', activity) || '').trim()).filter(code => specialCodes.has(code));
             if (!foundCodes.length) return;
             const diagnosisCodes = Array.from(diagnoses || []).map(diagnosis => String(getText('Code', diagnosis) || '').trim().toUpperCase()).filter(Boolean);
-            const validPrefixes = ['K05.0', 'K05.1', 'K03.6'];
-            const hasRequiredDiagnosis = diagnosisCodes.some(code => validPrefixes.some(prefix => code.startsWith(prefix)));
+            const hasRequiredDiagnosis = diagnosisCodes.some(code =>
+                code.startsWith('K05.') ||
+                code.startsWith('K03.6')
+            );
             if (!hasRequiredDiagnosis) {
-                invalidFields.push(`Activity code(s) ` + `${formatNaturalList(new Set(foundCodes))} ` + `require Diagnosis code K05.0, K05.1, or K03.6.`);
+                invalidFields.push(
+                    `Activity code(s) ` +
+                    `${formatNaturalList(new Set(foundCodes))} ` +
+                    `require a Diagnosis code in the K05.* family or K03.6.`
+                );
             }
         }
 
