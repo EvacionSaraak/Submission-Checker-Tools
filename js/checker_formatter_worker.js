@@ -1509,9 +1509,64 @@ self.onmessage = async (e) => {
       if (mode === 'eligibility') combineFn = combineEligibilities;
       else if (mode === 'reporting_full') combineFn = combineReportingsFull;
       const wb = await combineFn(files);
-      const wbArray = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-      const wbUint8 = new Uint8Array(wbArray);
-      self.postMessage({ type: 'result', workbookData: wbUint8 }, [wbUint8.buffer]);
+      try {
+        const wbArray = XLSX.write(wb, { bookType: 'xlsx', type: 'array', compression: true });
+        const wbUint8 = new Uint8Array(wbArray);
+        self.postMessage({ type: 'result', workbookData: wbUint8, resultKind: 'xlsx' }, [wbUint8.buffer]);
+      } catch (writeErr) {
+        if (mode !== 'reporting_full') throw writeErr;
+        if (!JSZIP_LOADED) throw new Error('Normal XLSX export failed (' + writeErr.message + ') and ZIP fallback is unavailable.');
+
+        log('Normal Reporting (full) XLSX export failed: ' + writeErr.message + '. Falling back to ZIP with the largest safe combined XLSX parts.', 'WARN');
+
+        const sourceSheetNames = wb.SheetNames.slice();
+        const zip = new JSZip();
+        let startSheet = 0;
+        let partNumber = 1;
+
+        const trySerializeRange = (startIndex, count) => {
+          const partWb = XLSX.utils.book_new();
+          for (let offset = 0; offset < count; offset++) {
+            const sourceName = sourceSheetNames[startIndex + offset];
+            XLSX.utils.book_append_sheet(partWb, wb.Sheets[sourceName], 'Combined Full ' + (offset + 1));
+          }
+          return XLSX.write(partWb, { bookType: 'xlsx', type: 'array', compression: true });
+        };
+
+        while (startSheet < sourceSheetNames.length) {
+          const remaining = sourceSheetNames.length - startSheet;
+          let low = 1;
+          let high = remaining;
+          let bestCount = 0;
+          let bestArray = null;
+
+          while (low <= high) {
+            const mid = Math.floor((low + high) / 2);
+            try {
+              const candidate = trySerializeRange(startSheet, mid);
+              bestCount = mid;
+              bestArray = candidate;
+              low = mid + 1;
+            } catch (partErr) {
+              high = mid - 1;
+            }
+          }
+
+          if (!bestCount || !bestArray) {
+            throw new Error('Fallback packaging could not serialize combined output sheet ' + (startSheet + 1) + ' even by itself.');
+          }
+
+          const partName = 'combined_reporting_full_part_' + String(partNumber).padStart(3, '0') + '.xlsx';
+          zip.file(partName, bestArray);
+          log('Fallback part ' + partNumber + ': packed ' + bestCount + ' combined sheet(s) starting at sheet ' + (startSheet + 1) + '.');
+          startSheet += bestCount;
+          partNumber++;
+          self.postMessage({ type: 'progress', progress: 95 + Math.floor((startSheet / sourceSheetNames.length) * 4) });
+        }
+
+        const zipUint8 = await zip.generateAsync({ type: 'uint8array', compression: 'STORE', streamFiles: true });
+        self.postMessage({ type: 'result', workbookData: zipUint8, resultKind: 'zip' }, [zipUint8.buffer]);
+      }
       log(`Processing complete for mode: ${mode}`, 'SUCCESS');
     }
   } catch (err) {
