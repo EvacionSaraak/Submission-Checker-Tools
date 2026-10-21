@@ -287,9 +287,10 @@ function getObservationValueWhitespaceErrors(obsList) {
     const obsCode = (obs.querySelector('Code')?.textContent || '').trim();
     const normalizedCode = obsCode.toUpperCase();
 
-    // Keep the existing concise Subcode wording while making the rule global.
+    // Show the exact raw value inside backticks so leading/trailing
+    // whitespace remains visible to the user.
     if (normalizedCode === 'SUBCODE') {
-      errors.push('Subcode shows as "01 ", should be exactly "01" with no white spaces.');
+      errors.push(`Subcode shows as \`${rawValue}\`, should be exactly \`01\` with no white spaces.`);
       return;
     }
 
@@ -299,7 +300,7 @@ function getObservationValueWhitespaceErrors(obsList) {
     const label = labelParts.length ? labelParts.join(' ') : `#${idx + 1}`;
 
     errors.push(
-      `Observation Value for ${label} contains leading or trailing whitespace; remove the extra whitespace.`
+      `Observation Value for ${label} is \`${rawValue}\` and contains leading or trailing whitespace; remove the extra whitespace.`
     );
   });
 
