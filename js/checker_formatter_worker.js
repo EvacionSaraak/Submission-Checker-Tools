@@ -1123,6 +1123,45 @@ async function combineReportingsFull(fileEntries) {
     }).filter(item => item.cells.size);
   };
 
+  const chooseHeaderCandidate = (candidates) => {
+    let best = null;
+    let bestScore = -Infinity;
+
+    for (const candidate of candidates) {
+      const entries = Array.from(candidate.cells.entries())
+        .filter(([, value]) => String(value ?? '').trim() !== '');
+      if (!entries.length) continue;
+
+      let stringCount = 0;
+      let numericLikeCount = 0;
+      const uniqueKeys = new Set();
+
+      for (const [, value] of entries) {
+        const text = String(value ?? '').trim();
+        if (!text) continue;
+        uniqueKeys.add(normalizeHeader(text));
+        if (typeof value === 'string') stringCount++;
+        if (/^-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/.test(text)) numericLikeCount++;
+      }
+
+      // Prefer wide, text-heavy, unique rows. This reliably rejects report-title
+      // rows such as "Insurance Claims Report for ..." while remaining generic
+      // enough for reports with completely different column names.
+      const score =
+        (entries.length * 100) +
+        (stringCount * 10) +
+        uniqueKeys.size -
+        (numericLikeCount * 5);
+
+      if (score > bestScore) {
+        bestScore = score;
+        best = candidate;
+      }
+    }
+
+    return best;
+  };
+
   for (let i = 0; i < fileEntries.length; i++) {
     const entry = fileEntries[i];
     const extension = getExtension(entry.name);
@@ -1132,19 +1171,23 @@ async function combineReportingsFull(fileEntries) {
     log(`Discovering reporting(full) headers: ${entry.name}`);
 
     try {
+      const headerCandidates = [];
+
       if (streamableExtensions.has(extension)) {
         const reader = await fullOpenStreamingXlsx(entry);
         await reader.streamRows((rowIndex, cells) => {
-          if (fileHeaderCells) return;
-          fileHeaderRowIndex = rowIndex;
-          fileHeaderCells = cells;
+          if (headerCandidates.length >= 25) return;
+          headerCandidates.push({ rowIndex, cells });
         });
       } else {
         const rows = readFallbackRows(entry);
-        if (rows.length) {
-          fileHeaderRowIndex = rows[0].rowIndex;
-          fileHeaderCells = rows[0].cells;
-        }
+        headerCandidates.push(...rows.slice(0, 25));
+      }
+
+      const selectedHeader = chooseHeaderCandidate(headerCandidates);
+      if (selectedHeader) {
+        fileHeaderRowIndex = selectedHeader.rowIndex;
+        fileHeaderCells = selectedHeader.cells;
       }
     } catch (err) {
       log(`File ${entry.name} skipped during header discovery: ${err.message}`, 'ERROR');
@@ -1188,8 +1231,9 @@ async function combineReportingsFull(fileEntries) {
     });
 
     log(
-      `${entry.name}: discovered ${sourceColumns.length} named column(s); ` +
-      `combined schema now has ${headerKeysInOrder.length} column(s).`
+      `${entry.name}: selected row ${fileHeaderRowIndex + 1} as header with ` +
+      `${sourceColumns.length} named column(s); combined schema now has ` +
+      `${headerKeysInOrder.length} column(s).`
     );
 
     const progress = 5 + Math.floor(((i + 1) / fileEntries.length) * 20);
