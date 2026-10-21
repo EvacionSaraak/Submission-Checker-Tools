@@ -31,6 +31,7 @@ const outputTableContainer = document.getElementById('outputTableContainer');
 const worker = new Worker(`../js/checker_formatter_worker.js?v=${Date.now()}`);
 
 let lastWorkbookData = null;
+let lastResultKind = 'xlsx';
 
 document.getElementById('mode-selector').addEventListener('change', e => {
   const mode = document.querySelector('input[name="mode"]:checked').value;
@@ -82,6 +83,7 @@ function resetUI() {
   combineButton.disabled = false;
   downloadButton.disabled = true;
   lastWorkbookData = null;
+  lastResultKind = 'xlsx';
 }
 
 // XML combining function (runs in main thread where DOMParser is available)
@@ -278,7 +280,10 @@ worker.onmessage = e => {
     progressText.textContent = `${p}%`;
   } else if (msg.type === 'result') {
     lastWorkbookData = msg.workbookData;
-    messageBox.textContent = 'Processing complete.';
+    lastResultKind = msg.resultKind || 'xlsx';
+    messageBox.textContent = lastResultKind === 'zip'
+      ? 'Processing complete. Single XLSX export failed, so the result was packaged into the largest safe XLSX parts inside one ZIP.'
+      : 'Processing complete.';
     combineButton.disabled = false;
     downloadButton.disabled = false;
     progressBar.style.width = '100%';
@@ -312,6 +317,9 @@ downloadButton.addEventListener('click', () => {
   if (mode === 'xml') {
     blob = new Blob([lastWorkbookData], { type: 'application/xml' });
     filename = `combined_xml_${timestamp}.xml`;
+  } else if (lastResultKind === 'zip') {
+    blob = new Blob([lastWorkbookData], { type: 'application/zip' });
+    filename = `combined_${mode}_${timestamp}.zip`;
   } else {
     blob = new Blob([lastWorkbookData], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     filename = `combined_${mode}_${timestamp}.xlsx`;
