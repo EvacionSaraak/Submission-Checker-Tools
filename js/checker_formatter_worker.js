@@ -784,8 +784,6 @@ async function combineReportingsFull(fileEntries) {
   }
 
   const XLSX = (typeof window !== "undefined" ? window.XLSX : self.XLSX);
-  const combinedRows = [];
-  let headerRow = null;
   let dataRowCount = 0;
 
   const EXCEL_MAX_ROW = 1048575; // zero-based 1,048,576
@@ -799,8 +797,14 @@ async function combineReportingsFull(fileEntries) {
     });
   };
 
+  const normalizeHeader = (value) =>
+    String(value === null || value === undefined ? '' : value)
+      .trim()
+      .replace(/\s+/g, ' ')
+      .toLowerCase();
+
   const rowSignature = (row) => JSON.stringify(
-    (row || []).map(cell => (cell === null || cell === undefined ? '' : String(cell).trim()))
+    (row || []).map(cell => normalizeHeader(cell))
   );
 
   const isMeaningfulCell = (cell) => {
@@ -890,6 +894,10 @@ async function combineReportingsFull(fileEntries) {
     return row;
   };
 
+  // First pass: parse each file and discover the union of all headers.
+  const parsedFiles = [];
+  const headerLabelsByKey = new Map();
+
   for (let i = 0; i < fileEntries.length; i++) {
     const { name, buffer } = fileEntries[i];
     log(`Reading reporting(full) file: ${name}`);
@@ -923,10 +931,6 @@ async function combineReportingsFull(fileEntries) {
       continue;
     }
 
-    // Match previous behavior: the first non-empty, non-merged row is treated
-    // as the file header. Its last populated column defines this file's real
-    // row width, preventing stray formatting/cells far to the right from
-    // inflating every output row.
     let fileHeaderRowIndex = -1;
     let fileLastColumn = -1;
 
@@ -947,48 +951,113 @@ async function combineReportingsFull(fileEntries) {
       continue;
     }
 
-    const fileHeaderRow = buildRow(meaningfulRows.get(fileHeaderRowIndex), fileLastColumn);
-    const existingHeaderSig = headerRow ? rowSignature(headerRow) : null;
+    const fileHeaderRow = buildRow(
+      meaningfulRows.get(fileHeaderRowIndex),
+      fileLastColumn
+    );
 
-    if (!headerRow) {
-      headerRow = fileHeaderRow.slice();
-      combinedRows.push(headerRow);
+    // Build a source-column -> normalized-header-key map. Blank header cells are
+    // ignored because they cannot be safely aligned across unrelated reports.
+    const sourceColumns = [];
+    fileHeaderRow.forEach((header, sourceIndex) => {
+      const key = normalizeHeader(header);
+      if (!key) return;
+
+      sourceColumns.push({ sourceIndex, key });
+
+      // Preserve the first spelling/casing we encounter for display.
+      if (!headerLabelsByKey.has(key)) {
+        headerLabelsByKey.set(key, String(header).trim().replace(/\s+/g, ' '));
+      }
+    });
+
+    if (!sourceColumns.length) {
+      log(`File ${name} skipped: header row contains no usable column names`, 'WARN');
+      continue;
     }
 
-    for (const rowIndex of rowIndexes) {
-      if (rowIndex < fileHeaderRowIndex) continue;
-      if (isMergedRow(rowIndex, merges)) continue;
+    parsedFiles.push({
+      name,
+      meaningfulRows,
+      rowIndexes,
+      merges,
+      fileHeaderRowIndex,
+      fileLastColumn,
+      fileHeaderSignature: rowSignature(fileHeaderRow),
+      sourceColumns
+    });
 
-      const row = buildRow(meaningfulRows.get(rowIndex), fileLastColumn);
-      if (isRowEmpty(row)) continue;
+    log(
+      `${name}: discovered ${sourceColumns.length} named column(s); ` +
+      `header row ${fileHeaderRowIndex + 1}.`
+    );
 
-      // Skip the first file's header and repeated identical headers in later files.
-      if (rowIndex === fileHeaderRowIndex) {
-        if (!existingHeaderSig || rowSignature(row) === existingHeaderSig) continue;
+    const progress = 10 + Math.floor(((i + 1) / fileEntries.length) * 40);
+    self.postMessage({ type: 'progress', progress });
+  }
+
+  if (!parsedFiles.length || !headerLabelsByKey.size) {
+    throw new Error('No non-merged rows with usable headers found in uploaded files');
+  }
+
+  // Deterministic union of every unique column found in any uploaded report.
+  // Alphabetical ordering makes mixed schemas stable regardless of upload order:
+  // e.g. [X,Y,Z] + [A,B,C] => [A,B,C,X,Y,Z].
+  const headerKeys = Array.from(headerLabelsByKey.keys()).sort((a, b) =>
+    headerLabelsByKey.get(a).localeCompare(
+      headerLabelsByKey.get(b),
+      undefined,
+      { sensitivity: 'base', numeric: true }
+    )
+  );
+  const outputHeaders = headerKeys.map(key => headerLabelsByKey.get(key));
+  const outputIndexByKey = new Map(headerKeys.map((key, index) => [key, index]));
+  const combinedRows = [outputHeaders];
+
+  // Second pass: align every source row by column name into the union schema.
+  for (let i = 0; i < parsedFiles.length; i++) {
+    const file = parsedFiles[i];
+
+    for (const rowIndex of file.rowIndexes) {
+      if (rowIndex <= file.fileHeaderRowIndex) continue;
+      if (isMergedRow(rowIndex, file.merges)) continue;
+
+      const sourceRow = buildRow(
+        file.meaningfulRows.get(rowIndex),
+        file.fileLastColumn
+      );
+      if (isRowEmpty(sourceRow)) continue;
+
+      // Skip repeated header rows embedded later in a report.
+      if (rowSignature(sourceRow) === file.fileHeaderSignature) continue;
+
+      const outputRow = new Array(outputHeaders.length).fill('');
+      for (const { sourceIndex, key } of file.sourceColumns) {
+        const outputIndex = outputIndexByKey.get(key);
+        if (outputIndex === undefined) continue;
+        outputRow[outputIndex] = sourceRow[sourceIndex] ?? '';
       }
-      if (existingHeaderSig && rowSignature(row) === existingHeaderSig) continue;
 
-      combinedRows.push(row);
+      if (isRowEmpty(outputRow)) continue;
+      combinedRows.push(outputRow);
       dataRowCount++;
     }
 
     log(
-      `${name}: accepted ${rowIndexes.length} populated row index(es); ` +
-      `header row ${fileHeaderRowIndex + 1}, width ${fileLastColumn + 1} column(s).`
+      `${file.name}: appended rows using combined ${outputHeaders.length}-column schema.`
     );
 
-    const progress = 50 + Math.floor(((i + 1) / fileEntries.length) * 50);
+    const progress = 50 + Math.floor(((i + 1) / parsedFiles.length) * 50);
     self.postMessage({ type: 'progress', progress });
-  }
-
-  if (!headerRow) {
-    throw new Error('No non-merged rows found in uploaded files');
   }
 
   const wsOut = XLSX.utils.aoa_to_sheet(combinedRows);
   const wbOut = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wbOut, wsOut, 'Combined Reporting Full');
-  log(`Combined reporting(full) workbook created with ${dataRowCount} data rows`);
+  log(
+    `Combined reporting(full) workbook created with ${dataRowCount} data rows and ` +
+    `${outputHeaders.length} unique columns`
+  );
   self.postMessage({ type: 'progress', progress: 100 });
   return wbOut;
 }
