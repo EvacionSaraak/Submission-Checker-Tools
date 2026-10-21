@@ -786,16 +786,8 @@ async function combineReportingsFull(fileEntries) {
   const XLSX = (typeof window !== "undefined" ? window.XLSX : self.XLSX);
   let dataRowCount = 0;
 
-  const EXCEL_MAX_ROW = 1048575; // zero-based 1,048,576
-  const EXCEL_MAX_COL = 16383;   // zero-based XFD
-
-  const isRowEmpty = (row) => {
-    if (!Array.isArray(row)) return true;
-    return row.every(cell => {
-      const val = cell === null || cell === undefined ? '' : String(cell).trim();
-      return val === '';
-    });
-  };
+  const EXCEL_MAX_ROW = 1048575;
+  const EXCEL_MAX_COL = 16383;
 
   const normalizeHeader = (value) =>
     String(value === null || value === undefined ? '' : value)
@@ -803,14 +795,9 @@ async function combineReportingsFull(fileEntries) {
       .replace(/\s+/g, ' ')
       .toLowerCase();
 
-  const rowSignature = (row) => JSON.stringify(
-    (row || []).map(cell => normalizeHeader(cell))
-  );
-
   const isMeaningfulCell = (cell) => {
     if (!cell || typeof cell !== 'object') return false;
     if (cell.v !== undefined && cell.v !== null && String(cell.v).trim() !== '') return true;
-    // A formula with no cached value should still count as an occupied cell.
     return typeof cell.f === 'string' && cell.f.trim() !== '';
   };
 
@@ -833,10 +820,6 @@ async function combineReportingsFull(fileEntries) {
     rowIndex >= merge.s.r && rowIndex <= merge.e.r
   );
 
-  // Read actual populated cells instead of trusting ws['!ref'].
-  // Some exported workbooks carry an inflated/corrupt used range; passing that
-  // directly to sheet_to_json can make SheetJS allocate a massive array and
-  // throw RangeError: Invalid array length.
   const collectMeaningfulRows = (ws, fileName) => {
     const rows = new Map();
     let ignoredOutOfBounds = 0;
@@ -881,22 +864,9 @@ async function combineReportingsFull(fileEntries) {
     return rows;
   };
 
-  const buildRow = (cellMap, maxColumnIndex) => {
-    if (!(cellMap instanceof Map) || maxColumnIndex < 0) return [];
-    const safeMaxColumn = Math.min(maxColumnIndex, EXCEL_MAX_COL);
-    const row = new Array(safeMaxColumn + 1).fill('');
-
-    for (const [columnIndex, value] of cellMap.entries()) {
-      if (columnIndex < 0 || columnIndex > safeMaxColumn) continue;
-      row[columnIndex] = value;
-    }
-
-    return row;
-  };
-
-  // First pass: parse each file and discover the union of all headers.
   const parsedFiles = [];
   const headerLabelsByKey = new Map();
+  const headerKeysInOrder = [];
 
   for (let i = 0; i < fileEntries.length; i++) {
     const { name, buffer } = fileEntries[i];
@@ -904,7 +874,6 @@ async function combineReportingsFull(fileEntries) {
 
     let wb;
     try {
-      // Keep native Excel date serials intact (avoid JS Date conversion).
       wb = XLSX.read(buffer, { type: 'array', cellDates: false });
     } catch (err) {
       log(`Failed to read file ${name}: ${err.message}`, 'ERROR');
@@ -932,44 +901,45 @@ async function combineReportingsFull(fileEntries) {
     }
 
     let fileHeaderRowIndex = -1;
-    let fileLastColumn = -1;
+    let fileHeaderCells = null;
 
     for (const rowIndex of rowIndexes) {
       if (isMergedRow(rowIndex, merges)) continue;
       const cells = meaningfulRows.get(rowIndex);
       if (!cells || !cells.size) continue;
-      const lastColumn = Math.max(...cells.keys());
-      const candidate = buildRow(cells, lastColumn);
-      if (isRowEmpty(candidate)) continue;
+
+      const hasUsableValue = Array.from(cells.values()).some(value =>
+        String(value === null || value === undefined ? '' : value).trim() !== ''
+      );
+      if (!hasUsableValue) continue;
+
       fileHeaderRowIndex = rowIndex;
-      fileLastColumn = lastColumn;
+      fileHeaderCells = cells;
       break;
     }
 
-    if (fileHeaderRowIndex < 0 || fileLastColumn < 0) {
+    if (fileHeaderRowIndex < 0 || !(fileHeaderCells instanceof Map)) {
       log(`File ${name} skipped: no non-merged populated rows found`, 'WARN');
       continue;
     }
 
-    const fileHeaderRow = buildRow(
-      meaningfulRows.get(fileHeaderRowIndex),
-      fileLastColumn
-    );
-
-    // Build a source-column -> normalized-header-key map. Blank header cells are
-    // ignored because they cannot be safely aligned across unrelated reports.
     const sourceColumns = [];
-    fileHeaderRow.forEach((header, sourceIndex) => {
-      const key = normalizeHeader(header);
-      if (!key) return;
+    const headerSignatureParts = [];
 
-      sourceColumns.push({ sourceIndex, key });
+    Array.from(fileHeaderCells.entries())
+      .sort((a, b) => a[0] - b[0])
+      .forEach(([sourceIndex, header]) => {
+        const key = normalizeHeader(header);
+        if (!key) return;
 
-      // Preserve the first spelling/casing we encounter for display.
-      if (!headerLabelsByKey.has(key)) {
-        headerLabelsByKey.set(key, String(header).trim().replace(/\s+/g, ' '));
-      }
-    });
+        sourceColumns.push({ sourceIndex, key });
+        headerSignatureParts.push([sourceIndex, key]);
+
+        if (!headerLabelsByKey.has(key)) {
+          headerLabelsByKey.set(key, String(header).trim().replace(/\s+/g, ' '));
+          headerKeysInOrder.push(key);
+        }
+      });
 
     if (!sourceColumns.length) {
       log(`File ${name} skipped: header row contains no usable column names`, 'WARN');
@@ -982,39 +952,29 @@ async function combineReportingsFull(fileEntries) {
       rowIndexes,
       merges,
       fileHeaderRowIndex,
-      fileLastColumn,
-      fileHeaderSignature: rowSignature(fileHeaderRow),
+      fileHeaderSignature: JSON.stringify(headerSignatureParts),
       sourceColumns
     });
 
     log(
       `${name}: discovered ${sourceColumns.length} named column(s); ` +
-      `header row ${fileHeaderRowIndex + 1}.`
+      `combined schema now has ${headerKeysInOrder.length} column(s).`
     );
 
     const progress = 10 + Math.floor(((i + 1) / fileEntries.length) * 40);
     self.postMessage({ type: 'progress', progress });
   }
 
-  if (!parsedFiles.length || !headerLabelsByKey.size) {
+  if (!parsedFiles.length || !headerKeysInOrder.length) {
     throw new Error('No non-merged rows with usable headers found in uploaded files');
   }
 
-  // Deterministic union of every unique column found in any uploaded report.
-  // Alphabetical ordering makes mixed schemas stable regardless of upload order:
-  // e.g. [X,Y,Z] + [A,B,C] => [A,B,C,X,Y,Z].
-  const headerKeys = Array.from(headerLabelsByKey.keys()).sort((a, b) =>
-    headerLabelsByKey.get(a).localeCompare(
-      headerLabelsByKey.get(b),
-      undefined,
-      { sensitivity: 'base', numeric: true }
-    )
-  );
-  const outputHeaders = headerKeys.map(key => headerLabelsByKey.get(key));
-  const outputIndexByKey = new Map(headerKeys.map((key, index) => [key, index]));
+  // Preserve the first valid report's header order. Any column first seen in a
+  // later report is appended to the end in that report's own left-to-right order.
+  const outputHeaders = headerKeysInOrder.map(key => headerLabelsByKey.get(key));
+  const outputIndexByKey = new Map(headerKeysInOrder.map((key, index) => [key, index]));
   const combinedRows = [outputHeaders];
 
-  // Second pass: align every source row by column name into the union schema.
   for (let i = 0; i < parsedFiles.length; i++) {
     const file = parsedFiles[i];
 
@@ -1022,23 +982,31 @@ async function combineReportingsFull(fileEntries) {
       if (rowIndex <= file.fileHeaderRowIndex) continue;
       if (isMergedRow(rowIndex, file.merges)) continue;
 
-      const sourceRow = buildRow(
-        file.meaningfulRows.get(rowIndex),
-        file.fileLastColumn
-      );
-      if (isRowEmpty(sourceRow)) continue;
+      const sourceCells = file.meaningfulRows.get(rowIndex);
+      if (!(sourceCells instanceof Map) || !sourceCells.size) continue;
 
-      // Skip repeated header rows embedded later in a report.
-      if (rowSignature(sourceRow) === file.fileHeaderSignature) continue;
+      const repeatedHeaderSignature = JSON.stringify(
+        file.sourceColumns
+          .map(({ sourceIndex }) => [sourceIndex, normalizeHeader(sourceCells.get(sourceIndex) ?? '')])
+          .filter(([, key]) => key)
+      );
+      if (repeatedHeaderSignature === file.fileHeaderSignature) continue;
 
       const outputRow = new Array(outputHeaders.length).fill('');
+      let hasOutputValue = false;
+
       for (const { sourceIndex, key } of file.sourceColumns) {
         const outputIndex = outputIndexByKey.get(key);
         if (outputIndex === undefined) continue;
-        outputRow[outputIndex] = sourceRow[sourceIndex] ?? '';
+
+        const value = sourceCells.get(sourceIndex) ?? '';
+        outputRow[outputIndex] = value;
+        if (String(value === null || value === undefined ? '' : value).trim() !== '') {
+          hasOutputValue = true;
+        }
       }
 
-      if (isRowEmpty(outputRow)) continue;
+      if (!hasOutputValue) continue;
       combinedRows.push(outputRow);
       dataRowCount++;
     }
