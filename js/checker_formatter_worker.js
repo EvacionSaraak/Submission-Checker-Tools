@@ -1209,8 +1209,8 @@ async function combineReportingsFull(fileEntries) {
   // worksheet to XML before zipping the workbook; one extremely large sheet can
   // exceed V8's maximum string length even when input/output processing is dense.
   // Keeping each worksheet bounded prevents a single giant XML string.
-  const OUTPUT_BATCH_ROWS = 5000;
-  const MAX_DATA_ROWS_PER_SHEET = 50000;
+  const OUTPUT_BATCH_ROWS = 1000;
+  const MAX_DATA_ROWS_PER_SHEET = 10000;
   const outputSheets = [];
   let wsOut = XLSX.utils.aoa_to_sheet([outputHeaders], { dense: true });
   let outputBatch = [];
@@ -1267,58 +1267,73 @@ async function combineReportingsFull(fileEntries) {
     })
   );
 
-  for (let i = 0; i < parsedFiles.length; i++) {
-    const file = parsedFiles[i];
+  const processDataRow = (file, rowIndex, sourceCells) => {
+    if (rowIndex <= file.fileHeaderRowIndex) return;
+    if (!(sourceCells instanceof Map) || !sourceCells.size) return;
 
-    for (const rowIndex of file.rowIndexes) {
-      if (rowIndex <= file.fileHeaderRowIndex) continue;
-      if (isMergedRow(rowIndex, file.merges)) continue;
+    const repeatedHeaderSignature = JSON.stringify(
+      file.sourceColumns
+        .map(({ sourceIndex }) => [sourceIndex, normalizeHeader(sourceCells.get(sourceIndex) ?? '')])
+        .filter(([, key]) => key)
+    );
+    if (repeatedHeaderSignature === file.fileHeaderSignature) return;
 
-      const sourceCells = file.meaningfulRows.get(rowIndex);
-      if (!(sourceCells instanceof Map) || !sourceCells.size) continue;
+    const outputRow = new Array(outputHeaders.length).fill('');
+    let hasOutputValue = false;
 
-      const repeatedHeaderSignature = JSON.stringify(
-        file.sourceColumns
-          .map(({ sourceIndex }) => [sourceIndex, normalizeHeader(sourceCells.get(sourceIndex) ?? '')])
-          .filter(([, key]) => key)
-      );
-      if (repeatedHeaderSignature === file.fileHeaderSignature) continue;
+    for (const { sourceIndex, key } of file.sourceColumns) {
+      const outputIndex = outputIndexByKey.get(key);
+      if (outputIndex === undefined) continue;
 
-      const outputRow = new Array(outputHeaders.length).fill('');
-      let hasOutputValue = false;
-
-      for (const { sourceIndex, key } of file.sourceColumns) {
-        const outputIndex = outputIndexByKey.get(key);
-        if (outputIndex === undefined) continue;
-
-        const value = sourceCells.get(sourceIndex) ?? '';
-        outputRow[outputIndex] = value;
-        if (String(value === null || value === undefined ? '' : value).trim() !== '') {
-          hasOutputValue = true;
-        }
-      }
-
-      if (!hasOutputValue) continue;
-
-      const rowSignature = exactRowSignature(outputRow);
-      if (seenExactRows.has(rowSignature)) {
-        continue;
-      }
-
-      seenExactRows.add(rowSignature);
-      outputBatch.push(outputRow);
-      dataRowCount++;
-
-      if (outputBatch.length >= OUTPUT_BATCH_ROWS) {
-        flushOutputBatch();
+      const value = sourceCells.get(sourceIndex) ?? '';
+      outputRow[outputIndex] = value;
+      if (String(value === null || value === undefined ? '' : value).trim() !== '') {
+        hasOutputValue = true;
       }
     }
 
+    if (!hasOutputValue) return;
+
+    const rowSignature = exactRowSignature(outputRow);
+    if (seenExactRows.has(rowSignature)) return;
+
+    seenExactRows.add(rowSignature);
+    outputBatch.push(outputRow);
+    dataRowCount++;
+
+    if (outputBatch.length >= OUTPUT_BATCH_ROWS) {
+      flushOutputBatch();
+    }
+  };
+
+  for (let i = 0; i < parsedFiles.length; i++) {
+    const file = parsedFiles[i];
+
+    log(`Streaming reporting(full) data: ${file.entry.name}`);
+
+    try {
+      if (streamableExtensions.has(file.extension)) {
+        const reader = await fullOpenStreamingXlsx(file.entry);
+        await reader.streamRows((rowIndex, cells) => {
+          processDataRow(file, rowIndex, cells);
+        });
+      } else {
+        const rows = readFallbackRows(file.entry);
+        rows.forEach(({ rowIndex, cells }) => {
+          processDataRow(file, rowIndex, cells);
+        });
+      }
+    } catch (err) {
+      throw new Error(`${file.entry.name}: ${err.message}`);
+    }
+
+    flushOutputBatch();
+
     log(
-      `${file.name}: appended rows using combined ${outputHeaders.length}-column schema.`
+      `${file.entry.name}: appended rows using combined ${outputHeaders.length}-column schema.`
     );
 
-    const progress = 50 + Math.floor(((i + 1) / parsedFiles.length) * 50);
+    const progress = 25 + Math.floor(((i + 1) / parsedFiles.length) * 65);
     self.postMessage({ type: 'progress', progress });
   }
 
