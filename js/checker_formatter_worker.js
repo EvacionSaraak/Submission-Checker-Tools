@@ -987,6 +987,18 @@ async function combineReportingsFull(fileEntries) {
   const outputIndexByKey = new Map(headerKeysInOrder.map((key, index) => [key, index]));
   const combinedRows = [outputHeaders];
 
+  // De-duplicate only rows that are identical across the entire final schema.
+  // Matching Claim IDs or partial field matches are not enough.
+  const seenExactRows = new Set();
+  const exactRowSignature = (row) => JSON.stringify(
+    row.map(value => {
+      if (value === null || value === undefined) return '';
+      if (typeof value === 'number') return { type: 'number', value };
+      if (typeof value === 'boolean') return { type: 'boolean', value };
+      return { type: 'string', value: String(value) };
+    })
+  );
+
   for (let i = 0; i < parsedFiles.length; i++) {
     const file = parsedFiles[i];
 
@@ -1019,6 +1031,13 @@ async function combineReportingsFull(fileEntries) {
       }
 
       if (!hasOutputValue) continue;
+
+      const rowSignature = exactRowSignature(outputRow);
+      if (seenExactRows.has(rowSignature)) {
+        continue;
+      }
+
+      seenExactRows.add(rowSignature);
       combinedRows.push(outputRow);
       dataRowCount++;
     }
