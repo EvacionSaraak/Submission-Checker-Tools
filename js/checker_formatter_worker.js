@@ -1094,62 +1094,65 @@ async function combineReportingsFull(fileEntries) {
   const parsedFiles = [];
   const headerLabelsByKey = new Map();
   const headerKeysInOrder = [];
+  const streamableExtensions = new Set(['xlsx', 'xlsm', 'xltx', 'xltm']);
+
+  const getExtension = (name) => {
+    const match = /\.([^.]+)$/.exec(String(name || '').toLowerCase());
+    return match ? match[1] : '';
+  };
+
+  const readFallbackRows = (entry) => {
+    const workbook = XLSX.read(entry.buffer, { type: 'array', cellDates: false, dense: true });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    if (!sheet) return [];
+
+    const matrix = XLSX.utils.sheet_to_json(sheet, {
+      header: 1,
+      defval: '',
+      raw: true,
+      blankrows: false
+    });
+
+    return matrix.map((row, rowIndex) => {
+      const cells = new Map();
+      row.forEach((value, columnIndex) => {
+        if (value === '' || value === null || value === undefined) return;
+        cells.set(columnIndex, value);
+      });
+      return { rowIndex, cells };
+    }).filter(item => item.cells.size);
+  };
 
   for (let i = 0; i < fileEntries.length; i++) {
-    const { name, buffer } = fileEntries[i];
-    log(`Reading reporting(full) file: ${name}`);
-
-    let wb;
-    try {
-      // Dense mode stores worksheet cells in row arrays instead of creating
-      // one object property per cell address (A1, B1, ...). This prevents
-      // "Too many properties to enumerate" on very large reports.
-      wb = XLSX.read(buffer, { type: 'array', cellDates: false, dense: true });
-    } catch (err) {
-      log(`Failed to read file ${name}: ${err.message}`, 'ERROR');
-      continue;
-    }
-
-    if (!wb.SheetNames || wb.SheetNames.length === 0) {
-      log(`File ${name} skipped: no sheets found`, 'WARN');
-      continue;
-    }
-
-    const ws = wb.Sheets[wb.SheetNames[0]];
-    if (!ws) {
-      log(`File ${name} skipped: first sheet is missing`, 'WARN');
-      continue;
-    }
-
-    const merges = getMergeRanges(ws);
-    const meaningfulRows = collectMeaningfulRows(ws, name);
-    const rowIndexes = Array.from(meaningfulRows.keys()).sort((a, b) => a - b);
-
-    if (!rowIndexes.length) {
-      log(`File ${name} skipped: no populated cells found`, 'WARN');
-      continue;
-    }
-
+    const entry = fileEntries[i];
+    const extension = getExtension(entry.name);
     let fileHeaderRowIndex = -1;
     let fileHeaderCells = null;
 
-    for (const rowIndex of rowIndexes) {
-      if (isMergedRow(rowIndex, merges)) continue;
-      const cells = meaningfulRows.get(rowIndex);
-      if (!cells || !cells.size) continue;
+    log(`Discovering reporting(full) headers: ${entry.name}`);
 
-      const hasUsableValue = Array.from(cells.values()).some(value =>
-        String(value === null || value === undefined ? '' : value).trim() !== ''
-      );
-      if (!hasUsableValue) continue;
-
-      fileHeaderRowIndex = rowIndex;
-      fileHeaderCells = cells;
-      break;
+    try {
+      if (streamableExtensions.has(extension)) {
+        const reader = await fullOpenStreamingXlsx(entry);
+        await reader.streamRows((rowIndex, cells) => {
+          if (fileHeaderCells) return;
+          fileHeaderRowIndex = rowIndex;
+          fileHeaderCells = cells;
+        });
+      } else {
+        const rows = readFallbackRows(entry);
+        if (rows.length) {
+          fileHeaderRowIndex = rows[0].rowIndex;
+          fileHeaderCells = rows[0].cells;
+        }
+      }
+    } catch (err) {
+      log(`File ${entry.name} skipped during header discovery: ${err.message}`, 'ERROR');
+      continue;
     }
 
-    if (fileHeaderRowIndex < 0 || !(fileHeaderCells instanceof Map)) {
-      log(`File ${name} skipped: no non-merged populated rows found`, 'WARN');
+    if (!(fileHeaderCells instanceof Map) || !fileHeaderCells.size) {
+      log(`File ${entry.name} skipped: no usable header row found.`, 'WARN');
       continue;
     }
 
@@ -1172,26 +1175,24 @@ async function combineReportingsFull(fileEntries) {
       });
 
     if (!sourceColumns.length) {
-      log(`File ${name} skipped: header row contains no usable column names`, 'WARN');
+      log(`File ${entry.name} skipped: header row contains no named columns.`, 'WARN');
       continue;
     }
 
     parsedFiles.push({
-      name,
-      meaningfulRows,
-      rowIndexes,
-      merges,
+      entry,
+      extension,
       fileHeaderRowIndex,
       fileHeaderSignature: JSON.stringify(headerSignatureParts),
       sourceColumns
     });
 
     log(
-      `${name}: discovered ${sourceColumns.length} named column(s); ` +
+      `${entry.name}: discovered ${sourceColumns.length} named column(s); ` +
       `combined schema now has ${headerKeysInOrder.length} column(s).`
     );
 
-    const progress = 10 + Math.floor(((i + 1) / fileEntries.length) * 40);
+    const progress = 5 + Math.floor(((i + 1) / fileEntries.length) * 20);
     self.postMessage({ type: 'progress', progress });
   }
 
