@@ -986,21 +986,53 @@ async function combineReportingsFull(fileEntries) {
   const outputHeaders = headerKeysInOrder.map(key => headerLabelsByKey.get(key));
   const outputIndexByKey = new Map(headerKeysInOrder.map((key, index) => [key, index]));
 
-  // Build the output worksheet as a dense sheet and flush rows in bounded
-  // segments. A normal sparse SheetJS worksheet creates one enumerable object
-  // property per cell, which can hit V8's "Too many properties to enumerate"
-  // limit on very large combined reports.
+  // Build output in bounded worksheet segments. SheetJS serializes each
+  // worksheet to XML before zipping the workbook; one extremely large sheet can
+  // exceed V8's maximum string length even when input/output processing is dense.
+  // Keeping each worksheet bounded prevents a single giant XML string.
   const OUTPUT_BATCH_ROWS = 5000;
-  const wsOut = XLSX.utils.aoa_to_sheet([outputHeaders], { dense: true });
+  const MAX_DATA_ROWS_PER_SHEET = 50000;
+  const outputSheets = [];
+  let wsOut = XLSX.utils.aoa_to_sheet([outputHeaders], { dense: true });
   let outputBatch = [];
   let outputRowIndex = 1; // zero-based row 0 already contains the headers
+  let currentSheetDataRows = 0;
+
+  const finalizeCurrentSheet = () => {
+    outputSheets.push(wsOut);
+    wsOut = XLSX.utils.aoa_to_sheet([outputHeaders], { dense: true });
+    outputRowIndex = 1;
+    currentSheetDataRows = 0;
+  };
 
   const flushOutputBatch = () => {
     if (!outputBatch.length) return;
-    XLSX.utils.sheet_add_aoa(wsOut, outputBatch, {
-      origin: { r: outputRowIndex, c: 0 }
-    });
-    outputRowIndex += outputBatch.length;
+
+    let offset = 0;
+    while (offset < outputBatch.length) {
+      const remainingCapacity = MAX_DATA_ROWS_PER_SHEET - currentSheetDataRows;
+
+      if (remainingCapacity <= 0) {
+        finalizeCurrentSheet();
+        continue;
+      }
+
+      const take = Math.min(remainingCapacity, outputBatch.length - offset);
+      const chunk = outputBatch.slice(offset, offset + take);
+
+      XLSX.utils.sheet_add_aoa(wsOut, chunk, {
+        origin: { r: outputRowIndex, c: 0 }
+      });
+
+      outputRowIndex += take;
+      currentSheetDataRows += take;
+      offset += take;
+
+      if (currentSheetDataRows >= MAX_DATA_ROWS_PER_SHEET && offset < outputBatch.length) {
+        finalizeCurrentSheet();
+      }
+    }
+
     outputBatch = [];
   };
 
@@ -1072,12 +1104,21 @@ async function combineReportingsFull(fileEntries) {
   }
 
   flushOutputBatch();
+  if (currentSheetDataRows > 0 || outputSheets.length === 0) {
+    outputSheets.push(wsOut);
+  }
 
   const wbOut = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wbOut, wsOut, 'Combined Reporting Full');
+  outputSheets.forEach((sheet, index) => {
+    const sheetName = outputSheets.length === 1
+      ? 'Combined Reporting Full'
+      : `Combined Full ${index + 1}`;
+    XLSX.utils.book_append_sheet(wbOut, sheet, sheetName);
+  });
+
   log(
-    `Combined reporting(full) workbook created with ${dataRowCount} data rows and ` +
-    `${outputHeaders.length} unique columns`
+    `Combined reporting(full) workbook created with ${dataRowCount} data rows, ` +
+    `${outputHeaders.length} unique columns, across ${outputSheets.length} sheet(s)`
   );
   self.postMessage({ type: 'progress', progress: 100 });
   return wbOut;
