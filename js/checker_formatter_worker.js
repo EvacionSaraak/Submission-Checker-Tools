@@ -10,6 +10,14 @@ try {
   console.log('XLSX library not loaded - only XML mode will be available');
 }
 
+let JSZIP_LOADED = false;
+try {
+  importScripts('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js');
+  JSZIP_LOADED = typeof JSZip !== 'undefined';
+} catch (e) {
+  console.log('JSZip library not loaded - large XLSX streaming unavailable');
+}
+
 const TARGET_HEADERS = [
   'Pri. Claim No', 'Clinician License', 'Encounter Date', 'Pri. Patient Insurance Card No',
   'Department', 'Visit Id', 'Pri. Plan Type', 'Facility ID',
