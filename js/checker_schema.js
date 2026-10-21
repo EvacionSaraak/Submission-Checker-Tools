@@ -94,6 +94,7 @@
         const MUTUALLY_EXCLUSIVE_INFUSION_CODES = new Set(['96360', '96365', '96374']);
         const INVALID_ACTIVITY_CODES = new Set(['36591']);
         const FIXED_QUANTITY_TWO_CODES = new Set(['87400', '87804']);
+        const LAB_ORDERING_PERFORMING_MATCH_CODES = new Set(['87804', '87880']);
         const DAMAN_RECEIVER_IDS = new Set(['D004', 'A001']);
         const DAMAN_BASIC_RECEIVER_ID = 'D004';
         const THIQA_RECEIVER_ID = 'D001';
@@ -1401,14 +1402,28 @@
                 context.net === 0
             );
             contexts.forEach(context => {
-                const { code, quantityRaw, quantity, net, clinicianSpecialty, orderingClinician, orderingSpecialty } = context;
+                const { code, quantityRaw, quantity, net, clinician, clinicianSpecialty, orderingClinician, orderingSpecialty } = context;
                 if (!code) return;
                 if (MUTUALLY_EXCLUSIVE_INFUSION_CODES.has(code)) infusionCodes.add(code);
                 if (GP_992_CODES.has(code)) consultationCodes.add(code);
                 if (INVALID_ACTIVITY_CODES.has(code)) invalidFields.push(`Activity ${code} is invalid and cannot be used.`);
                 validateTherapyCodeSpecialty(code, clinicianSpecialty, invalidFields);
-                if (/^8/.test(code) && code !== '82948' && !specialtyContains(clinicianSpecialty, 'Pathology')) {
+                if (
+                    /^8/.test(code) &&
+                    code !== '82948' &&
+                    !LAB_ORDERING_PERFORMING_MATCH_CODES.has(code) &&
+                    !specialtyContains(clinicianSpecialty, 'Pathology')
+                ) {
                     invalidFields.push(`Activity ${code} requires Clinician specialty containing Pathology (Currently \`${clinicianSpecialty || 'Unknown'}\`).`);
+                }
+                if (
+                    LAB_ORDERING_PERFORMING_MATCH_CODES.has(code) &&
+                    clinician !== orderingClinician
+                ) {
+                    invalidFields.push(
+                        `Activity ${code} requires Performing Clinician to be the same as OrderingClinician ` +
+                        `(Performing: \`${clinician || 'Missing'}\`, Ordering: \`${orderingClinician || 'Missing'}\`).`
+                    );
                 }
                 if ((code === '97802' || code === '97803') && !specialtyContains(clinicianSpecialty, 'Dietician')) invalidFields.push(`Activity ${code} requires Clinician specialty containing Dietician (Currently \`${clinicianSpecialty || 'Unknown'}\`).`);
                 if (specialtyContains(clinicianSpecialty, 'Dietician') && code !== '97802' && code !== '97803') invalidFields.push(`Performing Clinician specialty Dietician can only be used for 97802/97803 (Currently ${code}).`);
