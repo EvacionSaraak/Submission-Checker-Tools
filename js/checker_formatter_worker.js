@@ -985,7 +985,24 @@ async function combineReportingsFull(fileEntries) {
   // later report is appended to the end in that report's own left-to-right order.
   const outputHeaders = headerKeysInOrder.map(key => headerLabelsByKey.get(key));
   const outputIndexByKey = new Map(headerKeysInOrder.map((key, index) => [key, index]));
-  const combinedRows = [outputHeaders];
+
+  // Build the output worksheet as a dense sheet and flush rows in bounded
+  // segments. A normal sparse SheetJS worksheet creates one enumerable object
+  // property per cell, which can hit V8's "Too many properties to enumerate"
+  // limit on very large combined reports.
+  const OUTPUT_BATCH_ROWS = 5000;
+  const wsOut = XLSX.utils.aoa_to_sheet([outputHeaders], { dense: true });
+  let outputBatch = [];
+  let outputRowIndex = 1; // zero-based row 0 already contains the headers
+
+  const flushOutputBatch = () => {
+    if (!outputBatch.length) return;
+    XLSX.utils.sheet_add_aoa(wsOut, outputBatch, {
+      origin: { r: outputRowIndex, c: 0 }
+    });
+    outputRowIndex += outputBatch.length;
+    outputBatch = [];
+  };
 
   // De-duplicate only rows that are identical across the entire final schema.
   // Matching Claim IDs or partial field matches are not enough.
@@ -1038,8 +1055,12 @@ async function combineReportingsFull(fileEntries) {
       }
 
       seenExactRows.add(rowSignature);
-      combinedRows.push(outputRow);
+      outputBatch.push(outputRow);
       dataRowCount++;
+
+      if (outputBatch.length >= OUTPUT_BATCH_ROWS) {
+        flushOutputBatch();
+      }
     }
 
     log(
@@ -1050,7 +1071,8 @@ async function combineReportingsFull(fileEntries) {
     self.postMessage({ type: 'progress', progress });
   }
 
-  const wsOut = XLSX.utils.aoa_to_sheet(combinedRows);
+  flushOutputBatch();
+
   const wbOut = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wbOut, wsOut, 'Combined Reporting Full');
   log(
