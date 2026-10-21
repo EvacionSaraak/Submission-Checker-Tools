@@ -823,40 +823,49 @@ async function combineReportingsFull(fileEntries) {
   const collectMeaningfulRows = (ws, fileName) => {
     const rows = new Map();
     let ignoredOutOfBounds = 0;
-    let ignoredInvalidAddress = 0;
 
-    for (const address of Object.keys(ws || {})) {
-      if (!address || address[0] === '!') continue;
+    // With XLSX dense:true, SheetJS represents the worksheet as an array of
+    // row arrays. Some builds expose the dense data under !data instead, so
+    // support both forms. Crucially, neither path enumerates every A1-style
+    // worksheet property.
+    const denseRows = Array.isArray(ws)
+      ? ws
+      : (Array.isArray(ws?.['!data']) ? ws['!data'] : null);
 
-      let coord;
-      try {
-        coord = XLSX.utils.decode_cell(address);
-      } catch (err) {
-        ignoredInvalidAddress++;
-        continue;
-      }
-
-      if (
-        !coord ||
-        !Number.isInteger(coord.r) || !Number.isInteger(coord.c) ||
-        coord.r < 0 || coord.c < 0 ||
-        coord.r > EXCEL_MAX_ROW || coord.c > EXCEL_MAX_COL
-      ) {
-        ignoredOutOfBounds++;
-        continue;
-      }
-
-      const cell = ws[address];
-      if (!isMeaningfulCell(cell)) continue;
-
-      if (!rows.has(coord.r)) rows.set(coord.r, new Map());
-      rows.get(coord.r).set(coord.c, cellOutputValue(cell));
+    if (!denseRows) {
+      throw new Error(
+        `${fileName}: worksheet could not be read in dense mode; refusing unsafe property enumeration.`
+      );
     }
 
-    if (ignoredOutOfBounds || ignoredInvalidAddress) {
+    for (let rowIndex = 0; rowIndex < denseRows.length; rowIndex++) {
+      if (rowIndex > EXCEL_MAX_ROW) {
+        ignoredOutOfBounds++;
+        break;
+      }
+
+      const denseRow = denseRows[rowIndex];
+      if (!Array.isArray(denseRow) || denseRow.length === 0) continue;
+
+      let outputRow = null;
+      const maxColumns = Math.min(denseRow.length, EXCEL_MAX_COL + 1);
+
+      for (let columnIndex = 0; columnIndex < maxColumns; columnIndex++) {
+        const cell = denseRow[columnIndex];
+        if (!isMeaningfulCell(cell)) continue;
+
+        if (!outputRow) outputRow = new Map();
+        outputRow.set(columnIndex, cellOutputValue(cell));
+      }
+
+      if (outputRow && outputRow.size) {
+        rows.set(rowIndex, outputRow);
+      }
+    }
+
+    if (ignoredOutOfBounds) {
       log(
-        `${fileName}: ignored ${ignoredOutOfBounds} out-of-bounds and ` +
-        `${ignoredInvalidAddress} invalid worksheet cell address(es).`,
+        `${fileName}: ignored worksheet content beyond Excel's supported row limit.`,
         'WARN'
       );
     }
@@ -874,7 +883,10 @@ async function combineReportingsFull(fileEntries) {
 
     let wb;
     try {
-      wb = XLSX.read(buffer, { type: 'array', cellDates: false });
+      // Dense mode stores worksheet cells in row arrays instead of creating
+      // one object property per cell address (A1, B1, ...). This prevents
+      // "Too many properties to enumerate" on very large reports.
+      wb = XLSX.read(buffer, { type: 'array', cellDates: false, dense: true });
     } catch (err) {
       log(`Failed to read file ${name}: ${err.message}`, 'ERROR');
       continue;
