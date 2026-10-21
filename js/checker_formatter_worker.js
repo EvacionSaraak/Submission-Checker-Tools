@@ -779,6 +779,216 @@ async function combineReportings(fileEntries) {
   return wbOut;
 }
 
+function fullXmlDecode(value) {
+  return String(value || '')
+    .replace(/&#x([0-9a-f]+);/gi, function(_, hex) { return String.fromCodePoint(parseInt(hex, 16)); })
+    .replace(/&#(\d+);/g, function(_, dec) { return String.fromCodePoint(parseInt(dec, 10)); })
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&');
+}
+
+function fullGetAttr(attrs, name) {
+  const match = new RegExp('\\b' + name + '="([^"]*)"', 'i').exec(attrs || '');
+  return match ? fullXmlDecode(match[1]) : '';
+}
+
+function fullColumnIndexFromRef(ref) {
+  const match = /^([A-Z]+)\d+$/i.exec(String(ref || ''));
+  if (!match) return -1;
+  let index = 0;
+  for (const ch of match[1].toUpperCase()) index = index * 26 + (ch.charCodeAt(0) - 64);
+  return index - 1;
+}
+
+function fullCellTextFromXml(body) {
+  const pieces = [];
+  const re = /<t\b[^>]*>([\s\S]*?)<\/t>/gi;
+  let match;
+  while ((match = re.exec(body))) pieces.push(fullXmlDecode(match[1]));
+  return pieces.join('');
+}
+
+function fullParseWorksheetRowXml(rowXml, sharedStrings) {
+  const row = new Map();
+  const cellRe = /<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/gi;
+  let match;
+
+  while ((match = cellRe.exec(rowXml))) {
+    const attrs = match[1] || '';
+    const body = match[2] || '';
+    const columnIndex = fullColumnIndexFromRef(fullGetAttr(attrs, 'r'));
+    if (columnIndex < 0) continue;
+
+    const type = fullGetAttr(attrs, 't').toLowerCase();
+    let value = '';
+
+    if (type === 'inlinestr') {
+      value = fullCellTextFromXml(body);
+    } else {
+      const valueMatch = /<v\b[^>]*>([\s\S]*?)<\/v>/i.exec(body);
+      const raw = valueMatch ? fullXmlDecode(valueMatch[1]) : '';
+
+      if (type === 's') {
+        const idx = Number(raw);
+        value = Number.isInteger(idx) && idx >= 0 ? (sharedStrings[idx] || '') : '';
+      } else if (type === 'b') {
+        value = raw === '1';
+      } else if (type === 'str' || type === 'e') {
+        value = raw;
+      } else if (raw !== '' && /^-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/.test(raw)) {
+        const num = Number(raw);
+        value = Number.isFinite(num) ? num : raw;
+      } else if (raw !== '') {
+        value = raw;
+      } else {
+        const formulaMatch = /<f\b[^>]*>([\s\S]*?)<\/f>/i.exec(body);
+        value = formulaMatch ? '=' + fullXmlDecode(formulaMatch[1]) : '';
+      }
+    }
+
+    if (value !== '' && value !== null && value !== undefined) row.set(columnIndex, value);
+  }
+
+  return row;
+}
+
+function fullStreamZipXmlElements(zipFile, tagName, onElement) {
+  return new Promise(function(resolve, reject) {
+    if (!zipFile) {
+      resolve();
+      return;
+    }
+
+    const decoder = new TextDecoder('utf-8');
+    const stream = zipFile.internalStream('uint8array');
+    const openToken = '<' + tagName;
+    const closeToken = '</' + tagName + '>';
+    let carry = '';
+    let settled = false;
+
+    function fail(err) {
+      if (settled) return;
+      settled = true;
+      reject(err);
+    }
+
+    function consume(final) {
+      while (true) {
+        const start = carry.indexOf(openToken);
+        if (start < 0) {
+          if (final) carry = '';
+          else if (carry.length > 8192) carry = carry.slice(-8192);
+          return;
+        }
+        if (start > 0) carry = carry.slice(start);
+
+        const end = carry.indexOf(closeToken);
+        if (end < 0) return;
+
+        const fullEnd = end + closeToken.length;
+        const xml = carry.slice(0, fullEnd);
+        carry = carry.slice(fullEnd);
+        onElement(xml);
+      }
+    }
+
+    stream.on('data', function(chunk) {
+      if (settled) return;
+      try {
+        carry += decoder.decode(chunk, { stream: true });
+        consume(false);
+      } catch (err) {
+        fail(err);
+      }
+    });
+    stream.on('error', fail);
+    stream.on('end', function() {
+      if (settled) return;
+      try {
+        carry += decoder.decode();
+        consume(true);
+        settled = true;
+        resolve();
+      } catch (err) {
+        fail(err);
+      }
+    });
+    stream.resume();
+  });
+}
+
+async function fullResolveFirstWorksheetPath(zip) {
+  const workbookFile = zip.file('xl/workbook.xml');
+  const relsFile = zip.file('xl/_rels/workbook.xml.rels');
+  if (!workbookFile || !relsFile) return 'xl/worksheets/sheet1.xml';
+
+  const values = await Promise.all([workbookFile.async('string'), relsFile.async('string')]);
+  const workbookXml = values[0];
+  const relsXml = values[1];
+  const sheetMatch = /<sheet\b[^>]*\br:id="([^"]+)"/i.exec(workbookXml);
+  if (!sheetMatch) return 'xl/worksheets/sheet1.xml';
+
+  const relId = sheetMatch[1];
+  const relRe = /<Relationship\b([^>]*?)\/?>/gi;
+  let relMatch;
+  while ((relMatch = relRe.exec(relsXml))) {
+    const attrs = relMatch[1] || '';
+    if (fullGetAttr(attrs, 'Id') !== relId) continue;
+
+    let target = fullGetAttr(attrs, 'Target').replace(/\\/g, '/');
+    if (!target) break;
+    if (target.startsWith('/')) return target.replace(/^\/+/, '');
+    if (target.startsWith('xl/')) return target;
+
+    const parts = ['xl'];
+    target.split('/').forEach(function(segment) {
+      if (!segment || segment === '.') return;
+      if (segment === '..') parts.pop();
+      else parts.push(segment);
+    });
+    return parts.join('/');
+  }
+
+  return 'xl/worksheets/sheet1.xml';
+}
+
+async function fullLoadSharedStrings(zip) {
+  const shared = [];
+  const file = zip.file('xl/sharedStrings.xml');
+  if (!file) return shared;
+  await fullStreamZipXmlElements(file, 'si', function(xml) {
+    shared.push(fullCellTextFromXml(xml));
+  });
+  return shared;
+}
+
+async function fullOpenStreamingXlsx(entry) {
+  if (!JSZIP_LOADED) throw new Error('JSZip is required for large XLSX streaming.');
+  const zip = await JSZip.loadAsync(entry.buffer);
+  const sheetPath = await fullResolveFirstWorksheetPath(zip);
+  const sharedStrings = await fullLoadSharedStrings(zip);
+  const worksheetFile = zip.file(sheetPath);
+  if (!worksheetFile) throw new Error(entry.name + ': worksheet XML not found at ' + sheetPath);
+
+  return {
+    streamRows: async function(onRow) {
+      let fallbackRowIndex = 0;
+      await fullStreamZipXmlElements(worksheetFile, 'row', function(rowXml) {
+        const rowTag = /^<row\b([^>]*)>/i.exec(rowXml);
+        const rowNumber = rowTag ? Number(fullGetAttr(rowTag[1], 'r')) : NaN;
+        const rowIndex = Number.isFinite(rowNumber) && rowNumber > 0 ? rowNumber - 1 : fallbackRowIndex;
+        fallbackRowIndex = Math.max(fallbackRowIndex + 1, rowIndex + 1);
+
+        const cells = fullParseWorksheetRowXml(rowXml, sharedStrings);
+        if (cells.size) onRow(rowIndex, cells);
+      });
+    }
+  };
+}
+
 // ==============================
 // Reporting (full) combiner
 // ==============================
