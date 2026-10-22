@@ -1254,7 +1254,7 @@ async function combineReportingsFull(fileEntries) {
   // exceed V8's maximum string length even when input/output processing is dense.
   // Keeping each worksheet bounded prevents a single giant XML string.
   const OUTPUT_BATCH_ROWS = 1000;
-  const MAX_DATA_ROWS_PER_SHEET = 10000;
+  const MAX_DATA_ROWS_PER_SHEET = 500000;
   const outputSheets = [];
   let wsOut = XLSX.utils.aoa_to_sheet([outputHeaders], { dense: true });
   let outputBatch = [];
