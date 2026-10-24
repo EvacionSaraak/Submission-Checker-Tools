@@ -273,7 +273,7 @@ function hasSubcodeObservation(obsList) {
   });
 }
 
-function getObservationValueWhitespaceErrors(obsList) {
+function getObservationValueWhitespaceErrors(obsList, { suppressSubcode = false } = {}) {
   const errors = [];
 
   Array.from(obsList).forEach((obs, idx) => {
@@ -290,7 +290,9 @@ function getObservationValueWhitespaceErrors(obsList) {
     // Show the exact raw value inside backticks so leading/trailing
     // whitespace remains visible to the user.
     if (normalizedCode === 'SUBCODE') {
-      errors.push(`Subcode shows as \`${rawValue}\`, should be exactly \`01\` with no white spaces.`);
+      if (!suppressSubcode) {
+        errors.push(`Subcode shows as \`${rawValue}\`, should be exactly \`01\` with no white spaces.`);
+      }
       return;
     }
 
@@ -853,8 +855,16 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
         }
       }
       // Observation Value whitespace is invalid globally, including LOINC,
-      // Subcode, tooth observations, and all other observation types.
-      const valueWhitespaceRemarks = getObservationValueWhitespaceErrors(obsList);
+      // Subcode, tooth observations, and all other observation types. If Subcode
+      // itself is forbidden for this receiver, suppress its lower-priority
+      // whitespace remark and keep only the payer-level prohibition.
+      const receiverAllowsSubcode =
+        isMedical ||
+        ['D001', 'HAAD'].includes(String(receiverID || '').trim().toUpperCase());
+
+      const valueWhitespaceRemarks = getObservationValueWhitespaceErrors(obsList, {
+        suppressSubcode: !receiverAllowsSubcode
+      });
       if (valueWhitespaceRemarks.length > 0) {
         row.remarks.push(...valueWhitespaceRemarks);
       }
