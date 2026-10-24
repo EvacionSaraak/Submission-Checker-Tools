@@ -291,7 +291,7 @@ function getObservationValueWhitespaceErrors(obsList, { suppressSubcode = false 
     // whitespace remains visible to the user.
     if (normalizedCode === 'SUBCODE') {
       if (!suppressSubcode) {
-        errors.push(`Subcode shows as \`${rawValue}\`, should be exactly \`01\` with no white spaces.`);
+        errors.push(`Subcode shows as '${rawValue}', should be exactly '01' with no white spaces.`);
       }
       return;
     }
