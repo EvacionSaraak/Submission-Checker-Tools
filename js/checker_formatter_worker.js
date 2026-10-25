@@ -19,8 +19,8 @@ try {
 }
 
 const TARGET_HEADERS = [
-  'Pri. Claim No', 'Clinician License', 'Encounter Date', 'Pri. Patient Insurance Card No',
-  'Department', 'Visit Id', 'Pri. Plan Type', 'Facility ID',
+  'Department', 'Pri. Claim No', 'Clinician License', 'Encounter Date',
+  'Pri. Patient Insurance Card No', 'Visit Id', 'Pri. Plan Type', 'Facility ID',
   'Patient Code', 'Clinician Name', 'Opened by', 'Source File', 'Raw Encounter Date',
   'Total Amount', 'Emirates ID No.'
 ];
