@@ -1433,14 +1433,14 @@
                     net === 0 &&
                     zeroPricedContexts.length === 1 &&
                     zeroPricedContexts[0] === context;
-                const isOnlyActivity99212 =
-                    code === '99212' &&
+                const isOnlyActivity99202Or99212 =
+                    (code === '99202' || code === '99212') &&
                     contexts.length === 1 &&
                     contexts[0] === context;
                 if (
                     GP_992_REQUIRED_CODES.has(code) &&
                     !isSoleZeroPriced99202Or99212 &&
-                    !isOnlyActivity99212 &&
+                    !isOnlyActivity99202Or99212 &&
                     !specialtyContains(orderingSpecialty, 'General Practitioner')
                 ) {
                     invalidFields.push(`Activity ${code} requires OrderingClinician specialty as General Practitioner (Currently \`${orderingSpecialty || 'Unknown'}\`).`);
