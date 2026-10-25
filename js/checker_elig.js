@@ -6,9 +6,8 @@
 //      not eligible for partial-match review.
 //   2. A valid candidate must match encounter date, Member ID, the required
 //      clinician license, and Emirates ID when the Eligibility Excel supplies
-//      one. A blank Eligibility Excel EID is accepted only through Member ID.
-//      An all-zero claim EID is treated as the supported unknown-EID marker,
-//      not as a missing/invalid EID. A genuinely blank claim EID remains invalid.
+//      one. When the Eligibility Excel EID is blank, Member ID becomes the
+//      authoritative patient identifier and the claim EID is ignored entirely.
 //   3. Clinician matching uses every GT-prefixed license found in the claim
 //      when any GT license exists; otherwise it uses OrderingClinician only.
 //      Performing Clinician is not used unless it is the GT override.
@@ -1039,11 +1038,13 @@
       invalidRemarks.push('Encounter Start is missing or has an invalid date.');
     }
 
-    const blankEligibilityPlaceholderAccepted = Boolean(
+    const blankEligibilityEidAccepted = Boolean(
       match?.selectedComparison?.eidBlankAccepted
     );
 
-    if (!hasAcceptableClaimEid(claim.eid) && !blankEligibilityPlaceholderAccepted) {
+    // If the selected eligibility row has no EID, Member ID is authoritative.
+    // Do not validate or compare the claim EID in that scenario.
+    if (!hasAcceptableClaimEid(claim.eid) && !blankEligibilityEidAccepted) {
       invalidRemarks.push('Emirates ID is missing or invalid.');
     }
 
@@ -1190,8 +1191,7 @@
     );
     const blankEligibilityEidAccepted = Boolean(
       eligibilityEidBlank &&
-      memberIdMatch &&
-      isBlankEligibilityAllowedPlaceholderEid(claim?.eid)
+      memberIdMatch
     );
     const serviceCategoryComparison = getServiceCategoryComparison(claim, row);
 
@@ -1217,7 +1217,7 @@
       serviceCategoryValue: serviceCategoryComparison.serviceCategory,
       serviceCategoryExpected: serviceCategoryComparison.expected,
       eidBlankAccepted: blankEligibilityEidAccepted,
-      unknownClaimEidAccepted: blankEligibilityEidAccepted
+      memberIdAuthoritativeForBlankEid: blankEligibilityEidAccepted
     };
   }
 
