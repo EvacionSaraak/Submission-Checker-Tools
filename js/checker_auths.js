@@ -1130,6 +1130,22 @@ function validateClaims(xmlDoc, xlsxData, receiverID = '', options = {}) {
     const encounter = claimEl.getElementsByTagName("Encounter")[0];
     const claimType = getText(encounter || claimEl, "Type");
     const isMedicalClaim = String(claimType || '').trim() === '3';
+    // ADNIC dental claims below AED 500 do not require prior authorization.
+    // Apply this before activity validation and network-level manual-review checks.
+    const isADNICDentalExempt = String(receiverID || '').trim().toUpperCase() === 'A002' &&
+      String(claimType || '').trim() === '2' &&
+      claimNetRaw !== '' && Number.isFinite(claimNet) && claimNet < 500;
+    if (isADNICDentalExempt) {
+      acts.forEach(a => results.push({
+        claimId: cid, memberId: mid, id: getText(a, "ID"), code: getText(a, "Code"),
+        start: getText(a, "Start"), authID: (getText(a, "PriorAuthorizationID") || getText(a, "PriorAuthorization")).trim(),
+        netTotal: getText(a, "Net") || getText(a, "NetTotal"), qty: getText(a, "Quantity") || "1",
+        ordering: getText(a, "OrderingClinician"), description: authRules[getText(a, "Code")]?.description || "",
+        xlsRow: {}, xlsAllAuthRows: [], denialCode: "", denialReason: "",
+        status: "valid", remarks: [], unknown: false
+      }));
+      return;
+    }
     const isMaternity = Array.from(claimEl.getElementsByTagName('Diagnosis')).some(
       diagnosis => String(getText(diagnosis, 'Code') || '').trim().toUpperCase().startsWith('O')
     );
