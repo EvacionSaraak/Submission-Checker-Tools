@@ -1133,7 +1133,7 @@ function validateClaims(xmlDoc, xlsxData, receiverID = '', options = {}) {
     // ADNIC dental claims below AED 500 do not require prior authorization.
     // Apply this before activity validation and network-level manual-review checks.
     const isADNICDentalExempt = String(receiverID || '').trim().toUpperCase() === 'A002' &&
-      String(claimType || '').trim() === '2' &&
+      String(options.claimTypeMode || '').trim().toUpperCase() === 'DENTAL' &&
       claimNetRaw !== '' && Number.isFinite(claimNet) && claimNet < 500;
     if (isADNICDentalExempt) {
       acts.forEach(a => results.push({
@@ -1744,7 +1744,8 @@ async function runAuthsCheck() {
 
     // Validate claims against authorizations (pass receiverID to skip validation for HAAD)
     const results = validateClaims(xmlResult.doc, xlsxData, xmlResult.receiverID, {
-      eligibilityIndex
+      eligibilityIndex,
+      claimTypeMode: document.querySelector('input[name="claimTypeGlobal"]:checked')?.value || ''
     });
     console.log('[DEBUG] Auth validation complete:', {
       resultsCount: results.length,
@@ -1780,7 +1781,9 @@ async function handleRun() {
       loadEndoAuthCodes(),
       loadInsuranceApprovalLimits()
     ]);
-    const results = validateClaims(parsedXmlDoc, parsedXlsxData, parsedReceiverID);
+    const results = validateClaims(parsedXmlDoc, parsedXlsxData, parsedReceiverID, {
+      claimTypeMode: document.querySelector('input[name="claimTypeGlobal"]:checked')?.value || ''
+    });
     renderResults(results);
     postProcessResults(results);
   } catch (err) {
