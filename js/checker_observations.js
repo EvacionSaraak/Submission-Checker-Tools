@@ -799,13 +799,13 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
         row.remarks.push('Code 83718 must have observation with appropriate LOINC codes.');
       }
 
-      // Subcode observations are only permitted for Thiqa (D001) and HAAD.
+      // Subcode observations are only permitted for Thiqa (D001).
       if (
         !isMedical &&
-        !['D001', 'HAAD'].includes(String(receiverID || '').trim().toUpperCase()) &&
+        String(receiverID || '').trim().toUpperCase() !== 'D001' &&
         countSubcodeObservations(obsList) > 0
       ) {
-        row.remarks.push('Subcode observations are not allowed for this receiver; only Thiqa (D001) and HAAD may use Subcode.');
+        row.remarks.push('Subcode observations are not allowed for this receiver; only Thiqa (D001) may use Subcode.');
       }
 
       // Check Subcode observation requirement for root canal codes from 20-Feb-2026 onward
@@ -860,7 +860,7 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
       // whitespace remark and keep only the payer-level prohibition.
       const receiverAllowsSubcode =
         isMedical ||
-        ['D001', 'HAAD'].includes(String(receiverID || '').trim().toUpperCase());
+        String(receiverID || '').trim().toUpperCase() === 'D001';
 
       const valueWhitespaceRemarks = getObservationValueWhitespaceErrors(obsList, {
         suppressSubcode: !receiverAllowsSubcode
