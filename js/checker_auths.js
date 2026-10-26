@@ -1142,7 +1142,8 @@ function validateClaims(xmlDoc, xlsxData, receiverID = '', options = {}) {
         netTotal: getText(a, "Net") || getText(a, "NetTotal"), qty: getText(a, "Quantity") || "1",
         ordering: getText(a, "OrderingClinician"), description: authRules[getText(a, "Code")]?.description || "",
         xlsRow: {}, xlsAllAuthRows: [], denialCode: "", denialReason: "",
-        status: "valid", remarks: [], unknown: false
+        status: (getText(a, "PriorAuthorizationID") || getText(a, "PriorAuthorization")).trim() ? "unknown" : "valid",
+        remarks: [], unknown: Boolean((getText(a, "PriorAuthorizationID") || getText(a, "PriorAuthorization")).trim())
       }));
       return;
     }
