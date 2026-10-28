@@ -1462,7 +1462,7 @@
             const hasNewPatientCode = consultationCodes.has('99202') || consultationCodes.has('99203');
             const hasEstablishedPatientCode = consultationCodes.has('99212') || consultationCodes.has('99213');
             if (hasNewPatientCode && hasEstablishedPatientCode) invalidFields.push('99202/99203 cannot be combined with 99212/99213 in the same claim.');
-            if (infusionCodes.size > 1) invalidFields.push(`Codes ${Array.from(infusionCodes).join(', ')} cannot coexist in the same claim.`);
+            if (String(receiverID || '').trim().toUpperCase() !== 'HAAD' && infusionCodes.size > 1) invalidFields.push(`Codes ${Array.from(infusionCodes).join(', ')} cannot coexist in the same claim.`);
         }
 
         function validateMedicalOrderingConsistency(activities, getText, invalidFields, options = {}) {
