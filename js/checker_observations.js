@@ -344,8 +344,9 @@ function validateObservationValueTypes(obsList, activityCode) {
       if (!VALUETYPE_EXEMPT_OBS_TYPES.has(obsType.toLowerCase())) {
         remarks.push(`Observation ValueType for ${activityCode} may not be empty for observation "${obsCode}" (Type: "${obsType || '(missing)'}").`);
       }
-    } else if (!/[\p{L}\p{N}]/u.test(valueType)) {
-      // Punctuation/symbol-only placeholders (".", "---", "??", etc.) are invalid
+    } else if (valueType !== '%' && !/[\p{L}\p{N}]/u.test(valueType)) {
+      // "%" is a valid unit for percentage-based lab observations.
+      // Other punctuation/symbol-only placeholders (".", "---", "??", etc.) are invalid
       // for ALL observation types, including those allowed to omit ValueType.
       remarks.push(`Observation ValueType for ${activityCode} is invalid: "${valueType}" for observation "${obsCode}". Use a meaningful ValueType.`);
     }
