@@ -218,6 +218,11 @@ async function filterLicenseZip() {
   const excelInput = document.getElementById('license-lineup')?.files?.[0];
   if (!zipInput || !excelInput) throw new Error('Upload both a license ZIP/RAR and an Excel lineup.');
   if (typeof JSZip === 'undefined' || typeof XLSX === 'undefined') throw new Error('ZIP or Excel library failed to load.');
+  progressBarContainer.style.display = 'block';
+  progressBar.style.width = '0%';
+  progressText.textContent = '0%';
+  messageBox.textContent = 'Reading clinician lineup and archive...';
+  await new Promise(resolve => requestAnimationFrame(resolve));
   const workbook = XLSX.read(await excelInput.arrayBuffer(), { type: 'array' });
   const headerAliases = new Set(['doctorlicenseno', 'clinicianlicense', 'clinicianlicenseno', 'licenseno', 'licensenumber', 'phylic', 'professionall icenseno'.replace(/\s/g, '')]);
   const allowed = new Set();
@@ -257,6 +262,13 @@ async function filterLicenseZip() {
     const inputZip = await JSZip.loadAsync(await zipInput.arrayBuffer(), { checkCRC32: true });
     files = Object.values(inputZip.files).filter(entry => !entry.dir);
   }
+  const progressStatus = document.createElement('div');
+  progressStatus.id = 'license-processing-status';
+  progressStatus.setAttribute('role', 'status');
+  progressStatus.setAttribute('aria-live', 'polite');
+  outputTableContainer.replaceChildren(progressStatus);
+  progressStatus.textContent = 'Processed 0 of ' + files.length + ' clinician files (0%).';
+  await new Promise(resolve => requestAnimationFrame(resolve));
   let kept = 0, excluded = 0, unmatched = 0;
   const retainedFiles = [], excludedFiles = [];
   const matchedLicenses = new Set();
@@ -296,13 +308,19 @@ async function filterLicenseZip() {
       excluded++;
       excludedFiles.push({ license: license || 'Not recognized', name: entry.name, reason });
     }
-    if (i % 10 === 0 || i === candidates.length - 1) {
-      const pct = Math.round(10 + 80 * (i + 1) / Math.max(1, candidates.length));
+    if (i % 5 === 0 || i === candidates.length - 1) {
+      const processed = i + 1;
+      const pct = Math.round(90 * processed / Math.max(1, candidates.length));
       progressBar.style.width = pct + '%';
       progressText.textContent = pct + '%';
+      progressStatus.textContent = 'Processed ' + processed + ' of ' + candidates.length +
+        ' clinician files (' + Math.round(100 * processed / Math.max(1, candidates.length)) +
+        '%): ' + kept + ' retained, ' + excluded + ' excluded.';
+      await new Promise(resolve => requestAnimationFrame(resolve));
     }
   }
   if (!kept) throw new Error('No license files matched the Excel lineup. No ZIP was generated.');
+  progressStatus.textContent = 'Processed ' + candidates.length + ' of ' + candidates.length + ' clinician files. Creating ZIP...';
   lastWorkbookData = await outputZip.generateAsync({ type: 'uint8array', compression: 'DEFLATE', compressionOptions: { level: 6 } });
   lastResultKind = 'zip';
   messageBox.textContent = 'ZIP ready: ' + kept + ' retained, ' + excluded + ' excluded (' + unmatched + ' filenames without a recognizable license).';
