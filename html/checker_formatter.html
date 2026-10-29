@@ -18,8 +18,8 @@
 </div>
 
 <div id="zip-exclusion-panel" class="hidden">
-  <div class="form-row"><label for="license-zip">ZIP containing clinician license files:</label>
-    <input type="file" id="license-zip" accept=".zip,application/zip" /></div>
+  <div class="form-row"><label for="license-zip">ZIP or RAR containing clinician license files:</label>
+    <input type="file" id="license-zip" accept=".zip,.rar,application/zip,application/vnd.rar" /></div>
   <div class="form-row"><label for="license-lineup">Excel lineup of current clinician licenses:</label>
     <input type="file" id="license-lineup" accept=".xlsx,.xls" /></div>
   <p>Matches license numbers in filenames against the Excel <strong>DoctorLicenseNo</strong> column (or Clinician License / License No). Unmatched files are excluded; matched duplicates and folder paths are retained.</p>
@@ -132,6 +132,6 @@
 <div id="outputTableContainer"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="../js/checker_formatter.js?v=20261029-zip-exclusion-fix"></script>
+<script src="../js/checker_formatter.js?v=20261029-rar"></script>
 </body>
 </html>
