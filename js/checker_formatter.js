@@ -341,6 +341,8 @@ async function filterLicenseZip() {
     details.appendChild(label);
     const table = document.createElement('table');
     table.className = 'table table-sm table-striped table-bordered';
+    table.style.width = '100%';
+    table.style.tableLayout = 'fixed';
     const thead = document.createElement('thead');
     const headerRow = document.createElement('tr');
     for (const text of ['License', 'Archive path', 'Reason']) {
@@ -350,8 +352,24 @@ async function filterLicenseZip() {
     const tbody = document.createElement('tbody');
     for (const entry of entries) {
       const row = document.createElement('tr');
-      for (const value of [entry.license, entry.name, entry.reason]) {
-        const cell = document.createElement('td'); cell.textContent = value; row.appendChild(cell);
+      for (const [index, value] of [entry.license, entry.name, entry.reason].entries()) {
+        const cell = document.createElement('td');
+        cell.style.whiteSpace = 'normal';
+        cell.style.overflowWrap = 'anywhere';
+        cell.style.wordBreak = 'break-word';
+        cell.style.verticalAlign = 'top';
+        cell.style.width = index === 0 ? '16%' : index === 1 ? '44%' : '40%';
+        if (index === 1) {
+          const path = String(value || '').replace(/\\/g, '/');
+          const slash = path.lastIndexOf('/');
+          if (slash >= 0) cell.appendChild(document.createTextNode(path.slice(0, slash + 1)));
+          const filename = document.createElement('strong');
+          filename.textContent = path.slice(slash + 1);
+          cell.appendChild(filename);
+        } else {
+          cell.textContent = value;
+        }
+        row.appendChild(cell);
       }
       tbody.appendChild(row);
     }
