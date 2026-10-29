@@ -232,15 +232,31 @@ async function filterLicenseZip() {
   const workbook = XLSX.read(await excelInput.arrayBuffer(), { type: 'array' });
   const headerAliases = new Set(['doctorlicenseno', 'clinicianlicense', 'clinicianlicenseno', 'licenseno', 'licensenumber', 'phylic', 'professionall icenseno'.replace(/\s/g, '')]);
   const allowed = new Set();
+  const lineupRecords = new Map();
+  const lineupHeaders = [];
+  const seenHeaders = new Set();
   for (const sheetName of workbook.SheetNames) {
     const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, defval: '', raw: false });
     for (let i = 0; i < Math.min(30, rows.length); i++) {
       const headers = (rows[i] || []).map(cell => String(cell || '').toLowerCase().replace(/[^a-z0-9]/g, ''));
       const idx = headers.findIndex(header => headerAliases.has(header));
       if (idx < 0) continue;
+      const columnLabels = (rows[i] || []).map(value => String(value == null ? '' : value).trim());
+      for (const label of columnLabels) {
+        if (label && !seenHeaders.has(label)) { seenHeaders.add(label); lineupHeaders.push(label); }
+      }
       for (const row of rows.slice(i + 1)) {
-        const value = normalizeLicenseID(row[idx]);
-        if (/^[A-Z]{1,5}\d+[A-Z0-9]*$/.test(value)) allowed.add(value);
+        const license = normalizeLicenseID(row[idx]);
+        if (!/^[A-Z]{1,5}\d+[A-Z0-9]*$/.test(license)) continue;
+        allowed.add(license);
+        if (!lineupRecords.has(license)) lineupRecords.set(license, { sheetName, details: {} });
+        const details = lineupRecords.get(license).details;
+        columnLabels.forEach((label, index) => {
+          const value = row[index];
+          if (label && value !== '' && value != null && (details[label] == null || details[label] === '')) {
+            details[label] = value;
+          }
+        });
       }
       break;
     }
@@ -279,21 +295,24 @@ async function filterLicenseZip() {
   let kept = 0, excluded = 0, unmatched = 0;
   const retainedFiles = [], excludedFiles = [];
   const matchedLicenses = new Set();
+  const retainedPDFLicenses = new Set();
   const candidates = files.map(entry => {
     const baseName = entry.name.split('/').pop();
     // Match filename license prefix; PDF contents are not parsed.
     const match = baseName.match(/^\s*([A-Za-z]{1,5}\s*-?\s*\d+[A-Za-z0-9]*)\b/);
     const license = match ? normalizeLicenseID(match[1]) : '';
     const modified = entry.date instanceof Date && Number.isFinite(entry.date.getTime()) ? entry.date.getTime() : 0;
-    return { entry, license, modified };
+    return { entry, license, modified, isPDF: /\.pdf$/i.test(baseName) };
   });
   const newestByLicense = new Map();
   for (const candidate of candidates) {
     if (!candidate.license || !allowed.has(candidate.license)) continue;
     const previous = newestByLicense.get(candidate.license);
-    // Latest archive modification timestamp wins; ties use filename/path alphabetically.
-    if (!previous || candidate.modified > previous.modified ||
-        (candidate.modified === previous.modified && candidate.entry.name.localeCompare(previous.entry.name) > 0)) {
+    // Prefer a PDF over other file formats, then the latest archive timestamp.
+    // This ensures an available clinician PDF is not replaced by a newer non-PDF attachment.
+    if (!previous || (candidate.isPDF && !previous.isPDF) ||
+        (candidate.isPDF === previous.isPDF && (candidate.modified > previous.modified ||
+        (candidate.modified === previous.modified && candidate.entry.name.localeCompare(previous.entry.name) > 0)))) {
       newestByLicense.set(candidate.license, candidate);
     }
   }
@@ -304,13 +323,16 @@ async function filterLicenseZip() {
     if (!license) { unmatched++; reason = 'License number not recognized in filename'; }
     else if (!allowed.has(license)) reason = 'License not in Excel lineup';
     else if (newestByLicense.get(license) !== candidate) {
-      reason = 'Older duplicate; retained ' + newestByLicense.get(license).entry.name;
+      const selected = newestByLicense.get(license);
+      reason = (selected.isPDF && !candidate.isPDF ? 'Non-PDF duplicate' : 'Older duplicate') +
+        '; retained ' + selected.entry.name;
     }
     if (!reason) {
       outputZip.file(entry.name, await entry.async('uint8array'), { date: entry.date });
       kept++;
       matchedLicenses.add(license);
-      retainedFiles.push({ license, name: entry.name, reason: 'Latest matching license file' });
+      if (candidate.isPDF) retainedPDFLicenses.add(license);
+      retainedFiles.push({ license, name: entry.name, reason: candidate.isPDF ? 'Latest matching license PDF' : 'Latest matching license file (not PDF)' });
     } else {
       excludedZip.file(entry.name, await entry.async('uint8array'), { date: entry.date });
       excluded++;
@@ -327,13 +349,32 @@ async function filterLicenseZip() {
       await new Promise(resolve => requestAnimationFrame(resolve));
     }
   }
-  if (!candidates.length) throw new Error('No files were found in the uploaded archive.');
-  progressStatus.textContent = 'Processed ' + candidates.length + ' of ' + candidates.length + ' clinician files. Creating ZIP archives...';
+  // Include a spreadsheet in the retained ZIP for every clinician lacking a retained PDF.
+  const missingLicenses = [...allowed].filter(license => !retainedPDFLicenses.has(license))
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  const reportHeaders = ['License Number', 'Reason', 'Source Sheet', ...lineupHeaders];
+  const reportRows = missingLicenses.map(license => {
+    const record = lineupRecords.get(license);
+    return [license, 'No matching clinician PDF in retained ZIP', record?.sheetName || '',
+      ...lineupHeaders.map(header => record?.details?.[header] ?? '')];
+  });
+  const missingWorkbook = XLSX.utils.book_new();
+  const missingSheet = XLSX.utils.aoa_to_sheet([reportHeaders, ...reportRows]);
+  missingSheet['!cols'] = reportHeaders.map((header, index) => ({
+    wch: index === 1 ? 42 : index === 2 ? 22 : Math.min(40, Math.max(16, String(header).length + 3))
+  }));
+  missingSheet['!autofilter'] = {
+    ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: reportRows.length, c: reportHeaders.length - 1 } })
+  };
+  XLSX.utils.book_append_sheet(missingWorkbook, missingSheet, 'Missing Clinicians');
+  outputZip.file('Missing Clinicians.xlsx', XLSX.write(missingWorkbook, { type: 'array', bookType: 'xlsx' }));
+  progressStatus.textContent = 'Processed ' + candidates.length + ' of ' + candidates.length + ' clinician files. Creating ZIP archives and missing-clinicians report...';
   const zipOptions = { type: 'uint8array', compression: 'DEFLATE', compressionOptions: { level: 6 } };
-  lastWorkbookData = kept ? await outputZip.generateAsync(zipOptions) : null;
+  lastWorkbookData = await outputZip.generateAsync(zipOptions);
   lastExcludedZipData = excluded ? await excludedZip.generateAsync(zipOptions) : null;
   lastResultKind = 'zip';
-  messageBox.textContent = 'ZIPs ready: ' + kept + ' retained, ' + excluded + ' excluded (' + unmatched + ' filenames without a recognizable license).';
+  messageBox.textContent = 'ZIPs ready: ' + kept + ' retained, ' + excluded + ' excluded; ' +
+    missingLicenses.length + ' clinicians missing a PDF (listed in Missing Clinicians.xlsx inside the retained ZIP).';
   const summary = document.createElement('div');
   const title = document.createElement('h3');
   title.textContent = 'License filtering summary';
@@ -341,7 +382,7 @@ async function filterLicenseZip() {
   const stats = document.createElement('p');
   stats.textContent = 'Input files: ' + files.length + ' | Retained: ' + kept + ' | Excluded: ' + excluded +
     ' | Distinct retained licenses: ' + matchedLicenses.size + ' | Excel licenses: ' + allowed.size +
-    ' | Unrecognized filenames: ' + unmatched;
+    ' | Unrecognized filenames: ' + unmatched + ' | Clinicians missing PDFs: ' + missingLicenses.length;
   summary.appendChild(stats);
   for (const [heading, entries] of [['Retained files', retainedFiles], ['Excluded files', excludedFiles]]) {
     const details = document.createElement('details');
