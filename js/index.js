@@ -21,7 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function loadPage(file, index) {
-    iframe.src = file;
+    iframe.src = file === 'html/checker_formatter.html' ? `${file}?v=20261029-zip-exclusion-fix` : file;
     setActiveButton(index);
     saveLastPage(index);
   }
