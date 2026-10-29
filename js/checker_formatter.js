@@ -340,7 +340,7 @@ async function filterLicenseZip() {
     label.textContent = heading + ' (' + entries.length + ')';
     details.appendChild(label);
     const table = document.createElement('table');
-    table.className = 'table table-sm table-striped table-bordered';
+    table.className = 'table table-sm table-striped table-bordered zip-exclusion-results';
     table.style.width = '100%';
     table.style.tableLayout = 'fixed';
     const thead = document.createElement('thead');
@@ -352,7 +352,7 @@ async function filterLicenseZip() {
     const tbody = document.createElement('tbody');
     for (const entry of entries) {
       const row = document.createElement('tr');
-      row.classList.add(heading === 'Retained files' ? 'valid' : 'invalid');
+      row.classList.add(heading === 'Retained files' ? 'table-success' : 'table-danger');
       for (const [index, value] of [entry.license, entry.name, entry.reason].entries()) {
         const cell = document.createElement('td');
         cell.style.whiteSpace = 'normal';
