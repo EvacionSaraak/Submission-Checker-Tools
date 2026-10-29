@@ -260,24 +260,44 @@ async function filterLicenseZip() {
   let kept = 0, excluded = 0, unmatched = 0;
   const retainedFiles = [], excludedFiles = [];
   const matchedLicenses = new Set();
-  for (let i = 0; i < files.length; i++) {
-    const entry = files[i];
+  const candidates = files.map(entry => {
     const baseName = entry.name.split('/').pop();
-    // Require the license number at the start of the filename; do not guess from names or dates.
+    // Match filename license prefix; PDF contents are not parsed.
     const match = baseName.match(/^\s*([A-Za-z]{1,5}\s*-?\s*\d+[A-Za-z0-9]*)\b/);
     const license = match ? normalizeLicenseID(match[1]) : '';
-    if (!license) unmatched++;
-    if (license && allowed.has(license)) {
+    const modified = entry.date instanceof Date && Number.isFinite(entry.date.getTime()) ? entry.date.getTime() : 0;
+    return { entry, license, modified };
+  });
+  const newestByLicense = new Map();
+  for (const candidate of candidates) {
+    if (!candidate.license || !allowed.has(candidate.license)) continue;
+    const previous = newestByLicense.get(candidate.license);
+    // Latest archive modification timestamp wins; ties use filename/path alphabetically.
+    if (!previous || candidate.modified > previous.modified ||
+        (candidate.modified === previous.modified && candidate.entry.name.localeCompare(previous.entry.name) > 0)) {
+      newestByLicense.set(candidate.license, candidate);
+    }
+  }
+  for (let i = 0; i < candidates.length; i++) {
+    const candidate = candidates[i];
+    const { entry, license } = candidate;
+    let reason = '';
+    if (!license) { unmatched++; reason = 'License number not recognized in filename'; }
+    else if (!allowed.has(license)) reason = 'License not in Excel lineup';
+    else if (newestByLicense.get(license) !== candidate) {
+      reason = 'Older duplicate; retained ' + newestByLicense.get(license).entry.name;
+    }
+    if (!reason) {
       outputZip.file(entry.name, await entry.async('uint8array'), { date: entry.date });
       kept++;
       matchedLicenses.add(license);
-      retainedFiles.push({ license, name: entry.name });
+      retainedFiles.push({ license, name: entry.name, reason: 'Latest matching license file' });
     } else {
       excluded++;
-      excludedFiles.push({ license: license || 'Not recognized', name: entry.name });
+      excludedFiles.push({ license: license || 'Not recognized', name: entry.name, reason });
     }
-    if (i % 10 === 0 || i === files.length - 1) {
-      const pct = Math.round(10 + 80 * (i + 1) / Math.max(1, files.length));
+    if (i % 10 === 0 || i === candidates.length - 1) {
+      const pct = Math.round(10 + 80 * (i + 1) / Math.max(1, candidates.length));
       progressBar.style.width = pct + '%';
       progressText.textContent = pct + '%';
     }
@@ -305,14 +325,14 @@ async function filterLicenseZip() {
     table.className = 'table table-sm table-striped table-bordered';
     const thead = document.createElement('thead');
     const headerRow = document.createElement('tr');
-    for (const text of ['License', 'Archive path']) {
+    for (const text of ['License', 'Archive path', 'Reason']) {
       const cell = document.createElement('th'); cell.textContent = text; headerRow.appendChild(cell);
     }
     thead.appendChild(headerRow); table.appendChild(thead);
     const tbody = document.createElement('tbody');
     for (const entry of entries) {
       const row = document.createElement('tr');
-      for (const value of [entry.license, entry.name]) {
+      for (const value of [entry.license, entry.name, entry.reason]) {
         const cell = document.createElement('td'); cell.textContent = value; row.appendChild(cell);
       }
       tbody.appendChild(row);
