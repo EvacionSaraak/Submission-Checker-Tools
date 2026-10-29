@@ -10,6 +10,7 @@ const reportingPanel = document.getElementById('reporting-panel');
 const reportingFullPanel = document.getElementById('reporting-full-panel');
 const xmlPanel = document.getElementById('xml-panel');
 const errorsPanel = document.getElementById('errors-panel');
+const zipExclusionPanel = document.getElementById('zip-exclusion-panel');
 
 const eligibilityInput = document.getElementById('eligibility-files');
 const reportingInput = document.getElementById('reporting-files');
@@ -35,7 +36,11 @@ let lastResultKind = 'xlsx';
 
 document.getElementById('mode-selector').addEventListener('change', e => {
   const mode = document.querySelector('input[name="mode"]:checked').value;
-  if (mode === 'eligibility') {
+  zipExclusionPanel.classList.toggle('hidden', mode !== 'zip_exclusion');
+  if (mode === 'zip_exclusion') {
+    [eligibilityPanel, reportingPanel, reportingFullPanel, xmlPanel, errorsPanel].forEach(panel => panel.classList.add('hidden'));
+    combineButton.style.display = '';
+  } else if (mode === 'eligibility') {
     eligibilityPanel.classList.remove('hidden');
     reportingPanel.classList.add('hidden');
     reportingFullPanel.classList.add('hidden');
@@ -201,11 +206,74 @@ async function combineXMLFiles(fileEntries) {
   return encoder.encode(finalXml);
 }
 
+
+function normalizeLicenseID(value) {
+  return String(value == null ? '' : value).trim().toUpperCase().replace(/[\s-]+/g, '');
+}
+
+async function filterLicenseZip() {
+  const zipInput = document.getElementById('license-zip')?.files?.[0];
+  const excelInput = document.getElementById('license-lineup')?.files?.[0];
+  if (!zipInput || !excelInput) throw new Error('Upload both a license ZIP and an Excel lineup.');
+  if (typeof JSZip === 'undefined' || typeof XLSX === 'undefined') throw new Error('ZIP or Excel library failed to load.');
+  const workbook = XLSX.read(await excelInput.arrayBuffer(), { type: 'array' });
+  const headerAliases = new Set(['doctorlicenseno', 'clinicianlicense', 'clinicianlicenseno', 'licenseno', 'licensenumber', 'phylic', 'professionall icenseno'.replace(/\s/g, '')]);
+  const allowed = new Set();
+  for (const sheetName of workbook.SheetNames) {
+    const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, defval: '', raw: false });
+    for (let i = 0; i < Math.min(30, rows.length); i++) {
+      const headers = (rows[i] || []).map(cell => String(cell || '').toLowerCase().replace(/[^a-z0-9]/g, ''));
+      const idx = headers.findIndex(header => headerAliases.has(header));
+      if (idx < 0) continue;
+      for (const row of rows.slice(i + 1)) {
+        const value = normalizeLicenseID(row[idx]);
+        if (/^[A-Z]{1,5}\d+[A-Z0-9]*$/.test(value)) allowed.add(value);
+      }
+      break;
+    }
+  }
+  if (!allowed.size) throw new Error('No clinician license numbers found. Check the DoctorLicenseNo column in the Excel sheet.');
+  const inputZip = await JSZip.loadAsync(await zipInput.arrayBuffer(), { checkCRC32: true });
+  const outputZip = new JSZip();
+  let kept = 0, excluded = 0, unmatched = 0;
+  const files = Object.values(inputZip.files).filter(entry => !entry.dir);
+  for (let i = 0; i < files.length; i++) {
+    const entry = files[i];
+    const baseName = entry.name.split('/').pop();
+    // Require the license number at the start of the filename; do not guess from names or dates.
+    const match = baseName.match(/^\s*([A-Za-z]{1,5}\s*-?\s*\d+[A-Za-z0-9]*)\b/);
+    const license = match ? normalizeLicenseID(match[1]) : '';
+    if (!license) unmatched++;
+    if (license && allowed.has(license)) {
+      outputZip.file(entry.name, await entry.async('uint8array'), { date: entry.date });
+      kept++;
+    } else excluded++;
+    if (i % 10 === 0 || i === files.length - 1) {
+      const pct = Math.round(10 + 80 * (i + 1) / Math.max(1, files.length));
+      progressBar.style.width = pct + '%';
+      progressText.textContent = pct + '%';
+    }
+  }
+  if (!kept) throw new Error('No license files matched the Excel lineup. No ZIP was generated.');
+  lastWorkbookData = await outputZip.generateAsync({ type: 'uint8array', compression: 'DEFLATE', compressionOptions: { level: 6 } });
+  lastResultKind = 'zip';
+  messageBox.textContent = 'ZIP ready: ' + kept + ' retained, ' + excluded + ' excluded (' + unmatched + ' filenames without a recognizable license).';
+  downloadButton.disabled = false;
+  progressBar.style.width = '100%';
+  progressText.textContent = '100%';
+}
+
 combineButton.addEventListener('click', async () => {
   try {
     messageBox.textContent = '';
     outputTableContainer.innerHTML = '';
     const mode = document.querySelector('input[name="mode"]:checked').value;
+    if (mode === 'zip_exclusion') {
+      combineButton.disabled = true;
+      downloadButton.disabled = true;
+      try { await filterLicenseZip(); } finally { combineButton.disabled = false; }
+      return;
+    }
     const inputFiles = mode === 'eligibility' ? eligibilityInput.files : 
                        mode === 'reporting' ? reportingInput.files : 
                        mode === 'reporting_full' ? reportingFullInput.files :
@@ -319,7 +387,7 @@ downloadButton.addEventListener('click', () => {
     filename = `combined_xml_${timestamp}.xml`;
   } else if (lastResultKind === 'zip') {
     blob = new Blob([lastWorkbookData], { type: 'application/zip' });
-    filename = `combined_${mode}_${timestamp}.zip`;
+    filename = mode === 'zip_exclusion' ? `filtered_clinician_licenses_${timestamp}.zip` : `combined_${mode}_${timestamp}.zip`;
   } else {
     blob = new Blob([lastWorkbookData], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     filename = `combined_${mode}_${timestamp}.xlsx`;
