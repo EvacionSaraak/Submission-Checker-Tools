@@ -1,5 +1,6 @@
 const combineButton = document.getElementById('combine-button');
 const downloadButton = document.getElementById('download-button');
+const excludedDownloadButton = document.getElementById('download-excluded-button');
 const progressBarContainer = document.getElementById('progress-bar-container');
 const progressBar = document.getElementById('progress-bar');
 const progressText = document.getElementById('progress-text');
@@ -33,10 +34,13 @@ const worker = new Worker(`../js/checker_formatter_worker.js?v=${Date.now()}`);
 
 let lastWorkbookData = null;
 let lastResultKind = 'xlsx';
+let lastExcludedZipData = null;
 
 document.getElementById('mode-selector').addEventListener('change', e => {
   const mode = document.querySelector('input[name="mode"]:checked').value;
   combineButton.textContent = mode === 'zip_exclusion' ? 'Filter ZIP' : 'Combine';
+  downloadButton.textContent = mode === 'zip_exclusion' ? 'Download Retained ZIP' : 'Download Results';
+  excludedDownloadButton.style.display = mode === 'zip_exclusion' ? '' : 'none';
   if (zipExclusionPanel) zipExclusionPanel.classList.toggle('hidden', mode !== 'zip_exclusion');
   if (mode === 'zip_exclusion') {
     if (!zipExclusionPanel) { messageBox.textContent = 'ZIP Exclusion panel is unavailable. Reload the Formatting page to refresh its HTML.'; return; }
@@ -89,8 +93,10 @@ function resetUI() {
   outputTableContainer.innerHTML = '';
   combineButton.disabled = false;
   downloadButton.disabled = true;
+  excludedDownloadButton.disabled = true;
   lastWorkbookData = null;
   lastResultKind = 'xlsx';
+  lastExcludedZipData = null;
 }
 
 // XML combining function (runs in main thread where DOMParser is available)
@@ -242,6 +248,7 @@ async function filterLicenseZip() {
   if (!allowed.size) throw new Error('No clinician license numbers found. Check the DoctorLicenseNo column in the Excel sheet.');
   const isRar = /\.rar$/i.test(zipInput.name);
   const outputZip = new JSZip();
+  const excludedZip = new JSZip();
   let files;
   if (isRar) {
     // RAR extraction is performed in-browser using the WASM implementation.
@@ -305,6 +312,7 @@ async function filterLicenseZip() {
       matchedLicenses.add(license);
       retainedFiles.push({ license, name: entry.name, reason: 'Latest matching license file' });
     } else {
+      excludedZip.file(entry.name, await entry.async('uint8array'), { date: entry.date });
       excluded++;
       excludedFiles.push({ license: license || 'Not recognized', name: entry.name, reason });
     }
@@ -319,11 +327,13 @@ async function filterLicenseZip() {
       await new Promise(resolve => requestAnimationFrame(resolve));
     }
   }
-  if (!kept) throw new Error('No license files matched the Excel lineup. No ZIP was generated.');
-  progressStatus.textContent = 'Processed ' + candidates.length + ' of ' + candidates.length + ' clinician files. Creating ZIP...';
-  lastWorkbookData = await outputZip.generateAsync({ type: 'uint8array', compression: 'DEFLATE', compressionOptions: { level: 6 } });
+  if (!candidates.length) throw new Error('No files were found in the uploaded archive.');
+  progressStatus.textContent = 'Processed ' + candidates.length + ' of ' + candidates.length + ' clinician files. Creating ZIP archives...';
+  const zipOptions = { type: 'uint8array', compression: 'DEFLATE', compressionOptions: { level: 6 } };
+  lastWorkbookData = kept ? await outputZip.generateAsync(zipOptions) : null;
+  lastExcludedZipData = excluded ? await excludedZip.generateAsync(zipOptions) : null;
   lastResultKind = 'zip';
-  messageBox.textContent = 'ZIP ready: ' + kept + ' retained, ' + excluded + ' excluded (' + unmatched + ' filenames without a recognizable license).';
+  messageBox.textContent = 'ZIPs ready: ' + kept + ' retained, ' + excluded + ' excluded (' + unmatched + ' filenames without a recognizable license).';
   const summary = document.createElement('div');
   const title = document.createElement('h3');
   title.textContent = 'License filtering summary';
@@ -386,7 +396,8 @@ async function filterLicenseZip() {
     table.appendChild(tbody); details.appendChild(table); summary.appendChild(details);
   }
   outputTableContainer.replaceChildren(summary);
-  downloadButton.disabled = false;
+  downloadButton.disabled = !lastWorkbookData;
+  excludedDownloadButton.disabled = !lastExcludedZipData;
   progressBar.style.width = '100%';
   progressText.textContent = '100%';
 }
@@ -399,7 +410,17 @@ combineButton.addEventListener('click', async () => {
     if (mode === 'zip_exclusion') {
       combineButton.disabled = true;
       downloadButton.disabled = true;
-      try { await filterLicenseZip(); } finally { combineButton.disabled = false; }
+      excludedDownloadButton.disabled = true;
+      lastWorkbookData = null;
+      lastExcludedZipData = null;
+      try {
+        await filterLicenseZip();
+      } catch (err) {
+        messageBox.textContent = 'ZIP filtering error: ' + err.message;
+        console.error('ZIP exclusion error:', err);
+      } finally {
+        combineButton.disabled = false;
+      }
       return;
     }
     const inputFiles = mode === 'eligibility' ? eligibilityInput.files : 
@@ -529,6 +550,22 @@ downloadButton.addEventListener('click', () => {
   a.click();
   setTimeout(() => {
     document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 0);
+});
+
+excludedDownloadButton.addEventListener('click', () => {
+  if (!lastExcludedZipData || document.querySelector('input[name="mode"]:checked')?.value !== 'zip_exclusion') return;
+  const timestamp = new Date().toISOString().slice(0,19).replace(/:/g, '-');
+  const blob = new Blob([lastExcludedZipData], { type: 'application/zip' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `excluded_clinician_licenses_${timestamp}.zip`;
+  document.body.appendChild(link);
+  link.click();
+  setTimeout(() => {
+    link.remove();
     URL.revokeObjectURL(url);
   }, 0);
 });
