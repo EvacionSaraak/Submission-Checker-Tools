@@ -323,6 +323,15 @@ function isSpecialMedicalCode(code) {
 // Observation types that are allowed to have a blank/missing ValueType (tooth-number observations)
 // "Flags" observations (e.g. MedicalTourismUnplanned) carry no value and are always valid without a ValueType.
 const VALUETYPE_EXEMPT_OBS_TYPES = new Set(['universal dental', 'episode', 'flags']);
+// COMMENT observations are forbidden regardless of ValueType (including "." or other placeholders).
+function getCommentObservationRemarks(obsList) {
+  return Array.from(obsList).flatMap((obs, index) => {
+    if (!String(obs.textContent || '').toUpperCase().includes('COMMENT')) return [];
+    const code = (obs.querySelector('Code')?.textContent || '').trim();
+    const label = code ? `"${code}"` : `#${index + 1}`;
+    return [`Observation ${label} contains COMMENT and is not allowed. Remove the comment observation.`];
+  });
+}
 // Returns remarks for any observation where ValueType is blank but the observation type requires it.
 // "Universal Dental" and "Episode" observations carry a tooth number and don't need a ValueType.
 function validateObservationValueTypes(obsList, activityCode) {
@@ -735,6 +744,7 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
     let claimHasInvalid = false;
     Array.from(claim.getElementsByTagName('Activity')).forEach(act => {
       const obsList = act.getElementsByTagName('Observation');
+      const commentObservationRemarks = getCommentObservationRemarks(obsList);
       const activityId = act.querySelector('ID')?.textContent || '';
       const typeValue = act.querySelector('Type')?.textContent?.trim() || '';
       const rawCode = act.querySelector('Code')?.textContent || '';
@@ -751,7 +761,7 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
           code,
           description: forbiddenEntry.description,
           details: 'N/A',
-          remarks: [forbiddenEntry.reason]
+          remarks: [forbiddenEntry.reason, ...commentObservationRemarks]
         });
         claimHasInvalid = true;
         rows.push(row);
@@ -761,7 +771,7 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
       // Codes containing a space are treated as unknown (not invalid) since the space may be part of a subcode variant
       if (code.length !== 5 && !code.includes(`-`) && !rawCode.includes(' ')) {
         const typeRemarks = validateActivityType(code, typeValue, false, tariffCodeTypeMap);
-        const allRemarks = [`Code "${code}" is invalid: it must have exactly 5 characters.`, ...typeRemarks];
+        const allRemarks = [`Code "${code}" is invalid: it must have exactly 5 characters.`, ...typeRemarks, ...commentObservationRemarks];
         const row = buildActivityRow({
           claimId,
           activityId,
@@ -794,6 +804,9 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
           claimId, activityId, type: typeValue, code, obsCodes, meta, claimRegionTrack: claimRegionTrack[claimId], codeLastDigit, obsList, isMedical, tariffCodeTypeMap
         });
       }
+
+      // Reject any comment observation independently of its supplied ValueType.
+      if (commentObservationRemarks.length) row.remarks.push(...commentObservationRemarks);
 
       if (code === '83718' && !hasRequiredLoincObservation(obsList, CODE_83718_LOINC_CODES)) {
         row.remarks.push('Code 83718 must have observation with appropriate LOINC codes.');
