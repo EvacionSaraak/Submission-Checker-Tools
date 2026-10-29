@@ -249,7 +249,7 @@ async function filterLicenseZip() {
     });
     const extracted = extractor.extract();
     files = [...extracted.files].filter(file => !file.fileHeader.flags.directory).map(file => ({
-      name: file.fileHeader.name.replace(/\\\\/g, '/'),
+      name: file.fileHeader.name.replace(/\\/g, '/'),
       async: async () => file.extraction,
       date: file.fileHeader.time ? new Date(file.fileHeader.time) : undefined
     }));
