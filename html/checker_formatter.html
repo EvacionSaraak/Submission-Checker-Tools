@@ -5,6 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Checker Formatter</title>
 <link rel="stylesheet" href="../css/tables.css" />
+<style>
+/* Match Bootstrap 5's Submission Checker success/danger table cell colors. */
+.zip-exclusion-results tr.table-success > td { background-color: #d1e7dd !important; }
+.zip-exclusion-results tr.table-danger > td { background-color: #f8d7da !important; }
+</style>
 </head>
 <body>
 
@@ -132,6 +137,6 @@
 <div id="outputTableContainer"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="../js/checker_formatter.js?v=20261029-zip-path-lines"></script>
+<script src="../js/checker_formatter.js?v=20261029-bootstrap-status-colors"></script>
 </body>
 </html>
