@@ -14,8 +14,16 @@
   <label><input type="radio" name="mode" value="reporting_full"> Reporting (full)</label>
   <label><input type="radio" name="mode" value="xml"> XML</label>
   <label><input type="radio" name="mode" value="errors"> Errors</label>
+  <label><input type="radio" name="mode" value="zip_exclusion"> ZIP Exclusion</label>
 </div>
 
+<div id="zip-exclusion-panel" class="hidden">
+  <div class="form-row"><label for="license-zip">ZIP containing clinician license files:</label>
+    <input type="file" id="license-zip" accept=".zip,application/zip" /></div>
+  <div class="form-row"><label for="license-lineup">Excel lineup of current clinician licenses:</label>
+    <input type="file" id="license-lineup" accept=".xlsx,.xls" /></div>
+  <p>Matches license numbers in filenames against the Excel <strong>DoctorLicenseNo</strong> column (or Clinician License / License No). Unmatched files are excluded; matched duplicates and folder paths are retained.</p>
+</div>
 <div id="eligibility-panel">
   <div class="form-row">
     <label for="eligibility-files">Upload Eligibility XLSX files:</label>
@@ -123,6 +131,7 @@
 <div id="messageBox" style="margin-top:10px; color: red; font-weight: bold;"></div>
 <div id="outputTableContainer"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="../js/checker_formatter.js?v=20261021-3"></script>
 </body>
 </html>
