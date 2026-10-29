@@ -352,6 +352,7 @@ async function filterLicenseZip() {
     const tbody = document.createElement('tbody');
     for (const entry of entries) {
       const row = document.createElement('tr');
+      row.classList.add(heading === 'Retained files' ? 'valid' : 'invalid');
       for (const [index, value] of [entry.license, entry.name, entry.reason].entries()) {
         const cell = document.createElement('td');
         cell.style.whiteSpace = 'normal';
