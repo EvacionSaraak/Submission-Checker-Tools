@@ -215,7 +215,7 @@ function normalizeLicenseID(value) {
 async function filterLicenseZip() {
   const zipInput = document.getElementById('license-zip')?.files?.[0];
   const excelInput = document.getElementById('license-lineup')?.files?.[0];
-  if (!zipInput || !excelInput) throw new Error('Upload both a license ZIP and an Excel lineup.');
+  if (!zipInput || !excelInput) throw new Error('Upload both a license ZIP/RAR and an Excel lineup.');
   if (typeof JSZip === 'undefined' || typeof XLSX === 'undefined') throw new Error('ZIP or Excel library failed to load.');
   const workbook = XLSX.read(await excelInput.arrayBuffer(), { type: 'array' });
   const headerAliases = new Set(['doctorlicenseno', 'clinicianlicense', 'clinicianlicenseno', 'licenseno', 'licensenumber', 'phylic', 'professionall icenseno'.replace(/\s/g, '')]);
@@ -234,10 +234,29 @@ async function filterLicenseZip() {
     }
   }
   if (!allowed.size) throw new Error('No clinician license numbers found. Check the DoctorLicenseNo column in the Excel sheet.');
-  const inputZip = await JSZip.loadAsync(await zipInput.arrayBuffer(), { checkCRC32: true });
+  const isRar = /\\.rar$/i.test(zipInput.name);
   const outputZip = new JSZip();
+  let files;
+  if (isRar) {
+    // RAR extraction is performed in-browser using the WASM implementation.
+    const { createExtractorFromData } = await import('https://esm.sh/node-unrar-js@2.0.2/esm?bundle');
+    const wasmResponse = await fetch('https://cdn.jsdelivr.net/npm/node-unrar-js@2.0.2/esm/js/unrar.wasm');
+    if (!wasmResponse.ok) throw new Error('Unable to load the RAR decoder.');
+    const extractor = await createExtractorFromData({
+      data: await zipInput.arrayBuffer(),
+      wasmBinary: await wasmResponse.arrayBuffer()
+    });
+    const extracted = extractor.extract();
+    files = [...extracted.files].filter(file => !file.fileHeader.flags.directory).map(file => ({
+      name: file.fileHeader.name.replace(/\\\\/g, '/'),
+      async: async () => file.extraction,
+      date: file.fileHeader.time ? new Date(file.fileHeader.time) : undefined
+    }));
+  } else {
+    const inputZip = await JSZip.loadAsync(await zipInput.arrayBuffer(), { checkCRC32: true });
+    files = Object.values(inputZip.files).filter(entry => !entry.dir);
+  }
   let kept = 0, excluded = 0, unmatched = 0;
-  const files = Object.values(inputZip.files).filter(entry => !entry.dir);
   for (let i = 0; i < files.length; i++) {
     const entry = files[i];
     const baseName = entry.name.split('/').pop();
