@@ -36,8 +36,9 @@ let lastResultKind = 'xlsx';
 
 document.getElementById('mode-selector').addEventListener('change', e => {
   const mode = document.querySelector('input[name="mode"]:checked').value;
-  zipExclusionPanel.classList.toggle('hidden', mode !== 'zip_exclusion');
+  if (zipExclusionPanel) zipExclusionPanel.classList.toggle('hidden', mode !== 'zip_exclusion');
   if (mode === 'zip_exclusion') {
+    if (!zipExclusionPanel) { messageBox.textContent = 'ZIP Exclusion panel is unavailable. Reload the Formatting page to refresh its HTML.'; return; }
     [eligibilityPanel, reportingPanel, reportingFullPanel, xmlPanel, errorsPanel].forEach(panel => panel.classList.add('hidden'));
     combineButton.style.display = '';
   } else if (mode === 'eligibility') {
