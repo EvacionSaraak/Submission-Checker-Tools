@@ -24,7 +24,7 @@
     <input type="file" id="license-zip" accept=".zip,.rar,application/zip,application/vnd.rar" /></div>
   <div class="form-row"><label for="license-lineup">Excel lineup of current clinician licenses:</label>
     <input type="file" id="license-lineup" accept=".xlsx,.xls" /></div>
-  <p>Matches filename license numbers against the Excel <strong>DoctorLicenseNo</strong> column (or Clinician License / License No). Retains the newest matching PDF per license, excludes duplicates and non-listed licenses, and preserves original folder paths. The retained ZIP also includes <strong>Missing Clinicians.xlsx</strong> listing lineup clinicians without a matching PDF.</p>
+  <p>Automatically identifies clinician license numbers across Excel worksheets, including <strong>DoctorLicenseNo</strong> lists and provider-information templates with a <strong>Doctors &amp; Specialties</strong> sheet and a <strong>License number</strong> column. Facility and trade license columns are ignored. Retains the newest matching PDF per clinician and preserves original folder paths. The retained ZIP includes <strong>Missing Clinicians.xlsx</strong> for clinicians without a matching PDF.</p>
 </div>
 <div id="eligibility-panel">
   <div class="form-row">
@@ -135,6 +135,6 @@
 <div id="outputTableContainer"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="../js/checker_formatter.js?v=20261029-missing-clinicians-report"></script>
+<script src="../js/checker_formatter.js?v=20261029-auto-clinician-sheet-detection"></script>
 </body>
 </html>
