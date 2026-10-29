@@ -362,10 +362,19 @@ async function filterLicenseZip() {
         if (index === 1) {
           const path = String(value || '').replace(/\\/g, '/');
           const slash = path.lastIndexOf('/');
-          if (slash >= 0) cell.appendChild(document.createTextNode(path.slice(0, slash + 1)));
+          if (slash >= 0) {
+            const folder = document.createElement('div');
+            folder.textContent = path.slice(0, slash + 1);
+            folder.style.overflowWrap = 'anywhere';
+            cell.appendChild(folder);
+          }
+          const filenameLine = document.createElement('div');
+          filenameLine.style.paddingLeft = slash >= 0 ? '12px' : '0';
+          filenameLine.style.overflowWrap = 'anywhere';
           const filename = document.createElement('strong');
           filename.textContent = path.slice(slash + 1);
-          cell.appendChild(filename);
+          filenameLine.appendChild(filename);
+          cell.appendChild(filenameLine);
         } else {
           cell.textContent = value;
         }
