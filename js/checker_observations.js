@@ -339,9 +339,15 @@ function validateObservationValueTypes(obsList, activityCode) {
   Array.from(obsList).forEach((obs, idx) => {
     const obsType = (obs.querySelector('Type')?.textContent || '').trim();
     const valueType = (obs.querySelector('ValueType')?.textContent || '').trim();
-    if (!VALUETYPE_EXEMPT_OBS_TYPES.has(obsType.toLowerCase()) && !valueType) {
-      const obsCode = (obs.querySelector('Code')?.textContent || '').trim() || `#${idx + 1}`;
-      remarks.push(`Observation ValueType for ${activityCode} may not be empty for observation "${obsCode}" (Type: "${obsType || '(missing)'}").`);
+    const obsCode = (obs.querySelector('Code')?.textContent || '').trim() || `#${idx + 1}`;
+    if (!valueType) {
+      if (!VALUETYPE_EXEMPT_OBS_TYPES.has(obsType.toLowerCase())) {
+        remarks.push(`Observation ValueType for ${activityCode} may not be empty for observation "${obsCode}" (Type: "${obsType || '(missing)'}").`);
+      }
+    } else if (!/[\p{L}\p{N}]/u.test(valueType)) {
+      // Punctuation/symbol-only placeholders (".", "---", "??", etc.) are invalid
+      // for ALL observation types, including those allowed to omit ValueType.
+      remarks.push(`Observation ValueType for ${activityCode} is invalid: "${valueType}" for observation "${obsCode}". Use a meaningful ValueType.`);
     }
   });
   return remarks;
@@ -749,6 +755,7 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
       const typeValue = act.querySelector('Type')?.textContent?.trim() || '';
       const rawCode = act.querySelector('Code')?.textContent || '';
       const code = rawCode.trim();
+      const valueTypeRemarks = validateObservationValueTypes(obsList, code);
       const codeLastDigit = code.slice(-1);
       // --- Check for codes that cannot be submitted
       const forbiddenEntry = FORBIDDEN_CODES_MAP[code];
@@ -761,7 +768,7 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
           code,
           description: forbiddenEntry.description,
           details: 'N/A',
-          remarks: [forbiddenEntry.reason, ...commentObservationRemarks]
+          remarks: [forbiddenEntry.reason, ...commentObservationRemarks, ...valueTypeRemarks]
         });
         claimHasInvalid = true;
         rows.push(row);
@@ -771,7 +778,7 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
       // Codes containing a space are treated as unknown (not invalid) since the space may be part of a subcode variant
       if (code.length !== 5 && !code.includes(`-`) && !rawCode.includes(' ')) {
         const typeRemarks = validateActivityType(code, typeValue, false, tariffCodeTypeMap);
-        const allRemarks = [`Code "${code}" is invalid: it must have exactly 5 characters.`, ...typeRemarks, ...commentObservationRemarks];
+        const allRemarks = [`Code "${code}" is invalid: it must have exactly 5 characters.`, ...typeRemarks, ...commentObservationRemarks, ...valueTypeRemarks];
         const row = buildActivityRow({
           claimId,
           activityId,
@@ -882,8 +889,7 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
         row.remarks.push(...valueWhitespaceRemarks);
       }
 
-      // Validate observation ValueTypes: non-dental/episode observations must have a ValueType
-      const valueTypeRemarks = validateObservationValueTypes(obsList, code);
+      // Empty ValueTypes remain exempt for configured types; punctuation-only placeholders never are.
       if (valueTypeRemarks.length > 0) {
         row.remarks.push(...valueTypeRemarks);
       }
