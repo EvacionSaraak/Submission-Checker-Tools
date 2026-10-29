@@ -36,6 +36,7 @@ let lastResultKind = 'xlsx';
 
 document.getElementById('mode-selector').addEventListener('change', e => {
   const mode = document.querySelector('input[name="mode"]:checked').value;
+  combineButton.textContent = mode === 'zip_exclusion' ? 'Filter ZIP' : 'Combine';
   if (zipExclusionPanel) zipExclusionPanel.classList.toggle('hidden', mode !== 'zip_exclusion');
   if (mode === 'zip_exclusion') {
     if (!zipExclusionPanel) { messageBox.textContent = 'ZIP Exclusion panel is unavailable. Reload the Formatting page to refresh its HTML.'; return; }
@@ -234,7 +235,7 @@ async function filterLicenseZip() {
     }
   }
   if (!allowed.size) throw new Error('No clinician license numbers found. Check the DoctorLicenseNo column in the Excel sheet.');
-  const isRar = /\\.rar$/i.test(zipInput.name);
+  const isRar = /\.rar$/i.test(zipInput.name);
   const outputZip = new JSZip();
   let files;
   if (isRar) {
@@ -257,6 +258,8 @@ async function filterLicenseZip() {
     files = Object.values(inputZip.files).filter(entry => !entry.dir);
   }
   let kept = 0, excluded = 0, unmatched = 0;
+  const retainedFiles = [], excludedFiles = [];
+  const matchedLicenses = new Set();
   for (let i = 0; i < files.length; i++) {
     const entry = files[i];
     const baseName = entry.name.split('/').pop();
@@ -267,7 +270,12 @@ async function filterLicenseZip() {
     if (license && allowed.has(license)) {
       outputZip.file(entry.name, await entry.async('uint8array'), { date: entry.date });
       kept++;
-    } else excluded++;
+      matchedLicenses.add(license);
+      retainedFiles.push({ license, name: entry.name });
+    } else {
+      excluded++;
+      excludedFiles.push({ license: license || 'Not recognized', name: entry.name });
+    }
     if (i % 10 === 0 || i === files.length - 1) {
       const pct = Math.round(10 + 80 * (i + 1) / Math.max(1, files.length));
       progressBar.style.width = pct + '%';
@@ -278,6 +286,40 @@ async function filterLicenseZip() {
   lastWorkbookData = await outputZip.generateAsync({ type: 'uint8array', compression: 'DEFLATE', compressionOptions: { level: 6 } });
   lastResultKind = 'zip';
   messageBox.textContent = 'ZIP ready: ' + kept + ' retained, ' + excluded + ' excluded (' + unmatched + ' filenames without a recognizable license).';
+  const summary = document.createElement('div');
+  const title = document.createElement('h3');
+  title.textContent = 'License filtering summary';
+  summary.appendChild(title);
+  const stats = document.createElement('p');
+  stats.textContent = 'Input files: ' + files.length + ' | Retained: ' + kept + ' | Excluded: ' + excluded +
+    ' | Distinct retained licenses: ' + matchedLicenses.size + ' | Excel licenses: ' + allowed.size +
+    ' | Unrecognized filenames: ' + unmatched;
+  summary.appendChild(stats);
+  for (const [heading, entries] of [['Retained files', retainedFiles], ['Excluded files', excludedFiles]]) {
+    const details = document.createElement('details');
+    details.open = heading === 'Excluded files';
+    const label = document.createElement('summary');
+    label.textContent = heading + ' (' + entries.length + ')';
+    details.appendChild(label);
+    const table = document.createElement('table');
+    table.className = 'table table-sm table-striped table-bordered';
+    const thead = document.createElement('thead');
+    const headerRow = document.createElement('tr');
+    for (const text of ['License', 'Archive path']) {
+      const cell = document.createElement('th'); cell.textContent = text; headerRow.appendChild(cell);
+    }
+    thead.appendChild(headerRow); table.appendChild(thead);
+    const tbody = document.createElement('tbody');
+    for (const entry of entries) {
+      const row = document.createElement('tr');
+      for (const value of [entry.license, entry.name]) {
+        const cell = document.createElement('td'); cell.textContent = value; row.appendChild(cell);
+      }
+      tbody.appendChild(row);
+    }
+    table.appendChild(tbody); details.appendChild(table); summary.appendChild(details);
+  }
+  outputTableContainer.replaceChildren(summary);
   downloadButton.disabled = false;
   progressBar.style.width = '100%';
   progressText.textContent = '100%';
