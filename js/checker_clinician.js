@@ -66,25 +66,12 @@
   // Excel date threshold: serial dates above this are likely dates (1000 ≈ Sep 26, 1902)
   const MIN_EXCEL_SERIAL_DATE = 1000;
 
-  // Pathology-related profession keywords exempt from affiliation requirement for performing clinicians
+  // Pathology-related professions are exempt from the category mismatch
+  // warning only. They are NOT exempt from performing license affiliation.
   const PATHOLOGY_KEYWORDS = [
     'PATHOLOGY',
     'MEDICAL LABORATORY'
   ];
-
-  // Approved temporary/secondment facility exceptions.
-  // These waive only the facility-affiliation requirement; an ACTIVE license
-  // effective on the encounter date is still required.
-  const SECONDMENT_AFFILIATIONS = Object.freeze({
-    GD42887: Object.freeze(['MF4456'])
-  });
-
-  function isSecondedToFacility(clinicianId, providerId) {
-    const clinician = String(clinicianId || '').trim().toUpperCase();
-    const provider = String(providerId || '').trim().toUpperCase();
-    const allowedFacilities = SECONDMENT_AFFILIATIONS[clinician];
-    return Array.isArray(allowedFacilities) && allowedFacilities.includes(provider);
-  }
 
   // Helper function to check if a clinician's profession is pathology-related
   function isPathologyProfession(clinicianId) {
@@ -686,7 +673,7 @@
   // Validate the current ClinicianLicenses record for the encounter date.
   // This lets the current file cover newer affiliations that may not yet exist
   // in the older licensing-history workbook.
-  function getCurrentClinicianStateAtEncounter(clinicianId, encounterDate, isPathology, isSecondment) {
+  function getCurrentClinicianStateAtEncounter(clinicianId, encounterDate) {
     const clinician = clinicianMap[clinicianId];
     if (!clinician || !(encounterDate instanceof Date) || isNaN(encounterDate.getTime())) {
       return null;
@@ -703,7 +690,7 @@
     // "About to Expire" is still active until the affiliation's To date.
     // Missing Status is retained for compatibility with legacy clinician lists.
     const statusOk = isActiveEquivalentClinicianStatus(status);
-    const affiliationOk = isPathology || isSecondment || affiliatedLicenses.has(facility);
+    const affiliationOk = affiliatedLicenses.has(facility);
 
     if (!(statusOk && fromOk && toOk && affiliationOk)) return null;
 
@@ -900,39 +887,24 @@
         const entries = clinicianStatusMap[pid] || [];
         const encounterD = parseDMY(encounterStart);
 
-        // Check if performing clinician is pathology-related (exempt from affiliation requirement)
-        const isPathology = isPathologyProfession(pid);
-
-        // Get facility from ClinicianLicenses (reliable source).
+        // Only performing clinician IDs are subject to the hard facility-license rule.
+        // Every performing license must belong to one of our facilities.
         const clinicianFacility = (clinicianMap[pid]?.facility || '').toString().trim().toUpperCase();
-        const isSecondment = isSecondedToFacility(pid, normalizedProviderId);
 
         let mostRecent = null;
 
         // Evaluate the licensing-history workbook by its own effective dates,
         // statuses, and facility values.
         const historyStates = getHistoryStatesAtEncounter(entries, encounterD);
-        const eligibleHistory = historyStates.filter(e => {
-          const isActiveEquivalent = isActiveEquivalentClinicianStatus(e.status);
-
-          if (isPathology || isSecondment) {
-            return isActiveEquivalent;
-          }
-
-          return isActiveEquivalent && affiliatedLicenses.has(
-            String(e.facility || '').trim().toUpperCase()
-          );
-        });
+        const eligibleHistory = historyStates.filter(e =>
+          isActiveEquivalentClinicianStatus(e.status) &&
+          affiliatedLicenses.has(String(e.facility || '').trim().toUpperCase())
+        );
 
         // The current clinician file is authoritative inside its explicit
         // Status + From/To window. Prefer it when valid so stale history cannot
         // reject a newer ACTIVE facility assignment.
-        const currentState = getCurrentClinicianStateAtEncounter(
-          pid,
-          encounterD,
-          isPathology,
-          isSecondment
-        );
+        const currentState = getCurrentClinicianStateAtEncounter(pid, encounterD);
 
         if (currentState) {
           mostRecent = currentState;
@@ -954,21 +926,16 @@
               clinicianMap[pid]?.facility || ''
             ).trim().toUpperCase();
 
-            if (isPathology || isSecondment || affiliatedLicenses.has(legacyFacility)) {
+            if (affiliatedLicenses.has(legacyFacility)) {
               valid = true;
             }
           }
         }
 
         if (!valid) {
-          if (isPathology) {
-            remarks.push('No ACTIVE license for encounter date (pathology profession - affiliation not required)');
-          } else if (isSecondment) {
-            remarks.push(`No ACTIVE license for encounter date (approved secondment to ${normalizedProviderId})`);
-          } else {
-            const facilityDetails = formatFacilityDetails(pid);
-            remarks.push('No ACTIVE affiliated facility license for encounter date' + (facilityDetails ? '.' + facilityDetails : ''));
-          }
+          const facilityDetails = formatFacilityDetails(pid);
+          remarks.push(`Performing Clinician ${pid || '(missing)'} has no ACTIVE license under our facilities for the encounter date` +
+            (facilityDetails ? '.' + facilityDetails : ''));
         }
 
         const fullHistory = entries.map(e =>
@@ -983,16 +950,13 @@
           performingStatusDisplay = (formattedEff ? `${formattedEff}${performingStatus ? ' (' + performingStatus + ')' : ''}` : '');
         }
 
-        // Provider is part of the key because secondment eligibility is provider-specific.
+        // Include claim provider in the diagnostic log key for claim-level traceability.
         const logKey = `${pid}|${normalizedProviderId}|${fullHistory}`;
 
         if (!clinicianLogs[logKey]) {
           const hasStandardAffiliation = affiliatedLicenses.has(clinicianFacility);
           const affiliatedFacilities = clinicianFacility && hasStandardAffiliation ? [clinicianFacility] : [];
-          if (isSecondment && normalizedProviderId && !affiliatedFacilities.includes(normalizedProviderId)) {
-            affiliatedFacilities.push(`${normalizedProviderId} (secondment)`);
-          }
-
+          // Do not show an affiliation if it exists only through an exception.
           clinicianLogs[logKey] = {
             pid,
             performingDisplay,
