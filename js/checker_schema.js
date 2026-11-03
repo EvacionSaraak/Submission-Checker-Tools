@@ -617,6 +617,10 @@
                 invalidFields.push('Diagnosis Code M79.1 is invalid. Use M79.10 instead.');
                 return;
             }
+            if (code === 'I48.2') {
+                invalidFields.push('Diagnosis Code I48.2 is invalid. Use I48.20 instead.');
+                return;
+            }
             const reportableAlternatives = NON_REPORTABLE_ICD10_CODES.get(code);
             if (reportableAlternatives) {
                 invalidFields.push(`Diagnosis Code ${code} is an incomplete ICD-10-CM category. ` + `Use a specific reportable code: ${formatNaturalList(reportableAlternatives)}, ` + `according to the documented scar type.`);
