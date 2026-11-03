@@ -1551,7 +1551,11 @@
                 }
                 ['ID', 'MemberID', 'PayerID', 'ProviderID', 'EmiratesIDNumber', 'Gross', 'PatientShare', 'Net'].forEach(field => invalidIfEmpty(field));
                 const payerID = text('PayerID');
-                const claimNet = Number.parseFloat(text('Net'));
+                const claimNetRaw = text('Net');
+                const claimNet = Number.parseFloat(claimNetRaw);
+                if (Number.isFinite(claimNet) && claimNet < 0) {
+                    invalidFields.push(`Claim Net is negative (${claimNetRaw}).`);
+                }
                 if (payerID === 'A02' && Number.isFinite(claimNet) && claimNet < 500) invalidFields.push('ADNIC (A02) claim is auto-rejected because ' + 'total sponsor price is under 500.');
                 const patientShareRaw = text('PatientShare');
                 const patientShareValue = Number.parseFloat(patientShareRaw);
