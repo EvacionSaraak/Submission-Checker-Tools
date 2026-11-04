@@ -21,7 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function loadPage(file, index) {
-    iframe.src = file === 'html/checker_formatter.html' ? `${file}?v=20261104-flat-named-clinicians` : file;
+    iframe.src = file === 'html/checker_formatter.html' ? `${file}?v=20261104-conditional-exclusion-folders` : file;
     setActiveButton(index);
     saveLastPage(index);
   }
