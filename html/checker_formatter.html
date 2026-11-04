@@ -30,7 +30,7 @@
     <input type="file" id="license-lineup" accept=".xlsx,.xls,.xlsm,.xlsb,.zip,.rar,application/vnd.rar,application/zip" aria-describedby="license-lineup-help" />
     <div id="license-lineup-help" class="form-text">Select the NNHS or provider clinician spreadsheet(s), containing DoctorLicenseNo/License number and, where available, ProviderLicenseNo. This is NOT the PDF archive.</div>
   </div>
-  <p>Click <strong>Filter ZIP</strong>, then <strong>Download ZIP</strong> once. The ZIP groups files by <strong>ProviderLicenseNo - Facility Name</strong> (for example <strong>MF232 - Emirates</strong>). Current license PDFs are placed directly in each facility's <strong>Clinician License</strong> folder; source folders such as Secondment are not carried over. Excluded files are organized into specific folders: <strong>Duplicated</strong>, <strong>Not in Clinician List</strong>, <strong>License Number Not Recognized</strong>, and <strong>Not a PDF</strong>. Each facility with excluded files also receives an <strong>Exclusion Reasons.xlsx</strong> report with the exact reason for every excluded file. <strong>Expired Licenses</strong> and exclusion folders appear only when needed; <strong>Missing Clinicians.xlsx</strong> is generated only when PDFs are missing. Files without a facility match go to <strong>0-No Facility Detected</strong>.</p>
+  <p>Click <strong>Filter ZIP</strong>, then <strong>Download ZIP</strong> once. The ZIP groups files by <strong>ProviderLicenseNo - Facility Name</strong> (for example <strong>MF232 - Emirates</strong>). Current license PDFs are placed directly in each facility's <strong>Clinician License</strong> folder; source folders such as Secondment are not carried over. Excluded files are organized into specific folders: <strong>Duplicated</strong>, <strong>Not in Clinician List</strong>, <strong>License Number Not Recognized</strong>, and <strong>Not a PDF</strong>. Each facility with excluded files also receives an <strong>Exclusion Reasons.xlsx</strong> report with the exact reason for every excluded file. <strong>Expired Licenses</strong> and exclusion folders appear only when needed; <strong>Missing Clinicians.xlsx</strong> is generated only when PDFs are missing. Files without a confirmed facility match are <strong>omitted from the downloadable ZIP</strong>; the result summary shows how many were skipped.</p>
 </div>
 <div id="eligibility-panel">
   <div class="form-row">
@@ -140,6 +140,6 @@
 <div id="outputTableContainer"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="../js/checker_formatter.js?v=20261104-specific-exclusions"></script>
+<script src="../js/checker_formatter.js?v=20261104-skip-unassigned-facility"></script>
 </body>
 </html>
