@@ -1,6 +1,5 @@
 const combineButton = document.getElementById('combine-button');
 const downloadButton = document.getElementById('download-button');
-const excludedDownloadButton = document.getElementById('download-excluded-button');
 const progressBarContainer = document.getElementById('progress-bar-container');
 const progressBar = document.getElementById('progress-bar');
 const progressText = document.getElementById('progress-text');
@@ -34,13 +33,11 @@ const worker = new Worker(`../js/checker_formatter_worker.js?v=${Date.now()}`);
 
 let lastWorkbookData = null;
 let lastResultKind = 'xlsx';
-let lastExcludedZipData = null;
 
 document.getElementById('mode-selector').addEventListener('change', e => {
   const mode = document.querySelector('input[name="mode"]:checked').value;
   combineButton.textContent = mode === 'zip_exclusion' ? 'Filter ZIP' : 'Combine';
-  downloadButton.textContent = mode === 'zip_exclusion' ? 'Download Retained ZIP' : 'Download Results';
-  excludedDownloadButton.style.display = mode === 'zip_exclusion' ? '' : 'none';
+  downloadButton.textContent = mode === 'zip_exclusion' ? 'Download ZIP' : 'Download Results';
   if (zipExclusionPanel) zipExclusionPanel.classList.toggle('hidden', mode !== 'zip_exclusion');
   if (mode === 'zip_exclusion') {
     if (!zipExclusionPanel) { messageBox.textContent = 'ZIP Exclusion panel is unavailable. Reload the Formatting page to refresh its HTML.'; return; }
@@ -93,10 +90,8 @@ function resetUI() {
   outputTableContainer.innerHTML = '';
   combineButton.disabled = false;
   downloadButton.disabled = true;
-  excludedDownloadButton.disabled = true;
   lastWorkbookData = null;
   lastResultKind = 'xlsx';
-  lastExcludedZipData = null;
 }
 
 // XML combining function (runs in main thread where DOMParser is available)
@@ -262,7 +257,7 @@ async function readClinicianLineupWorkbooks(inputFile) {
     return !basename.startsWith('~$') && !entry.name.startsWith('__MACOSX/') &&
       /\.xls(?:x|m|b)?$/i.test(basename);
   });
-  if (!excelFiles.length) throw new Error('No Excel workbooks (.xls, .xlsx, .xlsm, .xlsb) found in the lineup archive.');
+  if (!excelFiles.length) throw new Error('The second upload (Clinician Excel list) contains no Excel workbooks. Put your license PDFs in upload 1 and the Excel clinician list in upload 2.');
   const workbooks = [];
   for (const entry of excelFiles) {
     try {
@@ -314,7 +309,7 @@ function isClinicianLicenseExpired(record, todayUTC) {
 async function filterLicenseZip() {
   const zipInput = document.getElementById('license-zip')?.files?.[0];
   const lineupInput = document.getElementById('license-lineup')?.files?.[0];
-  if (!zipInput || !lineupInput) throw new Error('Upload both a license ZIP/RAR and a clinician lineup (Excel or ZIP/RAR).');
+  if (!zipInput || !lineupInput) throw new Error('Select both: (1) PDF license ZIP/RAR, (2) clinician Excel list or ZIP/RAR containing Excel workbooks.');
   if (typeof JSZip === 'undefined' || typeof XLSX === 'undefined') throw new Error('ZIP or Excel library failed to load.');
   progressBarContainer.style.display = 'block';
   progressBar.style.width = '0%';
@@ -330,7 +325,6 @@ async function filterLicenseZip() {
   const lineupSources = [];
   const unassignedFacility = '__UNASSIGNED_FACILITY__';
   const isLicenseID = value => /^[A-Z]{1,5}\d+[A-Z0-9]*$/.test(normalizeLicenseID(value));
-  let hasFacilityAssignment = false;
   for (const { name: workbookName, workbook } of lineupWorkbooks) {
     for (const sheetName of workbook.SheetNames) {
       const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, defval: '', raw: false });
@@ -377,7 +371,6 @@ async function filterLicenseZip() {
           allowed.add(license);
           const providerValue = providerIdx >= 0 ? normalizeLicenseID(row[providerIdx]) : '';
           const provider = isLicenseID(providerValue) ? providerValue : '';
-          if (provider) hasFacilityAssignment = true;
           const facilityKey = provider || unassignedFacility;
           if (!lineupByFacility.has(facilityKey)) lineupByFacility.set(facilityKey, new Map());
           const clinicianRecords = lineupByFacility.get(facilityKey);
@@ -413,14 +406,12 @@ async function filterLicenseZip() {
     }
   }
   if (!allowed.size) throw new Error('No clinician license numbers found in the Excel workbook(s).');
-  const groupByFacility = hasFacilityAssignment;
-  const facilityFolderName = key => key === unassignedFacility ? 'Unassigned Facility' : key;
+  const facilityFolderName = key => key === unassignedFacility ? '0-No Facility Deteced' : key;
   const previewSources = lineupSources.slice(0, 4).join('; ') +
     (lineupSources.length > 4 ? '; and ' + (lineupSources.length - 4) + ' more' : '');
   messageBox.textContent = 'Detected ' + allowed.size + ' unique clinician licenses across ' +
     lineupByFacility.size + ' facility group(s) in ' + lineupWorkbooks.length + ' Excel workbook(s). Reading PDF archive...';
   const outputZip = new JSZip();
-  const excludedZip = new JSZip();
   const files = await readLicenseArchiveEntries(zipInput);
   const progressStatus = document.createElement('div');
   progressStatus.id = 'license-processing-status';
@@ -433,12 +424,50 @@ async function filterLicenseZip() {
   const retainedFiles = [], expiredFiles = [], excludedFiles = [];
   const matchedLicenses = new Set();
   const retainedPDFLicenses = new Set();
+  const facilityByLicense = new Map();
+  const facilityNameAliases = new Map();
+  for (const [facility, clinicians] of lineupByFacility) {
+    for (const [license, record] of clinicians) {
+      if (!facilityByLicense.has(license)) facilityByLicense.set(license, []);
+      facilityByLicense.get(license).push(facility);
+      // Only use complete facility names as path clues when a license is absent.
+      for (const [key, name] of Object.entries(record.details || {})) {
+        const fieldKey = key.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (!/^(providername|facilityname|providerdescription|facilitydescription)$/.test(fieldKey)) continue;
+        const normalized = String(name || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+        if (normalized.length < 8) continue;
+        if (!facilityNameAliases.has(normalized)) facilityNameAliases.set(normalized, new Set());
+        facilityNameAliases.get(normalized).add(facility);
+      }
+    }
+  }
+  function findArchiveFacilities(license, archivePath) {
+    const known = facilityByLicense.get(license);
+    if (known?.length) {
+      const specific = known.filter(facility => facility !== unassignedFacility);
+      return specific.length ? specific : [unassignedFacility];
+    }
+    const segments = String(archivePath || '').replace(/\\/g, '/').split('/').slice(0, -1);
+    const recognized = new Set();
+    for (const segment of segments) {
+      const upper = segment.toUpperCase();
+      const tokens = upper.split(/[^A-Z0-9]+/);
+      const normalizedSegment = upper.replace(/[^A-Z0-9]/g, '');
+      for (const facility of lineupByFacility.keys()) {
+        if (facility !== unassignedFacility && tokens.includes(facility)) recognized.add(facility);
+      }
+      for (const [name, facilities] of facilityNameAliases) {
+        if (normalizedSegment === name) facilities.forEach(facility => recognized.add(facility));
+      }
+    }
+    return recognized.size === 1 ? [...recognized] : [unassignedFacility];
+  }
   const today = new Date();
   const todayUTC = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
   const facilityFolders = new Set(lineupByFacility.keys());
   // Keep an explicit expired subfolder in each known facility, even when empty.
   for (const facilityKey of facilityFolders) {
-    const base = groupByFacility ? facilityFolderName(facilityKey) + '/' : '';
+    const base = facilityFolderName(facilityKey) + '/';
     outputZip.folder(base + 'Expired Licenses');
   }
   const candidates = files.map(entry => {
@@ -474,13 +503,11 @@ async function filterLicenseZip() {
     }
     if (!reason) {
       const data = await entry.async('uint8array');
-      const facilitiesForLicense = groupByFacility
-        ? [...lineupByFacility.entries()].filter(([, clinicians]) => clinicians.has(license)).map(([key]) => key)
-        : [unassignedFacility];
+      const facilitiesForLicense = findArchiveFacilities(license, entry.name);
       for (const facilityKey of facilitiesForLicense) {
         const record = lineupByFacility.get(facilityKey)?.get(license);
         const isExpired = candidate.isPDF && isClinicianLicenseExpired(record, todayUTC);
-        const base = groupByFacility ? facilityFolderName(facilityKey) + '/' : '';
+        const base = facilityFolderName(facilityKey) + '/';
         const outputPath = base + (isExpired ? 'Expired Licenses/' : '') + entry.name;
         outputZip.file(outputPath, data, { date: entry.date });
         const detail = {
@@ -496,9 +523,16 @@ async function filterLicenseZip() {
       matchedLicenses.add(license);
       if (candidate.isPDF) retainedPDFLicenses.add(license);
     } else {
-      excludedZip.file(entry.name, await entry.async('uint8array'), { date: entry.date });
+      // Keep every excluded file in the same ZIP, separated by facility/reason.
+      const facilityKeys = findArchiveFacilities(license, entry.name);
+      const category = /duplicate/i.test(reason) ? 'duplicated' : 'Other Exclusions';
+      const data = await entry.async('uint8array');
+      for (const facilityKey of facilityKeys) {
+        const outputPath = facilityFolderName(facilityKey) + '/' + category + '/' + entry.name;
+        outputZip.file(outputPath, data, { date: entry.date });
+        excludedFiles.push({ license: license || 'Not recognized', name: outputPath, reason });
+      }
       excluded++;
-      excludedFiles.push({ license: license || 'Not recognized', name: entry.name, reason });
     }
     if (i % 5 === 0 || i === candidates.length - 1) {
       const processed = i + 1;
@@ -540,21 +574,18 @@ async function filterLicenseZip() {
       })
     };
     XLSX.utils.book_append_sheet(missingWorkbook, sheet, 'Missing Clinicians');
-    const reportPath = groupByFacility
-      ? facilityFolderName(facilityKey) + '/Missing Clinicians.xlsx'
-      : 'Missing Clinicians.xlsx';
+    const reportPath = facilityFolderName(facilityKey) + '/Missing Clinicians.xlsx';
     outputZip.file(reportPath, XLSX.write(missingWorkbook, { type: 'array', bookType: 'xlsx' }));
     missingReports++;
   }
-  progressStatus.textContent = 'Processed ' + candidates.length + ' of ' + candidates.length + ' clinician files. Creating ZIP archives and missing-clinicians report...';
+  progressStatus.textContent = 'Processed ' + candidates.length + ' of ' + candidates.length + ' clinician files. Creating ZIP and missing-clinicians reports...';
   const zipOptions = { type: 'uint8array', compression: 'DEFLATE', compressionOptions: { level: 6 } };
   lastWorkbookData = await outputZip.generateAsync(zipOptions);
-  lastExcludedZipData = excluded ? await excludedZip.generateAsync(zipOptions) : null;
   lastResultKind = 'zip';
-  messageBox.textContent = 'ZIPs ready: ' + retainedFiles.length + ' current file entries, ' +
-    expiredFiles.length + ' expired license PDFs in facility folders, ' + excluded +
-    ' excluded files, ' + missingCount + ' missing facility-clinician PDFs in ' +
-    missingReports + ' facility report(s).';
+  messageBox.textContent = 'ZIP ready: ' + retainedFiles.length + ' current file entries, ' +
+    expiredFiles.length + ' expired license PDFs, ' + excludedFiles.length +
+    ' categorized excluded file entries, ' + missingCount + ' missing facility-clinician PDFs in ' +
+    missingReports + ' facility report(s). One download contains everything.';
   const summary = document.createElement('div');
   const title = document.createElement('h3');
   title.textContent = 'License filtering summary';
@@ -563,7 +594,7 @@ async function filterLicenseZip() {
   stats.textContent = 'Input files: ' + files.length + ' | Retained: ' + kept + ' | Excluded: ' + excluded +
     ' | Distinct retained licenses: ' + matchedLicenses.size + ' | Excel licenses: ' + allowed.size +
     ' | Unrecognized filenames: ' + unmatched + ' | Missing facility-clinician PDFs: ' + missingCount +
-    ' | Facility groups: ' + lineupByFacility.size + ' | Expired license PDFs: ' + expiredFiles.length +
+    ' | Facility groups: ' + lineupByFacility.size + ' | Categorized excluded entries: ' + excludedFiles.length + ' | Expired license PDFs: ' + expiredFiles.length +
     ' | Excel workbooks: ' + lineupWorkbooks.length;
   summary.appendChild(stats);
   const detectedSource = document.createElement('p');
@@ -623,7 +654,6 @@ async function filterLicenseZip() {
   }
   outputTableContainer.replaceChildren(summary);
   downloadButton.disabled = !lastWorkbookData;
-  excludedDownloadButton.disabled = !lastExcludedZipData;
   progressBar.style.width = '100%';
   progressText.textContent = '100%';
 }
@@ -636,10 +666,8 @@ combineButton.addEventListener('click', async () => {
     if (mode === 'zip_exclusion') {
       combineButton.disabled = true;
       downloadButton.disabled = true;
-      excludedDownloadButton.disabled = true;
-      lastWorkbookData = null;
-      lastExcludedZipData = null;
-      try {
+          lastWorkbookData = null;
+          try {
         await filterLicenseZip();
       } catch (err) {
         messageBox.textContent = 'ZIP filtering error: ' + err.message;
@@ -780,21 +808,7 @@ downloadButton.addEventListener('click', () => {
   }, 0);
 });
 
-excludedDownloadButton.addEventListener('click', () => {
-  if (!lastExcludedZipData || document.querySelector('input[name="mode"]:checked')?.value !== 'zip_exclusion') return;
-  const timestamp = new Date().toISOString().slice(0,19).replace(/:/g, '-');
-  const blob = new Blob([lastExcludedZipData], { type: 'application/zip' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `excluded_clinician_licenses_${timestamp}.zip`;
-  document.body.appendChild(link);
-  link.click();
-  setTimeout(() => {
-    link.remove();
-    URL.revokeObjectURL(url);
-  }, 0);
-});
+
 
 function renderWorkbookTable(workbookUint8) {
   outputTableContainer.innerHTML = '';
