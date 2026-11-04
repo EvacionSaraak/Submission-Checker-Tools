@@ -306,6 +306,34 @@ function isClinicianLicenseExpired(record, todayUTC) {
   return record?.expiryDate instanceof Date && record.expiryDate.getTime() < todayUTC.getTime();
 }
 
+
+function shortFacilityArchiveName(value) {
+  const valueText = String(value == null ? '' : value).trim();
+  // Use familiar clinic names, not the generic regulatory facility-type suffix.
+  const shortened = valueText
+    .replace(/\s+(?:Primary Care Center|Medical Center|Dental Center|Specialty Hospital|Hospital|Pharmacy)(?=\s*\(|$)/i, '')
+    .replace(/[\x00-\x1f<>:"/\\|?*]/g, ' ')
+    .replace(/\s+/g, ' ').trim().replace(/[. ]+$/, '');
+  return shortened.slice(0, 85);
+}
+
+function appendFlatLicenseFile(zip, usedPaths, facilityFolder, category, entry, data) {
+  // Never copy the original archive's folder structure (e.g. Secondment/*).
+  const originalName = String(entry.name || '').replace(/\\/g, '/').split('/').pop().trim() || 'Unknown File';
+  const safeName = originalName.replace(/[\x00-\x1f<>:"/\\|?*]/g, '_');
+  const extension = /\.[^.]+$/.exec(safeName)?.[0] || '';
+  const stem = safeName.slice(0, safeName.length - extension.length);
+  const base = facilityFolder + '/' + category + '/';
+  let outputPath = base + safeName;
+  let copy = 2;
+  while (usedPaths.has(outputPath.toLowerCase())) {
+    outputPath = base + stem + ' (' + copy++ + ')' + extension;
+  }
+  usedPaths.add(outputPath.toLowerCase());
+  zip.file(outputPath, data, { date: entry.date });
+  return outputPath;
+}
+
 async function filterLicenseZip() {
   const zipInput = document.getElementById('license-zip')?.files?.[0];
   const lineupInput = document.getElementById('license-lineup')?.files?.[0];
@@ -406,7 +434,37 @@ async function filterLicenseZip() {
     }
   }
   if (!allowed.size) throw new Error('No clinician license numbers found in the Excel workbook(s).');
-  const facilityFolderName = key => key === unassignedFacility ? '0-No Facility Deteced' : key;
+  // Resolve known facility names from the maintained facilities.json list,
+  // supplemented by full provider/facility names in uploaded Excel sheets.
+  const facilityNames = new Map([['MF232', 'Emirates']]);
+  try {
+    const response = await fetch('../json/facilities.json');
+    if (response.ok) {
+      const data = await response.json();
+      for (const facility of (Array.isArray(data?.facilities) ? data.facilities : [])) {
+        const license = normalizeLicenseID(facility.license);
+        if (license && facility.name) facilityNames.set(license, facility.name);
+      }
+    }
+  } catch (err) {
+    console.warn('[ZIP Exclusion] Facility name list unavailable; using Excel facility names.', err);
+  }
+  for (const [facility, clinicians] of lineupByFacility) {
+    if (facility === unassignedFacility || facilityNames.has(facility)) continue;
+    for (const record of clinicians.values()) {
+      const matched = Object.entries(record.details || {}).find(([header, value]) =>
+        /^(providername|facilityname|providerdescription|facilitydescription)$/.test(
+          header.toLowerCase().replace(/[^a-z0-9]/g, '')
+        ) && String(value || '').trim()
+      );
+      if (matched) { facilityNames.set(facility, String(matched[1])); break; }
+    }
+  }
+  const facilityFolderName = key => {
+    if (key === unassignedFacility) return '0-No Facility Deteced';
+    const shortName = shortFacilityArchiveName(facilityNames.get(key));
+    return shortName ? key + ' - ' + shortName : key;
+  };
   const previewSources = lineupSources.slice(0, 4).join('; ') +
     (lineupSources.length > 4 ? '; and ' + (lineupSources.length - 4) + ' more' : '');
   messageBox.textContent = 'Detected ' + allowed.size + ' unique clinician licenses across ' +
@@ -425,49 +483,28 @@ async function filterLicenseZip() {
   const matchedLicenses = new Set();
   const retainedPDFLicenses = new Set();
   const facilityByLicense = new Map();
-  const facilityNameAliases = new Map();
   for (const [facility, clinicians] of lineupByFacility) {
-    for (const [license, record] of clinicians) {
+    for (const license of clinicians.keys()) {
       if (!facilityByLicense.has(license)) facilityByLicense.set(license, []);
       facilityByLicense.get(license).push(facility);
-      // Only use complete facility names as path clues when a license is absent.
-      for (const [key, name] of Object.entries(record.details || {})) {
-        const fieldKey = key.toLowerCase().replace(/[^a-z0-9]/g, '');
-        if (!/^(providername|facilityname|providerdescription|facilitydescription)$/.test(fieldKey)) continue;
-        const normalized = String(name || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-        if (normalized.length < 8) continue;
-        if (!facilityNameAliases.has(normalized)) facilityNameAliases.set(normalized, new Set());
-        facilityNameAliases.get(normalized).add(facility);
-      }
     }
   }
-  function findArchiveFacilities(license, archivePath) {
+  // Only the clinician lineup's ProviderLicenseNo determines facility ownership.
+  // Archive folder names such as "Secondment" do not establish an affiliation.
+  function findArchiveFacilities(license) {
     const known = facilityByLicense.get(license);
-    if (known?.length) {
-      const specific = known.filter(facility => facility !== unassignedFacility);
-      return specific.length ? specific : [unassignedFacility];
-    }
-    const segments = String(archivePath || '').replace(/\\/g, '/').split('/').slice(0, -1);
-    const recognized = new Set();
-    for (const segment of segments) {
-      const upper = segment.toUpperCase();
-      const tokens = upper.split(/[^A-Z0-9]+/);
-      const normalizedSegment = upper.replace(/[^A-Z0-9]/g, '');
-      for (const facility of lineupByFacility.keys()) {
-        if (facility !== unassignedFacility && tokens.includes(facility)) recognized.add(facility);
-      }
-      for (const [name, facilities] of facilityNameAliases) {
-        if (normalizedSegment === name) facilities.forEach(facility => recognized.add(facility));
-      }
-    }
-    return recognized.size === 1 ? [...recognized] : [unassignedFacility];
+    if (!known?.length) return [unassignedFacility];
+    const actualFacilities = known.filter(facility => facility !== unassignedFacility);
+    return actualFacilities.length ? actualFacilities : [unassignedFacility];
   }
+  const outputPaths = new Set();
   const today = new Date();
   const todayUTC = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
   const facilityFolders = new Set(lineupByFacility.keys());
   // Keep an explicit expired subfolder in each known facility, even when empty.
   for (const facilityKey of facilityFolders) {
     const base = facilityFolderName(facilityKey) + '/';
+    outputZip.folder(base + 'Clinician License');
     outputZip.folder(base + 'Expired Licenses');
   }
   const candidates = files.map(entry => {
@@ -496,20 +533,20 @@ async function filterLicenseZip() {
     let reason = '';
     if (!license) { unmatched++; reason = 'License number not recognized in filename'; }
     else if (!allowed.has(license)) reason = 'License not in Excel lineup';
+    else if (!candidate.isPDF) reason = 'File is not a clinician license PDF';
     else if (newestByLicense.get(license) !== candidate) {
       const selected = newestByLicense.get(license);
       reason = (selected.isPDF && !candidate.isPDF ? 'Non-PDF duplicate' : 'Older duplicate') +
-        '; retained ' + selected.entry.name;
+        '; retained ' + selected.entry.name.split('/').pop();
     }
     if (!reason) {
       const data = await entry.async('uint8array');
-      const facilitiesForLicense = findArchiveFacilities(license, entry.name);
+      const facilitiesForLicense = findArchiveFacilities(license);
       for (const facilityKey of facilitiesForLicense) {
         const record = lineupByFacility.get(facilityKey)?.get(license);
         const isExpired = candidate.isPDF && isClinicianLicenseExpired(record, todayUTC);
-        const base = facilityFolderName(facilityKey) + '/';
-        const outputPath = base + (isExpired ? 'Expired Licenses/' : '') + entry.name;
-        outputZip.file(outputPath, data, { date: entry.date });
+        const outputPath = appendFlatLicenseFile(outputZip, outputPaths, facilityFolderName(facilityKey),
+          isExpired ? 'Expired Licenses' : 'Clinician License', entry, data);
         const detail = {
           license, name: outputPath,
           reason: isExpired
@@ -524,12 +561,12 @@ async function filterLicenseZip() {
       if (candidate.isPDF) retainedPDFLicenses.add(license);
     } else {
       // Keep every excluded file in the same ZIP, separated by facility/reason.
-      const facilityKeys = findArchiveFacilities(license, entry.name);
-      const category = /duplicate/i.test(reason) ? 'duplicated' : 'Other Exclusions';
+      const facilityKeys = findArchiveFacilities(license);
+      const category = /duplicate/i.test(reason) ? 'Duplicated' : 'Other Exclusions';
       const data = await entry.async('uint8array');
       for (const facilityKey of facilityKeys) {
-        const outputPath = facilityFolderName(facilityKey) + '/' + category + '/' + entry.name;
-        outputZip.file(outputPath, data, { date: entry.date });
+        const outputPath = appendFlatLicenseFile(outputZip, outputPaths, facilityFolderName(facilityKey),
+          category, entry, data);
         excludedFiles.push({ license: license || 'Not recognized', name: outputPath, reason });
       }
       excluded++;
