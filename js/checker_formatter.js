@@ -501,11 +501,11 @@ async function filterLicenseZip() {
   const today = new Date();
   const todayUTC = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
   const facilityFolders = new Set(lineupByFacility.keys());
-  // Keep an explicit expired subfolder in each known facility, even when empty.
+  // Keep the main Clinician License folder per facility. Expired Licenses,
+  // Duplicated and Other Exclusions are created only when a file is placed there.
   for (const facilityKey of facilityFolders) {
     const base = facilityFolderName(facilityKey) + '/';
     outputZip.folder(base + 'Clinician License');
-    outputZip.folder(base + 'Expired Licenses');
   }
   const candidates = files.map(entry => {
     const baseName = entry.name.split('/').pop();
