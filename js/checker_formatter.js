@@ -306,8 +306,9 @@ function parseClinicianExpiryDate(value) {
 function isClinicianLicenseExpired(record, todayUTC) {
   // Expiry is evaluated from Excel status/date only, never from the PDF filename
   // or the archive's modification time.
-  if (record?.expiryDate instanceof Date) return record.expiryDate.getTime() < todayUTC.getTime();
-  return /^expir(?:ed|y|ing)?$/i.test(String(record?.licenseStatus || '').trim());
+  const status = String(record?.licenseStatus || '').trim();
+  if (/^expired(?:\b|$)/i.test(status)) return true;
+  return record?.expiryDate instanceof Date && record.expiryDate.getTime() < todayUTC.getTime();
 }
 
 async function filterLicenseZip() {
