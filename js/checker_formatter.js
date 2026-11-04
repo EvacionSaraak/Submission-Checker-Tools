@@ -224,7 +224,16 @@ function safeLicenseArchivePath(name) {
   return String(name || '').replace(/\\/g, '/').split('/').filter(part => part && part !== '.' && part !== '..').join('/');
 }
 
-async function readLicenseArchiveEntries(inputFile) {
+function isClinicianExcelFilename(path) {
+  const basename = safeLicenseArchivePath(path).split('/').pop().trim();
+  return !basename.startsWith('~$') && /\.xls(?:x|m|b)?$/i.test(basename);
+}
+
+function isNestedArchiveFilename(path) {
+  return /\.(rar|zip)$/i.test(String(path || '').trim());
+}
+
+async function readLicenseArchiveEntries(inputFile, { contentFilter = null } = {}) {
   if (/\.rar$/i.test(inputFile.name)) {
     const { createExtractorFromData } = await import('https://esm.sh/node-unrar-js@2.0.2/esm?bundle');
     const wasmResponse = await fetch('https://cdn.jsdelivr.net/npm/node-unrar-js@2.0.2/esm/js/unrar.wasm');
@@ -232,14 +241,31 @@ async function readLicenseArchiveEntries(inputFile) {
     const extractor = await createExtractorFromData({
       data: await inputFile.arrayBuffer(), wasmBinary: await wasmResponse.arrayBuffer()
     });
-    return [...extractor.extract().files].filter(file => !file.fileHeader.flags.directory).map(file => ({
-      name: safeLicenseArchivePath(file.fileHeader.name),
-      async: async () => {
-        if (file.extraction == null) throw new Error('RAR entry could not be extracted: ' + file.fileHeader.name);
-        return file.extraction;
-      },
-      date: file.fileHeader.time ? new Date(file.fileHeader.time) : undefined
-    }));
+
+    // List ALL entries first (including nested folder paths). Only decompress
+    // Excel/nested archives when scanning a lineup, so a mistakenly selected
+    // PDF RAR does not need to expand hundreds of PDFs into memory.
+    const headers = [...extractor.getFileList().fileHeaders].filter(header =>
+      !header.flags.directory && safeLicenseArchivePath(header.name)
+    );
+    const extraction = [...extractor.extract(contentFilter ? {
+      files: header => !header.flags.directory && contentFilter(safeLicenseArchivePath(header.name))
+    } : {}).files];
+    const extractedByName = new Map(extraction.filter(file => file.extraction != null).map(file =>
+      [safeLicenseArchivePath(file.fileHeader.name), file.extraction]
+    ));
+    return headers.map(header => {
+      const name = safeLicenseArchivePath(header.name);
+      return {
+        name,
+        async: async () => {
+          const content = extractedByName.get(name);
+          if (content == null) throw new Error('Unable to extract RAR entry: ' + name);
+          return content;
+        },
+        date: header.time ? new Date(header.time) : undefined
+      };
+    });
   }
   if (!/\.zip$/i.test(inputFile.name)) throw new Error('Archive must be ZIP or RAR.');
   const archive = await JSZip.loadAsync(await inputFile.arrayBuffer(), { checkCRC32: true });
@@ -250,26 +276,73 @@ async function readLicenseArchiveEntries(inputFile) {
 }
 
 async function readClinicianLineupWorkbooks(inputFile) {
-  if (/\.xls(?:x|m|b)?$/i.test(inputFile.name)) {
-    return [{ name: inputFile.name, workbook: XLSX.read(await inputFile.arrayBuffer(), { type: 'array' }) }];
+  if (isClinicianExcelFilename(inputFile.name)) {
+    const workbook = XLSX.read(await inputFile.arrayBuffer(), { type: 'array' });
+    if (!workbook.SheetNames?.length) throw new Error('The uploaded Excel lineup contains no worksheets.');
+    return [{ name: inputFile.name, workbook }];
   }
-  if (!/\.(rar|zip)$/i.test(inputFile.name)) {
-    throw new Error('Clinician lineup must be an Excel file or a ZIP/RAR containing Excel files.');
+  if (!isNestedArchiveFilename(inputFile.name)) {
+    throw new Error('Clinician lineup must be an Excel file or a ZIP/RAR containing Excel workbooks.');
   }
-  const entries = await readLicenseArchiveEntries(inputFile);
-  const excelFiles = entries.filter(entry => {
-    const basename = entry.name.split('/').pop();
-    return !basename.startsWith('~$') && !entry.name.startsWith('__MACOSX/') &&
-      /\.xls(?:x|m|b)?$/i.test(basename);
-  });
-  if (!excelFiles.length) throw new Error('No Excel workbooks (.xls, .xlsx, .xlsm, .xlsb) found in the lineup archive.');
+
   const workbooks = [];
-  for (const entry of excelFiles) {
+  const scanned = { total: 0, pdfs: 0, archives: 0, other: 0, excelFiles: 0 };
+  const maxDepth = 4;
+  const maxEntries = 10000;
+  const maxNestedBytes = 250 * 1024 * 1024;
+
+  async function inspectArchive(file, level, prefix) {
+    if (level > maxDepth) throw new Error('Lineup archive nesting exceeds four levels. Extract the inner archive and try again.');
+    let entries;
     try {
-      workbooks.push({ name: entry.name, workbook: XLSX.read(await entry.async('uint8array'), { type: 'array' }) });
+      entries = await readLicenseArchiveEntries(file, {
+        contentFilter: name => isClinicianExcelFilename(name) || isNestedArchiveFilename(name)
+      });
     } catch (err) {
-      throw new Error('Cannot read Excel workbook ' + entry.name + ': ' + err.message);
+      throw new Error('Cannot read clinician lineup archive' + (level ? ' inside another archive' : '') + ': ' + err.message);
     }
+    // ZIP and RAR already enumerate every file within directory trees. Explicit
+    // recursion is only needed for archives INSIDE the outer archive.
+    for (const entry of entries) {
+      if (++scanned.total > maxEntries) throw new Error('Too many files in the clinician lineup archive (limit 10,000).');
+      const name = entry.name;
+      if (!name || name.startsWith('__MACOSX/') || name.split('/').pop().startsWith('~$')) continue;
+      if (isClinicianExcelFilename(name)) {
+        scanned.excelFiles++;
+        try {
+          const workbook = XLSX.read(await entry.async('uint8array'), { type: 'array' });
+          if (!workbook.SheetNames?.length) throw new Error('no worksheets');
+          workbooks.push({ name: prefix + name, workbook });
+        } catch (err) {
+          throw new Error('An Excel workbook in the lineup archive could not be read (' +
+            (prefix + name).split('/').length + ' path segments): ' + err.message);
+        }
+      } else if (isNestedArchiveFilename(name)) {
+        scanned.archives++;
+        if (level === maxDepth) throw new Error('Nested lineup archive limit reached. Extract inner archives before uploading.');
+        const bytes = await entry.async('uint8array');
+        if (bytes.byteLength > maxNestedBytes) throw new Error('Nested lineup archive is too large (250 MB limit).');
+        await inspectArchive({
+          name: name.trim(),
+          arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
+        }, level + 1, prefix + name + '/');
+      } else if (/\.pdf$/i.test(name.trim())) {
+        scanned.pdfs++;
+      } else {
+        scanned.other++;
+      }
+    }
+  }
+
+  await inspectArchive(inputFile, 0, '');
+  if (!workbooks.length) {
+    const detail = 'Scanned ' + scanned.total + ' file(s) including nested folders' +
+      (scanned.archives ? ' and ' + scanned.archives + ' inner archive(s)' : '') +
+      ': ' + scanned.pdfs + ' PDF(s), 0 Excel workbooks.';
+    throw new Error('No Excel workbooks found in the clinician lineup upload. ' + detail +
+      (scanned.pdfs
+        ? ' This appears to be a license-PDF archive. Select the NNHS Excel lineup (or the RAR containing those Excel files) in the second upload field.'
+        : ' Check that the archive actually contains .xlsx/.xls files rather than folders or other file types.'));
   }
   return workbooks;
 }
