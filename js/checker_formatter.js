@@ -358,6 +358,15 @@ function parseClinicianExpiryDate(value) {
   }
   const raw = String(value == null ? '' : value).trim();
   if (!raw) return null;
+  // NNHS workbooks may contain Excel serial dates as strings when read with raw:false.
+  // Interpret these as dates rather than treating them as unrecognized text.
+  if (/^\d{4,5}(?:\.0+)?$/.test(raw) && XLSX.SSF?.parse_date_code) {
+    const serial = Number(raw);
+    if (serial >= 1000 && serial <= 100000) {
+      const parsed = XLSX.SSF.parse_date_code(serial);
+      if (parsed) return new Date(Date.UTC(parsed.y, parsed.m - 1, parsed.d));
+    }
+  }
   let match = raw.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:\s|$)/);
   let y, m, d;
   if (match) {
