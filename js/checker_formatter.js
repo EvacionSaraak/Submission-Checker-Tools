@@ -480,6 +480,8 @@ async function filterLicenseZip() {
   await new Promise(resolve => requestAnimationFrame(resolve));
   let kept = 0, excluded = 0, unmatched = 0;
   const retainedFiles = [], expiredFiles = [], excludedFiles = [];
+  const excludedByFacility = new Map();
+  const exclusionCategories = new Map();
   const matchedLicenses = new Set();
   const retainedPDFLicenses = new Set();
   const facilityByLicense = new Map();
@@ -501,8 +503,9 @@ async function filterLicenseZip() {
   const today = new Date();
   const todayUTC = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
   const facilityFolders = new Set(lineupByFacility.keys());
-  // Keep the main Clinician License folder per facility. Expired Licenses,
-  // Duplicated and Other Exclusions are created only when a file is placed there.
+  // Keep the main Clinician License folder per facility. All other folders
+  // (Expired Licenses, Duplicated, and reason-specific exclusions) are made
+  // only when at least one file belongs to that category.
   for (const facilityKey of facilityFolders) {
     const base = facilityFolderName(facilityKey) + '/';
     outputZip.folder(base + 'Clinician License');
@@ -531,13 +534,22 @@ async function filterLicenseZip() {
     const candidate = candidates[i];
     const { entry, license } = candidate;
     let reason = '';
-    if (!license) { unmatched++; reason = 'License number not recognized in filename'; }
-    else if (!allowed.has(license)) reason = 'License not in Excel lineup';
-    else if (!candidate.isPDF) reason = 'File is not a clinician license PDF';
-    else if (newestByLicense.get(license) !== candidate) {
+    let exclusionCategory = '';
+    if (!license) {
+      unmatched++;
+      exclusionCategory = 'License Number Not Recognized';
+      reason = 'No valid clinician license number found at the beginning of the filename. Rename the file to start with its license number.';
+    } else if (!allowed.has(license)) {
+      exclusionCategory = 'Not in Clinician List';
+      reason = 'Clinician license ' + license + ' was not found in any uploaded clinician Excel list.';
+    } else if (!candidate.isPDF) {
+      exclusionCategory = 'Not a PDF';
+      reason = 'The file is not a PDF, so it cannot be retained as a clinician license PDF.';
+    } else if (newestByLicense.get(license) !== candidate) {
       const selected = newestByLicense.get(license);
-      reason = (selected.isPDF && !candidate.isPDF ? 'Non-PDF duplicate' : 'Older duplicate') +
-        '; retained ' + selected.entry.name.split('/').pop();
+      exclusionCategory = 'Duplicated';
+      reason = 'Older duplicate of clinician license ' + license +
+        '; retained ' + selected.entry.name.split('/').pop() + ' as the preferred PDF.';
     }
     if (!reason) {
       const data = await entry.async('uint8array');
@@ -560,14 +572,23 @@ async function filterLicenseZip() {
       matchedLicenses.add(license);
       if (candidate.isPDF) retainedPDFLicenses.add(license);
     } else {
-      // Keep every excluded file in the same ZIP, separated by facility/reason.
+      // Keep excluded files inside the same ZIP, in explicit reason folders.
+      // Never infer facility affiliation from an archive folder or secondment.
       const facilityKeys = findArchiveFacilities(license);
-      const category = /duplicate/i.test(reason) ? 'Duplicated' : 'Other Exclusions';
       const data = await entry.async('uint8array');
       for (const facilityKey of facilityKeys) {
         const outputPath = appendFlatLicenseFile(outputZip, outputPaths, facilityFolderName(facilityKey),
-          category, entry, data);
-        excludedFiles.push({ license: license || 'Not recognized', name: outputPath, reason });
+          exclusionCategory, entry, data);
+        excludedFiles.push({
+          license: license || 'Not recognized', name: outputPath, reason,
+          category: exclusionCategory
+        });
+        if (!excludedByFacility.has(facilityKey)) excludedByFacility.set(facilityKey, []);
+        excludedByFacility.get(facilityKey).push({
+          license: license || '', source: entry.name,
+          category: exclusionCategory, reason, outputPath
+        });
+        exclusionCategories.set(exclusionCategory, (exclusionCategories.get(exclusionCategory) || 0) + 1);
       }
       excluded++;
     }
@@ -581,6 +602,30 @@ async function filterLicenseZip() {
         '%): ' + kept + ' retained, ' + excluded + ' excluded.';
       await new Promise(resolve => requestAnimationFrame(resolve));
     }
+  }
+  // Include exact reasons and original filenames for each excluded file.
+  // The report exists only in facilities that actually have exclusions.
+  for (const [facilityKey, records] of excludedByFacility) {
+    if (!records.length) continue;
+    const headers = ['Clinician License', 'Excluded Filename', 'Exclusion Category',
+      'Detailed Reason', 'Original Archive Path', 'ZIP Destination'];
+    const reportRows = records.map(record => [
+      record.license, record.source.split('/').pop(), record.category,
+      record.reason, record.source, record.outputPath
+    ]);
+    const workbook = XLSX.utils.book_new();
+    const sheet = XLSX.utils.aoa_to_sheet([headers, ...reportRows]);
+    sheet['!cols'] = headers.map((header, index) => ({
+      wch: index === 3 ? 72 : index >= 4 ? 48 : index === 1 ? 35 : 26
+    }));
+    sheet['!autofilter'] = {
+      ref: XLSX.utils.encode_range({
+        s: { r: 0, c: 0 }, e: { r: reportRows.length, c: headers.length - 1 }
+      })
+    };
+    XLSX.utils.book_append_sheet(workbook, sheet, 'Exclusion Reasons');
+    outputZip.file(facilityFolderName(facilityKey) + '/Exclusion Reasons.xlsx',
+      XLSX.write(workbook, { type: 'array', bookType: 'xlsx' }));
   }
   // Create one missing-PDF Excel report per facility, only where needed.
   let missingCount = 0;
@@ -621,8 +666,9 @@ async function filterLicenseZip() {
   lastResultKind = 'zip';
   messageBox.textContent = 'ZIP ready: ' + retainedFiles.length + ' current file entries, ' +
     expiredFiles.length + ' expired license PDFs, ' + excludedFiles.length +
-    ' categorized excluded file entries, ' + missingCount + ' missing facility-clinician PDFs in ' +
-    missingReports + ' facility report(s). One download contains everything.';
+    ' excluded file entries across ' + exclusionCategories.size + ' explicit reason categories, ' +
+    missingCount + ' missing facility-clinician PDFs in ' + missingReports +
+    ' facility report(s). One download includes Exclusion Reasons.xlsx for facilities with exclusions.';
   const summary = document.createElement('div');
   const title = document.createElement('h3');
   title.textContent = 'License filtering summary';
@@ -634,6 +680,13 @@ async function filterLicenseZip() {
     ' | Facility groups: ' + lineupByFacility.size + ' | Categorized excluded entries: ' + excludedFiles.length + ' | Expired license PDFs: ' + expiredFiles.length +
     ' | Excel workbooks: ' + lineupWorkbooks.length;
   summary.appendChild(stats);
+  if (exclusionCategories.size) {
+    const explanation = document.createElement('p');
+    explanation.textContent = 'Exclusion reasons: ' +
+      [...exclusionCategories.entries()].map(([category, count]) => category + ': ' + count).join(' | ') +
+      '. Detailed file-by-file reasons are saved in each affected facility\'s Exclusion Reasons.xlsx.';
+    summary.appendChild(explanation);
+  }
   const detectedSource = document.createElement('p');
   detectedSource.textContent = 'Excel licenses detected from: ' + previewSources;
   summary.appendChild(detectedSource);
