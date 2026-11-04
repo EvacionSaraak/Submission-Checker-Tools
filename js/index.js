@@ -21,7 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function loadPage(file, index) {
-    iframe.src = file === 'html/checker_formatter.html' ? `${file}?v=20261104-corrected-facility-label` : file;
+    iframe.src = file === 'html/checker_formatter.html' ? `${file}?v=20261104-specific-exclusions` : file;
     setActiveButton(index);
     saveLastPage(index);
   }
