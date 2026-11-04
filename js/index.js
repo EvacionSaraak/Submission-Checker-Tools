@@ -21,7 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function loadPage(file, index) {
-    iframe.src = file === 'html/checker_formatter.html' ? `${file}?v=20261104-skip-unassigned-facility` : file;
+    iframe.src = file === 'html/checker_formatter.html' ? `${file}?v=20261104-compiled-missing-clinicians` : file;
     setActiveButton(index);
     saveLastPage(index);
   }
