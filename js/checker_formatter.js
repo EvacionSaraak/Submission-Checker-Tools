@@ -274,6 +274,42 @@ async function readClinicianLineupWorkbooks(inputFile) {
   return workbooks;
 }
 
+
+function parseClinicianExpiryDate(value) {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : new Date(Date.UTC(value.getFullYear(), value.getMonth(), value.getDate()));
+  }
+  if (typeof value === 'number' && Number.isFinite(value) && value > 1000 && XLSX.SSF?.parse_date_code) {
+    const parsed = XLSX.SSF.parse_date_code(value);
+    return parsed ? new Date(Date.UTC(parsed.y, parsed.m - 1, parsed.d)) : null;
+  }
+  const raw = String(value == null ? '' : value).trim();
+  if (!raw) return null;
+  let match = raw.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:\s|$)/);
+  let y, m, d;
+  if (match) {
+    [, y, m, d] = match.map(Number);
+  } else {
+    match = raw.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})(?:\s|$)/);
+    if (!match) return null;
+    const first = Number(match[1]), second = Number(match[2]);
+    d = second > 12 ? second : first; // UK/UAE DD/MM/YYYY unless clearly US MM/DD/YYYY
+    m = second > 12 ? first : second;
+    y = Number(match[3]);
+    if (y < 100) y += y < 50 ? 2000 : 1900;
+  }
+  const date = new Date(Date.UTC(Number(y), Number(m) - 1, Number(d)));
+  return date.getUTCFullYear() === Number(y) && date.getUTCMonth() + 1 === Number(m) &&
+    date.getUTCDate() === Number(d) ? date : null;
+}
+
+function isClinicianLicenseExpired(record, todayUTC) {
+  // Expiry is evaluated from Excel status/date only, never from the PDF filename
+  // or the archive's modification time.
+  if (record?.expiryDate instanceof Date) return record.expiryDate.getTime() < todayUTC.getTime();
+  return /^expir(?:ed|y|ing)?$/i.test(String(record?.licenseStatus || '').trim());
+}
+
 async function filterLicenseZip() {
   const zipInput = document.getElementById('license-zip')?.files?.[0];
   const lineupInput = document.getElementById('license-lineup')?.files?.[0];
@@ -326,6 +362,9 @@ async function filterLicenseZip() {
         const providerIdx = headers.findIndex(header =>
           /^(providerlicen[sc]e(no|number|id)?|facilitylicen[sc]e(no|number|id)?|providerid|facilityid)$/.test(header)
         );
+        const expiryIdx = headers.findIndex(header => !/provider|facility|trade/.test(header) &&
+          (/expir.*licen[sc]e|licen[sc]e.*expir|^expirydate|^expirationdate|^licen[sc]evalidto|^validuntil|^validto|^licen[sc]eenddate/.test(header)));
+        const statusIdx = headers.findIndex(header => /^(licen[sc]e|clinician|doctor|professional)?status$/.test(header));
         lineupSources.push(workbookName + ' / ' + sheetName + ' — ' + (labels[idx] || 'Detected license column') +
           ' (row ' + (i + 1) + ')');
         for (const label of labels) {
@@ -342,9 +381,25 @@ async function filterLicenseZip() {
           if (!lineupByFacility.has(facilityKey)) lineupByFacility.set(facilityKey, new Map());
           const clinicianRecords = lineupByFacility.get(facilityKey);
           if (!clinicianRecords.has(license)) {
-            clinicianRecords.set(license, { sheetName, workbookName, providerLicenseNo: provider, details: {} });
+            clinicianRecords.set(license, {
+              sheetName, workbookName, providerLicenseNo: provider, details: {},
+              expiryDate: null, expiryRaw: '', licenseStatus: ''
+            });
           }
-          const details = clinicianRecords.get(license).details;
+          const record = clinicianRecords.get(license);
+          const expiryRaw = expiryIdx >= 0 ? row[expiryIdx] : '';
+          const expiryDate = parseClinicianExpiryDate(expiryRaw);
+          const licenseStatus = statusIdx >= 0 ? String(row[statusIdx] || '').trim() : '';
+          // If the same clinician/facility occurs more than once, the latest
+          // recorded license expiry takes precedence over an older expired one.
+          if (expiryDate && (!record.expiryDate || expiryDate > record.expiryDate)) {
+            record.expiryDate = expiryDate;
+            record.expiryRaw = expiryRaw;
+            record.licenseStatus = licenseStatus;
+          } else if (!record.expiryDate && licenseStatus) {
+            if (!record.licenseStatus || !/^expir/i.test(licenseStatus)) record.licenseStatus = licenseStatus;
+          }
+          const details = record.details;
           labels.forEach((label, column) => {
             const value = row[column];
             if (label && value !== '' && value != null && (details[label] == null || details[label] === '')) {
@@ -374,9 +429,17 @@ async function filterLicenseZip() {
   progressStatus.textContent = 'Processed 0 of ' + files.length + ' clinician files (0%).';
   await new Promise(resolve => requestAnimationFrame(resolve));
   let kept = 0, excluded = 0, unmatched = 0;
-  const retainedFiles = [], excludedFiles = [];
+  const retainedFiles = [], expiredFiles = [], excludedFiles = [];
   const matchedLicenses = new Set();
   const retainedPDFLicenses = new Set();
+  const today = new Date();
+  const todayUTC = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
+  const facilityFolders = new Set(lineupByFacility.keys());
+  // Keep an explicit expired subfolder in each known facility, even when empty.
+  for (const facilityKey of facilityFolders) {
+    const base = groupByFacility ? facilityFolderName(facilityKey) + '/' : '';
+    outputZip.folder(base + 'Expired Licenses');
+  }
   const candidates = files.map(entry => {
     const baseName = entry.name.split('/').pop();
     // Match filename license prefix; PDF contents are not parsed.
@@ -414,12 +477,19 @@ async function filterLicenseZip() {
         ? [...lineupByFacility.entries()].filter(([, clinicians]) => clinicians.has(license)).map(([key]) => key)
         : [unassignedFacility];
       for (const facilityKey of facilitiesForLicense) {
-        const outputPath = groupByFacility ? facilityFolderName(facilityKey) + '/' + entry.name : entry.name;
+        const record = lineupByFacility.get(facilityKey)?.get(license);
+        const isExpired = candidate.isPDF && isClinicianLicenseExpired(record, todayUTC);
+        const base = groupByFacility ? facilityFolderName(facilityKey) + '/' : '';
+        const outputPath = base + (isExpired ? 'Expired Licenses/' : '') + entry.name;
         outputZip.file(outputPath, data, { date: entry.date });
-        retainedFiles.push({
+        const detail = {
           license, name: outputPath,
-          reason: candidate.isPDF ? 'Latest matching license PDF' : 'Latest matching license file (not PDF)'
-        });
+          reason: isExpired
+            ? 'License expired per clinician Excel' +
+              (record?.expiryDate ? ' (' + record.expiryDate.toISOString().slice(0, 10) + ')' : '')
+            : candidate.isPDF ? 'Latest matching license PDF' : 'Latest matching license file (not PDF)'
+        };
+        (isExpired ? expiredFiles : retainedFiles).push(detail);
       }
       kept++;
       matchedLicenses.add(license);
@@ -480,8 +550,9 @@ async function filterLicenseZip() {
   lastWorkbookData = await outputZip.generateAsync(zipOptions);
   lastExcludedZipData = excluded ? await excludedZip.generateAsync(zipOptions) : null;
   lastResultKind = 'zip';
-  messageBox.textContent = 'ZIPs ready: ' + retainedFiles.length + ' retained file entries, ' +
-    excluded + ' excluded files, ' + missingCount + ' missing facility-clinician PDFs in ' +
+  messageBox.textContent = 'ZIPs ready: ' + retainedFiles.length + ' current file entries, ' +
+    expiredFiles.length + ' expired license PDFs in facility folders, ' + excluded +
+    ' excluded files, ' + missingCount + ' missing facility-clinician PDFs in ' +
     missingReports + ' facility report(s).';
   const summary = document.createElement('div');
   const title = document.createElement('h3');
@@ -491,12 +562,13 @@ async function filterLicenseZip() {
   stats.textContent = 'Input files: ' + files.length + ' | Retained: ' + kept + ' | Excluded: ' + excluded +
     ' | Distinct retained licenses: ' + matchedLicenses.size + ' | Excel licenses: ' + allowed.size +
     ' | Unrecognized filenames: ' + unmatched + ' | Missing facility-clinician PDFs: ' + missingCount +
-    ' | Facility groups: ' + lineupByFacility.size + ' | Excel workbooks: ' + lineupWorkbooks.length;
+    ' | Facility groups: ' + lineupByFacility.size + ' | Expired license PDFs: ' + expiredFiles.length +
+    ' | Excel workbooks: ' + lineupWorkbooks.length;
   summary.appendChild(stats);
   const detectedSource = document.createElement('p');
   detectedSource.textContent = 'Excel licenses detected from: ' + previewSources;
   summary.appendChild(detectedSource);
-  for (const [heading, entries] of [['Retained files', retainedFiles], ['Excluded files', excludedFiles]]) {
+  for (const [heading, entries] of [['Retained files', retainedFiles], ['Expired licenses', expiredFiles], ['Excluded files', excludedFiles]]) {
     const details = document.createElement('details');
     details.open = heading === 'Excluded files';
     const label = document.createElement('summary');
