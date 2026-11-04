@@ -22,9 +22,9 @@
 <div id="zip-exclusion-panel" class="hidden">
   <div class="form-row"><label for="license-zip">ZIP or RAR containing clinician license files:</label>
     <input type="file" id="license-zip" accept=".zip,.rar,application/zip,application/vnd.rar" /></div>
-  <div class="form-row"><label for="license-lineup">Excel lineup of current clinician licenses:</label>
-    <input type="file" id="license-lineup" accept=".xlsx,.xls" /></div>
-  <p>Automatically identifies clinician license numbers across Excel worksheets, including <strong>DoctorLicenseNo</strong> lists and provider-information templates with a <strong>Doctors &amp; Specialties</strong> sheet and a <strong>License number</strong> column. Facility and trade license columns are ignored. Retains the newest matching PDF per clinician and preserves original folder paths. The retained ZIP includes <strong>Missing Clinicians.xlsx</strong> for clinicians without a matching PDF.</p>
+  <div class="form-row"><label for="license-lineup">Clinician lineup (Excel or ZIP/RAR of Excel workbooks):</label>
+    <input type="file" id="license-lineup" accept=".xlsx,.xls,.xlsm,.xlsb,.zip,.rar,application/vnd.rar,application/zip" /></div>
+  <p>Automatically detects clinician license numbers in all uploaded Excel workbooks, including <strong>DoctorLicenseNo</strong> lists and provider-information templates. <strong>ProviderLicenseNo</strong> assigns each clinician to a facility. The retained ZIP groups matching PDFs by facility, with an <strong>Expired Licenses</strong> subfolder (using Excel license expiry dates or expired status) and a <strong>Missing Clinicians.xlsx</strong> report for each facility with missing PDFs. The separate excluded ZIP still contains unmatched and older duplicate files. Without facility data, the original folder layout is retained.</p>
 </div>
 <div id="eligibility-panel">
   <div class="form-row">
@@ -135,6 +135,6 @@
 <div id="outputTableContainer"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="../js/checker_formatter.js?v=20261029-auto-clinician-sheet-detection"></script>
+<script src="../js/checker_formatter.js?v=20261104-facility-expiry-rar"></script>
 </body>
 </html>
