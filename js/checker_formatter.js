@@ -632,24 +632,32 @@ async function filterLicenseZip() {
     outputZip.file(facilityFolderName(facilityKey) + '/Exclusion Reasons.xlsx',
       XLSX.write(workbook, { type: 'array', bookType: 'xlsx' }));
   }
-  // Create one missing-PDF Excel report per facility, only where needed.
+  // Facility-specific missing-PDF reports are preserved. The root workbook
+  // compiles their rows, deduplicated by clinician license + ProviderLicenseNo.
+  // A clinician at two distinct facilities is NOT a duplicate affiliation.
   let missingCount = 0;
   let missingReports = 0;
+  const compiledMissingRows = new Map();
+  const reportHeaders = ['License Number', 'ProviderLicenseNo', 'Reason', 'Source Workbook', 'Source Sheet',
+    ...lineupHeaders.filter(header => !['licensenumber', 'providerlicenseno'].includes(
+      header.toLowerCase().replace(/[^a-z0-9]/g, '')
+    ))];
   for (const [facilityKey, clinicians] of lineupByFacility) {
     if (facilityKey === unassignedFacility) continue;
     const missingLicenses = [...clinicians.keys()].filter(license => !retainedPDFLicenses.has(license))
       .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
     if (!missingLicenses.length) continue;
     missingCount += missingLicenses.length;
-    const reportHeaders = ['License Number', 'ProviderLicenseNo', 'Reason', 'Source Workbook', 'Source Sheet',
-      ...lineupHeaders.filter(header => !['licensenumber', 'providerlicenseno'].includes(
-        header.toLowerCase().replace(/[^a-z0-9]/g, '')
-      ))];
     const reportRows = missingLicenses.map(license => {
       const record = clinicians.get(license);
-      return [license, record.providerLicenseNo, 'No matching clinician PDF in retained ZIP',
+      const row = [license, record.providerLicenseNo, 'No matching clinician PDF in retained ZIP',
         record.workbookName, record.sheetName,
         ...reportHeaders.slice(5).map(header => record.details[header] ?? '')];
+      // Keep one row for each actual clinician-facility pair. This also
+      // removes repeats across source workbooks with different metadata.
+      const key = license + '\u0000' + facilityKey;
+      if (!compiledMissingRows.has(key)) compiledMissingRows.set(key, row);
+      return row;
     });
     const missingWorkbook = XLSX.utils.book_new();
     const sheet = XLSX.utils.aoa_to_sheet([reportHeaders, ...reportRows]);
@@ -666,6 +674,27 @@ async function filterLicenseZip() {
     outputZip.file(reportPath, XLSX.write(missingWorkbook, { type: 'array', bookType: 'xlsx' }));
     missingReports++;
   }
+
+  // Always put the consolidated workbook at the ZIP root, even when there
+  // are no missing PDFs (header-only report). Sort for straightforward review.
+  const consolidatedRows = [...compiledMissingRows.values()].sort((left, right) =>
+    String(left[1]).localeCompare(String(right[1]), undefined, { numeric: true }) ||
+    String(left[0]).localeCompare(String(right[0]), undefined, { numeric: true })
+  );
+  const compiledWorkbook = XLSX.utils.book_new();
+  const compiledSheet = XLSX.utils.aoa_to_sheet([reportHeaders, ...consolidatedRows]);
+  compiledSheet['!cols'] = reportHeaders.map((header, index) => ({
+    wch: index === 2 ? 42 : index === 3 ? 34 : Math.min(40, Math.max(16, String(header).length + 3))
+  }));
+  compiledSheet['!autofilter'] = {
+    ref: XLSX.utils.encode_range({
+      s: { r: 0, c: 0 }, e: { r: consolidatedRows.length, c: reportHeaders.length - 1 }
+    })
+  };
+  XLSX.utils.book_append_sheet(compiledWorkbook, compiledSheet, 'Compiled Missing Clinicians');
+  outputZip.file('Compiled Missing Clinicians.xlsx',
+    XLSX.write(compiledWorkbook, { type: 'array', bookType: 'xlsx' }));
+
   progressStatus.textContent = 'Processed ' + candidates.length + ' of ' + candidates.length + ' clinician files. Creating ZIP and missing-clinicians reports...';
   const zipOptions = { type: 'uint8array', compression: 'DEFLATE', compressionOptions: { level: 6 } };
   lastWorkbookData = await outputZip.generateAsync(zipOptions);
@@ -675,7 +704,8 @@ async function filterLicenseZip() {
     ' excluded file entries across ' + exclusionCategories.size + ' explicit reason categories, ' +
     skippedNoFacility + ' file(s) skipped because no facility could be assigned, ' +
     missingCount + ' missing facility-clinician PDFs in ' + missingReports +
-    ' facility report(s). One download includes only facility-assigned records.';
+    ' facility report(s). Compiled Missing Clinicians.xlsx contains ' +
+    consolidatedRows.length + ' unique clinician-facility rows at the ZIP root.';
   const summary = document.createElement('div');
   const title = document.createElement('h3');
   title.textContent = 'License filtering summary';
@@ -684,6 +714,7 @@ async function filterLicenseZip() {
   stats.textContent = 'Input files: ' + files.length + ' | Retained: ' + kept + ' | Excluded: ' + excluded +
     ' | Distinct retained licenses: ' + matchedLicenses.size + ' | Excel licenses: ' + allowed.size +
     ' | Unrecognized filenames: ' + unmatched + ' | Missing facility-clinician PDFs: ' + missingCount +
+    ' | Compiled missing rows: ' + consolidatedRows.length +
     ' | Facility groups: ' + assignedFacilities.length + ' | Files skipped (no facility): ' + skippedNoFacility +
     ' | Categorized excluded entries: ' + excludedFiles.length + ' | Expired license PDFs: ' + expiredFiles.length +
     ' | Excel workbooks: ' + lineupWorkbooks.length;
