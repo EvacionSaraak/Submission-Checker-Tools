@@ -461,7 +461,7 @@ async function filterLicenseZip() {
     }
   }
   const facilityFolderName = key => {
-    if (key === unassignedFacility) return '0-No Facility Deteced';
+    if (key === unassignedFacility) return '0-No Facility Detected';
     const shortName = shortFacilityArchiveName(facilityNames.get(key));
     return shortName ? key + ' - ' + shortName : key;
   };
