@@ -219,102 +219,153 @@ function normalizeLicenseID(value) {
   return String(value == null ? '' : value).trim().toUpperCase().replace(/[\s-]+/g, '');
 }
 
+
+function safeLicenseArchivePath(name) {
+  return String(name || '').replace(/\\/g, '/').split('/').filter(part => part && part !== '.' && part !== '..').join('/');
+}
+
+async function readLicenseArchiveEntries(inputFile) {
+  if (/\.rar$/i.test(inputFile.name)) {
+    const { createExtractorFromData } = await import('https://esm.sh/node-unrar-js@2.0.2/esm?bundle');
+    const wasmResponse = await fetch('https://cdn.jsdelivr.net/npm/node-unrar-js@2.0.2/esm/js/unrar.wasm');
+    if (!wasmResponse.ok) throw new Error('Unable to load the RAR decoder.');
+    const extractor = await createExtractorFromData({
+      data: await inputFile.arrayBuffer(), wasmBinary: await wasmResponse.arrayBuffer()
+    });
+    return [...extractor.extract().files].filter(file => !file.fileHeader.flags.directory).map(file => ({
+      name: safeLicenseArchivePath(file.fileHeader.name),
+      async: async () => {
+        if (file.extraction == null) throw new Error('RAR entry could not be extracted: ' + file.fileHeader.name);
+        return file.extraction;
+      },
+      date: file.fileHeader.time ? new Date(file.fileHeader.time) : undefined
+    }));
+  }
+  if (!/\.zip$/i.test(inputFile.name)) throw new Error('Archive must be ZIP or RAR.');
+  const archive = await JSZip.loadAsync(await inputFile.arrayBuffer(), { checkCRC32: true });
+  return Object.values(archive.files).filter(entry => !entry.dir).map(entry => ({
+    name: safeLicenseArchivePath(entry.name),
+    async: type => entry.async(type), date: entry.date
+  }));
+}
+
+async function readClinicianLineupWorkbooks(inputFile) {
+  if (/\.xls(?:x|m|b)?$/i.test(inputFile.name)) {
+    return [{ name: inputFile.name, workbook: XLSX.read(await inputFile.arrayBuffer(), { type: 'array' }) }];
+  }
+  if (!/\.(rar|zip)$/i.test(inputFile.name)) {
+    throw new Error('Clinician lineup must be an Excel file or a ZIP/RAR containing Excel files.');
+  }
+  const entries = await readLicenseArchiveEntries(inputFile);
+  const excelFiles = entries.filter(entry => {
+    const basename = entry.name.split('/').pop();
+    return !basename.startsWith('~$') && !entry.name.startsWith('__MACOSX/') &&
+      /\.xls(?:x|m|b)?$/i.test(basename);
+  });
+  if (!excelFiles.length) throw new Error('No Excel workbooks (.xls, .xlsx, .xlsm, .xlsb) found in the lineup archive.');
+  const workbooks = [];
+  for (const entry of excelFiles) {
+    try {
+      workbooks.push({ name: entry.name, workbook: XLSX.read(await entry.async('uint8array'), { type: 'array' }) });
+    } catch (err) {
+      throw new Error('Cannot read Excel workbook ' + entry.name + ': ' + err.message);
+    }
+  }
+  return workbooks;
+}
+
 async function filterLicenseZip() {
   const zipInput = document.getElementById('license-zip')?.files?.[0];
-  const excelInput = document.getElementById('license-lineup')?.files?.[0];
-  if (!zipInput || !excelInput) throw new Error('Upload both a license ZIP/RAR and an Excel lineup.');
+  const lineupInput = document.getElementById('license-lineup')?.files?.[0];
+  if (!zipInput || !lineupInput) throw new Error('Upload both a license ZIP/RAR and a clinician lineup (Excel or ZIP/RAR).');
   if (typeof JSZip === 'undefined' || typeof XLSX === 'undefined') throw new Error('ZIP or Excel library failed to load.');
   progressBarContainer.style.display = 'block';
   progressBar.style.width = '0%';
   progressText.textContent = '0%';
   messageBox.textContent = 'Reading clinician lineup and archive...';
   await new Promise(resolve => requestAnimationFrame(resolve));
-  const workbook = XLSX.read(await excelInput.arrayBuffer(), { type: 'array' });
-  // Discover clinician-license columns rather than assuming a particular sheet,
-  // header row, or spelling of DoctorLicenseNo.
+  const lineupWorkbooks = await readClinicianLineupWorkbooks(lineupInput);
+  // A license may belong to several facilities; preserve each association.
   const allowed = new Set();
-  const lineupRecords = new Map();
+  const lineupByFacility = new Map();
   const lineupHeaders = [];
   const seenHeaders = new Set();
   const lineupSources = [];
+  const unassignedFacility = '__UNASSIGNED_FACILITY__';
   const isLicenseID = value => /^[A-Z]{1,5}\d+[A-Z0-9]*$/.test(normalizeLicenseID(value));
-  for (const sheetName of workbook.SheetNames) {
-    const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, defval: '', raw: false });
-    const sheetKey = String(sheetName).toLowerCase().replace(/[^a-z0-9]/g, '');
-    for (let i = 0; i < Math.min(30, rows.length); i++) {
-      const columnLabels = (rows[i] || []).map(value => String(value == null ? '' : value).trim());
-      const headers = columnLabels.map(value => value.toLowerCase().replace(/[^a-z0-9]/g, ''));
-      const clinicianContext = /doctor|clinician|physician|practitioner|dentist|nurse|therapist|specialt|medicalstaff/.test(
-        sheetKey + headers.join(' ')
-      );
-      const candidates = [];
-      for (let idx = 0; idx < headers.length; idx++) {
-        const header = headers[idx];
-        if (!header || /facility|branch|trade|hospital|establishment|company|specialt|expiry|expir|start|issue|date|status|validity|otherfacilit/.test(header)) continue;
-        const precise = /^(doctor|doctors|clinician|physician|professional|practitioner)?licen[sc]e(no|number|id)?$/.test(header) ||
-          /^(doctor|clinician|physician|professional)lic(no|number|id)$/.test(header) ||
-          header === 'phylic';
-        const named = /licen[sc]e/.test(header) && /doctor|clinician|physician|professional|practitioner|dentist|nurse|therapist|provider|medical|doh|haad|dha|moh/.test(header);
-        const generic = /licen[sc]e/.test(header) && (header.length <= 25 || /number|no|id|code/.test(header));
-        const agencyID = clinicianContext && /^(professional|practitioner|physician|doctor|clinician|provider|doh|haad|dha|moh).*(id|number|no)$/.test(header);
-        const inferred = clinicianContext && /^(id|lic|licno|licnumber|registrationno|registrationnumber)$/.test(header);
-        if (!precise && !named && !generic && !agencyID && !inferred) continue;
-        const sample = rows.slice(i + 1, i + 51).map(row => row[idx]).filter(v => v != null && String(v).trim());
-        const matched = sample.filter(isLicenseID).length;
-        if (!matched || matched / sample.length < 0.5) continue;
-        const score = (precise ? 100 : named ? 90 : generic ? 75 : agencyID ? 60 : 40) +
-          Math.min(matched, 20) + (clinicianContext ? 10 : 0);
-        candidates.push({ idx, score, matched });
-      }
-      if (!candidates.length) continue;
-      candidates.sort((a, b) => b.score - a.score);
-      const idx = candidates[0].idx;
-      const sourceLabel = columnLabels[idx] || 'Detected license column';
-      lineupSources.push(`${sheetName} — ${sourceLabel} (row ${i + 1})`);
-      for (const label of columnLabels) {
-        if (label && !seenHeaders.has(label)) { seenHeaders.add(label); lineupHeaders.push(label); }
-      }
-      for (const row of rows.slice(i + 1)) {
-        const license = normalizeLicenseID(row[idx]);
-        if (!isLicenseID(license)) continue;
-        allowed.add(license);
-        if (!lineupRecords.has(license)) lineupRecords.set(license, { sheetName, details: {} });
-        const details = lineupRecords.get(license).details;
-        columnLabels.forEach((label, index) => {
-          const value = row[index];
-          if (label && value !== '' && value != null && (details[label] == null || details[label] === '')) {
-            details[label] = value;
+  let hasFacilityAssignment = false;
+  for (const { name: workbookName, workbook } of lineupWorkbooks) {
+    for (const sheetName of workbook.SheetNames) {
+      const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, defval: '', raw: false });
+      const sheetKey = String(sheetName).toLowerCase().replace(/[^a-z0-9]/g, '');
+      for (let i = 0; i < Math.min(30, rows.length); i++) {
+        const labels = (rows[i] || []).map(v => String(v == null ? '' : v).trim());
+        const headers = labels.map(v => v.toLowerCase().replace(/[^a-z0-9]/g, ''));
+        const clinicianContext = /doctor|clinician|physician|practitioner|dentist|nurse|therapist|specialt|medicalstaff/.test(sheetKey + headers.join(' '));
+        const candidates = [];
+        for (let idx = 0; idx < headers.length; idx++) {
+          const header = headers[idx];
+          // ProviderLicenseNo and facility numbers must never become clinician IDs.
+          if (!header || /provider|facility|branch|trade|hospital|establishment|company|specialt|expiry|expir|start|issue|date|status|validity/.test(header)) continue;
+          const precise = /^(doctor|doctors|clinician|physician|professional|practitioner)?licen[sc]e(no|number|id)?$/.test(header) ||
+            /^(doctor|clinician|physician|professional)lic(no|number|id)$/.test(header) || header === 'phylic';
+          const named = /licen[sc]e/.test(header) && /doctor|clinician|physician|professional|practitioner|dentist|nurse|therapist|medical|doh|haad|dha|moh/.test(header);
+          const generic = /licen[sc]e/.test(header) && (header.length <= 25 || /number|no|id|code/.test(header));
+          const agencyID = clinicianContext && /^(professional|practitioner|physician|doctor|clinician|doh|haad|dha|moh).*(id|number|no)$/.test(header);
+          const inferred = clinicianContext && /^(id|lic|licno|licnumber|registrationno|registrationnumber)$/.test(header);
+          if (!precise && !named && !generic && !agencyID && !inferred) continue;
+          const sample = rows.slice(i + 1, i + 51).map(row => row[idx]).filter(v => v != null && String(v).trim());
+          const matched = sample.filter(isLicenseID).length;
+          if (!matched || matched / sample.length < 0.5) continue;
+          candidates.push({ idx, score: (precise ? 100 : named ? 90 : generic ? 75 : agencyID ? 60 : 40) +
+            Math.min(matched, 20) + (clinicianContext ? 10 : 0) });
+        }
+        if (!candidates.length) continue;
+        candidates.sort((a, b) => b.score - a.score);
+        const idx = candidates[0].idx;
+        const providerIdx = headers.findIndex(header =>
+          /^(providerlicen[sc]e(no|number|id)?|facilitylicen[sc]e(no|number|id)?|providerid|facilityid)$/.test(header)
+        );
+        lineupSources.push(workbookName + ' / ' + sheetName + ' — ' + (labels[idx] || 'Detected license column') +
+          ' (row ' + (i + 1) + ')');
+        for (const label of labels) {
+          if (label && !seenHeaders.has(label)) { seenHeaders.add(label); lineupHeaders.push(label); }
+        }
+        for (const row of rows.slice(i + 1)) {
+          const license = normalizeLicenseID(row[idx]);
+          if (!isLicenseID(license)) continue;
+          allowed.add(license);
+          const providerValue = providerIdx >= 0 ? normalizeLicenseID(row[providerIdx]) : '';
+          const provider = isLicenseID(providerValue) ? providerValue : '';
+          if (provider) hasFacilityAssignment = true;
+          const facilityKey = provider || unassignedFacility;
+          if (!lineupByFacility.has(facilityKey)) lineupByFacility.set(facilityKey, new Map());
+          const clinicianRecords = lineupByFacility.get(facilityKey);
+          if (!clinicianRecords.has(license)) {
+            clinicianRecords.set(license, { sheetName, workbookName, providerLicenseNo: provider, details: {} });
           }
-        });
+          const details = clinicianRecords.get(license).details;
+          labels.forEach((label, column) => {
+            const value = row[column];
+            if (label && value !== '' && value != null && (details[label] == null || details[label] === '')) {
+              details[label] = value;
+            }
+          });
+        }
+        break;
       }
-      break; // Once a clinician-license table is detected, do not rescan its data rows as headers.
     }
   }
-  if (!allowed.size) throw new Error('No clinician license numbers were detected. The lineup needs a license column with clinician IDs (for example GD41353).');
-  messageBox.textContent = `Detected ${allowed.size} clinician licenses from ${lineupSources.join('; ')}. Reading archive...`;
-  const isRar = /\.rar$/i.test(zipInput.name);
+  if (!allowed.size) throw new Error('No clinician license numbers found in the Excel workbook(s).');
+  const groupByFacility = hasFacilityAssignment;
+  const facilityFolderName = key => key === unassignedFacility ? 'Unassigned Facility' : key;
+  const previewSources = lineupSources.slice(0, 4).join('; ') +
+    (lineupSources.length > 4 ? '; and ' + (lineupSources.length - 4) + ' more' : '');
+  messageBox.textContent = 'Detected ' + allowed.size + ' unique clinician licenses across ' +
+    lineupByFacility.size + ' facility group(s) in ' + lineupWorkbooks.length + ' Excel workbook(s). Reading PDF archive...';
   const outputZip = new JSZip();
   const excludedZip = new JSZip();
-  let files;
-  if (isRar) {
-    // RAR extraction is performed in-browser using the WASM implementation.
-    const { createExtractorFromData } = await import('https://esm.sh/node-unrar-js@2.0.2/esm?bundle');
-    const wasmResponse = await fetch('https://cdn.jsdelivr.net/npm/node-unrar-js@2.0.2/esm/js/unrar.wasm');
-    if (!wasmResponse.ok) throw new Error('Unable to load the RAR decoder.');
-    const extractor = await createExtractorFromData({
-      data: await zipInput.arrayBuffer(),
-      wasmBinary: await wasmResponse.arrayBuffer()
-    });
-    const extracted = extractor.extract();
-    files = [...extracted.files].filter(file => !file.fileHeader.flags.directory).map(file => ({
-      name: file.fileHeader.name.replace(/\\/g, '/'),
-      async: async () => file.extraction,
-      date: file.fileHeader.time ? new Date(file.fileHeader.time) : undefined
-    }));
-  } else {
-    const inputZip = await JSZip.loadAsync(await zipInput.arrayBuffer(), { checkCRC32: true });
-    files = Object.values(inputZip.files).filter(entry => !entry.dir);
-  }
+  const files = await readLicenseArchiveEntries(zipInput);
   const progressStatus = document.createElement('div');
   progressStatus.id = 'license-processing-status';
   progressStatus.setAttribute('role', 'status');
@@ -358,11 +409,21 @@ async function filterLicenseZip() {
         '; retained ' + selected.entry.name;
     }
     if (!reason) {
-      outputZip.file(entry.name, await entry.async('uint8array'), { date: entry.date });
+      const data = await entry.async('uint8array');
+      const facilitiesForLicense = groupByFacility
+        ? [...lineupByFacility.entries()].filter(([, clinicians]) => clinicians.has(license)).map(([key]) => key)
+        : [unassignedFacility];
+      for (const facilityKey of facilitiesForLicense) {
+        const outputPath = groupByFacility ? facilityFolderName(facilityKey) + '/' + entry.name : entry.name;
+        outputZip.file(outputPath, data, { date: entry.date });
+        retainedFiles.push({
+          license, name: outputPath,
+          reason: candidate.isPDF ? 'Latest matching license PDF' : 'Latest matching license file (not PDF)'
+        });
+      }
       kept++;
       matchedLicenses.add(license);
       if (candidate.isPDF) retainedPDFLicenses.add(license);
-      retainedFiles.push({ license, name: entry.name, reason: candidate.isPDF ? 'Latest matching license PDF' : 'Latest matching license file (not PDF)' });
     } else {
       excludedZip.file(entry.name, await entry.async('uint8array'), { date: entry.date });
       excluded++;
@@ -379,32 +440,49 @@ async function filterLicenseZip() {
       await new Promise(resolve => requestAnimationFrame(resolve));
     }
   }
-  // Include a spreadsheet in the retained ZIP for every clinician lacking a retained PDF.
-  const missingLicenses = [...allowed].filter(license => !retainedPDFLicenses.has(license))
-    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-  const reportHeaders = ['License Number', 'Reason', 'Source Sheet', ...lineupHeaders];
-  const reportRows = missingLicenses.map(license => {
-    const record = lineupRecords.get(license);
-    return [license, 'No matching clinician PDF in retained ZIP', record?.sheetName || '',
-      ...lineupHeaders.map(header => record?.details?.[header] ?? '')];
-  });
-  const missingWorkbook = XLSX.utils.book_new();
-  const missingSheet = XLSX.utils.aoa_to_sheet([reportHeaders, ...reportRows]);
-  missingSheet['!cols'] = reportHeaders.map((header, index) => ({
-    wch: index === 1 ? 42 : index === 2 ? 22 : Math.min(40, Math.max(16, String(header).length + 3))
-  }));
-  missingSheet['!autofilter'] = {
-    ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: reportRows.length, c: reportHeaders.length - 1 } })
-  };
-  XLSX.utils.book_append_sheet(missingWorkbook, missingSheet, 'Missing Clinicians');
-  outputZip.file('Missing Clinicians.xlsx', XLSX.write(missingWorkbook, { type: 'array', bookType: 'xlsx' }));
+  // Create one missing-PDF Excel report per facility, only where needed.
+  let missingCount = 0;
+  let missingReports = 0;
+  for (const [facilityKey, clinicians] of lineupByFacility) {
+    const missingLicenses = [...clinicians.keys()].filter(license => !retainedPDFLicenses.has(license))
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    if (!missingLicenses.length) continue;
+    missingCount += missingLicenses.length;
+    const reportHeaders = ['License Number', 'ProviderLicenseNo', 'Reason', 'Source Workbook', 'Source Sheet',
+      ...lineupHeaders.filter(header => !['licensenumber', 'providerlicenseno'].includes(
+        header.toLowerCase().replace(/[^a-z0-9]/g, '')
+      ))];
+    const reportRows = missingLicenses.map(license => {
+      const record = clinicians.get(license);
+      return [license, record.providerLicenseNo, 'No matching clinician PDF in retained ZIP',
+        record.workbookName, record.sheetName,
+        ...reportHeaders.slice(5).map(header => record.details[header] ?? '')];
+    });
+    const missingWorkbook = XLSX.utils.book_new();
+    const sheet = XLSX.utils.aoa_to_sheet([reportHeaders, ...reportRows]);
+    sheet['!cols'] = reportHeaders.map((header, index) => ({
+      wch: index === 2 ? 42 : index === 3 ? 34 : Math.min(40, Math.max(16, String(header).length + 3))
+    }));
+    sheet['!autofilter'] = {
+      ref: XLSX.utils.encode_range({
+        s: { r: 0, c: 0 }, e: { r: reportRows.length, c: reportHeaders.length - 1 }
+      })
+    };
+    XLSX.utils.book_append_sheet(missingWorkbook, sheet, 'Missing Clinicians');
+    const reportPath = groupByFacility
+      ? facilityFolderName(facilityKey) + '/Missing Clinicians.xlsx'
+      : 'Missing Clinicians.xlsx';
+    outputZip.file(reportPath, XLSX.write(missingWorkbook, { type: 'array', bookType: 'xlsx' }));
+    missingReports++;
+  }
   progressStatus.textContent = 'Processed ' + candidates.length + ' of ' + candidates.length + ' clinician files. Creating ZIP archives and missing-clinicians report...';
   const zipOptions = { type: 'uint8array', compression: 'DEFLATE', compressionOptions: { level: 6 } };
   lastWorkbookData = await outputZip.generateAsync(zipOptions);
   lastExcludedZipData = excluded ? await excludedZip.generateAsync(zipOptions) : null;
   lastResultKind = 'zip';
-  messageBox.textContent = 'ZIPs ready: ' + kept + ' retained, ' + excluded + ' excluded; ' +
-    missingLicenses.length + ' clinicians missing a PDF (listed in Missing Clinicians.xlsx inside the retained ZIP).';
+  messageBox.textContent = 'ZIPs ready: ' + retainedFiles.length + ' retained file entries, ' +
+    excluded + ' excluded files, ' + missingCount + ' missing facility-clinician PDFs in ' +
+    missingReports + ' facility report(s).';
   const summary = document.createElement('div');
   const title = document.createElement('h3');
   title.textContent = 'License filtering summary';
@@ -412,10 +490,11 @@ async function filterLicenseZip() {
   const stats = document.createElement('p');
   stats.textContent = 'Input files: ' + files.length + ' | Retained: ' + kept + ' | Excluded: ' + excluded +
     ' | Distinct retained licenses: ' + matchedLicenses.size + ' | Excel licenses: ' + allowed.size +
-    ' | Unrecognized filenames: ' + unmatched + ' | Clinicians missing PDFs: ' + missingLicenses.length;
+    ' | Unrecognized filenames: ' + unmatched + ' | Missing facility-clinician PDFs: ' + missingCount +
+    ' | Facility groups: ' + lineupByFacility.size + ' | Excel workbooks: ' + lineupWorkbooks.length;
   summary.appendChild(stats);
   const detectedSource = document.createElement('p');
-  detectedSource.textContent = 'Excel licenses detected from: ' + lineupSources.join('; ');
+  detectedSource.textContent = 'Excel licenses detected from: ' + previewSources;
   summary.appendChild(detectedSource);
   for (const [heading, entries] of [['Retained files', retainedFiles], ['Excluded files', excludedFiles]]) {
     const details = document.createElement('details');
