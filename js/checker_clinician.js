@@ -66,12 +66,22 @@
   // Excel date threshold: serial dates above this are likely dates (1000 ≈ Sep 26, 1902)
   const MIN_EXCEL_SERIAL_DATE = 1000;
 
-  // Pathology-related professions are exempt from the category mismatch
-  // warning only. They are NOT exempt from performing license affiliation.
+  // Pathology specialties only qualify for the laboratory exception on
+  // pathology/laboratory CPTs. Other service categories retain normal rules.
   const PATHOLOGY_KEYWORDS = [
     'PATHOLOGY',
     'MEDICAL LABORATORY'
   ];
+
+  // CPT Pathology and Laboratory code family (80000–89398).
+  // Do not treat radiology, collection procedures or unfamiliar HCPCS codes as
+  // labs merely because an external laboratory was involved.
+  function isLaboratoryActivity(code) {
+    const normalized = String(code || '').trim().toUpperCase();
+    if (!/^\d{5}$/.test(normalized)) return false;
+    const number = Number(normalized);
+    return number >= 80000 && number <= 89398;
+  }
 
   // Helper function to check if a clinician's profession is pathology-related
   function isPathologyProfession(clinicianId) {
@@ -673,7 +683,7 @@
   // Validate the current ClinicianLicenses record for the encounter date.
   // This lets the current file cover newer affiliations that may not yet exist
   // in the older licensing-history workbook.
-  function getCurrentClinicianStateAtEncounter(clinicianId, encounterDate) {
+  function getCurrentClinicianStateAtEncounter(clinicianId, encounterDate, allowExternalLab) {
     const clinician = clinicianMap[clinicianId];
     if (!clinician || !(encounterDate instanceof Date) || isNaN(encounterDate.getTime())) {
       return null;
@@ -691,8 +701,12 @@
     // Missing Status is retained for compatibility with legacy clinician lists.
     const statusOk = isActiveEquivalentClinicianStatus(status);
     const affiliationOk = affiliatedLicenses.has(facility);
+    // Outsourced laboratory performers still require an identifiable,
+    // explicitly active license and a valid service-date window.
+    const externalEligible = allowExternalLab && !!facility &&
+      /^(active|about to expire)$/i.test(status);
 
-    if (!(statusOk && fromOk && toOk && affiliationOk)) return null;
+    if (!(statusOk && fromOk && toOk && (affiliationOk || externalEligible))) return null;
 
     return {
       facility,
@@ -850,6 +864,9 @@
         const activityId = getText(act, 'ID');
         const oid = getText(act, 'OrderingClinician');
         const pid = getText(act, 'Clinician');
+        const activityCode = getText(act, 'Code');
+        const isLab = isLaboratoryActivity(activityCode);
+        const performingPathology = isPathologyProfession(pid);
         const remarks = [];
 
         // Ordering and performing display with profession
@@ -873,12 +890,16 @@
             const isOrderingPathology = isPathologyProfession(oid);
             const isPerformingPathology = isPathologyProfession(pid);
             
-            if (isOrderingPathology || isPerformingPathology) {
+            if (isLab && (isOrderingPathology || isPerformingPathology)) {
               remarks.push('Labs. Category Mismatch disregarded.');
             } else {
               remarks.push('Category mismatch');
             }
           }
+        }
+
+        if (performingPathology && !isLab) {
+          remarks.push('Pathology / Medical Laboratory Performing Clinician is not permitted for non-laboratory CPT ' + (activityCode || '(missing)'));
         }
 
         let performingEff = '', performingStatus = '', performingStatusDisplay = '';
@@ -898,13 +919,14 @@
         const historyStates = getHistoryStatesAtEncounter(entries, encounterD);
         const eligibleHistory = historyStates.filter(e =>
           isActiveEquivalentClinicianStatus(e.status) &&
-          affiliatedLicenses.has(String(e.facility || '').trim().toUpperCase())
+          !!String(e.facility || '').trim() &&
+          (isLab || affiliatedLicenses.has(String(e.facility || '').trim().toUpperCase()))
         );
 
         // The current clinician file is authoritative inside its explicit
         // Status + From/To window. Prefer it when valid so stale history cannot
         // reject a newer ACTIVE facility assignment.
-        const currentState = getCurrentClinicianStateAtEncounter(pid, encounterD);
+        const currentState = getCurrentClinicianStateAtEncounter(pid, encounterD, isLab);
 
         if (currentState) {
           mostRecent = currentState;
@@ -934,9 +956,12 @@
 
         if (!valid) {
           const facilityDetails = formatFacilityDetails(pid);
-          remarks.push(`Performing Clinician ${pid || '(missing)'} has no ACTIVE license under our facilities for the encounter date` +
+          remarks.push(`Performing Clinician ${pid || '(missing)'} has no eligible ACTIVE license ${isLab ? 'for the laboratory encounter date' : 'under our facilities for the encounter date'}` +
             (facilityDetails ? '.' + facilityDetails : ''));
         }
+
+        // Specialty eligibility is independent of license affiliation.
+        if (performingPathology && !isLab) valid = false;
 
         const fullHistory = entries.map(e =>
           `${e.effective || '[No Date]'} [${e.facility || '[No Facility]'}] (${e.status || '[No Status]'})`
