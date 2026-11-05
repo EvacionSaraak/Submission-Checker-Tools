@@ -920,7 +920,8 @@
         const eligibleHistory = historyStates.filter(e =>
           isActiveEquivalentClinicianStatus(e.status) &&
           !!String(e.facility || '').trim() &&
-          (isLab || affiliatedLicenses.has(String(e.facility || '').trim().toUpperCase()))
+          (affiliatedLicenses.has(String(e.facility || '').trim().toUpperCase()) ||
+            (isLab && /^(active|about to expire)$/i.test(String(e.status || '').trim())))
         );
 
         // The current clinician file is authoritative inside its explicit
