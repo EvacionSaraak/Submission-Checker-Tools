@@ -3855,8 +3855,20 @@
     "Specialty": "Orthodontics",
     "Facility": "MF5731",
     "Facility Name": "AL BAHRI DENTAL AND ORTHODONTIC CENTER - L.L.C - S.P.C - BRANCH",
+    "Internal Affiliation Approved": true,
     "Status": "Active",
     "From": 45383,
     "To": 46843
+  },
+  {
+    "Phy Lic": "GD42887",
+    "Clinician Name": "",
+    "Specialty": "Orthodontics",
+    "Facility": "",
+    "Facility Name": "",
+    "Internal Affiliation Approved": true,
+    "Status": "",
+    "From": "",
+    "To": ""
   }
 ]
