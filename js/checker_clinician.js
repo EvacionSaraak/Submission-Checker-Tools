@@ -94,10 +94,6 @@
     return PATHOLOGY_KEYWORDS.some(keyword => category.includes(keyword));
   }
 
-  // User-authorized facility-affiliation exception. This is not a DoH
-  // licensing-status verification and must not override an inactive record.
-  const MANUAL_ORTHODONTIST_AFFILIATIONS = new Set(['GD42887', 'GD43658']);
-
   let xmlDoc = null, clinicianMap = {}, clinicianStatusMap = {};
   let xmlInput, clinicianInput, statusInput, processBtn, csvBtn, resultsDiv, uploadDiv;
   let claimCount = 0, clinicianCount = 0, historyCount = 0;
@@ -203,6 +199,7 @@
                 facility: (row['Facility'] || row['Facility License Number'] || row['Facility License'] || '').toString().trim().toUpperCase(),
                 facilityName: row['Facility Name'] || '',
                 status: row['Status'] || '',
+                approvedInternalAffiliation: row['Internal Affiliation Approved'] === true,
                 from: row['From'] || '',
                 to: row['To'] || ''
               };
@@ -210,23 +207,6 @@
 
             const count = Object.keys(newClinicianMap).length;
             if (count === 0) throw new Error('clinician_licenses.json loaded, but no usable clinician records were found.');
-
-            // Keep a visible specialty label if this affiliated orthodontist
-            // has not yet been included in the ClinicianLicenses export.
-            for (const license of MANUAL_ORTHODONTIST_AFFILIATIONS) {
-              if (!newClinicianMap[license]) {
-                newClinicianMap[license] = {
-                  name: '',
-                  category: 'Orthodontics',
-                  facility: '',
-                  facilityName: '',
-                  status: '',
-                  from: '',
-                  to: '',
-                  _manualAffiliation: true
-                };
-              }
-            }
 
             clinicianMap = newClinicianMap;
             clinicianCount = Object.keys(newClinicianMap).length;
@@ -721,7 +701,7 @@
     // "About to Expire" is still active until the affiliation's To date.
     // Missing Status is retained for compatibility with legacy clinician lists.
     const statusOk = isActiveEquivalentClinicianStatus(status);
-    const affiliationOk = affiliatedLicenses.has(facility);
+    const affiliationOk = affiliatedLicenses.has(facility) || clinician.approvedInternalAffiliation === true;
     // Outsourced laboratory performers still require an identifiable,
     // explicitly active license and a valid service-date window.
     const externalEligible = allowExternalLab && !!facility &&
@@ -929,9 +909,10 @@
         const entries = clinicianStatusMap[pid] || [];
         const encounterD = parseDMY(encounterStart);
 
-        // Only performing clinician IDs are subject to the hard facility-license rule.
-        // Every performing license must belong to one of our facilities.
+        // Performing clinicians require facility affiliation, an approved
+        // internal affiliation in clinician JSON, or the outsourced lab rule.
         const clinicianFacility = (clinicianMap[pid]?.facility || '').toString().trim().toUpperCase();
+        const approvedInternalAffiliation = clinicianMap[pid]?.approvedInternalAffiliation === true;
 
         let mostRecent = null;
 
@@ -942,6 +923,7 @@
           isActiveEquivalentClinicianStatus(e.status) &&
           !!String(e.facility || '').trim() &&
           (affiliatedLicenses.has(String(e.facility || '').trim().toUpperCase()) ||
+            approvedInternalAffiliation ||
             (isLab && /^(active|about to expire)$/i.test(String(e.status || '').trim())))
         );
 
@@ -970,16 +952,15 @@
               clinicianMap[pid]?.facility || ''
             ).trim().toUpperCase();
 
-            if (affiliatedLicenses.has(legacyFacility)) {
+            if (affiliatedLicenses.has(legacyFacility) || approvedInternalAffiliation) {
               valid = true;
             }
           }
         }
 
-        // Explicitly accepted as a company orthodontist, with the override
-        // limited to missing facility affiliation. Documented inactive or
-        // expired licensing status still takes precedence.
-        if (!valid && MANUAL_ORTHODONTIST_AFFILIATIONS.has(String(pid || '').trim().toUpperCase())) {
+        // Data-driven internal affiliation. This does not assert DoH facility
+        // licensing; explicitly inactive/expired records remain ineligible.
+        if (!valid && approvedInternalAffiliation) {
           const clinician = clinicianMap[pid] || {};
           const status = String(clinician.status || '').trim();
           const from = clinician.from ? parseDMY(clinician.from) : null;
@@ -989,11 +970,14 @@
             (!to || (Number.isFinite(to.getTime()) && encounterD <= to));
           const explicitlyInactiveHistory = historyStates.length > 0 &&
             historyStates.every(e => !isActiveEquivalentClinicianStatus(e.status));
-          if (activeStatus && dateEligible && !explicitlyInactiveHistory &&
-              String(clinician.category || 'Orthodontics').toUpperCase().includes('ORTHODONT')) {
+          if (activeStatus && dateEligible && !explicitlyInactiveHistory) {
             valid = true;
-            remarks.push(`Manual facility-affiliation exception: orthodontist ${pid}; current DoH licensing status must be verified independently`);
+            remarks.push(`Internal affiliation approved in clinician JSON for ${pid}; current DoH licensing status must be verified independently`);
           }
+        }
+
+        if (valid && approvedInternalAffiliation && !String(clinicianMap[pid]?.status || '').trim()) {
+          remarks.push('Internal affiliation approved; current DoH license status is not recorded and must be independently verified');
         }
 
         if (!valid) {
@@ -1023,7 +1007,7 @@
         if (!clinicianLogs[logKey]) {
           const hasStandardAffiliation = affiliatedLicenses.has(clinicianFacility);
           const affiliatedFacilities = clinicianFacility && hasStandardAffiliation ? [clinicianFacility] : [];
-          // Do not show an affiliation if it exists only through an exception.
+          // Data-approved affiliation is not represented as an official facility license.
           clinicianLogs[logKey] = {
             pid,
             performingDisplay,
