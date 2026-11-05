@@ -96,7 +96,7 @@
 
   // User-authorized facility-affiliation exception. This is not a DoH
   // licensing-status verification and must not override an inactive record.
-  const MANUAL_ORTHODONTIST_AFFILIATIONS = new Set(['GD42887']);
+  const MANUAL_ORTHODONTIST_AFFILIATIONS = new Set(['GD42887', 'GD43658']);
 
   let xmlDoc = null, clinicianMap = {}, clinicianStatusMap = {};
   let xmlInput, clinicianInput, statusInput, processBtn, csvBtn, resultsDiv, uploadDiv;
@@ -992,7 +992,7 @@
           if (activeStatus && dateEligible && !explicitlyInactiveHistory &&
               String(clinician.category || 'Orthodontics').toUpperCase().includes('ORTHODONT')) {
             valid = true;
-            remarks.push('Manual facility-affiliation exception: orthodontist GD42887; current DoH licensing status must be verified independently');
+            remarks.push(`Manual facility-affiliation exception: orthodontist ${pid}; current DoH licensing status must be verified independently`);
           }
         }
 
