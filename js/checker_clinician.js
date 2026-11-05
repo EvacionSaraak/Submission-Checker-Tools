@@ -94,6 +94,10 @@
     return PATHOLOGY_KEYWORDS.some(keyword => category.includes(keyword));
   }
 
+  // User-authorized facility-affiliation exception. This is not a DoH
+  // licensing-status verification and must not override an inactive record.
+  const MANUAL_ORTHODONTIST_AFFILIATIONS = new Set(['GD42887']);
+
   let xmlDoc = null, clinicianMap = {}, clinicianStatusMap = {};
   let xmlInput, clinicianInput, statusInput, processBtn, csvBtn, resultsDiv, uploadDiv;
   let claimCount = 0, clinicianCount = 0, historyCount = 0;
@@ -207,8 +211,25 @@
             const count = Object.keys(newClinicianMap).length;
             if (count === 0) throw new Error('clinician_licenses.json loaded, but no usable clinician records were found.');
 
+            // Keep a visible specialty label if this affiliated orthodontist
+            // has not yet been included in the ClinicianLicenses export.
+            for (const license of MANUAL_ORTHODONTIST_AFFILIATIONS) {
+              if (!newClinicianMap[license]) {
+                newClinicianMap[license] = {
+                  name: '',
+                  category: 'Orthodontics',
+                  facility: '',
+                  facilityName: '',
+                  status: '',
+                  from: '',
+                  to: '',
+                  _manualAffiliation: true
+                };
+              }
+            }
+
             clinicianMap = newClinicianMap;
-            clinicianCount = count;
+            clinicianCount = Object.keys(newClinicianMap).length;
             clinicianDataLoaded = true;
             console.log(`[INFO] Loaded ${clinicianCount} clinicians from JSON`);
           })
@@ -952,6 +973,26 @@
             if (affiliatedLicenses.has(legacyFacility)) {
               valid = true;
             }
+          }
+        }
+
+        // Explicitly accepted as a company orthodontist, with the override
+        // limited to missing facility affiliation. Documented inactive or
+        // expired licensing status still takes precedence.
+        if (!valid && MANUAL_ORTHODONTIST_AFFILIATIONS.has(String(pid || '').trim().toUpperCase())) {
+          const clinician = clinicianMap[pid] || {};
+          const status = String(clinician.status || '').trim();
+          const from = clinician.from ? parseDMY(clinician.from) : null;
+          const to = clinician.to ? parseDMY(clinician.to) : null;
+          const activeStatus = !status || isActiveEquivalentClinicianStatus(status);
+          const dateEligible = (!from || (Number.isFinite(from.getTime()) && from <= encounterD)) &&
+            (!to || (Number.isFinite(to.getTime()) && encounterD <= to));
+          const explicitlyInactiveHistory = historyStates.length > 0 &&
+            historyStates.every(e => !isActiveEquivalentClinicianStatus(e.status));
+          if (activeStatus && dateEligible && !explicitlyInactiveHistory &&
+              String(clinician.category || 'Orthodontics').toUpperCase().includes('ORTHODONT')) {
+            valid = true;
+            remarks.push('Manual facility-affiliation exception: orthodontist GD42887; current DoH licensing status must be verified independently');
           }
         }
 
