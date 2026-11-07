@@ -87,7 +87,27 @@ try {
     });
   
   console.log(`Found ${cleanedData.length} valid clinician records`);
-  
+
+  // Preserve internal affiliations independently of the XLSX import.
+  if (fs.existsSync(JSON_OUTPUT_PATH)) {
+    const existing = JSON.parse(fs.readFileSync(JSON_OUTPUT_PATH, 'utf8'));
+    const approvals = new Map(
+      (Array.isArray(existing) ? existing : [])
+        .filter(row => row['Internal Affiliation Approved'] === true)
+        .map(row => [String(row['Phy Lic'] || '').trim().toUpperCase(), row])
+        .filter(([license]) => !!license)
+    );
+    const imported = new Set();
+    for (const row of cleanedData) {
+      const id = String(row['Phy Lic'] || '').trim().toUpperCase();
+      imported.add(id);
+      if (approvals.has(id)) row['Internal Affiliation Approved'] = true;
+    }
+    for (const [id, row] of approvals) {
+      if (!imported.has(id)) cleanedData.push(row);
+    }
+  }
+
   // Write JSON file
   fs.writeFileSync(JSON_OUTPUT_PATH, JSON.stringify(cleanedData, null, 2));
   
