@@ -621,6 +621,10 @@
                 invalidFields.push('Diagnosis Code I48.2 is invalid. Use I48.20 instead.');
                 return;
             }
+            if (code === 'H57.8A2') {
+                invalidFields.push('Diagnosis Code H57.8A2 requires correction to T15.92XA, provided the clinical documentation supports a foreign body in the left external eye, initial encounter.');
+                return;
+            }
             const reportableAlternatives = NON_REPORTABLE_ICD10_CODES.get(code);
             if (reportableAlternatives) {
                 invalidFields.push(`Diagnosis Code ${code} is an incomplete ICD-10-CM category. ` + `Use a specific reportable code: ${formatNaturalList(reportableAlternatives)}, ` + `according to the documented scar type.`);
