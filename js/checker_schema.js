@@ -1703,7 +1703,8 @@
                     // High activity quantities require manual confirmation rather
                     // than making the claim invalid. Default threshold is > 4.
                     // Code 86003 commonly uses higher quantities, so only flag it > 50.
-                    const quantityReviewThreshold = code === '86003' ? 50 : 4;
+                    // CPT 86235 is acceptable through quantity 10; review only above 10.
+                    const quantityReviewThreshold = code === '86003' ? 50 : code === '86235' ? 10 : 4;
                     if (Number.isFinite(quantityValue) && quantityValue > quantityReviewThreshold) {
                         remarks.push(
                             `the quantity for ${code || '(unknown)'} is ${quantity}, kindly double check if this is corrext`
