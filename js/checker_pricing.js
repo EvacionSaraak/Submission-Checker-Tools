@@ -165,10 +165,12 @@ function isPatientShareRequiredForPricingRow(row, options = {}) {
   const code = getPricingRowCode(row);
   if (!code || code.startsWith('97')) return false;
 
-  // A zero-priced 99213 is valid without Patient Share.
-  if (code === '99213' && moneyEqual(getPricingRowNet(row), 0)) return false;
+  // Patient Share is not mandatory for an individually zero-priced
+  // activity, irrespective of its CPT family. This is activity-level Net,
+  // not the total Net of the claim or a different activity.
+  if (moneyEqual(getPricingRowNet(row), 0)) return false;
 
-  // All other 99-series codes require Patient Share for applicable non-HAAD payers.
+  // Positively priced 99-series codes require Patient Share for applicable non-HAAD payers.
   if (code.startsWith('99')) return true;
 
   // In Medical mode, codes beginning with 1 through 6 also require it.
