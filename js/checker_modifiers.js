@@ -915,6 +915,7 @@
     const records = [];
     const claimActivities = new Map();
     const claimDiagnoses = new Map();
+    const claimPatientShares = new Map();
 
     for (const claim of getDirectChildren(rootElement, 'Claim')) {
       const claimID = getDirectChildText(claim, 'ID') || 'Unknown';
@@ -928,6 +929,8 @@
         code: normalizeIdentifier(getDirectChildText(diagnosis, 'Code'))
       }));
       claimDiagnoses.set(claimID, diagnoses);
+      const rawPatientShare = getDirectChildText(claim, 'PatientShare');
+      claimPatientShares.set(claimID, rawPatientShare.trim() === '' ? null : Number(rawPatientShare));
       const activities = [];
 
       for (const activity of getDirectChildren(claim, 'Activity')) {
@@ -1025,11 +1028,12 @@
       receiver,
       records: uniqueRecords,
       claimActivities,
-      claimDiagnoses
+      claimDiagnoses,
+      claimPatientShares
     };
   }
 
-  function buildClaimModifierContext(claimActivities, minorProcedureCodes, claimDiagnoses = new Map()) {
+  function buildClaimModifierContext(claimActivities, minorProcedureCodes, claimDiagnoses = new Map(), claimPatientShares = new Map()) {
     const context = new Map();
 
     for (const [claimID, activities] of claimActivities.entries()) {
@@ -1038,6 +1042,8 @@
         hasMinorProcedure: false,
         hasPricedConsultation: false,
         hasPregnancyDiagnosis: diagnoses.some(diagnosis => String(diagnosis.code || '').startsWith('O')),
+        patientShare: claimPatientShares.get(claimID) ?? null,
+        activities,
         diagnoses
       };
 
@@ -1200,10 +1206,22 @@
         );
         const factoredBasePrice = Math.round((basePrice * factor + Number.EPSILON) * 100) / 100;
         const expectedDiscountedPrice = Math.round((factoredBasePrice * 0.5 + Number.EPSILON) * 100) / 100;
-        if (!moneyEqual(record.Net, expectedDiscountedPrice)) {
+        // Patient Share is reported at claim level. For a single zero-Net
+        // E/M consultation, the exact discounted amount may be entirely
+        // collected as Patient Share rather than recorded in Activity.Net.
+        // Multiple consultations are ambiguous and must not share this waiver.
+        const claimConsultations = (currentClaimContext.activities || [])
+          .filter(activity => isConsultationCode(activity.activityCode));
+        const patientShareCoversConsultation =
+          moneyEqual(record.Net, 0) &&
+          claimConsultations.length === 1 &&
+          String(claimConsultations[0].activityID) === String(record.ActivityID) &&
+          moneyEqual(currentClaimContext.patientShare, expectedDiscountedPrice);
+        if (!moneyEqual(record.Net, expectedDiscountedPrice) && !patientShareCoversConsultation) {
           remarks.push(
             `Modifier 52 on ${record.ActivityCode} must use the 50% E/M price ` +
-            `${expectedDiscountedPrice} (standard ${basePrice} × factor ${factor}); claimed Net is ${record.Net}.`
+            `${expectedDiscountedPrice} (standard ${basePrice} × factor ${factor}); claimed Net is ${record.Net}` +
+            ` and claim Patient Share is ${currentClaimContext.patientShare ?? '(missing)'}.`
           );
         }
       } else {
@@ -2362,7 +2380,7 @@
         minorProcedureRules,
         modifierFactorRules
       ));
-      const claimContext = buildClaimModifierContext(xmlData.claimActivities, minorProcedureCodes, xmlData.claimDiagnoses);
+      const claimContext = buildClaimModifierContext(xmlData.claimActivities, minorProcedureCodes, xmlData.claimDiagnoses, xmlData.claimPatientShares);
       const claimEligibilityMatches = resolveClaimEligibilityMatches(
         xmlData.records,
         xmlData.claimActivities,
