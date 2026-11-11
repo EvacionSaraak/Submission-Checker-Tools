@@ -19,22 +19,24 @@
         const receiverID = xmlDoc.querySelector('Header > ReceiverID')?.textContent?.trim()?.toUpperCase() || '';
         const claims = extractClaims(xmlDoc, { requiredType, claimMode: selectedType, receiverID });
 
-        const invalidRows = claims.filter(r => !r.isValid);
-        window.invalidRows = invalidRows;
+        const counts = countTimingStatuses(claims);
+        const reviewRows = claims.filter(r => r.status !== 'Valid');
+        // Legacy export consumers still read this global, including Unknown findings.
+        window.invalidRows = reviewRows;
         const summaryBox = document.getElementById('resultsSummary');
-        if (summaryBox) summaryBox.textContent = `Valid: ${claims.length - invalidRows.length} / ${claims.length} (${((claims.length - invalidRows.length) / claims.length * 100).toFixed(1)}%)`;
+        if (summaryBox) summaryBox.textContent = formatTimingSummary(counts);
 
         const exportBtn = document.getElementById('exportBtn');
         if (exportBtn) {
-          exportBtn.style.display = invalidRows.length ? 'inline-block' : 'none';
+          exportBtn.style.display = reviewRows.length ? 'inline-block' : 'none';
           exportBtn.onclick = () => {
             const wb = XLSX.utils.book_new();
             const wsData = [
-              ['Claim ID', 'Activity ID', 'Type', 'Encounter Start', 'Encounter End', 'Activity Start', 'Duration', 'Excess', 'Remarks'],
-              ...window.invalidRows.map(r => [r.claimId, r.activityId, r.type, r.encounterStart, r.encounterEnd, r.start, r.duration, r.excess, r.remarks.map(s => s && !s.endsWith('.') ? s + '.' : s).join('; ')])
+              ['Claim ID', 'Activity ID', 'Activity Type', 'Encounter Type', 'Status', 'Encounter Start', 'Encounter End', 'Activity Start', 'Duration', 'Excess', 'Remarks'],
+              ...window.invalidRows.map(r => [r.claimId, r.activityId, r.type, formatEncounterTypeForDisplay(r), r.status, r.encounterStart, r.encounterEnd, r.start, r.duration, r.excess, r.remarks.map(s => s && !s.endsWith('.') ? s + '.' : s).join('; ')])
             ];
-            XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(wsData), 'Invalid Timings');
-            XLSX.writeFile(wb, 'invalid_timings.xlsx');
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(wsData), 'Timing Findings');
+            XLSX.writeFile(wb, 'timing_findings.xlsx');
           };
         }
 
@@ -109,6 +111,43 @@
     }
 
     // --- Claims Extraction/Validation ---
+    // Encounter.Type governs the general duration rule. Activity.Type remains
+    // independent and still governs code-specific validations.
+    function getEncounterTimingClassification(value) {
+      const type = String(value || '').trim();
+      if (type === '1') return { type, label: 'Outpatient', outpatient: true, review: false };
+      if (type === '3') return { type, label: 'Inpatient', outpatient: false, review: true };
+      if (type === '5') return { type, label: 'Daycase', outpatient: false, review: true };
+      return { type, label: 'Unrecognized', outpatient: false, review: true };
+    }
+
+    function formatExactEncounterDuration(minutes) {
+      if (!Number.isFinite(minutes) || minutes < 0) return 'N/A';
+      return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+    }
+
+    function getTimingStatus(isValid, reviewRequired) {
+      return !isValid ? 'Invalid' : (reviewRequired ? 'Unknown' : 'Valid');
+    }
+
+    function countTimingStatuses(rows) {
+      return (rows || []).reduce((counts, row) => {
+        const status = row.status || (row.isValid ? 'Valid' : 'Invalid');
+        counts[status] = (counts[status] || 0) + 1;
+        counts.total++;
+        return counts;
+      }, { Valid: 0, Unknown: 0, Invalid: 0, total: 0 });
+    }
+
+    function formatTimingSummary(counts) {
+      const percentage = counts.total ? (counts.Valid / counts.total * 100).toFixed(1) : '0.0';
+      return `Valid: ${counts.Valid} / ${counts.total} (${percentage}%) | Unknown: ${counts.Unknown} | Invalid: ${counts.Invalid}`;
+    }
+
+    function formatEncounterTypeForDisplay(row) {
+      return `${row.encounterType || '(missing)'} — ${row.encounterLabel || 'Unrecognized'}`;
+    }
+
     function getMaximumEncounterMinutes({ claimMode, receiverID }) {
       const isMedical = String(claimMode || '').trim().toUpperCase() === 'MEDICAL';
       const isHaad = String(receiverID || '').trim().toUpperCase() === 'HAAD';
@@ -127,6 +166,9 @@
       xmlDoc.querySelectorAll('Claim').forEach(claim => {
         const claimId = claim.querySelector('ID')?.textContent?.trim() || 'Unknown';
         const encounter = claim.querySelector('Encounter');
+        const encounterType = encounter?.querySelector('Type')?.textContent?.trim() || '';
+        const encounterClassification = getEncounterTimingClassification(encounterType);
+        const encounterLabel = encounterClassification.label;
         const encounterStartStr = encounter?.querySelector('Start')?.textContent?.trim() || '';
         const encounterEndStr = encounter?.querySelector('End')?.textContent?.trim() || '';
         if (!encounterStartStr || !encounterEndStr) return;
@@ -139,6 +181,42 @@
         let baseValid = true;
         const baseRemarks = [];
         if (encounterMinutes < 0) { baseValid = false; baseRemarks.push('Encounter end is before encounter start.'); }
+
+        // Inpatient and Daycase claims always require human review, even when
+        // timestamps are consistent. This is not an automatic Invalid finding.
+        // A stay <24 hours receives an additional duration-verification remark.
+        // No OP maximum (or general 10-minute minimum) is imposed on either.
+        if (encounterType === '3' || encounterType === '5') {
+          baseRemarks.push(`Encounter Type ${encounterType} — ${encounterLabel}: manual review required.`);
+          if (encounterMinutes >= 0 && encounterMinutes < 1440) {
+            baseRemarks.push(
+              `${encounterLabel} duration is ${formatExactEncounterDuration(encounterMinutes)} (under 24 hours). ` +
+              'Kindly verify encounter duration and supporting clinical documentation.'
+            );
+          } else if (encounterType === '5' && encounterMinutes >= 1440) {
+            baseRemarks.push(
+              `Daycase duration is ${formatExactEncounterDuration(encounterMinutes)} (24 hours or more). ` +
+              'Kindly verify the Daycase classification and supporting documentation.'
+            );
+          }
+        } else if (!encounterClassification.outpatient) {
+          baseRemarks.push(
+            `Encounter Type ${encounterType || '(missing)'} is not configured for outpatient timing checks. ` +
+            'Kindly verify encounter classification.'
+          );
+        }
+
+        const makeRow = (fields, isValid) => {
+          const status = getTimingStatus(isValid, encounterClassification.review);
+          return {
+            ...fields,
+            encounterType,
+            encounterLabel,
+            status,
+            isUnknown: status === 'Unknown',
+            isValid: status === 'Valid'
+          };
+        };
 
         const activities = Array.from(claim.querySelectorAll('Activity'));
 
@@ -175,7 +253,7 @@
           if (!activityStartStr) {
             isValid = false;
             remarks.push('Missing Activity Start');
-            results.push({ claimId, activityId, type: typeValue, encounterStart: encounterStartStr, encounterEnd: encounterEndStr, start: 'N/A', duration: formatDuration(encounterMinutes), excess: 'N/A', isValid, remarks });
+            results.push(makeRow({ claimId, activityId, type: typeValue, encounterStart: encounterStartStr, encounterEnd: encounterEndStr, start: 'N/A', duration: formatDuration(encounterMinutes), excess: 'N/A', remarks }, isValid));
             return;
           }
 
@@ -186,10 +264,10 @@
           if (activityStart && activityStart < encounterStart) { isValid = false; remarks.push('Activity start is before encounter start.'); }
           if (activityStart && activityStart > encounterEnd) { isValid = false; remarks.push('Activity start is after encounter end.'); }
 
-          if (encounterMinutes >= 0 && encounterMinutes < 10 && !has97Activities) {
+          if (encounterClassification.outpatient && encounterMinutes >= 0 && encounterMinutes < 10 && !has97Activities) {
             isValid = false;
             remarks.push(`Encounter duration too short (${encounterMinutes} min). Should be 10 minutes minimum.`);
-          } else if (encounterMinutes > maximumEncounterMinutes) {
+          } else if (encounterClassification.outpatient && encounterMinutes > maximumEncounterMinutes) {
             isValid = false;
             if (encounterMinutes >= 1440) {
               const [startDate] = encounterStartStr.split(' ');
@@ -213,7 +291,7 @@
             if (!Number.isFinite(quantityValue) || quantityValue <= 0) { isValid = false; remarks.push(`${codeValue} has an invalid therapy quantity.`); }
           }
 
-          results.push({ claimId, activityId, type: typeValue, encounterStart: encounterStartStr, encounterEnd: encounterEndStr, start: activityStartStr, duration: formatDuration(encounterMinutes), excess: Number.isNaN(excessMinutes) ? 'N/A' : formatDuration(excessMinutes), isValid, remarks });
+          results.push(makeRow({ claimId, activityId, type: typeValue, encounterStart: encounterStartStr, encounterEnd: encounterEndStr, start: activityStartStr, duration: formatDuration(encounterMinutes), excess: Number.isNaN(excessMinutes) ? 'N/A' : formatDuration(excessMinutes), remarks }, isValid));
         });
       });
 
@@ -261,10 +339,10 @@
       const exportBtn = document.getElementById('exportBtn');
       if (!rows.length) { container.innerHTML = '<p>No entries found.</p>'; summaryBox.textContent = ''; exportBtn.style.display = 'none'; return; }
 
-      const invalidRows = rows.filter(r => !r.isValid);
-      window.invalidRows = invalidRows;
-      exportBtn.style.display = invalidRows.length ? 'inline-block' : 'none';
-      summaryBox.textContent = `Valid: ${rows.length - invalidRows.length} / ${rows.length} (${((rows.length - invalidRows.length) / rows.length * 100).toFixed(1)}%)`;
+      const reviewRows = rows.filter(r => r.status !== 'Valid');
+      window.invalidRows = reviewRows;
+      exportBtn.style.display = reviewRows.length ? 'inline-block' : 'none';
+      summaryBox.textContent = formatTimingSummary(countTimingStatuses(rows));
       container.innerHTML = buildResultsTable(rows);
 
       const observer = new MutationObserver(() => fillMissingClaimIds());
@@ -298,7 +376,9 @@
         <thead><tr>
           <th style="padding:8px;border:1px solid #ccc">Claim ID</th>
           <th style="padding:8px;border:1px solid #ccc">Activity ID</th>
-          <th style="padding:8px;border:1px solid #ccc">Type</th>
+          <th style="padding:8px;border:1px solid #ccc">Activity Type</th>
+          <th style="padding:8px;border:1px solid #ccc">Encounter Type</th>
+          <th style="padding:8px;border:1px solid #ccc">Status</th>
           <th style="padding:8px;border:1px solid #ccc">Encounter Start</th>
           <th style="padding:8px;border:1px solid #ccc">Encounter End</th>
           <th style="padding:8px;border:1px solid #ccc">Activity Start</th>
@@ -310,10 +390,13 @@
           const claimCell = r.claimId !== prevClaimId ? r.claimId : '';
           prevClaimId = r.claimId;
           const remarkLines = (r.remarks || []).map(line => `<div>${sanitize(line)}</div>`).join('');
-          return `<tr class="${r.isValid ? 'table-success' : 'table-danger'}" data-claim-id="${sanitize(r.claimId || '')}">
+          const statusClass = r.status === 'Invalid' ? 'table-danger' : (r.status === 'Unknown' ? 'table-warning' : 'table-success');
+          return `<tr class="${statusClass}" data-claim-id="${sanitize(r.claimId || '')}">
             <td class="claim-id-cell" style="padding:6px;border:1px solid #ccc">${sanitize(claimCell)}</td>
             <td style="padding:6px;border:1px solid #ccc">${sanitize(r.activityId)}</td>
             <td style="padding:6px;border:1px solid #ccc">${sanitize(r.type || '')}</td>
+            <td style="padding:6px;border:1px solid #ccc">${sanitize(formatEncounterTypeForDisplay(r))}</td>
+            <td style="padding:6px;border:1px solid #ccc">${sanitize(r.status || '')}</td>
             <td style="padding:6px;border:1px solid #ccc">${sanitize(r.encounterStart)}</td>
             <td style="padding:6px;border:1px solid #ccc">${sanitize(r.encounterEnd)}</td>
             <td style="padding:6px;border:1px solid #ccc">${sanitize(r.start)}</td>
@@ -353,7 +436,7 @@
     window.validateTimingsAsync = validateTimingsAsync;
 
     // Expose test API for Node.js tests.
-    window._timingsTestApi = { extractClaims, get97BandForDuration, calculate97DurationRange, SERIES_97_BANDS };
+    window._timingsTestApi = { extractClaims, getEncounterTimingClassification, getTimingStatus, countTimingStatuses, get97BandForDuration, calculate97DurationRange, SERIES_97_BANDS };
 
     // Initialize legacy handler only on the standalone Timing checker page.
     const xmlFileInput = document.getElementById('xmlFileInput');
