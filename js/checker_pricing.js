@@ -37,6 +37,24 @@ function isPricingExcludedReceiver(receiverID) {
 const DAMAN_RECEIVER_IDS = new Set(['D004', 'A001']);
 const DRUG_FORMULARY_RECEIVER_IDS = new Set(['D004', 'D001']);
 const DRUG_MANUAL_QUANTITY_RECEIVER_IDS = new Set(['D004', 'A001', 'D001']);
+// Drug codes explicitly reported as de-activated for submission.
+// Applies even if a supplied/bundled Drugs.xlsx omits the code or marks it Active.
+const DEACTIVATED_DRUG_CODES = new Set([
+  'I66-3614-05482-01',
+  'I61-3220-01086-01',
+  'B97-4882-05179-02'
+]);
+
+function getDeactivatedDrugCodeFinding(code) {
+  const normalized = String(code || '').trim().toUpperCase();
+  if (!DEACTIVATED_DRUG_CODES.has(normalized)) return null;
+  return {
+    ruleId: 'DRUG_DEACTIVATED_AUDITOR_CHANGE',
+    status: 'Invalid',
+    remark: `Drug code ${normalized} is de-activated. Kindly inform the Auditor to change this drug code.`
+  };
+}
+
 const THIQA_RECEIVER_ID = 'D001';
 // Khabisi (MF5020) services that always use factor 1.3.
 // This includes the infusion services plus 94640 and 96372.
@@ -2447,6 +2465,30 @@ async function handleRun(options = {}) {
         }
       }
     }
+    // Run after claim-level adjustments to ensure these codes cannot pass
+    // due to zero-Net bypass, missing Drugs.xlsx entries, or other pricing rules.
+    output.forEach(row => {
+      const finding = getDeactivatedDrugCodeFinding(row.CPT || row.DrugCode);
+      if (!finding) return;
+
+      const priorFindings = Array.isArray(row.findings) ? row.findings : [];
+      if (!priorFindings.some(item => item.ruleId === finding.ruleId)) {
+        priorFindings.push(asMedicalFinding({
+          ...finding,
+          claimID: row.ClaimID,
+          activityID: row.ActivityID,
+          code: row.CPT
+        }));
+      }
+      row.findings = priorFindings;
+      row.status = 'Invalid';
+      row.isValid = false;
+      if (!String(row.Remarks || '').includes(finding.remark)) {
+        row.Remarks = [String(row.Remarks || '').trim(), finding.remark]
+          .filter(Boolean).join(' ');
+      }
+    });
+
     const mergedOutput = output;
     lastResults = mergedOutput;
     const tableElement = buildResultsTable(mergedOutput);
