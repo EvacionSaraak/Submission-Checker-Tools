@@ -1,0 +1,979 @@
+{
+  "metadata": {
+    "version": "2026-11-11.1",
+    "title": "Encounter timing: inpatient/daycase code hints",
+    "status": "REFERENCE_ONLY_NOT_ACTIVATED",
+    "purpose": "Support manual/contextual interpretation of encounter timing; do not use code presence as automatic evidence of inpatient admission or current billing validity.",
+    "catalogSource": "json/medical_pricing.json",
+    "catalogRows": 20441,
+    "catalogTypes": {
+      "CPT": 20343,
+      "SERVICE": 98
+    },
+    "policySources": [
+      "https://www.doh.gov.ae/-/media/Feature/shafifya/Prices/Adjudication-Rules/DOH-Claims-and-Adjudication-Rules-V20251.ashx",
+      "https://www.doh.gov.ae/en/Shafafiya/Prices",
+      "https://shafafiyaportal.doh.gov.ae/dictionary/CommonTypes_xsd.html"
+    ],
+    "lastVerifiedAgainstLiveCodeStatus": false,
+    "warning": "Catalog membership does not establish that a code is current, reimbursable, or appropriate for a particular date, payer, facility or encounter."
+  },
+  "identifiers": {
+    "encounterTypeIsPrimarySourceOfSetting": true,
+    "encounterTypes": {
+      "1": "OUTPATIENT_NO_ER",
+      "3": "INPATIENT_NO_ER",
+      "5": "DAYCASE_NO_ER"
+    },
+    "activityTypes": {
+      "3": "CPT",
+      "4": "HCPCS",
+      "5": "DRUG",
+      "6": "DENTAL",
+      "8": "SERVICE",
+      "9": "IR_DRG",
+      "10": "GENERIC_DRUG"
+    },
+    "codeKeyFormat": "Activity.Type + ':' + normalized Activity.Code; do not match bare code alone"
+  },
+  "proposedTimingPolicy": {
+    "encounterType1": {
+      "generalDuration": "retain_existing_outpatient_rules",
+      "codeSpecificTiming": "retain"
+    },
+    "encounterType3": {
+      "generalDuration": "no_universal_maximum",
+      "shorterThan12Hours": "manual_review_only_not_automatic_invalid",
+      "reason": "Admission is expected to exceed 12 hours and overnight; actual stay alone does not prove incorrect type.",
+      "codeSpecificTiming": "retain"
+    },
+    "encounterType5": {
+      "generalDuration": "no_outpatient_maximum",
+      "overnightAndExceeds12Hours": "manual_review_encounter_reclassification",
+      "codeSpecificTiming": "retain"
+    },
+    "otherTypes": {
+      "generalDuration": "manual_review_unknown_or_not_supported_for_facility"
+    },
+    "alwaysValidate": [
+      "encounter_end_after_start",
+      "activity_start_within_encounter",
+      "code_specific_timing_if_applicable"
+    ],
+    "notes": "DoH V2025.1 requires IR-DRG for inpatient and non-dental daycase. Activity.Type=9 is NOT an inpatient-only signal. Rules may be updated by new circulars and tariff versions."
+  },
+  "catalogGroups": [
+    {
+      "id": "inpatient_per_diem",
+      "activityType": "8",
+      "interpretation": "Hospital bed/unit per-diem indicators. Not proof of allowed billing or encounter type.",
+      "settingHint": "IP_OR_SPECIAL_SETTING",
+      "codeCount": 24
+    },
+    {
+      "id": "inpatient_room_and_unit",
+      "activityType": "8",
+      "interpretation": "Room/ward, ICU, nursery and special-care accommodation indicators. Not a standalone inpatient diagnosis or proof of permissible billing.",
+      "settingHint": "IP_OR_SPECIAL_SETTING",
+      "codeCount": 19
+    },
+    {
+      "id": "long_term_stay",
+      "activityType": "8",
+      "interpretation": "Long-term care per-diem services; do not assume acute inpatient encounter from these codes.",
+      "settingHint": "LTC_REVIEW",
+      "codeCount": 4
+    },
+    {
+      "id": "daycase_and_observation_room",
+      "activityType": "8",
+      "interpretation": "Short-stay, recovery and day-stay descriptors; some support daycase but room usage alone does not establish Encounter.Type 5.",
+      "settingHint": "DAYCASE_OR_OBSERVATION",
+      "codeCount": 7
+    },
+    {
+      "id": "hospital_evaluation_management",
+      "activityType": "3",
+      "interpretation": "Hospital E/M entries often applicable to both inpatient and observation after CPT updates; verify current code status and setting rules.",
+      "settingHint": "HOSPITAL_CONTEXT_ONLY",
+      "codeCount": 11
+    },
+    {
+      "id": "inpatient_consultation_legacy_catalog",
+      "activityType": "3",
+      "interpretation": "Catalog descriptions name inpatient consultation, but current validity must be confirmed; do not auto-approve or auto-block from this list.",
+      "settingHint": "HOSPITAL_CONTEXT_ONLY",
+      "codeCount": 5
+    },
+    {
+      "id": "neonatal_pediatric_inpatient_care",
+      "activityType": "3",
+      "interpretation": "Inpatient neonatal/pediatric critical or intensive care descriptions; setting hint only, no encounter-duration inference.",
+      "settingHint": "IP_CONTEXT_ONLY",
+      "codeCount": 10
+    },
+    {
+      "id": "hospital_ventilation",
+      "activityType": "3",
+      "interpretation": "Descriptions explicitly allow hospital inpatient OR observation; not inpatient-exclusive.",
+      "settingHint": "HOSPITAL_CONTEXT_ONLY",
+      "codeCount": 2
+    },
+    {
+      "id": "critical_care_any_setting",
+      "activityType": "3",
+      "interpretation": "Critical care does not itself prove inpatient status.",
+      "settingHint": "SETTING_AMBIGUOUS",
+      "codeCount": 2
+    },
+    {
+      "id": "observation_care_legacy_catalog",
+      "activityType": "3",
+      "interpretation": "Observation status codes; do not equate observation care with inpatient admission. Confirm current code validity.",
+      "settingHint": "OBSERVATION_CONTEXT_ONLY",
+      "codeCount": 7
+    }
+  ],
+  "entries": [
+    {
+      "activityType": "8",
+      "code": "1",
+      "category": "inpatient_per_diem",
+      "settingHint": "IP_OR_SPECIAL_SETTING",
+      "description": "Perdiem - Ward or Shared Room - Daily Rate (Day 1 to 3)",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "8",
+      "code": "2",
+      "category": "inpatient_per_diem",
+      "settingHint": "IP_OR_SPECIAL_SETTING",
+      "description": "Perdiem - Ward or Shared Room - Daily Rate (Day 4 to 8)",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "8",
+      "code": "3",
+      "category": "inpatient_per_diem",
+      "settingHint": "IP_OR_SPECIAL_SETTING",
+      "description": "Perdiem - Ward or Shared Room - Daily Rate (Day 8 and more)",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "8",
+      "code": "4",
+      "category": "inpatient_per_diem",
+      "settingHint": "IP_OR_SPECIAL_SETTING",
+      "description": "Perdiem - ICU/CCU - Daily Rate (Day 1 to 7)",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "8",
+      "code": "4-01",
+      "category": "inpatient_per_diem",
+      "settingHint": "IP_OR_SPECIAL_SETTING",
+      "description": "Perdiem - ICU/CCU - Daily Rate (Day 8 to 14)",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "8",
+      "code": "4-02",
+      "category": "inpatient_per_diem",
+      "settingHint": "IP_OR_SPECIAL_SETTING",
+      "description": "Perdiem - ICU/CCU - Daily Rate (Day 15 to 21)",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "8",
+      "code": "4-03",
+      "category": "inpatient_per_diem",
+      "settingHint": "IP_OR_SPECIAL_SETTING",
+      "description": "Perdiem - ICU/CCU - Daily Rate (Day 22 and more)",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "8",
+      "code": "5",
+      "category": "inpatient_per_diem",
+      "settingHint": "IP_OR_SPECIAL_SETTING",
+      "description": "Perdiem - NICU - Daily Rate (Day 1 to 7)",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "8",
+      "code": "6",
+      "category": "inpatient_per_diem",
+      "settingHint": "IP_OR_SPECIAL_SETTING",
+      "description": "Perdiem - NICU - Daily Rate (Day 8 to 14)",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "8",
+      "code": "7",
+      "category": "inpatient_per_diem",
+      "settingHint": "IP_OR_SPECIAL_SETTING",
+      "description": "Perdiem - NICU - Daily Rate (Day 15 to 21)",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "8",
+      "code": "8",
+      "category": "inpatient_per_diem",
+      "settingHint": "IP_OR_SPECIAL_SETTING",
+      "description": "Perdiem - NICU - Daily Rate (Day 22 and more)",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "8",
+      "code": "17-07",
+      "category": "inpatient_per_diem",
+      "settingHint": "IP_OR_SPECIAL_SETTING",
+      "description": "Perdiem - PICU - Daily Rate (Day 1 to 7)",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "8",
+      "code": "17-07-01",
+      "category": "inpatient_per_diem",
+      "settingHint": "IP_OR_SPECIAL_SETTING",
+      "description": "Perdiem - PICU - Daily Rate (Day 8 to 14)",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "8",
+      "code": "17-07-02",
+      "category": "inpatient_per_diem",
+      "settingHint": "IP_OR_SPECIAL_SETTING",
+      "description": "Perdiem - PICU - Daily Rate (Day 15 to 21)",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "8",
+      "code": "17-07-03",
+      "category": "inpatient_per_diem",
+      "settingHint": "IP_OR_SPECIAL_SETTING",
+      "description": "Perdiem - PICU - Daily Rate (Day 22 and more)",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "8",
+      "code": "17-12",
+      "category": "inpatient_per_diem",
+      "settingHint": "IP_OR_SPECIAL_SETTING",
+      "description": "Perdiem - New-born Nursery - Daily Rate (Day 1 to 3)",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "8",
+      "code": "17-12-01",
+      "category": "inpatient_per_diem",
+      "settingHint": "IP_OR_SPECIAL_SETTING",
+      "description": "Perdiem - New-born Nursery - Daily Rate (Day 4 to 8)",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "8",
+      "code": "17-12-02",
+      "category": "inpatient_per_diem",
+      "settingHint": "IP_OR_SPECIAL_SETTING",
+      "description": "Perdiem - New-born Nursery - Daily Rate (Day 9 and more)",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "8",
+      "code": "18",
+      "category": "inpatient_per_diem",
+      "settingHint": "IP_OR_SPECIAL_SETTING",
+      "description": "Perdiem - SCU - Daily Rate (Day 1 to 3)",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "8",
+      "code": "18-01",
+      "category": "inpatient_per_diem",
+      "settingHint": "IP_OR_SPECIAL_SETTING",
+      "description": "Perdiem - SCU - Daily Rate (Day 4 to 8)",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "8",
+      "code": "18-02",
+      "category": "inpatient_per_diem",
+      "settingHint": "IP_OR_SPECIAL_SETTING",
+      "description": "Perdiem - SCU - Daily Rate (Day 9 and more)",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "8",
+      "code": "19",
+      "category": "inpatient_per_diem",
+      "settingHint": "IP_OR_SPECIAL_SETTING",
+      "description": "Perdiem - SCBU - Daily Rate (Day 1 to 3)",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "8",
+      "code": "19-01",
+      "category": "inpatient_per_diem",
+      "settingHint": "IP_OR_SPECIAL_SETTING",
+      "description": "Perdiem - SCBU - Daily Rate (Day 4 to 8)",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "8",
+      "code": "19-02",
+      "category": "inpatient_per_diem",
+      "settingHint": "IP_OR_SPECIAL_SETTING",
+      "description": "Perdiem - SCBU - Daily Rate (Day 9 and more)",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "8",
+      "code": "3-01",
+      "category": "inpatient_room_and_unit",
+      "settingHint": "IP_OR_SPECIAL_SETTING",
+      "description": "Room Rate difference - Daily Rate (Day 1 and more ) - Suite",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "8",
+      "code": "3-02",
+      "category": "inpatient_room_and_unit",
+      "settingHint": "IP_OR_SPECIAL_SETTING",
+      "description": "Room Rate difference - Daily Rate (Day 1 and more ) - VIP Room",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "8",
+      "code": "3-03",
+      "category": "inpatient_room_and_unit",
+      "settingHint": "IP_OR_SPECIAL_SETTING",
+      "description": "Room Rate difference - Daily Rate (Day 1 and more ) - First Class Room",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "8",
+      "code": "3-06",
+      "category": "inpatient_room_and_unit",
+      "settingHint": "IP_OR_SPECIAL_SETTING",
+      "description": "Room Rate difference - Daily Rate (Day 1 and more ) - Royal Suite",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "8",
+      "code": "3-10",
+      "category": "inpatient_room_and_unit",
+      "settingHint": "IP_OR_SPECIAL_SETTING",
+      "description": "Room Rate difference - Daily Rate (Day 1 and more ) - Isolation Room",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "8",
+      "code": "17-01",
+      "category": "inpatient_room_and_unit",
+      "settingHint": "IP_OR_SPECIAL_SETTING",
+      "description": "Room and Board: Suite",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "8",
+      "code": "17-02",
+      "category": "inpatient_room_and_unit",
+      "settingHint": "IP_OR_SPECIAL_SETTING",
+      "description": "Room and Board: VIP Room",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "8",
+      "code": "17-03",
+      "category": "inpatient_room_and_unit",
+      "settingHint": "IP_OR_SPECIAL_SETTING",
+      "description": "Room and Board: First Class Room",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "8",
+      "code": "17-04",
+      "category": "inpatient_room_and_unit",
+      "settingHint": "IP_OR_SPECIAL_SETTING",
+      "description": "Room and Board: Shared Room",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "8",
+      "code": "17-05",
+      "category": "inpatient_room_and_unit",
+      "settingHint": "IP_OR_SPECIAL_SETTING",
+      "description": "Room and Board: Ward",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "8",
+      "code": "17-06",
+      "category": "inpatient_room_and_unit",
+      "settingHint": "IP_OR_SPECIAL_SETTING",
+      "description": "Room and Board: Royal Suite",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "8",
+      "code": "17-10",
+      "category": "inpatient_room_and_unit",
+      "settingHint": "IP_OR_SPECIAL_SETTING",
+      "description": "Room and Board: Isolation Room",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "8",
+      "code": "27",
+      "category": "inpatient_room_and_unit",
+      "settingHint": "IP_OR_SPECIAL_SETTING",
+      "description": "Intensive Care Unit (ICU)",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "8",
+      "code": "27-01",
+      "category": "inpatient_room_and_unit",
+      "settingHint": "IP_OR_SPECIAL_SETTING",
+      "description": "Coronary Care Unit (CCU)",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "8",
+      "code": "28",
+      "category": "inpatient_room_and_unit",
+      "settingHint": "IP_OR_SPECIAL_SETTING",
+      "description": "Neonatal Intensive Care Unit (NICU)",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "8",
+      "code": "29",
+      "category": "inpatient_room_and_unit",
+      "settingHint": "IP_OR_SPECIAL_SETTING",
+      "description": "Special Care Unit (SCU) or Adult Special-Care Unit (ASCU)",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "8",
+      "code": "30",
+      "category": "inpatient_room_and_unit",
+      "settingHint": "IP_OR_SPECIAL_SETTING",
+      "description": "Special Care Baby Unit (SCBU)",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "8",
+      "code": "31",
+      "category": "inpatient_room_and_unit",
+      "settingHint": "IP_OR_SPECIAL_SETTING",
+      "description": "Paediatric intensive care Unit (PICU)",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "8",
+      "code": "32",
+      "category": "inpatient_room_and_unit",
+      "settingHint": "IP_OR_SPECIAL_SETTING",
+      "description": "Nursery - General Classification",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "8",
+      "code": "17-13",
+      "category": "long_term_stay",
+      "settingHint": "LTC_REVIEW",
+      "description": "Perdiem - Long Term Stay - Daily Rate - Simple Cases",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "8",
+      "code": "17-14",
+      "category": "long_term_stay",
+      "settingHint": "LTC_REVIEW",
+      "description": "Perdiem - Long Term Stay - Daily Rate - Intermediate Cases",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "8",
+      "code": "17-15",
+      "category": "long_term_stay",
+      "settingHint": "LTC_REVIEW",
+      "description": "Perdiem - Long Term Stay - Daily Rate - Intensive Cases",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "8",
+      "code": "17-16",
+      "category": "long_term_stay",
+      "settingHint": "LTC_REVIEW",
+      "description": "Perdiem - Long Term Stay - Daily Rate - Severe Cases",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "8",
+      "code": "24",
+      "category": "daycase_and_observation_room",
+      "settingHint": "DAYCASE_OR_OBSERVATION",
+      "description": "Perdiem - Short Stay",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "8",
+      "code": "25-01",
+      "category": "daycase_and_observation_room",
+      "settingHint": "DAYCASE_OR_OBSERVATION",
+      "description": "Perdiem - Day Stay (Day care) Medical Case - Inclusive.",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "8",
+      "code": "25-02",
+      "category": "daycase_and_observation_room",
+      "settingHint": "DAYCASE_OR_OBSERVATION",
+      "description": "Perdiem - Day Stay (Day care) Surgical Case - Inclusive.",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "8",
+      "code": "17-22",
+      "category": "daycase_and_observation_room",
+      "settingHint": "DAYCASE_OR_OBSERVATION",
+      "description": "Short Stay Room - Hourly Rate",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "8",
+      "code": "17-23",
+      "category": "daycase_and_observation_room",
+      "settingHint": "DAYCASE_OR_OBSERVATION",
+      "description": "Recovery Room - Hourly Rate",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "8",
+      "code": "17-24",
+      "category": "daycase_and_observation_room",
+      "settingHint": "DAYCASE_OR_OBSERVATION",
+      "description": "Short Stay Room - Daily Rate",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "8",
+      "code": "17-25",
+      "category": "daycase_and_observation_room",
+      "settingHint": "DAYCASE_OR_OBSERVATION",
+      "description": "Day Stay (Day care) Room - Daily Rate",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "3",
+      "code": "99221",
+      "category": "hospital_evaluation_management",
+      "settingHint": "HOSPITAL_CONTEXT_ONLY",
+      "description": "Initial hospital care, per day, for the evaluation and management of a patient, which requires these 3 key components: A detailed or comprehensive history; A detailed or comprehensive examination; and Medical decision making that is straightforward or of low complexity. Counseling and/or coordination of care with other physicians, other qualified health care professionals, or agencies are provided consistent with the nature of the problem(s) and the patient's and/or family's needs. Usually, the problem(s) requiring admission are of low severity. Typically, 30 minutes are spent at the bedside and on the patient's hospital floor or unit.",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "3",
+      "code": "99222",
+      "category": "hospital_evaluation_management",
+      "settingHint": "HOSPITAL_CONTEXT_ONLY",
+      "description": "Initial hospital care, per day, for the evaluation and management of a patient, which requires these 3 key components: A comprehensive history; A comprehensive examination; and Medical decision making of moderate complexity. Counseling and/or coordination of care with other physicians, other qualified health care professionals, or agencies are provided consistent with the nature of the problem(s) and the patient's and/or family's needs. Usually, the problem(s) requiring admission are of moderate severity. Typically, 50 minutes are spent at the bedside and on the patient's hospital floor or unit.",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "3",
+      "code": "99223",
+      "category": "hospital_evaluation_management",
+      "settingHint": "HOSPITAL_CONTEXT_ONLY",
+      "description": "Initial hospital care, per day, for the evaluation and management of a patient, which requires these 3 key components: A comprehensive history; A comprehensive examination; and Medical decision making of high complexity. Counseling and/or coordination of care with other physicians, other qualified health care professionals, or agencies are provided consistent with the nature of the problem(s) and the patient's and/or family's needs. Usually, the problem(s) requiring admission are of high severity. Typically, 70 minutes are spent at the bedside and on the patient's hospital floor or unit.",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "3",
+      "code": "99231",
+      "category": "hospital_evaluation_management",
+      "settingHint": "HOSPITAL_CONTEXT_ONLY",
+      "description": "Subsequent hospital care, per day, for the evaluation and management of a patient, which requires at least 2 of these 3 key components: A problem focused interval history; A problem focused examination; Medical decision making that is straightforward or of low complexity. Counseling and/or coordination of care with other physicians, other qualified health care professionals, or agencies are provided consistent with the nature of the problem(s) and the patient's and/or family's needs. Usually, the patient is stable, recovering or improving. Typically, 15 minutes are spent at the bedside and on the patient's hospital floor or unit.",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "3",
+      "code": "99232",
+      "category": "hospital_evaluation_management",
+      "settingHint": "HOSPITAL_CONTEXT_ONLY",
+      "description": "Subsequent hospital care, per day, for the evaluation and management of a patient, which requires at least 2 of these 3 key components: An expanded problem focused interval history; An expanded problem focused examination; Medical decision making of moderate complexity. Counseling and/or coordination of care with other physicians, other qualified health care professionals, or agencies are provided consistent with the nature of the problem(s) and the patient's and/or family's needs. Usually, the patient is responding inadequately to therapy or has developed a minor complication. Typically, 25 minutes are spent at the bedside and on the patient's hospital floor or unit.",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "3",
+      "code": "99233",
+      "category": "hospital_evaluation_management",
+      "settingHint": "HOSPITAL_CONTEXT_ONLY",
+      "description": "Subsequent hospital care, per day, for the evaluation and management of a patient, which requires at least 2 of these 3 key components: A detailed interval history; A detailed examination; Medical decision making of high complexity. Counseling and/or coordination of care with other physicians, other qualified health care professionals, or agencies are provided consistent with the nature of the problem(s) and the patient's and/or family's needs. Usually, the patient is unstable or has developed a significant complication or a significant new problem. Typically, 35 minutes are spent at the bedside and on the patient's hospital floor or unit.",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "3",
+      "code": "99234",
+      "category": "hospital_evaluation_management",
+      "settingHint": "HOSPITAL_CONTEXT_ONLY",
+      "description": "Observation or inpatient hospital care, for the evaluation and management of a patient including admission and discharge on the same date, which requires these 3 key components: A detailed or comprehensive history; A detailed or comprehensive examination; and Medical decision making that is straightforward or of low complexity. Counseling and/or coordination of care with other physicians, other qualified health care professionals, or agencies are provided consistent with the nature of the problem(s) and the patient's and/or family's needs. Usually the presenting problem(s) requiring admission are of low severity. Typically, 40 minutes are spent at the bedside and on the patient's hospital floor or unit.",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "3",
+      "code": "99235",
+      "category": "hospital_evaluation_management",
+      "settingHint": "HOSPITAL_CONTEXT_ONLY",
+      "description": "Observation or inpatient hospital care, for the evaluation and management of a patient including admission and discharge on the same date, which requires these 3 key components: A comprehensive history; A comprehensive examination; and Medical decision making of moderate complexity. Counseling and/or coordination of care with other physicians, other qualified health care professionals, or agencies are provided consistent with the nature of the problem(s) and the patient's and/or family's needs. Usually the presenting problem(s) requiring admission are of moderate severity. Typically, 50 minutes are spent at the bedside and on the patient's hospital floor or unit.",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "3",
+      "code": "99236",
+      "category": "hospital_evaluation_management",
+      "settingHint": "HOSPITAL_CONTEXT_ONLY",
+      "description": "Observation or inpatient hospital care, for the evaluation and management of a patient including admission and discharge on the same date, which requires these 3 key components: A comprehensive history; A comprehensive examination; and Medical decision making of high complexity. Counseling and/or coordination of care with other physicians, other qualified health care professionals, or agencies are provided consistent with the nature of the problem(s) and the patient's and/or family's needs. Usually the presenting problem(s) requiring admission are of high severity. Typically, 55 minutes are spent at the bedside and on the patient's hospital floor or unit.",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "3",
+      "code": "99238",
+      "category": "hospital_evaluation_management",
+      "settingHint": "HOSPITAL_CONTEXT_ONLY",
+      "description": "Hospital discharge day management; 30 minutes or less",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "3",
+      "code": "99239",
+      "category": "hospital_evaluation_management",
+      "settingHint": "HOSPITAL_CONTEXT_ONLY",
+      "description": "Hospital discharge day management; more than 30 minutes",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "3",
+      "code": "99251",
+      "category": "inpatient_consultation_legacy_catalog",
+      "settingHint": "HOSPITAL_CONTEXT_ONLY",
+      "description": "Inpatient consultation for a new or established patient, which requires these 3 key components: A problem focused history; A problem focused examination; and Straightforward medical decision making. Counseling and/or coordination of care with other physicians, other qualified health care professionals, or agencies are provided consistent with the nature of the problem(s) and the patient's and/or family's needs. Usually, the presenting problem(s) are self limited or minor. Typically, 20 minutes are spent at the bedside and on the patient's hospital floor or unit.",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "3",
+      "code": "99252",
+      "category": "inpatient_consultation_legacy_catalog",
+      "settingHint": "HOSPITAL_CONTEXT_ONLY",
+      "description": "Inpatient consultation for a new or established patient, which requires these 3 key components: An expanded problem focused history; An expanded problem focused examination; and Straightforward medical decision making. Counseling and/or coordination of care with other physicians, other qualified health care professionals, or agencies are provided consistent with the nature of the problem(s) and the patient's and/or family's needs. Usually, the presenting problem(s) are of low severity. Typically, 40 minutes are spent at the bedside and on the patient's hospital floor or unit.",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "3",
+      "code": "99253",
+      "category": "inpatient_consultation_legacy_catalog",
+      "settingHint": "HOSPITAL_CONTEXT_ONLY",
+      "description": "Inpatient consultation for a new or established patient, which requires these 3 key components: A detailed history; A detailed examination; and Medical decision making of low complexity. Counseling and/or coordination of care with other physicians, other qualified health care professionals, or agencies are provided consistent with the nature of the problem(s) and the patient's and/or family's needs. Usually, the presenting problem(s) are of moderate severity. Typically, 55 minutes are spent at the bedside and on the patient's hospital floor or unit.",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "3",
+      "code": "99254",
+      "category": "inpatient_consultation_legacy_catalog",
+      "settingHint": "HOSPITAL_CONTEXT_ONLY",
+      "description": "Inpatient consultation for a new or established patient, which requires these 3 key components: A comprehensive history; A comprehensive examination; and Medical decision making of moderate complexity. Counseling and/or coordination of care with other physicians, other qualified health care professionals, or agencies are provided consistent with the nature of the problem(s) and the patient's and/or family's needs. Usually, the presenting problem(s) are of moderate to high severity. Typically, 80 minutes are spent at the bedside and on the patient's hospital floor or unit.",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "3",
+      "code": "99255",
+      "category": "inpatient_consultation_legacy_catalog",
+      "settingHint": "HOSPITAL_CONTEXT_ONLY",
+      "description": "Inpatient consultation for a new or established patient, which requires these 3 key components: A comprehensive history; A comprehensive examination; and Medical decision making of high complexity. Counseling and/or coordination of care with other physicians, other qualified health care professionals, or agencies are provided consistent with the nature of the problem(s) and the patient's and/or family's needs. Usually, the presenting problem(s) are of moderate to high severity. Typically, 110 minutes are spent at the bedside and on the patient's hospital floor or unit.",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "3",
+      "code": "99468",
+      "category": "neonatal_pediatric_inpatient_care",
+      "settingHint": "IP_CONTEXT_ONLY",
+      "description": "Initial inpatient neonatal critical care, per day, for the evaluation and management of a critically ill neonate, 28 days of age or younger",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "3",
+      "code": "99469",
+      "category": "neonatal_pediatric_inpatient_care",
+      "settingHint": "IP_CONTEXT_ONLY",
+      "description": "Subsequent inpatient neonatal critical care, per day, for the evaluation and management of a critically ill neonate, 28 days of age or younger",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "3",
+      "code": "99471",
+      "category": "neonatal_pediatric_inpatient_care",
+      "settingHint": "IP_CONTEXT_ONLY",
+      "description": "Initial inpatient pediatric critical care, per day, for the evaluation and management of a critically ill infant or young child, 29 days through 24 months of age",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "3",
+      "code": "99472",
+      "category": "neonatal_pediatric_inpatient_care",
+      "settingHint": "IP_CONTEXT_ONLY",
+      "description": "Subsequent inpatient pediatric critical care, per day, for the evaluation and management of a critically ill infant or young child, 29 days through 24 months of age",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "3",
+      "code": "99475",
+      "category": "neonatal_pediatric_inpatient_care",
+      "settingHint": "IP_CONTEXT_ONLY",
+      "description": "Initial inpatient pediatric critical care, per day, for the evaluation and management of a critically ill infant or young child, 2 through 5 years of age",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "3",
+      "code": "99476",
+      "category": "neonatal_pediatric_inpatient_care",
+      "settingHint": "IP_CONTEXT_ONLY",
+      "description": "Subsequent inpatient pediatric critical care, per day, for the evaluation and management of a critically ill infant or young child, 2 through 5 years of age",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "3",
+      "code": "99477",
+      "category": "neonatal_pediatric_inpatient_care",
+      "settingHint": "IP_CONTEXT_ONLY",
+      "description": "Initial hospital care, per day, for the evaluation and management of the neonate, 28 days of age or younger, who requires intensive observation, frequent interventions, and other intensive care services",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "3",
+      "code": "99478",
+      "category": "neonatal_pediatric_inpatient_care",
+      "settingHint": "IP_CONTEXT_ONLY",
+      "description": "Subsequent intensive care, per day, for the evaluation and management of the recovering very low birth weight infant (present body weight less than 1500 grams)",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "3",
+      "code": "99479",
+      "category": "neonatal_pediatric_inpatient_care",
+      "settingHint": "IP_CONTEXT_ONLY",
+      "description": "Subsequent intensive care, per day, for the evaluation and management of the recovering low birth weight infant (present body weight of 1500-2500 grams)",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "3",
+      "code": "99480",
+      "category": "neonatal_pediatric_inpatient_care",
+      "settingHint": "IP_CONTEXT_ONLY",
+      "description": "Subsequent intensive care, per day, for the evaluation and management of the recovering infant (present body weight of 2501-5000 grams)",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "3",
+      "code": "94002",
+      "category": "hospital_ventilation",
+      "settingHint": "HOSPITAL_CONTEXT_ONLY",
+      "description": "Ventilation assist and management, initiation of pressure or volume preset ventilators for assisted or controlled breathing; hospital inpatient/observation, initial day",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "3",
+      "code": "94003",
+      "category": "hospital_ventilation",
+      "settingHint": "HOSPITAL_CONTEXT_ONLY",
+      "description": "Ventilation assist and management, initiation of pressure or volume preset ventilators for assisted or controlled breathing; hospital inpatient/observation, each subsequent day",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "3",
+      "code": "99291",
+      "category": "critical_care_any_setting",
+      "settingHint": "SETTING_AMBIGUOUS",
+      "description": "Critical care, evaluation and management of the critically ill or critically injured patient; first 30-74 minutes",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "3",
+      "code": "99292",
+      "category": "critical_care_any_setting",
+      "settingHint": "SETTING_AMBIGUOUS",
+      "description": "Critical care, evaluation and management of the critically ill or critically injured patient; each additional 30 minutes (List separately in addition to code for primary service)",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "3",
+      "code": "99217",
+      "category": "observation_care_legacy_catalog",
+      "settingHint": "OBSERVATION_CONTEXT_ONLY",
+      "description": "Observation care discharge day management (This code is to be utilized to report all services provided to a patient on discharge from outpatient hospital \"observation status\" if the discharge is on other than the initial date of \"observation status.\" To report services to a patient designated as \"observation status\" or \"inpatient status\" and discharged on the same date, use the codes for Observation or Inpatient Care Services [including Admission and Discharge Services, 99234-99236 as appropriate.])",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "3",
+      "code": "99218",
+      "category": "observation_care_legacy_catalog",
+      "settingHint": "OBSERVATION_CONTEXT_ONLY",
+      "description": "Initial observation care, per day, for the evaluation and management of a patient which requires these 3 key components: A detailed or comprehensive history; A detailed or comprehensive examination; and Medical decision making that is straightforward or of low complexity. Counseling and/or coordination of care with other physicians, other qualified health care professionals, or agencies are provided consistent with the nature of the problem(s) and the patient's and/or family's needs. Usually, the problem(s) requiring admission to outpatient hospital \"observation status\" are of low severity. Typically, 30 minutes are spent at the bedside and on the patient's hospital floor or unit.",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "3",
+      "code": "99219",
+      "category": "observation_care_legacy_catalog",
+      "settingHint": "OBSERVATION_CONTEXT_ONLY",
+      "description": "Initial observation care, per day, for the evaluation and management of a patient, which requires these 3 key components: A comprehensive history; A comprehensive examination; and Medical decision making of moderate complexity. Counseling and/or coordination of care with other physicians, other qualified health care professionals, or agencies are provided consistent with the nature of the problem(s) and the patient's and/or family's needs. Usually, the problem(s) requiring admission to outpatient hospital \"observation status\" are of moderate severity. Typically, 50 minutes are spent at the bedside and on the patient's hospital floor or unit.",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "3",
+      "code": "99220",
+      "category": "observation_care_legacy_catalog",
+      "settingHint": "OBSERVATION_CONTEXT_ONLY",
+      "description": "Initial observation care, per day, for the evaluation and management of a patient, which requires these 3 key components: A comprehensive history; A comprehensive examination; and Medical decision making of high complexity. Counseling and/or coordination of care with other physicians, other qualified health care professionals, or agencies are provided consistent with the nature of the problem(s) and the patient's and/or family's needs. Usually, the problem(s) requiring admission to outpatient hospital \"observation status\" are of high severity. Typically, 70 minutes are spent at the bedside and on the patient's hospital floor or unit.",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "3",
+      "code": "99224",
+      "category": "observation_care_legacy_catalog",
+      "settingHint": "OBSERVATION_CONTEXT_ONLY",
+      "description": "Subsequent observation care, per day, for the evaluation and management of a patient, which requires at least 2 of these 3 key components: Problem focused interval history; Problem focused examination; Medical decision making that is straightforward or of low complexity. Counseling and/or coordination of care with other physicians, other qualified health care professionals, or agencies are provided consistent with the nature of the problem(s) and the patient's and/or family's needs. Usually, the patient is stable, recovering, or improving. Typically, 15 minutes are spent at the bedside and on the patient's hospital floor or unit.",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "3",
+      "code": "99225",
+      "category": "observation_care_legacy_catalog",
+      "settingHint": "OBSERVATION_CONTEXT_ONLY",
+      "description": "Subsequent observation care, per day, for the evaluation and management of a patient, which requires at least 2 of these 3 key components: An expanded problem focused interval history; An expanded problem focused examination; Medical decision making of moderate complexity. Counseling and/or coordination of care with other physicians, other qualified health care professionals, or agencies are provided consistent with the nature of the problem(s) and the patient's and/or family's needs. Usually, the patient is responding inadequately to therapy or has developed a minor complication. Typically, 25 minutes are spent at the bedside and on the patient's hospital floor or unit.",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    },
+    {
+      "activityType": "3",
+      "code": "99226",
+      "category": "observation_care_legacy_catalog",
+      "settingHint": "OBSERVATION_CONTEXT_ONLY",
+      "description": "Subsequent observation care, per day, for the evaluation and management of a patient, which requires at least 2 of these 3 key components: A detailed interval history; A detailed examination; Medical decision making of high complexity. Counseling and/or coordination of care with other physicians, other qualified health care professionals, or agencies are provided consistent with the nature of the problem(s) and the patient's and/or family's needs. Usually, the patient is unstable or has developed a significant complication or a significant new problem. Typically, 35 minutes are spent at the bedside and on the patient's hospital floor or unit.",
+      "classificationBasis": "catalog_description_only",
+      "currentDoHCodeStatus": "not_verified"
+    }
+  ],
+  "drg": {
+    "activityType": "9",
+    "appliesToEncounterTypes": [
+      "3",
+      "5"
+    ],
+    "codeList": "not_in_json_medical_pricing",
+    "codeListSourceRequired": "current_DoH_IR_DRG_Mandatory_Tariff_and_grouper",
+    "presenceDoesNotDisambiguateIPFromDaycase": true
+  },
+  "newCodeHandling": {
+    "missingCatalogEntry": "NO_AUTO_REJECTION",
+    "settingResolution": "Encounter.Type takes precedence over heuristic code list",
+    "manualReviewWhen": "Code is unknown, appears setting-incompatible, or current effective/expiry date is unverified",
+    "updateApproach": "Append exact Activity.Type+Code records with documented DoH source, effective date and expiry date when available; do not presume existing CPT codes are active."
+  },
+  "integration": {
+    "checkerTimingsModified": false,
+    "usedForAutomaticInvalidation": false,
+    "requiresExplicitReviewBeforeActivation": true
+  }
+}
