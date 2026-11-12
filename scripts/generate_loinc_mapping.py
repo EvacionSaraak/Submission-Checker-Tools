@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Extract a DoH Codes-LOINC.xlsx code/LOINC crosswalk using Python stdlib only.
+"""Extract the DoH LOINC terminology vocabulary using Python stdlib only.
 
 Reads original OOXML ZIP contents without modifying the spreadsheet. Fails closed
-if required columns cannot be identified. Run from repository root.
+if the LOINC_NUM/STATUS columns cannot be identified. Run from repository root.
 """
 from __future__ import annotations
 
@@ -123,81 +123,76 @@ def extract_loincs(value: str) -> list[str]:
 def main() -> None:
     if not SOURCE.is_file():
         raise FileNotFoundError(SOURCE)
-    mapping = collections.defaultdict(set)
-    typed_mapping = collections.defaultdict(lambda: collections.defaultdict(set))
+    statuses = {}
+    replacements = {}
     sheet_stats = []
-    unmatched_sheets = []
     with zipfile.ZipFile(SOURCE, "r") as z:
         strings = load_shared_strings(z)
         sheets = sorted((n for n in z.namelist()
             if re.fullmatch(r"xl/worksheets/sheet\d+\.xml", n)),
-            key=lambda s: int(re.search(r"sheet(\d+)", s).group(1)))
+            key=lambda name: int(re.search(r"sheet(\d+)", name).group(1)))
         if not sheets:
-            raise RuntimeError("No worksheet XML found")
+            raise RuntimeError("No worksheets in the DoH LOINC workbook")
         print("Workbook sheets:", len(sheets), "Shared strings:", len(strings), flush=True)
         for name in sheets:
-            column_map = None
-            examined = []
+            columns = None
             rows_seen = 0
-            matches = 0
-            types_seen = collections.Counter()
+            mapped = 0
+            first_rows = []
             for row in iter_sheet_rows(z, name, strings):
                 rows_seen += 1
-                if column_map is None:
-                    if len(examined) < 35:
-                        examined.append(list(row.items())[:16])
-                        column_map = detect_header(row)
-                    if column_map is None:
-                        continue
-                    print(name, "header:", str(row)[:2000], flush=True)
+                if columns is None:
+                    if len(first_rows) < 35:
+                        first_rows.append(row)
+                    by_name = {normalize_header(v): k for k,v in row.items()}
+                    if "loincnum" in by_name and "status" in by_name:
+                        columns = (by_name["loincnum"], by_name["status"], by_name.get("mapto"))
+                        print(name, "columns:", columns, "headers:", str(row)[:1600], flush=True)
                     continue
-                code_col, loinc_col, type_col = column_map
-                code = normalize_code(row.get(code_col, ""))
-                loincs = extract_loincs(row.get(loinc_col, ""))
-                if not code or not loincs or LOINC_PATTERN.fullmatch(code):
+                loinc_col, status_col, map_col = columns
+                loinc = str(row.get(loinc_col, "")).strip()
+                if not LOINC_PATTERN.fullmatch(loinc):
                     continue
-                mapping[code].update(loincs)
-                matches += len(loincs)
-                if type_col is not None:
-                    raw_type = normalize_code(row.get(type_col, ""))
-                    if raw_type:
-                        types_seen[raw_type] += 1
-                        typed_mapping[raw_type][code].update(loincs)
-            sheet_stats.append({"sheet": name, "rows": rows_seen,
-                "mappedCells": matches, "columns": column_map, "activityTypes": dict(types_seen)})
-            if column_map is None:
-                unmatched_sheets.append({"sheet": name, "firstRows": examined[:3]})
-            print(f"{name}: {rows_seen} rows; {matches} LOINC associations; header={column_map}",
-                  flush=True)
-    pair_count = sum(len(v) for v in mapping.values())
-    if pair_count < 50:
-        raise RuntimeError(f"Only {pair_count} pairs found, refusing to create an incomplete mapping. "
-            f"Sheet stats: {sheet_stats}. Unrecognized sheets: {str(unmatched_sheets)[:2500]}")
-    # The conservative code-only lookup works even if the official export does not
-    # carry Activity.Type. When it does, preserve that dimension too.
-    data = {
+                status = str(row.get(status_col, "")).strip().upper() or "UNKNOWN"
+                statuses[loinc] = status
+                if map_col is not None:
+                    target = str(row.get(map_col, "")).strip()
+                    if target:
+                        replacements[loinc] = target
+                mapped += 1
+            if columns is None:
+                print(name, "unrecognized; first rows:", first_rows[:3], flush=True)
+            sheet_stats.append({"sheet":name,"rows":rows_seen,"loincCodes":mapped,
+                "headersFound":columns is not None})
+    counts = collections.Counter(statuses.values())
+    if len(statuses) < 1000:
+        raise RuntimeError(f"Only {len(statuses)} LOINC codes found; refusing incomplete export: {sheet_stats}")
+    # LOINC_NUM is the vocabulary identifier. This workbook does NOT contain
+    # CPT/Activity.Code columns, so it cannot prove activity-to-LOINC pairing.
+    result = {
         "metadata": {
             "source": str(SOURCE).replace("\\", "/"),
             "sourceBlobSHA": SOURCE_BLOB_SHA,
             "generatedUTC": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-            "purpose": "Validate each XML Observation.Type=LOINC, Observation.Code against its parent Activity.Code",
-            "codeCount": len(mapping),
-            "uniquePairs": pair_count,
+            "loincCount": len(statuses),
+            "statusCounts": dict(sorted(counts.items())),
             "sheetStatistics": sheet_stats,
-            "unrecognizedSheets": [s["sheet"] for s in unmatched_sheets],
-            "semantics": "Presence in listed set means valid. Missing Activity.Code is unverified, not invalid. Observation value is not considered.",
-            "doHCodeValidity": "Not asserted; this crosswalk does not establish tariff code activeness.",
+            "validationScope": "LOINC vocabulary membership and terminology status only",
+            "activityCodeMappingAvailable": False,
+            "note": "DoH dictionary Codes-LOINC.xlsx has LOINC_NUM, STATUS and MAP_TO but no CPT/activity-code-to-LOINC crosswalk. Do not infer parent-code compatibility from this file.",
+            "valueValidationEnabled": False,
+            "activeStatus": "ACTIVE",
+            "nonActiveInterpretation": "DEPRECATED=Invalid; DISCOURAGED/TRIAL/other statuses=Unknown pending policy verification",
+            "unknownLoincInterpretation": "Unknown (newer codes may not exist in this workbook)"
         },
-        "codes": {code: sorted(values) for code, values in sorted(mapping.items())},
+        "statusByLoinc": dict(sorted(statuses.items())),
+        "mapTo": dict(sorted(replacements.items()))
     }
-    if typed_mapping:
-        data["activityTypes"] = {ty: {code: sorted(v) for code, v in sorted(codes.items())}
-            for ty, codes in sorted(typed_mapping.items())}
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-    OUTPUT.write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")) + "\n",
-        encoding="utf-8")
-    print("OUTPUT:", OUTPUT, "codes:", len(mapping), "pairs:", pair_count,
-          "bytes:", OUTPUT.stat().st_size, "types:", list(typed_mapping), flush=True)
+    OUTPUT.write_text(json.dumps(result, ensure_ascii=False, separators=(",", ":")) + "\n",
+                      encoding="utf-8")
+    print("OUTPUT:",OUTPUT,"codes:",len(statuses),"statuses:",dict(counts),
+          "mapTo:",len(replacements),"bytes:",OUTPUT.stat().st_size,flush=True)
 
 if __name__ == "__main__":
     main()
