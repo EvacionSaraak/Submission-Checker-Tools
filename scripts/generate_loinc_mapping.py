@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import collections
 import datetime
+import hashlib
 import json
 import pathlib
 import re
@@ -17,7 +18,6 @@ import xml.etree.ElementTree as ET
 
 SOURCE = pathlib.Path("resources/Codes-LOINC.xlsx")
 OUTPUT = pathlib.Path("json/loinc_code_mapping.json")
-SOURCE_BLOB_SHA = "9509021c62f1708e81b4ba78789402066a65d13e"
 NS = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
 LOINC_PATTERN = re.compile(r"\b\d{1,8}-\d\b")
 CELL_COL = re.compile(r"^([A-Z]+)")
@@ -120,6 +120,15 @@ def normalize_code(value: str) -> str:
 def extract_loincs(value: str) -> list[str]:
     return list(dict.fromkeys(LOINC_PATTERN.findall(str(value or ""))))
 
+def github_blob_sha(path: pathlib.Path) -> str:
+    """Compute Git blob SHA from the current workbook bytes, not a stale constant."""
+    h = hashlib.sha1()
+    h.update(b"blob " + str(path.stat().st_size).encode("ascii") + b"\x00")
+    with path.open("rb") as handle:
+        for part in iter(lambda: handle.read(1024 * 1024), b""):
+            h.update(part)
+    return h.hexdigest()
+
 def main() -> None:
     if not SOURCE.is_file():
         raise FileNotFoundError(SOURCE)
@@ -172,7 +181,7 @@ def main() -> None:
     result = {
         "metadata": {
             "source": str(SOURCE).replace("\\", "/"),
-            "sourceBlobSHA": SOURCE_BLOB_SHA,
+            "sourceBlobSHA": github_blob_sha(SOURCE),
             "generatedUTC": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "loincCount": len(statuses),
             "statusCounts": dict(sorted(counts.items())),
