@@ -25,7 +25,7 @@ jobs:
         run: python3 scripts/generate_loinc_mapping.py
       - name: Commit regenerated mapping
         run: |
-          git add json/loinc_code_mapping.json
+          git add json/loinc_code_mapping.json json/loinc_dictionary
           if git diff --cached --quiet; then
             echo "Mapping is already current"
           else
