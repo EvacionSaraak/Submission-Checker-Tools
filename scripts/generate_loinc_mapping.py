@@ -18,6 +18,7 @@ import xml.etree.ElementTree as ET
 
 SOURCE = pathlib.Path("resources/Codes-LOINC.xlsx")
 OUTPUT = pathlib.Path("json/loinc_code_mapping.json")
+READABLE_DIR = pathlib.Path("json/loinc_dictionary")
 NS = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
 LOINC_PATTERN = re.compile(r"\b\d{1,8}-\d\b")
 CELL_COL = re.compile(r"^([A-Z]+)")
@@ -198,10 +199,71 @@ def main() -> None:
         "mapTo": dict(sorted(replacements.items()))
     }
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-    OUTPUT.write_text(json.dumps(result, ensure_ascii=False, separators=(",", ":")) + "\n",
+    # Keep the existing path/schema for the Observation Checker, but store one
+    # entry per line so the raw file can be inspected and diffed.
+    OUTPUT.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n",
                       encoding="utf-8")
-    print("OUTPUT:",OUTPUT,"codes:",len(statuses),"statuses:",dict(counts),
-          "mapTo:",len(replacements),"bytes:",OUTPUT.stat().st_size,flush=True)
+
+    # GitHub may refuse to preview the full 70k-entry JSON, even when indented.
+    # Smaller first-digit chapters provide genuinely browser-readable versions.
+    READABLE_DIR.mkdir(parents=True, exist_ok=True)
+    chapters = collections.defaultdict(dict)
+    for code, status in sorted(statuses.items()):
+        chapters[code[0]][code] = status
+
+    index = [
+        "# DoH LOINC Dictionary — Browse by Code",
+        "",
+        "This directory contains human-readable subsets of the DoH "
+        "\`Codes-LOINC.xlsx\` terminology export.",
+        "",
+        "**This is a LOINC terminology/status dictionary, not a "
+        "CPT-to-LOINC activity crosswalk.** The original complete JSON "
+        "remains at [loinc_code_mapping.json](../loinc_code_mapping.json) "
+        "for the Observation Checker.",
+        "",
+        "| First digit of LOINC | Entries | Active | Deprecated | Trial | Discouraged |",
+        "|---|---:|---:|---:|---:|---:|"
+    ]
+    for prefix, code_statuses in sorted(chapters.items()):
+        chapter_counts = collections.Counter(code_statuses.values())
+        chapter = {
+            "metadata": {
+                "source": result["metadata"]["source"],
+                "sourceBlobSHA": result["metadata"]["sourceBlobSHA"],
+                "generatedUTC": result["metadata"]["generatedUTC"],
+                "codePrefix": prefix,
+                "loincCount": len(code_statuses),
+                "statusCounts": dict(sorted(chapter_counts.items())),
+                "activityCodeMappingAvailable": False
+            },
+            "statusByLoinc": code_statuses,
+            "mapTo": {code: replacements[code] for code in code_statuses if code in replacements}
+        }
+        filename = f"{prefix}.json"
+        (READABLE_DIR / filename).write_text(
+            json.dumps(chapter, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8"
+        )
+        index.append(
+            f"| [{prefix}…]({filename}) | {len(code_statuses):,} | "
+            f"{chapter_counts['ACTIVE']:,} | {chapter_counts['DEPRECATED']:,} | "
+            f"{chapter_counts['TRIAL']:,} | {chapter_counts['DISCOURAGED']:,} |"
+        )
+    index += [
+        "",
+        "Choose the JSON file for the **first digit** of the LOINC code. "
+        "Use GitHub's Find feature or your browser's search within that file.",
+        "",
+        "All code statuses and \`MAP_TO\` values come from the uploaded dictionary; "
+        "no CPT relationships are inferred.",
+        ""
+    ]
+    (READABLE_DIR / "README.md").write_text("\n".join(index), encoding="utf-8")
+
+    print("OUTPUT:", OUTPUT, "codes:", len(statuses), "statuses:", dict(counts),
+          "mapTo:", len(replacements), "bytes:", OUTPUT.stat().st_size,
+          "readableChapters:", len(chapters), flush=True)
 
 if __name__ == "__main__":
     main()
