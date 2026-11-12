@@ -76,6 +76,99 @@ const CODE_83718_LOINC_CODES = new Set([
   '14646-4', '12772-0', '26015-8', '26017-4', '18263-4', '2085-9',
   '35243-5', '35197-3', '49130-8', '9832-7', '9833-5'
 ]);
+
+// DoH's Codes-LOINC.xlsx is a terminology vocabulary, NOT a CPT-to-LOINC
+// crosswalk. Status validation is definitive only within that vocabulary.
+// Parent activity-code compatibility is Unknown unless independently mapped.
+const DOH_LOINC_DICTIONARY_URL = '../json/loinc_code_mapping.json?v=20261112-doh-loinc-status';
+const LOINC_CODE_PATTERN = /^\d{1,8}-\d$/;
+let loincDictionaryPromise = null;
+
+function loadDohLoincDictionary() {
+  if (!loincDictionaryPromise) {
+    loincDictionaryPromise = fetch(DOH_LOINC_DICTIONARY_URL, { cache: 'no-cache' })
+      .then(response => {
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        return response.json();
+      })
+      .then(data => {
+        if (!data || !data.statusByLoinc || typeof data.statusByLoinc !== 'object' ||
+            !data.metadata || data.metadata.loincCount < 1000) {
+          throw new Error('Unexpected DoH LOINC JSON structure');
+        }
+        return data;
+      })
+      .catch(error => {
+        console.warn('[OBSERVATIONS][LOINC] Dictionary unavailable; matching remains Unknown:', error);
+        return null;
+      });
+  }
+  return loincDictionaryPromise;
+}
+
+function validateDohLoincObservations(obsList, activityCode, activityType, dictionary) {
+  const remarks = [];
+  const warnings = [];
+  const loincObservations = Array.from(obsList || []).filter(obs =>
+    String(obs.querySelector('Type')?.textContent || '').trim().toUpperCase() === 'LOINC'
+  );
+  if (!loincObservations.length) return { remarks, warnings };
+
+  const parentCode = String(activityCode || '').trim().toUpperCase();
+  const parentType = String(activityType || '').trim();
+  const statuses = dictionary && dictionary.statusByLoinc;
+  const codePairings = dictionary && dictionary.activityToLoincs;
+  const key = parentType + ':' + parentCode;
+  const exactPairing = codePairings && (
+    codePairings[key] || codePairings[parentCode]
+  );
+  const supportedPairings = Array.isArray(exactPairing)
+    ? new Set(exactPairing.map(x => String(x).trim()))
+    : (parentType === '3' && parentCode === '83718' ? CODE_83718_LOINC_CODES : null);
+
+  for (const obs of loincObservations) {
+    const loinc = String(obs.querySelector('Code')?.textContent || '').trim();
+    if (!LOINC_CODE_PATTERN.test(loinc)) {
+      remarks.push('Activity ' + parentCode + ': LOINC observation Code "' +
+        (loinc || '(blank)') + '" has an invalid LOINC identifier format.');
+      continue;
+    }
+    if (!statuses) {
+      warnings.push('Activity ' + parentCode + ': LOINC ' + loinc +
+        ' could not be checked because the DoH LOINC dictionary was unavailable.');
+      continue;
+    }
+    const status = String(statuses[loinc] || '').toUpperCase();
+    if (!status) {
+      warnings.push('Activity ' + parentCode + ': LOINC ' + loinc +
+        ' was not found in the uploaded DoH LOINC dictionary. Verify whether this is a newer code.');
+      continue;
+    }
+    if (status === 'DEPRECATED') {
+      const successor = String(dictionary.mapTo?.[loinc] || '').trim();
+      remarks.push('Activity ' + parentCode + ': LOINC ' + loinc +
+        ' is DEPRECATED in the DoH dictionary.' +
+        (successor ? ' MAP_TO: ' + successor + ' (verify suitability before replacement).' : ''));
+      continue;
+    }
+    if (status !== 'ACTIVE') {
+      warnings.push('Activity ' + parentCode + ': LOINC ' + loinc +
+        ' has DoH dictionary status ' + status + '; kindly verify its suitability.');
+      continue;
+    }
+    if (supportedPairings) {
+      if (!supportedPairings.has(loinc)) {
+        remarks.push('LOINC ' + loinc + ' is not mapped to Activity ' + parentCode +
+          ' in the available code-specific reference.');
+      }
+    } else {
+      warnings.push('LOINC ' + loinc + ' is ACTIVE in the DoH dictionary, but its compatibility ' +
+        'with Activity ' + parentCode + ' is unverified: the supplied workbook has no CPT-to-LOINC crosswalk.');
+    }
+  }
+  return { remarks, warnings };
+}
+
 // Root canal codes requiring a Subcode observation from 20-Feb-2026 onward
 const ROOT_CANAL_SUBCODE_CODES = new Set(['33111', '33121', '33131', '33141', '33115', '33125', '33135', '33145']);
 const SUBCODE_OBS_CUTOFF = new Date(2026, 1, 20); // 20 Feb 2026 (month is 0-indexed)
@@ -730,7 +823,7 @@ function getCombinedRemarks(row) {
   return [...(row.remarks || []), ...(row.warnings || [])];
 }
 // Main activity validation and results rendering
-function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontistSet, receiverID = '', isMedical = false, tariffCodeTypeMap = new Map(), endoPricingCodes = new Set()) {
+function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontistSet, receiverID = '', isMedical = false, tariffCodeTypeMap = new Map(), endoPricingCodes = new Set(), loincDictionary = null) {
   const rows = [];
   const claimSummaries = {};
   const claimRegionTrack = {};
@@ -756,6 +849,7 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
       const typeValue = act.querySelector('Type')?.textContent?.trim() || '';
       const rawCode = act.querySelector('Code')?.textContent || '';
       const code = rawCode.trim();
+      const loincFindings = validateDohLoincObservations(obsList, code, typeValue, loincDictionary);
       const valueTypeRemarks = validateObservationValueTypes(obsList, code);
       const codeLastDigit = code.slice(-1);
       // --- Check for codes that cannot be submitted
@@ -769,8 +863,9 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
           code,
           description: forbiddenEntry.description,
           details: 'N/A',
-          remarks: [forbiddenEntry.reason, ...commentObservationRemarks, ...valueTypeRemarks]
+          remarks: [forbiddenEntry.reason, ...commentObservationRemarks, ...valueTypeRemarks, ...loincFindings.remarks]
         });
+        row.warnings.push(...loincFindings.warnings);
         claimHasInvalid = true;
         rows.push(row);
         return;
@@ -779,7 +874,7 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
       // Codes containing a space are treated as unknown (not invalid) since the space may be part of a subcode variant
       if (code.length !== 5 && !code.includes(`-`) && !rawCode.includes(' ')) {
         const typeRemarks = validateActivityType(code, typeValue, false, tariffCodeTypeMap);
-        const allRemarks = [`Code "${code}" is invalid: it must have exactly 5 characters.`, ...typeRemarks, ...commentObservationRemarks, ...valueTypeRemarks];
+        const allRemarks = [`Code "${code}" is invalid: it must have exactly 5 characters.`, ...typeRemarks, ...commentObservationRemarks, ...valueTypeRemarks, ...loincFindings.remarks];
         const row = buildActivityRow({
           claimId,
           activityId,
@@ -789,6 +884,7 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
           details: 'N/A',
           remarks: allRemarks
         });
+        row.warnings.push(...loincFindings.warnings);
         claimHasInvalid = true;
         rows.push(row);
         return;
@@ -812,6 +908,10 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
           claimId, activityId, type: typeValue, code, obsCodes, meta, claimRegionTrack: claimRegionTrack[claimId], codeLastDigit, obsList, isMedical, tariffCodeTypeMap
         });
       }
+
+      // LOINC code/status validation is independent of observation Value and ValueType.
+      row.remarks.push(...loincFindings.remarks);
+      row.warnings.push(...loincFindings.warnings);
 
       // Reject any comment observation independently of its supplied ValueType.
       if (commentObservationRemarks.length) row.remarks.push(...commentObservationRemarks);
@@ -932,12 +1032,22 @@ function buildResultsTable(rows) {
   window.invalidRows = rows.filter(r => (r.remarks && r.remarks.length > 0) || (r.warnings && r.warnings.length > 0));
   const exportBtn = document.getElementById('exportBtn');
   if (exportBtn) exportBtn.style.display = window.invalidRows.length ? 'inline-block' : 'none';
-  const claimSummaries = rows.__claimSummaries || {};
-  const totalClaims = Object.keys(claimSummaries).length;
-  const validClaims = Object.values(claimSummaries).filter(isInvalid => !isInvalid).length;
+  const claimStatuses = new Map();
+  rows.forEach(row => {
+    const current = claimStatuses.get(row.claimId) || 'Valid';
+    const next = row.remarks?.length ? 'Invalid' : (row.warnings?.length ? 'Unknown' : 'Valid');
+    const rank = { Valid: 0, Unknown: 1, Invalid: 2 };
+    if (rank[next] > rank[current]) claimStatuses.set(row.claimId, next);
+    else if (!claimStatuses.has(row.claimId)) claimStatuses.set(row.claimId, current);
+  });
+  const totalClaims = claimStatuses.size;
+  const validClaims = [...claimStatuses.values()].filter(status => status === 'Valid').length;
+  const unknownClaims = [...claimStatuses.values()].filter(status => status === 'Unknown').length;
+  const invalidClaims = [...claimStatuses.values()].filter(status => status === 'Invalid').length;
   const percentage = totalClaims === 0 ? "0.0" : ((validClaims / totalClaims) * 100).toFixed(1);
 
-  if (summaryBox) summaryBox.textContent = `Valid claims: ${validClaims} / ${totalClaims} (${percentage}%)`;
+  if (summaryBox) summaryBox.textContent =
+    `Valid claims: ${validClaims} / ${totalClaims} (${percentage}%) | Unknown: ${unknownClaims} | Invalid: ${invalidClaims}`;
   const table = document.createElement('table');
   table.className = 'table table-striped table-bordered';
   table.style.width = '100%';
@@ -1145,14 +1255,15 @@ async function parseXML(suppliedFile = null) {
     (typeof window.getUnifiedXmlText === 'function' && (suppliedFile || window.unifiedCheckerFiles?.xml))
       ? window.getUnifiedXmlText()
       : readXmlWithRetry(file);
-  const [xmlText, toothJson, authJson, clinicianLicenses, mandatoryTariffBuffer, endoPricingJson] =
+  const [xmlText, toothJson, authJson, clinicianLicenses, mandatoryTariffBuffer, endoPricingJson, loincDictionary] =
     await Promise.all([
       xmlTextPromise,
       loadToothJson(),
       loadAuthJson(),
       loadClinicianLicenses(),
       loadMandatoryTariff(),
-      loadEndoPricingJson()
+      loadEndoPricingJson(),
+      loadDohLoincDictionary()
     ]);
   console.log('[TEETH] All resources loaded, processing...');
   const toothMap = buildCodeMeta(toothJson);
@@ -1223,7 +1334,8 @@ async function parseXML(suppliedFile = null) {
     receiverID,
     isMedical,
     tariffCodeTypeMap,
-    endoPricingCodes
+    endoPricingCodes,
+    loincDictionary
   );
   console.log('[TEETH] Validation complete, building table... (rows:', rows.length, ')');
   const tableElement = buildResultsTable(rows);
