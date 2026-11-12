@@ -1,6 +1,6 @@
 # DoH LOINC Dictionary — Browse by Code
 
-This directory contains human-readable subsets of the DoH \`Codes-LOINC.xlsx\` terminology export.
+This directory contains human-readable subsets of the DoH `Codes-LOINC.xlsx` terminology export.
 
 **This is a LOINC terminology/status dictionary, not a CPT-to-LOINC activity crosswalk.** The original complete JSON remains at [loinc_code_mapping.json](../loinc_code_mapping.json) for the Observation Checker.
 
@@ -18,4 +18,4 @@ This directory contains human-readable subsets of the DoH \`Codes-LOINC.xlsx\` t
 
 Choose the JSON file for the **first digit** of the LOINC code. Use GitHub's Find feature or your browser's search within that file.
 
-All code statuses and \`MAP_TO\` values come from the uploaded dictionary; no CPT relationships are inferred.
+All code statuses and `MAP_TO` values come from the uploaded dictionary; no CPT relationships are inferred.
