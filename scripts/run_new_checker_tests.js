@@ -1479,6 +1479,74 @@ await run('Khabisi 96375 uses exact-list factor 1.3 for Thiqa without broadening
   assert(unrelatedNineSeries.rule === null, 'Expected unrelated 9-series code to avoid the 96375 exact-list rule');
 });
 
+await run('Al Khabisi Thiqa CPT 93000 applies factor 1.5 and accepts a lower Net', () => {
+  const factor = pricingApi.findFactorFromRules([], 'MF5020', '93000', 'D001');
+  assert(factor.factor === 1.5, `Expected 93000 Thiqa/Khabisi factor 1.5, got ${factor.factor}`);
+  assert(factor.rule && factor.rule.isOverride, 'Expected 93000 override to be explicitly scoped');
+
+  const adjustedUnit = 65 * factor.factor;
+  assert(pricingApi.getMedicalTariffMaximum(adjustedUnit, 1) === 97.5, 'Expected 65 × 1.5 = 97.50');
+  assert(pricingApi.isWithinMedicalTariffMaximum(84.5, adjustedUnit, 1), '84.50 must be valid below 97.50 maximum');
+  assert(pricingApi.isWithinMedicalTariffMaximum(97.5, adjustedUnit, 1), '97.50 must be valid at maximum');
+  assert(!pricingApi.isWithinMedicalTariffMaximum(97.51, adjustedUnit, 1), '97.51 must be invalid above maximum');
+
+  const compareRow = {
+    CPT: '93000', ClaimedNet: '84.5', ClaimedQty: '1', ReferenceNetPrice: '65',
+    FactoredReference: '97.5', AppliedFactor: '1.5', _isMedicalPricingMatch: true
+  };
+  assert(pricingApi.getComparisonPriceResult(compareRow, [compareRow]).correct === true,
+    'Comparison modal must also accept 84.50 under the 97.50 maximum');
+
+  for (const otherPayer of ['A001', 'D004']) {
+    assert(pricingApi.findFactorFromRules([], 'MF5020', '93000', otherPayer).factor === 1,
+      `93000 override must not affect payer ${otherPayer}`);
+  }
+  assert(pricingApi.findFactorFromRules([], 'MF9999', '93000', 'D001').factor === 1,
+    '93000 override must not affect other facilities');
+  assert(pricingApi.findFactorFromRules([], 'MF5020', '99214', 'D001').factor === 1,
+    '93000 override must not apply to other 9-series codes');
+});
+
+await run('Al Khabisi authorized CPT 97803 uses 1.3 factor times quantity 3', () => {
+  const factor = pricingApi.findFactorFromRules([], 'MF5020', '97803', 'D001', 'AUTH-TEST');
+  assert(factor.factor === 1.3, 'Expected 97803 to use authorized factor 1.3');
+  const adjustedUnit = Math.round(39 * factor.factor * 100) / 100;
+  assert(adjustedUnit === 50.7, 'Expected 39 × 1.3 = 50.70');
+  assert(pricingApi.getMedicalTariffMaximum(adjustedUnit, 3) === 152.1,
+    'Expected 50.70 × quantity 3 = 152.10');
+  assert(pricingApi.isWithinMedicalTariffMaximum(152.1, adjustedUnit, 3),
+    'Claimed Net 152.10 must be Valid');
+  assert(!pricingApi.isWithinMedicalTariffMaximum(152.11, adjustedUnit, 3),
+    'Claimed Net 152.11 must exceed the maximum');
+  const compareRow = {
+    CPT: '97803', ClaimedNet: '152.1', ClaimedQty: '3', ReferenceNetPrice: '39',
+    FactoredReference: '50.7', AppliedFactor: '1.3', _isMedicalPricingMatch: true
+  };
+  assert(pricingApi.getComparisonPriceResult(compareRow, [compareRow]).correct === true,
+    'Comparison modal must accept authorized 97803 × 3 pricing');
+  assert(pricingApi.findFactorFromRules([], 'MF5020', '97803', 'D001', '').factor === 1,
+    'Preserve the existing requirement for activity authorization on Khabisi 97803');
+});
+
+await run('Medical tariff maximum cannot legalize negative/zero Net or dental underpricing', () => {
+  assert(!pricingApi.isWithinMedicalTariffMaximum(-1, 97.5, 1), 'Negative Net must fail');
+  assert(!pricingApi.isWithinMedicalTariffMaximum(0, 97.5, 1), 'Zero Net stays in its own validation rules');
+  assert(!pricingApi.isWithinMedicalTariffMaximum(1, 97.5, 0), 'Zero quantity must fail');
+  assert(!pricingApi.isWithinMedicalTariffMaximum(1, 97.5, -1), 'Negative quantity must fail');
+  assert(!pricingApi.isWithinMedicalTariffMaximum(1, NaN, 1), 'Invalid tariff must fail');
+  const dental = { CPT: '93000', ClaimedNet: '84.5', ClaimedQty: '1', ReferenceNetPrice: '65',
+    FactoredReference: '97.5', AppliedFactor: '1.5', _isMedicalPricingMatch: false };
+  assert(pricingApi.getComparisonPriceResult(dental, [dental]).correct === false,
+    'Dental comparison must retain its own exact-match rules');
+
+  const overMaximum = pricingApi.buildConcisePriceMismatchRemark({
+    claimedNet: 152.11, code: '97803', pricingContext: 'Mandatory Tariff',
+    expectedNet: 152.1, isMaximum: true, factoredUnitPrice: 50.7, quantity: 3
+  });
+  assert(/maximum 152\\.1/.test(overMaximum) && /unit 50\\.7 × qty 3/.test(overMaximum),
+    'Medical over-cap message must show the factor-adjusted unit and quantity-adjusted cap');
+});
+
 await run('Pricing claim-type normalizer accepts MEDICAL and DENTAL only', () => {
   assert(pricingApi.normalizeClaimTypeMode('medical') === 'MEDICAL', 'Expected lowercase medical to normalize');
   assert(pricingApi.normalizeClaimTypeMode(' dental ') === 'DENTAL', 'Expected padded dental to normalize');
