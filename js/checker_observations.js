@@ -81,7 +81,7 @@ const CODE_83718_LOINC_CODES = new Set([
 // crosswalk. Status validation is definitive only within that vocabulary.
 // Parent activity-code compatibility is Unknown unless independently mapped.
 const DOH_LOINC_DICTIONARY_URL = '../json/loinc_code_mapping.json?v=20261112-doh-loinc-status';
-const LOiNC_CPT_CROSSWALK_URL = '../json/loinc_activity_crosswalk.json?v=20261115-cpt-seed';
+const LOiNC_CPT_CROSSWALK_URL = '../json/loinc_activity_crosswalk.json?v=20261115-confirmed-pairs';
 const LOINC_CODE_PATTERN = /^\d{1,8}-\d$/;
 let loincDictionaryPromise = null;
 let loincCptCrosswalkPromise = null;
@@ -193,7 +193,7 @@ function validateDohLoincObservations(obsList, activityCode, activityType, dicti
     const reviewOnly = reviewOnlyPairs.find(pair => String(pair?.loinc || '').trim() === loinc);
     if (reviewOnly) {
       warnings.push('LOINC ' + loinc + ' with Activity ' + parentCode +
-        ' requires coding review: ' + String(reviewOnly.reason || 'context-dependent mapping') + '.');
+        ' requires coding review: ' + String(reviewOnly.reason || 'context-dependent mapping').replace(/[.!?]+$/, '') + '.');
     } else if (isLegacy83718) {
       // Retain the existing strict 83718 whitelist behavior.
       remarks.push('LOINC ' + loinc + ' is not mapped to Activity ' + parentCode +
