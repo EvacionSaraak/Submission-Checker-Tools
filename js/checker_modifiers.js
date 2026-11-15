@@ -2204,9 +2204,10 @@
     const receiver = String(receiverID || '').trim().toUpperCase();
     const priorAuthorization = String(priorAuthorizationID || '').trim();
 
-    // CPT 95018 has a Thiqa-only 1.3 factor at Al Khabisi, matching
-    // checker_pricing's scoped Mandatory Tariff override.
-    if (facility === 'MF5020' && receiver === 'D001' && normalizedCode === '95018') {
+    // CPTs 95018 and 93005 have Thiqa-only 1.3 factors at Al Khabisi,
+    // matching checker_pricing's scoped Mandatory Tariff overrides.
+    if (facility === 'MF5020' && receiver === 'D001' &&
+        (normalizedCode === '95018' || normalizedCode === '93005')) {
       return 1.3;
     }
 
