@@ -57,11 +57,12 @@ function getDeactivatedDrugCodeFinding(code) {
 
 const THIQA_RECEIVER_ID = 'D001';
 // Khabisi (MF5020) services that always use factor 1.3.
-// This includes the infusion services plus 94640 and 96372.
+// Includes CPT 95018 (allergy testing), plus the established infusion/ENT services.
 const KHABISI_FACTOR_13_CODES = new Set([
   '92504',
   '92567',
   '94640',
+  '95018',
   '96360',
   '96361',
   '96365',
