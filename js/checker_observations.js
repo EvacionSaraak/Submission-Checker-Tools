@@ -81,8 +81,10 @@ const CODE_83718_LOINC_CODES = new Set([
 // crosswalk. Status validation is definitive only within that vocabulary.
 // Parent activity-code compatibility is Unknown unless independently mapped.
 const DOH_LOINC_DICTIONARY_URL = '../json/loinc_code_mapping.json?v=20261112-doh-loinc-status';
+const LOiNC_CPT_CROSSWALK_URL = '../json/loinc_activity_crosswalk.json?v=20261115-cpt-seed';
 const LOINC_CODE_PATTERN = /^\d{1,8}-\d$/;
 let loincDictionaryPromise = null;
+let loincCptCrosswalkPromise = null;
 
 function loadDohLoincDictionary() {
   if (!loincDictionaryPromise) {
@@ -106,7 +108,30 @@ function loadDohLoincDictionary() {
   return loincDictionaryPromise;
 }
 
-function validateDohLoincObservations(obsList, activityCode, activityType, dictionary) {
+function loadLoincCptCrosswalk() {
+  if (!loincCptCrosswalkPromise) {
+    loincCptCrosswalkPromise = fetch(LOiNC_CPT_CROSSWALK_URL, { cache: 'no-cache' })
+      .then(response => {
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        return response.json();
+      })
+      .then(data => {
+        const mapping = data?.activityToLoincs;
+        if (!mapping || typeof mapping !== 'object' || !Object.keys(mapping).length ||
+            data?.metadata?.exhaustive !== false) {
+          throw new Error('Unexpected or unsafe CPT-LOINC crosswalk structure');
+        }
+        return data;
+      })
+      .catch(error => {
+        console.warn('[OBSERVATIONS][LOINC] CPT crosswalk unavailable; code pairings remain Unknown:', error);
+        return null;
+      });
+  }
+  return loincCptCrosswalkPromise;
+}
+
+function validateDohLoincObservations(obsList, activityCode, activityType, dictionary, crosswalk = null) {
   const remarks = [];
   const warnings = [];
   const loincObservations = Array.from(obsList || []).filter(obs =>
@@ -117,14 +142,18 @@ function validateDohLoincObservations(obsList, activityCode, activityType, dicti
   const parentCode = String(activityCode || '').trim().toUpperCase();
   const parentType = String(activityType || '').trim();
   const statuses = dictionary && dictionary.statusByLoinc;
-  const codePairings = dictionary && dictionary.activityToLoincs;
   const key = parentType + ':' + parentCode;
-  const exactPairing = codePairings && (
-    codePairings[key] || codePairings[parentCode]
-  );
+  // The DoH terminology file does not contain CPT relationships.
+  // Use the independently sourced Tampermonkey seed only for known positive
+  // pairings, never to infer a code's invalidity from absence.
+  const exactPairing = crosswalk?.activityToLoincs?.[key];
+  const isLegacy83718 = parentType === '3' && parentCode === '83718';
   const supportedPairings = Array.isArray(exactPairing)
     ? new Set(exactPairing.map(x => String(x).trim()))
-    : (parentType === '3' && parentCode === '83718' ? CODE_83718_LOINC_CODES : null);
+    : (isLegacy83718 ? CODE_83718_LOINC_CODES : null);
+  const reviewOnlyPairs = Array.isArray(crosswalk?.reviewOnly?.[key])
+    ? crosswalk.reviewOnly[key]
+    : [];
 
   for (const obs of loincObservations) {
     const loinc = String(obs.querySelector('Code')?.textContent || '').trim();
@@ -156,14 +185,29 @@ function validateDohLoincObservations(obsList, activityCode, activityType, dicti
         ' has DoH dictionary status ' + status + '; kindly verify its suitability.');
       continue;
     }
-    if (supportedPairings) {
-      if (!supportedPairings.has(loinc)) {
-        remarks.push('LOINC ' + loinc + ' is not mapped to Activity ' + parentCode +
-          ' in the available code-specific reference.');
-      }
+    if (supportedPairings?.has(loinc)) {
+      // Verified positive pairing from the crosswalk. This does not validate
+      // the laboratory measurement value, method, unit, or specimen.
+      continue;
+    }
+    const reviewOnly = reviewOnlyPairs.find(pair => String(pair?.loinc || '').trim() === loinc);
+    if (reviewOnly) {
+      warnings.push('LOINC ' + loinc + ' with Activity ' + parentCode +
+        ' requires coding review: ' + String(reviewOnly.reason || 'context-dependent mapping') + '.');
+    } else if (isLegacy83718) {
+      // Retain the existing strict 83718 whitelist behavior.
+      remarks.push('LOINC ' + loinc + ' is not mapped to Activity ' + parentCode +
+        ' in the existing specific reference.');
+    } else if (supportedPairings) {
+      // The Tampermonkey verified-code-repair list is intentionally incomplete.
+      // An unlisted code is not enough evidence for an Invalid result.
+      warnings.push('LOINC ' + loinc + ' is ACTIVE, but is not listed in the current ' +
+        'CPT-to-LOINC seed mappings for Activity ' + parentCode +
+        '. Kindly verify the specimen/method and consider adding a supported mapping.');
     } else {
-      warnings.push('LOINC ' + loinc + ' is ACTIVE in the DoH dictionary, but its compatibility ' +
-        'with Activity ' + parentCode + ' is unverified: the supplied workbook has no CPT-to-LOINC crosswalk.');
+      warnings.push('LOINC ' + loinc + ' is ACTIVE in the DoH dictionary, but its ' +
+        'compatibility with Activity ' + parentCode +
+        ' is unverified: no verified CPT-to-LOINC mapping is available for this activity.');
     }
   }
   return { remarks, warnings };
@@ -823,7 +867,7 @@ function getCombinedRemarks(row) {
   return [...(row.remarks || []), ...(row.warnings || [])];
 }
 // Main activity validation and results rendering
-function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontistSet, receiverID = '', isMedical = false, tariffCodeTypeMap = new Map(), endoPricingCodes = new Set(), loincDictionary = null) {
+function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontistSet, receiverID = '', isMedical = false, tariffCodeTypeMap = new Map(), endoPricingCodes = new Set(), loincDictionary = null, loincCptCrosswalk = null) {
   const rows = [];
   const claimSummaries = {};
   const claimRegionTrack = {};
@@ -849,7 +893,7 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
       const typeValue = act.querySelector('Type')?.textContent?.trim() || '';
       const rawCode = act.querySelector('Code')?.textContent || '';
       const code = rawCode.trim();
-      const loincFindings = validateDohLoincObservations(obsList, code, typeValue, loincDictionary);
+      const loincFindings = validateDohLoincObservations(obsList, code, typeValue, loincDictionary, loincCptCrosswalk);
       const valueTypeRemarks = validateObservationValueTypes(obsList, code);
       const codeLastDigit = code.slice(-1);
       // --- Check for codes that cannot be submitted
@@ -1255,7 +1299,7 @@ async function parseXML(suppliedFile = null) {
     (typeof window.getUnifiedXmlText === 'function' && (suppliedFile || window.unifiedCheckerFiles?.xml))
       ? window.getUnifiedXmlText()
       : readXmlWithRetry(file);
-  const [xmlText, toothJson, authJson, clinicianLicenses, mandatoryTariffBuffer, endoPricingJson, loincDictionary] =
+  const [xmlText, toothJson, authJson, clinicianLicenses, mandatoryTariffBuffer, endoPricingJson, loincDictionary, loincCptCrosswalk] =
     await Promise.all([
       xmlTextPromise,
       loadToothJson(),
@@ -1263,7 +1307,8 @@ async function parseXML(suppliedFile = null) {
       loadClinicianLicenses(),
       loadMandatoryTariff(),
       loadEndoPricingJson(),
-      loadDohLoincDictionary()
+      loadDohLoincDictionary(),
+      loadLoincCptCrosswalk()
     ]);
   console.log('[TEETH] All resources loaded, processing...');
   const toothMap = buildCodeMeta(toothJson);
@@ -1335,7 +1380,8 @@ async function parseXML(suppliedFile = null) {
     isMedical,
     tariffCodeTypeMap,
     endoPricingCodes,
-    loincDictionary
+    loincDictionary,
+    loincCptCrosswalk
   );
   console.log('[TEETH] Validation complete, building table... (rows:', rows.length, ')');
   const tableElement = buildResultsTable(rows);
