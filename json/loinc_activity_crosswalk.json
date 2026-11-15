@@ -1,0 +1,186 @@
+{
+  "metadata": {
+    "schemaVersion": 1,
+    "purpose": "Seed CPT-to-LOINC observation compatibility list for the Submission Checker Observation module",
+    "source": "Tampermonkey Odoo_Modawah_Check_LOINC_v2_3_69.user.txt, with explicitly identified existing Observation Checker and policy additions",
+    "sourceVersion": "2.3.69",
+    "sourceSection": "VERIFIED_CODE_REPAIR_CPT, ~lines 5264-5285",
+    "caveat": "These lists originated as controlled candidate codes for confirmed lab-report repairs, not a complete authoritative DoH CPT-to-LOINC crosswalk. Absence is UNKNOWN, not automatic Invalid.",
+    "exhaustive": false,
+    "activityKeyFormat": "Activity.Type:Activity.Code; currently only CPT Type 3",
+    "checksObservationValue": false,
+    "terminologyStatusSource": "json/loinc_code_mapping.json (DoH Codes-LOINC.xlsx)",
+    "codeCount": 18,
+    "pairCount": 70,
+    "includedFrom": {
+      "tampermonkeyVerifiedRepair": 15,
+      "priorObservationChecker83718": 1,
+      "additionalControlledCptEntries": [
+        "83719",
+        "84525"
+      ],
+      "additionalDoHPolicyCode": "3:82728 -> 20567-4 (method-specific Daman policy reference)"
+    },
+    "validationPolicy": {
+      "listedPairAndActiveLoinc": "Valid for code-pair lookup only (not measurement/specimen/claim validity)",
+      "notListedForMappedCpt": "Unknown; mapping is not exhaustive",
+      "activityNotMapped": "Unknown; mapping unavailable",
+      "deprecatedLoinc": "Invalid per terminology-status rule",
+      "nonActiveLoinc": "Unknown per terminology-status rule",
+      "needsManualReview": "Context-dependent aliases and method-sensitive codes"
+    }
+  },
+  "activityToLoincs": {
+    "3:80061": [
+      "13458-5",
+      "2093-3"
+    ],
+    "3:80069": [
+      "1751-7",
+      "17861-6",
+      "2028-9",
+      "2075-0",
+      "2160-0",
+      "2823-3",
+      "2951-2",
+      "3094-0"
+    ],
+    "3:80076": [
+      "1742-6",
+      "1751-7",
+      "1920-8",
+      "1968-7",
+      "1975-2",
+      "2885-2",
+      "6768-6"
+    ],
+    "3:82565": [
+      "2160-0"
+    ],
+    "3:82670": [
+      "2243-4"
+    ],
+    "3:82728": [
+      "20567-4",
+      "2276-4"
+    ],
+    "3:82947": [
+      "14771-0",
+      "1558-6"
+    ],
+    "3:83036": [
+      "4548-4"
+    ],
+    "3:83718": [
+      "12772-0",
+      "14646-4",
+      "18263-4",
+      "2085-9",
+      "26015-8",
+      "26017-4",
+      "35197-3",
+      "35243-5",
+      "49130-8",
+      "9832-7",
+      "9833-5"
+    ],
+    "3:83719": [
+      "2091-7"
+    ],
+    "3:84443": [
+      "3016-3"
+    ],
+    "3:84450": [
+      "1920-8"
+    ],
+    "3:84460": [
+      "1742-6"
+    ],
+    "3:84520": [
+      "3094-0"
+    ],
+    "3:84525": [
+      "3094-0"
+    ],
+    "3:85018": [
+      "718-7"
+    ],
+    "3:85025": [
+      "4544-3",
+      "5905-5",
+      "6690-2",
+      "704-7",
+      "706-2",
+      "711-2",
+      "713-8",
+      "718-7",
+      "731-0",
+      "736-9",
+      "742-7",
+      "751-8",
+      "770-8",
+      "777-3",
+      "785-6",
+      "786-4",
+      "787-2",
+      "788-0",
+      "789-8"
+    ],
+    "3:85027": [
+      "4544-3",
+      "6690-2",
+      "718-7",
+      "777-3",
+      "785-6",
+      "786-4",
+      "787-2",
+      "788-0",
+      "789-8"
+    ]
+  },
+  "sourceByActivity": {
+    "3:80061": "Tampermonkey v2.3.69 VERIFIED_CODE_REPAIR_CPT list (safe-fix candidate codes; not an exhaustive CPT crosswalk)",
+    "3:80069": "Tampermonkey v2.3.69 VERIFIED_CODE_REPAIR_CPT list (safe-fix candidate codes; not an exhaustive CPT crosswalk)",
+    "3:80076": "Tampermonkey v2.3.69 VERIFIED_CODE_REPAIR_CPT list (safe-fix candidate codes; not an exhaustive CPT crosswalk)",
+    "3:82565": "Tampermonkey v2.3.69 VERIFIED_CODE_REPAIR_CPT list (safe-fix candidate codes; not an exhaustive CPT crosswalk)",
+    "3:82670": "Tampermonkey v2.3.69 VERIFIED_CODE_REPAIR_CPT list (safe-fix candidate codes; not an exhaustive CPT crosswalk)",
+    "3:82728": "Tampermonkey v2.3.69 VERIFIED_CODE_REPAIR_CPT list (safe-fix candidate codes; not an exhaustive CPT crosswalk)",
+    "3:82947": "Tampermonkey v2.3.69 VERIFIED_CODE_REPAIR_CPT list (safe-fix candidate codes; not an exhaustive CPT crosswalk)",
+    "3:83036": "Tampermonkey v2.3.69 VERIFIED_CODE_REPAIR_CPT list (safe-fix candidate codes; not an exhaustive CPT crosswalk)",
+    "3:83718": "Current Observation Checker CODE_83718_LOINC_CODES validation list",
+    "3:83719": "Tampermonkey v2.3.69 MISSING_LIPID_LOINC[83719] (method confirmation recommended)",
+    "3:84443": "Tampermonkey v2.3.69 VERIFIED_CODE_REPAIR_CPT list (safe-fix candidate codes; not an exhaustive CPT crosswalk)",
+    "3:84450": "Tampermonkey v2.3.69 VERIFIED_CODE_REPAIR_CPT list (safe-fix candidate codes; not an exhaustive CPT crosswalk)",
+    "3:84460": "Tampermonkey v2.3.69 VERIFIED_CODE_REPAIR_CPT list (safe-fix candidate codes; not an exhaustive CPT crosswalk)",
+    "3:84520": "Tampermonkey v2.3.69 VERIFIED_CODE_REPAIR_CPT list (safe-fix candidate codes; not an exhaustive CPT crosswalk)",
+    "3:84525": "Tampermonkey v2.3.69 internal BUN alias rule (preferred serum/plasma BUN code)",
+    "3:85018": "Tampermonkey v2.3.69 VERIFIED_CODE_REPAIR_CPT list (safe-fix candidate codes; not an exhaustive CPT crosswalk)",
+    "3:85025": "Tampermonkey v2.3.69 VERIFIED_CODE_REPAIR_CPT list (safe-fix candidate codes; not an exhaustive CPT crosswalk)",
+    "3:85027": "Tampermonkey v2.3.69 VERIFIED_CODE_REPAIR_CPT list (safe-fix candidate codes; not an exhaustive CPT crosswalk)"
+  },
+  "supplementalSources": {
+    "3:82728:20567-4": "Tampermonkey DAMAN_OBSERVATION_REQUIREMENTS: as of 2026-11-03, required for relevant Daman ferritin; method specific immunoassay. Do not infer it replaces other ferritin methods globally.",
+    "3:83719:2091-7": "Tampermonkey MISSING_LIPID_LOINC: VLDL cholesterol unspecified method, needs clinical/method confirmation.",
+    "3:84525:3094-0": "Tampermonkey BUN accepted alias behavior; preferred serum/plasma BUN LOINC."
+  },
+  "reviewOnly": {
+    "3:84525": [
+      {
+        "loinc": "3096-5",
+        "reason": "Tampermonkey accepts this as an internal alias only for CPT 84525 with a verified matching PDF; LOINC denotes a 24-hour urine measurement, so not generally equivalent to serum/plasma 3094-0."
+      }
+    ],
+    "3:82670": [
+      {
+        "loinc": "53766-2",
+        "reason": "Tampermonkey compares estradiol to 2243-4 with a coding warning; 53766-2 is not an unconditional estradiol equivalent."
+      }
+    ],
+    "3:83719": [
+      {
+        "loinc": "13458-5",
+        "reason": "Calculated VLDL LOINC; CPT 83719 denotes direct testing. Requires method and billing review."
+      }
+    ]
+  }
+}
