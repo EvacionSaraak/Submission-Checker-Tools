@@ -2204,6 +2204,12 @@
     const receiver = String(receiverID || '').trim().toUpperCase();
     const priorAuthorization = String(priorAuthorizationID || '').trim();
 
+    // CPT 95018 has a Thiqa-only 1.3 factor at Al Khabisi, matching
+    // checker_pricing's scoped Mandatory Tariff override.
+    if (facility === 'MF5020' && receiver === 'D001' && normalizedCode === '95018') {
+      return 1.3;
+    }
+
     // Explicit medical pricing overrides shared with checker_pricing.
     if (facility === 'MF5020' && KHABISI_FACTOR_13_CODES.has(normalizedCode)) {
       return 1.3;
