@@ -1479,6 +1479,37 @@ await run('Khabisi 96375 uses exact-list factor 1.3 for Thiqa without broadening
   assert(unrelatedNineSeries.rule === null, 'Expected unrelated 9-series code to avoid the 96375 exact-list rule');
 });
 
+await run('Al Khabisi Thiqa CPT 95018 factor 1.3 validates AED 88.40', () => {
+  const matched = pricingApi.findFactorFromRules([], 'MF5020', '95018', 'D001');
+  assert(matched.factor === 1.3, `Expected factor 1.3 for 95018/Khabisi/Thiqa, got ${matched.factor}`);
+  assert(matched.rule && matched.rule.isOverride, 'CPT 95018 should use the Thiqa-only Khabisi override');
+
+  const factoredUnit = Math.round(68 * matched.factor * 100) / 100;
+  assert(factoredUnit === 88.4, `Expected 68 × 1.3 = 88.40, got ${factoredUnit}`);
+  assert(pricingApi.getMedicalTariffMaximum(factoredUnit, 1) === 88.4,
+    'Expected adjusted tariff maximum of AED 88.40');
+  assert(pricingApi.isWithinMedicalTariffMaximum(88.4, factoredUnit, 1),
+    'Claimed Net AED 88.40 must be Valid');
+  assert(!pricingApi.isWithinMedicalTariffMaximum(88.41, factoredUnit, 1),
+    'Claimed Net AED 88.41 must exceed the maximum');
+
+  const row = {
+    CPT: '95018', ClaimedNet: '88.4', ClaimedQty: '1',
+    ReferenceNetPrice: '68', FactoredReference: '88.4',
+    AppliedFactor: '1.3', _isMedicalPricingMatch: true
+  };
+  assert(pricingApi.getComparisonPriceResult(row, [row]).correct === true,
+    'Comparison modal should accept claimed Net AED 88.40');
+  assert(pricingApi.findFactorFromRules([], 'MF5020', '95018', 'A001').factor === 1,
+    'A001 must not inherit Thiqa factor 1.3');
+  assert(pricingApi.findFactorFromRules([], 'MF5020', '95018', 'D004').factor === 1,
+    'D004 must not inherit Thiqa factor 1.3');
+  assert(pricingApi.findFactorFromRules([], 'MF5090', '95018', 'D001').factor === 1,
+    'Other facilities must not inherit the Al Khabisi CPT 95018 override');
+  assert(pricingApi.findFactorFromRules([], 'MF5020', '95019', 'D001').factor === 1,
+    'Neighboring CPT codes must not inherit the 95018 override');
+});
+
 await run('Al Khabisi Thiqa CPT 93000 applies factor 1.5 and accepts a lower Net', () => {
   const factor = pricingApi.findFactorFromRules([], 'MF5020', '93000', 'D001');
   assert(factor.factor === 1.5, `Expected 93000 Thiqa/Khabisi factor 1.5, got ${factor.factor}`);
