@@ -1479,6 +1479,38 @@ await run('Khabisi 96375 uses exact-list factor 1.3 for Thiqa without broadening
   assert(unrelatedNineSeries.rule === null, 'Expected unrelated 9-series code to avoid the 96375 exact-list rule');
 });
 
+await run('Al Khabisi Thiqa CPT 93005 factor 1.3 validates AED 42.90', () => {
+  const matched = pricingApi.findFactorFromRules([], 'MF5020', '93005', 'D001');
+  assert(matched.factor === 1.3, `Expected factor 1.3 for 93005/Khabisi/Thiqa, got ${matched.factor}`);
+  assert(matched.rule && matched.rule.isOverride, '93005 should use a scoped Thiqa Khabisi override');
+
+  const factoredUnit = Math.round(33 * matched.factor * 100) / 100;
+  assert(factoredUnit === 42.9, 'Expected 33 × 1.3 = 42.90');
+  assert(pricingApi.getMedicalTariffMaximum(factoredUnit, 1) === 42.9,
+    'Expected maximum net AED 42.90 at quantity 1');
+  assert(pricingApi.isWithinMedicalTariffMaximum(42.9, factoredUnit, 1),
+    'Claimed Net 42.90 must be valid');
+  assert(!pricingApi.isWithinMedicalTariffMaximum(42.91, factoredUnit, 1),
+    'Claimed Net 42.91 must exceed the maximum');
+
+  const row = {
+    CPT: '93005', ClaimedNet: '42.9', ClaimedQty: '1',
+    ReferenceNetPrice: '33', FactoredReference: '42.9',
+    AppliedFactor: '1.3', _isMedicalPricingMatch: true
+  };
+  assert(pricingApi.getComparisonPriceResult(row, [row]).correct === true,
+    'Comparison modal should accept 42.90 for 93005');
+
+  for (const payer of ['A001', 'D004']) {
+    assert(pricingApi.findFactorFromRules([], 'MF5020', '93005', payer).factor === 1,
+      `Payer ${payer} should not receive the Thiqa-specific override`);
+  }
+  assert(pricingApi.findFactorFromRules([], 'MF5090', '93005', 'D001').factor === 1,
+    '93005 factor must not affect other facilities');
+  assert(pricingApi.findFactorFromRules([], 'MF5020', '93006', 'D001').factor === 1,
+    '93005 factor must not leak to adjacent codes');
+});
+
 await run('Al Khabisi Thiqa CPT 95018 factor 1.3 validates AED 88.40', () => {
   const matched = pricingApi.findFactorFromRules([], 'MF5020', '95018', 'D001');
   assert(matched.factor === 1.3, `Expected factor 1.3 for 95018/Khabisi/Thiqa, got ${matched.factor}`);
