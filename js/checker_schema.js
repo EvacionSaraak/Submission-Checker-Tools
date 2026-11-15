@@ -1063,9 +1063,9 @@
             const foundCodes = Array.from(activities || []).map(activity => String(getText('Code', activity) || '').trim()).filter(code => implantCodes.has(code));
             if (!foundCodes.length) return;
             const diagnosisCodes = Array.from(diagnoses || []).map(diagnosis => normalizeDiagnosisCode(getText('Code', diagnosis))).filter(Boolean);
-            const hasValidDiagnosis = diagnosisCodes.some(code => code.startsWith('K081') || code.startsWith('K084'));
+            const hasValidDiagnosis = diagnosisCodes.some(code => code.startsWith('K081') || code.startsWith('K083') || code.startsWith('K084'));
             if (!hasValidDiagnosis) {
-                invalidFields.push(`Activity code(s) ` + `${formatNaturalList(new Set(foundCodes))} ` + `require at least one Diagnosis code from K08.1 or K08.4.`);
+                invalidFields.push(`Activity code(s) ` + `${formatNaturalList(new Set(foundCodes))} ` + `require at least one Diagnosis code from K08.1, K08.3, or K08.4.`);
             }
         }
 
