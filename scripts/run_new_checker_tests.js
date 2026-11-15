@@ -1543,7 +1543,7 @@ await run('Medical tariff maximum cannot legalize negative/zero Net or dental un
     claimedNet: 152.11, code: '97803', pricingContext: 'Mandatory Tariff',
     expectedNet: 152.1, isMaximum: true, factoredUnitPrice: 50.7, quantity: 3
   });
-  assert(/maximum 152\\.1/.test(overMaximum) && /unit 50\\.7 × qty 3/.test(overMaximum),
+  assert(/maximum 152\.1/.test(overMaximum) && /unit 50\.7 × qty 3/.test(overMaximum),
     'Medical over-cap message must show the factor-adjusted unit and quantity-adjusted cap');
 });
 
