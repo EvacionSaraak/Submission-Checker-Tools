@@ -57,12 +57,11 @@ function getDeactivatedDrugCodeFinding(code) {
 
 const THIQA_RECEIVER_ID = 'D001';
 // Khabisi (MF5020) services that always use factor 1.3.
-// Includes CPT 95018 (allergy testing), plus the established infusion/ENT services.
+// Established Al Khabisi 1.3 factor for these Thiqa infusion/ENT services.
 const KHABISI_FACTOR_13_CODES = new Set([
   '92504',
   '92567',
   '94640',
-  '95018',
   '96360',
   '96361',
   '96365',
@@ -72,6 +71,9 @@ const KHABISI_FACTOR_13_CODES = new Set([
   '96375',
   '69210'
 ]);
+// Al Khabisi Thiqa CPTs with a specific 1.3 factor (not other payers/facilities).
+// 95018: 68 × 1.3 = 88.40; 93005: 33 × 1.3 = 42.90.
+const KHABISI_THIQA_FACTOR_13_CODES = new Set(['95018', '93005']);
 // Khabisi nutrition services use factor 1.3 only when the specific activity
 // contains a non-empty PriorAuthorizationID; otherwise they remain factor 1.
 const KHABISI_AUTH_FACTOR_13_CODES = new Set(['97802', '97803']);
@@ -2727,6 +2729,27 @@ function findFactorFromRules(rules, facilityId, code, payerId, priorAuthorizatio
         matchType: 'Exact List',
         matchValues: Array.from(KHABISI_THIQA_FACTOR_15_CODES),
         factors: { D001: 1.5 },
+        isOverride: true
+      }
+    };
+  }
+
+  // Al Khabisi 95018 and 93005 need 1.3 under Thiqa, irrespective of the
+  // broader Factors.xlsx match. Other payers and facilities retain their rules.
+  if (
+    normPayer === THIQA_RECEIVER_ID &&
+    normFacility === 'MF5020' &&
+    KHABISI_THIQA_FACTOR_13_CODES.has(normCode)
+  ) {
+    return {
+      factor: 1.3,
+      rule: {
+        facility: 'Khabisi',
+        facilityId: 'MF5020',
+        serviceType: 'Khabisi specific Thiqa factor 1.3 override',
+        matchType: 'Exact List',
+        matchValues: Array.from(KHABISI_THIQA_FACTOR_13_CODES),
+        factors: { D001: 1.3 },
         isOverride: true
       }
     };
