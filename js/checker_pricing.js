@@ -74,6 +74,8 @@ const KHABISI_FACTOR_13_CODES = new Set([
 // Khabisi nutrition services use factor 1.3 only when the specific activity
 // contains a non-empty PriorAuthorizationID; otherwise they remain factor 1.
 const KHABISI_AUTH_FACTOR_13_CODES = new Set(['97802', '97803']);
+// New Look Al Khabisi (MF5020): Thiqa ECG 93000 uses a 1.5 tariff factor.
+const KHABISI_THIQA_FACTOR_15_CODES = new Set(['93000']);
 // Activity Type → Mandatory Tariff Type mapping
 const ACTIVITY_TYPE_TO_TARIFF_TYPE = {
   '3': 'CPT',
@@ -113,6 +115,22 @@ function formatMoney(value) {
   return Number.isFinite(n) ? String(n) : String(value);
 }
 
+// Medical Mandatory Tariff is a maximum: factored unit tariff multiplied by
+// activity quantity. Keep the comparison in cents to avoid decimal drift.
+function getMedicalTariffMaximum(factoredUnitPrice, quantity) {
+  const unitPrice = Number(factoredUnitPrice);
+  const qty = Number(quantity);
+  return Number.isFinite(unitPrice) && unitPrice > 0 && Number.isFinite(qty) && qty > 0
+    ? roundMoney(unitPrice * qty)
+    : null;
+}
+
+function isWithinMedicalTariffMaximum(claimedNet, factoredUnitPrice, quantity) {
+  const net = Number(claimedNet);
+  const maximum = getMedicalTariffMaximum(factoredUnitPrice, quantity);
+  return maximum !== null && Number.isFinite(net) && net > 0 && compareMoney(net, maximum) <= 0;
+}
+
 function getConcisePricingContextLabel(pricingContext) {
   const context = String(pricingContext || '').trim();
   if (/mandatory tariff/i.test(context)) return 'Mandatory Tariff';
@@ -123,9 +141,14 @@ function getConcisePricingContextLabel(pricingContext) {
   return context.replace(/\s+Pricing$/i, '').trim() || 'reference pricing';
 }
 
-function buildConcisePriceMismatchRemark({ claimedNet, code, pricingContext, expectedNet }) {
+function buildConcisePriceMismatchRemark({ claimedNet, code, pricingContext, expectedNet, isMaximum = false, factoredUnitPrice = null, quantity = null }) {
+  const calculation = isMaximum && factoredUnitPrice !== null && quantity !== null
+    ? `; unit ${formatMoney(factoredUnitPrice)} × qty ${formatMoney(quantity)}`
+    : '';
   const expectedText = Number.isFinite(Number(expectedNet))
-    ? ` (should be ${formatMoney(expectedNet)})`
+    ? (isMaximum
+      ? ` (maximum ${formatMoney(expectedNet)}${calculation})`
+      : ` (should be ${formatMoney(expectedNet)})`)
     : '';
 
   return (
@@ -2123,7 +2146,9 @@ async function handleRun(options = {}) {
         status = 'Unknown';
         remarks.push(`The reference price is 0 under ${pricingContext} (status Unknown).`);
       } else if (hasValidRef && xmlQty > 0) {
-        if (moneyEqual(xmlNet, effectiveRef)) {
+        if (isMedicalMode && isMedicalPricingMatch && !nonEndoUsedEndoPrice && isWithinMedicalTariffMaximum(xmlNet, effectiveRef, xmlQty)) {
+          status = 'Valid';
+        } else if (moneyEqual(xmlNet, effectiveRef)) {
           status = 'Valid';
         } else if (moneyEqual(xmlNet / xmlQty, effectiveRef)) {
           status = 'Valid';
@@ -2150,7 +2175,12 @@ async function handleRun(options = {}) {
             claimedNet: xmlNet,
             code: rec.CPT,
             pricingContext,
-            expectedNet: effectiveRef
+            expectedNet: isMedicalMode && isMedicalPricingMatch
+              ? getMedicalTariffMaximum(effectiveRef, xmlQty)
+              : effectiveRef,
+            isMaximum: isMedicalMode && isMedicalPricingMatch,
+            factoredUnitPrice: isMedicalMode && isMedicalPricingMatch ? effectiveRef : null,
+            quantity: isMedicalMode && isMedicalPricingMatch ? xmlQty : null
           }));
         }
       }
@@ -2251,6 +2281,7 @@ async function handleRun(options = {}) {
         ClaimPayerID: claimPayerID,
         PayerID: pricingReceiverID,
         _matchedFactorRule: matchedFactorRule,
+        _isMedicalPricingMatch: Boolean(isMedicalMode && isMedicalPricingMatch),
         _basePricingFactor: basePricingFactor,
         _modifierPriceFactor: modifierPriceFactor,
         _cptModifiers: Array.isArray(rec.CPTModifiers) ? rec.CPTModifiers.slice() : [],
@@ -2678,6 +2709,27 @@ function findFactorFromRules(rules, facilityId, code, payerId, priorAuthorizatio
   const normFacility = String(facilityId || '').trim().toUpperCase();
   const normPayer = String(payerId || '').trim().toUpperCase();
   const priorAuthorization = String(priorAuthorizationId || '').trim();
+
+  // Al Khabisi Thiqa ECG 93000 uses factor 1.5. Do not extend this
+  // exception to other facilities, payers, or unrelated 9-series CPTs.
+  if (
+    normPayer === THIQA_RECEIVER_ID &&
+    normFacility === 'MF5020' &&
+    KHABISI_THIQA_FACTOR_15_CODES.has(normCode)
+  ) {
+    return {
+      factor: 1.5,
+      rule: {
+        facility: 'Khabisi',
+        facilityId: 'MF5020',
+        serviceType: 'Khabisi ECG factor 1.5 override',
+        matchType: 'Exact List',
+        matchValues: Array.from(KHABISI_THIQA_FACTOR_15_CODES),
+        factors: { D001: 1.5 },
+        isOverride: true
+      }
+    };
+  }
 
   // Khabisi 1.3 overrides are Thiqa-only. Daman (A001/D004) must remain
   // binary factor 0/1 and therefore falls through to its normal factor rules.
@@ -3324,6 +3376,10 @@ function getComparisonPriceResult(row, claimRows) {
     return { correct: true, reason: 'Correct zero-priced medical activity.' };
   }
 
+  if (row && row._isMedicalPricingMatch === true && isWithinMedicalTariffMaximum(claimed, expectedUnit, qty)) {
+    return { correct: true, reason: 'Within factored Mandatory Tariff maximum' };
+  }
+
   if (
     moneyEqual(claimed, expectedTotal) ||
     moneyEqual(claimed, expectedUnit) ||
@@ -3416,9 +3472,9 @@ function getComparisonPriceResult(row, claimRows) {
   const pricingBasis = getComparisonPricingBasis(row);
   return {
     correct: false,
-    reason:
-      `Claimed ${formatMoney(claimed)} does not match expected ${formatMoney(expectedTotal)} ` +
-      `under ${pricingBasis}.`
+    reason: row && row._isMedicalPricingMatch === true
+      ? `Claimed ${formatMoney(claimed)} exceeds the factored Mandatory Tariff maximum ${formatMoney(expectedTotal)} under ${pricingBasis}.`
+      : `Claimed ${formatMoney(claimed)} does not match expected ${formatMoney(expectedTotal)} under ${pricingBasis}.`
   };
 }
 
@@ -4025,6 +4081,8 @@ window.runPricingCheck = runPricingCheck;
 window._pricingTestApi = {
   buildConcisePriceMismatchRemark,
   getConcisePricingContextLabel,
+  getMedicalTariffMaximum,
+  isWithinMedicalTariffMaximum,
   analyzeDrugActivity,
   isPricingExcludedReceiver,
   getDrugUnitPackageQuantity,
