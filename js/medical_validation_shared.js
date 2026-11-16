@@ -921,8 +921,11 @@
         }));
       }
 
+      // Five-digit 878xx point-of-care tests use a same-clinician rule
+      // instead of the general 8-series Performing Pathology requirement.
+      const is878SameClinicianTest = /^878\d{2}$/.test(code);
       const isLab = pathPrefixes.some(prefix => code.startsWith(normalizeActivityCode(prefix)));
-      if (isLab && !specialtyIncludes(performing, 'PATHOLOGY')) {
+      if (isLab && !is878SameClinicianTest && !specialtyIncludes(performing, 'PATHOLOGY')) {
         findings.push(makeFinding({
           ruleId: 'MED_SPEC_PATHOLOGY_REQUIRED',
           code: activity.code,
@@ -930,6 +933,22 @@
           remark: `Lab code ${activity.code} requires Performing specialty Pathology.`,
           context
         }));
+      }
+
+      if (is878SameClinicianTest) {
+        const performingLicense = normalizeLoose(activity.clinician);
+        const orderingLicense = normalizeLoose(activity.orderingClinician);
+        if (!performingLicense || !orderingLicense || performingLicense !== orderingLicense) {
+          findings.push(makeFinding({
+            ruleId: 'MED_LAB_ORDERING_PERFORMING_MATCH',
+            code: activity.code,
+            activityID: activity.id,
+            remark:
+              `Activity ${activity.code} requires Performing Clinician to be the same as OrderingClinician ` +
+              `(Performing: \`${activity.clinician || 'Missing'}\`, Ordering: \`${activity.orderingClinician || 'Missing'}\`).`,
+            context
+          }));
+        }
       }
 
       if (specialtyIncludes(performing, 'PATHOLOGY') && !isLab) {
