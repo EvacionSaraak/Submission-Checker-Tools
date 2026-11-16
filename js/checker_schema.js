@@ -94,7 +94,9 @@
         const MUTUALLY_EXCLUSIVE_INFUSION_CODES = new Set(['96360', '96365', '96374']);
         const INVALID_ACTIVITY_CODES = new Set(['36591']);
         const FIXED_QUANTITY_TWO_CODES = new Set(['87400', '87804']);
-        const LAB_ORDERING_PERFORMING_MATCH_CODES = new Set(['87804', '87880']);
+        // All five-digit CPT 878xx tests can be performed by the ordering clinician;
+        // their Performing Clinician must match OrderingClinician instead of requiring Pathology.
+        const LAB_ORDERING_PERFORMING_MATCH_PATTERN = /^878\d{2}$/;
         const DAMAN_RECEIVER_IDS = new Set(['D004', 'A001']);
         const DAMAN_BASIC_RECEIVER_ID = 'D004';
         const THIQA_RECEIVER_ID = 'D001';
@@ -1419,14 +1421,14 @@
                 if (
                     /^8/.test(code) &&
                     code !== '82948' &&
-                    !LAB_ORDERING_PERFORMING_MATCH_CODES.has(code) &&
+                    !LAB_ORDERING_PERFORMING_MATCH_PATTERN.test(code) &&
                     !specialtyContains(clinicianSpecialty, 'Pathology')
                 ) {
                     invalidFields.push(`Activity ${code} requires Clinician specialty containing Pathology (Currently \`${clinicianSpecialty || 'Unknown'}\`).`);
                 }
                 if (
-                    LAB_ORDERING_PERFORMING_MATCH_CODES.has(code) &&
-                    clinician !== orderingClinician
+                    LAB_ORDERING_PERFORMING_MATCH_PATTERN.test(code) &&
+                    (!clinician || !orderingClinician || clinician !== orderingClinician)
                 ) {
                     invalidFields.push(
                         `Activity ${code} requires Performing Clinician to be the same as OrderingClinician ` +
