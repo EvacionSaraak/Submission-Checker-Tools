@@ -722,6 +722,78 @@ await run('Specialty rules enforce dietician both directions', () => {
   assert(findings.some(f => f.ruleId === 'MED_SPEC_DIETICIAN_RESTRICTED'), 'Expected dietician restricted finding');
 });
 
+await run('Schema 878xx tests use same clinician instead of Pathology specialty', () => {
+  const specialtyMap = new Map([
+    ['PED1', 'Pediatrics'], ['PED2', 'Pediatrics'], ['PATH1', 'Pathology']
+  ]);
+  const checkSchema = (code, performing, ordering) => {
+    const activity = {
+      Code: code, Clinician: performing, OrderingClinician: ordering,
+      Quantity: code === '87804' ? '2' : '1', Net: '25'
+    };
+    const invalidFields = [];
+    schemaApi.validateConsultationAndSpecialtyRules(
+      [activity], (field, row) => row[field] || '', invalidFields,
+      specialtyMap, { isMedicalClaim: true, receiverID: 'D001', claimPayerID: 'E001' }
+    );
+    return invalidFields;
+  };
+  for (const code of ['87800', '87804', '87807', '87880', '87899']) {
+    const valid = checkSchema(code, 'PED1', 'PED1');
+    assert(!valid.some(message => /Pathology|same as OrderingClinician/.test(message)),
+      `Schema: 878xx code ${code} with matching Pediatrics clinician must be accepted: ${valid.join('; ')}`);
+    const mismatched = checkSchema(code, 'PED1', 'PED2');
+    assert(mismatched.some(message => /requires Performing Clinician to be the same as OrderingClinician/.test(message)),
+      `Schema: 878xx code ${code} with mismatched clinicians must fail`);
+    assert(!mismatched.some(message => /requires Clinician specialty containing Pathology/.test(message)),
+      `Schema: 878xx code ${code} must not require Pathology`);
+  }
+  for (const code of ['8780', '878070', '87799', '87900']) {
+    const invalid = checkSchema(code, 'PED1', 'PED2');
+    assert(invalid.some(message => /requires Clinician specialty containing Pathology/.test(message)),
+      `Schema: ${code} must retain the standard lab Pathology rule`);
+    assert(!invalid.some(message => /requires Performing Clinician to be the same as OrderingClinician/.test(message)),
+      `Schema: ${code} must not inherit the 878xx same-clinician rule`);
+  }
+  const missing = checkSchema('87807', '', '');
+  assert(missing.some(message => /requires Performing Clinician to be the same as OrderingClinician/.test(message)),
+    'Schema: two missing clinician licenses must not count as matching');
+});
+
+await run('Medical shared 878xx specialty rule matches the Schema Checker', () => {
+  const rules = { specialtyRestrictions: {
+    pathologyLabCodePrefixes: ['8'], dieticianCodes: ['97802', '97803']
+  } };
+  const checkMedical = (code, performing, ordering, specialty = 'Pediatrics') =>
+    medicalShared.validateSpecialtyRules(makeMedicalContext({
+      activities: [{
+        id: 'A1', code, normalizedCode: code, quantity: 1, net: 25,
+        clinician: performing, orderingClinician: ordering,
+        clinicianSpecialty: specialty, orderingSpecialty: 'Pediatrics', modifiers: []
+      }]
+    }), rules);
+
+  for (const code of ['87800', '87804', '87807', '87880', '87899']) {
+    const same = checkMedical(code, 'PED1', 'PED1');
+    assert(!same.some(f => f.ruleId === 'MED_SPEC_PATHOLOGY_REQUIRED' || f.ruleId === 'MED_LAB_ORDERING_PERFORMING_MATCH'),
+      `Shared Medical: matching Pediatrics clinician should be accepted for ${code}`);
+    const different = checkMedical(code, 'PED1', 'PED2');
+    assert(different.some(f => f.ruleId === 'MED_LAB_ORDERING_PERFORMING_MATCH'),
+      `Shared Medical: mismatched clinician should be invalid for ${code}`);
+    assert(!different.some(f => f.ruleId === 'MED_SPEC_PATHOLOGY_REQUIRED'),
+      `Shared Medical: ${code} should not require Pathology`);
+  }
+  for (const code of ['8780', '878070', '87799', '87900']) {
+    const other = checkMedical(code, 'PED1', 'PED2');
+    assert(other.some(f => f.ruleId === 'MED_SPEC_PATHOLOGY_REQUIRED'),
+      `Shared Medical: ${code} retains Pathology requirement`);
+    assert(!other.some(f => f.ruleId === 'MED_LAB_ORDERING_PERFORMING_MATCH'),
+      `Shared Medical: ${code} should not require matching clinicians`);
+  }
+  assert(checkMedical('87807', '', '').some(f => f.ruleId === 'MED_LAB_ORDERING_PERFORMING_MATCH'),
+    'Shared Medical: missing clinician licenses must not silently pass matching');
+});
+
 await run('Modifier rules enforce qty and missing modifier 25', () => {
   const ctx = makeMedicalContext({
     diagnoses: [{ code: 'J00', normalizedCode: 'J00', type: 'Principal' }],
