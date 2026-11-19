@@ -3881,5 +3881,365 @@
     "Status": "",
     "From": "",
     "To": ""
+  },
+  {
+    "Phy Lic": "GD16266",
+    "Clinician Name": "SHERIF MOHAMED MAKRAM ISMAIL AHMED HAMAD",
+    "Specialty": "Dermatology",
+    "Facility": "MF1901",
+    "Facility Name": "MAJESTIC MEDICAL CENTER- SOLE PROPRIETORSHIP L.L.C.",
+    "Status": "Active",
+    "From": 44035,
+    "To": 47063
+  },
+  {
+    "Phy Lic": "GD45197",
+    "Clinician Name": "YASSMINE RAOUD",
+    "Specialty": "General Dentist",
+    "Facility": "MF232",
+    "Facility Name": "EMIRATES MEDICAL CENTER - SOLE PROPRIETORSHIP L.L.C.",
+    "Status": "Active",
+    "From": 45616,
+    "To": 47076
+  },
+  {
+    "Phy Lic": "GD19645",
+    "Clinician Name": "REEM A M ABUALQUMSSAN",
+    "Specialty": "General Dentist",
+    "Facility": "MF4456",
+    "Facility Name": "IVORY MEDICAL CENTER - SOLE PROPRIETORSHIP L.L.C.",
+    "Status": "Active",
+    "From": 42246,
+    "To": 47046
+  },
+  {
+    "Phy Lic": "GD37765",
+    "Clinician Name": "Ibrahim Adnan Ibrahim Abu Abbas",
+    "Specialty": "General Dentist",
+    "Facility": "MF4456",
+    "Facility Name": "IVORY MEDICAL CENTER - SOLE PROPRIETORSHIP L.L.C.",
+    "Status": "Active",
+    "From": 44475,
+    "To": 47039
+  },
+  {
+    "Phy Lic": "GD48372",
+    "Clinician Name": "MOHAMAD HAZEM ALMUKAYED",
+    "Specialty": "General Practitioner",
+    "Facility": "MF4706",
+    "Facility Name": "LAURETTA MEDICAL CENTER - SOLE PROPRIETORSHIP L.L.C.",
+    "Status": "Active",
+    "From": 46159,
+    "To": 47038
+  },
+  {
+    "Phy Lic": "GN70941",
+    "Clinician Name": "FATIMA SAEED JUMA HADEED ALKAABI",
+    "Specialty": "Registered Nurse",
+    "Facility": "MF4706",
+    "Facility Name": "LAURETTA MEDICAL CENTER - SOLE PROPRIETORSHIP L.L.C.",
+    "Status": "Active",
+    "From": 45768,
+    "To": 47065
+  },
+  {
+    "Phy Lic": "GD23441",
+    "Clinician Name": "SALHA MOHD MOHAREB HABIB",
+    "Specialty": "General Dentist",
+    "Facility": "MF494",
+    "Facility Name": "TALAT MEDICAL CENTRE - SOLE PROPRIETORSHIP L.L.C.",
+    "Status": "Active",
+    "From": 43173,
+    "To": 47045
+  },
+  {
+    "Phy Lic": "GD23958",
+    "Clinician Name": "IMAN HASSAN MUSA ALSHAMI",
+    "Specialty": "General Dentist",
+    "Facility": "MF494",
+    "Facility Name": "TALAT MEDICAL CENTRE - SOLE PROPRIETORSHIP L.L.C.",
+    "Status": "Active",
+    "From": 43325,
+    "To": 47045
+  },
+  {
+    "Phy Lic": "GN28841",
+    "Clinician Name": "MARK ANTHONY DE GUZMAN ESCANO",
+    "Specialty": "Registered Nurse",
+    "Facility": "MF494",
+    "Facility Name": "TALAT MEDICAL CENTRE - SOLE PROPRIETORSHIP L.L.C.",
+    "Status": "Active",
+    "From": 42442,
+    "To": 47044
+  },
+  {
+    "Phy Lic": "GD18521",
+    "Clinician Name": "SAMMY AL BENNA",
+    "Specialty": "Plastic Surgery",
+    "Facility": "MF5020",
+    "Facility Name": "NEW LOOK MEDICAL CENTER - SOLE PROPRIETORSHIP L.L.C. - BRANCH",
+    "Status": "Active",
+    "From": 42023,
+    "To": 47037
+  },
+  {
+    "Phy Lic": "GD24925",
+    "Clinician Name": "Mohamed Ali Mohamed",
+    "Specialty": "General Dentist",
+    "Facility": "MF5020",
+    "Facility Name": "NEW LOOK MEDICAL CENTER - SOLE PROPRIETORSHIP L.L.C. - BRANCH",
+    "Status": "Active",
+    "From": 43635,
+    "To": 47037
+  },
+  {
+    "Phy Lic": "GD49579",
+    "Clinician Name": "THANA TARIQ AHMAD RASHAD TARIQ AHMAD RASHAD MANASRA",
+    "Specialty": "Orthodontics",
+    "Facility": "MF5020",
+    "Facility Name": "NEW LOOK MEDICAL CENTER - SOLE PROPRIETORSHIP L.L.C. - BRANCH",
+    "Status": "Active",
+    "From": 46322,
+    "To": 47052
+  },
+  {
+    "Phy Lic": "GT42706",
+    "Clinician Name": "MARICHEL SECJADAS ROSAL",
+    "Specialty": "Aesthetician",
+    "Facility": "MF5020",
+    "Facility Name": "NEW LOOK MEDICAL CENTER - SOLE PROPRIETORSHIP L.L.C. - BRANCH",
+    "Status": "Active",
+    "From": 46323,
+    "To": 47053
+  },
+  {
+    "Phy Lic": "GN73523",
+    "Clinician Name": "HAMDA MUBARAK MASOUD HADI AL AHBABI",
+    "Specialty": "Registered Nurse",
+    "Facility": "MF5339",
+    "Facility Name": "WLDY MEDICAL CENTER - SOLE PROPRIETORSHIP L.L.C.",
+    "Status": "Active",
+    "From": 46013,
+    "To": 47045
+  },
+  {
+    "Phy Lic": "GT27993",
+    "Clinician Name": "MOHAMMAD SALAH SALEM JARADAT",
+    "Specialty": "Speech Therapist/ Speech & Language Pathologist",
+    "Facility": "MF5339",
+    "Facility Name": "WLDY MEDICAL CENTER - SOLE PROPRIETORSHIP L.L.C.",
+    "Status": "Active",
+    "From": 44588,
+    "To": 47070
+  },
+  {
+    "Phy Lic": "GD38197",
+    "Clinician Name": "NISHI GROVER",
+    "Specialty": "Pediatric Dentistry",
+    "Facility": "MF5357",
+    "Facility Name": "NEW LOOK MEDICAL CENTER - SOLE PROPRIETORSHIP L.L.C. - BRANCH",
+    "Status": "Active",
+    "From": 44549,
+    "To": 47073
+  },
+  {
+    "Phy Lic": "GD45039",
+    "Clinician Name": "Saleeta Mushtaq Gadie",
+    "Specialty": "Periodontics",
+    "Facility": "MF5357",
+    "Facility Name": "NEW LOOK MEDICAL CENTER - SOLE PROPRIETORSHIP L.L.C. - BRANCH",
+    "Status": "Active",
+    "From": 45588,
+    "To": 47048
+  },
+  {
+    "Phy Lic": "GN23243",
+    "Clinician Name": "SHINCY MANUEL ADAMPASSERIL CHACKO",
+    "Specialty": "Registered Nurse",
+    "Facility": "MF5357",
+    "Facility Name": "NEW LOOK MEDICAL CENTER - SOLE PROPRIETORSHIP L.L.C. - BRANCH",
+    "Status": "Active",
+    "From": 42121,
+    "To": 47052
+  },
+  {
+    "Phy Lic": "GT42705",
+    "Clinician Name": "HOSAM SHABAN GABER ABED",
+    "Specialty": "Physiotherapist",
+    "Facility": "MF5357",
+    "Facility Name": "NEW LOOK MEDICAL CENTER - SOLE PROPRIETORSHIP L.L.C. - BRANCH",
+    "Status": "Active",
+    "From": 46323,
+    "To": 47053
+  },
+  {
+    "Phy Lic": "GD23284",
+    "Clinician Name": "GAWAHER MOHAMED",
+    "Specialty": "Obstetrics and Gynecology",
+    "Facility": "MF7003",
+    "Facility Name": "TRUELIFE SPECIALTY HOSPITAL - SOLE PROPRIETORSHIP L.L.C.",
+    "Status": "Active",
+    "From": 43129,
+    "To": 47035
+  },
+  {
+    "Phy Lic": "GD37275",
+    "Clinician Name": "ABEER AL KHALILI",
+    "Specialty": "General Dentist",
+    "Facility": "MF7003",
+    "Facility Name": "TRUELIFE SPECIALTY HOSPITAL - SOLE PROPRIETORSHIP L.L.C.",
+    "Status": "Active",
+    "From": 44384,
+    "To": 47053
+  },
+  {
+    "Phy Lic": "GD37614",
+    "Clinician Name": "Alaa  Hamdan Elmaamon  Elshiekh",
+    "Specialty": "General Dentist",
+    "Facility": "MF7003",
+    "Facility Name": "TRUELIFE SPECIALTY HOSPITAL - SOLE PROPRIETORSHIP L.L.C.",
+    "Status": "Active",
+    "From": 44452,
+    "To": 47048
+  },
+  {
+    "Phy Lic": "GD38172",
+    "Clinician Name": "MUSTAFA HASSAN ASHOUR",
+    "Specialty": "General Practitioner",
+    "Facility": "MF7003",
+    "Facility Name": "TRUELIFE SPECIALTY HOSPITAL - SOLE PROPRIETORSHIP L.L.C.",
+    "Status": "Active",
+    "From": 44544,
+    "To": 47072
+  },
+  {
+    "Phy Lic": "GD39404",
+    "Clinician Name": "SHIRAZ  ADIL OSMAN  MAHMOUD",
+    "Specialty": "Dermatology",
+    "Facility": "MF7003",
+    "Facility Name": "TRUELIFE SPECIALTY HOSPITAL - SOLE PROPRIETORSHIP L.L.C.",
+    "Status": "Active",
+    "From": 44737,
+    "To": 47075
+  },
+  {
+    "Phy Lic": "GD41353",
+    "Clinician Name": "BODOUR ALSAADI",
+    "Specialty": "Orthodontics",
+    "Facility": "MF7003",
+    "Facility Name": "TRUELIFE SPECIALTY HOSPITAL - SOLE PROPRIETORSHIP L.L.C.",
+    "Status": "Active",
+    "From": 45006,
+    "To": 47085
+  },
+  {
+    "Phy Lic": "GD45218",
+    "Clinician Name": "AMR MOHAMMAD RADWAN MAJZOUB",
+    "Specialty": "Anesthesia",
+    "Facility": "MF7003",
+    "Facility Name": "TRUELIFE SPECIALTY HOSPITAL - SOLE PROPRIETORSHIP L.L.C.",
+    "Status": "Active",
+    "From": 45622,
+    "To": 47082
+  },
+  {
+    "Phy Lic": "GD49524",
+    "Clinician Name": "SAMI MOHAMED AHMED ABDALLA MOHAMED",
+    "Specialty": "Internal Medicine",
+    "Facility": "MF7003",
+    "Facility Name": "TRUELIFE SPECIALTY HOSPITAL - SOLE PROPRIETORSHIP L.L.C.",
+    "Status": "Active",
+    "From": 46315,
+    "To": 47045
+  },
+  {
+    "Phy Lic": "GN64099",
+    "Clinician Name": "VIVIAN NGOZI IJEABUONWU",
+    "Specialty": "Registered Nurse",
+    "Facility": "MF7003",
+    "Facility Name": "TRUELIFE SPECIALTY HOSPITAL - SOLE PROPRIETORSHIP L.L.C.",
+    "Status": "Active",
+    "From": 44882,
+    "To": 47073
+  },
+  {
+    "Phy Lic": "GN77005",
+    "Clinician Name": "JINCY MATHEW",
+    "Specialty": "Assistant Nurse",
+    "Facility": "MF7003",
+    "Facility Name": "TRUELIFE SPECIALTY HOSPITAL - SOLE PROPRIETORSHIP L.L.C.",
+    "Status": "Active",
+    "From": 46315,
+    "To": 47045
+  },
+  {
+    "Phy Lic": "GT36697",
+    "Clinician Name": "JAY R FERRER ARGUELLES",
+    "Specialty": "Physiotherapist",
+    "Facility": "MF7003",
+    "Facility Name": "TRUELIFE SPECIALTY HOSPITAL - SOLE PROPRIETORSHIP L.L.C.",
+    "Status": "Active",
+    "From": 45686,
+    "To": 47037
+  },
+  {
+    "Phy Lic": "GT42825",
+    "Clinician Name": "Wodimh Khalifa Mohammed Khalifa Alghfeli",
+    "Specialty": "Medical Laboratory Technician",
+    "Facility": "MF7003",
+    "Facility Name": "TRUELIFE SPECIALTY HOSPITAL - SOLE PROPRIETORSHIP L.L.C.",
+    "Status": "Active",
+    "From": 46334,
+    "To": 47064
+  },
+  {
+    "Phy Lic": "GT42868",
+    "Clinician Name": "AMRUTHA KALLITHODI",
+    "Specialty": "Physiotherapist",
+    "Facility": "MF7003",
+    "Facility Name": "TRUELIFE SPECIALTY HOSPITAL - SOLE PROPRIETORSHIP L.L.C.",
+    "Status": "Active",
+    "From": 46337,
+    "To": 47067
+  },
+  {
+    "Phy Lic": "GT42869",
+    "Clinician Name": "SILNA VAITHANTE POYIL",
+    "Specialty": "Physiotherapist",
+    "Facility": "MF7003",
+    "Facility Name": "TRUELIFE SPECIALTY HOSPITAL - SOLE PROPRIETORSHIP L.L.C.",
+    "Status": "Active",
+    "From": 46337,
+    "To": 47067
+  },
+  {
+    "Phy Lic": "GT42871",
+    "Clinician Name": "MARCK DIETHER RUBIO SALMASAN",
+    "Specialty": "Physiotherapist",
+    "Facility": "MF7003",
+    "Facility Name": "TRUELIFE SPECIALTY HOSPITAL - SOLE PROPRIETORSHIP L.L.C.",
+    "Status": "Active",
+    "From": 46337,
+    "To": 47067
+  },
+  {
+    "Phy Lic": "GT6117",
+    "Clinician Name": "MH'D ANAS ALKHATIB",
+    "Specialty": "Medical Laboratory Technician",
+    "Facility": "MF7003",
+    "Facility Name": "TRUELIFE SPECIALTY HOSPITAL - SOLE PROPRIETORSHIP L.L.C.",
+    "Status": "Active",
+    "From": 40260,
+    "To": 47040
+  },
+  {
+    "Phy Lic": "GP18235",
+    "Clinician Name": "MOHAMMAD Ahmad KHEDER",
+    "Specialty": "Pharmacist",
+    "Facility": "PF5131",
+    "Facility Name": "BRASHOV PHARMACY - L.L.C - O.P.C",
+    "Status": "Active",
+    "From": 43706,
+    "To": 47048
   }
 ]
