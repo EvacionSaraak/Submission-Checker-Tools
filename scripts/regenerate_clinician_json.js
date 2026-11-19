@@ -1,129 +1,171 @@
 #!/usr/bin/env node
 /**
- * Script to regenerate clinician_licenses.json from ClinicianLicenses.xlsx
- * This ensures the JSON includes the Facility column from the Excel file.
- * 
- * Usage: node scripts/regenerate_clinician_json.js
+ * Sync facility clinician licenses from resources/ClinicianLicenses.xlsx.
+ *
+ * Only clinicians affiliated to a facility in json/facilities.json are considered.
+ * This is deliberately additive: it preserves all existing clinician rows,
+ * secondments, manually approved affiliations, and locally curated specialties.
+ * Duplicates in the workbook are resolved using the latest effective dates.
+ *
+ * Run: npm install --no-save --no-package-lock xlsx@0.18.5
+ *      node scripts/regenerate_clinician_json.js
  */
+'use strict';
 
 const fs = require('fs');
 const path = require('path');
+const XLSX = require('xlsx');
 
-// Note: This script requires the xlsx package to be installed
-// Run: npm install xlsx
-let XLSX;
-try {
-  XLSX = require('xlsx');
-} catch (e) {
-  console.error('Error: xlsx package not found. Please run: npm install xlsx');
-  process.exit(1);
+const ROOT = path.resolve(__dirname, '..');
+const SOURCE = path.join(ROOT, 'resources', 'ClinicianLicenses.xlsx');
+const TARGET = path.join(ROOT, 'json', 'clinician_licenses.json');
+const FACILITIES = path.join(ROOT, 'json', 'facilities.json');
+
+const upper = value => String(value == null ? '' : value).trim().toUpperCase();
+const asText = value => String(value == null ? '' : value).trim();
+const normalizeHeader = value => upper(value).replace(/[^A-Z0-9]/g, '');
+const fieldAliases = {
+  license: ['CLINICIANLICENSE', 'PHYLIC', 'PHYSICIANLICENSE', 'LICENSE'],
+  name: ['CLINICIANNAME', 'PHYSICIANNAME', 'NAME'],
+  category: ['CATEGORY', 'SPECIALTY', 'SPECIALITY'],
+  profession: ['PROFESSION'],
+  facility: ['FACILITYLICENSE', 'FACILITY', 'FACILITYID'],
+  facilityName: ['FACILITYNAME'],
+  status: ['STATUS', 'LICENSESTATUS'],
+  from: ['FROM', 'STARTDATE', 'VALIDFROM', 'EFFECTIVEFROM'],
+  to: ['TO', 'ENDDATE', 'VALIDTO', 'EXPIRYDATE', 'EXPIRATIONDATE']
+};
+
+function findHeader(matrix) {
+  for (let index = 0; index < Math.min(matrix.length, 35); index++) {
+    const labels = (matrix[index] || []).map(normalizeHeader);
+    const column = {};
+    for (const [field, aliases] of Object.entries(fieldAliases)) {
+      column[field] = labels.findIndex(label => aliases.includes(label));
+    }
+    if (column.license >= 0 && column.facility >= 0 && column.name >= 0) {
+      return { headerRow: index, column };
+    }
+  }
+  return null;
 }
 
-const EXCEL_PATH = path.join(__dirname, '../resources/ClinicianLicenses.xlsx');
-const JSON_OUTPUT_PATH = path.join(__dirname, '../json/clinician_licenses.json');
+function cell(row, columnIndex) {
+  return columnIndex >= 0 ? row[columnIndex] : '';
+}
 
-console.log('Reading Excel file:', EXCEL_PATH);
+function sortableDate(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value.getTime() / 86400000 + 25569;
+  const parsed = Date.parse(asText(value));
+  return Number.isFinite(parsed) ? parsed / 86400000 + 25569 : 0;
+}
 
-try {
-  // Read the Excel file
-  const workbook = XLSX.readFile(EXCEL_PATH);
-  const sheetName = workbook.SheetNames[0]; // "Clinician Data"
-  const worksheet = workbook.Sheets[sheetName];
-  
-  console.log('Sheet name:', sheetName);
-  
-  // The Excel file has:
-  // - Rows 0-1: Merged metadata cells
-  // - Row 2: Headers (but shows as data due to merged cells above)
-  // - Row 3+: Actual data
-  
-  // Read raw data starting from row 2
-  const rawData = XLSX.utils.sheet_to_json(worksheet, { 
-    range: 2,
-    defval: ''
-  });
-  
-  console.log(`Found ${rawData.length} raw records`);
-  
-  // First row contains the header names as values (due to merged cells)
-  const headerRow = rawData[0];
-  const headers = {};
-  Object.keys(headerRow).forEach(key => {
-    headers[key] = String(headerRow[key]).trim();
-  });
-  
-  console.log('Header mapping:', headers);
-  
-  // Process data rows (skip first row which was headers)
-  const cleanedData = rawData
-    .slice(1) // Skip the header row
-    .filter(row => {
-      // Find the "Clinician License" column
-      const licenseKey = Object.keys(headers).find(k => headers[k] === 'Clinician License');
-      return row[licenseKey] && String(row[licenseKey]).trim();
-    })
-    .map(row => {
-      // Map columns based on header mapping
-      const getLicenseKey = Object.keys(headers).find(k => headers[k] === 'Clinician License');
-      const getNameKey = Object.keys(headers).find(k => headers[k] === 'Clinician Name');
-      const getCategoryKey = Object.keys(headers).find(k => headers[k] === 'Category');
-      const getProfessionKey = Object.keys(headers).find(k => headers[k] === 'Profession');
-      const getFacilityKey = Object.keys(headers).find(k => headers[k] === 'Facility License');
-      const getFacilityNameKey = Object.keys(headers).find(k => headers[k] === 'Facility Name');
-      const getStatusKey = Object.keys(headers).find(k => headers[k] === 'Status');
-      const getFromKey = Object.keys(headers).find(k => headers[k] === 'From');
-      const getToKey = Object.keys(headers).find(k => headers[k] === 'To');
-      
-      return {
-        'Phy Lic': String(row[getLicenseKey] || '').trim(),
-        'Clinician Name': String(row[getNameKey] || '').trim(),
-        'Specialty': String(row[getCategoryKey] || row[getProfessionKey] || '').trim(),
-        'Facility': String(row[getFacilityKey] || '').trim(),
-        'Facility Name': String(row[getFacilityNameKey] || '').trim(),
-        'Status': String(row[getStatusKey] || '').trim(),
-        'From': row[getFromKey] || '',
-        'To': row[getToKey] || ''
+function isLater(candidate, existing) {
+  return (
+    sortableDate(candidate.From) > sortableDate(existing.From) ||
+    (sortableDate(candidate.From) === sortableDate(existing.From) &&
+      sortableDate(candidate.To) > sortableDate(existing.To))
+  );
+}
+
+function keyFor(record) {
+  return upper(record['Phy Lic']) + '|' + upper(record.Facility);
+}
+
+function sync() {
+  const facilityData = JSON.parse(fs.readFileSync(FACILITIES, 'utf8'));
+  const allowedFacilities = new Set(
+    (facilityData.facilities || []).map(row => upper(row.license)).filter(Boolean)
+  );
+  if (!allowedFacilities.size) throw new Error('No configured facilities; refusing to rewrite clinician JSON.');
+
+  const existing = JSON.parse(fs.readFileSync(TARGET, 'utf8'));
+  if (!Array.isArray(existing)) throw new Error('Existing clinician JSON must be an array.');
+  const existingKeys = new Set(existing.map(keyFor));
+
+  const workbook = XLSX.readFile(SOURCE, { cellDates: false, dense: true });
+  const workbookRecords = new Map();
+  let matchedSheets = 0;
+  let relevantRows = 0;
+  let skippedMissingData = 0;
+
+  for (const sheetName of workbook.SheetNames) {
+    const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], {
+      header: 1, raw: true, defval: '', blankrows: false
+    });
+    const header = findHeader(rows);
+    if (!header) {
+      console.log('Skipping sheet without clinician/facility headers:', sheetName);
+      continue;
+    }
+    matchedSheets++;
+    const c = header.column;
+    console.log('Parsing sheet:', sheetName, 'header row:', header.headerRow + 1, 'rows:', rows.length);
+    for (const row of rows.slice(header.headerRow + 1)) {
+      const license = upper(cell(row, c.license));
+      const facility = upper(cell(row, c.facility));
+      if (!allowedFacilities.has(facility)) continue;
+      const name = asText(cell(row, c.name));
+      if (!license || !name) {
+        skippedMissingData++;
+        continue;
+      }
+
+      relevantRows++;
+      const record = {
+        'Phy Lic': license,
+        'Clinician Name': name,
+        'Specialty': asText(cell(row, c.category)) || asText(cell(row, c.profession)),
+        'Facility': facility,
+        'Facility Name': asText(cell(row, c.facilityName)),
+        'Status': asText(cell(row, c.status)),
+        'From': cell(row, c.from) || '',
+        'To': cell(row, c.to) || ''
       };
-    });
-  
-  console.log(`Found ${cleanedData.length} valid clinician records`);
-
-  // Preserve internal affiliations independently of the XLSX import.
-  if (fs.existsSync(JSON_OUTPUT_PATH)) {
-    const existing = JSON.parse(fs.readFileSync(JSON_OUTPUT_PATH, 'utf8'));
-    const approvals = new Map(
-      (Array.isArray(existing) ? existing : [])
-        .filter(row => row['Internal Affiliation Approved'] === true)
-        .map(row => [String(row['Phy Lic'] || '').trim().toUpperCase(), row])
-        .filter(([license]) => !!license)
-    );
-    const imported = new Set();
-    for (const row of cleanedData) {
-      const id = String(row['Phy Lic'] || '').trim().toUpperCase();
-      imported.add(id);
-      if (approvals.has(id)) row['Internal Affiliation Approved'] = true;
-    }
-    for (const [id, row] of approvals) {
-      if (!imported.has(id)) cleanedData.push(row);
+      const key = keyFor(record);
+      const previous = workbookRecords.get(key);
+      if (!previous || isLater(record, previous)) workbookRecords.set(key, record);
     }
   }
 
-  // Write JSON file
-  fs.writeFileSync(JSON_OUTPUT_PATH, JSON.stringify(cleanedData, null, 2));
-  
-  console.log(`✓ Successfully generated ${JSON_OUTPUT_PATH}`);
-  console.log(`✓ Exported ${cleanedData.length} clinician records`);
-  
-  // Show sample of first records
-  if (cleanedData.length > 0) {
-    console.log('\nSample records:');
-    cleanedData.slice(0, 3).forEach((record, idx) => {
-      console.log(`\nRecord ${idx + 1}:`, JSON.stringify(record, null, 2));
-    });
+  if (!matchedSheets) {
+    throw new Error('Could not find Clinician License, Clinician Name and Facility License headers in workbook.');
   }
-  
-} catch (error) {
-  console.error('Error:', error.message);
-  console.error(error.stack);
-  process.exit(1);
+
+  const additions = [];
+  const byFacility = {};
+  let skippedInactive = 0;
+  for (const [key, record] of workbookRecords) {
+    if (existingKeys.has(key)) continue;
+    const status = upper(record.Status);
+    if (status && status !== 'ACTIVE') {
+      skippedInactive++;
+      continue;
+    }
+    additions.push(record);
+    byFacility[record.Facility] = (byFacility[record.Facility] || 0) + 1;
+    existingKeys.add(key);
+  }
+  additions.sort((a, b) => a.Facility.localeCompare(b.Facility) || a['Phy Lic'].localeCompare(b['Phy Lic']));
+
+  const updated = [...existing, ...additions];
+  const output = JSON.stringify(updated, null, 2) + '\n';
+  console.log(JSON.stringify({
+    configuredFacilities: allowedFacilities.size,
+    matchedSheets, relevantRows, distinctClinicianFacilities: workbookRecords.size,
+    previouslyListed: existing.length, additions: additions.length,
+    skippedInactive, skippedMissingData, byFacility,
+    afterUpdate: updated.length,
+    preservedApprovedAffiliations: existing.filter(row => row['Internal Affiliation Approved'] === true).length
+  }, null, 2));
+  if (!additions.length) {
+    console.log('No missing active clinician-facility pairs; JSON unchanged.');
+    return;
+  }
+
+  fs.writeFileSync(TARGET, output);
+  console.log('Updated', TARGET);
 }
+
+sync();
