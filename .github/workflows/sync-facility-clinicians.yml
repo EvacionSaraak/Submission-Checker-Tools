@@ -1,0 +1,40 @@
+name: Sync facility clinician licenses
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "resources/ClinicianLicenses.xlsx"
+      - "scripts/regenerate_clinician_json.js"
+      - ".github/workflows/sync-facility-clinicians.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install workbook reader
+        run: npm install --no-save --no-package-lock xlsx@0.18.5
+      - name: Add missing active clinicians for our facilities
+        run: node scripts/regenerate_clinician_json.js
+      - name: Commit new clinician JSON records
+        run: |
+          git add json/clinician_licenses.json
+          if git diff --cached --quiet; then
+            echo "No new facility clinician records."
+          else
+            git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "Sync new facility clinicians from ClinicianLicenses workbook"
+            git push
+          fi
