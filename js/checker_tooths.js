@@ -22,10 +22,12 @@
 };
 
 const QUADRANT_MAP = {
-  'Upper Right': new Set(['1','2','3','4','5','6','7','8','9','10','11','A','B','C','D','E']),
-  'Upper Left': new Set(['12','13','14','15','16','17','18','19','20','21','22','F','G','H','I','J']),
-  'Lower Left': new Set(['23','24','25','26','27','28','29','30','31','32','K','L','M','N','O']),
-  'Lower Right': new Set(['33','34','35','36','37','38','39','40','41','42','43','44','45','46','47','48','P','Q','R','S','T'])
+  // Universal permanent numbering: UR 1–8, UL 9–16, LL 17–24, LR 25–32.
+  // Primary numbering: UR A–E, UL F–J, LL K–O, LR P–T.
+  'Upper Right': new Set(['1','2','3','4','5','6','7','8','A','B','C','D','E']),
+  'Upper Left': new Set(['9','10','11','12','13','14','15','16','F','G','H','I','J']),
+  'Lower Left': new Set(['17','18','19','20','21','22','23','24','K','L','M','N','O']),
+  'Lower Right': new Set(['25','26','27','28','29','30','31','32','P','Q','R','S','T'])
 };
 
 const ANTERIOR_TEETH = new Set([
@@ -444,6 +446,96 @@ function isEndodonticDescription(description) {
   return /(root[\s-]*canal|pulpotomy|pulpectomy|endodont)/i.test(text);
 }
 
+
+// Resolve additional-tooth/service dependencies from the dental catalogue.
+// The code-ending pattern is only a pairing candidate: the code description
+// must explicitly say "Each additional tooth/unit/crown" and a matching
+// first/single/base-service code must exist in the catalogue.
+function buildAdditionalDentalDependencies(codeToMeta) {
+  const dependencies = new Map();
+  Object.entries(codeToMeta || {}).forEach(([code, meta]) => {
+    const description = String(meta?.description || '').replace(/\s+/g, ' ').trim();
+    if (!/^\d{4}9$/.test(code) || !/\beach\s+additional\s+(?:tooth|unit|crown)\b/i.test(description)) return;
+    const baseCode = code.slice(0, -1) + '1';
+    if (!codeToMeta[baseCode]) return;
+    const scope = /\bsame\s+quadrant\b/i.test(description) ? 'quadrant'
+      : /\bsame\s+sextant\b/i.test(description) ? 'sextant'
+      : 'claim';
+    dependencies.set(code, {
+      baseCode,
+      scope,
+      toothSpecific: /\beach\s+additional\s+tooth\b/i.test(description)
+    });
+  });
+  return dependencies;
+}
+
+function getDentalActivityTeeth(activity) {
+  if (!activity || typeof activity.getElementsByTagName !== 'function') return [];
+  const obsCodes = parseObservationCodes(activity.getElementsByTagName('Observation'));
+  return Array.from(new Set(
+    obsCodes.filter(isToothNumberObservationCode).map(resolveSupernumeraryTooth)
+  ));
+}
+
+// Validate against every activity in the current claim. Activity order does
+// not matter; matching must never cross between two claims in the same XML.
+function validateDentalAdditionalService(code, activity, claimActivities, dependencies) {
+  const rule = dependencies.get(code);
+  if (!rule) return [];
+
+  const firstActivities = Array.from(claimActivities || []).filter(other =>
+    String(other.querySelector('Code')?.textContent || '').trim() === rule.baseCode
+  );
+  const regionPhrase = rule.scope === 'quadrant' ? ' in the same quadrant'
+    : rule.scope === 'sextant' ? ' in the same sextant' : '';
+  if (!firstActivities.length) {
+    return ['Code ' + code + ' requires ' + rule.baseCode + ' (first/base service) in the same claim' + regionPhrase + '.'];
+  }
+
+  // An additional unit, crown, or time unit requires the same base service,
+  // not a tooth number unless the catalogue explicitly requires the same region.
+  if (!rule.toothSpecific && rule.scope === 'claim') return [];
+
+  const additionalTeeth = getDentalActivityTeeth(activity);
+  if (!additionalTeeth.length) {
+    return ['Code ' + code + ' requires a tooth-number observation to verify its relationship to ' + rule.baseCode + regionPhrase + '.'];
+  }
+
+  const firstTeeth = firstActivities.flatMap(getDentalActivityTeeth);
+  if (!firstTeeth.length) {
+    return ['Code ' + code + ' requires a tooth-number observation on ' + rule.baseCode + ' to verify the first tooth' + regionPhrase + '.'];
+  }
+
+  const getRegion = rule.scope === 'quadrant' ? getQuadrant
+    : rule.scope === 'sextant' ? getSextant : null;
+  const remarks = [];
+  additionalTeeth.forEach(tooth => {
+    const region = getRegion ? getRegion(tooth) : null;
+    if (getRegion && region === 'Unknown') {
+      remarks.push('Code ' + code + ': tooth ' + tooth + ' has an unknown ' + rule.scope + '; cannot verify ' + rule.baseCode + '.');
+      return;
+    }
+    const regionFirstTeeth = getRegion
+      ? firstTeeth.filter(firstTooth => getRegion(firstTooth) === region)
+      : firstTeeth;
+    if (!regionFirstTeeth.length) {
+      remarks.push(
+        'Code ' + code + ' tooth ' + tooth + ' requires ' + rule.baseCode +
+        ' (first tooth) in the same ' + rule.scope + ' (' + region + '); none was found.'
+      );
+      return;
+    }
+    if (!regionFirstTeeth.some(firstTooth => firstTooth !== tooth)) {
+      remarks.push(
+        'Code ' + code + ' tooth ' + tooth + ' must differ from the first tooth on ' + rule.baseCode +
+        (region ? ' in ' + region : '') + '.'
+      );
+    }
+  });
+  return remarks;
+}
+
 function isToothNumberObservationCode(obsCode) {
   const normalized = normalizeToothCode(obsCode);
   if (!normalized || isMultiToothObservation(normalized)) return false;
@@ -711,6 +803,7 @@ function getCombinedRemarks(row) {
 
 // Main activity validation and results rendering
 function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontistSet, receiverID = '', isMedical = false, tariffCodeTypeMap = new Map()) {
+  const additionalDentalDependencies = isMedical ? new Map() : buildAdditionalDentalDependencies(codeToMeta);
   const rows = [];
   const claimSummaries = {};
   const claimRegionTrack = {};
@@ -734,7 +827,8 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
 
     let claimHasInvalid = false;
 
-    Array.from(claim.getElementsByTagName('Activity')).forEach(act => {
+    const claimActivities = Array.from(claim.getElementsByTagName('Activity'));
+    claimActivities.forEach(act => {
       const obsList = act.getElementsByTagName('Observation');
       const activityId = act.querySelector('ID')?.textContent || '';
       const typeValue = act.querySelector('Type')?.textContent?.trim() || '';
@@ -841,6 +935,12 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
       const valueTypeRemarks = validateObservationValueTypes(obsList);
       if (valueTypeRemarks.length > 0) {
         row.remarks.push(...valueTypeRemarks);
+      }
+
+      // First/additional service dependencies (51 pairs currently in the catalogue).
+      // Append after the normal activity checks, including PDF-only activities.
+      if (!isMedical) {
+        row.remarks.push(...validateDentalAdditionalService(code, act, claimActivities, additionalDentalDependencies));
       }
 
       if (row.remarks && row.remarks.length > 0) claimHasInvalid = true;
@@ -1108,6 +1208,7 @@ function parseXML() {
 // function getSextant(tooth) { ... }
 
     // Expose function globally for unified checker
+    window._toothDependencyTestApi = { buildAdditionalDentalDependencies, validateDentalAdditionalService, getQuadrant, getSextant, getDentalActivityTeeth, validateActivities, buildCodeMeta };
     window.parseXML = parseXML;
 
   } catch (error) {
