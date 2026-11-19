@@ -2199,6 +2199,148 @@ await run('Allocator leaves unassignable claims marked as unassigned', () => {
   assert(result.allocationRows.some(row => row['Claim ID'] === 'C2' && row.Coder === '(Unassigned)'), 'Expected unsupported claim to remain unassigned');
 });
 
+
+// Dental first/additional service checks: both production dental validators
+// should produce the same findings for the same catalogue and claim data.
+const dentalCatalogue = JSON.parse(
+  fs.readFileSync(path.join(__dirname, '..', 'json', 'checker_tooths.json'), 'utf8')
+);
+function loadDentalDependencyApi(scriptName, exportName) {
+  const context = {
+    window: {},
+    document: { getElementById() { return null; }, querySelector() { return null; } },
+    console, XLSX: {}
+  };
+  vm.createContext(context);
+  vm.runInContext(
+    fs.readFileSync(path.join(__dirname, '..', 'js', scriptName), 'utf8'),
+    context, { filename: scriptName }
+  );
+  const api = context.window[exportName];
+  assert(api, 'Dental dependency test API missing from ' + scriptName);
+  return api;
+}
+function dentalObservation(code) {
+  return {
+    textContent: String(code),
+    querySelector(selector) {
+      if (selector === 'Code') return { textContent: String(code) };
+      if (selector === 'Type') return { textContent: 'Universal Dental' };
+      if (selector === 'ValueType') return { textContent: '' };
+      return null;
+    }
+  };
+}
+function dentalActivity(code, teeth = [], id = 'A1') {
+  const fields = { Code: code, Type: '6', ID: id, Quantity: '1', Net: '10' };
+  return {
+    querySelector(selector) {
+      return Object.prototype.hasOwnProperty.call(fields, selector)
+        ? { textContent: fields[selector] } : null;
+    },
+    getElementsByTagName(selector) {
+      return selector === 'Observation' ? teeth.map(dentalObservation) : [];
+    }
+  };
+}
+function dentalXml(claimActivityGroups) {
+  return {
+    getElementsByTagName(selector) {
+      if (selector !== 'Claim') return [];
+      return claimActivityGroups.map((activities, index) => ({
+        querySelector(key) {
+          if (key === 'ID') return { textContent: 'C' + (index + 1) };
+          if (key === 'Encounter > Start') return { textContent: '18/11/2026 10:00' };
+          return null;
+        },
+        getElementsByTagName(key) {
+          return key === 'Activity' ? activities : [];
+        }
+      }));
+    }
+  };
+}
+
+for (const [filename, exportName] of [
+  ['checker_tooths.js', '_toothDependencyTestApi'],
+  ['checker_observations.js', '_observationDependencyTestApi']
+]) {
+  const api = loadDentalDependencyApi(filename, exportName);
+  const meta = api.buildCodeMeta(dentalCatalogue);
+  const dependencies = api.buildAdditionalDentalDependencies(meta);
+  const check = (code, additionalTeeth, baseCode, baseTeeth) => {
+    const additional = dentalActivity(code, additionalTeeth, 'A2');
+    const activities = [additional];
+    if (baseCode) activities.push(dentalActivity(baseCode, baseTeeth, 'A1'));
+    return api.validateDentalAdditionalService(code, additional, activities, dependencies);
+  };
+  await run('Dental dependency pairs ' + filename + ': all 51 and quadrant classification', () => {
+    assert(dependencies.size === 51, 'Expected 51 catalogue-based additional service pairs');
+    assert(Array.from(dependencies.values()).filter(x => x.scope === 'quadrant').length === 20,
+      'Expected 20 same-quadrant additional service pairs');
+    assert(dependencies.get('20149').baseCode === '20141', 'Expected 20149 -> 20141');
+    assert(dependencies.get('71109').baseCode === '71101', 'Expected extraction pair');
+    assert(dependencies.get('16109').baseCode === '16101', 'Expected extra time-unit pair');
+    assert(!dependencies.has('20141'), 'Non-additional base codes must not be restricted');
+  });
+  await run('Dental dependency tooth geometry ' + filename + ': universal and primary boundaries', () => {
+    assert(api.getQuadrant('8') === 'Upper Right', 'Permanent tooth 8 is upper right');
+    assert(api.getQuadrant('9') === 'Upper Left', 'Permanent tooth 9 is upper left');
+    assert(api.getQuadrant('16') === 'Upper Left' && api.getQuadrant('17') === 'Lower Left',
+      'Permanent tooth 16/17 quadrant boundary');
+    assert(api.getQuadrant('24') === 'Lower Left' && api.getQuadrant('25') === 'Lower Right',
+      'Permanent tooth 24/25 quadrant boundary');
+    assert(api.getQuadrant('E') === 'Upper Right' && api.getQuadrant('F') === 'Upper Left',
+      'Primary E/F quadrant boundary');
+  });
+  await run('Dental dependency 20149 ' + filename + ': missing, wrong quadrant, same tooth, valid', () => {
+    assert(check('20149', ['7'], null, []).length, 'First tooth code 20141 is mandatory');
+    assert(check('20149', ['9'], '20141', ['8']).length, 'Different quadrants fail');
+    assert(check('20149', ['7'], '20141', ['7']).length, 'Same tooth cannot count as additional');
+    assert(check('20149', ['7'], '20141', []).length, 'First tooth observation is required');
+    assert(check('20149', [], '20141', ['8']).length, 'Additional tooth observation is required');
+    assert(check('20149', ['7'], '20141', ['8']).length === 0, 'Different teeth within same quadrant pass');
+    assert(check('13409', ['F'], '13401', ['E']).length, 'Primary cross-quadrant sealant should fail');
+    assert(check('71109', ['7'], '71101', ['8']).length === 0, 'Extraction with same quadrant passes');
+  });
+  await run('Dental dependency other services ' + filename + ': no invented quadrant restrictions', () => {
+    assert(check('42339', ['9'], '42331', ['8']).length === 0,
+      'Additional tooth without same-quadrant wording may use another quadrant');
+    assert(check('42339', ['8'], '42331', ['8']).length,
+      'Additional tooth must be distinct from the first tooth');
+    assert(check('16109', [], '16101', []).length === 0,
+      'Additional time unit needs base code, not tooth observations');
+    assert(check('16109', [], null, []).length, 'Additional time unit cannot omit base code');
+  });
+  await run('Dental dependency integration ' + filename + ': claim-only, order-independent, medical excluded', () => {
+    const missing = api.validateActivities(
+      dentalXml([[dentalActivity('20149', ['7'])]]),
+      meta, {}, new Set(), 'D001', false, new Map()
+    );
+    assert(missing[0].remarks.some(r => /20149.*20141/.test(r)), 'Missing first tooth must mark dental claim invalid');
+
+    const separate = api.validateActivities(
+      dentalXml([[dentalActivity('20149', ['7'])], [dentalActivity('20141', ['8'])]]),
+      meta, {}, new Set(), 'D001', false, new Map()
+    );
+    assert(separate[0].remarks.some(r => /20149.*20141/.test(r)), 'Base service from another claim cannot qualify');
+
+    const inOrder = api.validateActivities(
+      dentalXml([[dentalActivity('20149', ['7']), dentalActivity('20141', ['8'])]]),
+      meta, {}, new Set(), 'D001', false, new Map()
+    );
+    assert(!inOrder[0].remarks.some(r => /20149.*20141/.test(r)),
+      'First service after additional code in XML should qualify');
+
+    const medical = api.validateActivities(
+      dentalXml([[dentalActivity('20149', ['7'])]]),
+      meta, {}, new Set(), 'D001', true, new Map()
+    );
+    assert(!medical[0].remarks.some(r => /20149.*20141/.test(r)),
+      'Dental dependency rule must not run in Medical mode');
+  });
+}
+
 if (process.exitCode) {
   process.exit(process.exitCode);
 }
