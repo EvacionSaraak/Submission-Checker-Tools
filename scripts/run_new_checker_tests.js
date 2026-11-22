@@ -980,6 +980,14 @@ await run('MF7003 CPT 36415 must be priced at exactly zero for every payer', () 
       'MF7003 36415 invalid Net ' + JSON.stringify(nonzeroNet) + ' must be rejected');
   }
 
+  for (const invalidQuantity of ['0', '-1', '', 'abc']) {
+    const record = createRecord('0', 'MF7003', '36415', '30');
+    record.Quantity = invalidQuantity;
+    const result = pricingApi.buildTrueLifeZeroPriceVenipunctureRow(record, 'D001');
+    assert(result.status === 'Invalid' && /requires a positive quantity/.test(result.Remarks),
+      'Invalid quantity ' + JSON.stringify(invalidQuantity) + ' must still be rejected');
+  }
+
   assert(pricingApi.buildTrueLifeZeroPriceVenipunctureRow(
     createRecord('10', 'MF5357'), 'D001'
   ) === null, 'Other facilities must retain existing payer-specific 36415 rules');
