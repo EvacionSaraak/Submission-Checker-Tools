@@ -2453,8 +2453,8 @@ function checkAuthorization(authorizationId, memberId, code = '01901') {
 }
 await run('Authorization wrong-member ownership precedes CPT lookup', () => {
   const result = checkAuthorization('AUTH-OTHER', 'MEMBER-MINE');
-  assert(result.remarks.some(text => /belongs to a different member/i.test(text)),
-    'Must identify wrong member, not generic missing procedure');
+  assert(result.remarks.some(text => /Authorization \(AUTH-OTHER\) does not belong to this Member \(MEMBER-MINE\)\. It belongs to MEMBER-OTHER\./i.test(text)),
+    'Must preserve original member mismatch wording');
   assert(!result.remarks.some(text => /has no authorization for|does not list code/i.test(text)),
     'Must not misclassify a wrong-member authorization as a code error');
   assert(result.xlsAllAuthRows.length === 0,
@@ -2471,13 +2471,13 @@ await run('Authorization matches both member and code before validating', () => 
 });
 await run('Authorization correct member, wrong code is distinct from wrong member', () => {
   const result = checkAuthorization('AUTH-SAME', 'MEMBER-MINE');
-  assert(result.remarks.some(text => /belongs to this member but does not list code 01901/i.test(text)),
-    'Matching member with missing procedure should show a distinct error');
+  assert(result.remarks.some(text => text === 'AUTH-SAME has no authorization for 01901.'),
+    'Missing procedure must use the original authorization error format');
 });
 await run('Authorization missing, missing owner, numeric ID and leading-zero CPT', () => {
   assert(checkAuthorization('NO-SUCH-AUTH', 'MEMBER-MINE').remarks
-    .some(text => /not found in the uploaded approval report/i.test(text)),
-    'Missing authorization ID should not be confused with wrong member');
+    .some(text => text === 'NO-SUCH-AUTH has no authorization for 01901.'),
+    'Unknown authorization ID must retain the original error message');
   const unverified = checkAuthorization('AUTH-UNVERIFIABLE', 'MEMBER-MINE');
   assert(unverified.unknown === true && unverified.remarks.some(text => /no Member ID/i.test(text)),
     'Source without a member ID requires manual verification');
