@@ -945,6 +945,52 @@ await run('Only configured zero-priced companions are auto-accepted for pricing'
   );
 });
 
+await run('MF7003 CPT 36415 must be priced at exactly zero for every payer', () => {
+  const createRecord = (net, facilityID = 'MF7003', code = '36415', claimNet = '0') => ({
+    ClaimID: 'C1',
+    ActivityID: 'A1',
+    ActivityType: '3',
+    CPT: code,
+    Net: net,
+    Quantity: '1',
+    FacilityID: facilityID,
+    ClaimNet: claimNet,
+    PatientShare: '0'
+  });
+  for (const receiverID of ['D001', 'A001', 'D004', 'A025', 'C002', 'C001', 'HAAD']) {
+    const good = pricingApi.buildTrueLifeZeroPriceVenipunctureRow(
+      createRecord('0.00'), receiverID
+    );
+    assert(good !== null && good.status === 'Valid' && good.ComputedRef === 0,
+      'MF7003 36415 at Net 0 must pass for ' + receiverID);
+    assert(good._claimNetZeroBypass !== true && good.ReferenceNetPrice === '0',
+      'MF7003 36415 special rule must bypass tariff rules, not bypass its own check');
+
+    const charged = pricingApi.buildTrueLifeZeroPriceVenipunctureRow(
+      createRecord('25.50'), receiverID
+    );
+    assert(charged.status === 'Invalid' && /must always have activity Net 0/.test(charged.Remarks),
+      'MF7003 36415 nonzero Net must be invalid for ' + receiverID);
+    assert(charged.ClaimNet === '0', 'Parent claim Net 0 must not suppress the activity-level rule');
+  }
+
+  for (const nonzeroNet of ['0.01', '0.001', '-0.01', '-5', '5', '', 'not-a-number']) {
+    const result = pricingApi.buildTrueLifeZeroPriceVenipunctureRow(createRecord(nonzeroNet), 'D001');
+    assert(result.status === 'Invalid',
+      'MF7003 36415 invalid Net ' + JSON.stringify(nonzeroNet) + ' must be rejected');
+  }
+
+  assert(pricingApi.buildTrueLifeZeroPriceVenipunctureRow(
+    createRecord('10', 'MF5357'), 'D001'
+  ) === null, 'Other facilities must retain existing payer-specific 36415 rules');
+  assert(pricingApi.buildTrueLifeZeroPriceVenipunctureRow(
+    createRecord('10', 'MF7003', '36416'), 'D001'
+  ) === null, 'Other CPT codes at MF7003 must not be affected');
+  assert(pricingApi.buildTrueLifeZeroPriceVenipunctureRow(
+    createRecord('0', ' mf7003 '), 'D001'
+  ).status === 'Valid', 'Facility license case/whitespace normalization should work');
+});
+
 await run('Required-priced medical activity config matches normalized facility, receiver, and code', () => {
   assert(
     pricingApi.requiresNonZeroMedicalPrice({
