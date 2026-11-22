@@ -481,6 +481,30 @@ function mapXLSXData(rows) {
   }, {});
 }
 
+// Never resolve an authorization to another member's approval row, even if
+// its AuthorizationID and Item Code match. Match member ownership first,
+// then procedure code, and classify missing data separately.
+function resolveAuthorizationRows(xlsxMap, authID, memberId, code) {
+  const rows = authID ? (xlsxMap[authID] || []) : [];
+  const normalizedMember = normalizeMemberId(memberId);
+  const memberRows = normalizedMember ? rows.filter(row => {
+    const rowMember = normalizeMemberId(row["Card Number / DHA Member ID"]);
+    return !!rowMember && rowMember === normalizedMember;
+  }) : [];
+  const matchedRow = memberRows.find(row =>
+    normalizeProcedureCode(row["Item Code"]) === normalizeProcedureCode(code)
+  ) || null;
+  const hasOtherMember = rows.some(row =>
+    !!normalizeMemberId(row["Card Number / DHA Member ID"])
+  );
+  const issue = !authID ? 'missing_auth_id'
+    : !rows.length ? 'auth_not_found'
+    : !memberRows.length ? (hasOtherMember ? 'wrong_member' : 'member_not_verifiable')
+    : !matchedRow ? 'code_not_listed'
+    : null;
+  return { memberRows, matchedRow, issue };
+}
+
 // --- GROUPING LOGIC ---
 function preprocessClaimCodeSums(results) {
   const claimCodeSums = {};
@@ -520,7 +544,7 @@ function validateXLSXMatch(row, { memberId, code, netTotal, ordering, authID }) 
   const xOrdering = xlsClinician.trim().toUpperCase();
   if (xOrdering !== (xmlClinician || "").trim().toUpperCase())
     clinicianMismatch = true;
-  if ((row.AuthorizationID || "").trim() !== authID.trim())
+  if (String(row.AuthorizationID || "").trim() !== authID.trim())
     remarks.push(`AuthorizationID mismatch: XLSX=${row.AuthorizationID}`);
   return { remarks, clinicianMismatch, xmlClinician, xlsClinician };
 }
@@ -957,18 +981,11 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId, claimType = ''
     };
   }
 
-  // Try to find rows for this authID; mapXLSXData maps by trimmed AuthorizationID as primary key.
-  const rows = xlsxMap[authID] || [];
-  // All rows sharing this authorization (for "View" modal display)
-  const xlsAllAuthRows = rows;
-  const matchedRowByCodeAndMember = rows.find(r =>
-    normalizeProcedureCode(r["Item Code"]) === normalizeProcedureCode(code) &&
-    normalizeMemberId(r["Card Number / DHA Member ID"]) === normalizeMemberId(memberId)
-  );
-  const matchedRowByCode = rows.find(r =>
-    normalizeProcedureCode(r["Item Code"]) === normalizeProcedureCode(code)
-  );
-  const matchedRow = matchedRowByCodeAndMember || matchedRowByCode || {};
+  // Only member-owned authorization rows are eligible for display/validation.
+  // In particular, an Item Code match for someone else is NOT a match.
+  const authorizationLookup = resolveAuthorizationRows(xlsxMap, authID, memberId, code);
+  const matchedRow = authorizationLookup.matchedRow || {};
+  const xlsAllAuthRows = authorizationLookup.memberRows;
 
   const denialCode   = matchedRow["Denial Code (If any)"]   || "";
   const denialReason = matchedRow["Denial Reason (If any)"] || "";
@@ -987,11 +1004,31 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId, claimType = ''
   let unknown = false;
   let clinicianMismatchMsg = "";
 
-  if (!matchedRow.AuthorizationID) {
-    if (authID) {
-      remarks.push(`${authID} has no authorization for ${code}.`);
-    } else {
-      remarks.push(`Authorization required for ${code}.`);
+  if (!authorizationLookup.matchedRow) {
+    switch (authorizationLookup.issue) {
+      case 'wrong_member':
+        remarks.push(
+          `Authorization ${authID} belongs to a different member in the uploaded approval report. ` +
+          `It cannot authorize code ${code} for this claim's Member ID. Verify PriorAuthorizationID.`
+        );
+        break;
+      case 'member_not_verifiable':
+        remarks.push(
+          `Authorization ${authID} has no Member ID in the uploaded approval report; ` +
+          `ownership cannot be verified for code ${code}.`
+        );
+        unknown = true;
+        break;
+      case 'code_not_listed':
+        remarks.push(
+          `Authorization ${authID} belongs to this member but does not list code ${code}.`
+        );
+        break;
+      case 'auth_not_found':
+        remarks.push(`Authorization ${authID} was not found in the uploaded approval report for code ${code}.`);
+        break;
+      default:
+        remarks.push(`Authorization required for ${code}.`);
     }
   } else {
     // Check for extra whitespace in common fields (including AuthorizationID on the XLSX row)
@@ -1832,6 +1869,7 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
     // Expose function globally for unified checker
+    window._authTestApi = { normalizeMemberId, normalizeProcedureCode, mapXLSXData, resolveAuthorizationRows, validateActivity, validateClaims };
     window.runAuthsCheck = runAuthsCheck;
 
   } catch (error) {
