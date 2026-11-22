@@ -42,10 +42,18 @@ function buildTrueLifeZeroPriceVenipunctureRow(record, receiverID = '') {
   const rawNet = String(record.Net == null ? '' : record.Net).trim();
   const amount = rawNet === '' ? NaN : Number(rawNet);
   const validZeroNet = Number.isFinite(amount) && amount === 0;
-  const remarks = validZeroNet
-    ? ''
-    : 'MF7003: Code 36415 must always have activity Net 0. Claimed Net: ' +
-      (rawNet || '(missing)') + '.';
+  const quantity = Number(record.Quantity);
+  const validQuantity = Number.isFinite(quantity) && quantity > 0;
+  const remarks = [
+    ...(validZeroNet ? [] : [
+      'MF7003: Code 36415 must always have activity Net 0. Claimed Net: ' +
+        (rawNet || '(missing)') + '.'
+    ]),
+    ...(validQuantity ? [] : [
+      'Code 36415 requires a positive quantity; claimed quantity: ' +
+        (String(record.Quantity == null ? '' : record.Quantity).trim() || '(missing)') + '.'
+    ])
+  ].join(' ');
   return {
     ClaimID: record.ClaimID || '',
     ActivityID: record.ActivityID || '',
@@ -59,8 +67,8 @@ function buildTrueLifeZeroPriceVenipunctureRow(record, receiverID = '') {
     PricingContext: 'MF7003 - CPT 36415 mandatory activity Net 0',
     PricingRow: null,
     XmlRow: record,
-    isValid: validZeroNet,
-    status: validZeroNet ? 'Valid' : 'Invalid',
+    isValid: validZeroNet && validQuantity,
+    status: validZeroNet && validQuantity ? 'Valid' : 'Invalid',
     Remarks: remarks,
     ComputedRef: 0,
     xmlNetNum: Number.isFinite(amount) ? amount : NaN,
