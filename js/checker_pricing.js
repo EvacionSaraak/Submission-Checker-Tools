@@ -29,6 +29,57 @@ const MEDICAL_CONFIGURED_PAYERS = new Set(['D001', 'A001', 'D004', 'A025', 'A024
 // Submissions for these receivers are skipped before pricing resources are loaded.
 const PRICING_EXCLUDED_RECEIVERS = new Set(['C001']);
 
+// True Life (MF7003): venipuncture CPT 36415 must be submitted at
+// activity Net 0, for every receiver, including zero-Net claims.
+// Keep this separate from the existing receiver-specific 36415 rule.
+function isTrueLifeZeroPriceVenipuncture(record) {
+  return String(record?.FacilityID || '').trim().toUpperCase() === 'MF7003'
+    && normalizeCode(record?.CPT || '') === '36415';
+}
+
+function buildTrueLifeZeroPriceVenipunctureRow(record, receiverID = '') {
+  if (!isTrueLifeZeroPriceVenipuncture(record)) return null;
+  const rawNet = String(record.Net == null ? '' : record.Net).trim();
+  const amount = rawNet === '' ? NaN : Number(rawNet);
+  const validZeroNet = Number.isFinite(amount) && amount === 0;
+  const remarks = validZeroNet
+    ? ''
+    : 'MF7003: Code 36415 must always have activity Net 0. Claimed Net: ' +
+      (rawNet || '(missing)') + '.';
+  return {
+    ClaimID: record.ClaimID || '',
+    ActivityID: record.ActivityID || '',
+    ActivityType: record.ActivityType || '',
+    CPT: record.CPT || '',
+    ClaimedNet: record.Net == null ? '' : record.Net,
+    ClaimedQty: record.Quantity || '',
+    ReferenceNetPrice: '0',
+    AppliedFactor: '',
+    FactoredReference: '0',
+    PricingContext: 'MF7003 - CPT 36415 mandatory activity Net 0',
+    PricingRow: null,
+    XmlRow: record,
+    isValid: validZeroNet,
+    status: validZeroNet ? 'Valid' : 'Invalid',
+    Remarks: remarks,
+    ComputedRef: 0,
+    xmlNetNum: Number.isFinite(amount) ? amount : NaN,
+    PatientShare: record.PatientShare || '0',
+    ClaimGross: record.ClaimGross || '',
+    ClaimNet: record.ClaimNet || '',
+    ReceiverID: String(receiverID || '').trim().toUpperCase(),
+    ClaimPayerID: String(record.PayerID || '').trim().toUpperCase(),
+    PayerID: String(receiverID || '').trim().toUpperCase(),
+    _matchedFactorRule: null,
+    _drugPricingMeta: null,
+    _drugExpectedNet: null,
+    _zeroPricePassesPricing: validZeroNet,
+    _isZeroBilled: validZeroNet,
+    _requiresMedicalPrice: false,
+    _trueLife36415ZeroPriceRule: true
+  };
+}
+
 function isPricingExcludedReceiver(receiverID) {
   return PRICING_EXCLUDED_RECEIVERS.has(
     String(receiverID || '').trim().toUpperCase()
@@ -1667,6 +1718,19 @@ async function handleRun(options = {}) {
     }
 
     if (isPricingExcludedReceiver(pricingReceiverID)) {
+      // All other NAS activities remain excluded; the facility's mandatory
+      // zero-Net 36415 rule is the sole pricing check performed for NAS.
+      const restrictedRows = extractPricingRecords(xmlDoc)
+        .map(rec => buildTrueLifeZeroPriceVenipunctureRow(rec, pricingReceiverID))
+        .filter(Boolean);
+      if (restrictedRows.length) {
+        lastResults = restrictedRows;
+        lastWorkbook = makeWorkbookFromJson(restrictedRows, 'checker_pricing_results');
+        toggleDownload(true);
+        showProgress(100, 'MF7003 CPT 36415 checked; other NAS pricing excluded');
+        message('NAS pricing skipped except MF7003 CPT 36415 (mandatory Net 0).', 'green');
+        return buildResultsTable(restrictedRows);
+      }
       console.log(`[PRICING] ReceiverID "${pricingReceiverID}" is excluded from checker_pricing.`);
       lastResults = [];
       lastWorkbook = null;
@@ -1803,6 +1867,11 @@ async function handleRun(options = {}) {
     }
     showProgress(50, 'Comparing records');
     const output = extracted.map(rec => {
+      // Facility-specific mandatory price overrides must run BEFORE the
+      // claim-Net-zero bypass and tariff/payer matching.
+      const trueLifeZeroPriceRow = buildTrueLifeZeroPriceVenipunctureRow(rec, pricingReceiverID);
+      if (trueLifeZeroPriceRow) return trueLifeZeroPriceRow;
+
       const remarks = [];
       let status = 'Invalid';
       const facility = rec.FacilityID || '';
@@ -4103,6 +4172,8 @@ function escapeHtml(str) {
 window.__pricingRunImpl = handleRun;
 window.runPricingCheck = runPricingCheck;
 window._pricingTestApi = {
+  isTrueLifeZeroPriceVenipuncture,
+  buildTrueLifeZeroPriceVenipunctureRow,
   buildConcisePriceMismatchRemark,
   getConcisePricingContextLabel,
   getMedicalTariffMaximum,
