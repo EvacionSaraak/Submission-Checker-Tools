@@ -2341,6 +2341,98 @@ for (const [filename, exportName] of [
   });
 }
 
+
+function loadAuthorizationTestApi() {
+  const filename = 'checker_auths.js';
+  const code = fs.readFileSync(path.join(__dirname, '..', 'js', filename), 'utf8');
+  const context = {
+    window: {},
+    document: { addEventListener() {}, getElementById() { return null; }, querySelector() { return null; } },
+    console,
+    fetch: async () => ({ ok: false, status: 404 }),
+    XLSX: {}
+  };
+  vm.createContext(context);
+  vm.runInContext(code, context, { filename });
+  assert(context.window._authTestApi, 'Auth checker test API missing');
+  return context.window._authTestApi;
+}
+
+const authTestApi = loadAuthorizationTestApi();
+function makeAuthorizationReportRow(authorizationId, memberId, code, status = 'Approved') {
+  return {
+    AuthorizationID: authorizationId,
+    'Card Number / DHA Member ID': memberId,
+    'Item Code': code,
+    'Ordering Clinician': 'CL1',
+    'Ordered On': '16/11/2026',
+    Status: status
+  };
+}
+function makeAuthorizationActivity(authorizationId, code) {
+  const values = {
+    ID: 'A1', Code: code, Start: '17/11/2026 12:00', Net: '35', Quantity: '1',
+    OrderingClinician: 'CL1', PriorAuthorizationID: authorizationId
+  };
+  return {
+    querySelector(name) {
+      return Object.prototype.hasOwnProperty.call(values, name)
+        ? { textContent: values[name] } : null;
+    }
+  };
+}
+const authReportRows = [
+  makeAuthorizationReportRow('AUTH-OTHER', 'MEMBER-OTHER', '01901'),
+  makeAuthorizationReportRow('AUTH-MIXED', 'MEMBER-OTHER', '01901'),
+  makeAuthorizationReportRow('AUTH-MIXED', 'MEMBER-MINE', '01902'),
+  makeAuthorizationReportRow('AUTH-MIXED', 'MEMBER-MINE', '01901'),
+  makeAuthorizationReportRow('AUTH-SAME', 'MEMBER-MINE', '01902'),
+  makeAuthorizationReportRow('AUTH-UNVERIFIABLE', '', '01901'),
+  makeAuthorizationReportRow(1234567890, 'MEMBER-MINE', '01901')
+];
+const authReportMap = authTestApi.mapXLSXData(authReportRows);
+function checkAuthorization(authorizationId, memberId, code = '01901') {
+  return authTestApi.validateActivity(
+    makeAuthorizationActivity(authorizationId, code),
+    authReportMap, 'C1', memberId, '5', { receiverID: 'D001' }
+  );
+}
+await run('Authorization wrong-member ownership precedes CPT lookup', () => {
+  const result = checkAuthorization('AUTH-OTHER', 'MEMBER-MINE');
+  assert(result.remarks.some(text => /belongs to a different member/i.test(text)),
+    'Must identify wrong member, not generic missing procedure');
+  assert(!result.remarks.some(text => /has no authorization for|does not list code/i.test(text)),
+    'Must not misclassify a wrong-member authorization as a code error');
+  assert(result.xlsAllAuthRows.length === 0,
+    'Modal must not show another member’s authorization details');
+});
+await run('Authorization matches both member and code before validating', () => {
+  const result = checkAuthorization('AUTH-MIXED', 'MEMBER-MINE');
+  assert(result.remarks.length === 0,
+    'Matching member-owned authorization for procedure must be valid');
+  assert(result.xlsRow['Card Number / DHA Member ID'] === 'MEMBER-MINE',
+    'Must choose member-owned row even if another member’s matching code appears first');
+  assert(result.xlsAllAuthRows.length === 2,
+    'Only matching member’s authorization rows may appear in modal');
+});
+await run('Authorization correct member, wrong code is distinct from wrong member', () => {
+  const result = checkAuthorization('AUTH-SAME', 'MEMBER-MINE');
+  assert(result.remarks.some(text => /belongs to this member but does not list code 01901/i.test(text)),
+    'Matching member with missing procedure should show a distinct error');
+});
+await run('Authorization missing, missing owner, numeric ID and leading-zero CPT', () => {
+  assert(checkAuthorization('NO-SUCH-AUTH', 'MEMBER-MINE').remarks
+    .some(text => /not found in the uploaded approval report/i.test(text)),
+    'Missing authorization ID should not be confused with wrong member');
+  const unverified = checkAuthorization('AUTH-UNVERIFIABLE', 'MEMBER-MINE');
+  assert(unverified.unknown === true && unverified.remarks.some(text => /no Member ID/i.test(text)),
+    'Source without a member ID requires manual verification');
+  assert(checkAuthorization('1234567890', 'MEMBER-MINE').remarks.length === 0,
+    'Excel numeric authorization IDs must be handled');
+  assert(authTestApi.resolveAuthorizationRows(authReportMap, 'AUTH-MIXED', 'MEMBER-MINE', '1901').issue === null,
+    'Leading-zero CPT codes must compare equivalently');
+});
+
 if (process.exitCode) {
   process.exit(process.exitCode);
 }
