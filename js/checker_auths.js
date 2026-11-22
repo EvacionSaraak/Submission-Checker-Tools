@@ -1006,12 +1006,24 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId, claimType = ''
 
   if (!authorizationLookup.matchedRow) {
     switch (authorizationLookup.issue) {
-      case 'wrong_member':
+      case 'wrong_member': {
+        // Preserve the original member-ownership error wording without using
+        // a different member's authorization row for code/price validation.
+        const authorizationRows = xlsxMap[authID] || [];
+        const foreignRow = authorizationRows.find(row =>
+          normalizeProcedureCode(row["Item Code"]) === normalizeProcedureCode(code) &&
+          normalizeMemberId(row["Card Number / DHA Member ID"]) !== normalizeMemberId(memberId)
+        ) || authorizationRows.find(row =>
+          normalizeMemberId(row["Card Number / DHA Member ID"]) &&
+          normalizeMemberId(row["Card Number / DHA Member ID"]) !== normalizeMemberId(memberId)
+        );
+        const otherMember = foreignRow && String(foreignRow["Card Number / DHA Member ID"] || "").trim();
         remarks.push(
-          `Authorization ${authID} belongs to a different member in the uploaded approval report. ` +
-          `It cannot authorize code ${code} for this claim's Member ID. Verify PriorAuthorizationID.`
+          `Authorization (${authID}) does not belong to this Member (${memberId}).` +
+          (otherMember ? ` It belongs to ${otherMember}.` : '')
         );
         break;
+      }
       case 'member_not_verifiable':
         remarks.push(
           `Authorization ${authID} has no Member ID in the uploaded approval report; ` +
@@ -1020,12 +1032,10 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId, claimType = ''
         unknown = true;
         break;
       case 'code_not_listed':
-        remarks.push(
-          `Authorization ${authID} belongs to this member but does not list code ${code}.`
-        );
+        remarks.push(`${authID} has no authorization for ${code}.`);
         break;
       case 'auth_not_found':
-        remarks.push(`Authorization ${authID} was not found in the uploaded approval report for code ${code}.`);
+        remarks.push(`${authID} has no authorization for ${code}.`);
         break;
       default:
         remarks.push(`Authorization required for ${code}.`);
