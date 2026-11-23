@@ -73,7 +73,7 @@
       'Denial Description',
       'Rule Description'
     ],
-    clinician: ['Clinician License', 'Doctor License', 'Clinician'],
+    clinician: ['Clinician', 'Clinician License', 'Doctor License'],
     clinicianName: ['Clinician Name', 'Doctor Name'],
     providerLicense: ['Provider License', 'Facility License', 'Provider ID'],
     providerName: ['Provider Name', 'Facility Name'],
@@ -121,9 +121,7 @@
 
   function normalizeMemberId(value) {
     const raw = normalizeText(value);
-    // Odoo exports an unset Member ID as boolean false or literal "FALSE".
-    // It is not a patient identifier and must never join unrelated claims.
-    if (!raw || /^false$/i.test(raw)) return '';
+    if (!raw) return '';
 
     if (/^\d+(?:\.0+)?$/.test(raw)) {
       return raw.replace(/\.0+$/, '').replace(/^0+(?=\d)/, '');
@@ -471,102 +469,6 @@
     });
   }
 
-
-  // Odoo Reporting (Full) supplies claim records, NOT eligibility responses.
-  // FALSE/false Member IDs must remain visible but must never match a patient.
-  const REPORT_HEADERS = Object.freeze({
-    claimId: ['Pri. Claim ID', 'Pri. Claim No', 'Claim ID', 'ClaimID'],
-    visitId: ['Visit Id', 'Visit ID', 'VisitID'],
-    memberId: ['Pri. Member ID', 'Pri. Patient Insurance Card No', 'Member ID', 'MemberID'],
-    eid: ['Emirates ID No', 'Emirates ID No.', 'Emirates ID', 'EmiratesIDNumber', 'EID'],
-    date: ['Adm/Reg. Date', 'Encounter Date', 'Claim Date', 'ClaimDate', 'Report Date'],
-    clinician: ['Admitting License', 'Clinician License', 'Doctor License', 'Clinician'],
-    clinicianName: ['Admitting Doctor', 'Clinician Name', 'Doctor Name', 'OrderDoctor'],
-    department: ['Admitting Department', 'Department'],
-    facility: ['Center Name', 'Centre Name', 'Facility Name', 'Facility']
-  });
-
-  function findReportingHeaderRow(matrix) {
-    let bestIndex = -1, bestScore = -1;
-    for (let rowIndex = 0; rowIndex < Math.min(25, matrix.length); rowIndex++) {
-      const row = matrix[rowIndex] || [];
-      const indexes = {};
-      Object.entries(REPORT_HEADERS).forEach(([key, aliases]) => {
-        indexes[key] = resolveHeaderIndex(row, aliases);
-      });
-      if (indexes.claimId < 0 && indexes.visitId < 0) continue;
-      const score = (indexes.claimId >= 0 ? 5 : 2) +
-        (indexes.date >= 0 ? 4 : 0) +
-        (indexes.memberId >= 0 ? 3 : 0) +
-        (indexes.eid >= 0 ? 3 : 0) +
-        (indexes.clinician >= 0 ? 2 : 0) +
-        (indexes.facility >= 0 ? 1 : 0);
-      if (score > bestScore) { bestScore = score; bestIndex = rowIndex; }
-    }
-    return bestIndex;
-  }
-
-  function parseReportingWorkbook(arrayBuffer, sourceName = 'Reporting workbook') {
-    if (!root.XLSX || typeof root.XLSX.read !== 'function') {
-      throw new Error('SheetJS (XLSX) is unavailable.');
-    }
-    const workbook = root.XLSX.read(arrayBuffer, {type:'array', cellDates:true, raw:true});
-    const claims = [], warnings = [];
-    for (const sheetName of workbook.SheetNames) {
-      const matrix = root.XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], {
-        header:1, defval:'', raw:true, blankrows:false, skipHidden:false
-      });
-      if (!matrix.length) continue;
-      const headerIndex = findReportingHeaderRow(matrix);
-      if (headerIndex < 0) {
-        warnings.push(sheetName + ': skipped (no reporting Claim ID/Visit ID header).');
-        continue;
-      }
-      const headers = (matrix[headerIndex] || []).map(normalizeText);
-      const indexes = {};
-      Object.entries(REPORT_HEADERS).forEach(([key, aliases]) => {
-        indexes[key] = resolveHeaderIndex(headers, aliases);
-      });
-      const clinicianIndexes = resolveClinicianHeaderIndexes(headers, REPORT_HEADERS.clinician);
-      let count = 0;
-      for (let rowIndex = headerIndex + 1; rowIndex < matrix.length; rowIndex++) {
-        const values = matrix[rowIndex] || [];
-        const getValue = field => indexes[field] >= 0 ? values[indexes[field]] : '';
-        const claimID = normalizeText(getValue('claimId')) || normalizeText(getValue('visitId'));
-        if (!claimID) continue;
-        const memberValue = getValue('memberId');
-        const memberIDRaw = memberValue === false || /^false$/i.test(normalizeText(memberValue))
-          ? 'FALSE' : normalizeText(memberValue);
-        const encounter = parseDateTime(getValue('date'));
-        const license = normalizeClinician(firstPopulatedClinicianValue(values, clinicianIndexes));
-        const orderingClinicians = new Set(license ? [license] : []);
-        const performingClinicians = new Set();
-        const clinicians = new Set(orderingClinicians);
-        const clinicianRule = getRequiredClinicians(performingClinicians, orderingClinicians);
-        const department = normalizeText(getValue('department'));
-        const eidRaw = normalizeText(getValue('eid'));
-        claims.push({
-          claimIndex:claims.length, claimID, receiverID:'', payerIDRaw:'', payerID:'',
-          memberIDRaw, memberID:normalizeMemberId(memberValue),
-          eidRaw, eid:normalizeEid(eidRaw), providerIDRaw:'', providerID:'',
-          encounterStartRaw:encounter.display || normalizeText(getValue('date')),
-          encounterDate:encounter.dateKey, encounterTimestamp:encounter.timestamp,
-          clinicians, performingClinicians, orderingClinicians, ...clinicianRule,
-          isDental:/\b(?:dental|orthodontics?)\b/i.test(department),
-          activityCodes:new Set(), packageName:'', claimXML:'',
-          reportingDepartment:department,
-          reportingClinicianName:normalizeText(getValue('clinicianName')),
-          reportingFacility:normalizeText(getValue('facility')),
-          reportingSource:sourceName, reportingSheet:sheetName,
-          reportingRow:rowIndex + 1
-        });
-        count++;
-      }
-      if (!count) warnings.push(sheetName + ': no claims with Claim ID or Visit ID.');
-    }
-    return {claims, warnings};
-  }
-
   function findHeaderRow(matrix) {
     const scanLimit = Math.min(matrix.length, 20);
     let best = null;
@@ -621,31 +523,6 @@
     return -1;
   }
 
-  // Full Reporting combinations can contain several synonymous clinician
-  // columns. Resolve them in explicit-license-first order, then choose a
-  // nonblank value per ROW instead of binding one column for the workbook.
-  function resolveClinicianHeaderIndexes(rawHeaders, aliases) {
-    const headers = rawHeaders.map(value => normalizeHeader(
-      normalizeText(value).replace(/\s*\(\d+\)\s*$/, '')
-    ));
-    const indexes = [];
-    for (const alias of aliases) {
-      const target = normalizeHeader(alias);
-      headers.forEach((header, index) => {
-        if (header === target && !indexes.includes(index)) indexes.push(index);
-      });
-    }
-    return indexes;
-  }
-
-  function firstPopulatedClinicianValue(values, indexes) {
-    for (const index of indexes) {
-      const value = normalizeText(values[index]);
-      if (value) return value;
-    }
-    return '';
-  }
-
   function parseEligibilityWorkbook(arrayBuffer) {
     if (!root.XLSX || typeof root.XLSX.read !== 'function') {
       throw new Error('SheetJS (XLSX) is unavailable.');
@@ -686,8 +563,6 @@
       Object.entries(HEADER_ALIASES).forEach(([key, aliases]) => {
         indexes[key] = resolveHeaderIndex(rawHeaders, aliases);
       });
-      const clinicianHeaderIndexes = resolveClinicianHeaderIndexes(rawHeaders, HEADER_ALIASES.clinician);
-      const clinicianNameHeaderIndexes = resolveClinicianHeaderIndexes(rawHeaders, HEADER_ALIASES.clinicianName);
 
       if (indexes.orderedOn < 0 || indexes.status < 0 || (indexes.eid < 0 && indexes.memberId < 0)) {
         warnings.push(
@@ -706,8 +581,6 @@
         });
 
         const orderedOn = parseDateTime(values[indexes.orderedOn]);
-        const clinicianRaw = firstPopulatedClinicianValue(values, clinicianHeaderIndexes);
-        const clinicianName = firstPopulatedClinicianValue(values, clinicianNameHeaderIndexes);
         const row = {
           sheetName,
           sheetRowNumber: rowIndex + 1,
@@ -723,9 +596,9 @@
           orderedTimestamp: orderedOn.timestamp,
           answeredOn: indexes.answeredOn >= 0 ? normalizeText(values[indexes.answeredOn]) : '',
           status: indexes.status >= 0 ? normalizeText(values[indexes.status]) : '',
-          clinicianRaw,
-          clinician: normalizeClinician(clinicianRaw),
-          clinicianName,
+          clinicianRaw: indexes.clinician >= 0 ? normalizeText(values[indexes.clinician]) : '',
+          clinician: indexes.clinician >= 0 ? normalizeClinician(values[indexes.clinician]) : '',
+          clinicianName: indexes.clinicianName >= 0 ? normalizeText(values[indexes.clinicianName]) : '',
           providerLicenseRaw:
             indexes.providerLicense >= 0 ? normalizeText(values[indexes.providerLicense]) : '',
           providerLicense:
@@ -936,15 +809,13 @@
     );
   }
 
-  function buildWrongMemberIdRemark(candidate, claim = null) {
+  function buildWrongMemberIdRemark(candidate) {
     const expectedMemberID =
       candidate?.row?.memberIDRaw ||
       candidate?.row?.memberID ||
       '(blank)';
 
-    return claim && !claim.memberID
-      ? 'Missing Member ID (eligibility has ' + expectedMemberID + ').'
-      : 'Wrong Member ID (should be ' + expectedMemberID + ').';
+    return `Wrong Member ID (should be ${expectedMemberID}).`;
   }
 
   function findBestEligibilityMatch(claim, indexes) {
@@ -1163,13 +1034,6 @@
     const unknownRemarks = [];
     const notes = [];
 
-    // A missing Member ID is a review finding, never a reason to omit the claim.
-    if (!claim.memberID) {
-      unknownRemarks.push(/^false$/i.test(normalizeText(claim.memberIDRaw))
-        ? 'Member ID is missing (FALSE in reporting file).'
-        : 'Member ID is missing.');
-    }
-
     if (!claim.encounterDate) {
       invalidRemarks.push('Encounter Start is missing or has an invalid date.');
     }
@@ -1187,7 +1051,7 @@
     if (!matchedRow) {
       invalidRemarks.push(buildEligibilityNotFoundRemark(claim));
     } else if (!match.completeMatch && memberIdCorrectionCandidate) {
-      unknownRemarks.push(buildWrongMemberIdRemark(memberIdCorrectionCandidate, claim));
+      unknownRemarks.push(buildWrongMemberIdRemark(memberIdCorrectionCandidate));
       notes.push(
         `Eligibility ${memberIdCorrectionRow?.requestNumber || '(unknown)'} matched ` +
         'encounter date, a nonblank Emirates ID, and the required clinician. ' +
@@ -2471,32 +2335,24 @@
   async function runEligCheck(options) {
     const config = options || {};
     const xmlFile = resolveInputFile('xmlFileInput', 'xml', config.xmlFile);
-    const reportInput = document.getElementById('reportFileInput');
-    const reportFiles = Array.from(config.reportFiles || reportInput?.files || []);
     const eligibilityFile = resolveInputFile(
       'eligibilityFileInput',
       'eligibility',
       config.eligibilityFile
     );
-    const sourceMode = config.sourceType || config.reportSource ||
-      document.querySelector('input[name="reportSource"]:checked')?.value || '';
-    // Keep the unified checker's XML path unchanged when it has no report upload.
-    const useReport = reportFiles.length > 0 && (sourceMode !== 'xml' || !xmlFile);
 
     installModalDelegation();
 
-    if (!useReport && !xmlFile) {
-      return createErrorWrapper(new Error(
-        sourceMode === 'xls' ? 'Missing reporting Excel file.' : 'Missing XML file.'
-      ));
+    if (!xmlFile) {
+      return createErrorWrapper(new Error('Missing XML file.'));
     }
 
     try {
-      const xmlText = useReport ? '' :
-        (typeof root.getUnifiedXmlText === 'function'
-          ? await root.getUnifiedXmlText()
-          : await xmlFile.text());
-      const receiverID = useReport ? '' : getSubmissionReceiverID(xmlText);
+      const xmlText = typeof root.getUnifiedXmlText === 'function'
+        ? await root.getUnifiedXmlText()
+        : await xmlFile.text();
+
+      const receiverID = getSubmissionReceiverID(xmlText);
 
       if (receiverID === 'HAAD') {
         lastResults = [];
@@ -2524,18 +2380,8 @@
       }
 
       const eligibilityBuffer = await eligibilityFile.arrayBuffer();
+      const claims = parseXMLClaims(xmlText);
       const workbookContext = parseEligibilityWorkbook(eligibilityBuffer);
-      let claims = [];
-      if (useReport) {
-        for (const file of reportFiles) {
-          const parsed = parseReportingWorkbook(await file.arrayBuffer(), file.name);
-          claims.push(...parsed.claims);
-          workbookContext.warnings.push(...parsed.warnings);
-        }
-        if (!claims.length) throw new Error('No claims found in the reporting Excel file(s).');
-      } else {
-        claims = parseXMLClaims(xmlText);
-      }
       const indexes = buildEligibilityIndexes(workbookContext.rows);
 
       const results = claims.map(claim => {
@@ -2582,6 +2428,7 @@
     normalizeMemberId,
     normalizeEid,
     isUsableEid,
+    isUnknownEid,
     hasAcceptableClaimEid,
     normalizeClinician,
     isGtClinician,
@@ -2591,10 +2438,6 @@
     getSubmissionReceiverID,
     parseXMLClaims,
     parseEligibilityWorkbook,
-    parseReportingWorkbook,
-    findReportingHeaderRow,
-    resolveClinicianHeaderIndexes,
-    firstPopulatedClinicianValue,
     buildEligibilityIndexes,
     findBestEligibilityMatch,
     analyzeClaim,
