@@ -2582,7 +2582,6 @@
     normalizeMemberId,
     normalizeEid,
     isUsableEid,
-    isUnknownEid,
     hasAcceptableClaimEid,
     normalizeClinician,
     isGtClinician,
