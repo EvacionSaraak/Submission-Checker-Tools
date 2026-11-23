@@ -121,7 +121,9 @@
 
   function normalizeMemberId(value) {
     const raw = normalizeText(value);
-    if (!raw) return '';
+    // Odoo exports an unset Member ID as boolean false or literal "FALSE".
+    // It is not a patient identifier and must never join unrelated claims.
+    if (!raw || /^false$/i.test(raw)) return '';
 
     if (/^\d+(?:\.0+)?$/.test(raw)) {
       return raw.replace(/\.0+$/, '').replace(/^0+(?=\d)/, '');
