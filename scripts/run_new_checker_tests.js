@@ -2453,7 +2453,7 @@ function checkAuthorization(authorizationId, memberId, code = '01901') {
 }
 await run('Authorization wrong-member ownership precedes CPT lookup', () => {
   const result = checkAuthorization('AUTH-OTHER', 'MEMBER-MINE');
-  assert(result.remarks.some(text => /Authorization \(AUTH-OTHER\) does not belong to this Member \(MEMBER-MINE\)\. It belongs to MEMBER-OTHER\./i.test(text)),
+  assert(result.remarks.some(text => text === 'Authorization AUTH-OTHER does not belong to MEMBER-MINE, it belongs to MEMBER-OTHER.'),
     'Must preserve original member mismatch wording');
   assert(!result.remarks.some(text => /has no authorization for|does not list code/i.test(text)),
     'Must not misclassify a wrong-member authorization as a code error');
