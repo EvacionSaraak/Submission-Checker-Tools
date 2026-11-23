@@ -528,7 +528,7 @@
   // nonblank value per ROW instead of binding one column for the workbook.
   function resolveClinicianHeaderIndexes(rawHeaders, aliases) {
     const headers = rawHeaders.map(value => normalizeHeader(
-      normalizeText(value).replace(/\\s*\\(\\d+\\)\\s*$/, '')
+      normalizeText(value).replace(/\s*\(\d+\)\s*$/, '')
     ));
     const indexes = [];
     for (const alias of aliases) {
