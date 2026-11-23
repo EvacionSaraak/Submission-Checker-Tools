@@ -73,7 +73,7 @@
       'Denial Description',
       'Rule Description'
     ],
-    clinician: ['Clinician', 'Clinician License', 'Doctor License'],
+    clinician: ['Clinician License', 'Doctor License', 'Clinician'],
     clinicianName: ['Clinician Name', 'Doctor Name'],
     providerLicense: ['Provider License', 'Facility License', 'Provider ID'],
     providerName: ['Provider Name', 'Facility Name'],
@@ -523,6 +523,31 @@
     return -1;
   }
 
+  // Full Reporting combinations can contain several synonymous clinician
+  // columns. Resolve them in explicit-license-first order, then choose a
+  // nonblank value per ROW instead of binding one column for the workbook.
+  function resolveClinicianHeaderIndexes(rawHeaders, aliases) {
+    const headers = rawHeaders.map(value => normalizeHeader(
+      normalizeText(value).replace(/\\s*\\(\\d+\\)\\s*$/, '')
+    ));
+    const indexes = [];
+    for (const alias of aliases) {
+      const target = normalizeHeader(alias);
+      headers.forEach((header, index) => {
+        if (header === target && !indexes.includes(index)) indexes.push(index);
+      });
+    }
+    return indexes;
+  }
+
+  function firstPopulatedClinicianValue(values, indexes) {
+    for (const index of indexes) {
+      const value = normalizeText(values[index]);
+      if (value) return value;
+    }
+    return '';
+  }
+
   function parseEligibilityWorkbook(arrayBuffer) {
     if (!root.XLSX || typeof root.XLSX.read !== 'function') {
       throw new Error('SheetJS (XLSX) is unavailable.');
@@ -563,6 +588,8 @@
       Object.entries(HEADER_ALIASES).forEach(([key, aliases]) => {
         indexes[key] = resolveHeaderIndex(rawHeaders, aliases);
       });
+      const clinicianHeaderIndexes = resolveClinicianHeaderIndexes(rawHeaders, HEADER_ALIASES.clinician);
+      const clinicianNameHeaderIndexes = resolveClinicianHeaderIndexes(rawHeaders, HEADER_ALIASES.clinicianName);
 
       if (indexes.orderedOn < 0 || indexes.status < 0 || (indexes.eid < 0 && indexes.memberId < 0)) {
         warnings.push(
@@ -581,6 +608,8 @@
         });
 
         const orderedOn = parseDateTime(values[indexes.orderedOn]);
+        const clinicianRaw = firstPopulatedClinicianValue(values, clinicianHeaderIndexes);
+        const clinicianName = firstPopulatedClinicianValue(values, clinicianNameHeaderIndexes);
         const row = {
           sheetName,
           sheetRowNumber: rowIndex + 1,
@@ -596,9 +625,9 @@
           orderedTimestamp: orderedOn.timestamp,
           answeredOn: indexes.answeredOn >= 0 ? normalizeText(values[indexes.answeredOn]) : '',
           status: indexes.status >= 0 ? normalizeText(values[indexes.status]) : '',
-          clinicianRaw: indexes.clinician >= 0 ? normalizeText(values[indexes.clinician]) : '',
-          clinician: indexes.clinician >= 0 ? normalizeClinician(values[indexes.clinician]) : '',
-          clinicianName: indexes.clinicianName >= 0 ? normalizeText(values[indexes.clinicianName]) : '',
+          clinicianRaw,
+          clinician: normalizeClinician(clinicianRaw),
+          clinicianName,
           providerLicenseRaw:
             indexes.providerLicense >= 0 ? normalizeText(values[indexes.providerLicense]) : '',
           providerLicense:
@@ -2438,6 +2467,8 @@
     getSubmissionReceiverID,
     parseXMLClaims,
     parseEligibilityWorkbook,
+    resolveClinicianHeaderIndexes,
+    firstPopulatedClinicianValue,
     buildEligibilityIndexes,
     findBestEligibilityMatch,
     analyzeClaim,
