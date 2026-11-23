@@ -538,7 +538,7 @@ function validateXLSXMatch(row, { memberId, code, netTotal, ordering, authID }) 
   let xmlClinician = ordering || "";
   let xlsClinician = (row["Ordering Clinician"] || "");
   if (normalizeMemberId(row["Card Number / DHA Member ID"]) !== normalizeMemberId(memberId))
-    remarks.push(`Authorization (${authID || (row.AuthorizationID || "").trim() || "UNKNOWN"}) does not belong to this Member (${memberId}). It belongs to ${row["Card Number / DHA Member ID"]}.`);
+    remarks.push(`Authorization ${authID || String(row.AuthorizationID || "").trim() || "UNKNOWN"} does not belong to ${memberId}, it belongs to ${String(row["Card Number / DHA Member ID"] || "").trim()}.`);
   if (normalizeProcedureCode(row["Item Code"]) !== normalizeProcedureCode(code))
     remarks.push(`Item Code mismatch: XLSX=${row["Item Code"]}`);
   const xOrdering = xlsClinician.trim().toUpperCase();
@@ -1019,8 +1019,7 @@ function validateActivity(activityEl, xlsxMap, claimId, memberId, claimType = ''
         );
         const otherMember = foreignRow && String(foreignRow["Card Number / DHA Member ID"] || "").trim();
         remarks.push(
-          `Authorization (${authID}) does not belong to this Member (${memberId}).` +
-          (otherMember ? ` It belongs to ${otherMember}.` : '')
+          `Authorization ${authID} does not belong to ${memberId}, it belongs to ${otherMember || '(unknown)'}.`
         );
         break;
       }
