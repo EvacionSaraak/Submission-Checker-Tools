@@ -401,14 +401,15 @@ function hasRequiredLoincObservation(obsList, allowedCodes) {
   });
 }
 
-// Check if an activity has a Subcode observation whose semantic value is "01".
-// Whitespace formatting is validated separately so a value such as "01 " does
-// not also trigger a misleading "missing Subcode" remark.
+// Require the complete Endodontist Subcode observation, including ValueType.
+// Whitespace is reported separately; normalize fields here for matching only.
 function hasSubcodeObservation(obsList) {
   return Array.from(obsList).some(obs => {
+    const type = (obs.querySelector('Type')?.textContent || '').trim().toUpperCase();
     const code = (obs.querySelector('Code')?.textContent || '').trim().toUpperCase();
     const rawValue = obs.querySelector('Value')?.textContent || '';
-    return code === 'SUBCODE' && rawValue.trim() === '01';
+    const valueType = (obs.querySelector('ValueType')?.textContent || '').trim().toUpperCase();
+    return type === 'TEXT' && code === 'SUBCODE' && rawValue.trim() === '01' && valueType === 'TEXT';
   });
 }
 
@@ -1084,7 +1085,7 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
 
           if (isEndodontist && !hasSubcode) {
             // ERROR: Endodontist but missing required Subcode observation
-            row.remarks.push(`Code ${code} requires a Subcode observation (Type: Text, Code: Subcode, Value: "01") when performed by an Endodontist.`);
+            row.remarks.push(`Code ${code} requires a Subcode observation (Type: Text, Code: Subcode, Value: "01", ValueType: "Text") when performed by an Endodontist.`);
           }
 
           // ERROR: More than one Subcode observation is not allowed
@@ -1496,7 +1497,7 @@ async function parseXML(suppliedFile = null) {
 // function getSextant(tooth) { ... }
 
     // Expose function globally for unified checker
-    window._observationDependencyTestApi = { buildAdditionalDentalDependencies, validateDentalAdditionalService, getQuadrant, getSextant, getDentalActivityTeeth, validateActivities, buildCodeMeta };
+    window._observationDependencyTestApi = { hasSubcodeObservation,  buildAdditionalDentalDependencies, validateDentalAdditionalService, getQuadrant, getSextant, getDentalActivityTeeth, validateActivities, buildCodeMeta };
     window.parseXML = parseXML;
   } catch (error) {
     console.error('[CHECKER-ERROR] Failed to load checker:', error);
