@@ -270,12 +270,14 @@ function parseEncounterDate(dateStr) {
   return new Date(y, m - 1, d);
 }
 
-// Check if an activity has a valid Subcode observation (Observation Code = "Subcode", Value = "01")
+// Endodontist Subcode must include the complete DoH observation shape.
 function hasSubcodeObservation(obsList) {
   return Array.from(obsList).some(obs => {
+    const type = (obs.querySelector('Type')?.textContent || '').trim().toUpperCase();
     const code = (obs.querySelector('Code')?.textContent || '').trim().toUpperCase();
     const value = (obs.querySelector('Value')?.textContent || '').trim();
-    return code === 'SUBCODE' && value === '01';
+    const valueType = (obs.querySelector('ValueType')?.textContent || '').trim().toUpperCase();
+    return type === 'TEXT' && code === 'SUBCODE' && value === '01' && valueType === 'TEXT';
   });
 }
 
@@ -912,7 +914,7 @@ function validateActivities(xmlDoc, codeToMeta, fallbackDescriptions, endodontis
 
           if (isEndodontist && !hasSubcode) {
             // ERROR: Endodontist but missing required Subcode observation
-            row.remarks.push(`Code ${code} requires a Subcode observation (Type: Text, Code: Subcode, Value: "01") when performed by an Endodontist.`);
+            row.remarks.push(`Code ${code} requires a Subcode observation (Type: Text, Code: Subcode, Value: "01", ValueType: "Text") when performed by an Endodontist.`);
           }
 
           // ERROR: More than one Subcode observation is not allowed
@@ -1208,7 +1210,7 @@ function parseXML() {
 // function getSextant(tooth) { ... }
 
     // Expose function globally for unified checker
-    window._toothDependencyTestApi = { buildAdditionalDentalDependencies, validateDentalAdditionalService, getQuadrant, getSextant, getDentalActivityTeeth, validateActivities, buildCodeMeta };
+    window._toothDependencyTestApi = { hasSubcodeObservation,  buildAdditionalDentalDependencies, validateDentalAdditionalService, getQuadrant, getSextant, getDentalActivityTeeth, validateActivities, buildCodeMeta };
     window.parseXML = parseXML;
 
   } catch (error) {
