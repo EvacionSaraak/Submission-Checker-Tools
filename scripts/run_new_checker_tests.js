@@ -2320,6 +2320,85 @@ for (const [filename, exportName] of [
   ['checker_observations.js', '_observationDependencyTestApi']
 ]) {
   const api = loadDentalDependencyApi(filename, exportName);
+
+  // DoH Subcode for post-cutoff Thiqa root canal work by an Endodontist:
+  // Type Text, Code Subcode, Value 01, ValueType Text.
+  const rootCanalSubcodeCodes = ['33111', '33121', '33131', '33141', '33115', '33125', '33135', '33145'];
+  function subcodeObservation({ type = 'Text', value = '01', valueType = 'Text', omitValueType = false } = {}) {
+    const values = { Type: type, Code: 'Subcode', Value: value, ValueType: valueType };
+    return {
+      textContent: Object.values(values).join(' '),
+      querySelector(selector) {
+        if (selector === 'ValueType' && omitValueType) return null;
+        return Object.prototype.hasOwnProperty.call(values, selector)
+          ? { textContent: values[selector] } : null;
+      }
+    };
+  }
+  function rootCanalActivity(code, observation) {
+    const fields = { ID: 'A1', Code: code, Type: '6', Clinician: 'ENDO-TEST', Quantity: '1' };
+    return {
+      querySelector(selector) {
+        return Object.prototype.hasOwnProperty.call(fields, selector)
+          ? { textContent: fields[selector] } : null;
+      },
+      getElementsByTagName(selector) {
+        return selector === 'Observation'
+          ? [dentalObservation('8'), observation].filter(Boolean)
+          : [];
+      }
+    };
+  }
+  function rootCanalCheck(code, observation, { receiverID = 'D001', clinician = 'ENDO-TEST', medical = false } = {}) {
+    const activity = rootCanalActivity(code, observation);
+    if (clinician !== 'ENDO-TEST') {
+      const original = activity.querySelector;
+      activity.querySelector = selector => selector === 'Clinician'
+        ? { textContent: clinician } : original(selector);
+    }
+    return api.validateActivities(
+      dentalXml([[activity]]), {}, {}, new Set(['ENDO-TEST']),
+      receiverID, medical, new Map(), new Set(rootCanalSubcodeCodes)
+    )[0];
+  }
+  await run('Endodontist Subcode requires Text ValueType in all 8 root canal codes: ' + filename, () => {
+    for (const code of rootCanalSubcodeCodes) {
+      const complete = subcodeObservation();
+      assert(api.hasSubcodeObservation([complete]) === true,
+        'Complete Text Subcode should qualify for ' + code);
+      const valid = rootCanalCheck(code, complete);
+      assert(!valid.remarks.some(text => /requires a Subcode observation/i.test(text)),
+        'Complete Subcode should not get missing-Subcode error for ' + code);
+
+      for (const broken of [
+        subcodeObservation({ omitValueType: true }),
+        subcodeObservation({ valueType: '' }),
+        subcodeObservation({ valueType: 'Number' }),
+        subcodeObservation({ type: 'Number' }),
+        subcodeObservation({ value: '02' })
+      ]) {
+        assert(api.hasSubcodeObservation([broken]) === false,
+          'Incomplete Subcode must fail matching for ' + code);
+        const result = rootCanalCheck(code, broken);
+        assert(result.remarks.includes(
+          'Code ' + code + ' requires a Subcode observation (Type: Text, Code: Subcode, Value: "01", ValueType: "Text") when performed by an Endodontist.'
+        ), 'Canonical Subcode error must list ValueType Text for ' + code);
+      }
+    }
+  });
+  await run('Endodontist Subcode rule keeps existing payer/clinician scope: ' + filename, () => {
+    const incomplete = subcodeObservation({ omitValueType: true });
+    assert(!rootCanalCheck('33145', incomplete, { receiverID: 'A001' }).remarks
+      .some(text => /requires a Subcode observation/i.test(text)),
+      'The Endodontist Subcode requirement remains Thiqa-only');
+    assert(!rootCanalCheck('33145', incomplete, { clinician: 'NON-ENDO' }).remarks
+      .some(text => /requires a Subcode observation/i.test(text)),
+      'Other dental specialties must not trigger the Endodontist rule');
+    assert(!rootCanalCheck('33145', incomplete, { medical: true }).remarks
+      .some(text => /requires a Subcode observation/i.test(text)),
+      'Medical mode must not trigger the dental Endodontist Subcode rule');
+  });
+
   const meta = api.buildCodeMeta(dentalCatalogue);
   const dependencies = api.buildAdditionalDentalDependencies(meta);
   const check = (code, additionalTeeth, baseCode, baseTeeth) => {
